@@ -1,10 +1,14 @@
 import {
   buildAssistantMessage,
   buildUserMessage,
+  buildUserPromptParts,
+  messagePartUpdated,
   messageUpdated,
+  sessionError,
   sessionStatus,
   type CompatEvent,
 } from "../compat-events"
+import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
@@ -99,7 +103,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       directory: input.directory,
       title: input.title ?? prev?.title ?? null,
       agentSessionId: input.agentSessionId,
-      ownerKey: input.ownerKey ?? prev?.ownerKey ?? null,
+      ownerKey: input.ownerKey === undefined ? prev?.ownerKey ?? null : input.ownerKey,
       time: {
         created: prev?.time.created ?? now,
         updated: now,
@@ -123,6 +127,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
         : update.model ? { model: update.model } : {}),
       variant: update.variant === undefined ? prev?.variant ?? null : update.variant,
       agent: update.agent === undefined ? prev?.agent ?? null : update.agent,
+      ...(update.handoff === undefined
+        ? prev?.handoff !== undefined ? { handoff: prev.handoff } : {}
+        : { handoff: update.handoff }),
     }
     this.configs.set(id, next)
     this.touch(id)
@@ -214,6 +221,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
               ...(input.system ? { system: input.system } : {}),
               ...(input.variant ? { variant: input.variant } : {}),
             })),
+            ...buildUserPromptParts(input.sessionId, input.userMessageId, input.parts).map(messagePartUpdated),
           ]
         : []),
       messageUpdated(buildAssistantMessage({
@@ -257,17 +265,19 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
     const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
     const status = input.outcome.status === "failed" ? "error" : null
+    const events: CompatEvent[] = []
     if (input.outcome.status === "failed") {
       const message = this.ensureMessage(input.sessionId, assistantMessageId)
-      const time = message.info.time && typeof message.info.time === "object" ? message.info.time : {}
-      this.upsertMessage(input.sessionId, {
-        ...message,
-        info: {
-          ...message.info,
-          time: { ...time, completed: input.outcome.completedAt },
+      const info = message.info as unknown as AssistantMessage
+      events.push(
+        messageUpdated({
+          ...info,
+          time: { ...info.time, completed: input.outcome.completedAt },
           error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
-        },
-      })
+        }),
+        sessionError(input.outcome.error ?? "turn failed", input.sessionId),
+      )
+      for (const event of events) this.applyEvent(input.sessionId, event)
     }
     this.sessions.set(input.sessionId, {
       ...prev,
@@ -278,6 +288,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       time: { ...prev.time, updated: Date.now() },
     })
     this.afterChange()
+    return { events }
   }
 
   appendEvent(input: {

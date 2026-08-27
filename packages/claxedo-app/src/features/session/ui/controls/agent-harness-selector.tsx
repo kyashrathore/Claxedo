@@ -91,7 +91,7 @@ type Item = {
 
 interface AgentHarnessSelectorProps {
   triggerStyle?: JSX.CSSProperties
-  /** When true, the current session already exists — harness cannot be changed. */
+  /** Whether the current session already exists. Existing sessions hand off through session config. */
   sessionLocked?: boolean
   /** When true, Pi has admitted its first prompt and its model is immutable. */
   modelLocked?: boolean
@@ -405,8 +405,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     },
   }))
 
-  // Disable harness switching after a session is created because backend migration is not supported.
-  const harnessDisabled = createMemo(() => sessionLocked() || isPolling() || harnessSwitching())
+  const harnessDisabled = createMemo(() => isPolling() || harnessSwitching())
   const harnessTriggerStyle = createMemo(() => {
     const disabled = harnessDisabled()
     const next = style(disabled)
@@ -619,7 +618,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         harnessLabel={harnessOptionLabel}
         harnessGroup={harnessOptionGroup}
         harnessDisabled={harnessDisabled}
-        harnessHint={() => (sessionLocked() ? "Start a new session to change harness" : undefined)}
+        harnessHint={() => (sessionLocked() ? "Continue this conversation with another harness" : undefined)}
         harnessIcon={(option) => <HarnessOptionIcon harness={option} />}
         onHarnessSelect={applyHarness}
         showManageModels={() => harness() === "opencode" || harness() === "pi"}

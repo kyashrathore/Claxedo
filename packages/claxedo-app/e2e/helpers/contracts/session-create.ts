@@ -25,7 +25,7 @@
 // `/index`, so this module cannot CALL them and instead mirrors their rules with a
 // source citation on each. If they are ever exported, delete the mirrors and call the
 // real thing; that is strictly better than any copy.
-import type { SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
+import type { SessionConfigRequestUpdate } from "@claxedo/agent-sdk-runtime"
 
 // ---------------------------------------------------------------------------
 // (a) The x-claxedo-draft-id header
@@ -68,7 +68,7 @@ function nullableString(name: string) {
 }
 
 /**
- * The CONFIG half of the accepted body, bound to the real `SessionConfigUpdate`.
+ * The CONFIG half of the accepted body, bound to the real `SessionConfigRequestUpdate`.
  *
  * The route annotates its body as `{ title?: string; model?: unknown }`
  * (`session-core.ts:447`) — that annotation UNDERSTATES what it consumes. The very
@@ -114,7 +114,7 @@ export const SESSION_CREATE_CONFIG_FIELDS = {
     check: nullableString("agent"),
     consumedBy: 'kept only when `"agent" in row` and it is a string or null (session-config.ts:94)',
   },
-} satisfies Record<keyof Required<SessionConfigUpdate>, FieldSpec>
+} satisfies Record<keyof Required<SessionConfigRequestUpdate>, FieldSpec>
 
 /**
  * Non-config body fields the route legitimately accepts.

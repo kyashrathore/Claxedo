@@ -82,7 +82,7 @@ import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/s
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
 import { createSessionScreenKeydownHandler } from "@/features/session/ui/session-screen-keydown"
 import { createSessionMessageActions } from "@/features/session/ui/session-message-actions"
-import { createFirstTurnOnboarding } from "@/features/session/onboarding/first-turn-onboarding"
+import { createFirstTurnOnboarding, firstTurnHarnessRecovery } from "@/features/session/onboarding/first-turn-onboarding"
 import { DeferredSessionSecondaryStatus } from "@/features/session/ui/components/session-secondary-status"
 import { createActiveLocationSnapshot } from "@/features/session/ui/active-location-snapshot"
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
@@ -116,7 +116,6 @@ export default function SessionPage() {
   const sessionTitles = useSessionTitleProjection()
   const comments = useComments()
   const promptHarnessControllers = usePromptHarnessControllersOptional()
-
   const contentMetaSource = createMemo(() => {
     const surfaceId = sessionParams.surfaceId?.()
     if (!surfaceId) return
@@ -637,6 +636,7 @@ export default function SessionPage() {
     messages,
     cloud: () => resolvedWorkspaceKind() === "cloud",
     onStartNewSession: () => navigateSession(),
+    harnessRecovery: () => firstTurnHarnessRecovery(promptHarnessControllers.selection, dir(), sessionID(), sessionParams.surfaceId?.(), activeSessionRef()),
   })
   const visibleUserMessages = createMemo(
     () => {

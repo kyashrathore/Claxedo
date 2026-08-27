@@ -16,8 +16,9 @@ import type {
   AgentTurnOutcome,
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
+import { renderSessionHandoff } from "./session-handoff"
 import { hasAdapterCapability } from "./capabilities"
-import { buildSession, eventSessionId, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
+import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
@@ -73,6 +74,7 @@ export type AgentHarnessFactory = {
 export type CreateAgentRuntimeInput = {
   store: AgentRuntimeStore
   harnesses: AgentHarnessFactory[]
+  resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
 }
 
 export type AgentRuntimeEventEnvelope = {
@@ -147,17 +149,20 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   ]))
   const subscribers = new Set<Subscriber>()
 
-  const adapterFor = (harness: Pick<SessionHarness, "id" | "access">) => {
-    const adapter = adapters.get(key(harness))
-    if (!adapter) throw new Error(`No harness registered for ${harness.id}:${harness.access}`)
-    return adapter
+  const adapterFor = async (harness: SessionHarness) => {
+    const existing = adapters.get(key(harness))
+    if (existing) return existing
+    if (!input.resolveHarness) throw new Error(`No harness registered for ${harness.id}:${harness.access}`)
+    const resolved = await input.resolveHarness(harness)
+    adapters.set(key(harness), resolved)
+    return resolved
   }
 
   const adapterForSession = async (sessionId: string, directory: RuntimeDirectory) => {
     const config = store.getSessionConfig(sessionId)
     if (!config && adapters.size === 1) return adapters.values().next().value!
     if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
-    return adapterFor(config.harness)
+    return await adapterFor(config.harness)
   }
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
@@ -197,7 +202,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return committed
   }
 
-  const runTurn = async (sessionId: string, prompt: PromptInput, directory: RuntimeDirectory, adapter: AgentHarnessAdapter) => {
+  const runTurn = async (sessionId: string, prompt: PromptInput, directory: RuntimeDirectory, adapter: AgentHarnessAdapter, clearsHandoff = false) => {
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
@@ -334,6 +339,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
         terminal ||= isTerminalRuntimePayload(payload)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
+        // A failed turn has one authoritative terminal publication path below.
+        // Publishing a provider terminal first makes the UI clear its working
+        // state before the store has committed the assistant error row.
+        if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
         const compat = toCompatEvent(payload)
         if (compat) {
           if (compat.type === "session.idle") await maybeEmitTitle()
@@ -361,20 +370,31 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       // message.completed/session.idle, but only finishTurn records the
       // replayable turn.finish outcome. Stores make this call idempotent and
       // avoid duplicating terminal events that the adapter already committed.
-      store.finishTurn?.({
+      const finished = store.finishTurn?.({
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: outcome ?? { status: "completed", completedAt: Date.now() },
       })
+      if (outcome?.status === "failed") {
+        if (finished?.events.length) {
+          for (const payload of finished.events) publish({ sessionId, directory, payload })
+        } else {
+          commitAndPublish(sessionId, directory, sessionError(outcome.error, sessionId), { dir: "out", method: "runtime.error" })
+        }
+      }
+      if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
       const message = err instanceof Error ? err.message : "turn failed"
-      const payload = sessionError(message, sessionId)
-      commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.error" })
-      store.finishTurn?.({
+      const finished = store.finishTurn?.({
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: { status: "failed", completedAt: Date.now(), error: message },
       })
+      if (finished?.events.length) {
+        for (const payload of finished.events) publish({ sessionId, directory, payload })
+      } else {
+        commitAndPublish(sessionId, directory, sessionError(message, sessionId), { dir: "out", method: "runtime.error" })
+      }
     } finally {
       router.dispose()
     }
@@ -383,7 +403,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   return {
     sessions: {
       async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
-        const adapter = adapterFor(create.harness)
+        const adapter = await adapterFor(create.harness)
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(create.model.modelID === "default" ? "" : create.model.modelID)
         }
@@ -409,7 +429,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const config = store.getSessionConfig(sessionId)
         if (!config) return store.getSession(sessionId) as AgentSession | null
         const projected = store.getSession(sessionId) as AgentSession | null
-        const live = await adapterFor(config.harness).getSession(sessionId, directory) as AgentSession | null
+        const adapter = await adapterFor(config.harness)
+        const live = await adapter.getSession(sessionId, directory) as AgentSession | null
         if (!live) return projected
         if (!projected) return live
         return {
@@ -427,8 +448,97 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
       },
       async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        return await adapter.updateSessionConfig(sessionId, update, directory)
+        const current = store.getSessionConfig(sessionId)
+        const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
+        if (!changingHarness) {
+          const adapter = await adapterForSession(sessionId, directory)
+          return await adapter.updateSessionConfig(sessionId, update, directory)
+        }
+        const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
+        if (!session) throw new Error(`Session ${sessionId} not found`)
+        if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
+        const previousAgentSessionId = store.getAgentSessionId(sessionId)
+        if (!previousAgentSessionId) throw new Error(`Session ${sessionId} has no native harness session`)
+        const previousOwnerKey = store.getSessionOwnerKey?.(sessionId) ?? null
+        const targetDirectory = directory ?? session.directory
+        const source = await adapterFor(current!.harness)
+        const transcript = renderSessionHandoff(
+          await source.getMessages(sessionId, targetDirectory),
+          current!.harness,
+        )
+        const target = await adapterFor(update.harness!)
+        if (!target.createHandoffSession) throw new Error(`Harness ${update.harness!.id} does not support conversation handoff`)
+        try {
+          const created = await target.createHandoffSession(
+            targetDirectory,
+            session.title ?? undefined,
+            sessionId,
+            { system: transcript },
+          )
+          store.bindSession({
+            sessionId,
+            directory: runtimeDirectory(targetDirectory),
+            title: session.title ?? undefined,
+            agentSessionId: created.agentSessionId ?? created.id,
+            ownerKey: created.ownerKey ?? null,
+          })
+          const configured = await target.updateSessionConfig(sessionId, {
+            ...update,
+            // Source-harness choices are never valid target-harness state.
+            // The caller may provide target choices atomically; otherwise the
+            // target starts from its defaults and the next prompt carries the
+            // selections made by the target harness UI.
+            ...(update.model === undefined ? { model: null } : {}),
+            ...(update.variant === undefined ? { variant: null } : {}),
+            ...(update.agent === undefined ? { agent: null } : {}),
+          }, targetDirectory)
+          const next = store.updateSessionConfig(sessionId, {
+            ...configured,
+            harness: update.harness!,
+            model: configured.model ?? null,
+            variant: configured.variant ?? null,
+            agent: configured.agent ?? null,
+            handoff: { from: current!.harness, pending: true, transcript },
+          })!
+          const markerId = `handoff-${randomUUID()}`
+          const createdAt = Date.now()
+          const markerModel = configured.model ?? {
+            providerID: update.harness!.id,
+            modelID: "default",
+          }
+          commitAndPublish(sessionId, targetDirectory, messageUpdated(buildUserMessage({
+            id: markerId,
+            sessionID: sessionId,
+            agent: configured.agent ?? "build",
+            model: markerModel,
+            created: createdAt,
+          })), { dir: "out", method: "session/handoff" })
+          commitAndPublish(sessionId, targetDirectory, messagePartUpdated({
+            id: `${markerId}-part`,
+            sessionID: sessionId,
+            messageID: markerId,
+            type: "handoff",
+            from: current!.harness,
+            to: update.harness!,
+          }), { dir: "out", method: "session/handoff" })
+          return next
+        } catch (error) {
+          store.bindSession({
+            sessionId,
+            directory: runtimeDirectory(session.directory),
+            title: session.title ?? undefined,
+            agentSessionId: previousAgentSessionId,
+            ownerKey: previousOwnerKey,
+          })
+          store.updateSessionConfig(sessionId, {
+            harness: current!.harness,
+            model: current!.model ?? null,
+            variant: current!.variant ?? null,
+            agent: current!.agent ?? null,
+            handoff: current!.handoff ?? null,
+          })
+          throw error
+        }
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId, directory)
@@ -444,6 +554,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const adapter = await adapterForSession(turn.sessionId, directory)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
+        const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
           userMessageId,
@@ -452,7 +563,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           model: turn.model ?? config?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
           ...(turn.tools ? { tools: turn.tools } : {}),
           ...(turn.format ? { format: turn.format } : {}),
-          ...(turn.system ? { system: turn.system } : {}),
+          ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
         }
@@ -473,7 +584,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         for (const payload of started?.events ?? []) {
           publish({ sessionId: turn.sessionId, directory, payload })
         }
-        void runTurn(turn.sessionId, prompt, directory, adapter)
+        void runTurn(turn.sessionId, prompt, directory, adapter, !!handoff)
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
       },
       async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {

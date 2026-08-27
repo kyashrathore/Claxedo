@@ -100,9 +100,9 @@ export type WorkspaceRuntimeStore =
     bindSession(input: {
       sessionId: string
       directory: string
-      agentSessionId?: string
+      agentSessionId: string
       title?: string
-      ownerKey?: string
+      ownerKey?: string | null
       parentSessionId?: string
       createdAt?: number
     }): void
@@ -1357,6 +1357,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return next
   }
 
+  function assertSessionDirectory(sessionId: string, directory: string) {
+    const owner = (store().getSession(sessionId) as { directory?: string } | null)?.directory
+    if (owner && owner !== directory) {
+      throw new HTTPException(409, {
+        message: `Session ${sessionId} belongs to another workspace directory`,
+      })
+    }
+  }
+
   function sessionConfigFor(input?: { sessionId?: string; directory?: string }) {
     if (!input?.sessionId) return
     const config = store().getSessionConfig(input.sessionId)
@@ -1404,6 +1413,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         access: nextRunner.access,
         create: () => nextAdapter,
       } as unknown as AgentHarnessFactory],
+      resolveHarness: (target) => ensureSessionAdapter(target),
     })
     sessionRuntimes.set(key, runtime)
     return runtime
@@ -2207,14 +2217,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // (`bindDiscoveredSession`); there the HARNESS reported the session
           // under that directory, which is the authority a create does not
           // have.
-          if (id) {
-            const owner = (store().getSession(id) as { directory?: string } | null)?.directory
-            if (owner && owner !== directory) {
-              throw new HTTPException(409, {
-                message: `Session ${id} belongs to another workspace directory`,
-              })
-            }
-          }
+          if (id) assertSessionDirectory(id, directory)
           // The requested harness must be honoured here exactly as the route's
           // own `resolveAdapter` would. Resolving the ACTIVE runner instead
           // silently creates the session on the wrong adapter — and when the
@@ -2323,6 +2326,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
           const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
+        },
+        switchSessionHarness: async ({ directory, sessionId, update }) => {
+          assertSessionDirectory(sessionId, directory)
+          const runtime = await runtimeForSession({ sessionId, directory })
+          return await runtime.sessions.updateConfig(sessionId, update, directory)
         },
         afterUpdateSession: ({ sessionId, updates }) => {
           // Renames and archives have to reach the durable store, or a

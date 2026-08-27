@@ -96,7 +96,7 @@ export type SessionAppPorts = {
     emit(
       event:
         | { name: "first_turn_ok" }
-        | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "workspace" | "session" | "unknown" }
+        | { name: "first_turn_failed"; class: "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown" }
         | { name: "first_cloud_turn_ok" },
     ): void
   }

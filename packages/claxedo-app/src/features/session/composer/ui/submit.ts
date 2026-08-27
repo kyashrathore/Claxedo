@@ -330,7 +330,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
     const existingSessionConfig = await (async () => {
       if (isNewSession) return undefined
-      if (infoSessionConfig) return infoSessionConfig
       try {
         return parseExistingSessionConfig(await readSessionConfig({
           sessionID: explicitSessionID!,
@@ -343,6 +342,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           description: errorMessage(err),
           variant: "error",
         })
+        return infoSessionConfig
       }
     })()
     if (!isNewSession && usesWorkspaceRuntimeSession(sessionDirectory) && !existingSessionConfig) {

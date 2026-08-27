@@ -118,8 +118,10 @@ export class ConvexRuntimeStore extends MemoryRuntimeStore {
   }
 
   override finishTurn(input: AgentRuntimeTurnFinishInput) {
-    super.finishTurn(input)
+    const result = super.finishTurn(input)
     this.enqueueSessionSync(input.sessionId)
+    if (result?.events.some((event) => event.type === "message.updated")) this.enqueueMessagesSync(input.sessionId)
+    return result
   }
 
   override appendEvent(input: {

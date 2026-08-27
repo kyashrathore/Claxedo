@@ -56,6 +56,17 @@ export function harnessProfile(id: HarnessType) {
   }
 }
 
+export function sessionHarnessIdentity(type: HarnessType) {
+  if (type.startsWith("acp:")) return { id: type.slice(4), access: "acp" as const }
+  if (type === "claude-acp") return { id: "claude", access: "acp" as const }
+  if (type === "codex-acp") return { id: "codex", access: "acp" as const }
+  if (type === "cursor-acp") return { id: "cursor", access: "acp" as const }
+  if (type === "claude-sdk") return { id: "claude", access: "native" as const }
+  if (type === "codex-app-server") return { id: "codex", access: "native" as const }
+  if (type === "cursor-sdk") return { id: "cursor", access: "native" as const }
+  return { id: type, access: "native" as const }
+}
+
 export function effectiveHarnessModel(type: HarnessType, selected?: string | null) {
   if (type === "opencode") return ""
   if (type === "pi") return selected || ""

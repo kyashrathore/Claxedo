@@ -95,6 +95,11 @@ describe("upstream contract", () => {
     state.harnessMode = true
     state.localCurrentModel = { id: "stale-model", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
+    state.localSessionConfig = {
+      harness: { id: "opencode" },
+      agent: "build",
+      model: { providerID: "opencode", modelID: "big-pickle" },
+    }
 
     const submit = createSubmit({
       info: () => ({
@@ -119,7 +124,7 @@ describe("upstream contract", () => {
       agent: "build",
       model: { providerID: "opencode", modelID: "big-pickle" },
     })
-    expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toEqual([])
+    expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toEqual([])
   })
 
   test("existing structured ACP follow-up does not fall back to OpenCode", async () => {
@@ -127,6 +132,11 @@ describe("upstream contract", () => {
     state.harnessMode = false
     state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
     state.localCurrentAgent = { name: "stale-agent" }
+    state.localSessionConfig = {
+      harness: { id: "claude", access: "acp" },
+      agent: "build",
+      model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+    }
 
     const submit = createSubmit({
       info: () => ({
@@ -151,7 +161,7 @@ describe("upstream contract", () => {
       agent: "build",
       model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
     })
-    expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toEqual([])
+    expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toEqual([])
     expect(harnessSetCalls).toEqual([])
   })
 
@@ -160,6 +170,11 @@ describe("upstream contract", () => {
     state.harnessMode = false
     state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
     state.localCurrentAgent = { name: "stale-agent" }
+    state.runtimeSessionConfig = {
+      harness: { type: "codex-acp" },
+      agent: "build",
+      model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    }
     queryClient.setQueryData(sessionConfigRawQueryKey({
       sessionID: "session-1",
       directory: "ws_1",
@@ -186,8 +201,39 @@ describe("upstream contract", () => {
       agent: "build",
       model: { providerID: "codex-acp", modelID: "gpt-5.5" },
     })
-    expect(runtimeCalls.filter((call) => call.input.includes("/config"))).toEqual([])
+    expect(runtimeCalls.filter((call) => call.input.includes("/config") && call.method === "PATCH")).toEqual([])
     expect(harnessSetCalls).toEqual([])
+  })
+
+  test("the authoritative session config wins over stale session-list model metadata", async () => {
+    state.demoMode = false
+    state.harnessMode = true
+    state.localSessionConfig = {
+      harness: { id: "claude", access: "native" },
+      agent: "build",
+      model: { providerID: "claude-sdk", modelID: "sonnet" },
+    }
+
+    const submit = createSubmit({
+      info: () => ({
+        id: "session-1",
+        config: {
+          harness: { id: "claude", access: "native" },
+          agent: "build",
+          model: { providerID: "claude-sdk", modelID: "opus[1m]" },
+        },
+      }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+    await waitForSubmitEffect(() => calls.transportAsync > 0)
+
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      model: { providerID: "claude-sdk", modelID: "sonnet" },
+    })
   })
 
   test("keeps upstream ordering by adding the optimistic prompt only after session creation", async () => {

@@ -543,6 +543,15 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       metadata: { ...part.metadata, opencodePartId: part.id, opencodePart: part },
     }]
   }
+  if ((part.type as string) === "handoff") {
+    return [{
+      // TanStack has no handoff part. Carry the canonical OpenCode part on an
+      // empty text envelope so it survives projection without rendering copy.
+      type: "text",
+      content: "",
+      metadata: { opencodePartId: part.id, opencodePart: part },
+    }]
+  }
   // Compaction markers carry no payload beyond their type/id. TanStack's MessagePart
   // union has no "compaction" variant, so (like "agent") we carry it as a custom-typed
   // part and stash the original for a lossless round-trip. Dropping it here silently
@@ -631,6 +640,9 @@ function chatMessageToOpencodeMessage(message: UIMessage) {
 function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
   const metadata = (part as ConversationMessagePart).metadata
   const stored = metadata?.opencodePart
+  if (stored && (stored.type as string) === "handoff") {
+    return [{ ...stored, messageID: message.id }]
+  }
   if (part.type === "text") {
     return [stored ? {
       ...stored,

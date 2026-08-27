@@ -10,7 +10,7 @@ import type {
   AgentSessionRow,
   RuntimeDirectory,
   SessionConfig,
-  SessionConfigUpdate,
+  SessionConfigRequestUpdate,
   HarnessCapabilities,
 } from "@claxedo/agent-sdk-runtime"
 import type {
@@ -198,7 +198,14 @@ type Opts = {
     c: Ctx,
     directory: RuntimeDirectory,
     sessionId: string,
-    update: SessionConfigUpdate,
+    update: SessionConfigRequestUpdate,
+    adapter: AgentHarnessAdapter,
+  ) => Promise<SessionConfig>
+  switchSessionHarness?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    sessionId: string,
+    update: SessionConfigRequestUpdate,
     adapter: AgentHarnessAdapter,
   ) => Promise<SessionConfig>
   getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
@@ -708,6 +715,9 @@ export function createSessionRoutes(opts: Opts) {
           ? await opts.getSessionConfig(c, directory, sessionId, adapter)
           : await adapter.getSessionConfig(sessionId, directory)
         if (!sameSessionHarness(current.harness, body.harness)) {
+          if (opts.switchSessionHarness) {
+            return c.json(await opts.switchSessionHarness(c, directory, sessionId, body, adapter))
+          }
           return harnessSwitchUnsupported(
             c,
             await adapter.readHarnessCapabilities(directory, { sessionId }),

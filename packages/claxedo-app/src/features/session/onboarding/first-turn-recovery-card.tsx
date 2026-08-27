@@ -76,21 +76,41 @@ export function FirstTurnRecoveryCard(props: {
   modelID?: string
   onAction: (kind: SessionErrorClass) => unknown
 }) {
-  const recovery = () => sessionRecovery(props.kind)
+  const recovery = () => sessionRecovery(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
   const description = () =>
     props.summary ??
     sessionRecoveryDescription(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
+  if (props.kind === "usage_limit") {
+    return (
+      <div
+        role="status"
+        data-testid="usage-limit-status-message"
+        data-recovery-class={props.kind}
+        class="mt-2 flex items-start gap-2 px-1 py-1 text-text-weaker"
+      >
+        <Icon name="circle-alert" size="small" class="mt-0.5 shrink-0 text-icon-weak-base" />
+        <div class="min-w-0">
+          <div class="text-12-regular">{recovery().title}</div>
+          <div class="mt-0.5 text-12-regular">{description()}</div>
+        </div>
+      </div>
+    )
+  }
   const detail = () => {
     const value = props.detail?.trim()
     if (!value || value === description().trim()) return
     return value
   }
   const [pending, setPending] = createSignal(false)
+  const [actionError, setActionError] = createSignal<string>()
   const act = async () => {
     if (pending()) return
+    setActionError(undefined)
     setPending(true)
     try {
       await props.onAction(props.kind)
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not continue with another model")
     } finally {
       setPending(false)
     }
@@ -104,6 +124,9 @@ export function FirstTurnRecoveryCard(props: {
           <div class="text-14-medium text-text-strong">{recovery().title}</div>
           <div class="mt-1 text-13-regular text-text-base">{description()}</div>
           <Show when={detail()}>{(value) => <RawDetail detail={value()} />}</Show>
+          <Show when={actionError()}>{(value) => (
+            <div class="mt-2 text-12-regular text-icon-critical-base" role="alert">{value()}</div>
+          )}</Show>
           <Button
             class="mt-3"
             size="small"

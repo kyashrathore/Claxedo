@@ -1466,6 +1466,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
         // T8) reuses the same formatDuration voice as "Worked for {duration}".
         const label = () => {
           if (turnDividerRow().label === "compaction") return language.t("ui.messagePart.compaction")
+          if (turnDividerRow().label === "handoff") return `Session handed off to ${turnDividerRow().harness}`
           const durationMs = turnDividerRow().durationMs
           return typeof durationMs === "number"
             ? language.t("ui.message.interruptedDuration", { duration: formatDuration(durationMs) })

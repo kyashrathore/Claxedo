@@ -4,12 +4,29 @@
 // prefers it; the regexes below are only a fallback for errors that arrive
 // class-less. Keep them in lockstep with that file — it is the source of truth.
 // (agent-sdk-runtime cannot be imported here: it is not browser-safe.)
-import { providerErrorDetail } from "./provider-error-detail"
+import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-detail"
+import type { HarnessSelectionSnapshot } from "@/features/session/harness/controller"
+import type { ModelKey } from "@/features/session/composer/model-strategy"
 
-export type SessionErrorClass = "credential" | "harness" | "model" | "workspace" | "session" | "unknown"
+export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
 export type FirstTurnMessage =
   | { id: string; role: "user"; time: { created: number } }
   | { id: string; role: "assistant"; parentID: string; time: { created: number; completed?: number }; error?: unknown }
+
+export function nextHarnessRecoveryModel(
+  selection: Pick<HarnessSelectionSnapshot, "harness" | "models" | "selectedModelKey">,
+): ModelKey | undefined {
+  const current = selection.selectedModelKey
+  const next = selection.models.find((model) => {
+    if (model.id !== current?.modelID) return true
+    if (selection.harness !== "pi") return false
+    return model.providerID !== current.providerID
+  })
+  if (!next) return
+  const providerID = selection.harness === "pi" ? next.providerID : selection.harness
+  if (!providerID) return
+  return { providerID, modelID: next.id }
+}
 
 // Copy is position-independent — descriptions must not reference "first turn".
 // User-facing text says "agent", never "harness"/"ACP"/"adapter". Kept in sync
@@ -18,6 +35,7 @@ const recoveries = {
   credential: { kind: "credential", title: "Reconnect your AI provider", description: "The provider rejected the credential for this workspace.", label: "Reconnect and resend" },
   harness: { kind: "harness", title: "The agent isn't responding", description: "The agent process stopped or couldn't run this turn.", label: "Resend last prompt" },
   model: { kind: "model", title: "Try another model", description: "The selected model couldn't serve this turn.", label: "Switch model and resend" },
+  usage_limit: { kind: "usage_limit", title: "Usage limit reached", description: "Choose another model to continue.", label: "Continue" },
   workspace: { kind: "workspace", title: "Workspace isn't ready", description: "The project workspace wasn't available for this turn.", label: "Resend last prompt" },
   session: { kind: "session", title: "This session was lost", description: "The agent process no longer has this conversation. Its history is still here.", label: "Start a new session" },
   // No generic-shrug copy: the description is always derived from the wire
@@ -27,7 +45,15 @@ const recoveries = {
   unknown: { kind: "unknown", title: "That turn didn't complete", description: "The agent returned an error before completing this turn. Resend the last prompt.", label: "Resend last prompt" },
 } as const satisfies Record<SessionErrorClass, { kind: SessionErrorClass; title: string; description: string; label: string }>
 
-export function sessionRecovery(kind: SessionErrorClass) {
+export function sessionRecovery(
+  kind: SessionErrorClass,
+  error?: unknown,
+  context?: { providerID?: string; modelID?: string },
+) {
+  if (kind === "usage_limit") {
+    const detail = providerUsageLimitDetail(error, context)
+    if (detail) return { ...recoveries[kind], ...detail }
+  }
   return recoveries[kind]
 }
 
@@ -51,6 +77,7 @@ export function sessionRecoveryDescription(
   const fallback = recoveries[kind].description
   const { summary, status } = providerErrorDetail(error, context)
   if (status !== undefined && summary) return summary
+  if (kind === "usage_limit") return providerUsageLimitDetail(error, context)?.description ?? fallback
   if (kind !== "unknown") return fallback
   return summary ?? fallback
 }
@@ -59,10 +86,11 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
   const data = record(record(error)?.data)
   const classified = data?.firstTurnErrorClass
   if (
-    classified === "credential" || classified === "harness" || classified === "model" ||
+    classified === "credential" || classified === "harness" || classified === "model" || classified === "usage_limit" ||
     classified === "workspace" || classified === "session" || classified === "unknown"
   ) return classified
   const message = typeof data?.message === "string" ? data.message : ""
+  if (/(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)/i.test(message)) return "usage_limit"
   if (/\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota|rate[ _-]?limit)\b/i.test(message)) return "credential"
   if (/(thread not found|session not found|conversation not found|no such (thread|session))/i.test(message)) return "session"
   if (/(harness|adapter|acp|agent process|spawn|executable|binary|capabilit(?:y|ies)|unsupported operation)/i.test(message)) return "harness"

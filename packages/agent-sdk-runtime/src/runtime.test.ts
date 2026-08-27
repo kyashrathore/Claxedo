@@ -11,7 +11,7 @@ import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
-import type { AgentRuntimeStreamEvent } from "./index"
+import type { AgentMessage, AgentRuntimeStreamEvent, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
@@ -96,7 +96,265 @@ function testHarness(options: {
   } as unknown as AgentHarnessFactory
 }
 
+function handoffHarness(input: {
+  id: "pi" | "claude"
+  prompts?: string[]
+  handoffs?: string[]
+  handoffSystems?: string[]
+  messages?: AgentMessage[]
+  turnError?: string
+  configError?: string
+  onAdapter?: (adapter: AgentHarnessAdapter) => void
+}): AgentHarnessFactory {
+  let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
+  const adapter: AgentHarnessAdapter = {
+    async listSessions() { return [] },
+    async getSession(id) { return { id } },
+    async createSession(_directory, _title, id = "ses_handoff") { return { id } },
+    async createHandoffSession(_directory, _title, id, options) {
+      input.handoffs?.push(id)
+      input.handoffSystems?.push(options.system)
+      return { id, agentSessionId: `${input.id}-native-thread` }
+    },
+    async updateSession() { return null },
+    async getSessionConfig() { return config },
+    async updateSessionConfig(_id, update) {
+      if (input.configError) throw new Error(input.configError)
+      config = {
+        harness: update.harness ?? config.harness,
+        ...(update.model === undefined ? config.model ? { model: config.model } : {} : update.model ? { model: update.model } : {}),
+        variant: update.variant === undefined ? config.variant ?? null : update.variant,
+        agent: update.agent === undefined ? config.agent ?? null : update.agent,
+        ...(update.handoff === undefined
+          ? config.handoff !== undefined ? { handoff: config.handoff } : {}
+          : { handoff: update.handoff }),
+      }
+      return config
+    },
+    async deleteSession() {},
+    readHarnessCapabilities() { return {} as never },
+    async *sendMessage(id, prompt) {
+      input.prompts?.push(prompt.system ?? "")
+      if (input.turnError) throw new Error(input.turnError)
+      yield messagePartUpdated({ id: `${id}-part`, sessionID: id, messageID: prompt.assistantMessageId, type: "text", text: `reply from ${input.id}` })
+      yield { type: "finish", sessionId: id }
+    },
+    async getMessages() { return input.messages ?? [] },
+    dispose() {},
+  }
+  input.onAdapter?.(adapter)
+  return { id: input.id, access: "native", create: () => adapter } as unknown as AgentHarnessFactory
+}
+
 describe("createAgentRuntime", () => {
+  test("resolves a target harness lazily for conversation handoff", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const handoffs: string[] = []
+    const resolutions: string[] = []
+    let targetAdapter: AgentHarnessAdapter | undefined
+    handoffHarness({
+      id: "claude",
+      handoffs,
+      onAdapter(adapter) {
+        targetAdapter = adapter
+      },
+    })
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" })],
+      resolveHarness: async (harness) => {
+        resolutions.push(`${harness.id}:${harness.access}`)
+        if (!targetAdapter) throw new Error("target adapter was not created")
+        return targetAdapter
+      },
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_lazy",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.sessions.updateConfig(
+      session.id,
+      { harness: { id: "claude", access: "native" } },
+      "/repo",
+    )
+
+    expect(resolutions).toEqual(["claude:native"])
+    expect(handoffs).toEqual(["ses_lazy"])
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    runtime.dispose()
+  })
+
+  test("continues across harnesses in a fresh native thread with the completed transcript", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const prompts: string[] = []
+    const handoffs: string[] = []
+    const handoffSystems: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({
+          id: "pi",
+          messages: [
+            {
+              info: { id: "u1", sessionID: "ses_cross", role: "user" },
+              parts: [{ id: "p1", sessionID: "ses_cross", messageID: "u1", type: "text", text: "inspect the bug" }],
+            },
+            {
+              info: { id: "u1_r", sessionID: "ses_cross", role: "assistant", parentID: "u1" },
+              parts: [{ id: "p1_r", sessionID: "ses_cross", messageID: "u1_r", type: "text", text: "reply from pi" }],
+            },
+          ] as AgentMessage[],
+        }),
+        handoffHarness({ id: "claude", prompts, handoffs, handoffSystems }),
+      ],
+    })
+    const session = await runtime.sessions.create({ id: "ses_cross", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect the bug" })
+    await tick()
+
+    await runtime.sessions.updateConfig(session.id, {
+      harness: { id: "claude", access: "native" },
+      model: { providerID: "claude", modelID: "sonnet" },
+    }, "/repo")
+    const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
+
+    expect(handoffs).toEqual(["ses_cross"])
+    expect(handoffSystems).toHaveLength(1)
+    expect(handoffSystems[0]).toContain("User:\ninspect the bug")
+    expect(handoffSystems[0]).toContain("Assistant:\nreply from pi")
+    expect(rows.getMessages(session.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        parts: [expect.objectContaining({
+          type: "handoff",
+          from: { id: "pi", access: "native" },
+          to: { id: "claude", access: "native" },
+        })],
+      }),
+    ]))
+    expect(continued.prompt.system).toContain('<session-handoff from="pi">')
+    expect(continued.prompt.system).toContain("User:\ninspect the bug")
+    expect(continued.prompt.system).toContain("Assistant:\nreply from pi")
+    expect(continued.prompt.system).not.toContain("User:\ncontinue")
+    await tick()
+    expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    expect(prompts).toHaveLength(1)
+    runtime.dispose()
+  })
+
+  test("snapshots canonical source-adapter history for a discovered session", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const prompts: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({
+          id: "pi",
+          messages: [
+            {
+              info: { id: "u-existing", sessionID: "ses_discovered", role: "user" },
+              parts: [{ id: "p-user", sessionID: "ses_discovered", messageID: "u-existing", type: "text", text: "my dog is Tommy" }],
+            },
+            {
+              info: { id: "a-existing", sessionID: "ses_discovered", role: "assistant", parentID: "u-existing" },
+              parts: [{ id: "p-assistant", sessionID: "ses_discovered", messageID: "a-existing", type: "text", text: "I will remember that." }],
+            },
+          ] as AgentMessage[],
+        }),
+        handoffHarness({ id: "claude", prompts }),
+      ],
+    })
+    const session = await runtime.sessions.create({ id: "ses_discovered", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+    expect(rows.getMessages(session.id)).toEqual([
+      expect.objectContaining({ parts: [expect.objectContaining({ type: "handoff" })] }),
+    ])
+    const pending = rows.getSessionConfig(session.id)?.handoff
+    expect(pending).toMatchObject({
+      from: { id: "pi", access: "native" },
+      pending: true,
+    })
+    expect(pending?.transcript).toContain("User:\nmy dog is Tommy")
+
+    const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u-next", text: "what is my dog's name?" })
+
+    expect(continued.prompt.system).toContain("Assistant:\nI will remember that.")
+    await tick()
+    expect(prompts).toHaveLength(1)
+    runtime.dispose()
+  })
+
+  test("keeps a pending handoff when the first target-harness turn fails", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", turnError: "target failed" })],
+    })
+    const session = await runtime.sessions.create({ id: "ses_retry", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect" })
+    await tick()
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
+    await tick()
+
+    const pending = rows.getSessionConfig(session.id)?.handoff
+    expect(pending).toMatchObject({
+      from: { id: "pi", access: "native" },
+      pending: true,
+    })
+    expect(pending?.transcript).toContain('<session-handoff from="pi">')
+    runtime.dispose()
+  })
+
+  test("does not carry a source-harness model into the target harness", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" })],
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_model_boundary",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+    })
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+
+    expect(rows.getSessionConfig(session.id)?.model).toBeUndefined()
+    runtime.dispose()
+  })
+
+  test("restores the source binding when target-harness configuration fails", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", configError: "configuration failed" })],
+    })
+    const session = await runtime.sessions.create({ id: "ses_rollback", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.sessions.updateConfig(
+      session.id,
+      { harness: { id: "claude", access: "native" } },
+      "/repo",
+    )).rejects.toThrow("configuration failed")
+
+    expect(rows.getAgentSessionId(session.id)).toBe("ses_rollback")
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "pi", access: "native" })
+    expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
+    runtime.dispose()
+  })
+
   test("creates a session, starts a turn, and publishes events", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
@@ -524,7 +782,15 @@ describe("createAgentRuntime", () => {
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
-    await events
+    const received = await events
+    const terminalIndex = received.findIndex((event) => event.payload.type === "session.error")
+    const messageErrorIndex = received.findIndex((event) =>
+      event.payload.type === "message.updated" &&
+      event.payload.properties.info.role === "assistant" &&
+      !!event.payload.properties.info.error
+    )
+    expect(messageErrorIndex).toBeGreaterThan(-1)
+    expect(messageErrorIndex).toBeLessThan(terminalIndex)
     await tick()
 
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
@@ -550,7 +816,15 @@ describe("createAgentRuntime", () => {
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
-    expect((await events).map((event) => event.payload.type)).toContain("session.error")
+    const received = await events
+    const terminalIndex = received.findIndex((event) => event.payload.type === "session.error")
+    const messageErrorIndex = received.findIndex((event) =>
+      event.payload.type === "message.updated" &&
+      event.payload.properties.info.role === "assistant" &&
+      !!event.payload.properties.info.error
+    )
+    expect(messageErrorIndex).toBeGreaterThan(-1)
+    expect(messageErrorIndex).toBeLessThan(terminalIndex)
     await tick()
 
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
@@ -890,7 +1164,7 @@ describe("createAgentRuntime", () => {
       workspaceId: "ws_1",
       sessionId: "ses_1",
       messages: [
-        { info: { id: "msg_user", role: "user" }, parts: [] },
+        { info: { id: "msg_user", role: "user" }, parts: [{ text: "hello" }] },
         { info: { id: "msg_assistant", role: "assistant" }, parts: [{ text: "done" }] },
       ],
     })
@@ -949,11 +1223,13 @@ describe("createAgentRuntime", () => {
       model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
       parts: [{ type: "text", text: "hello" }],
     })
-    store.finishTurn({
+    const finished = store.finishTurn({
       sessionId: "ses_1",
       assistantMessageId: "msg_assistant",
       outcome: { status: "failed", completedAt: 123, error: "Codex authentication failed" },
     })
+
+    expect(finished?.events.map((event) => event.type)).toEqual(["message.updated", "session.error"])
 
     expect(store.getMessages("ses_1")[1]).toMatchObject({
       info: {

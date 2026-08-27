@@ -1943,11 +1943,13 @@ describe("RuntimeStore", () => {
       parts: [{ type: "text", text: "hello" }],
     })
 
-    store.finishTurn({
+    const finished = store.finishTurn({
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "failed", completedAt: 123, error: "The database connection is not open" },
     })
+
+    assert.deepEqual(finished?.events.map((event) => event.type), ["message.updated", "session.error"])
 
     const assistant = store.getMessages("s1")[1]?.info as {
       error?: { data?: { message?: string; firstTurnErrorClass?: string } }
@@ -2092,6 +2094,31 @@ describe("RuntimeStore", () => {
 
     const next = new RuntimeStore(root)
     assert.deepEqual(next.getSessionConfig("s1"), expectedConfig)
+  })
+
+  it("persists and clears a pending cross-harness handoff", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    first.updateSessionConfig("s1", {
+      harness: { id: "claude", access: "native" },
+      handoff: {
+        from: { id: "pi", access: "native" },
+        pending: true,
+        transcript: '<session-handoff from="pi">\n\nremember Tommy\n\n</session-handoff>',
+      },
+    })
+
+    const replayed = new RuntimeStore(root)
+    assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, {
+      from: { id: "pi", access: "native" },
+      pending: true,
+      transcript: '<session-handoff from="pi">\n\nremember Tommy\n\n</session-handoff>',
+    })
+
+    replayed.updateSessionConfig("s1", { handoff: null })
+    assert.equal(replayed.getSessionConfig("s1")?.handoff, undefined)
+    assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
   })
 
   it("normalizes http transport spelling across replay", () => {

@@ -965,6 +965,37 @@ describe("session prompt route", () => {
     })
   })
 
+  it("does not accept runtime-owned handoff state from a client config patch", async () => {
+    const directory = process.cwd()
+    const calls: SessionConfigUpdate[] = []
+    const app = SessionRoutes(() => ({
+      ...adapter({}),
+      updateSessionConfig: async (_id, patch) => {
+        calls.push(patch)
+        return {
+          harness: { id: "opencode", access: "native" },
+          variant: null,
+          agent: null,
+        }
+      },
+    }))
+
+    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        handoff: {
+          from: { id: "claude", access: "native" },
+          pending: true,
+          transcript: "client-authored transcript",
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(calls).toEqual([{}])
+  })
+
   it("allows session config patches to set model for the same harness", async () => {
     const directory = process.cwd()
     const calls: SessionConfigUpdate[] = []
@@ -1095,6 +1126,37 @@ describe("session prompt route", () => {
       },
     })
     expect(calls).toEqual([])
+  })
+
+  it("delegates session config harness switches to the cross-harness owner", async () => {
+    const directory = process.cwd()
+    const calls: SessionConfigUpdate[] = []
+    const target = {
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+      variant: null,
+      agent: null,
+    } satisfies SessionConfig
+    const app = SessionRoutes(() => adapter({}), {
+      switchSessionHarness: async ({ update }) => {
+        calls.push(update)
+        return target
+      },
+    })
+
+    const patch = {
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+    } satisfies SessionConfigUpdate
+    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(target)
+    expect(calls).toEqual([patch])
   })
 
   it("accepts http transport spelling as a session config alias for streamable-http", async () => {

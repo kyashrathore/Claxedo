@@ -7,7 +7,7 @@
 // ----------------------------------
 // `prompt_async` is fire-and-forget (204, empty). `POST /session` answers with a
 // session row. This route is the only one of the three whose REQUEST body and
-// RESPONSE body are the same domain object — `SessionConfigUpdate` in, `SessionConfig`
+// RESPONSE body are the same domain object — `SessionConfigRequestUpdate` in, `SessionConfig`
 // out (`c.json(config)`, `session-core.ts:571`; the value comes from
 // `opts.updateSessionConfig`, typed `Promise<SessionConfig>` at `session-core.ts:133-139`).
 // The shared mock validates both sides through this module and stores the normalized
@@ -16,7 +16,7 @@
 // Three enforceable surfaces here:
 //
 //   (1) COMPILE-TIME DRIFT TRIPWIRE — `SESSION_CONFIG_PATCH_FIELDS` is declared
-//       `satisfies Record<keyof Required<SessionConfigUpdate>, FieldSpec>` against the
+//       `satisfies Record<keyof Required<SessionConfigRequestUpdate>, FieldSpec>` against the
 //       real normalizer's OUTPUT type. Add or remove a config field server-side and
 //       this file stops compiling.
 //
@@ -43,7 +43,7 @@
 // get merged, the shared piece is the per-field `check` functions, not the
 // `consumedBy`/`whenPresent` prose, which is route-specific.
 //
-import type { SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
+import type { SessionConfigRequestUpdate } from "@claxedo/agent-sdk-runtime"
 import { normalizeSessionConfigUpdate } from "../../../../workspace-runtime/src/session-config"
 
 // ---------------------------------------------------------------------------
@@ -75,10 +75,10 @@ function nullableString(name: string) {
 }
 
 /**
- * Every field of the server's `SessionConfigUpdate`, with the rule the PATCH route
+ * Every field of the server's public `SessionConfigRequestUpdate`, with the rule the PATCH route
  * actually applies to it.
  *
- * The `satisfies Record<keyof Required<SessionConfigUpdate>, FieldSpec>` clause is the
+ * The `satisfies Record<keyof Required<SessionConfigRequestUpdate>, FieldSpec>` clause is the
  * tripwire: this object must carry EXACTLY the server type's keys
  * (`agent-sdk-runtime/src/index.ts:159-164`). A new config field server-side leaves
  * this table missing a key and typecheck fails; a removed one leaves an excess key and
@@ -161,7 +161,7 @@ export const SESSION_CONFIG_PATCH_FIELDS = {
       'kept only when `"agent" in row` AND the value is a string or null (session-config.ts:94) — '
       + "same presence semantics as `variant`",
   },
-} satisfies Record<keyof Required<SessionConfigUpdate>, FieldSpec>
+} satisfies Record<keyof Required<SessionConfigRequestUpdate>, FieldSpec>
 
 /**
  * Non-`SessionConfigUpdate` body fields the PATCH route still legitimately accepts.
@@ -227,7 +227,7 @@ export class SessionConfigPatchContractError extends Error {
  * JSON payload, because a client that got that far is unambiguously broken and no spec
  * should be allowed to depend on the server's silence.
  */
-export function parseSessionConfigPatch(rawBody: unknown, url: string): SessionConfigUpdate {
+export function parseSessionConfigPatch(rawBody: unknown, url: string): SessionConfigRequestUpdate {
   if (rawBody === undefined || rawBody === null) return {}
   if (typeof rawBody !== "object" || Array.isArray(rawBody)) {
     throw new SessionConfigPatchContractError(url, [

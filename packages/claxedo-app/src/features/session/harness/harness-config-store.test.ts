@@ -448,11 +448,11 @@ describe("harness config helpers", () => {
       })).toBe(true)
     })
 
-    test("skips existing sessions during hydrate to avoid reload fanout", () => {
+    test("loads selectable models when an active existing session hydrates", () => {
       expect(shouldFetchConfigOptionsForScope("claude-acp", false, {
         directory: "/tmp/project",
         sessionId: "ses_1",
-      })).toBe(false)
+      })).toBe(true)
     })
 
     test("allows draft sessions to load selectable models", () => {

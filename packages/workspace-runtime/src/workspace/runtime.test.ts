@@ -1513,6 +1513,121 @@ describe("workspace runtime auth helpers", () => {
     secondHost.dispose()
   })
 
+  test("switches a mounted Claude session to a lazily-created Codex harness", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-cross-harness-config-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({
+      sessionId: "s-claude-to-codex",
+      directory: dir,
+      title: "Continue this conversation",
+      agentSessionId: "claude-native-thread",
+      createdAt: 1,
+    })
+    seed.updateSessionConfig("s-claude-to-codex", {
+      harness: { id: "claude", access: "native" },
+      model: { providerID: "claude", modelID: "sonnet" },
+      variant: null,
+      agent: null,
+    }, { directory: dir })
+    seed.close()
+
+    const handoffs: string[] = []
+    const sourceAdapter = {
+      async getMessages() {
+        return [
+          {
+            info: { id: "u-claude", sessionID: "s-claude-to-codex", role: "user" as const },
+            parts: [{ id: "p-user", sessionID: "s-claude-to-codex", messageID: "u-claude", type: "text", text: "my dog is Tommy" }],
+          },
+          {
+            info: { id: "a-claude", sessionID: "s-claude-to-codex", role: "assistant" as const, parentID: "u-claude" },
+            parts: [{ id: "p-assistant", sessionID: "s-claude-to-codex", messageID: "a-claude", type: "text", text: "I will remember that." }],
+          },
+        ]
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const targetAdapter = {
+      async createHandoffSession(_directory: string, _title: string | undefined, id: string) {
+        handoffs.push(id)
+        return { id, agentSessionId: "codex-native-thread" }
+      },
+      async updateSessionConfig(_id: string, update: SessionConfigUpdate) {
+        return {
+          harness: update.harness ?? { id: "codex", access: "native" },
+          ...(update.model ? { model: update.model } : {}),
+          variant: update.variant ?? null,
+          agent: update.agent ?? null,
+        }
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "claude", access: "native" },
+      storeRoot,
+      harnesses: [
+        { match: (candidate) => candidate.id === "claude", create: () => sourceAdapter },
+        { match: (candidate) => candidate.id === "codex", create: () => targetAdapter },
+      ],
+    })
+    const patch = {
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+    } satisfies SessionConfigUpdate
+
+    const otherDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-cross-harness-other-"))
+    tempDirs.push(otherDir)
+    const otherOwner = "s-other-workspace"
+    registerWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: otherOwner, directory: otherDir })
+    const crossDirectoryResponse = await app.request(
+      `http://localhost/session/s-claude-to-codex/config?directory=${encodeURIComponent(otherDir)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      },
+    )
+    unregisterWorkspaceDirectory({ workspaceId: workspaceId(), sessionId: otherOwner })
+
+    expect(crossDirectoryResponse.status).toBe(409)
+    expect(handoffs).toEqual([])
+
+    const response = await app.request(
+      `http://localhost/session/s-claude-to-codex/config?directory=${encodeURIComponent(dir)}`,
+      {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      },
+    )
+
+    expect(response.status).toBe(200)
+    const switched = await response.json() as SessionConfig
+    expect(switched).toMatchObject({
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+      variant: null,
+      agent: null,
+      handoff: {
+        from: { id: "claude", access: "native" },
+        pending: true,
+      },
+    })
+    expect(switched.handoff?.transcript).toContain('<session-handoff from="claude">')
+    expect(switched.handoff?.transcript).toContain("User:\nmy dog is Tommy")
+    expect(handoffs).toEqual(["s-claude-to-codex"])
+
+    host.dispose()
+    const persisted = new RuntimeStore(storeRoot)
+    expect(persisted.getAgentSessionId("s-claude-to-codex")).toBe("codex-native-thread")
+    expect(persisted.getSessionConfig("s-claude-to-codex")?.harness).toEqual({ id: "codex", access: "native" })
+    persisted.close()
+  })
+
   test("listing sessions does not overwrite an existing session config from another harness", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-list-preserve-config-"))
     tempDirs.push(dir)

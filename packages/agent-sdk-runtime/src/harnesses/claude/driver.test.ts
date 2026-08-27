@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   CLAUDE_FORWARD_SUBAGENT_TEXT,
+  claudeSystemPrompt,
   claudeSpawnEnv,
   createClaudeSdkDriver,
   ingestClaudeSdkMessage,
@@ -17,6 +18,15 @@ function driver() {
 }
 
 describe("Claude SDK driver", () => {
+  test("appends a handoff transcript to Claude Code's canonical system prompt", () => {
+    expect(claudeSystemPrompt("prior conversation")).toEqual({
+      type: "preset",
+      preset: "claude_code",
+      append: "prior conversation",
+    })
+    expect(claudeSystemPrompt()).toBeUndefined()
+  })
+
   test("U5: measures routed nested SDK frames below the forwarding thresholds", async () => {
     const childText = [
       "Inspecting authentication entry points.",

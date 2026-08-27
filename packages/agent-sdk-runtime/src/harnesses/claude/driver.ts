@@ -56,6 +56,12 @@ const MODEL_LIST_TIMEOUT_MS = 30_000
 // against the contract thresholds before this option is enabled.
 export const CLAUDE_FORWARD_SUBAGENT_TEXT = true
 
+export function claudeSystemPrompt(system?: string) {
+  return system
+    ? { type: "preset" as const, preset: "claude_code" as const, append: system }
+    : undefined
+}
+
 export function createClaudeSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {
   return new ClaudeSdkDriver(host)
 }
@@ -169,10 +175,12 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       input.input.model.modelID,
       input.input.variant,
     )
+    const systemPrompt = claudeSystemPrompt(input.input.system)
     const q: Query = query({
       prompt: extractTextFromParts(input.input.parts),
       options: {
         cwd: input.directory,
+        ...(systemPrompt ? { systemPrompt } : {}),
         // Spawn the user's / sandbox image's installed Claude Code, never a
         // bundled binary. Throws an actionable install error when absent.
         pathToClaudeCodeExecutable: requireClaudeExecutable(),

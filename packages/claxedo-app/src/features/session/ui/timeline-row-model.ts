@@ -19,7 +19,8 @@ export type TimelineRowMap = {
   }
   TurnDivider: {
     userMessageID: string
-    label: "compaction" | "interrupted"
+    label: "compaction" | "handoff" | "interrupted"
+    harness?: string
     durationMs?: number
   }
   AssistantPart: {

@@ -174,6 +174,7 @@ export type SessionConfig = {
   model?: PromptModel
   variant?: string | null
   agent?: string | null
+  handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
 
 /**
@@ -190,7 +191,12 @@ export type SessionConfigUpdate = {
   model?: PromptModel | null
   variant?: string | null
   agent?: string | null
+  handoff?: { from: SessionHarness; pending: true; transcript: string } | null
 }
+
+/** Config fields accepted from public session create/update requests.
+ * Pending handoff state is runtime-owned and must not be client-authored. */
+export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff">
 
 export type AgentRuntimeStreamEvent = AgentRuntimeEvent | CompatEvent
 export type RuntimeDirectory = string | undefined

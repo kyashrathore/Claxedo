@@ -266,7 +266,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.set(sessionId, modeId)
   }
 
-  async createAgentSession(input: { directory: string; model: string }) {
+  async createAgentSession(input: { directory: string; model: string; system?: string }) {
     const proc = await this.ensureProcess(input.directory)
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
@@ -278,6 +278,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       approvalsReviewer: "user",
       sandbox: settings.sandbox,
       dynamicTools: CODEX_DYNAMIC_TOOLS,
+      ...(input.system ? { developerInstructions: input.system } : {}),
       ...(model ? { model } : {}),
     }) as JsonRecord
     const thread = record(result.thread)

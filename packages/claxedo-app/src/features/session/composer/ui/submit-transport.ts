@@ -254,7 +254,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
         sessionRef: input.sessionRef?.(),
         serverUrl: input.serverUrl(),
       }),
-      staleTime: Number.POSITIVE_INFINITY,
+      staleTime: 0,
       queryFn: async () => {
         const res = await sessionRequest(configInput.directory, sessionConfigPath(configInput), {
           headers: { Accept: "application/json" },
