@@ -16,10 +16,12 @@ export function e2eAuthViteEnvironment(mode: E2EAuthMode): Record<string, string
       VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1",
       VITE_CLERK_PUBLISHABLE_KEY: "",
+      VITE_SANDBOX_ENABLED: "true",
     }
   }
   return {
     VITE_AUTH_ENABLED: "true",
     VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "0",
+    VITE_SANDBOX_ENABLED: "true",
   }
 }
