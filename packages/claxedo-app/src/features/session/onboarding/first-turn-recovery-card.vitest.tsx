@@ -1,6 +1,6 @@
 import { fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { describe, expect, test, vi } from "vitest"
-import { FirstTurnRecoveryCard } from "./first-turn-recovery-card"
+import { FirstTurnRecoveryCard, TimelineErrorPresentation } from "./first-turn-recovery-card"
 
 describe("FirstTurnRecoveryCard", () => {
   test.each([
@@ -111,6 +111,24 @@ describe("FirstTurnRecoveryCard", () => {
     expect(view.getByTestId("usage-limit-status-message")).toHaveAttribute("role", "status")
     expect(view.getByTestId("usage-limit-status-message")).toHaveClass("text-text-weaker")
     expect(view.getByText("Claude usage limit reached")).toHaveClass("text-12-regular")
+  })
+
+  test("renders a turn-admission conflict as compact status text with no action or card", () => {
+    const view = render(() => (
+      <TimelineErrorPresentation
+        presentation="turn-conflict"
+        text="Session is already processing a message"
+        summary="The previous message was still finishing. Try again."
+        onAction={vi.fn()}
+      />
+    ))
+
+    expect(view.getByTestId("turn-admission-status-message")).toHaveAttribute("role", "status")
+    expect(view.container.textContent).toContain("Message wasn’t sent")
+    expect(view.container.textContent).toContain("The previous message was still finishing. Try again.")
+    expect(view.container.querySelectorAll("button")).toHaveLength(0)
+    expect(view.queryByTestId("first-turn-recovery-card")).toBeNull()
+    expect(view.queryByTestId("usage-limit-status-message")).toBeNull()
   })
 
   test("shows a recovery-action failure instead of producing an unhandled rejection", async () => {

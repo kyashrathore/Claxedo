@@ -746,8 +746,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async abort(id: string, _directory: string): Promise<AbortResult> {
-    if (!this.lifecycle().abort(id)) return { ok: true, status: "already_idle" }
+    const lifecycle = this.lifecycle()
+    if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
     this.resolvePendingPermissions(id, "deny")
+    // `cancelled` is an admission acknowledgement: callers may start the next
+    // turn as soon as it resolves. Wait until this adapter's own generation has
+    // left its busy section so the replacement cannot be rejected by a stale
+    // second lock and persisted as a failed assistant turn.
+    await lifecycle.whenIdle(id)
     return { ok: true, status: "cancelled" }
   }
 

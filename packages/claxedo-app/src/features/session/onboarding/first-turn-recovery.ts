@@ -99,6 +99,12 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
   return "unknown"
 }
 
+export function isTurnAdmissionConflict(error: unknown) {
+  const data = record(record(error)?.data)
+  return data?.code === "turn_already_active" ||
+    data?.message === "Session is already processing a message"
+}
+
 export function firstTurnOutcome(messages: FirstTurnMessage[]) {
   const first = messages.find((message): message is Extract<FirstTurnMessage, { role: "user" }> => message.role === "user")
   if (!first) return
