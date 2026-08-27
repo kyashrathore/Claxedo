@@ -19,6 +19,7 @@ function dispatchPointer(
 }
 
 afterEach(() => {
+  vi.useRealTimers()
   workbenchDrag.cancel()
   cleanup()
 })
@@ -120,6 +121,80 @@ describe("CompactSwitcher", () => {
     expect(icons).toHaveLength(2)
     expect(icons[0].querySelector("[data-switcher-project-avatar]")).toHaveTextContent("C")
     expect(screen.queryByText("+2")).not.toBeInTheDocument()
+  })
+
+  test("reveals Cmd+number hints only after Command is held for 500ms", async () => {
+    vi.useFakeTimers()
+    render(() => <CompactSwitcher items={items} />)
+    const switcher = screen.getByTestId("compact-switcher")
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true })
+    await vi.advanceTimersByTimeAsync(499)
+    expect(switcher).not.toHaveAttribute("data-command-hints")
+
+    await vi.advanceTimersByTimeAsync(1)
+    expect(switcher).toHaveAttribute("data-command-hints", "true")
+    expect(screen.getAllByTestId("switcher-command-hint").map((hint) => hint.textContent)).toEqual(["⌘1", "⌘2"])
+    expect(screen.getAllByTestId("switcher-command-hint")[0]).toHaveClass("group-data-[command-hints]/switcher:flex")
+    expect(screen.getAllByTestId("switcher-identity")[0]).toHaveClass("group-data-[command-hints]/switcher:hidden")
+
+    fireEvent.keyUp(window, { key: "Meta" })
+    expect(switcher).not.toHaveAttribute("data-command-hints")
+  })
+
+  test("does not reveal Cmd+number hints for a short Command press", async () => {
+    vi.useFakeTimers()
+    render(() => <CompactSwitcher items={items} />)
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true })
+    await vi.advanceTimersByTimeAsync(250)
+    fireEvent.keyUp(window, { key: "Meta" })
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(screen.getByTestId("compact-switcher")).not.toHaveAttribute("data-command-hints")
+  })
+
+  test("clears pending and visible hints when the window blurs", async () => {
+    vi.useFakeTimers()
+    render(() => <CompactSwitcher items={items} />)
+    const switcher = screen.getByTestId("compact-switcher")
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true })
+    await vi.advanceTimersByTimeAsync(250)
+    fireEvent.blur(window)
+    await vi.advanceTimersByTimeAsync(500)
+    expect(switcher).not.toHaveAttribute("data-command-hints")
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true })
+    await vi.advanceTimersByTimeAsync(500)
+    expect(switcher).toHaveAttribute("data-command-hints", "true")
+    fireEvent.blur(window)
+    expect(switcher).not.toHaveAttribute("data-command-hints")
+  })
+
+  test("renders hints only for the nine registered number shortcuts", async () => {
+    vi.useFakeTimers()
+    const manyItems = Array.from({ length: 10 }, (_, index): SwitcherItem => ({
+      ...items[0],
+      contentId: `content-${index + 1}`,
+      title: `Surface ${index + 1}`,
+      active: index === 0,
+    }))
+    render(() => <CompactSwitcher items={manyItems} />)
+
+    fireEvent.keyDown(window, { key: "Meta", metaKey: true })
+    await vi.advanceTimersByTimeAsync(500)
+
+    expect(screen.getAllByTestId("switcher-command-hint").map((hint) => hint.textContent)).toEqual(
+      Array.from({ length: 9 }, (_, index) => `⌘${index + 1}`),
+    )
+  })
+
+  test("renders the effective shortcut labels supplied by the command registry", () => {
+    render(() => <CompactSwitcher items={items} shortcutHints={["⌘1", ""]} />)
+
+    expect(screen.getAllByTestId("switcher-command-hint").map((hint) => hint.textContent)).toEqual(["⌘1"])
+    expect(screen.getAllByTestId("switcher-identity")[1]).not.toHaveClass("group-data-[command-hints]/switcher:hidden")
   })
 
   test("keeps metadata hover affordance on the prefix without native tooltips", () => {

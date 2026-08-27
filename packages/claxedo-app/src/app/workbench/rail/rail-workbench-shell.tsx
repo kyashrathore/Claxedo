@@ -22,6 +22,7 @@ export type RailWorkbenchShellProps = {
   emptyDraftDirectory: Accessor<string | undefined>
   focusedPanelTarget: () => WorkspacePanelPaneTarget | undefined
   hasWorkspacePanelTarget: () => boolean
+  onCloseFocusedPane: (paneId: string, contentId: string | null) => void
   onCloseSurface: (contentId: string) => void
   onDiagnostics?: () => void
   onNewPage?: () => void
@@ -42,6 +43,7 @@ export type RailWorkbenchShellProps = {
   projectsCount: Accessor<number>
   sidebarPinned: Accessor<boolean>
   state: RailWorkbenchShellState
+  surfaceShortcutHints: Accessor<readonly string[]>
   switcherItems: Accessor<SwitcherItem[]>
   toggleFocusedWorkspaceNavigator: (navigator: WorkspacePanelNavigator) => void
   toggleFocusedWorkspaceReview: (button: HTMLButtonElement) => void
@@ -121,6 +123,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             onToggleWorkspacePanel={props.onToggleWorkspacePanel}
             onToggleWorkspacePanelFullWidth={props.onToggleWorkspacePanelFullWidth}
             sidebarPinned={props.sidebarPinned}
+            surfaceShortcutHints={props.surfaceShortcutHints}
             switcherItems={props.switcherItems}
             toggleFocusedWorkspaceNavigator={props.toggleFocusedWorkspaceNavigator}
             topBarRight={props.topBarRight}
@@ -135,6 +138,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
         <RailWorkbenchCanvas
           state={props.state}
           emptyDraftDirectory={props.emptyDraftDirectory}
+          onCloseFocusedPane={props.onCloseFocusedPane}
           onDiagnostics={props.onDiagnostics}
           onNewProject={props.onNewProject}
         />

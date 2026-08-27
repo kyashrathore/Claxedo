@@ -21,6 +21,7 @@ export type MountOpts = {
   retainedHiddenLimit?: () => number
   keyMap?: Partial<KeyMap>
   renderContent?: (id: string, ctx: PaneCtx) => JSX.Element
+  onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }
 
 export function mountWorkbench(opts: MountOpts = {}) {
@@ -58,6 +59,7 @@ export function mountWorkbench(opts: MountOpts = {}) {
         mountCapCandidate={opts.mountCapCandidate}
         retainedHiddenLimit={opts.retainedHiddenLimit}
         keyMap={opts.keyMap}
+        onCloseFocusedPane={opts.onCloseFocusedPane}
         onFocusChange={(p, c) => focusEvents.push({ paneId: p, contentId: c })}
         onPaneResize={(p, r) => resizeEvents.push({ paneId: p, rect: r })}
         onContentOpen={(c, p) => openEvents.push({ contentId: c, paneId: p })}

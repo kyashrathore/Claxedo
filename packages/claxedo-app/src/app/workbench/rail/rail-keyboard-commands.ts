@@ -1,4 +1,5 @@
 import type { CommandOption } from "@/app/providers/command"
+import { NUMBERED_SURFACE_SHORTCUTS } from "./rail-keyboard-shortcuts"
 
 export type RailKeyboardCommandActions = {
   closeFocusedPane: () => void
@@ -45,12 +46,12 @@ export function createRailKeyboardCommands(actions: RailKeyboardCommandActions):
       keybind: "mod+b",
       onSelect: actions.toggleSidebar,
     },
-    ...Array.from({ length: 9 }, (_, i) => ({
-      id: `claxedo.surface.${i + 1}`,
-      title: `Switch to Surface ${i + 1}`,
+    ...NUMBERED_SURFACE_SHORTCUTS.map((shortcut, index) => ({
+      id: shortcut.commandId,
+      title: `Switch to Surface ${shortcut.number}`,
       category: "View",
-      keybind: `mod+${i + 1}`,
-      onSelect: () => actions.showSurfaceAtIndex(i),
+      keybind: shortcut.keybind,
+      onSelect: () => actions.showSurfaceAtIndex(index),
     })),
     {
       // Keybind intentionally omitted (see claxedo.pane.close above): the

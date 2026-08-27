@@ -75,6 +75,7 @@ export function WorkbenchShellHeader(props: {
   onToggleWorkspacePanel: (button: HTMLButtonElement) => void
   onToggleWorkspacePanelFullWidth: () => void
   sidebarPinned: () => boolean
+  surfaceShortcutHints: () => readonly string[]
   switcherItems: () => SwitcherItem[]
   toggleFocusedWorkspaceNavigator: (navigator: "files" | "changes" | "processes") => void
   topBarRight?: () => JSX.Element
@@ -136,6 +137,7 @@ export function WorkbenchShellHeader(props: {
             items={props.switcherItems()}
             onSelect={props.onSelectSurface}
             onClose={props.onCloseSurface}
+            shortcutHints={props.surfaceShortcutHints()}
           />
           {/* Zone B — fills the empty space after the tabs; always leaves a
               floor of grabbable width even when the tab strip overflows. */}

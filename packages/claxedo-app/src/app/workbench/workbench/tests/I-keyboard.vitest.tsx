@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { fireEvent } from "@solidjs/testing-library"
 import { mountWorkbench } from "./dom-helpers"
 
@@ -56,6 +56,61 @@ describe("I. keyboard", () => {
     expect(h.state().panes).toHaveLength(1)
     expect(h.state().contentIds).toContain("b")
     expect(h.api().selectors.contentPane("b")).toBeNull()
+  })
+
+  test("mod+w delegates the focused pane and content to shell close policy", () => {
+    const onCloseFocusedPane = vi.fn()
+    const h = mountWorkbench({ onCloseFocusedPane })
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+
+    fireEvent.keyDown(window, { key: "w", metaKey: true })
+
+    expect(onCloseFocusedPane).toHaveBeenCalledWith(h.state().focusedPaneId, "a")
+    expect(h.state().panes).toHaveLength(1)
+    expect(h.state().contentIds).toContain("a")
+  })
+
+  test("mod+w remains a global pane shortcut while focus is inside an editor", () => {
+    const onCloseFocusedPane = vi.fn()
+    const h = mountWorkbench({
+      onCloseFocusedPane,
+      renderContent: () => <textarea aria-label="Composer" />,
+    })
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+
+    fireEvent.keyDown(h.utils.getByRole("textbox", { name: "Composer" }), { key: "w", metaKey: true })
+
+    expect(onCloseFocusedPane).toHaveBeenCalledWith(h.state().focusedPaneId, "a")
+  })
+
+  test("mod+w does not double-close when an inner command already handled it", () => {
+    const onCloseFocusedPane = vi.fn()
+    const h = mountWorkbench({ onCloseFocusedPane })
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+    const event = new KeyboardEvent("keydown", { key: "w", metaKey: true, bubbles: true, cancelable: true })
+    event.preventDefault()
+
+    window.dispatchEvent(event)
+
+    expect(onCloseFocusedPane).not.toHaveBeenCalled()
+  })
+
+  test("a custom close binding does not replace native editor shortcuts", () => {
+    const onCloseFocusedPane = vi.fn()
+    const h = mountWorkbench({
+      keyMap: { closePane: "mod+x" },
+      onCloseFocusedPane,
+      renderContent: () => <textarea aria-label="Composer" />,
+    })
+    h.api().contents.add("a")
+    h.api().navigation.show("a")
+
+    fireEvent.keyDown(h.utils.getByRole("textbox", { name: "Composer" }), { key: "x", metaKey: true })
+
+    expect(onCloseFocusedPane).not.toHaveBeenCalled()
   })
 
   test("pane close control closes that pane without removing content", () => {

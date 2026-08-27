@@ -38,6 +38,11 @@ import { useServer } from "@/app/connection/server"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-controller"
+import {
+  closeFocusedPaneFromShortcut,
+  NUMBERED_SURFACE_SHORTCUTS,
+  sidebarHiddenForCloseShortcut,
+} from "./workbench/rail/rail-keyboard-shortcuts"
 import { useRailEmptyDraftController } from "./workbench/rail/rail-empty-draft-controller"
 import { useRailShellChromeState } from "./workbench/rail/rail-shell-chrome-state"
 import { isNarrowViewport } from "./workbench/workbench/index"
@@ -490,6 +495,17 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
           focusedPanelTarget={workbenchController.focusedPanelTarget}
           hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}
+          onCloseFocusedPane={(paneId, contentId) => closeFocusedPaneFromShortcut({
+            sidebarHidden: sidebarHiddenForCloseShortcut({
+              narrowViewport: isNarrowViewport(),
+              mobileSidebarOpen: chrome.mobileSidebarOpen(),
+              desktopSidebarHidden: sidebarHidden(),
+            }),
+            paneId,
+            contentId,
+            closeSurface: workbenchController.closeSurface,
+            closePane: (id) => claxedoState.layout.closePane(id, { destroyContent: false }),
+          })}
           onCloseSurface={workbenchController.closeSurface}
           onNewPage={productNavigation().onNewPage}
           onNewProject={props.onNewProject}
@@ -510,6 +526,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           projectsCount={() => props.projects.length}
           sidebarPinned={sidebarPinned}
           state={claxedoState}
+          surfaceShortcutHints={() => NUMBERED_SURFACE_SHORTCUTS.map((shortcut) => command.keybind(shortcut.commandId))}
           switcherItems={workbenchController.switcherItems}
           toggleFocusedWorkspaceNavigator={workbenchController.toggleFocusedWorkspaceNavigator}
           toggleFocusedWorkspaceReview={toggleWorkspacePanel}

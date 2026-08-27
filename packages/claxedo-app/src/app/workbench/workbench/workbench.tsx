@@ -39,20 +39,16 @@ export type WorkbenchProps = {
   mountPolicy?: "always" | "active-only" | "visible-once"
   maxMountedContents?: number
   mountCapCandidate?: (contentId: string) => boolean
-  /** Reactive ceiling on retained HIDDEN cap-candidates, below
-   * `maxMountedContents`. Callers use it to unload hidden surfaces on user
-   * idle (see mount-idle-governor); visible panes are unaffected. */
+  /** Reactive ceiling on retained hidden cap-candidates; visible panes are unaffected. */
   retainedHiddenLimit?: () => number
   onFocusChange?: (paneId: string | null, contentId: string | null) => void
   onPaneResize?: (paneId: string, rect: PaneRect) => void
   onContentOpen?: (contentId: string, paneId: string) => void
   onContentClose?: (contentId: string, reason: "user" | "stale") => void
+  onCloseFocusedPane?: (paneId: string, contentId: string | null) => void
 }
 
-type DropTarget = {
-  paneId: string
-  edge: Edge
-}
+type DropTarget = { paneId: string; edge: Edge }
 
 /**
  * <Workbench> renders the pane tree (split + leaves), drag-drop overlays,
@@ -119,7 +115,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
     }
     lastOpenSig = next
   })
-
   // -- onContentClose: track contentIds removals.
   let lastAlive: Set<string> = new Set()
   createEffect(() => {
@@ -183,14 +178,20 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
   // -- keyboard
   const keyMap = createMemo(() => resolveKeyMap(props.keyMap))
   const onKeyDown = (e: KeyboardEvent) => {
-    if (eventTargetIsEditable(e.target)) return
+    if (e.defaultPrevented) return
     const km = keyMap()
     const s = ctx.getState()
     if (matchKey(e, km.closePane)) {
+      if (eventTargetIsEditable(e.target) && km.closePane !== "mod+w") return
       e.preventDefault()
-      if (s.focusedPaneId) wb.split.close(s.focusedPaneId, { destroyContent: false })
+      const paneId = s.focusedPaneId
+      if (!paneId) return
+      const contentId = s.panes.find((pane) => pane.id === paneId)?.contentId ?? null
+      if (props.onCloseFocusedPane) props.onCloseFocusedPane(paneId, contentId)
+      else wb.split.close(paneId, { destroyContent: false })
       return
     }
+    if (eventTargetIsEditable(e.target)) return
     if (matchKey(e, km.splitRight) || matchKey(e, km.splitDown)) {
       // Keyboard split: reveal the most-recent hidden surface in a new pane
       // beside the focused one. The prior handler passed the focused pane's own

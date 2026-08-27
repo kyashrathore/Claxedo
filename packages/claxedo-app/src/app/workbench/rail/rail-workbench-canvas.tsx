@@ -34,6 +34,7 @@ type RailWorkbenchState = {
 export function RailWorkbenchCanvas(props: {
   state: RailWorkbenchState
   emptyDraftDirectory: Accessor<string | undefined>
+  onCloseFocusedPane: (paneId: string, contentId: string | null) => void
   onDiagnostics?: () => void
   onNewProject?: () => void
 }) {
@@ -64,6 +65,7 @@ export function RailWorkbenchCanvas(props: {
         mountPolicy="visible-once"
         mountCapCandidate={(id) => props.state.meta.get(id)?.type === "session"}
         retainedHiddenLimit={retainedHiddenLimit}
+        onCloseFocusedPane={props.onCloseFocusedPane}
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}
