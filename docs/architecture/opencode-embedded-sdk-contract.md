@@ -959,6 +959,32 @@ READ from the pinned generated client.
 - **Forms exist**: `form.{request.list,list,create,get,state,reply,cancel}`,
   backing the structured-question decision.
 - `sessions.list` returns `{ data, cursor }` — paged. VERIFIED.
+- **`prompt` returns an INBOX entry, not a durable message.** VERIFIED
+  (`ports.integration.test.ts`). `sessions.prompt` answers with
+  `{ id: "msg_...", sessionID, timeCreated, payload: { text }, delivery }`, and
+  that id is NOT yet in `message.list`. Staging a revert against it fails with
+  a typed `MessageNotFoundError`. Unit 4b's revert projector must take its
+  message id from the message page, never from the admission result.
+- **`revert.clear` on a session with nothing staged is a no-op**, not an
+  error. VERIFIED. "Unrevert" therefore needs no prior-state bookkeeping in
+  the adapter.
+- **`session.fork` refuses an empty session**: `InvalidRequestError` with
+  `kind: "empty_session"`. VERIFIED. Fork requires at least one durable
+  message, so the adapter surfaces a typed failure rather than fabricating a
+  fork id the UI would then navigate to.
+- **Prompt input is FLAT** — `{ sessionID, text, files?, agents?, skills?,
+  metadata?, delivery?, resume? }`. No `parts`, no per-call `model`; see §2.3.
+  `delivery: "steer" | "queue"` is how V2 expresses send-while-running.
+- **`permission.reply` takes `"once" | "always" | "reject"`** with an optional
+  message, and `form.reply` takes a STRUCTURED `answer` record
+  (`string | number | boolean | string[]` per field). VERIFIED from the
+  generated client; this is what lets harness-neutral question replies carry
+  real form values instead of a stringified blob (R5).
+- **Location-scoped lists all take the NESTED `{ location: { directory } }`**
+  (`agent.list`, `command.list`, `model.list`, `permission.request.list`,
+  `form.request.list`) while `session.list` alone takes a FLAT `directory`.
+  Mixing the two is silent, not an error — the port makes each unrepresentable
+  in the wrong place.
 
 ## 8. The unexported raw-fetch host
 
