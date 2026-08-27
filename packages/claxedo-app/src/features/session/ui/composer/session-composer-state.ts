@@ -15,7 +15,7 @@ import {
   sessionTodoCacheQueryOptions,
 } from "@/features/session/data/sync/queries"
 import { dispatchSessionTodoEvent } from "@/features/session/store/session-status-dispatcher"
-import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
+import { sessionQuestionRequest, sessionVisiblePermissionRequest } from "./session-request-tree"
 import { permissionDecidedProperties } from "@/features/session/permission/modes"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 
@@ -84,8 +84,12 @@ export function createSessionComposerState(options?: { closeMs?: number | (() =>
   })
 
   const permissionRequest = createMemo((): PermissionRequest | undefined => {
-    return sessionPermissionRequest(sessionList(), requestRecords().permissions, sessionParams.sessionId(), (item) => {
-      return !permission.autoResponds(item, sdk.directory)
+    return sessionVisiblePermissionRequest({
+      ready: permission.requestPolicyReady(sdk.directory),
+      sessions: sessionList(),
+      requests: requestRecords().permissions,
+      sessionID: sessionParams.sessionId(),
+      include: (item) => !permission.autoResponds(item, sdk.directory),
     })
   })
 

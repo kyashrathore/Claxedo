@@ -82,12 +82,13 @@ const snapshotProject = {
   },
 }
 
-const renderView = (props?: { worktree?: string; workspaceKind?: "local" | "cloud"; signedControlPlane?: boolean }) =>
+const renderView = (props?: { worktree?: string; workspaceKind?: "local" | "cloud"; signedControlPlane?: boolean; sandboxEnabled?: boolean }) =>
   render(() => (
     <NewSessionDesignView
       worktree={props?.worktree ?? "main"}
       workspaceKind={props?.workspaceKind ?? "cloud"}
       signedControlPlane={props?.signedControlPlane ?? true}
+      sandboxEnabled={props?.sandboxEnabled}
       onWorktreeChange={() => {}}
       onWorkspaceKindChange={() => {}}
     >
@@ -169,6 +170,13 @@ describe("environment options", () => {
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: false })
     expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local", "cloud"])
+  })
+
+  test("hides cloud from the composer when sandbox creation is disabled", () => {
+    state.platform = "web"
+    state.projects = [bootstrapProject]
+    renderView({ signedControlPlane: false, sandboxEnabled: false })
+    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local"])
   })
 })
 

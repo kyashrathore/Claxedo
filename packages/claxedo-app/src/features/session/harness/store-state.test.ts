@@ -4,7 +4,7 @@ import {
   harnessStatusPatch,
   harnessSwitchStartPatch,
   initialHarnessStoreState,
-  readyHarnessFallbackPatch,
+  pollingHarnessHydrationPatch,
   readyHarnessHydrationPatch,
   workspaceDraftHarnessResetPatch,
 } from "./store-state"
@@ -240,15 +240,19 @@ describe("harness store state projectors", () => {
       optionsStale: false,
       optionsLoading: false,
     })
-    expect(readyHarnessFallbackPatch("claude-acp")).toEqual({
+    expect(pollingHarnessHydrationPatch("claude-acp")).toEqual({
+      harness: "claude-acp",
       harnessMode: "harness",
-      readiness: "ready",
+      selectedModel: "",
+      selectedModelProvider: undefined,
       dynamicModels: null,
       thoughtLevels: null,
       selectedThoughtLevel: undefined,
+      readiness: "polling",
       optionsSource: "empty",
       optionsStale: false,
       optionsLoading: false,
+      configError: undefined,
     })
     expect(harnessSwitchStartPatch({
       type: "claude-acp",

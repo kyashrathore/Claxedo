@@ -8,7 +8,7 @@ import {
 } from "./profile"
 import {
   harnessStatusPatch,
-  readyHarnessFallbackPatch,
+  pollingHarnessHydrationPatch,
   readyHarnessHydrationPatch,
   workspaceDraftHarnessResetPatch,
   type HarnessStorePatch,
@@ -102,7 +102,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     applyStatus,
     refresh,
     resetWorkspaceDraftHarness,
-    setReadyFallback: (scope: string, type: HarnessType) => input.applyPatch(scope, readyHarnessFallbackPatch(type)),
+    setPollingHydration: (scope: string, type?: HarnessType) => input.applyPatch(scope, pollingHarnessHydrationPatch(type)),
     setReadyHydration: (scope: string, type: HarnessType) => input.applyPatch(scope, readyHarnessHydrationPatch(type)),
   }
 }

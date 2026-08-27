@@ -217,11 +217,11 @@ describe("harness status actions", () => {
     expect(patches.at(-1)).toMatchObject({ optionsLoading: false })
   })
 
-  test("applies ready hydration and fallback patches", () => {
+  test("applies ready and polling hydration patches", () => {
     const subject = actions()
 
     subject.setReadyHydration(scope, "claude-acp")
-    subject.setReadyFallback(scope, "codex-acp")
+    subject.setPollingHydration(scope, "codex-app-server")
 
     expect(patches[0]).toMatchObject({
       harnessMode: "harness",
@@ -232,7 +232,8 @@ describe("harness status actions", () => {
     expect("optionsLoading" in patches[0]).toBe(false)
     expect(patches[1]).toMatchObject({
       harnessMode: "harness",
-      readiness: "ready",
+      harness: "codex-app-server",
+      readiness: "polling",
       dynamicModels: null,
       optionsSource: "empty",
       optionsStale: false,

@@ -14,6 +14,7 @@ import { useWorkGraphSyncLifecycle } from "@/features/workgraph/sync-lifecycle"
 import { PanelTab } from "@/features/workgraph/content-chrome"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
+import { useConfigOptional } from "@/app/providers/config"
 
 type ProjectShape = {
   id?: string
@@ -40,6 +41,7 @@ export function TaskComposerView(props: {
   request?: typeof fetch
   onRetarget?: (directory: WorkspaceDirectoryRef, project: NewSessionProjectSelection) => void
 }) {
+  const config = useConfigOptional()
   const queryOptions = useShellQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const client = createWorkGraphClient({ request: props.request })
@@ -208,6 +210,7 @@ export function TaskComposerView(props: {
       }}
       onWorkspaceKindChange={() => undefined}
       onProjectChange={retarget}
+      sandboxEnabled={config?.sandboxEnabled}
     >
       <section class="overflow-hidden rounded-xl border border-border-weak-base bg-surface-raised-base shadow-sm">
         <header class="flex items-center justify-between gap-3 border-b border-border-weaker-base px-3.5 py-2.5">
