@@ -316,6 +316,19 @@ So nothing in their pipeline calls a location-resolving endpoint against built
 or packed output. `health.get` passes, everything behind it is untested there,
 and the failure reaches consumers untouched.
 
+**Suspect, untested:** `packages/core/script/build.ts` is the only build in the
+family using `Bun.build({ splitting: true })`. Code splitting can duplicate a
+module across chunks, and Effect's `Context.Service` tags and `LayerNode`
+identities are module-level singletons — duplicated identity would produce
+exactly this failure shape (service lookup fails, handler 500s, nothing logged).
+
+I tried to test it by rebuilding core with `splitting: false`. **Inconclusive:**
+that build emits an invalid package (`bus.js` missing among 397 emitted files,
+and the script's own "exactly one eager require helper" assertion fires because
+it assumes splitting). Flipping the flag does not produce a comparable artifact,
+so the result says nothing either way. Recorded as a lead for upstream, not a
+finding.
+
 **Still not isolated:** which build step or emitted construct causes it. That
 needs instrumenting their build, which is upstream's to do — but the report now
 points at a specific, checkable gap rather than a symptom.
