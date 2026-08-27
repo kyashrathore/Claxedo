@@ -761,7 +761,7 @@ describe("workspace runtime auth helpers", () => {
 
     try {
       const app = new Hono()
-      mountTestHost(app, { harness: { id: "codex", access: "native" } })
+      const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
 
       const message = app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
@@ -774,6 +774,7 @@ describe("workspace runtime auth helpers", () => {
         }),
       })
       await started
+      expect(host.activity()).toEqual({ activeTurns: 1, activeWrites: 0, checkpointState: "active" })
 
       const config = await pushRuntimeConfig(app, {
         version: 1,
@@ -785,6 +786,7 @@ describe("workspace runtime auth helpers", () => {
 
       const response = await message
       expect(response.status).toBe(200)
+      expect(host.activity()).toEqual({ activeTurns: 0, activeWrites: 0, checkpointState: "active" })
       expect(events).toEqual(["send:start", "abort:true", "send:cleanup", "dispose"])
     } finally {
       CodexHarnessAdapter.prototype.sendMessage = originalSendMessage
@@ -850,6 +852,8 @@ describe("workspace runtime auth helpers", () => {
       })
       await started
 
+      expect(host.activity()).toEqual({ activeTurns: 1, activeWrites: 0, checkpointState: "active" })
+
       const config = await pushRuntimeConfig(app, {
         version: 1,
         mcp: {},
@@ -874,6 +878,7 @@ describe("workspace runtime auth helpers", () => {
       releaseSend()
       const response = await message
       expect(response.status).toBe(200)
+      expect(host.activity()).toEqual({ activeTurns: 0, activeWrites: 0, checkpointState: "active" })
       expect(events).toEqual(["send:start", "send:done"])
     } finally {
       AcpHarnessAdapter.prototype.getSessionConfig = originalGetSessionConfig

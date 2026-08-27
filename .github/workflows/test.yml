@@ -364,11 +364,12 @@ jobs:
     # setup + build + a few minutes of tests. The @workgraph-real leg runs as
     # its own job below (it boots a real workgraph API and builds with a baked
     # VITE_ server URL, so it cannot share a shard's app build).
-    name: e2e (linux ${{ matrix.shard }}/12)
+    name: e2e (linux ${{ matrix.auth-mode }}, ${{ matrix.shard }}/12)
     strategy:
       fail-fast: false
       matrix:
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        auth-mode: [test-user, local-unsigned]
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -439,7 +440,7 @@ jobs:
       # runs in NO CI lane — it is local/manual only, by design: it needs real
       # provider credentials. Do not describe it as "nightly" here unless a
       # scheduled workflow actually exists.
-      - name: Run claxedo-app e2e core suite (shard ${{ matrix.shard }}/12)
+      - name: Run claxedo-app e2e core suite (${{ matrix.auth-mode }}, shard ${{ matrix.shard }}/12)
         working-directory: packages/claxedo-app
         timeout-minutes: 30
         run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/12
@@ -448,6 +449,10 @@ jobs:
           # transforms on 2-core runners push first navigations past the expect
           # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
           CLAXEDO_E2E_PREBUILT: "1"
+          # Every watched browser flow runs twice: once with the historical
+          # synthetic Test User and once as a loopback visitor with no user.
+          # playwright.config.ts owns the corresponding Vite auth composition.
+          CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
           # Videos of passing tests bloat shard artifacts; failures keep theirs.
           PLAYWRIGHT_VIDEO: "0"
           # The spec harness bakes these at build time (core-settings-auth.spec
@@ -467,7 +472,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-linux-shard${{ matrix.shard }}-${{ github.run_attempt }}
+          name: playwright-linux-${{ matrix.auth-mode }}-shard${{ matrix.shard }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -476,10 +481,15 @@ jobs:
             packages/claxedo-app/e2e/playwright/report
 
   e2e-workgraph:
-    name: e2e (workgraph-real)
+    name: e2e (workgraph-real, ${{ matrix.auth-mode }})
+    strategy:
+      fail-fast: false
+      matrix:
+        auth-mode: [test-user, local-unsigned]
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
+      CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
     defaults:
       run:
         shell: bash
@@ -557,7 +567,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-workgraph-real-${{ github.run_attempt }}
+          name: playwright-workgraph-real-${{ matrix.auth-mode }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |

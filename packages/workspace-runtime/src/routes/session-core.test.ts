@@ -725,4 +725,69 @@ describe("createSessionRoutes directory-less sessions", () => {
       expect(error.data?.firstTurnErrorClass).toBe("session")
     }
   })
+
+  test("prompt_async continues after its accepted client request disconnects", async () => {
+    let finishTurn = () => {}
+    const turnGate = new Promise<void>((resolve) => { finishTurn = resolve })
+    let completeDisposal = () => {}
+    const disposal = new Promise<void>((resolve) => { completeDisposal = resolve })
+    let disposed = false
+    const events: CompatEnvelope[] = []
+    const runtime = {
+      turns: {
+        start: async () => ({
+          sessionId: "session_1",
+          userMessageId: "user_1",
+          assistantMessageId: "assistant_1",
+          directory: undefined,
+          prompt: {
+            parts: [{ type: "text", text: "continue" }],
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            agent: "build",
+            model: { providerID: "test", modelID: "fixture" },
+          },
+        }),
+      },
+      events: {
+        subscribe: () => (async function* () {
+          await turnGate
+          yield {
+            sessionId: "session_1",
+            directory: undefined,
+            payload: sessionIdle("session_1"),
+          }
+        })(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      createActiveTurnScope: () => ({
+        dispose: () => {
+          disposed = true
+          completeDisposal()
+        },
+      }),
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: (event) => events.push(event),
+    })
+    const client = new AbortController()
+
+    const response = await app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      signal: client.signal,
+      body: JSON.stringify({ parts: [{ type: "text", text: "continue" }] }),
+    })
+    expect(response.status).toBe(204)
+
+    client.abort()
+    finishTurn()
+    await disposal
+
+    expect(events.map((event) => event.payload.type)).toContain("session.idle")
+    expect(disposed).toBe(true)
+  })
 })

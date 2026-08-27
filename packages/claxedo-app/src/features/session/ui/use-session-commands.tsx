@@ -62,6 +62,7 @@ export type SessionCommandContext = {
   active: Accessor<boolean>
   sessionId: Accessor<string | undefined>
   directory: Accessor<string>
+  workspaceRouteId: (dir: string) => string | undefined
   activeMessage: () => UserMessage | undefined
   showAllFiles: () => void
   navigateMessageByOffset: (offset: number) => void
@@ -229,7 +230,9 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "new",
       onSelect: () => {
         phCapture("session_new", { ...identityProps(), surface: "command_palette" })
-        navigate(workspaceSessionRoute(args.directory()))
+        const workspaceId = args.workspaceRouteId(args.directory())
+        if (!workspaceId) return
+        navigate(workspaceSessionRoute(workspaceId))
         // Hand focus to the new draft's composer once it mounts. Without this a
         // keyboard user who runs "New session" from the palette/chord lands with
         // focus on BODY and has to tab past the whole sidebar to start typing.
@@ -374,11 +377,13 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           worktree.default ??
           args.directory()
         if (!dir) return
+        const workspaceId = args.workspaceRouteId(dir)
+        if (!workspaceId) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal")
         claxedoState.workspacePanel.close()
         claxedoState.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
-        navigate(workspaceTerminalRoute(dir, pendingId))
+        navigate(workspaceTerminalRoute(workspaceId, pendingId))
       },
     }),
     terminalCommand({
@@ -414,11 +419,13 @@ export const useSessionCommands = (args: SessionCommandContext) => {
           : { pinned: undefined, default: undefined }
         const dir = focusedMeta?.directory ?? worktree.pinned ?? worktree.default ?? args.directory()
         if (!dir) return
+        const workspaceId = args.workspaceRouteId(dir)
+        if (!workspaceId) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
         const contentId = state.layout.openTerminal(dir, pendingId, "Terminal")
         state.workspacePanel.close()
         state.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
-        navigate(workspaceTerminalRoute(dir, pendingId))
+        navigate(workspaceTerminalRoute(workspaceId, pendingId))
       },
     }),
     sessionCommand({

@@ -25,7 +25,7 @@
  *     — they do NOT cross-reference `terminal.all()`. Opening a terminal from the
  *     workspace toolbar (`terminal-actions.ts` `openTerminal`) creates a pending content
  *     id, queues a create request (`state.terminal.queueCreateForContent`), and navigates
- *     to `/w/<dir>/terminal/<pendingId>`; `TerminalContentInner`
+ *     to `/w/<workspaceId>/terminal/<pendingId>`; `TerminalContentInner`
  *     (`src/claxedo-ui/content-renderers/terminal-content.tsx`) consumes the queued
  *     create, calls `terminal.new()`, then replaces the pending id with the real PTY id
  *     in both `state.meta` and the URL.

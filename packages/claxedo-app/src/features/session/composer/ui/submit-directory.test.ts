@@ -211,6 +211,7 @@ describe("resolvePreparedSubmitDirectory", () => {
   test("creates local worktrees from the project root and marks the result pending", async () => {
     const createdFrom: string[] = []
     const pending: string[] = []
+    const lifecycle: string[] = []
 
     const result = await resolveDirectory({
       workspaceKind: "local",
@@ -221,12 +222,36 @@ describe("resolvePreparedSubmitDirectory", () => {
         createdFrom.push(directory)
         return { directory: "/repo/feature" }
       },
-      markLocalWorktreePending: (directory) => pending.push(directory),
+      markLocalWorktreePending: (directory) => {
+        pending.push(directory)
+        lifecycle.push("pending")
+      },
+      bootstrap: async () => {
+        lifecycle.push("bootstrap:start")
+        await Promise.resolve()
+        lifecycle.push("bootstrap:complete")
+      },
     })
 
     expect(result).toEqual({ directory: "/repo/feature" })
     expect(createdFrom).toEqual(["/repo/main"])
     expect(pending).toEqual(["/repo/feature"])
+    expect(lifecycle).toEqual(["pending", "bootstrap:start", "bootstrap:complete"])
+  })
+
+  test("keeps the created worktree handoff when its inventory refresh fails", async () => {
+    const result = await resolveDirectory({
+      workspaceKind: "local",
+      worktreeSelection: "create",
+      projectDirectory: "/repo/main",
+      projects: [{ id: "project-1", worktree: "/repo/main" }],
+      createLocalWorktree: async () => ({ directory: "/repo/feature" }),
+      bootstrap: async () => {
+        throw new Error("inventory temporarily unavailable")
+      },
+    })
+
+    expect(result).toEqual({ directory: "/repo/feature" })
   })
 })
 

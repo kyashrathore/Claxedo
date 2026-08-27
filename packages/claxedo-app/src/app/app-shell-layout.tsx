@@ -147,10 +147,10 @@ export type AppShellLayoutProps = ParentProps<{
    * Callback to create a new session. When no workspace is selected yet,
    * callers may pass `undefined` to create an unattached draft first.
    */
-  onNewSession?: (workspaceDir?: string, paneId?: string) => void
+  onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
   suppressEmptyDraftSession?: boolean
   onDeleteSession?: (session: import("./workbench/rail/domain-types").SessionItem) => void
-  onArchiveSession?: (session: import("./workbench/rail/domain-types").SessionItem) => boolean | Promise<boolean>
+  onArchiveSession?: (session: import("./workbench/rail/domain-types").SessionItem, nextSessionId?: string) => boolean | Promise<boolean>
   onDeleteWorkspace?: (workspace: import("./workbench/rail/domain-types").WorkspaceItem) => void
   onRemoveProject?: (project: import("./workbench/rail/domain-types").ProjectItem) => void
 
@@ -160,7 +160,7 @@ export type AppShellLayoutProps = ParentProps<{
    * @param command - Optional command to run in the terminal (e.g., "claude --dangerously-skip-permissions")
    * @param title - Optional title for the terminal surface (e.g., "Claude", "Codex")
    */
-  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
+  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
 
   /**
    * Provision a workspace for the project owning `workspaceDir` and resolve to
@@ -172,7 +172,7 @@ export type AppShellLayoutProps = ParentProps<{
   onCreateWorkspace?: (input: {
     directory: WorkspaceDirectoryRef
     kind: "local" | "cloud"
-  }) => Promise<WorkspaceDirectoryRef | undefined>
+  }) => Promise<{ directory: WorkspaceDirectoryRef; workspaceId: string } | undefined>
 
   /**
    * Callback to create a new page

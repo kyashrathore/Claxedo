@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
 import type { UpgradeWebSocket } from "hono/ws"
 import { PtyRoutes } from "./pty"
@@ -48,6 +48,35 @@ afterEach(() => {
 describe("PtyRoutes", () => {
   test("accepts initialCommand on create requests", () => {
     expect(Pty.CreateInput.safeParse({ title: "Claude", initialCommand: "claude" }).success).toBe(true)
+  })
+
+  test("commits a PTY only after the public create path succeeds", async () => {
+    const info = {
+      id: "pty_committed",
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/tmp",
+      status: "running" as const,
+      pid: 123,
+    }
+    const create = spyOn(Pty, "create").mockResolvedValue(info)
+    const commit = spyOn(Pty, "commit").mockReturnValue(info)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp"
+    try {
+      const response = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-opencode-directory": "/tmp" },
+        body: JSON.stringify({ title: "Terminal" }),
+      })
+
+      expect(response.status).toBe(200)
+      expect(create).toHaveBeenCalledTimes(1)
+      expect(commit).toHaveBeenCalledWith(info.id)
+    } finally {
+      create.mockRestore()
+      commit.mockRestore()
+    }
   })
 
   test("returns structured validation and not-found errors", async () => {

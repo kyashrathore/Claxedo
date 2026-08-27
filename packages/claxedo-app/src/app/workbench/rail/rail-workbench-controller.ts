@@ -21,8 +21,8 @@ export function useRailWorkbenchController(input: {
   fallbackWorkspaceDir?: () => string | undefined
   focusedPaneWorkspaceDir: (paneId: string | undefined) => string | undefined
   onLastFocusedSurfaceClosed?: () => void
-  onNewSession?: (workspaceDir?: string, paneId?: string) => void
-  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
+  onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
+  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
   onTabClose?: (nextActiveTab: ContentMeta | undefined, closedTab: ContentMeta) => void
   onTabSelect?: (meta: ContentMeta) => void
   onWorkspacePanelVisibilityChange?: (visible: boolean) => void

@@ -82,7 +82,7 @@ import { installMockRuntime } from "../helpers/mock-runtime"
 const DIR = "/tmp/e2e-documents-core"
 const PROJECT_ID = "proj_documents_core"
 const SESSION_ID = "ses_documents_core"
-const INDEX_URL = `/w/${encodeURIComponent(DIR)}/page/__index__`
+const INDEX_URL = `/w/${PROJECT_ID}/page/__index__`
 
 type Summary = {
   id: string
@@ -153,7 +153,7 @@ function error(route: Route, status: number, code: string, message: string) {
 }
 
 function documentUrl(id: string) {
-  return `/w/${encodeURIComponent(DIR)}/page/${encodeURIComponent(id)}`
+  return `/w/${PROJECT_ID}/page/${encodeURIComponent(id)}`
 }
 
 function evidenceName(value: string) {
@@ -559,11 +559,11 @@ async function bootstrap(page: Page, runtime: DocumentRuntime) {
     dir: DIR,
     projectId: PROJECT_ID,
     sessionId: SESSION_ID,
-    workspaceId: DIR,
+    workspaceId: PROJECT_ID,
   })
   await runtime.install(page)
   await page.addInitScript(
-    ({ dir }) => {
+    ({ dir, projectId }: { dir: string; projectId: string }) => {
       localStorage.clear()
       ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
         serverUrl: window.location.origin,
@@ -573,14 +573,14 @@ async function bootstrap(page: Page, runtime: DocumentRuntime) {
         "opencode.global.dat:server",
         JSON.stringify({
           list: [],
-          projects: { local: [{ worktree: dir, workspaceId: dir, expanded: true }] },
+          projects: { local: [{ id: projectId, worktree: dir, workspaceId: projectId, expanded: true }] },
           lastProject: {},
           workspaceServer: {},
           closedProjects: {},
         }),
       )
     },
-    { dir: DIR },
+    { dir: DIR, projectId: PROJECT_ID },
   )
 }
 
@@ -1266,7 +1266,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     const editor = await sourceEditor(editorPage)
     await expect(editor).toHaveValue("Heading\n=======\n\nagent base\n")
 
-    await page.goto(`/w/${encodeURIComponent(DIR)}/session/${encodeURIComponent(SESSION_ID)}`)
+    await page.goto(`/w/${PROJECT_ID}/session/${encodeURIComponent(SESSION_ID)}`)
     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(composer).toBeVisible({ timeout: 30_000 })
 

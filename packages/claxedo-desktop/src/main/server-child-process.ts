@@ -6,10 +6,13 @@ export function claxedoServerForkOptions(env: Record<string, string>): ForkOptio
   return {
     execPath: process.execPath,
     execArgv: claxedoServerExecArgv(),
+    detached: true,
     env: {
       ...env,
       ELECTRON_RUN_AS_NODE: "1",
     },
-    stdio: ["inherit", "inherit", "inherit", "ipc"],
+    // Detached ownership includes file descriptors: inherited terminal pipes
+    // keep launchers alive even after the daemon is reparented.
+    stdio: ["ignore", "ignore", "ignore", "ipc"],
   }
 }

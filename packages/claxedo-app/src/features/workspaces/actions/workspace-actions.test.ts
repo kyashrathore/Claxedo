@@ -48,6 +48,9 @@ function makeProps() {
     params: {},
     activeDirectory: () => "/workspace/other",
     activeProjectId: () => "p1",
+    workspaceRouteId: (directory) => directory === "/workspace/feature"
+      ? "ws_feature"
+      : directory === "/workspace/recovered" ? "ws_recovered" : "p1",
     projects: () => [project({ id: "p1", worktree: "/workspace/main", sandboxes: ["/workspace/feature"] })],
     navigate: (_path: string) => undefined,
     dialog: {
@@ -120,6 +123,31 @@ function makeProps() {
 }
 
 describe("createWorkspaceActions", () => {
+  test("uses the selected project id when another project shares its directory", () => {
+    const { props, navs, nav } = makeProps()
+    const selected = project({ id: "p2", worktree: "/workspace/shared" })
+    props.projects = () => [project({ id: "p1", worktree: "/workspace/shared" }), selected]
+    props.workspaceRouteId = () => undefined
+
+    createWorkspaceActions(props, nav).handleWorkspaceSelect(selected, selected.worktree)
+
+    expect(navs.map((item) => item.path)).toEqual([workspaceSessionRoute("p2")])
+  })
+
+  test("does not mutate workspace state before a new-session route identity exists", () => {
+    const { props, opens, access, pinned, defaulted, navs, nav } = makeProps()
+    const selected = project({ id: "", worktree: "/workspace/main" })
+    props.workspaceRouteId = () => undefined
+
+    createWorkspaceActions(props, nav).handleWorkspaceSelect(selected, selected.worktree)
+
+    expect(opens).toEqual([])
+    expect(access).toEqual([])
+    expect(pinned).toEqual([])
+    expect(defaulted).toEqual([])
+    expect(navs).toEqual([])
+  })
+
   test("opens a fresh new-session for a workspace with no existing session content", () => {
     const { props, opens, access, navs, nav } = makeProps()
 
@@ -132,7 +160,7 @@ describe("createWorkspaceActions", () => {
     expect(access).toEqual([{ projectId: "p1", dir: "/workspace/feature" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("/workspace/feature"),
+        path: workspaceSessionRoute("ws_feature"),
         reason: "workspace-select:new-session",
         details: {
           projectId: "p1",
@@ -236,7 +264,7 @@ describe("createWorkspaceActions", () => {
 
     expect(navs).toHaveLength(1)
     expect(navs[0].path).not.toBe("/s/new")
-    expect(navs[0].path).toBe(workspaceSessionRoute("/workspace/feature"))
+    expect(navs[0].path).toBe(workspaceSessionRoute("ws_feature"))
     expect(navs[0].reason).toBe("workspace-select:new-session")
   })
 

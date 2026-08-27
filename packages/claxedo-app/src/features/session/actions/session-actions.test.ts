@@ -164,6 +164,32 @@ describe("createSessionActions", () => {
     ])
   })
 
+  test("selected workspace identity is used without rediscovering it from an ambiguous directory", async () => {
+    const { props, openedProjects, sessions, navs, nav } = makeProps()
+    props.workspaceRouteId = () => undefined
+    props.projects = () => [
+      { id: "p1", worktree: "/workspace/shared" },
+      { id: "p2", worktree: "/workspace/shared" },
+    ]
+
+    await createSessionActions(props, nav).handleNewSession("/workspace/shared", undefined, "p2")
+
+    expect(openedProjects).toEqual(["/workspace/shared"])
+    expect(sessions).toEqual([{ directory: "/workspace/shared", sessionId: "new", title: "New Session" }])
+    expect(navs.map((item) => item.path)).toEqual([workspaceSessionRoute("p2")])
+  })
+
+  test("does not mutate layout before a workspace route identity exists", async () => {
+    const { props, openedProjects, sessions, navs, nav } = makeProps()
+    props.workspaceRouteId = () => undefined
+
+    await createSessionActions(props, nav).handleNewSession("/workspace/main")
+
+    expect(openedProjects).toEqual([])
+    expect(sessions).toEqual([])
+    expect(navs).toEqual([])
+  })
+
   test("new session inherits focused session model selection into the draft", async () => {
     const { props, nav } = makeProps()
     props.state.meta.get = () => ({

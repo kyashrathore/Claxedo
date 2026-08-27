@@ -57,6 +57,7 @@ type ContentIntent = {
 
 type BaseContentPayload = {
   title?: string
+  workspaceRouteId?: string
   command?: string
   sessionId?: string
   sessionRef?: SessionRef

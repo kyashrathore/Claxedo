@@ -103,6 +103,13 @@ explicitly in its own SPEC block's INVARIANTS section, with a reason.
    something else (`"send"` / `"arrow-undo-down"`) when ready; it is `disabled` when
    gating (missing model/agent, readonly role, readiness polling, etc.) applies. Never
    assert readiness via a fixed `waitForTimeout` sleep — poll the control's actual state.
+6. **Test User has an unsigned-local twin.** Every watched browser flow runs under both
+   `CLAXEDO_E2E_AUTH_MODE=test-user` and `CLAXEDO_E2E_AUTH_MODE=local-unsigned`.
+   The unsigned mode keeps the auth UI mounted but supplies no Clerk key and disables
+   the Playwright webdriver bypass, so it has no synthetic user and makes no external
+   identity-provider request. A behavior whose subject is specifically a signed user
+   must call `stampTestAuth()` explicitly; no spec may depend silently on
+   `navigator.webdriver` to become Test User.
 
 ## The SPEC comment (every spec file, non-negotiable)
 

@@ -3,12 +3,18 @@
 // plane: `@claxedo/local-server` cannot reach Documents, Connections, Channels,
 // WorkGraph, a workspace authority, or cloud provisioning, and its own closure
 // test asserts so.
-import { startLocalServer } from "@claxedo/local-server/self-hosted-execution"
+import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
-import { claxedoServerStartup, watchDesktopParent } from "./claxedo-server-startup"
+import { claxedoServerStartup } from "./claxedo-server-startup"
 import { createDiagnosticsChildTransport } from "./diagnostics-child-transport"
 import { claxedoServerReadyMessage } from "../src/shared/claxedo-server-lifecycle"
 import { recordStartupClock } from "../src/shared/startup-clock-probe"
+import {
+  CLAXEDO_DAEMON_SERVICE,
+  clearClaxedoDaemonDiscovery,
+  writeClaxedoDaemonDiscovery,
+  type ClaxedoDaemonDiscovery,
+} from "../src/main/server-daemon-discovery"
 
 // The V8 compile cache is already enabled and already seeded by the time this
 // module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
@@ -16,12 +22,6 @@ import { recordStartupClock } from "../src/shared/startup-clock-probe"
 // done from here — a graph is compiled before its own bodies run, so a cache
 // switched on in this body would arrive 9.11 MB too late.
 const startup = claxedoServerStartup(process.env)
-
-const terminate = () => process.kill(process.pid, "SIGTERM")
-watchDesktopParent({
-  pid: startup.desktopParentPid,
-  onOrphaned: terminate,
-})
 const parent = diagnosticsParent()
 const binding = diagnosticsBinding(process.env, Boolean(parent))
 const transport = binding && parent
@@ -29,19 +29,62 @@ const transport = binding && parent
   : undefined
 parent?.listen((message) => void transport?.onMessage(message))
 
+let requestIdleStop = () => {}
+const lifecycle = createLocalDaemonLifecycle({
+  onIdle: () => requestIdleStop(),
+  ...positiveDuration("CLAXEDO_DAEMON_LEASE_TTL_MS", "leaseTtlMs"),
+  ...positiveDuration("CLAXEDO_DAEMON_IDLE_GRACE_MS", "idleGraceMs"),
+  ...positiveDuration("CLAXEDO_DAEMON_POLL_INTERVAL_MS", "pollIntervalMs"),
+})
 const server = startLocalServer({
   port: startup.port,
+  daemon: {
+    identity: {
+      token: startup.daemonToken,
+      protocol: startup.daemonProtocol,
+      generation: startup.daemonGeneration,
+      pid: process.pid,
+    },
+    lifecycle,
+  },
   ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
   opencodePassword: startup.opencodePassword,
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })
+const discovery: ClaxedoDaemonDiscovery = {
+  service: CLAXEDO_DAEMON_SERVICE,
+  protocol: startup.daemonProtocol,
+  generation: startup.daemonGeneration,
+  token: startup.daemonToken,
+  pid: process.pid,
+  port: startup.port,
+  startedAt: new Date().toISOString(),
+}
+const clearDiscovery = () => clearClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, discovery)
+process.once("exit", clearDiscovery)
+
+let stopping = false
+const stop = () => {
+  if (stopping) return
+  stopping = true
+  void server.stop().finally(() => {
+    clearDiscovery()
+    process.exit(0)
+  })
+}
+requestIdleStop = stop
+process.once("SIGTERM", stop)
+process.once("SIGINT", stop)
+
 void server.ready.then(() => {
+  writeClaxedoDaemonDiscovery(startup.daemonDiscoveryPath, discovery)
   // The IPC send goes FIRST and unconditionally: the probe below is a
   // diagnostic, and a diagnostic that can delay the message main waits on to
   // publish the server URL would be measuring a cost it created.
   parent?.send(claxedoServerReadyMessage(startup.port))
   recordStartupClock("server-listening", { port: startup.port })
+  lifecycle.start()
 })
 
 // Bundle evaluation creates a large temporary object graph. The long-lived
@@ -54,8 +97,28 @@ setTimeout(() => {
 
 function diagnosticsParent() {
   if (typeof process.send === "function") {
+    let connected = process.connected
+    process.once("disconnect", () => {
+      connected = false
+    })
     return {
-      send: (message: Parameters<NonNullable<typeof process.send>>[0]) => process.send?.(message),
+      send: (message: Parameters<NonNullable<typeof process.send>>[0]) => {
+        if (!connected || !process.connected || typeof process.send !== "function") return
+        try {
+          // Supplying a callback keeps a close racing this send from becoming
+          // an unhandled process-level error. Diagnostics are optional once
+          // Electron has released the daemon; PTYs and harnesses are not.
+          process.send(message, undefined, undefined, (error) => {
+            if (error && "code" in error && error.code === "ERR_IPC_CHANNEL_CLOSED") connected = false
+          })
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "ERR_IPC_CHANNEL_CLOSED") {
+            connected = false
+            return
+          }
+          throw error
+        }
+      },
       listen: (listener: (message: unknown) => void) => process.on("message", listener),
     }
   }
@@ -71,4 +134,12 @@ function diagnosticsBinding(env: NodeJS.ProcessEnv, connected: boolean): Diagnos
   const generation = env.CLAXEDO_DIAGNOSTICS_GENERATION?.trim()
   if (!connected || !launchId || !generation) return
   return { pid: process.pid, launchId, generation }
+}
+
+function positiveDuration<Key extends "leaseTtlMs" | "idleGraceMs" | "pollIntervalMs">(
+  envKey: string,
+  key: Key,
+): Partial<Record<Key, number>> {
+  const value = Number(process.env[envKey])
+  return Number.isFinite(value) && value > 0 ? { [key]: Math.floor(value) } as Partial<Record<Key, number>> : {}
 }

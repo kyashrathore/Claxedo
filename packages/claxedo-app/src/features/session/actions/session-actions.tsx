@@ -30,6 +30,7 @@ import { cloneLocalSelectionState, getLocalSelectionHandoff, localDraftSelection
 import { sessionConfigSelectionQueryKey } from "../store/session-config-selection"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
 
 const directorySessionCacheEnsureTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DIRECTORY_SESSION_CACHE_ENSURE_DELAY_MS = 8_000
@@ -203,7 +204,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     setTimeout(() => replaceSessionUrl(sessionId), 120)
   }
 
-  const handleNewSession = async (workspaceDir?: string) => {
+  const handleNewSession = async (workspaceDir?: string, _paneId?: string, selectedRouteId?: string) => {
     props.flowLog("new session click", {
       workspaceDir: workspaceDir ?? null,
       routeDir: props.activeDirectory(),
@@ -214,36 +215,38 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     if (!workspaceDir) {
       const providerDirectory = props.activeDirectory() ?? props.projects()[0]?.worktree
       if (!providerDirectory) return
+      const routeId = props.workspaceRouteId(providerDirectory)
+      if (!routeId) return
       props.layout.projects.open(providerDirectory)
       const project = findProjectForWorkspace(props.projects, providerDirectory)
       if (project) props.state.workspace.recordAccess(project.id, providerDirectory)
       setFocusedWorkspace(providerDirectory)
       seedDraftSelection(providerDirectory)
       props.state.layout.openSession(providerDirectory, "new", "New Session")
-      const routeId = props.workspaceRouteId(providerDirectory)
-      if (!routeId) return
       nav(workspaceSessionRoute(routeId), "new-session", {
         workspaceDir: providerDirectory,
       })
       return
     }
 
-    props.layout.projects.open(workspaceDir)
-
     if (recoverMissingWorkspace(props, workspaceDir, (created, project) => {
+      const routeId = resolveWorkspaceRouteId([project], created)
+      if (!routeId) return
       ensureDirectorySessionCache(created)
       props.state.workspace.recordAccess(project.id, created)
       setFocusedWorkspace(created)
       seedDraftSelection(created)
       props.state.layout.openSession(created, "new", "New Session")
-      const routeId = props.workspaceRouteId(created)
-      if (!routeId) return
       nav(workspaceSessionRoute(routeId), "new-session:recovered-workspace", {
         projectId: project.id,
         workspaceDir,
         created,
       })
     })) return
+
+    const routeId = selectedRouteId ?? props.workspaceRouteId(workspaceDir)
+    if (!routeId) return
+    props.layout.projects.open(workspaceDir)
 
     const wsInfo = findWorkspaceForDirectory(props.projects, workspaceDir)
     if (wsInfo?.isCloud) {
@@ -255,8 +258,6 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     setFocusedWorkspace(workspaceDir)
     seedDraftSelection(workspaceDir)
     props.state.layout.openSession(workspaceDir, "new", "New Session")
-    const routeId = props.workspaceRouteId(workspaceDir)
-    if (!routeId) return
     nav(workspaceSessionRoute(routeId), wsInfo?.isCloud ? "new-session:cloud" : "new-session", {
       workspaceDir,
     })

@@ -147,7 +147,6 @@ const api: ElectronAPI = {
   },
   parseMarkdown: (source) => ipcRenderer.invoke("parse-markdown", source),
   renderMermaid: (source, theme) => ipcRenderer.invoke("render-mermaid", source, theme),
-  killSidecar: () => ipcRenderer.invoke("kill-sidecar"),
   awaitInitialization: (onStep) => {
     const handler = (_: unknown, step: InitStep) => onStep(step)
     ipcRenderer.on("init-step", handler)

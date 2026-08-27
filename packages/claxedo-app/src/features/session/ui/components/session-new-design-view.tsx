@@ -39,14 +39,19 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import type { NewSessionBranchChoice, NewSessionBranchState } from "./session-new-branch-source"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
 export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
 
 type ProjectIconMeta = { url?: string; override?: string; color?: string }
 
-type ProjectInventoryItem = {
-  id?: string
+export type NewSessionProjectSelection = {
+  id?: string | null
   worktree: string
+  workspaces?: Record<string, Pick<ProjectWorkspace, "id" | "workspaceId" | "directory">>
+}
+
+type ProjectInventoryItem = NewSessionProjectSelection & {
   name?: string
   icon?: ProjectIconMeta
   sandboxes?: string[]
@@ -75,7 +80,7 @@ export function NewSessionDesignView(props: {
   branches?: readonly NewSessionBranchChoice[]
   branchState?: NewSessionBranchState["status"]
   onBranchChange?: (value: string) => void
-  onProjectChange?: (directory: string) => void
+  onProjectChange?: (directory: string, project: NewSessionProjectSelection) => void
   /**
    * Upstream's project menu ends in an "Add project" footer action. Adding a
    * project needs the directory-picker dialog plus the `ensureLocalProject`
@@ -241,12 +246,18 @@ export function NewSessionDesignView(props: {
     if (!directory) return
     if (directory === projectRoot()) return
     if (props.onProjectChange) {
-      props.onProjectChange(directory)
+      const project = findProjectForDirectory(inventoryProjects(), [directory])
+      if (!project) return
+      props.onProjectChange(directory, project)
       return
     }
+    const project = findProjectForDirectory(inventoryProjects(), [directory])
+    if (!project) return
+    const workspaceId = workspaceRouteId([project], directory)
+    if (!workspaceId) return
     layout.projects.open(directory)
     server.projects.touch(directory)
-    navigate(workspaceSessionRoute(directory))
+    navigate(workspaceSessionRoute(workspaceId))
   }
 
   // Declared after `openProject` on purpose: createMemo computes eagerly, so a

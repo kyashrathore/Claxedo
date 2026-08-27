@@ -100,6 +100,7 @@ import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import { fastSessionSwitchAnyQuietDelay, markFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import {
   appendSessionListPageQueryData,
   sessionListQueryOptions,
@@ -198,8 +199,8 @@ export type RailSidebarProps = {
   headerSubtitle?: string
   onWorkspaceSelect?: (project: ProjectItem, workspaceDir: string) => void
   onSessionSelect?: (workspaceDir: string, sessionId: string) => void
-  onNewSession?: (workspaceDir: string) => void
-  onNewTerminal?: (workspaceDir: string, command?: string, title?: string) => void
+  onNewSession?: (workspaceDir: string, workspaceRouteId?: string) => void
+  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, workspaceRouteId?: string) => void
   onNewProject?: () => void
   onRemoveProject?: (project: ProjectItem) => void
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
@@ -1530,13 +1531,14 @@ export function RailSidebar(props: RailSidebarProps) {
     scope: "project" | "workspace"
   }) => {
     const [sharing, setSharing] = createSignal(false)
+    const selectedRouteId = () => workspaceRouteId([input.project], input.workspaceDir)
     const createTerminal = (command?: string, title?: string) => {
-      props.onNewTerminal?.(input.workspaceDir, command, title)
+      props.onNewTerminal?.(input.workspaceDir, command, title, selectedRouteId())
     }
     // Opened directly rather than through `onNewTerminal`: the creator is a
     // surface, not a pty, so it needs none of that action's pty plumbing.
     const openTerminalCreator = () => {
-      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal")
+      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal", { workspaceRouteId: selectedRouteId() })
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
     const shareTarget = createMemo(() => localWorkspaceShareTarget({
@@ -1607,7 +1609,7 @@ export function RailSidebar(props: RailSidebarProps) {
               aria-label={`New session in ${input.label}`}
               onClick={(e) => {
                 e.stopPropagation()
-                props.onNewSession?.(input.workspaceDir)
+                props.onNewSession?.(input.workspaceDir, selectedRouteId())
               }}
             >
               <Icon name="plus-small" size="small" />

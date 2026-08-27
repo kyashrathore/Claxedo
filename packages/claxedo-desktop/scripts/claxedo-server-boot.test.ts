@@ -41,7 +41,6 @@ test("a missing local-server bundle stops the boot, naming the artifact", async 
       ...Bun.env,
       ELECTRON_RUN_AS_NODE: "1",
       CLAXEDO_CHILD_PORT: String(port),
-      CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -112,6 +111,8 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
   const port = await freePort()
   const launchId = "server-boot-test"
   const generation = "server-boot-generation"
+  const daemonToken = "server-boot-daemon-token"
+  const daemonDiscoveryPath = path.join(root, "data", "local-daemon.json")
   const child = fork(SERVER_BUNDLE, [], {
     ...claxedoServerForkOptions({
       ...Object.fromEntries(
@@ -120,7 +121,10 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
       // Hermetic HOME: no user config, credentials, or caches leak in.
       HOME: root,
       CLAXEDO_CHILD_PORT: String(port),
-      CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
+      CLAXEDO_DAEMON_PROTOCOL: "1",
+      CLAXEDO_DAEMON_TOKEN: daemonToken,
+      CLAXEDO_DAEMON_GENERATION: generation,
+      CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscoveryPath,
       // First launch hands the server a profile path that does not exist yet.
       CLAXEDO_DATA_DIR: path.join(root, "data"),
       CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
@@ -143,6 +147,24 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
     const base = `http://127.0.0.1:${port}`
     await waitForHealth(base, child, () => stderr)
     expect(child.connected).toBe(true)
+    expect(JSON.parse(fs.readFileSync(daemonDiscoveryPath, "utf8"))).toMatchObject({
+      service: "claxedo-local-daemon",
+      protocol: 1,
+      generation,
+      token: daemonToken,
+      pid: child.pid,
+      port,
+    })
+    const daemonIdentity = await fetch(`${base}/api/claxedo/daemon`, {
+      headers: { authorization: `Bearer ${daemonToken}` },
+    })
+    expect(daemonIdentity.status).toBe(200)
+    expect(await daemonIdentity.json()).toEqual({
+      service: "claxedo-local-daemon",
+      protocol: 1,
+      generation,
+      pid: child.pid,
+    })
 
     // Mirror the app's open-workspace flow: registering the workspace first is
     // what makes engine-backed session routes answer for that directory.
@@ -167,7 +189,7 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
     const createPty = await fetch(`${base}/api/wr/pty?directory=${directory}`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ title: "ipc-smoke", initialCommand: "printf ipc-smoke" }),
+      body: JSON.stringify({ title: "daemon-survival", initialCommand: "printf 'daemon-before-restart\\n'" }),
     })
     expect(createPty.status).toBe(200)
     const pty = await createPty.json() as { id: string }
@@ -195,14 +217,88 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
         "requestId" in message && message.requestId === "boot-test-stale-operation"
     })).toMatchObject({ result: "owner-unavailable" })
 
-    expect((await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`, {
+    // Electron releases its IPC ownership immediately after startup and may
+    // then exit for an app restart or update. The daemon must retain the exact
+    // PTY and accept a fresh transport connection from the replacement app.
+    child.disconnect()
+    child.unref()
+    expect(child.connected).toBe(false)
+    await Bun.sleep(250)
+    expect((await fetch(`${base}/api/claxedo/health`)).status).toBe(200)
+    expect((await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`)).status).toBe(200)
+
+    const socket = openPtySocket(
+      `ws://127.0.0.1:${port}/api/wr/pty/${encodeURIComponent(pty.id)}/connect?directory=${directory}`,
+    )
+    await socket.opened
+    expect(await socket.waitForText("daemon-before-restart")).toContain("daemon-before-restart")
+    socket.ws.send("printf 'daemon-after-restart\\n'\r")
+    expect(await socket.waitForText("daemon-after-restart")).toContain("daemon-after-restart")
+    socket.ws.close()
+    await Bun.sleep(100)
+    if (child.exitCode !== null || child.signalCode !== null) {
+      throw new Error(`claxedo-server exited after replacement client disconnected:\n${stderr.slice(-4000)}`)
+    }
+
+    const removePty = await fetch(`${base}/api/wr/pty/${encodeURIComponent(pty.id)}?directory=${directory}`, {
       method: "DELETE",
-    })).status).toBe(200)
+    }).catch((error) => {
+      throw new Error(`claxedo-server stopped answering after reconnect: ${String(error)}\n${stderr.slice(-4000)}`)
+    })
+    expect(removePty.status).toBe(200)
   } finally {
     child.kill()
     expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
   }
 }, 90_000)
+
+test("a quiescent daemon exits after its bounded idle grace", async () => {
+  if (!fs.existsSync(SERVER_BUNDLE) || !fs.existsSync(ENGINE_ARTIFACT)) {
+    console.warn("[skip] server artifacts missing — run `bun run predev` first")
+    return
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-idle-daemon-test-"))
+  const port = await freePort()
+  const discoveryPath = path.join(root, "data", "local-daemon.json")
+  const child = fork(SERVER_BUNDLE, [], {
+    ...claxedoServerForkOptions({
+      ...Object.fromEntries(
+        Object.entries(Bun.env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+      ),
+      HOME: root,
+      CLAXEDO_CHILD_PORT: String(port),
+      CLAXEDO_DAEMON_PROTOCOL: "1",
+      CLAXEDO_DAEMON_TOKEN: "idle-daemon-token",
+      CLAXEDO_DAEMON_GENERATION: "idle-daemon-generation",
+      CLAXEDO_DAEMON_DISCOVERY_PATH: discoveryPath,
+      CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
+      CLAXEDO_DAEMON_POLL_INTERVAL_MS: "5",
+      CLAXEDO_DATA_DIR: path.join(root, "data"),
+      CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
+    }),
+    execPath: require("electron"),
+    stdio: ["ignore", "ignore", "pipe", "ipc"],
+  })
+  const messages: unknown[] = []
+  child.on("message", (message) => messages.push(message))
+  let stderr = ""
+  child.stderr?.setEncoding("utf8")
+  child.stderr?.on("data", (chunk) => { stderr += String(chunk) })
+  const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
+  try {
+    await waitForMessage(messages, (message) =>
+      !!message && typeof message === "object" && "type" in message && message.type === "claxedo-server-ready")
+    expect(fs.existsSync(discoveryPath)).toBe(true)
+    expect(await Promise.race([exited.then(() => true), Bun.sleep(5_000).then(() => false)])).toBe(true)
+    expect(child.exitCode).toBe(0)
+    expect(fs.existsSync(discoveryPath)).toBe(false)
+  } catch (error) {
+    throw new Error(`${String(error)}\n${stderr.slice(-4000)}`)
+  } finally {
+    if (child.exitCode === null && child.signalCode === null) child.kill()
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+}, 30_000)
 
 async function freePort() {
   const server = net.createServer()
@@ -235,4 +331,35 @@ async function waitForMessage(messages: unknown[], match: (message: unknown) => 
     await Bun.sleep(25)
   }
   throw new Error("claxedo-server IPC message did not arrive in time")
+}
+
+function openPtySocket(url: string) {
+  const ws = new WebSocket(url)
+  let text = ""
+  const opened = new Promise<void>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("PTY WebSocket did not open in time")), 5_000)
+    ws.addEventListener("open", () => {
+      clearTimeout(timeout)
+      resolve()
+    }, { once: true })
+    ws.addEventListener("error", () => {
+      clearTimeout(timeout)
+      reject(new Error("PTY WebSocket failed to open"))
+    }, { once: true })
+  })
+  ws.addEventListener("message", (event) => {
+    if (typeof event.data === "string") text += event.data
+  })
+  return {
+    ws,
+    opened,
+    async waitForText(expected: string) {
+      const deadline = Date.now() + 5_000
+      while (Date.now() < deadline) {
+        if (text.includes(expected)) return text
+        await Bun.sleep(25)
+      }
+      throw new Error(`PTY WebSocket did not receive ${expected}; output=${JSON.stringify(text)}`)
+    },
+  }
 }

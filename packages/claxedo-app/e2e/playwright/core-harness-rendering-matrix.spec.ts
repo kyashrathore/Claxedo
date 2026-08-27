@@ -573,7 +573,7 @@ async function primeHarness(
     // `big-pickle` placeholder model is resolved, which lets the legacy
     // `/<b64dir>/session` -> `/w/<workspaceId>` redirect win the race so the create
     // POST never targets the draft directory and the mocked session is never created
-    // (the URL then settles on the workspace-root `/w/<dir>` with no session pane).
+    // (the URL then settles on the workspace-root `/w/<workspaceId>` with no session pane).
     // Every other harness already defaults to a concrete model, so this only affects
     // opencode. Matches the canonical send-flow convention in
     // `core-first-prompt-local.spec.ts`.

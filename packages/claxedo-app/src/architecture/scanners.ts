@@ -163,8 +163,8 @@ export function oscColorEscapesOutsideResponder(files: SourceFile[]): Finding[] 
  * Writing the document URL only round-trips on an http(s) page.
  *
  * The packaged desktop renderer is a `file://` document routed by
- * `MemoryRouter`, so a pushed/replaced path becomes `file:///w/<dir>/<session>`
- * — an unloadable path. The next reload asks Chromium to load it as a file,
+ * `MemoryRouter`, so a pushed/replaced app route becomes an unloadable `file:///w/...`
+ * location. The next reload asks Chromium to load it as a file,
  * fails with `net::ERR_FAILED`, and strands the user on a blank
  * `chrome-error://chromewebdata/` window that only a relaunch recovers.
  *

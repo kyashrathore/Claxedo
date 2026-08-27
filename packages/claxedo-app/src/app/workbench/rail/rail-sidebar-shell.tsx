@@ -19,15 +19,15 @@ export type RailSidebarShellProps = {
   homedir?: string
   mobileSidebarOpen: Accessor<boolean>
   openMobileSidebar: () => void
-  onArchiveSession?: (session: SessionItem) => boolean | Promise<boolean>
+  onArchiveSession?: (session: SessionItem, nextSessionId?: string) => boolean | Promise<boolean>
   onDeleteSession?: (session: SessionItem) => void
   onDeleteWorkspace?: (workspace: WorkspaceItem) => void
   onDiagnostics?: () => void
   onHelp?: () => void
   onNewPage?: () => void
   onNewProject?: () => void
-  onNewSession?: (workspaceDir?: string, paneId?: string) => void
-  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
+  onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
+  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
   onOpenMarketplace?: () => void
   onOpenWorkGraph?: () => void
   onRailCancelCollapse: () => void
@@ -192,12 +192,12 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
               // drawer — re-invoking the parent handler would double-navigate.
               props.closeMobileSidebar()
             }}
-            onNewSession={(workspaceDir) => {
-              props.onNewSession?.(workspaceDir)
+            onNewSession={(workspaceDir, workspaceRouteId) => {
+              props.onNewSession?.(workspaceDir, undefined, workspaceRouteId)
               props.closeMobileSidebar()
             }}
-            onNewTerminal={(workspaceDir, command, title) => {
-              props.onNewTerminal?.(workspaceDir, command, title)
+            onNewTerminal={(workspaceDir, command, title, workspaceRouteId) => {
+              props.onNewTerminal?.(workspaceDir, command, title, undefined, workspaceRouteId)
               props.closeMobileSidebar()
             }}
             onDeleteSession={props.onDeleteSession}

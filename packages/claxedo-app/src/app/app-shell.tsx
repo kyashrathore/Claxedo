@@ -89,6 +89,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const { handleTabClose } = useAppShellRouteSync({
     activeSurface: shell.activeSurface,
     activeDirectory: shell.activeDirectory,
+    projects: shell.projects,
     findSurface: shell.state.meta.find,
     navigate,
     params,

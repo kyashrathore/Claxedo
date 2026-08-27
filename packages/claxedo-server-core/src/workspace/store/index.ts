@@ -350,7 +350,7 @@ export async function ensureWorkspace(input: {
     ? trim(input.remote_directory) || trim(input.directory) || "/workspace"
     : directoryKey(input.directory)
   if (kind !== "cloud" && isRejectedDir(directory)) return undefined
-  const hit = requestedId && byId.has(requestedId)
+  let hit = requestedId && byId.has(requestedId)
     ? requestedId
     : kind === "cloud"
       ? undefined
@@ -372,6 +372,11 @@ export async function ensureWorkspace(input: {
     info.repo_name = trim(path.basename(input.repo_url.replace(/\/+$/, "")).replace(/\.git$/, ""))
     info.git_remote = trim(input.repo_url)
   }
+  // Git discovery above is asynchronous. Two first-touch requests for the same
+  // local directory can both observe a miss before either finishes discovery;
+  // re-read the authoritative directory index before creating so the second
+  // request adopts the workspace the first one installed.
+  if (!hit && kind !== "cloud") hit = byDir.get(directory)
   const now = Date.now()
   if (hit) {
     const ws = byId.get(hit)!

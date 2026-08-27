@@ -1,5 +1,7 @@
 import { getFilename } from "@/lib/path"
 
+export { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
+
 export type WorkspaceDisplayProject = {
   id: string
   name?: string | null
@@ -35,34 +37,6 @@ function projectWorkspace(project: WorkspaceDisplayProject, directory: string) {
       workspace.id === directory ||
       workspace.workspaceId === directory
     )
-}
-
-// The `workspaces` map is keyed inconsistently: sometimes by workspace id,
-// sometimes by the workspace's own directory (user-hosted records especially).
-// A key that equals the record's own `directory` is therefore a directory, not
-// an id, and must never be reported as one: `/w/:workspaceId` would render
-// `/w/%2Fprivate%2Ftmp%2F...`, leaking the host's path layout into a shareable
-// URL, and the app-shell canonicalizer would compare that path against itself,
-// conclude the URL was already canonical, and never rewrite it.
-//
-// This is a STRUCTURAL comparison rather than a filesystem-path sniff on
-// purpose — the shape predicates are pinned debt (`architecture/debt-ratchet`),
-// and comparing the key against the record's resolved directory is both cheaper
-// and correct for non-path directory keys too. Note the key IS the directory
-// when `directory` is absent, which is exactly the id-less user-hosted case.
-export function workspaceRouteIdentity(projects: WorkspaceDisplayProject[], routeKey: string | undefined) {
-  if (!routeKey) return
-  return projects
-    .flatMap((project) => Object.entries(project.workspaces ?? {}))
-    .map(([key, workspace]) => {
-      const resolved = workspace.directory ?? key
-      const explicit = workspace.id ?? workspace.workspaceId
-      return {
-        routeId: explicit ?? (key === resolved ? undefined : key),
-        directory: resolved,
-      }
-    })
-    .find((workspace) => routeKey === workspace.routeId || routeKey === workspace.directory)
 }
 
 export function workspaceIsCloud(

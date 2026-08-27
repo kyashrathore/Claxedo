@@ -2,8 +2,8 @@ export function createRailHeaderActions(input: {
   focusedPaneWorkspaceDir: (paneId: string | undefined) => string | undefined
   focusedSplitPaneId: () => string | undefined
   focusedSurfaceWorkspaceToolsBlocked: () => boolean
-  onNewSession?: (workspaceDir?: string, paneId?: string) => void
-  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string) => void
+  onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
+  onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
   /**
    * Open the terminal creator instead of a pty. The header's directory is
    * `sidebarDir() ?? focusedPaneWorkspaceDir(paneId)` — a fallback chain, not a

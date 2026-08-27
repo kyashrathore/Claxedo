@@ -1,14 +1,17 @@
 import { chromium, type BrowserContext, type Page } from "playwright-core"
 import path from "node:path"
+import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
-const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..")
 const RESULT_DIR = path.resolve(
   Bun.env.CLAXEDO_APP_SHELL_MOTION_DIR ?? path.join(PACKAGE_DIR, "test-results/workspace-panel-motion"),
 )
 const RAW_VIDEO_DIR = path.join(Bun.env.TMPDIR ?? "/tmp", `claxedo-app-shell-motion-raw-${Date.now()}`)
-const baseURL = Bun.env.CLAXEDO_APP_SHELL_MOTION_URL ??
-  `http://localhost:4445/w/${encodeURIComponent(REPO_ROOT)}/session`
+const baseURL = workspaceCaptureUrl({
+  override: Bun.env.CLAXEDO_APP_SHELL_MOTION_URL,
+  workspaceId: Bun.env.CLAXEDO_WORKSPACE_ID,
+  origin: "http://localhost:4445",
+})
 const viewport = { width: 1280, height: 800 }
 const frameBudgetMs = 8.33
 const longFrameBudgetMs = 16.67

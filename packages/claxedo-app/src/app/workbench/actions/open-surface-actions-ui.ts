@@ -2,7 +2,7 @@ import { routeMatchesSurface, surfaceRoute } from "../state/surface-route"
 import { realDirectory, type ContentMeta } from "../state/index"
 import type { ActionProps, Nav } from "./shared"
 
-type OpenSurfaceActionProps = Pick<ActionProps, "params" | "routeDirectory" | "activeDirectory" | "flowLog"> & {
+type OpenSurfaceActionProps = Pick<ActionProps, "params" | "routeDirectory" | "activeDirectory" | "flowLog" | "workspaceRouteId"> & {
   state: {
     wb: {
       state: {
@@ -38,13 +38,15 @@ export function createOpenSurfaceActions(props: OpenSurfaceActionProps, nav: Nav
         ? realDirectory(tab.directory) ?? props.activeDirectory()
         : tab.directory
     if (!workspaceDir) return
+    const workspaceId = props.workspaceRouteId(workspaceDir)
 
-    const route = surfaceRoute(workspaceDir, tab)
+    const route = surfaceRoute(workspaceId, tab)
     if (!route) return
-    if (routeMatchesSurface(props.params, workspaceDir, tab, props.routeDirectory())) return
+    const currentRouteId = props.routeDirectory() ? props.workspaceRouteId(props.routeDirectory()!) : undefined
+    if (workspaceId && routeMatchesSurface(props.params, workspaceId, tab, currentRouteId)) return
 
     const syncRoute = () => {
-      if (routeMatchesSurface(props.params, workspaceDir, tab, props.routeDirectory())) return
+      if (workspaceId && routeMatchesSurface(props.params, workspaceId, tab, currentRouteId)) return
       nav(route, "tab-select", {
         surfaceId: tab.id,
         tabType: tab.type,

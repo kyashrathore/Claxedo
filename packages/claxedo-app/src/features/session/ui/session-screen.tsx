@@ -53,6 +53,7 @@ import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { placementFor } from "@/platform/runtime/placement"
 import { parseShellRoute, sessionRoute, shellRouteDirectory, workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import { sessionViewKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -261,14 +262,9 @@ export default function SessionPage() {
     }),
   )
   const replayWorkspaceId = createMemo(() => inventorySession()?.workspaceId ?? signedWorkspaceId() ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id)
-  // The split "New Session" pane resolves `ws()` from activeProject(), which
-  // often does NOT contain the workspace — leaving kind undefined. The fallback
-  // `sessionWorkspaceRuntimeRef` then HARDCODES kind:"cloud", so a user-hosted
-  // workspace wrongly enters the cloud sandbox-acquisition flow in the second
-  // pane ("Acquiring sandbox / Queueing sandbox") while the route pane correctly
-  // shows the user-hosted "Checking runtime health" flow. Resolve the real
-  // access kind from the full signed inventory (projects()), which carries it,
-  // so every pane agrees on cloud vs user-hosted.
+  const routeIdForDirectory = (value: string) => (sameDirectory(value, dir()) ? routeSessionWorkspaceId() : undefined) ?? workspaceRouteId(projects(), value)
+  // Split drafts can lack `ws()` metadata. Resolve the transport kind from the
+  // full signed inventory so every pane agrees on cloud versus user-hosted.
   const resolvedWorkspaceKind = createMemo<"cloud" | "user-hosted" | undefined>(() => {
     const inventoryKind = inventorySession()?.environment?.kind
     if (inventoryKind === "cloud" || inventoryKind === "user-hosted") return inventoryKind
@@ -367,21 +363,14 @@ export default function SessionPage() {
     setGate("err", undefined)
   })
 
-  // Cloud: group-aware navigation helper.
-  //
-  // In-pane retargets (openSession) keep the pane mounted, but the reverse
-  // surface→URL sync refuses to touch session/workspace-kind routes, so a switch
-  // into a DIFFERENT workspace/directory would leave the URL pinned to the prior
-  // workspace (a reload would then restore the wrong surface). Sync the URL to the
-  // target ONLY when its directory differs from the current URL — a replace nav
-  // that route-intent resolves back onto the already-open pane, never a remount.
+  // In-pane retargets stay mounted, so explicitly sync cross-workspace URLs;
+  // route-intent resolves the replace navigation back onto the existing pane.
   const syncGroupNavigateUrl = (path: string) => {
     if (window.__NOSYNC__) return
     const sync = groupNavigateUrlSync({ targetPath: path, currentPathname: paneLocation().pathname })
     if (sync) navigate(sync, { replace: true })
   }
 
-  // Cloud: group-aware navigation helper
   const groupNavigate = (path: string) => {
     const gid = sessionParams.paneId() ?? paneId
     const current = sessionParams.directory()
@@ -424,7 +413,8 @@ export default function SessionPage() {
       groupNavigate(sessionRoute(id))
       return
     }
-    groupNavigate(workspaceSessionRoute(directory))
+    const workspaceId = routeIdForDirectory(directory)
+    if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId))
   }
 
   const sessionController = createSessionController({
@@ -628,7 +618,10 @@ export default function SessionPage() {
           groupNavigate(sessionRoute(nav.sessionID))
           return
         }
-        if (nav.kind === "root") groupNavigate(workspaceSessionRoute(dir()))
+        if (nav.kind === "root") {
+          const workspaceId = routeIdForDirectory(dir())
+          if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId))
+        }
       })
       .catch((err) => {
         showToast({
@@ -771,16 +764,15 @@ export default function SessionPage() {
       setStore("newSessionWorktree", value)
       return
     }
-
     setStore("newSessionWorktree", "main")
-
     const target = value === "main" ? activeProject()?.worktree : value
     if (!target) return
     if (target === dir()) return
+    const workspaceId = routeIdForDirectory(target)
+    if (!workspaceId) return
     layout.projects.open(target)
-    groupNavigate(workspaceSessionRoute(target))
+    groupNavigate(workspaceSessionRoute(workspaceId))
   }
-
   let inputRef!: HTMLDivElement
   let promptDock: HTMLDivElement | undefined
   let scroller: HTMLDivElement | undefined
@@ -950,6 +942,7 @@ export default function SessionPage() {
     scheduleInitialCommands: scheduleSessionCommandsAfterFirstPaint,
     sessionId: sessionID,
     directory: dir,
+    workspaceRouteId: routeIdForDirectory,
     activeMessage,
     showAllFiles,
     navigateMessageByOffset,
@@ -1321,6 +1314,7 @@ export default function SessionPage() {
                         actions={actions()}
                         title={resolvedTitle}
                         directorySessions={directorySessions}
+                        workspaceId={routeIdForDirectory(dir())}
                         sessionRef={activeSessionRef()}
                         parentID={info()?.parentID}
                         onNavigateParent={navigateParent}
@@ -1382,10 +1376,12 @@ export default function SessionPage() {
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
                   signedControlPlane={signedControlPlane()}
-                  onProjectChange={(target: string) => {
+                  onProjectChange={(target, project) => {
                     if (target === dir()) return
+                    const workspaceId = workspaceRouteId([project], target)
+                    if (!workspaceId) return
                     layout.projects.open(target)
-                    groupNavigate(workspaceSessionRoute(target))
+                    groupNavigate(workspaceSessionRoute(workspaceId))
                   }}
                 >
                   <PromptInput

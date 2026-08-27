@@ -4,6 +4,23 @@ const port = Number(process.env.PLAYWRIGHT_PORT ?? 4455)
 process.env.PLAYWRIGHT_PORT ??= String(port)
 const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`
 const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
+// Browser specs run in two explicit identity modes. `test-user` preserves the
+// historical webdriver-authenticated lane. `local-unsigned` is the real
+// loopback/no-user composition: auth surfaces stay mounted, but there is no
+// Clerk key and both the webdriver and stored test-auth bypasses are disabled.
+// Keeping this at the Vite process boundary makes every spec in a run exercise
+// the same app composition; individual specs cannot accidentally drift back to
+// Test User because of Playwright's `navigator.webdriver` value.
+const authModes = ["test-user", "local-unsigned"] as const
+type AuthMode = (typeof authModes)[number]
+const authMode = process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user"
+if (!authModes.includes(authMode as AuthMode)) {
+  throw new Error(`CLAXEDO_E2E_AUTH_MODE="${authMode}" is not known. Known modes: ${authModes.join(", ")}.`)
+}
+const authViteEnv =
+  authMode === "local-unsigned"
+    ? "VITE_AUTH_ENABLED=true VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS=1 VITE_CLERK_PUBLISHABLE_KEY= "
+    : "VITE_AUTH_ENABLED=true VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS=0 "
 // SUITE LANE REGISTRY — the single source of truth for `CLAXEDO_E2E_SUITE`.
 // A spec is only ever executed by a lane whose tag it carries, so a spec with no
 // recognised lane tag runs in NO lane and nobody notices: that is exactly how
@@ -78,7 +95,7 @@ const webServer =
   process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
     ? undefined
     : {
-        command: `${workGraphReal ? `bun --cwd ../workgraph run build && VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}${
+        command: `${workGraphReal ? `bun --cwd ../workgraph run build && ` : ""}${authViteEnv}${workGraphReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}${
           prebuilt
             ? // VITE_CLAXEDO_E2E=1 keeps the e2e-only harness seams (test-auth
               // bypass, /__e2e/* routes, the server-URL override) alive in the

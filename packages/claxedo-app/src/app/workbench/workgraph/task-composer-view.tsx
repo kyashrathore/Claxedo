@@ -2,7 +2,10 @@ import type { OutcomeDto, RunDto, StreamDto, WorkItemDto } from "@claxedo/workgr
 import { Button } from "@opencode-ai/ui/button"
 import { useQuery } from "@tanstack/solid-query"
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
-import { NewSessionDesignView } from "@/features/session/ui/components/session-new-design-view"
+import {
+  NewSessionDesignView,
+  type NewSessionProjectSelection,
+} from "@/features/session/ui/components/session-new-design-view"
 import { MAIN_WORKTREE, type NewSessionWorkspaceKind } from "@/features/session/ui/components/session-new-workspace-options"
 import { createWorkGraphClient } from "@/features/workgraph/api"
 import { appProjectWorkGraphKey } from "@/features/workgraph/project-key"
@@ -13,6 +16,7 @@ import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 
 type ProjectShape = {
+  id?: string
   worktree: string
   name?: string
   git?: { remote?: string | null }
@@ -31,7 +35,11 @@ type ProjectShape = {
 }
 type WorkspaceDirectoryRef = string
 
-export function TaskComposerView(props: { directory?: string; request?: typeof fetch; onRetarget?: (directory: WorkspaceDirectoryRef) => void }) {
+export function TaskComposerView(props: {
+  directory?: string
+  request?: typeof fetch
+  onRetarget?: (directory: WorkspaceDirectoryRef, project: NewSessionProjectSelection) => void
+}) {
   const queryOptions = useShellQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const client = createWorkGraphClient({ request: props.request })
@@ -114,11 +122,23 @@ export function TaskComposerView(props: { directory?: string; request?: typeof f
     snapshotCursor: () => snapshot()?.snapshotCursor,
   })
 
-  const retarget = (next: string) => {
+  const projectForDirectory = (next: string) =>
+    projects().find(
+      (project) =>
+        project.worktree === next ||
+        Object.entries(project.workspaces ?? {}).some(([key, workspace]) =>
+          [key, workspace.id, workspace.workspaceId, workspace.directory, workspace.remote_directory].includes(next),
+        ),
+    )
+  const retarget = (
+    next: string,
+    project: NewSessionProjectSelection | undefined = projectForDirectory(next),
+  ) => {
+    if (!project) return
     setDirectory(next)
     setStreamId("")
     setProfile("")
-    props.onRetarget?.(next)
+    props.onRetarget?.(next, project)
   }
   const selectStream = (stream: StreamDto) => {
     setStreamId(stream.id)

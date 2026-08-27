@@ -2396,6 +2396,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     capabilities() {
       return workspaceCapabilities(enabled)
     },
+    activity() {
+      return {
+        activeTurns: activeTurnCount(),
+        activeWrites: activeCheckpointWrites,
+        checkpointState,
+      }
+    },
     async registerSessionTools(input) {
       const directory = options.target?.directory ?? workspaceDir()
       const harness = normalizeHarnessIdentity(input.harness)

@@ -194,6 +194,7 @@ function make(dir: string) {
     routeDirectory: () => "/workspace/main",
     activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
+    workspaceRouteId: (directory) => directory === dir ? "ws_created" : "p1",
     projects: () => data.project,
     navigate: (path: string) => routes.push(path),
     state: {
@@ -335,7 +336,7 @@ describe("createProjectActions", () => {
     expect(adds).toEqual([{ directory: dir, sessionId: "new", title: "New Session" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute(dir),
+        path: workspaceSessionRoute("ws_created"),
         reason: "new-workspace-created",
         details: {
           projectId: "p1",
@@ -407,7 +408,7 @@ describe("createProjectActions", () => {
     expect(adds).toEqual([{ directory: "workspace:ws_cloud_1", sessionId: "new", title: "New Session" }])
     expect(navs).toEqual([
       {
-        path: workspaceSessionRoute("workspace:ws_cloud_1"),
+        path: workspaceSessionRoute("ws_cloud_1"),
         reason: "new-workspace-created",
         details: {
           projectId: "p1",

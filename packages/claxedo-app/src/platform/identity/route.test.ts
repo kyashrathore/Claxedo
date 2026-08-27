@@ -6,6 +6,7 @@ import {
   marketplaceRoute,
   newTaskRoute,
   parseShellRoute,
+  nonCanonicalWorkspaceRouteRedirect,
   resolveLegacyRedirect,
   sessionRoute,
   shellRouteDirectory,
@@ -25,12 +26,26 @@ describe("shell route identity", () => {
     expect(marketplaceRoute()).toBe("/marketplace")
     expect(newTaskRoute()).toBe("/task/new")
     expect(workspaceRoute("ws_1")).toBe("/w/ws_1")
-    expect(newTaskRoute("/repo/main")).toBe("/w/%2Frepo%2Fmain/task/new")
-    expect(workspaceWorkGraphRoute("/repo/main")).toBe("/w/%2Frepo%2Fmain/workgraph")
-    expect(workspaceSessionRoute("/repo/main")).toBe("/w/%2Frepo%2Fmain/session")
-    expect(workspaceSessionRoute("/repo/main", "ses/with slash")).toBe("/w/%2Frepo%2Fmain/session/ses%2Fwith%20slash")
-    expect(workspacePageRoute("/repo/main", "page/with slash")).toBe("/w/%2Frepo%2Fmain/page/page%2Fwith%20slash")
-    expect(workspaceTerminalRoute("/repo/main", "pty/with slash")).toBe("/w/%2Frepo%2Fmain/terminal/pty%2Fwith%20slash")
+    expect(newTaskRoute("ws_1")).toBe("/w/ws_1/task/new")
+    expect(workspaceWorkGraphRoute("ws_1")).toBe("/w/ws_1/workgraph")
+    expect(workspaceSessionRoute("ws_1")).toBe("/w/ws_1/session")
+    expect(workspaceSessionRoute("ws_1", "ses/with slash")).toBe("/w/ws_1/session/ses%2Fwith%20slash")
+    expect(workspacePageRoute("ws_1", "page/with slash")).toBe("/w/ws_1/page/page%2Fwith%20slash")
+    expect(workspaceTerminalRoute("ws_1", "pty/with slash")).toBe("/w/ws_1/terminal/pty%2Fwith%20slash")
+  })
+
+  test("refuses to construct workspace routes from filesystem directories", () => {
+    for (const directory of [
+      "/private/tmp/workspace",
+      "C:\\Users\\name\\workspace",
+      "%2Fprivate%2Ftmp%2Fworkspace",
+      "%252FUsers%252Fname%252Fworkspace",
+    ]) {
+      expect(() => workspaceRoute(directory)).toThrow("opaque workspace ID")
+      expect(() => workspaceSessionRoute(directory)).toThrow("opaque workspace ID")
+      expect(() => workspacePageRoute(directory, "page_1")).toThrow("opaque workspace ID")
+      expect(() => workspaceTerminalRoute(directory, "pty_1")).toThrow("opaque workspace ID")
+    }
   })
 
   test("keeps legacy directory route keys in the route boundary", () => {
@@ -93,6 +108,35 @@ describe("shell route identity", () => {
       .toBe("/w/ws_local/page/page_1")
     expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/terminal/pty_1"), "ws_local"))
       .toBe("/w/ws_local/terminal/pty_1")
+  })
+
+  test("removes a filesystem directory from a workspace session URL", () => {
+    const reported =
+      "/w/%2Fprivate%2Ftmp%2Fclaxedo-visual-check%2Fworkspaces%2Fworkspace-02/session/ses_f5f6a4e40001P1kqQtnHHMxZfd"
+
+    expect(nonCanonicalWorkspaceRouteRedirect(reported)).toBe(
+      "/s/ses_f5f6a4e40001P1kqQtnHHMxZfd",
+    )
+  })
+
+  test("does not redirect a workspace URL that already contains an opaque id", () => {
+    expect(nonCanonicalWorkspaceRouteRedirect("/w/workspace-02-id/session/ses_1"))
+      .toBeUndefined()
+  })
+
+  test("does not discard non-session or draft workspace routes", () => {
+    const directory = "%2Fprivate%2Ftmp%2Fworkspace"
+    for (const pathname of [
+      `/w/${directory}`,
+      `/w/${directory}/workgraph`,
+      `/w/${directory}/task/new`,
+      `/w/${directory}/session`,
+      `/w/${directory}/session/new`,
+      `/w/${directory}/page/page_1`,
+      `/w/${directory}/terminal/pty_1`,
+    ]) {
+      expect(nonCanonicalWorkspaceRouteRedirect(pathname)).toBeUndefined()
+    }
   })
 
   test("recovers decoded absolute workspace routes", () => {

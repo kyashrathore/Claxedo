@@ -14,6 +14,7 @@ const h = vi.hoisted(() => ({
   fit: vi.fn(),
   navigate: vi.fn(),
   pathname: "/w/%2Frepo/session",
+  sdkWorkspaceId: "ws_terminal" as string | undefined,
   resolveRecovery: vi.fn((_alias: unknown, id: string) => id),
 }))
 
@@ -96,7 +97,7 @@ vi.mock("../../../../app/workbench/state/index", () => ({
 
 vi.mock("@/features/terminal/app-ports", () => ({
   SessionPaneScope: (props: { children: unknown }) => <>{props.children}</>,
-  useSDK: () => ({ workspaceId: undefined }),
+  useSDK: () => ({ get workspaceId() { return h.sdkWorkspaceId } }),
   useClaxedoState: () => ({
     terminal: {
       own: vi.fn(),
@@ -116,7 +117,7 @@ vi.mock("@/features/terminal/app-ports", () => ({
 import { TerminalContent } from "./terminal-content"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 
-function terminalMeta(id: string, title: string) {
+function terminalMeta(id: string, title: string, workspaceRouteId?: string) {
   return {
     id: `content-${id}`,
     type: "terminal",
@@ -128,6 +129,7 @@ function terminalMeta(id: string, title: string) {
       directory: "/repo",
       terminalId: id,
       title,
+      ...(workspaceRouteId ? { workspaceRouteId } : {}),
     },
   } as const
 }
@@ -147,6 +149,7 @@ describe("TerminalContent switching", () => {
     h.fit.mockClear()
     h.navigate.mockClear()
     h.pathname = "/w/%2Frepo/session"
+    h.sdkWorkspaceId = "ws_terminal"
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id)
   })
 
@@ -196,7 +199,7 @@ describe("TerminalContent switching", () => {
 
   test("replaces the route when recovery swaps a real terminal id", async () => {
     h.ptys.splice(0, h.ptys.length, { id: "pty-new", title: "Terminal 1", cwd: "/repo" })
-    h.pathname = workspaceTerminalRoute("/repo", "pty-old")
+    h.pathname = workspaceTerminalRoute("ws_terminal", "pty-old")
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id === "pty-old" ? "pty-new" : id)
 
     render(() => (
@@ -207,6 +210,28 @@ describe("TerminalContent switching", () => {
     ))
 
     await waitFor(() => expect(screen.getByTestId("terminal-pty-new")).toBeTruthy())
-    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("/repo", "pty-new"), { replace: true })
+    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("ws_terminal", "pty-new"), { replace: true })
+  })
+
+  test("replaces a local pending route from the surface workspace identity", async () => {
+    h.ptys.splice(0)
+    h.sdkWorkspaceId = undefined
+    h.pathname = workspaceTerminalRoute("ws_local", "pending-local")
+    h.terminalNew.mockImplementation(async () => {
+      h.ptys.push({ id: "pty-created", title: "Terminal", cwd: "/repo" })
+      return "pty-created"
+    })
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-local", "Terminal", "ws_local")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.navigate).toHaveBeenCalledWith(
+      workspaceTerminalRoute("ws_local", "pty-created"),
+      { replace: true },
+    ))
   })
 })

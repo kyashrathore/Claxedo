@@ -38,8 +38,12 @@ type NewSessionDeepLink = { directory: string; prompt?: string }
 export const collectNewSessionDeepLinks = (urls: string[]) =>
   urls.map(parseNewSessionDeepLink).filter((link): link is NewSessionDeepLink => !!link)
 
-export function newSessionDeepLinkRoute(link: NewSessionDeepLink, routeFor: (value: string) => string) {
-  const route = routeFor(link.directory)
+export function newSessionDeepLinkRoute(
+  link: NewSessionDeepLink,
+  workspaceId: string,
+  routeFor: (workspaceId: string) => string,
+) {
+  const route = routeFor(workspaceId)
   const prompt = link.prompt?.trim()
   if (!prompt) return route
   return `${route}${route.includes("?") ? "&" : "?"}prompt=${encodeURIComponent(prompt)}`
