@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/solid-query"
-import { createEffect, createMemo, createResource, createSignal, on, type Accessor } from "solid-js"
+import { createMemo, createResource, createSignal, type Accessor } from "solid-js"
 import { useSDK } from "@/features/session/app-ports"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -17,13 +17,6 @@ export type NewSessionBranchState =
 type VcsInfo = { branch?: string; default_branch?: string }
 type LoadedBranchRefs = { scope: string; refs: VcsRefs }
 type LoadedBranchData = LoadedBranchRefs & { vcs: VcsInfo }
-
-export function shouldQueueNewSessionBranchRefsRefresh(input: {
-  fetching: boolean
-  previouslyFetching: boolean | undefined
-}) {
-  return !input.fetching && input.previouslyFetching === true
-}
 
 export function settleNewSessionBranchState(data: LoadedBranchData): NewSessionBranchState {
   const choices = data.refs.branchChoices ?? []
@@ -99,10 +92,6 @@ export function createNewSessionBranchSource(input: {
       }),
     })
   }
-  const [snapshot, { refetch }] = createResource(directory, async (value): Promise<LoadedBranchRefs> => ({
-    scope: value,
-    refs: await diff(value).refsRequired(value),
-  }))
   const vcs = useQuery(() => {
     const value = directory() ?? ""
     const workspace = value ? sdk.workspace(value) : undefined
@@ -119,23 +108,18 @@ export function createNewSessionBranchSource(input: {
       enabled: !!value,
     }
   })
-  // VCS freshness is event-owned. Its query is invalidated for HEAD and refs
-  // changes. Queue a refs read after each VCS reconciliation and keep that queue
-  // through an already-running refs request, so values from different event
-  // generations are never combined into one ready snapshot.
-  const [refsRefreshPending, setRefsRefreshPending] = createSignal(false)
-  createEffect(on(() => vcs.isFetching, (fetching, previous) => {
-    if (!shouldQueueNewSessionBranchRefsRefresh({
-      fetching,
-      previouslyFetching: previous,
-    })) return
-    setRefsRefreshPending(true)
-  }))
-  createEffect(() => {
-    if (!directory() || !refsRefreshPending() || snapshot.loading) return
-    setRefsRefreshPending(false)
-    void refetch()
+  // The VCS query owns freshness. Key the refs resource to its settled data
+  // generation so a HEAD/refs invalidation starts one matching refs read, and
+  // createResource's latest-request semantics discard an older in-flight read.
+  const refsSource = createMemo(() => {
+    const scope = directory()
+    if (!scope || vcs.isFetching || !vcs.data) return
+    return { scope, vcsUpdatedAt: vcs.dataUpdatedAt }
   })
+  const [snapshot] = createResource(refsSource, async ({ scope }): Promise<LoadedBranchRefs> => ({
+    scope,
+    refs: await diff(scope).refsRequired(scope),
+  }))
   const state = createMemo<NewSessionBranchState>(() => {
     const scope = directory()
     if (!scope) return { status: "disabled" }
@@ -144,7 +128,7 @@ export function createNewSessionBranchSource(input: {
       const message = error instanceof Error ? error.message : String(error)
       return { status: "error", scope, message }
     }
-    if (snapshot.loading || refsRefreshPending() || vcs.isFetching || snapshot()?.scope !== scope || !vcs.data) {
+    if (snapshot.loading || vcs.isFetching || snapshot()?.scope !== scope || !vcs.data) {
       return { status: "loading", scope }
     }
     const data = snapshot()

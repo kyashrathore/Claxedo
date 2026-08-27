@@ -4,7 +4,6 @@ import {
   createNewSessionBranchSource,
   createNewSessionBranchSelection,
   settleNewSessionBranchState,
-  shouldQueueNewSessionBranchRefsRefresh,
   type NewSessionBranchState,
 } from "./session-new-branch-source"
 
@@ -42,11 +41,13 @@ describe("new-session branch snapshot", () => {
       .mockResolvedValue({ branches: choices.map((choice) => choice.gitRef), branchChoices: choices, tags: [], recent: [] })
 
     await new Promise<void>((resolve, reject) => createRoot((dispose) => {
-      const [fetching, setFetching] = createSignal(true)
+      const [fetching, setFetching] = createSignal(false)
       const [vcs, setVcs] = createSignal({ branch: "main" })
+      const [dataUpdatedAt, setDataUpdatedAt] = createSignal(1)
       dependencies.useQuery.mockReturnValue({
         get isFetching() { return fetching() },
         get data() { return vcs() },
+        get dataUpdatedAt() { return dataUpdatedAt() },
         error: undefined,
       })
       const source = createNewSessionBranchSource({
@@ -78,8 +79,14 @@ describe("new-session branch snapshot", () => {
           reject(error)
         }
       }
-      setTimeout(() => {
+      const waitForInitialRead = () => {
+        if (dependencies.refsRequired.mock.calls.length === 0) {
+          setTimeout(waitForInitialRead, 0)
+          return
+        }
+        setFetching(true)
         setVcs({ branch: "feature/e2e" })
+        setDataUpdatedAt(2)
         setFetching(false)
         resolveInitial({
           branches: ["main"],
@@ -88,7 +95,8 @@ describe("new-session branch snapshot", () => {
           recent: [],
         })
         check()
-      }, 0)
+      }
+      setTimeout(waitForInitialRead, 0)
     }))
   })
 
@@ -118,20 +126,6 @@ describe("new-session branch snapshot", () => {
     })).toEqual({ status: "error", scope: "/repo", message: "Current branch is unavailable" })
   })
 
-  test("queues a refs refresh after each subscribed VCS reconciliation", () => {
-    expect(shouldQueueNewSessionBranchRefsRefresh({
-      fetching: false,
-      previouslyFetching: true,
-    })).toBe(true)
-    expect(shouldQueueNewSessionBranchRefsRefresh({
-      fetching: true,
-      previouslyFetching: false,
-    })).toBe(false)
-    expect(shouldQueueNewSessionBranchRefsRefresh({
-      fetching: false,
-      previouslyFetching: undefined,
-    })).toBe(false)
-  })
 })
 
 describe("new-session branch/workspace interaction", () => {
