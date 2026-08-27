@@ -358,7 +358,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                           <span
                             aria-hidden="true"
                             data-testid="switcher-command-hint"
-                            class="absolute left-1/2 z-10 hidden h-5 min-w-7 -translate-x-1/2 items-center justify-center rounded-full bg-surface-base-active px-1.5 text-11-medium text-text-base group-data-[command-hints]/switcher:flex"
+                            class="hidden size-5 shrink-0 items-center justify-center rounded-md bg-surface-base-active text-11-medium text-text-base group-data-[command-hints]/switcher:flex"
                           >
                             {hint}
                           </span>

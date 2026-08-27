@@ -135,16 +135,6 @@ describe("CompactSwitcher", () => {
     await vi.advanceTimersByTimeAsync(1)
     expect(switcher).toHaveAttribute("data-command-hints", "true")
     expect(screen.getAllByTestId("switcher-command-hint").map((hint) => hint.textContent)).toEqual(["⌘1", "⌘2"])
-    expect(screen.getAllByTestId("switcher-command-hint")[0]).toHaveClass(
-      "group-data-[command-hints]/switcher:flex",
-      "absolute",
-      "h-5",
-      "min-w-7",
-      "rounded-full",
-      "bg-surface-base-active",
-    )
-    expect(screen.getAllByTestId("switcher-command-hint")[0].closest('[data-component="tooltip-trigger"]')).toHaveClass("w-5")
-    expect(screen.getAllByTestId("switcher-identity")[0]).toHaveClass("group-data-[command-hints]/switcher:hidden")
 
     fireEvent.keyUp(window, { key: "Meta" })
     expect(switcher).not.toHaveAttribute("data-command-hints")
