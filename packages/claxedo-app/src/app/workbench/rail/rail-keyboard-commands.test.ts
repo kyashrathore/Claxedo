@@ -5,13 +5,14 @@ import {
   closeFocusedPaneFromShortcut,
   NUMBERED_SURFACE_SHORTCUTS,
   sidebarHiddenForCloseShortcut,
+  numberedSurfaceShortcutHints,
 } from "./rail-keyboard-shortcuts"
 import { resolveKeyMap } from "../workbench/keyboard"
 
 describe("P4 keyboard command parity", () => {
   test("keeps the shell chord table pinned to command ids", () => {
     const commands = [
-      ...createRailKeyboardCommands(noopActions()),
+      ...createRailKeyboardCommands(noopActions(), { numberedSurfaceShortcuts: true }),
       createProcessPaneToggleCommand(() => {}),
     ]
     const byKeybind = Object.fromEntries(commands.map((command) => [command.keybind, command.id]))
@@ -38,6 +39,20 @@ describe("P4 keyboard command parity", () => {
     )
   })
 
+  test("does not advertise browser-reserved numbered surface shortcuts on web", () => {
+    const commands = createRailKeyboardCommands(noopActions(), { numberedSurfaceShortcuts: false })
+
+    expect(commands.some((command) => command.id.startsWith("claxedo.surface.") && /^mod\+\d$/.test(command.keybind ?? "")))
+      .toBe(false)
+  })
+
+  test("does not resurrect unavailable shortcut hints from the persisted command catalog", () => {
+    expect(numberedSurfaceShortcutHints({
+      has: (id) => id === "claxedo.surface.1",
+      keybind: () => "⌘1",
+    })).toEqual(["⌘1", "", "", "", "", "", "", "", ""])
+  })
+
   test("no chord is bound by both the command registry and the workbench keyboard listener (single dispatch, no double-fire)", () => {
     // Regression for the two-divergent-keyboard-systems finding
     // (core-panes-split-tabs:591 neighborhood): mod+w and mod+alt+Arrow were
@@ -47,7 +62,7 @@ describe("P4 keyboard command parity", () => {
     // wb.split.close). The workbench listener is the self-contained owner of
     // in-pane chords; the command registry must not re-bind them.
     const commandChords = new Set(
-      createRailKeyboardCommands(noopActions())
+      createRailKeyboardCommands(noopActions(), { numberedSurfaceShortcuts: true })
         .map((command) => command.keybind)
         .filter((keybind): keybind is string => typeof keybind === "string"),
     )

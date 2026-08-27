@@ -40,7 +40,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useRailKeyboardController } from "./workbench/rail/rail-keyboard-controller"
 import {
   closeFocusedPaneFromShortcut,
-  NUMBERED_SURFACE_SHORTCUTS,
+  numberedSurfaceShortcutHints,
   sidebarHiddenForCloseShortcut,
 } from "./workbench/rail/rail-keyboard-shortcuts"
 import { useRailEmptyDraftController } from "./workbench/rail/rail-empty-draft-controller"
@@ -526,7 +526,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           projectsCount={() => props.projects.length}
           sidebarPinned={sidebarPinned}
           state={claxedoState}
-          surfaceShortcutHints={() => NUMBERED_SURFACE_SHORTCUTS.map((shortcut) => command.keybind(shortcut.commandId))}
+          surfaceShortcutHints={() => numberedSurfaceShortcutHints(command)}
           switcherItems={workbenchController.switcherItems}
           toggleFocusedWorkspaceNavigator={workbenchController.toggleFocusedWorkspaceNavigator}
           toggleFocusedWorkspaceReview={toggleWorkspacePanel}

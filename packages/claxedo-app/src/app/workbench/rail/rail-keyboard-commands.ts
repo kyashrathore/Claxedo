@@ -11,7 +11,14 @@ export type RailKeyboardCommandActions = {
   focusSplitRight: () => void
 }
 
-export function createRailKeyboardCommands(actions: RailKeyboardCommandActions): CommandOption[] {
+export type RailKeyboardCommandOptions = {
+  numberedSurfaceShortcuts: boolean
+}
+
+export function createRailKeyboardCommands(
+  actions: RailKeyboardCommandActions,
+  options: RailKeyboardCommandOptions,
+): CommandOption[] {
   return [
     {
       // Keybind intentionally omitted: the workbench's own window keydown
@@ -46,13 +53,15 @@ export function createRailKeyboardCommands(actions: RailKeyboardCommandActions):
       keybind: "mod+b",
       onSelect: actions.toggleSidebar,
     },
-    ...NUMBERED_SURFACE_SHORTCUTS.map((shortcut, index) => ({
-      id: shortcut.commandId,
-      title: `Switch to Surface ${shortcut.number}`,
-      category: "View",
-      keybind: shortcut.keybind,
-      onSelect: () => actions.showSurfaceAtIndex(index),
-    })),
+    ...(options.numberedSurfaceShortcuts
+      ? NUMBERED_SURFACE_SHORTCUTS.map((shortcut, index) => ({
+          id: shortcut.commandId,
+          title: `Switch to Surface ${shortcut.number}`,
+          category: "View",
+          keybind: shortcut.keybind,
+          onSelect: () => actions.showSurfaceAtIndex(index),
+        }))
+      : []),
     {
       // Keybind intentionally omitted (see claxedo.pane.close above): the
       // workbench listener owns mod+alt+Arrow with geometric, 4-direction focus.

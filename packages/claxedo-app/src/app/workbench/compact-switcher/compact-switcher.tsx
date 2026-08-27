@@ -46,7 +46,7 @@ function StatusDot(props: { status?: SwitcherItem["status"] }) {
   )
 }
 
-function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; commandShortcut?: boolean }) {
+function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean }) {
   return (
     <span
       aria-hidden="true"
@@ -55,7 +55,6 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; comma
       classList={{
         "opacity-55 group-hover:opacity-100 group-focus-within:opacity-100": !props.active,
         "opacity-100": props.active,
-        "group-data-[command-hints]/switcher:hidden": props.commandShortcut,
       }}
     >
       <ProjectAvatar
@@ -351,19 +350,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                       <SwitcherPrefixMark
                         item={item()}
                         active={item().active}
-                        commandShortcut={!!shortcutHints()[index()]}
                       />
-                      <Show when={shortcutHints()[index()]} keyed>
-                        {(hint) => (
-                          <span
-                            aria-hidden="true"
-                            data-testid="switcher-command-hint"
-                            class="hidden size-5 shrink-0 items-center justify-center rounded-md bg-surface-base-active text-11-medium text-text-base group-data-[command-hints]/switcher:flex"
-                          >
-                            {hint}
-                          </span>
-                        )}
-                      </Show>
                     </button>
                   </Tooltip>
                   <button
@@ -414,6 +401,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                     class="absolute right-1 top-1/2 z-10 flex size-[18px] -translate-y-1/2 items-center justify-center rounded-sm border-none bg-transparent p-0 text-icon-weak-base opacity-0 outline-none transition-[opacity,background-color,color] duration-100 hover:bg-surface-base-hover hover:text-icon-base hover:opacity-100 focus-visible:opacity-100 focus-visible:bg-surface-base-hover group-hover:opacity-100"
                     classList={{
                       "opacity-65": item().active,
+                      "group-data-[command-hints]/switcher:hidden": !!shortcutHints()[index()],
                     }}
                     onPointerDown={(event) => {
                       event.preventDefault()
@@ -423,6 +411,17 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                   >
                     <Icon name="close-small" size="small" />
                   </button>
+                </Show>
+                <Show when={shortcutHints()[index()]} keyed>
+                  {(hint) => (
+                    <span
+                      aria-hidden="true"
+                      data-testid="switcher-command-hint"
+                      class="absolute right-1 top-1/2 z-20 hidden h-5 min-w-7 -translate-y-1/2 items-center justify-center rounded-md bg-surface-base-hover px-1.5 text-11-medium text-text-weak group-data-[command-hints]/switcher:flex"
+                    >
+                      {hint}
+                    </span>
+                  )}
                 </Show>
               </div>
             )}

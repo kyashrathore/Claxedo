@@ -4,6 +4,15 @@ export const NUMBERED_SURFACE_SHORTCUTS = Array.from({ length: 9 }, (_, index) =
   number: index + 1,
 }))
 
+export function numberedSurfaceShortcutHints(command: {
+  has: (id: string) => boolean
+  keybind: (id: string) => string
+}) {
+  return NUMBERED_SURFACE_SHORTCUTS.map((shortcut) =>
+    command.has(shortcut.commandId) ? command.keybind(shortcut.commandId) : "",
+  )
+}
+
 export function sidebarHiddenForCloseShortcut(input: {
   narrowViewport: boolean
   mobileSidebarOpen: boolean
