@@ -34,7 +34,6 @@ import {
   type ParentProps,
   Show,
   Loading,
-  untrack,
   useContext,
 } from "solid-js"
 import type { JSX } from "@solidjs/web"
@@ -201,6 +200,17 @@ function ConnectionGate(props: ParentProps) {
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
   const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
+  // Read the route ONCE, here in the component body, which is untracked.
+  // Reading it inside the loader below would make it a DEPENDENCY of startup:
+  // that loader runs in a Solid 2 async signal, whose computation tracks its
+  // synchronous prefix — unlike Solid 1's `createResource` fetcher, which was
+  // untracked. Every navigation would then re-run startup, drop
+  // `startup.data()` back to undefined, and unmount the whole app under
+  // `<Show when={startup.data()}>`: panes, rail, terminals, every piece of
+  // in-memory chrome, mid-interaction. Which surface the user booted on is a
+  // boot-time fact, and `refresh()` is meant to re-check health, not re-decide
+  // the route.
+  const bootPath = location.pathname
 
   const startup = createAsyncState(async () =>
     (async () => {
@@ -219,15 +229,6 @@ function ConnectionGate(props: ParentProps) {
         return true
       }
       const { http, type } = server.current
-      // `untrack`: this loader runs inside a Solid 2 async signal, whose
-      // computation TRACKS its synchronous prefix — unlike Solid 1's
-      // `createResource` fetcher, which was untracked. A tracked
-      // `location.pathname` read makes every navigation re-run startup, which
-      // drops `startup.data()` back to undefined and so unmounts the entire app
-      // shell under `<Show when={startup.data()}>` — panes, rail, terminals and
-      // all in-memory chrome, mid-interaction. Which surface the user booted on
-      // is a boot-time fact; it must not be a dependency.
-      const bootPath = untrack(() => location.pathname)
       const revealBeforeHealth = bootPath.startsWith("/s/") || bootPath.startsWith("/w/")
 
       // Poll until healthy, or give up after 10s — then drop to background mode.
