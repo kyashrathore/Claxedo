@@ -356,6 +356,62 @@ describe("SdkRuntimeAdapter", () => {
     adapter.dispose()
   })
 
+  test("does not acknowledge an abort until the adapter busy lock is retired", async () => {
+    let started: (() => void) | undefined
+    let releaseFirst: (() => void) | undefined
+    const running = new Promise<void>((resolve) => {
+      started = resolve
+    })
+    const firstRun = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    let turns = 0
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        runTurn: async () => {
+          turns += 1
+          if (turns !== 1) return
+          started?.()
+          await firstRun
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"))
+    const prompt = (messageId: string) => ({
+      parts: [{ type: "text" as const, text: messageId }],
+      userMessageId: messageId,
+      assistantMessageId: `${messageId}-assistant`,
+      agent: "build",
+      model: { providerID: "codex-app-server", modelID: "gpt-test" },
+    })
+    const first = (async () => {
+      for await (const _event of adapter.sendMessage(session.id, prompt("first"), path.resolve("/repo"))) {}
+    })()
+
+    await running
+    let abortSettled = false
+    const abort = adapter.abort(session.id, path.resolve("/repo")).then((result) => {
+      abortSettled = true
+      return result
+    })
+    await Bun.sleep(0)
+
+    expect(abortSettled).toBe(false)
+    releaseFirst?.()
+    await expect(abort).resolves.toEqual({ ok: true, status: "cancelled" })
+    await first
+
+    const replacementEvents: AgentRuntimeStreamEvent[] = []
+    for await (const event of adapter.sendMessage(session.id, prompt("replacement"), path.resolve("/repo"))) {
+      replacementEvents.push(event)
+    }
+    expect(replacementEvents.map((event) => event.type)).not.toContain("session.error")
+    expect(turns).toBe(2)
+    adapter.dispose()
+  })
+
   test("dispose aborts and closes active turns", () => {
     const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
@@ -477,8 +533,9 @@ describe("SdkRuntimeAdapter busy lock", () => {
 
     for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
       // The window that used to refuse: mid-drain, after the terminal event.
-      expect(lifecycle.enter("s1")).not.toBeNull()
-      lifecycle.busySessions.delete("s1")
+      const leaveReplacement = lifecycle.enter("s1")
+      expect(leaveReplacement).not.toBeNull()
+      leaveReplacement?.()
     }
   })
 
@@ -492,5 +549,21 @@ describe("SdkRuntimeAdapter busy lock", () => {
     for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) { /* drain */ }
     expect(lifecycle.busySessions.has("s1")).toBe(false)
     expect(lifecycle.enter("s1")).not.toBeNull()
+  })
+
+  test("a stale release cannot unlock a replacement turn generation", () => {
+    const lifecycle = createSessionTurnLifecycle()
+    const releaseFirst = lifecycle.enter("s1")
+    expect(releaseFirst).not.toBeNull()
+    releaseFirst?.()
+
+    const releaseReplacement = lifecycle.enter("s1")
+    expect(releaseReplacement).not.toBeNull()
+    releaseFirst?.()
+
+    expect(lifecycle.busySessions.has("s1")).toBe(true)
+    expect(lifecycle.enter("s1")).toBeNull()
+    releaseReplacement?.()
+    expect(lifecycle.busySessions.has("s1")).toBe(false)
   })
 })

@@ -761,6 +761,29 @@ test.describe("core busy / abort / errors @core", () => {
     })
   })
 
+  test("a persisted turn-admission conflict renders compact status text instead of an error card", async ({ page }) => {
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      harnessModels: PIN_MODELS,
+      errorMidTurn: "Session is already processing a message",
+      timingsMs: { busy: 40, pending: 80, delta: 200, completed: 80, idle: 30 },
+    })
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    await sendPrompt(page, input, "replay a persisted turn admission conflict")
+
+    const status = page.getByTestId("turn-admission-status-message")
+    await expect(status).toBeVisible({ timeout: 20_000 })
+    await expect(status).toContainText("Message wasn’t sent")
+    await expect(status).toContainText("The previous message was still finishing. Try again.")
+    await expect(page.getByTestId("first-turn-recovery-card")).toHaveCount(0)
+    await expect(page.locator(".error-card")).toHaveCount(0)
+    await expect(submitIcon(page)).not.toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
+    expect(mock.requests.promptCount).toBe(1)
+  })
+
   test(
     "escalation ladder: a genuinely silent server surfaces pending then long, and Cancel aborts — behavior 8",
     async ({ page }) => {

@@ -11,15 +11,39 @@ export const EXPLICIT_TURN_ABORT_REASON = Symbol("explicit-turn-abort")
 
 export function createSessionTurnLifecycle<T extends TrackedTurn>() {
   const busySessions = new Set<string>()
+  const busyGenerations = new Map<string, object>()
   const activeTurns = new Map<string, T>()
+  const idleWaiters = new Map<string, Set<() => void>>()
+
+  const settleIdle = (sessionId: string) => {
+    const waiters = idleWaiters.get(sessionId)
+    if (!waiters) return
+    idleWaiters.delete(sessionId)
+    for (const resolve of waiters) resolve()
+  }
 
   return {
     busySessions,
     activeTurns,
     enter(sessionId: string) {
-      if (busySessions.has(sessionId)) return null
+      if (busyGenerations.has(sessionId)) return null
+      const generation = {}
+      busyGenerations.set(sessionId, generation)
       busySessions.add(sessionId)
-      return () => busySessions.delete(sessionId)
+      return () => {
+        if (busyGenerations.get(sessionId) !== generation) return
+        busyGenerations.delete(sessionId)
+        busySessions.delete(sessionId)
+        settleIdle(sessionId)
+      }
+    },
+    whenIdle(sessionId: string) {
+      if (!busyGenerations.has(sessionId)) return Promise.resolve()
+      return new Promise<void>((resolve) => {
+        const waiters = idleWaiters.get(sessionId) ?? new Set<() => void>()
+        waiters.add(resolve)
+        idleWaiters.set(sessionId, waiters)
+      })
     },
     get(sessionId: string) {
       return activeTurns.get(sessionId)
@@ -52,8 +76,10 @@ export function createSessionTurnLifecycle<T extends TrackedTurn>() {
       activeTurns.clear()
     },
     clear() {
+      busyGenerations.clear()
       busySessions.clear()
       activeTurns.clear()
+      for (const sessionId of idleWaiters.keys()) settleIdle(sessionId)
     },
   }
 }

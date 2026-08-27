@@ -1,5 +1,6 @@
 import { createSignal, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { Card } from "@opencode-ai/ui/card"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -62,6 +63,75 @@ function RawDetail(props: { detail: string }) {
   )
 }
 
+function InlineErrorStatus(props: {
+  testId: string
+  title: string
+  description: string
+  recoveryClass?: SessionErrorClass
+}) {
+  return (
+    <div
+      role="status"
+      data-testid={props.testId}
+      data-recovery-class={props.recoveryClass}
+      class="mt-2 flex items-start gap-2 px-1 py-1 text-text-weaker"
+    >
+      <Icon name="circle-alert" size="small" class="mt-0.5 shrink-0 text-icon-weak-base" />
+      <div class="min-w-0">
+        <div class="text-12-regular">{props.title}</div>
+        <div class="mt-0.5 text-12-regular">{props.description}</div>
+      </div>
+    </div>
+  )
+}
+
+export function TurnAdmissionStatus(props: { summary?: string }) {
+  return (
+    <InlineErrorStatus
+      testId="turn-admission-status-message"
+      title="Message wasn’t sent"
+      description={props.summary ?? "The previous message was still finishing. Try again."}
+    />
+  )
+}
+
+export function TimelineErrorPresentation(props: {
+  presentation?: "turn-conflict"
+  recoveryClass?: SessionErrorClass
+  text: string
+  summary?: string
+  error?: unknown
+  providerID?: string
+  modelID?: string
+  onAction: (value: SessionErrorClass) => unknown
+}) {
+  return (
+    <Show
+      when={props.presentation === "turn-conflict"}
+      fallback={
+        <Show
+          when={props.recoveryClass}
+          fallback={<Card variant="error" class="error-card">{props.summary ?? props.text}</Card>}
+        >
+          {(kind) => (
+            <FirstTurnRecoveryCard
+              kind={kind()}
+              detail={props.text}
+              summary={props.summary}
+              error={props.error}
+              providerID={props.providerID}
+              modelID={props.modelID}
+              onAction={props.onAction}
+            />
+          )}
+        </Show>
+      }
+    >
+      <TurnAdmissionStatus summary={props.summary} />
+    </Show>
+  )
+}
+
 export function FirstTurnRecoveryCard(props: {
   kind: SessionErrorClass
   detail?: string
@@ -82,18 +152,12 @@ export function FirstTurnRecoveryCard(props: {
     sessionRecoveryDescription(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
   if (props.kind === "usage_limit") {
     return (
-      <div
-        role="status"
-        data-testid="usage-limit-status-message"
-        data-recovery-class={props.kind}
-        class="mt-2 flex items-start gap-2 px-1 py-1 text-text-weaker"
-      >
-        <Icon name="circle-alert" size="small" class="mt-0.5 shrink-0 text-icon-weak-base" />
-        <div class="min-w-0">
-          <div class="text-12-regular">{recovery().title}</div>
-          <div class="mt-0.5 text-12-regular">{description()}</div>
-        </div>
-      </div>
+      <InlineErrorStatus
+        testId="usage-limit-status-message"
+        recoveryClass={props.kind}
+        title={recovery().title}
+        description={description()}
+      />
     )
   }
   const detail = () => {

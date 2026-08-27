@@ -44,6 +44,7 @@ export type TimelineRowMap = {
   Error: {
     userMessageID: string
     text: string
+    presentation?: "turn-conflict"
     /**
      * The human sentence for the row's PRIMARY line, composed here alongside
      * the raw text so the first paint is already readable. `text` is the raw
@@ -201,7 +202,7 @@ export namespace TimelineRow {
       case "Error":
         return b._tag === "Error" && a.text === b.text && a.summary === b.summary &&
           a.recoveryClass === b.recoveryClass && a.error === b.error && a.providerID === b.providerID &&
-          a.modelID === b.modelID
+          a.modelID === b.modelID && a.presentation === b.presentation
       case "TurnFold":
         return b._tag === "TurnFold" && a.durationMs === b.durationMs && a.foldCount === b.foldCount &&
           a.folded === b.folded && a.running === b.running && a.tokens === b.tokens && a.cost === b.cost

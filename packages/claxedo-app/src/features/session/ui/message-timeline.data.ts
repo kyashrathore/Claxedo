@@ -1,7 +1,11 @@
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
 import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
-import { sessionRecoveryClass, sessionRecoveryDescription } from "../onboarding/first-turn-recovery"
+import {
+  isTurnAdmissionConflict,
+  sessionRecoveryClass,
+  sessionRecoveryDescription,
+} from "../onboarding/first-turn-recovery"
 import { stripRelayPrefix } from "../onboarding/provider-error-detail"
 import type { SessionTurnOutcome } from "../data/session-types"
 import { TimelineRow } from "./timeline-row-model"
@@ -277,6 +281,7 @@ export namespace Timeline {
       // so read it structurally rather than narrowing by name.
       const rawBody = (error.data as { responseBody?: unknown } | undefined)?.responseBody
       const body = typeof rawBody === "string" ? rawBody.trim() : ""
+      const turnAdmissionConflict = isTurnAdmissionConflict(error)
       const recoveryClass = sessionRecoveryClass(error)
       rows.push(
         new TimelineRow.Error({
@@ -286,14 +291,17 @@ export namespace Timeline {
           // position-independent (regex/wire-stamped), the renderer mounts the card
           // purely on its presence, and retry is registered on every submit. The
           // firstTurnRecovery param survives for telemetry gating.
-          recoveryClass: recoveryClass,
+          recoveryClass: turnAdmissionConflict ? undefined : recoveryClass,
           // Composed here, not at mount: the row already carries the human
           // sentence, so the primary line never paints raw provider bytes
           // first and get replaced a beat later.
-          summary: sessionRecoveryDescription(recoveryClass, error, {
-            providerID: errorMessage?.providerID,
-            modelID: errorMessage?.modelID,
-          }),
+          summary: turnAdmissionConflict
+            ? "The previous message was still finishing. Try again."
+            : sessionRecoveryDescription(recoveryClass, error, {
+                providerID: errorMessage?.providerID,
+                modelID: errorMessage?.modelID,
+              }),
+          presentation: turnAdmissionConflict ? "turn-conflict" : undefined,
           error,
           providerID: errorMessage?.providerID,
           modelID: errorMessage?.modelID,
