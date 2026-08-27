@@ -134,9 +134,7 @@ export function getDefaultConfig(): ClaxedoConfig {
 
     // Feature flags - all default to false for standalone mode
     authEnabled: import.meta.env.VITE_AUTH_ENABLED === "true",
-    // Sandbox surfaces are always present now — the embedded runtime backs them
-    // on every build, so there is no longer a VITE_SANDBOX_ENABLED gate.
-    sandboxEnabled: true,
+    sandboxEnabled: import.meta.env.VITE_SANDBOX_ENABLED === "true",
     globalChatEnabled: import.meta.env.VITE_GLOBAL_CHAT_ENABLED === "true",
     ...productUiFlagConfigFromEnv(import.meta.env),
     daytonaApiKey: envString(import.meta.env.VITE_DAYTONA_API_KEY),

@@ -32,6 +32,7 @@ import { getTerminalCommands } from "@/features/settings/ui/terminals"
 import { terminalLaunchers, type TerminalLauncher } from "./terminal-launchers"
 import { useTerminalWorkspaceProvisioning } from "./terminal-workspace-provisioning"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import { useConfigOptional } from "@/app/providers/config"
 import "./terminal-new-view.css"
 
 /**
@@ -56,6 +57,7 @@ export type TerminalNewViewProps = {
 type ProjectShape = { worktree: string; sandboxes?: string[]; workspaces?: Record<string, unknown> }
 
 export function TerminalNewView(props: TerminalNewViewProps) {
+  const config = useConfigOptional()
   const queryOptions = useShellQueryOptions()
   const provisioning = useTerminalWorkspaceProvisioning()
   const projectsQuery = useQuery(() => queryOptions.projects())
@@ -166,6 +168,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
       onWorktreeChange={changeWorktree}
       onWorkspaceKindChange={changeWorkspaceKind}
       onProjectChange={changeProject}
+      sandboxEnabled={config?.sandboxEnabled}
     >
       <div
         data-component="terminal-new-launchers"

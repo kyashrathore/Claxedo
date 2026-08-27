@@ -164,6 +164,13 @@ describe("newSessionEnvironmentOptions", () => {
     expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: false }))
       .toEqual(["local", "cloud"])
   })
+
+  test("keeps only local when cloud sandboxes are disabled", () => {
+    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: false, sandboxEnabled: false }))
+      .toEqual(["local"])
+    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: false, sandboxEnabled: false }))
+      .toEqual(["local"])
+  })
 })
 
 describe("repoDerivedProjectLabel", () => {

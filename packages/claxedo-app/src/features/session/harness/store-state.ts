@@ -162,11 +162,24 @@ export function readyHarnessHydrationPatch(type: HarnessType): HarnessStorePatch
   }
 }
 
-export function readyHarnessFallbackPatch(type: HarnessType): HarnessStorePatch {
+export function pollingHarnessHydrationPatch(type?: HarnessType): HarnessStorePatch {
   return {
-    harnessMode: harnessMode(type),
-    readiness: "ready",
-    ...emptyOptionsPatch(),
+    ...(type
+      ? {
+          harness: type,
+          harnessMode: harnessMode(type),
+          selectedModel: "",
+          selectedModelProvider: undefined,
+          dynamicModels: null,
+          thoughtLevels: null,
+          selectedThoughtLevel: undefined,
+          optionsSource: "empty" as const,
+          optionsStale: false,
+          optionsLoading: false,
+        }
+      : {}),
+    readiness: "polling",
+    configError: undefined,
   }
 }
 

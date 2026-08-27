@@ -133,8 +133,10 @@ describe("what the picker offers", () => {
   test("before the fetch lands the harness group reads as loading", () => {
     createRoot((dispose) => {
       const { control } = harness({ harness: "claude-acp" })
+      expect(control.groups()!.claxedo).toEqual([])
       expect(control.groups()!.harness.rows).toEqual([])
       expect(control.groups()!.harness.unavailable).toMatch(/loading/i)
+      expect(control.current()).toBeUndefined()
       dispose()
     })
   })

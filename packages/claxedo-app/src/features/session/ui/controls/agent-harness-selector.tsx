@@ -303,6 +303,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       void props.harnessController.reprobe(scope(), {
         directory: nextDirectory,
         sessionId: sessionId(),
+        sessionRef: sessionRef(),
       })
     },
     onExhausted: () => props.harnessController.markUnavailable(scope()),
@@ -428,6 +429,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // the notice row's job, and this control used to duplicate its wording
   // ("Unavailable" here AND in the readiness pill AND in the dot's tooltip).
   const modelLabel = createMemo(() => {
+    if (isPolling()) return "Connecting"
     if (modelLoading()) return "Loading models"
     if (picked()) return picked()?.name
     if (selection().draftDefaultState === "saved-model-unavailable") {

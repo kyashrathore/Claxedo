@@ -37,9 +37,11 @@ export type ProjectInventoryEntry = {
 export function newSessionEnvironmentOptions(input: {
   platform: "web" | "desktop"
   signedControlPlane: boolean
+  sandboxEnabled?: boolean
 }): Array<"local" | "cloud"> {
-  if (input.platform === "web" && input.signedControlPlane) return ["cloud"]
-  return ["local", "cloud"]
+  const options: Array<"local" | "cloud"> = input.platform === "web" && input.signedControlPlane ? [] : ["local"]
+  if (input.sandboxEnabled !== false) options.push("cloud")
+  return options
 }
 
 /**
