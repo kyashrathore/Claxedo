@@ -80,8 +80,23 @@ export function FirstTurnRecoveryCard(props: {
   const description = () =>
     props.summary ??
     sessionRecoveryDescription(props.kind, props.error, { providerID: props.providerID, modelID: props.modelID })
+  if (props.kind === "usage_limit") {
+    return (
+      <div
+        role="status"
+        data-testid="usage-limit-status-message"
+        data-recovery-class={props.kind}
+        class="mt-2 flex items-start gap-2 px-1 py-1 text-text-weaker"
+      >
+        <Icon name="circle-alert" size="small" class="mt-0.5 shrink-0 text-icon-weak-base" />
+        <div class="min-w-0">
+          <div class="text-12-regular">{recovery().title}</div>
+          <div class="mt-0.5 text-12-regular">{description()}</div>
+        </div>
+      </div>
+    )
+  }
   const detail = () => {
-    if (props.kind === "usage_limit") return
     const value = props.detail?.trim()
     if (!value || value === description().trim()) return
     return value

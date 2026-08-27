@@ -7,7 +7,6 @@ describe("FirstTurnRecoveryCard", () => {
     ["credential", "Reconnect and resend"],
     ["harness", "Resend last prompt"],
     ["model", "Switch model and resend"],
-    ["usage_limit", "Continue"],
     ["workspace", "Resend last prompt"],
     ["session", "Start a new session"],
     ["unknown", "Resend last prompt"],
@@ -92,7 +91,7 @@ describe("FirstTurnRecoveryCard", () => {
     expect(view.container.querySelector("button[aria-expanded]")).toBeNull()
   })
 
-  test("keeps a recognized usage limit to title, description, and one action", () => {
+  test("renders a recognized usage limit as demoted status text with no action or card", () => {
     const detail = "Claude Code returned an error result: You've reached your Fable 5 limit. Switch to another model, or manage usage credits at claude.ai/settings/usage, to continue."
     const view = render(() => (
       <FirstTurnRecoveryCard
@@ -106,14 +105,18 @@ describe("FirstTurnRecoveryCard", () => {
 
     expect(view.container.textContent).toContain("Claude usage limit reached")
     expect(view.container.textContent).toContain("You've reached your Fable 5 limit. Choose another model to continue.")
-    expect(view.container.querySelector("button[aria-expanded]")).toBeNull()
-    expect(view.getAllByRole("button")).toHaveLength(1)
+    expect(view.container.textContent).not.toContain("Infrastructure")
+    expect(view.container.querySelectorAll("button")).toHaveLength(0)
+    expect(view.queryByTestId("first-turn-recovery-card")).toBeNull()
+    expect(view.getByTestId("usage-limit-status-message")).toHaveAttribute("role", "status")
+    expect(view.getByTestId("usage-limit-status-message")).toHaveClass("text-text-weaker")
+    expect(view.getByText("Claude usage limit reached")).toHaveClass("text-12-regular")
   })
 
-  test("shows a model-switch failure instead of producing an unhandled rejection", async () => {
+  test("shows a recovery-action failure instead of producing an unhandled rejection", async () => {
     const view = render(() => (
       <FirstTurnRecoveryCard
-        kind="usage_limit"
+        kind="model"
         onAction={async () => { throw new Error("Model update was rejected") }}
       />
     ))
