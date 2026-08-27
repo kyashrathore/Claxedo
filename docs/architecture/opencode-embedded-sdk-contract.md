@@ -291,10 +291,25 @@ Variables eliminated, each by test:
   2026-08-26T16:44Z — 51 minutes *before* the 17:35Z publish.
 - **Not our bundle.** The tarball fails under Bun importing it directly.
 
-**Caveat:** I cannot prove the tarball was built from exactly `b731bc1`; it may
-come from a commit not on the branch I fetched. What is proven is that the
-published artifact and the closest available source behave differently on the
-same calls, same runtime, same dependency versions.
+Also VERIFIED: building the SDK from that source (`bun run build` in
+`packages/sdk`) and calling `../dist/effect/index.js` works too. So the build
+step does not introduce the defect — a dist built from this source is fine.
+
+**What is NOT isolated.** The working runs happen inside the upstream workspace,
+where `@opencode-ai/core`, `@opencode-ai/server` and friends resolve to
+workspace *source*. The failing runs use the published versions of all of them.
+So the fault could be in published `@opencode-ai/sdk`, in published
+`@opencode-ai/core`/`server`, or in how that set composes — I have not narrowed
+it to one package, and should not claim to have.
+
+**Also caveated:** I cannot prove the tarball was built from exactly `b731bc1`;
+it may come from a commit not on the branch I fetched.
+
+Eliminated as explanations, each by direct test rather than reasoning: usage
+shape, workspace provisioning, `effect` version skew, the presence of a global
+`~/.config/opencode/opencode.jsonc`, the runtime (both under Bun), and our
+Node bundle. What remains is that the published package set fails where the
+source tree succeeds.
 
 That reframes the upstream report entirely. It is not "the embedded SDK cannot
 resolve locations" — it is **"your published beta build does not match your
