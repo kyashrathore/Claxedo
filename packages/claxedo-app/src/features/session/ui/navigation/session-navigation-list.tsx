@@ -42,18 +42,30 @@ export function SessionNavigation(props: SessionNavigationProps) {
   // the id is a stable, unique key; the row's CONTENT still updates reactively
   // through the id-keyed lookup.
   const rowsById = createMemo(() => new Map(props.rows.map((row) => [row.source.sessionId, row])))
+  // Both the `<For>` keys and the lookup they resolve against come from the
+  // SAME memo. Reading `props.rows` twice — once to build the key list, once to
+  // build the map — let the two observe different values of a list that is
+  // still settling (a `Load more` page landing mid-render), and the lookup then
+  // missed for a key the `<For>` was rendering: `row` came back undefined and
+  // `props.row.title` threw straight into the app's error boundary, blanking
+  // the whole shell. The `<Show>` closes the same window from the other side.
+  const rowIds = createMemo(() => [...rowsById().keys()])
 
   return (
-    <For each={props.rows.map((row) => row.source.sessionId)}>
+    <For each={rowIds()}>
       {(sessionId) => (
-        <SessionNavigationItem
-          row={rowsById().get(sessionId)!}
-          onPrepareActivate={props.onPrepareActivate}
-          onActivate={props.onActivate}
-          onArchive={props.onArchive}
-          onPrepareDrag={props.onPrepareDrag}
-          onDragStart={props.onDragStart}
-        />
+        <Show when={rowsById().get(sessionId)}>
+          {(row) => (
+            <SessionNavigationItem
+              row={row()}
+              onPrepareActivate={props.onPrepareActivate}
+              onActivate={props.onActivate}
+              onArchive={props.onArchive}
+              onPrepareDrag={props.onPrepareDrag}
+              onDragStart={props.onDragStart}
+            />
+          )}
+        </Show>
       )}
     </For>
   )
