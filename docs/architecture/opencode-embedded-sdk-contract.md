@@ -1,8 +1,11 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: BLOCKED. The pinned SDK cannot execute a session turn — `sessions.prompt`
-returns 500 even with an explicit model (§2.2). The cutover cannot ship on this
-release regardless of packaging or product decisions.
+Status: BLOCKED on a PUBLISHED-ARTIFACT defect, not a design one. Upstream's own
+embedded test suite passes against `sst/opencode` source on the `beta` branch,
+and `config.get`/`agent.list`/`provider.list` all succeed there with a bare temp
+directory — while the published `0.0.0-beta-18314` tarball returns empty 500s
+for the same calls in the same runtime (§2.2). The cutover is likely blocked
+only until a corrected artifact ships.
 Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
 Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
 Planning commit: `8be1be76ce`
@@ -255,6 +258,52 @@ entrypoint that exposes it, not an upstream defect.
 git-backed project directory, and sessions carrying the `workspaceID`,
 `config.get`, `agent.list`, `provider.list` and `sessions.prompt` still all
 return 500. So provisioning is not the missing piece either.
+
+### The published artifact is defective; its SOURCE is not
+
+Cloning `sst/opencode`, checking out the `beta` branch and running the SDK's own
+suite settles this. **Upstream's 15 embedded tests pass here.** So the design
+works and the failure is not inherent.
+
+Then the decisive A/B — the same four calls, one against source, one against the
+published tarball in an isolated install:
+
+| Call | Upstream source (`../src/effect`) | Published `0.0.0-beta-18314` |
+|---|---|---|
+| `config.get` | **OK** — returns real entries | 500, empty body |
+| `agent.list` | **OK** | 500, empty body |
+| `provider.list` | **OK** | 500, empty body |
+| `plugin.list` | **OK** | (not retried) |
+
+Source succeeds with a **bare temp directory** — no workspace provisioning, no
+overrides, no schema-constructed location. Everything I thought was required
+setup was not.
+
+Variables eliminated, each by test:
+
+- **Not usage.** Plain `{ directory }` and
+  `Location.Ref.make({ directory: AbsolutePath.make(dir) })` fail identically
+  against the tarball, and the request URL serializes the same either way.
+- **Not workspace provisioning.** Source works without any; the tarball fails
+  with a fully provisioned workspace.
+- **Not `effect` skew.** Both resolve `effect@4.0.0-rc.111`.
+- **Not the branch being ahead.** `beta` HEAD is `b731bc1`, authored
+  2026-08-26T16:44Z — 51 minutes *before* the 17:35Z publish.
+- **Not our bundle.** The tarball fails under Bun importing it directly.
+
+**Caveat:** I cannot prove the tarball was built from exactly `b731bc1`; it may
+come from a commit not on the branch I fetched. What is proven is that the
+published artifact and the closest available source behave differently on the
+same calls, same runtime, same dependency versions.
+
+That reframes the upstream report entirely. It is not "the embedded SDK cannot
+resolve locations" — it is **"your published beta build does not match your
+source: config/agent/provider and prompting all return empty 500s from the
+tarball and pass from `packages/sdk/src`."** That is a packaging/build bug, and
+a far more actionable thing to file.
+
+It also means the cutover is likely blocked only until a corrected artifact is
+published — not by anything architectural.
 
 ### The 500s carry an empty body (correcting a false finding)
 
