@@ -1,12 +1,17 @@
-// Custom iOS-style notification sound for agent completion
+// Bundled cross-platform notification sound for agent completion.
 import iosSound from "./assets/ios.mp3"
 
 export const SOUND_OPTIONS = [
-  { id: "ios", label: "iOS", src: iosSound },
+  { id: "ios", label: "sound.option.alert01", src: iosSound },
 ] as const
 
 export type SoundOption = (typeof SOUND_OPTIONS)[number]
 export type SoundID = SoundOption["id"]
+export const DEFAULT_SOUND_ID: SoundID = SOUND_OPTIONS[0].id
+
+export function isSoundID(id: unknown): id is SoundID {
+  return typeof id === "string" && SOUND_OPTIONS.some((sound) => sound.id === id)
+}
 
 export function soundSrc(id: string | undefined): string | undefined {
   if (!id) return undefined

@@ -232,7 +232,7 @@ function useAgentLifecycleListener() {
         const isActiveTab =
           !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (eventType === "Idle" && !isActiveTab) {
+        if (eventType === "Idle" && !isActiveTab && settings.sounds.agentEnabled()) {
           void playSoundById(settings.sounds.agent())
           return
         }
@@ -252,14 +252,11 @@ function useSessionStatusListener() {
 
   createEffect(() => {
     const unsub = globalSDK.event.listen((e) => {
-      // as-any: SDK event details are opaque, but session.status carries this known payload.
+      // as-any: SDK event details are opaque, but session lifecycle events carry this known payload.
       const event = e.details as unknown as { type: string; properties: Record<string, unknown> }
 
-      if (event.type === "session.status") {
-        const { sessionID, status } = event.properties as {
-          sessionID: string
-          status: { type: string }
-        }
+      if (event.type === "session.idle") {
+        const { sessionID } = event.properties as { sessionID: string }
 
         const result = findSessionContent(state, sessionID)
         if (!result) return
@@ -267,7 +264,7 @@ function useSessionStatusListener() {
         const { paneId } = result
         const isActive = !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (status.type === "idle" && !isActive) {
+        if (!isActive && settings.sounds.agentEnabled()) {
           void playSoundById(settings.sounds.agent())
         }
       }
@@ -282,7 +279,7 @@ function useSessionStatusListener() {
         const { paneId } = result
         const isActive = !!paneId && state.wb.state.focusedPaneId === paneId
 
-        if (!isActive) {
+        if (!isActive && settings.sounds.errorsEnabled()) {
           void playSoundById(settings.sounds.errors())
         }
       }
