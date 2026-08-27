@@ -111,7 +111,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     result.handoffCreatedSession?.()
     expect(navigated).toBe("")
     await Promise.resolve()
-    expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")
+    expect(navigated).toBe("/s/ses_1")
   })
 
   test("non-draft path returns a deferred handoffCreatedSession callback", () => {
@@ -129,6 +129,35 @@ describe("applyCreatedSessionTargetEffects", () => {
       publishCloudHandoff: () => undefined,
     })
     expect(typeof result.handoffCreatedSession).toBe("function")
+  })
+
+  test("authoritative session ref wins over a stale catalog route id", async () => {
+    const navigated: string[] = []
+    const result = applyCreatedSessionTargetEffects({
+      created: true,
+      session: { id: "ses_1" },
+      sourceScope: "scope-1",
+      sessionDirectory: "workspace:ws_runtime",
+      workspaceRouteId: "ws_stale",
+      sessionRef: {
+        sessionId: "ses_1",
+        host: "workspace",
+        workspaceId: "ws_runtime",
+        toolSandbox: { kind: "workspace", workspaceId: "ws_runtime", hosting: "cloud" },
+      },
+      shouldAutoAccept: false,
+      enableAutoAccept: () => undefined,
+      navigateOnCreate: true,
+      previousSessionId: "new",
+      setLayoutTabs: () => undefined,
+      navigate: (href) => navigated.push(href),
+      publishCloudHandoff: () => undefined,
+    })
+
+    result.handoffCreatedSession?.()
+    await Promise.resolve()
+
+    expect(navigated).toEqual(["/w/ws_runtime/session/ses_1"])
   })
 
   test("deferred handoff fills a placeholder existing tab without replacing a concrete title", () => {
@@ -243,7 +272,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     expect(shown).toBe("tab-new")
     expect(navigated).toBe("")
     await Promise.resolve()
-    expect(navigated).toBe("/w/ws_1/session/ses_1")
+    expect(navigated).toBe("/s/ses_1")
   })
 
   test("deferred handoff stamps typed session refs for local workspace sessions", () => {
@@ -302,7 +331,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     })
   })
 
-  test("focused submitting surface navigates canonical workspace route for filesystem sessions", async () => {
+  test("focused submitting surface never puts its filesystem directory in the URL", async () => {
     let navigated = ""
     const result = applyCreatedSessionTargetEffects({
       created: true,
@@ -346,7 +375,7 @@ describe("applyCreatedSessionTargetEffects", () => {
 
     expect(navigated).toBe("")
     await Promise.resolve()
-    expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")
+    expect(navigated).toBe("/s/ses_1")
   })
 
   test("focused submitting surface is retargeted in place before navigation (no duplicate content)", async () => {
@@ -420,7 +449,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     ])
     expect(opened).toBe(0)
     await Promise.resolve()
-    expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")
+    expect(navigated).toBe("/s/ses_1")
   })
 
   test("draft-created sessions still return a workspace handoff before canonical navigation", async () => {
@@ -473,7 +502,7 @@ describe("applyCreatedSessionTargetEffects", () => {
     ]])
     expect(navigated).toBe("")
     await Promise.resolve()
-    expect(navigated).toBe("/w/%2Frepo%2Fmain/session/ses_1")
+    expect(navigated).toBe("/s/ses_1")
   })
 
   test("central-created sessions keep the global session route", async () => {

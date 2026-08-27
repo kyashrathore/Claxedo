@@ -17,8 +17,8 @@ export function isEmbedMode() {
  *
  * The packaged desktop renderer is loaded with `win.loadFile(...)` and routes
  * with `MemoryRouter`, so its URL is never the source of truth — but the address
- * bar is still writable. `history.replaceState(state, "", "/w/<dir>/<session>")`
- * therefore rewrote the window URL to `file:///w/<dir>/<session>`, and the next
+ * bar is still writable. Writing an application route there rewrites the
+ * document to a nonexistent `file:///w/...` location, and the next
  * reload asked Chromium to load that path *as a file*: `net::ERR_FAILED`, which
  * strands the user on a blank `chrome-error://chromewebdata/` page that only
  * relaunching the app recovers.

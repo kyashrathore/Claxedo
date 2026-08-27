@@ -31,6 +31,7 @@ import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const apiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 const repositoryDirectory = path.resolve(import.meta.dirname, "../../../..")
+const projectId = "project_workgraph_e2e"
 let harness: RealWorkGraphHarness
 
 test.describe.serial("@core @workgraph-real personal WorkGraph real local journey", () => {
@@ -208,7 +209,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       },
     })
 
-    await page.goto(`/w/${encodeURIComponent(repositoryDirectory)}/task/new`)
+    await page.goto(`/w/${projectId}/task/new`)
     await expect(page.getByRole("tablist", { name: "Task composer" })).toBeVisible()
     await page.getByRole("tab", { name: "Streams" }).click()
     await expect(page.getByText("Composer project stream", { exact: true })).toBeVisible()
@@ -231,7 +232,7 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
       streamId: String(projectStream.value.streamId),
     })
 
-    await page.goto(`/w/${encodeURIComponent(repositoryDirectory)}/workgraph`)
+    await page.goto(`/w/${projectId}/workgraph`)
     await expect(page.getByRole("article", { name: "Stream Composer project stream" })).toBeVisible()
     await expect(page.getByRole("article", { name: "Stream Other project stream" })).toHaveCount(0)
     await expect(page.getByText("Draft", { exact: true })).toBeVisible()

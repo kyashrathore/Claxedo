@@ -20,6 +20,7 @@ function makeProps() {
       navigate: (path: string) => navigateCalls.push(path),
       activeDirectory: () => "/workspace/main",
       projects: () => [{ id: "p1", worktree: "/workspace/main" }],
+      workspaceRouteId: (directory) => directory === "/workspace/main" ? "p1" : undefined,
       canUseDocuments: () => true,
       state: {
         layout: {
@@ -40,7 +41,7 @@ describe("createPageActions", () => {
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])
-    expect(navigateCalls).toEqual([workspacePageRoute("/workspace/main", "__index__")])
+    expect(navigateCalls).toEqual([workspacePageRoute("p1", "__index__")])
   })
 
   test("handleNewPage falls back to first project when no active workspace", () => {
@@ -67,7 +68,7 @@ describe("createPageActions", () => {
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])
-    expect(navigateCalls).toEqual([workspacePageRoute("/workspace/main", "__index__")])
+    expect(navigateCalls).toEqual([workspacePageRoute("p1", "__index__")])
   })
 
   test("handleNewPage opens pages-index while signed page access is unresolved", () => {
@@ -76,6 +77,6 @@ describe("createPageActions", () => {
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])
-    expect(navigateCalls).toEqual([workspacePageRoute("/workspace/main", "__index__")])
+    expect(navigateCalls).toEqual([workspacePageRoute("p1", "__index__")])
   })
 })

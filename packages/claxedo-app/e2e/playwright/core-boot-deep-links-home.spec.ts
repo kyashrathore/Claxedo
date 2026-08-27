@@ -173,6 +173,7 @@ import { installMockRuntime } from "../helpers/mock-runtime"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
+const PROJECT_ID = "project_core_boot_deep_links_home"
 const ONBOARDING_V1 = process.env.VITE_CLAXEDO_ONBOARDING_V1 === "true"
 const SESSION_ID = "ses_core_boot_deep_links_home"
 
@@ -180,28 +181,28 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-function workspaceSessionUrl(dir: string, sessionId: string) {
-  return `/w/${encodeURIComponent(dir)}/session/${encodeURIComponent(sessionId)}`
+function workspaceSessionUrl(workspaceId: string, sessionId: string) {
+  return `/w/${encodeURIComponent(workspaceId)}/session/${encodeURIComponent(sessionId)}`
 }
 
 async function seedOneProject(page: Page, dir: string) {
-  await page.addInitScript((d: string) => {
+  await page.addInitScript(({ dir, projectId }: { dir: string; projectId: string }) => {
     localStorage.clear()
     ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
       serverUrl: window.location.origin,
-      activeDirectory: d,
+      activeDirectory: dir,
     }
     localStorage.setItem(
       "opencode.global.dat:server",
       JSON.stringify({
         list: [],
-        projects: { local: [{ worktree: d, expanded: true }] },
+        projects: { local: [{ id: projectId, worktree: dir, expanded: true }] },
         lastProject: {},
         workspaceServer: {},
         closedProjects: {},
       }),
     )
-  }, dir)
+  }, { dir, projectId: PROJECT_ID })
 }
 
 /**
@@ -315,7 +316,7 @@ async function installSessionListMock(page: Page) {
  * fall through to a real, non-existent backend at 127.0.0.1:3001 and hung every
  * caller on the `ConnectionError` screen — see finding in this spec's PR notes). */
 async function createSessionViaFirstSend(page: Page, promptText: string) {
-  await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+  await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
   await seedOneProject(page, DIR)
   const input = await openDraftPrompt(page, DIR)
   await input.click()
@@ -406,7 +407,7 @@ function nonClerkBadResponses(entries: string[]) {
 
 test.describe("core boot, deep links, and home @core", () => {
   test("cold boot with zero projects paints a clean shell and the Home empty state — behaviors 1,2", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     // NOTE: the global SDK's central event-stream connection (zero-workspace context)
     // is NOT interceptable from here — see the `nonClerkConsole` FINDING comment below
     // for the full citation (it targets a hardcoded default origin the app resolves
@@ -559,7 +560,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("the remote-access deep link is honoured once earlier steps are proven — behavior 12 @onboarding-enabled", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -600,7 +601,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("saying yes to the cloud holds the user until the cloud can actually run @onboarding-enabled", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID, projectName: "core-boot-web-onboarding" })
     await page.route("**/api/claxedo/credentials**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -638,7 +639,7 @@ test.describe("core boot, deep links, and home @core", () => {
 
   test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs — behaviors 5,6", async ({ page }) => {
     const primaryUrl = await createSessionViaFirstSend(page, "core boot workspace deep link turn")
-    expect(primaryUrl).toContain(workspaceSessionUrl(DIR, SESSION_ID))
+    expect(primaryUrl).toContain(workspaceSessionUrl(PROJECT_ID, SESSION_ID))
 
     // Behavior 6 needs a stale tab to actually exist before the fresh nav, so open one
     // DELIBERATELY. The precondition is pinned STRICTLY `> 1`: with the previous
@@ -698,7 +699,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("unparseable persisted layout self-heals into a clean boot — behavior 7", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await seedProjectWithRawLayout(page, DIR, "{not valid json at all")
     await page.goto("/", { waitUntil: "domcontentloaded" })
 
@@ -708,7 +709,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("structurally-invalid persisted layout self-heals into a clean boot — behavior 7", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     const garbage = JSON.stringify({
       workbench: { panes: "not-an-array", split: null, contentIds: { nope: true }, focusedPaneId: 42 },
       meta: { orphan: { id: "orphan", type: "bogus-type-not-real" } },
@@ -825,7 +826,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("non-session routes hold the gate and show Could not reach when health never recovers — behavior 9", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     await page.route("**/api/claxedo/health", (route) =>
       route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ healthy: false }) }),
     )
@@ -852,7 +853,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("unreachable server auto-recovers once health returns, no retry button — behavior 10", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     let claxedoHealthCalls = 0
     await page.route("**/api/claxedo/health", (route) => {
       claxedoHealthCalls += 1

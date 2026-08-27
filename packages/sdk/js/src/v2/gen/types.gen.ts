@@ -2162,6 +2162,10 @@ export type WorktreeError = {
 export type WorktreeCreateInput = {
   name?: string
   /**
+   * Git revision to use as the new worktree branch's starting point
+   */
+  baseRef?: string
+  /**
    * Additional startup script to run after the project's start command
    */
   startCommand?: string

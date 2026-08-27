@@ -14,6 +14,7 @@ import {
   SessionPaneScope,
   TerminalNewView,
   useClaxedoState,
+  useSDK,
   type ContentMeta,
   type PaneCtx,
 } from "@/features/terminal/app-ports"
@@ -71,18 +72,28 @@ export function TerminalContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
  * surface's content id: re-pointing at another directory, and becoming a real
  * terminal in place (rather than opening a second tab and orphaning this one).
  */
-function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory: () => string }) {
+function TerminalNewSurface(props: {
+  meta: ContentMeta
+  ctx: PaneCtx
+  directory: () => string
+}) {
   const state = useClaxedoState()
   const navigate = useNavigate()
 
   const retarget = (directory: WorkspaceDirectoryRef) => {
     state.meta.patch(props.meta.id, {
       directory,
-      content: { ...props.meta.content, type: "terminal", directory, terminalId: NEW_TERMINAL_ID },
+      content: {
+        ...props.meta.content,
+        type: "terminal",
+        directory,
+        terminalId: NEW_TERMINAL_ID,
+        workspaceRouteId: undefined,
+      },
     })
   }
 
-  const launch = (input: { directory: WorkspaceDirectoryRef; command?: string; title?: string }) => {
+  const launch = (input: { directory: WorkspaceDirectoryRef; workspaceId: string; command?: string; title?: string }) => {
     const pendingId = `${PENDING_TERMINAL_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const title = input.title || "Terminal"
     batch(() => {
@@ -95,6 +106,7 @@ function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory:
           directory: input.directory,
           terminalId: pendingId,
           title,
+          workspaceRouteId: input.workspaceId,
           ...(input.command ? { command: input.command } : {}),
         },
       })
@@ -110,14 +122,26 @@ function TerminalNewSurface(props: { meta: ContentMeta; ctx: PaneCtx; directory:
     // is also what lets TerminalContentInner rewrite the URL when the real pty
     // id arrives (its swap is a no-op unless the route already points at the
     // pending one).
-    navigate(workspaceTerminalRoute(input.directory, pendingId))
+    navigate(workspaceTerminalRoute(input.workspaceId, pendingId))
   }
 
-  return <TerminalNewView directory={props.directory()} onLaunch={launch} onRetarget={retarget} />
+  return (
+    <TerminalNewView
+      directory={props.directory()}
+      workspaceId={props.meta.content?.workspaceRouteId}
+      onLaunch={launch}
+      onRetarget={retarget}
+    />
+  )
 }
 
-function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; directory: () => string }) {
+function TerminalContentInner(props: {
+  meta: ContentMeta
+  ctx: PaneCtx
+  directory: () => string
+}) {
   const state = useClaxedoState()
+  const sdk = useSDK()
   const terminal = useTerminal()
   const platform = usePlatform()
   const location = useLocation()
@@ -129,8 +153,13 @@ function TerminalContentInner(props: { meta: ContentMeta; ctx: PaneCtx; director
   const terminalId = () => props.meta.terminalId ?? props.meta.content?.terminalId
   const command = () => props.meta.content?.command
   const replaceTerminalRoute = (oldId: string, newId: string, dir: string) => {
-    if (location.pathname !== workspaceTerminalRoute(dir, oldId)) return
-    navigate(workspaceTerminalRoute(dir, newId), { replace: true })
+    // Local scopes deliberately have no SDK workspace id because they do not
+    // use relay transport. The surface still owns an opaque route identity;
+    // keep that identity on its content metadata and use it for the pending ->
+    // real PTY route swap. Hosted scopes can still supply it through the SDK.
+    const workspaceId = props.meta.content?.workspaceRouteId ?? sdk.workspaceId
+    if (!workspaceId || location.pathname !== workspaceTerminalRoute(workspaceId, oldId)) return
+    navigate(workspaceTerminalRoute(workspaceId, newId), { replace: true })
   }
 
   const [realPtyId, setRealPtyId] = createSignal(

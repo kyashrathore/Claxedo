@@ -20,6 +20,7 @@ import { ensureLocalProject } from "../../features/workspaces/data/query/project
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
 export default function Home() {
   const queryOptions = useQueryOptions()
@@ -40,18 +41,22 @@ export default function Home() {
       .slice(0, 5)
   })
 
-  async function openProject(directory: string) {
+  async function openProject(directory: string, selectedProject?: NonNullable<typeof projectsQuery.data>[number]) {
+    let projects = projectsQuery.data ?? []
     if ((server.isLocal() || centralTransportForServer(server.url) === "loopback") && isFilesystemDirectory(directory)) {
-      await ensureLocalProject({
+      const ensured = await ensureLocalProject({
         baseUrl: globalSDK.url,
         request: platform.fetch,
         directory,
         projectsQuery: queryOptions.projects(),
       })
+      if (Array.isArray(ensured)) projects = ensured
     }
+    const workspaceId = workspaceRouteId(selectedProject ? [selectedProject] : projects, directory)
+    if (!workspaceId) return
     layout.projects.open(directory)
     server.projects.touch(directory)
-    navigate(workspaceRoute(directory))
+    navigate(workspaceRoute(workspaceId))
   }
 
   async function chooseProject() {
@@ -106,7 +111,7 @@ export default function Home() {
                     size="large"
                     variant="ghost"
                     class="text-14-mono text-left justify-between px-3"
-                    onClick={() => openProject(project.worktree)}
+                    onClick={() => openProject(project.worktree, project)}
                   >
                     {project.worktree.replace(homedir(), "~")}
                     <div class="text-14-regular text-text-weak">

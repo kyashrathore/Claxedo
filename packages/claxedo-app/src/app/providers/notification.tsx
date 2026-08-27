@@ -19,7 +19,7 @@ import { useSettings } from "@/platform/settings/provider"
 import { EventSessionError } from "@opencode-ai/sdk/v2"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import { Persist, persisted } from "@/platform/persistence/persist"
-import { sessionRoute, workspaceRoute } from "@/platform/identity/route"
+import { sessionRoute } from "@/platform/identity/route"
 import { directorySessions, upsertDirectorySession } from "../../features/session/data/sync/directory-session-cache"
 
 type NotificationBase = {
@@ -296,7 +296,7 @@ const notificationContextInput = {
             const description =
               session?.title ??
               (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
-            const href = sessionID ? sessionRoute(sessionID) : workspaceRoute(directory)
+            const href = sessionID ? sessionRoute(sessionID) : undefined
             if (settings.notifications.errors()) {
               void platform.notify(language.t("notification.session.error.title"), description, href)
             }

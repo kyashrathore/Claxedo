@@ -195,9 +195,10 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       })
       if (Array.isArray(ensured)) projects = ensured
     }
-    layout.projects.open(workspaceDirectory)
     const workspaceId = workspaceRouteId(projects, workspaceDirectory)
-    if (workspaceId) navigate(routeFor(workspaceId))
+    if (!workspaceId) return
+    layout.projects.open(workspaceDirectory)
+    navigate(routeFor(workspaceId))
   }
 
   const handleDeepLinks = (urls: string[]) => {

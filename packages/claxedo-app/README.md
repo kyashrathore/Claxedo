@@ -124,6 +124,13 @@ bun run test:e2e:core       # CLAXEDO_E2E_SUITE=core playwright test
 bun run test:e2e:mobile     # --project=mobile (375×812 core flows)
 ```
 
+Both commands run every selected flow twice: first with the development Test
+User, then as a loopback unsigned visitor with auth UI enabled and no synthetic
+user. `CLAXEDO_E2E_AUTH_MODE=test-user|local-unsigned` selects one mode for a
+direct `test:e2e:*:base` invocation. The matrix runner always attempts both
+modes and all requested lane scripts before returning a non-zero aggregate
+status, so an early Test User failure cannot hide unsigned coverage.
+
 **Suite lanes.** `CLAXEDO_E2E_SUITE` selects specs *by tag* — a spec that carries
 no lane tag is selected by no lane and silently never runs. The registry lives in
 `playwright.config.ts` (`suiteGrep`); an unknown suite name throws rather than

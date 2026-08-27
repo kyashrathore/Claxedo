@@ -7,7 +7,7 @@ import { historyPath } from "./history-disk"
 import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 
 type DataHandler = (data: string) => void
-type ExitHandler = (event: { exitCode: number }) => void
+type ExitHandler = (event: { exitCode: number }) => void | Promise<void>
 
 const fakeProcesses = new Map<number, {
   dataHandlers: DataHandler[]
@@ -139,16 +139,31 @@ describe("Pty lifecycle cleanup", () => {
   test("orphan timeout removes abandoned unmanaged sessions", async () => {
     const { Pty } = await import("./index")
     const info = await Pty.create({ cwd: tmpDir, title: "orphan" })
-    const ws = socket()
-    const connection = Pty.connect(info.id, ws)
-
-    connection?.onClose()
+    expect(Pty.activity()).toEqual({ running: 1, committed: 0, provisional: 1, managed: 0, subscribers: 0 })
     expect(Pty.listDetailed().find((session) => session.id === info.id)?.orphanTimerActive).toBe(true)
 
     await waitFor(() => Pty.get(info.id) === undefined)
 
     expect(Pty.get(info.id)).toBeUndefined()
     expect(kill.mock.calls).toContainEqual([info.pid, "SIGTERM"])
+  })
+
+  test("committed sessions survive subscriber disconnects", async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({ cwd: tmpDir, title: "committed" })
+
+    expect(Pty.commit(info.id)).toEqual(info)
+    expect(Pty.listDetailed().find((session) => session.id === info.id)).toMatchObject({
+      committed: true,
+      orphanTimerActive: false,
+    })
+    const connection = Pty.connect(info.id, socket())
+    connection?.onClose()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(Pty.get(info.id)).toEqual(info)
+    expect(Pty.activity()).toEqual({ running: 1, committed: 1, provisional: 0, managed: 0, subscribers: 0 })
+    expect(kill.mock.calls).toEqual([])
   })
 
   test("reconnect cancels the orphan timer", async () => {
@@ -180,6 +195,18 @@ describe("Pty lifecycle cleanup", () => {
 
     expect(Pty.get(info.id)).toBeUndefined()
     expect(kill.mock.calls.filter((call) => call[0] === info.pid)).toHaveLength(2)
+  })
+
+  test("explicit remove wins a race with native exit retention", async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({ cwd: tmpDir, title: "exit-remove-race" })
+    const handlers = fakeProcesses.get(info.pid)?.exitHandlers ?? []
+
+    const exiting = Promise.all(handlers.map((handler) => handler({ exitCode: 0 })))
+    await Pty.remove(info.id)
+    await exiting
+
+    expect(Pty.get(info.id)).toBeUndefined()
   })
 
   test("dispose removes every active session", async () => {

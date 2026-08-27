@@ -240,6 +240,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const isNewSession = !explicitSessionID || explicitSessionID === "new"
     const shouldAutoAccept = isNewSession && input.autoAccept()
     const worktreeSelection = input.newSessionWorktree?.() || "main"
+    const baseRef = input.newSessionBaseRef?.()?.trim() || undefined
     const workspaceKind = input.newSessionWorkspaceKind?.() ?? "local"
     const cloudStartup = createCloudStartupController({
       enabled: isNewSession && workspaceKind === "cloud",
@@ -272,14 +273,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         const response = await authFetch(workspaceCreateUrl({ baseUrl: getDefaultBaseUrl() }), {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId }),
+          body: JSON.stringify({ projectId, ...(baseRef ? { gitBranch: baseRef } : {}) }),
         })
         if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)
         return await response.json() as CreateWorkspaceResult
       },
-      createLocalWorktree: (directory) => sdk.client.worktree.create({ directory }).then((x) => x.data),
+      createLocalWorktree: (directory) => sdk.client.worktree.create({
+        directory,
+        ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),
+      }).then((x) => x.data),
       markLocalWorktreePending: (directory) => WorktreeState.pending(directory),
-      bootstrap: () => globalBootstrapActions.bootstrap(),
+      bootstrap: () => globalBootstrapActions.bootstrap({ force: true }),
       showToast: (toast) => showToast(toast),
       errorMessage,
       text: {

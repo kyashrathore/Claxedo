@@ -44,7 +44,7 @@ export function remoteAccessWorkspaceLink(input: {
   workspaceId: string
   sourceClientId: string
 }) {
-  const url = new URL(`/w/${encodeURIComponent(input.workspaceId)}`, input.appOrigin)
+  const url = new URL(workspaceRoute(input.workspaceId), input.appOrigin)
   url.searchParams.set("claxedo_second_device", "1")
   url.searchParams.set("claxedo_source_client", input.sourceClientId)
   return url.toString()
@@ -68,3 +68,4 @@ export function remoteAccessClientId(storage: Pick<Storage, "getItem" | "setItem
   storage.setItem(key, id)
   return id
 }
+import { workspaceRoute } from "@/platform/identity/route"

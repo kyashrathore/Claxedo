@@ -1,14 +1,16 @@
 import { chromium } from "@playwright/test"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
+import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const runId = process.argv[2] || String(Date.now())
 const root = process.argv[3] || "/Users/yashvardhansingh/test/opencode"
+const workspaceId = process.env.WORKSPACE_ID?.trim()
 const outDir = join(root, ".context/compound-engineering/feature-video", runId)
 const videoDir = join(outDir, "raw-video")
 mkdirSync(videoDir, { recursive: true })
 
-const base = "http://localhost:4444/w/%2FUsers%2Fyashvardhansingh%2Ftest%2Fopencode/session"
+const base = workspaceCaptureUrl({ workspaceId, origin: "http://localhost:4444" })
 const evidence = {
   runId,
   base,

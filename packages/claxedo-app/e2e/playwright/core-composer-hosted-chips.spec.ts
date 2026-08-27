@@ -1,10 +1,11 @@
 /**
- * SPEC: Hosted composer chip row — project identity, environment, workspace choice
+ * SPEC: Hosted composer chip row — project identity, environment, workspace and branch choice
  *
  * PURPOSE — the empty-draft composer's chip row (`session-new-design-view.tsx` →
  * `session-context-row.tsx`) is the last thing a user configures before their first
- * prompt: WHICH project, WHERE it runs, and IN WHICH workspace. On a hosted cloud
- * session all three chips read from the SIGNED PROJECT INVENTORY
+ * prompt: WHICH project, WHERE it runs, IN WHICH workspace, and FROM WHICH branch.
+ * On a hosted cloud session the context chips read from signed inventory and the
+ * selected workspace runtime
  * (`queryOptions.projects()`, fed by `/api/claxedo/bootstrap`'s `project[]`), and all
  * three were wrong there in a way no local-lane spec could see:
  *
@@ -24,7 +25,7 @@
  *      the chip collapsed to "create new" for a project that already had cloud
  *      workspaces.
  *
- * This spec owns the hosted chip ROW's contract — what the three chips offer and
+ * This spec owns the hosted chip ROW's contract — what the chips offer and
  * display on a cloud draft. It does NOT own the provisioning pipeline those chips lead
  * into (`core-cloud-provisioning.spec.ts`) nor harness/model ownership through a cloud
  * send (`core-harness-ownership-cloud.spec.ts`); it deliberately asserts no assistant
@@ -42,6 +43,7 @@
  *   `[data-slot="context-chip-project"]`      — project;    keys are directories
  *   `[data-slot="context-chip-environment"]`  — local/cloud; keys are "local"/"cloud"
  *   `[data-slot="context-chip-worktree"]`     — workspace;   keys are workspace refs
+ *   `[data-slot="context-chip-branch"]`       — base branch; keys are Git refs
  *
  * LANE — `@core`, selected by `CLAXEDO_E2E_SUITE=core`; mocked runtime only
  * (`e2e/helpers/mock-runtime.ts`), no live control plane.
@@ -204,5 +206,23 @@ test.describe("core composer hosted chips @core", () => {
     expect(key).toBeTruthy()
 
     await page.screenshot({ path: `${EVIDENCE}/workspace-chip-selected.png`, fullPage: true })
+  })
+
+  test("the branch chip lists refs and selecting one prepares a new cloud workspace — behavior 5", async ({ page }) => {
+    await openCloudDraft(page)
+
+    const trigger = await chip(page, "context-chip-branch")
+    await expect(trigger.locator('[data-slot="context-chip-label"]')).toHaveText("main", { timeout: 20_000 })
+    expect(await chipOptionKeys(page, "context-chip-branch")).toEqual(["main", "feature/e2e"])
+
+    await trigger.click()
+    const feature = page.locator('[data-context-chip-picker="context-chip-branch"] [data-slot="list-item"][data-key="feature/e2e"]')
+    await expect(feature).toBeVisible({ timeout: 20_000 })
+    await feature.click()
+    await expect(trigger.locator('[data-slot="context-chip-label"]')).toHaveText("feature/e2e")
+
+    const workspace = await chip(page, "context-chip-worktree")
+    await expect(workspace.locator('[data-slot="context-chip-label"]')).toHaveText("New cloud sandbox")
+    await page.screenshot({ path: `${EVIDENCE}/branch-chip-selected.png`, fullPage: true })
   })
 })

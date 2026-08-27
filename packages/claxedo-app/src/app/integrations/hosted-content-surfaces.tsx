@@ -27,6 +27,7 @@ import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queri
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import { SurfaceFallback } from "./surface-fallback"
 import type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./content-surface-contract"
+import { workspaceRouteId, type WorkspaceRouteProject } from "@/platform/identity/workspace-route"
 
 /**
  * Hosted content surfaces: WorkGraph and Documents.
@@ -172,19 +173,26 @@ function WorkspaceWorkGraphSurface(props: { context: ContentSurfaceRenderContext
   return <WorkGraphSurface context={props.context} projectKey={projectKey()} />
 }
 
+export function taskComposerProjectRoute(project: WorkspaceRouteProject, directory = project.worktree ?? undefined) {
+  const routeId = workspaceRouteId([project], directory)
+  return routeId ? newTaskRoute(routeId) : undefined
+}
+
 function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
   const platform = usePlatform()
   const state = useClaxedoState()
   const navigate = useNavigate()
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
-  const retarget = (nextDirectory: string) => {
+  const retarget = (nextDirectory: string, project: WorkspaceRouteProject) => {
+    const route = taskComposerProjectRoute(project, nextDirectory)
+    if (!route) return
     state.meta.patch(props.context.meta.id, {
       directory: nextDirectory,
       scope: "directory",
       content: { type: "task-composer", directory: nextDirectory, title: "New task" },
     })
-    navigate(newTaskRoute(nextDirectory), { replace: true })
+    navigate(route, { replace: true })
   }
   return (
     <Show
@@ -201,7 +209,7 @@ function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
                   <button
                     type="button"
                     class="flex w-full items-center justify-between rounded-md px-3 py-2 text-left text-sm text-text-base hover:bg-surface-base-hover"
-                    onClick={() => retarget(project.worktree)}
+                    onClick={() => retarget(project.worktree, project)}
                   >
                     <span class="truncate">{project.name?.trim() || project.worktree.split("/").filter(Boolean).at(-1)}</span>
                     <span class="ml-3 truncate text-xs text-text-weaker">{project.worktree}</span>

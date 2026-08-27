@@ -445,6 +445,20 @@ test.describe("core harness ownership (cloud) @core", () => {
   // the cloud pane shows the WORKSPACE's own default, while nothing clobbers the local
   // selection. A prompt sent through the cloud workspace therefore still carries OpenCode.
   test("a cloud workspace draft keeps its own OpenCode default while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
+    await page.addInitScript(() => {
+      const writes: string[] = []
+      const pushState = window.history.pushState.bind(window.history)
+      const replaceState = window.history.replaceState.bind(window.history)
+      ;(window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites = writes
+      window.history.pushState = (data, unused, url) => {
+        if (url !== undefined && url !== null) writes.push(String(url))
+        return pushState(data, unused, url)
+      }
+      window.history.replaceState = (data, unused, url) => {
+        if (url !== undefined && url !== null) writes.push(String(url))
+        return replaceState(data, unused, url)
+      }
+    })
     const mock = await installMockRuntime(page, {
       dir: DIR,
       projectId: PROJECT_ID,
@@ -509,15 +523,20 @@ test.describe("core harness ownership (cloud) @core", () => {
     // pane back to the local project and prove the local draft comes back on Claude with
     // its harness-owned model control, then return to the cloud draft (which must still be
     // on its own OpenCode default) before sending.
+    await page.evaluate(() => {
+      const writes = (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites
+      if (writes) writes.length = 0
+    })
     await openProjectFromChip(page, DIR, PROJECT_NAME)
-    // `openProject` routes through `workspaceSessionRoute(directory)`
-    // (`src/platform/identity/route.ts:58-61`), so picking a PLAIN LOCAL project from the
-    // chip lands on `/w/<encodeURIComponent(directory)>/session` — the same route shape the
-    // cloud workspace uses, keyed by the directory instead of a workspace id. It is NOT the
-    // base64 `/${slug(DIR)}/session` route this test `goto`s at the top; the two are
-    // equivalent entry points to the same local directory, and the harness assertions below
-    // are what prove this one really resolved the local (non-cloud) scope.
-    await expect(page).toHaveURL(new RegExp(`/w/${encodeURIComponent(DIR)}/session$`), { timeout: 20_000 })
+    // Project-chip navigation resolves the local directory through project inventory
+    // before the first history write. The physical path never appears and then swaps;
+    // `/w/` is keyed by the opaque project/workspace ID from the start.
+    await expect(page).toHaveURL(new RegExp(`/w/${PROJECT_ID}/session$`), { timeout: 20_000 })
+    const historyWrites = await page.evaluate(
+      () => (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites ?? [],
+    )
+    expect(historyWrites).toEqual([`/w/${PROJECT_ID}/session`])
+    expect(historyWrites.join("\n")).not.toContain(encodeURIComponent(DIR))
     await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(1, { timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 

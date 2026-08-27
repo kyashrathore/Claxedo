@@ -113,7 +113,7 @@ export const promptContextAdds: Array<{
 export const promptContextRemoves: string[] = []
 export const refreshCalls: Array<{ directory: string; harnessType?: string }> = []
 export const bootstrapCalls: string[] = []
-export const worktreeCreateCalls: Array<{ directory?: string }> = []
+export const worktreeCreateCalls: Array<{ directory?: string; worktreeCreateInput?: { baseRef?: string } }> = []
 export const enabledAutoAccept: Array<{ sessionID: string; directory: string }> = []
 
 // Path-style writes (`todo`, `permission`, `question`) flow through a real
@@ -730,7 +730,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       url: "http://localhost:4096",
       client: {
         worktree: {
-          create: async (input: { directory?: string }) => {
+          create: async (input: { directory?: string; worktreeCreateInput?: { baseRef?: string } }) => {
             worktreeCreateCalls.push(input)
             return { data: { directory: "/repo/main/new" } }
           },

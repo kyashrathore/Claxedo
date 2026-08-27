@@ -70,6 +70,8 @@
  *      today. This test pins the stronger, observable contract the guard exists to
  *      protect: zero workspace ⇒ zero compose surface ⇒ zero session creation. See
  *      inline comment on the test for the full trace.)
+ *   6. The draft exposes repository branches, and selecting one creates the first
+ *      session in a new worktree based on that exact ref.
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
  *   e2e/INVARIANTS.md); harness ownership (#1) — this spec locks in the `opencode`
@@ -322,6 +324,44 @@ test.describe("core first prompt (local) @core", () => {
 
     expect(mock.requests.createSessionCount).toBe(1)
     expect(mock.requests.promptBodies[0]?.text).toBe(promptText)
+  })
+
+  test("selecting a base branch provisions the first session from that exact ref — behavior 6", async ({ page }) => {
+    const branches = ["main", "release/next"]
+    const mock = await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: SESSION_ID,
+      branches,
+      currentBranch: "main",
+      harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+    })
+    await seedOneProject(page, DIR)
+    const input = await openDraftPrompt(page, DIR)
+
+    const branch = page.locator('[data-slot="context-chip-branch"]').filter({ visible: true })
+    await expect(branch).toHaveCount(1, { timeout: 20_000 })
+    await expect(branch.locator('[data-slot="context-chip-label"]')).toHaveText("main")
+    await branch.click()
+
+    const picker = page.locator('[data-context-chip-picker="context-chip-branch"]')
+    const rows = picker.locator('[data-slot="list-item"]')
+    await expect(rows).toHaveCount(2, { timeout: 20_000 })
+    await expect(rows).toHaveText(branches)
+    await rows.filter({ hasText: "release/next" }).click()
+    await expect(branch.locator('[data-slot="context-chip-label"]')).toHaveText("release/next")
+
+    const workspace = page.locator('[data-slot="context-chip-worktree"]').filter({ visible: true })
+    await expect(workspace.locator('[data-slot="context-chip-label"]')).toHaveText("New local worktree")
+
+    const promptText = "start this task from release next"
+    await input.fill(promptText)
+    await page.locator(SELECTORS.submitControl).last().click()
+
+    await expect.poll(() => mock.requests.worktreeCreateBodies, { timeout: 15_000 }).toEqual([{
+      directory: DIR,
+      baseRef: "release/next",
+    }])
+    await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
   })
 
   test("a directory-less draft offers no compose surface and creates zero sessions — behavior 5", async ({ page }) => {

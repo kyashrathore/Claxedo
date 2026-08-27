@@ -4,6 +4,7 @@
 import { batch } from "solid-js"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import { sessionContentPayload } from "@/features/session/app-ports"
 import { isConcreteSessionTitle } from "@/features/session/lib/session-title-sync"
@@ -12,10 +13,12 @@ import type {
   ApplyOptimisticPromptHandoffContext,
 } from "./types"
 
-function createdSessionRoute(input: { sessionID: string; sessionDirectory: string; sessionRef?: { host: string } }) {
-  return input.sessionRef?.host === "central"
-    ? sessionRoute(input.sessionID)
-    : workspaceSessionRoute(input.sessionDirectory, input.sessionID)
+function createdSessionRoute(input: { sessionID: string; workspaceRouteId?: string; sessionRef?: SessionRef }) {
+  if (input.sessionRef?.host === "central") return sessionRoute(input.sessionID)
+  const workspaceId = (input.sessionRef ? workspaceKey(input.sessionRef) : undefined) ?? input.workspaceRouteId
+  return workspaceId
+    ? workspaceSessionRoute(workspaceId, input.sessionID)
+    : sessionRoute(input.sessionID)
 }
 
 export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTargetEffectsContext) {
@@ -69,7 +72,7 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
         })
         queueMicrotask(() => input.navigate(createdSessionRoute({
           sessionID: input.session.id,
-          sessionDirectory: input.sessionDirectory,
+          workspaceRouteId: input.workspaceRouteId,
           sessionRef: input.sessionRef,
         })))
         return
@@ -120,7 +123,7 @@ export function applyCreatedSessionTargetEffects(input: ApplyCreatedSessionTarge
       if (contentId) input.claxedoState?.layout.showContent(contentId)
       queueMicrotask(() => input.navigate(createdSessionRoute({
         sessionID: input.session.id,
-        sessionDirectory: input.sessionDirectory,
+        workspaceRouteId: input.workspaceRouteId,
         sessionRef: input.sessionRef,
       })))
     },

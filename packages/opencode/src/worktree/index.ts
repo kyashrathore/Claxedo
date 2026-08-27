@@ -29,6 +29,9 @@ export type Info = Schema.Schema.Type<typeof Info>
 
 export const CreateInput = Schema.Struct({
   name: Schema.optional(Schema.String),
+  baseRef: Schema.optional(
+    Schema.String.annotate({ description: "Git revision to use as the new worktree branch's starting point" }),
+  ),
   startCommand: Schema.optional(
     Schema.String.annotate({ description: "Additional startup script to run after the project's start command" }),
   ),
@@ -118,7 +121,7 @@ function failedRemoves(...chunks: string[]) {
 
 export interface Interface {
   readonly makeWorktreeInfo: (options?: { name?: string; detached?: boolean }) => Effect.Effect<Info, Error>
-  readonly createFromInfo: (info: Info, startCommand?: string) => Effect.Effect<void, Error>
+  readonly createFromInfo: (info: Info, startCommand?: string, baseRef?: string) => Effect.Effect<void, Error>
   readonly create: (input?: CreateInput) => Effect.Effect<Info, Error>
   readonly list: () => Effect.Effect<(Omit<Info, "branch"> & { branch?: string })[], Error>
   readonly remove: (input: RemoveInput) => Effect.Effect<boolean, Error>
@@ -211,11 +214,11 @@ const layer: Layer.Layer<
       return yield* candidate({ root, name: input?.name ? slugify(input.name) : "", detached: input?.detached })
     })
 
-    const setup = Effect.fnUntraced(function* (info: Info) {
+    const setup = Effect.fnUntraced(function* (info: Info, baseRef?: string) {
       const ctx = yield* InstanceState.context
       const created = yield* git(
         info.branch
-          ? ["worktree", "add", "--no-checkout", "-b", info.branch, info.directory]
+          ? ["worktree", "add", "--no-checkout", "-b", info.branch, info.directory, baseRef ?? "HEAD"]
           : ["worktree", "add", "--no-checkout", "--detach", info.directory, "HEAD"],
         { cwd: ctx.worktree },
       )
@@ -278,8 +281,8 @@ const layer: Layer.Layer<
       yield* runStartScripts(info.directory, { projectID, extra })
     })
 
-    const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
-      yield* setup(info)
+    const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string, baseRef?: string) {
+      yield* setup(info, baseRef)
       yield* boot(info, startCommand).pipe(
         Effect.catchCause((cause) => Effect.logError("worktree bootstrap failed", { cause })),
         Effect.forkIn(scope),
@@ -288,7 +291,7 @@ const layer: Layer.Layer<
 
     const create = Effect.fn("Worktree.create")(function* (input?: CreateInput) {
       const info = yield* makeWorktreeInfo({ name: input?.name })
-      yield* createFromInfo(info, input?.startCommand)
+      yield* createFromInfo(info, input?.startCommand, input?.baseRef)
       return info
     })
 

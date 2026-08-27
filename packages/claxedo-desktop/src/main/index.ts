@@ -66,6 +66,14 @@ import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { claxedoServerForkOptions } from "./server-child-process"
+import {
+  CLAXEDO_DAEMON_PROTOCOL,
+  claxedoDaemonDiscoveryPath,
+  readClaxedoDaemonDiscovery,
+  verifyClaxedoDaemonDiscovery,
+  type ClaxedoDaemonDiscovery,
+} from "./server-daemon-discovery"
+import { holdClaxedoDaemonLease } from "./server-daemon-lease"
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
 import { createProfiler } from "./diagnostics/profiler"
@@ -110,14 +118,14 @@ import { parseClaxedoServerReadyMessage } from "../shared/claxedo-server-lifecyc
 
 type ServerConnection =
   | { variant: "existing"; url: string }
-  | { variant: "embedded"; url: string }
+  | { variant: "daemon"; url: string; discovery: ClaxedoDaemonDiscovery }
 
 const initEmitter = new EventEmitter()
 let initStep: InitStep = { phase: "server_waiting" }
 
 let mainWindow: BrowserWindow | null = null
-let claxedoServerHandle: { close: () => Promise<void> } | null = null
 let quitting = false
+let daemonLease: Awaited<ReturnType<typeof holdClaxedoDaemonLease>> | undefined
 const loadingComplete = defer<void>()
 
 const browserTabSetup = setupBrowserTab()
@@ -305,7 +313,15 @@ function getClaxedoServerCompileCachePath(): string {
     : join(MAIN_DIR, "../../resources", CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
 }
 
-async function startClaxedoServer(): Promise<{ url: string }> {
+function desktopServerDataDir() {
+  return resolveDesktopServerDataDir({
+    channel: CHANNEL,
+    home: app.getPath("home"),
+    configured: process.env.CLAXEDO_DATA_DIR,
+  })
+}
+
+async function startClaxedoServer(serverDataDir: string): Promise<{ url: string; discovery: ClaxedoDaemonDiscovery }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
   const openCodeEmbedPath = getOpenCodeEmbedPath()
@@ -364,15 +380,11 @@ async function startClaxedoServer(): Promise<{ url: string }> {
     }
   }
 
-  const serverDataDir = resolveDesktopServerDataDir({
-    channel: CHANNEL,
-    home: app.getPath("home"),
-    configured: process.env.CLAXEDO_DATA_DIR,
-  })
-
   try {
     const serverLaunchId = `claxedo-server-${crypto.randomUUID()}`
     const serverGeneration = `server-generation-${crypto.randomUUID()}`
+    const daemonToken = crypto.randomUUID()
+    const daemonDiscovery = claxedoDaemonDiscoveryPath(serverDataDir)
     const child = fork(
       serverPath,
       [],
@@ -382,7 +394,10 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         ),
         CLAXEDO_CHILD_PORT: String(claxedoPort),
         CLAXEDO_DATA_DIR: serverDataDir,
-        CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
+        CLAXEDO_DAEMON_PROTOCOL: String(CLAXEDO_DAEMON_PROTOCOL),
+        CLAXEDO_DAEMON_TOKEN: daemonToken,
+        CLAXEDO_DAEMON_GENERATION: serverGeneration,
+        CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscovery,
         CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
         ...(existsSync(openCodeCompileCachePath)
           ? { CLAXEDO_CHILD_OPENCODE_COMPILE_CACHE_DIR: openCodeCompileCachePath }
@@ -469,7 +484,6 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         await Promise.race([exited.promise, delay(500)])
       },
     }
-    claxedoServerHandle = handle
     child.on("error", (error) => {
       listening.reject(error)
       logger.error("claxedo-server child process failed", { error: String(error) })
@@ -478,7 +492,6 @@ async function startClaxedoServer(): Promise<{ url: string }> {
       ownerBridge?.dispose()
       exited.resolve(code)
       listening.reject(new Error(`claxedo-server exited before listening (code ${String(code)})`))
-      if (claxedoServerHandle === handle) claxedoServerHandle = null
       if (!quitting && code !== 0) logger.error("claxedo-server child process exited", { code })
     })
 
@@ -499,13 +512,22 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         }),
       ])
       await readiness.verify()
+      const published = readClaxedoDaemonDiscovery(daemonDiscovery)
+      const adopted = published && await verifyClaxedoDaemonDiscovery(published)
+      if (!published || adopted !== claxedoUrl || published.generation !== serverGeneration || published.token !== daemonToken) {
+        throw new Error("The local Claxedo daemon did not publish its authenticated identity.")
+      }
       recordStartupClock("main-server-health-verified")
       logger.log("claxedo-server healthy", { url: claxedoUrl })
       diagnosticsProfiler.recordLifecycle({
         event: "server-ready",
         ownerId: "owner-claxedo-server",
       })
-      return { url: claxedoUrl }
+      ownerBridge?.dispose()
+      ownerBridge = undefined
+      if (child.connected) child.disconnect()
+      child.unref()
+      return { url: claxedoUrl, discovery: published }
     } catch (error) {
       logger.warn("embedded server readiness check failed", { error: String(error) })
       await handle.close()
@@ -518,29 +540,10 @@ async function startClaxedoServer(): Promise<{ url: string }> {
 }
 
 async function setupServerConnection(): Promise<ServerConnection> {
-  if (!IS_PACKAGED) {
-    // Probe the SAME port the embedded server would claim. This was hardcoded
-    // to 3001 while `startClaxedoServer` honours CLAXEDO_SERVER_PORT, so the
-    // env var moved the embedded server but not the probe — leaving no way to
-    // run an isolated dev server. Two checkouts of the repo (say a worktree and
-    // the main tree) both defaulted to the same base port, so whichever started
-    // second silently attached to the FIRST one's server: its PTYs, its
-    // workspace-runtime code. A renderer change appears to work while the
-    // server half of the same change never runs, and quitting one app leaves
-    // the other's PTYs alive. Set CLAXEDO_SERVER_PORT to get a private server.
-    //
-    // This probe is also why the base port must not be a popular default: a hit
-    // here is adopted as "our server", so any unrelated project listening on it
-    // would be handed the session. See DEFAULT_CLAXEDO_SERVER_PORT.
-    const devPort = resolveBaseServerPort()
-    const candidates = [process.env.CLAXEDO_SERVER_URL, `http://127.0.0.1:${devPort}`].filter(Boolean) as string[]
-    const results = await Promise.all(candidates.map(async (url) => ({ url, ok: await checkHealth(url) })))
-    const hit = results.find((r) => r.ok)
-    if (hit) {
-      logger.log("dev: using claxedo-server", { url: hit.url })
-      return { variant: "existing", url: hit.url }
-    }
-    logger.log("dev: claxedo-server not found, starting the embedded server")
+  const explicitDevelopmentUrl = !IS_PACKAGED ? process.env.CLAXEDO_SERVER_URL?.trim() : undefined
+  if (explicitDevelopmentUrl && await checkHealth(explicitDevelopmentUrl)) {
+    logger.log("dev: using explicitly configured claxedo-server", { url: explicitDevelopmentUrl })
+    return { variant: "existing", url: explicitDevelopmentUrl }
   }
 
   const customUrl = await getSavedServerUrl()
@@ -549,7 +552,20 @@ async function setupServerConnection(): Promise<ServerConnection> {
     return { variant: "existing", url: customUrl }
   }
 
-  return { variant: "embedded", ...(await startClaxedoServer()) }
+  const serverDataDir = desktopServerDataDir()
+  const discovery = readClaxedoDaemonDiscovery(claxedoDaemonDiscoveryPath(serverDataDir))
+  const daemonUrl = discovery && await verifyClaxedoDaemonDiscovery(discovery)
+  if (daemonUrl) {
+    logger.log("adopted existing claxedo daemon", {
+      url: daemonUrl,
+      pid: discovery.pid,
+      generation: discovery.generation,
+    })
+    return { variant: "daemon", url: daemonUrl, discovery }
+  }
+
+  logger.log("claxedo daemon not found, starting it")
+  return { variant: "daemon", ...(await startClaxedoServer(serverDataDir)) }
 }
 
 async function initialize() {
@@ -563,6 +579,11 @@ async function initialize() {
         variant: serverConnection.variant,
         url: serverConnection.url,
       })
+      if (serverConnection.variant === "daemon") {
+        daemonLease = await holdClaxedoDaemonLease(serverConnection.discovery, {
+          onError: (error) => logger.warn("daemon lease renewal failed", { error: String(error) }),
+        })
+      }
 
       // Must run before the renderer opens any socket to this server: the
       // file:// document sends `Origin: file://` on every WebSocket handshake,
@@ -762,7 +783,6 @@ registerHostConnectorIpc({
 logger.log("host connector", { available: true, state: hostConnector.status().status })
 
 const diagnosticsIpc = registerIpcHandlers({
-  killSidecar: () => stopLocalServer(),
   awaitInitialization: async (sendStep) => {
     sendStep(initStep)
     const listener = (step: InitStep) => sendStep(step)
@@ -828,17 +848,11 @@ if (browserTabSetup) {
   logger.log("browser-tab feature enabled", { partition: browserTabSetup.partition })
 }
 
-async function stopLocalServer() {
-  if (!claxedoServerHandle) return
-  const handle = claxedoServerHandle
-  claxedoServerHandle = null
-  await handle.close()
-}
-
 async function shutdown() {
+  await daemonLease?.stop()
+  daemonLease = undefined
   hostConnector?.dispose()
   diagnosticsSmokeFixtures.dispose()
-  await stopLocalServer()
   if (browserBridgePromise) {
     try {
       const bridge = await browserBridgePromise
@@ -1020,12 +1034,7 @@ function cleanupLegacyDevCaches() {
 }
 
 function sqliteFileExists() {
-  const base = resolveDesktopServerDataDir({
-    channel: CHANNEL,
-    home: app.getPath("home"),
-    configured: process.env.CLAXEDO_DATA_DIR,
-  })
-  return existsSync(join(base, "opencode-engine", "opencode.db"))
+  return existsSync(join(desktopServerDataDir(), "opencode-engine", "opencode.db"))
 }
 
 function setupAutoUpdater() {
@@ -1084,7 +1093,6 @@ async function checkUpdate() {
 
 async function installUpdate() {
   if (!updateReady) return
-  await stopLocalServer()
   autoUpdater.quitAndInstall()
 }
 

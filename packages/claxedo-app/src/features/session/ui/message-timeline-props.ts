@@ -39,4 +39,5 @@ export type MessageTimelineProps = {
   parentID?: string
   onNavigateParent: () => void
   directorySessions: Accessor<ClaxedoSession[]>
+  workspaceId?: string
 }

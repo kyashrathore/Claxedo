@@ -69,6 +69,12 @@ export type WorkspaceHost = {
     configApply: RuntimeConfigApplyStatus
   }
   capabilities: () => WorkspaceCapabilities
+  /** Canonical in-process work that prevents daemon quiescence. */
+  activity: () => {
+    activeTurns: number
+    activeWrites: number
+    checkpointState: WorkspaceCheckpointState
+  }
   registerSessionTools: (input: {
     sessionId: string
     harness?: string

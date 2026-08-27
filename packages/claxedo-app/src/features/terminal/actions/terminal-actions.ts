@@ -1,6 +1,7 @@
 import { batch } from "solid-js"
 import { recoverMissingWorkspace, type ActionProps, type Nav } from "@/features/terminal/app-ports"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
+import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
 
 export function createTerminalActions(props: ActionProps, nav: Nav) {
   const openTerminal = (
@@ -23,7 +24,13 @@ export function createTerminalActions(props: ActionProps, nav: Nav) {
     return { contentId, pendingId }
   }
 
-  const handleNewTerminal = (workspaceDir: string, command?: string, title?: string, groupId?: string) => {
+  const handleNewTerminal = (
+    workspaceDir: string,
+    command?: string,
+    title?: string,
+    groupId?: string,
+    selectedRouteId?: string,
+  ) => {
     const targetPaneId = groupId ?? props.state.wb.state.focusedPaneId ?? undefined
     props.flowLog("new terminal click", {
       workspaceDir,
@@ -36,10 +43,12 @@ export function createTerminalActions(props: ActionProps, nav: Nav) {
     })
 
     if (recoverMissingWorkspace(props, workspaceDir, (created, project) => {
+      const routeId = resolveWorkspaceRouteId([project], created)
+      if (!routeId) return
       const { pendingId } = openTerminal(created, command, title, targetPaneId)
       // Route to the terminal surface explicitly so the focused terminal remains
       // visible even when opened from a session route.
-      nav(workspaceTerminalRoute(created, pendingId), "new terminal recovered workspace", {
+      nav(workspaceTerminalRoute(routeId, pendingId), "new terminal recovered workspace", {
         projectId: project.id,
         workspaceDir,
         created,
@@ -50,9 +59,11 @@ export function createTerminalActions(props: ActionProps, nav: Nav) {
       })
     })) return
 
+    const routeId = selectedRouteId ?? props.workspaceRouteId(workspaceDir)
+    if (!routeId) return
     const { pendingId } = openTerminal(workspaceDir, command, title, targetPaneId)
     // Same reason as the recovery branch above.
-    nav(workspaceTerminalRoute(workspaceDir, pendingId), "new terminal opened", {
+    nav(workspaceTerminalRoute(routeId, pendingId), "new terminal opened", {
       workspaceDir,
       command,
       title,

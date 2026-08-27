@@ -41,10 +41,9 @@ export function resolveSessionIdentity(input: {
 }
 
 /**
- * Return route authority only for an actual workspace identity. Legacy local
- * panes can still be represented as `/w/%2Ftmp%2F.../session`; treating that
- * decoded filesystem path as a workspace id suppresses the local SessionRef
- * and incorrectly sends the pane to `/workspaces/%2Ftmp...`.
+ * Return route authority only for an actual workspace identity. The parser can
+ * still receive old directory-shaped inbound links, but no current producer
+ * writes those links; they must never authorize signed workspace transport.
  */
 export function signedRouteSessionWorkspaceId(pathname: string) {
   const route = parseShellRoute(pathname)

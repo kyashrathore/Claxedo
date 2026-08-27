@@ -384,6 +384,7 @@ describe("upstream contract", async () => {
         active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
+        workspaceRouteId: (directory) => directory === "/repo/pane" ? "ws_pane" : "ws_repo",
         activeMessage: () => undefined,
         showAllFiles: () => undefined,
         navigateMessageByOffset: () => undefined,
@@ -472,7 +473,7 @@ describe("upstream contract", async () => {
 
     byId.get("session.new")?.onSelect()
 
-    expect(navigateCalls).toEqual([workspaceSessionRoute("/repo")])
+    expect(navigateCalls).toEqual([workspaceSessionRoute("ws_repo")])
   })
 
   test("keeps upstream redo enabled when a revert point exists", () => {
@@ -629,6 +630,7 @@ describe("Claxedo behavior", async () => {
         active: () => true,
         sessionId: () => params.id,
         directory: () => "/repo",
+        workspaceRouteId: (directory) => directory === "/repo/pane" ? "ws_pane" : "ws_repo",
         activeMessage: () => undefined,
         showAllFiles: () => undefined,
         navigateMessageByOffset: () => undefined,
@@ -673,7 +675,7 @@ describe("Claxedo behavior", async () => {
     // Navigates to the draft route AND schedules a composer focus handoff. With
     // no live composer node in the test DOM the handoff falls back to focusInput,
     // proving the command no longer leaves focus stranded on BODY.
-    expect(navigateCalls).toEqual([workspaceSessionRoute("/repo")])
+    expect(navigateCalls).toEqual([workspaceSessionRoute("ws_repo")])
     expect(focusInputCalls).toBe(1)
   })
 
@@ -707,7 +709,7 @@ describe("Claxedo behavior", async () => {
     expect(terminalQueueCalls[0]?.[0]).toBe("terminal-content")
     expect(terminalQueueCalls[0]?.[1]).toBe("/repo/pane")
     expect(terminalCloseCalls).toEqual([])
-    expect(navigateCalls.at(-1)).toMatch(/^\/w\/%2Frepo%2Fpane\/terminal\/pending-/)
+    expect(navigateCalls.at(-1)).toMatch(/^\/w\/ws_pane\/terminal\/pending-/)
   })
 
   test("terminal.toggle closes the focused terminal instead of opening another", () => {
@@ -790,6 +792,6 @@ describe("Claxedo behavior", async () => {
     expect(terminalQueueCalls[0]?.[0]).toBe("terminal-content")
     expect(terminalQueueCalls[0]?.[1]).toBe("/repo/pane")
     expect(terminalQueueCalls[0]?.[4]).toBe("pane-1")
-    expect(navigateCalls.at(-1)).toMatch(/^\/w\/%2Frepo%2Fpane\/terminal\/pending-/)
+    expect(navigateCalls.at(-1)).toMatch(/^\/w\/ws_pane\/terminal\/pending-/)
   })
 })

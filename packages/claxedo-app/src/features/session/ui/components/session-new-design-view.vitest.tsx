@@ -5,6 +5,7 @@ import { NewSessionDesignView } from "./session-new-design-view"
 import { ADD_PROJECT_COMMAND_ID, addProjectAction } from "./session-add-project-action"
 
 const captured = vi.hoisted(() => ({ chips: [] as ContextChip[] }))
+const state = vi.hoisted(() => ({ projects: [] as unknown[] }))
 
 vi.mock("@/features/session/ui/components/session-context-row", () => ({
   SessionContextRow: (props: { chips: ContextChip[] }) => {
@@ -21,7 +22,7 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 vi.mock("@tanstack/solid-query", () => ({
-  useQuery: () => ({ data: [] }),
+  useQuery: () => ({ get data() { return state.projects } }),
 }))
 
 vi.mock("@solidjs/router", () => ({
@@ -44,6 +45,7 @@ vi.mock("@/platform/i18n/provider", () => ({
 }))
 
 const projectChip = () => captured.chips.find((chip) => chip.slot === "context-chip-project")
+const branchChip = () => captured.chips.find((chip) => chip.slot === "context-chip-branch")
 
 const renderView = (onAddProject?: () => void) =>
   render(() => (
@@ -60,6 +62,7 @@ const renderView = (onAddProject?: () => void) =>
 
 afterEach(() => {
   captured.chips = []
+  state.projects = []
   cleanup()
 })
 
@@ -84,6 +87,56 @@ describe("NewSessionDesignView project chip footer action", () => {
     renderView(addProject)
     projectChip()?.action?.onSelect()
     expect(addProject).toHaveBeenCalledTimes(1)
+  })
+
+  test("project selection carries its opaque identity with the directory", () => {
+    const onProjectChange = vi.fn()
+    const project = { id: "project_2", worktree: "/repo-two", name: "Two" }
+    state.projects = [{ id: "project_1", worktree: "/repo", name: "One" }, project]
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+        onProjectChange={onProjectChange}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    projectChip()?.onSelect("/repo-two")
+
+    expect(onProjectChange).toHaveBeenCalledWith("/repo-two", project)
+  })
+})
+
+describe("NewSessionDesignView branch chip", () => {
+  test("offers every advertised branch and sends the selected ref to its owner", () => {
+    const onBranchChange = vi.fn()
+    render(() => (
+      <NewSessionDesignView
+        worktree="/repo"
+        workspaceKind="local"
+        branch="main"
+        branches={["main", "release/next"]}
+        onBranchChange={onBranchChange}
+        onWorktreeChange={() => {}}
+        onWorkspaceKindChange={() => {}}
+      >
+        <div />
+      </NewSessionDesignView>
+    ))
+
+    expect(branchChip()?.ariaLabel).toBe("Base branch")
+    expect(branchChip()?.options.map((option) => option.value)).toEqual(["main", "release/next"])
+    branchChip()?.onSelect("release/next")
+    expect(onBranchChange).toHaveBeenCalledWith("release/next")
+  })
+
+  test("does not render a decorative branch control without a selection owner", () => {
+    renderView()
+    expect(branchChip()).toBeUndefined()
   })
 })
 

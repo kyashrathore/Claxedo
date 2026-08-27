@@ -15,6 +15,7 @@ import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/dom
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceRouteId as routeIdFromProjects } from "@/platform/identity/workspace-route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
 import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
 import { centralTransportForServer } from "@/platform/runtime/transport"
@@ -68,6 +69,7 @@ export type ProjectActionProps = Pick<
   | "routeDirectory"
   | "activeDirectory"
   | "activeProjectId"
+  | "workspaceRouteId"
   | "flowLog"
 > & {
   state: {
@@ -107,6 +109,18 @@ export type ProjectActionProps = Pick<
 }
 
 export function createProjectActions(props: ProjectActionProps, nav: Nav) {
+  const ensureLocalWorkspaceRouteId = async (dir: string) => {
+    const current = props.workspaceRouteId(dir)
+    if (current) return current
+    const projects = await ensureLocalProject({
+      baseUrl: props.globalSDK.url,
+      request: props.platform.fetch,
+      directory: dir,
+      projectsQuery: props.projectInventoryActions.query(),
+    })
+    return Array.isArray(projects) ? routeIdFromProjects(projects, dir) : undefined
+  }
+
   const openProjectSessionSurface = (workspaceDir: string) => {
     const paneId = props.state.wb.state.focusedPaneId
     if (paneId) {
@@ -132,14 +146,16 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         return
       }
 
+      let routeId = props.workspaceRouteId(workspaceDir)
       if (props.platform.platform !== "web") {
         try {
-          await ensureLocalProject({
+          const projects = await ensureLocalProject({
             baseUrl: props.globalSDK.url,
             request: props.platform.fetch,
             directory: workspaceDir,
             projectsQuery: props.projectInventoryActions.query(),
           })
+          routeId = Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : routeId
         } catch {
           showToast({
             title: "Not a git repository",
@@ -149,11 +165,12 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
           return
         }
       }
+      if (!routeId) return
       props.layout.projects.open(workspaceDir)
       void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
       const id = openProjectSessionSurface(workspaceDir)
       if (id)
-        nav(workspaceSessionRoute(workspaceDir), "new-project-selected", {
+        nav(workspaceSessionRoute(routeId), "new-project-selected", {
           workspaceDir,
           surfaceId: id,
         })
@@ -202,10 +219,12 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     return createLocalWorkspace(props, project, {
       onProgress,
       workspaceName,
-      onReady: (created) => {
+      onReady: async (created) => {
         onProgress?.("redirecting")
+        const routeId = await ensureLocalWorkspaceRouteId(created)
+        if (!routeId) return
         const tabId = openProjectSessionSurface(created)
-        if (tabId) nav(workspaceSessionRoute(created), "new-workspace-created", { projectId: project.id, created, tabId })
+        if (tabId) nav(workspaceSessionRoute(routeId), "new-workspace-created", { projectId: project.id, created, tabId })
       },
     })
   }
@@ -302,7 +321,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.state.workspace.recordAccess(project.id, result.workspaceId)
       if (opts?.openSession !== false) {
         const tabId = openProjectSessionSurface(dir)
-        if (tabId) nav(workspaceSessionRoute(dir), "new-workspace-created", { projectId: project.id, created: dir, tabId })
+        if (tabId) nav(workspaceSessionRoute(result.workspaceId), "new-workspace-created", { projectId: project.id, created: dir, tabId })
       }
       return item
     } catch (err) {
@@ -333,7 +352,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     kind: "local" | "cloud"
     workspaceName?: string
     onProgress?: (step: string, message?: string) => void
-  }): Promise<WorkspaceDirectoryRef | undefined> => {
+  }): Promise<{ directory: WorkspaceDirectoryRef; workspaceId: string } | undefined> => {
     const project = findProjectForWorkspace(props.projects, input.directory)
     if (!project) return undefined
     const created = input.kind === "cloud"
@@ -342,7 +361,11 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
           onProgress: input.onProgress,
           workspaceName: input.workspaceName,
         })
-    return created?.directory
+    if (!created?.directory) return undefined
+    const workspaceId = created.workspaceId ?? (
+      input.kind === "local" ? await ensureLocalWorkspaceRouteId(created.directory) : undefined
+    )
+    return workspaceId ? { directory: created.directory, workspaceId } : undefined
   }
 
   const handleSettings = () => {
@@ -521,7 +544,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   const handleRemoveProject = (project: ProjectItem) => {
     const current = props.activeProjectId()
     // Navigate away BEFORE purging tabs. While the route still names the
-    // removed workspace (`/w/<dir>/session`), route-intent recreates the draft
+    // removed workspace (`/w/:workspaceId/session`), route-intent recreates the draft
     // surface the purge just closed (`route-intent.ts` receive() opens a
     // `sessionId: "new"` draft for a workspace session route), route-sync then
     // keeps the URL parked on the removed workspace, and

@@ -423,6 +423,19 @@ export function shutdownEmbeddedWorkspaceRuntimes() {
   hosts.clear()
 }
 
+export function embeddedWorkspaceRuntimeActivity() {
+  let activeTurns = 0
+  let activeWrites = 0
+  let checkpointing = 0
+  for (const runtime of hosts.values()) {
+    const activity = runtime.host.activity()
+    activeTurns += activity.activeTurns
+    activeWrites += activity.activeWrites
+    if (activity.checkpointState !== "active") checkpointing++
+  }
+  return { hosts: hosts.size, activeTurns, activeWrites, checkpointing }
+}
+
 export function releaseEmbeddedWorkspaceRuntime(workspaceId: string) {
   const runtime = hosts.get(workspaceId)
   if (!runtime) return

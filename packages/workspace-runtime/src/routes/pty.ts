@@ -92,6 +92,10 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket, processObserver?: 
             }
           : undefined,
       )
+      // Ownership transfers only once the public create path has completed.
+      // From this point the PTY belongs to the user and must outlive any
+      // renderer/WebSocket connection that happens to observe it.
+      Pty.commit(info.id)
       return c.json(info)
     })
     .get("/:ptyID", async (c) => {

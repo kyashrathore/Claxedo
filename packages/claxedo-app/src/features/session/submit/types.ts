@@ -205,6 +205,7 @@ export type ApplyCreatedSessionTargetEffectsContext = {
   harnessConfig?: HarnessConfigPromoter
   sourceScope: string
   sessionDirectory: SubmitDirectory
+  workspaceRouteId?: string
   sessionRef?: SessionRef
   provisionalTitle?: string
   surfaceId?: string

@@ -20,9 +20,10 @@
  * test could see. Each is called out below at the line that fixes it.
  */
 
-import { Hono, type MiddlewareHandler } from "hono"
+import { Hono, type Context, type MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
 import { createNodeWebSocket } from "@hono/node-ws"
+import { timingSafeEqual } from "node:crypto"
 import { z } from "zod"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import {
@@ -50,6 +51,7 @@ import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/ser
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { UserExtensionRoutes } from "../extensions/user-extension-routes"
+import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
 /**
  * Paths whose responses carry credential material.
@@ -89,6 +91,16 @@ export type LocalAppOptions = {
   invalidateCentralSession?: (sessionId: string) => void
   env?: NodeJS.ProcessEnv
   usage?: Parameters<typeof LocalUsageRoutes>[0]
+  /** Machine-local daemon control surface. Never exposed to the renderer. */
+  daemon?: {
+    identity: {
+      token: string
+      protocol: number
+      generation: string
+      pid: number
+    }
+    lifecycle: LocalDaemonLifecycle
+  }
 }
 
 const TrackBody = z.object({
@@ -185,6 +197,46 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     }))
   app.get("/global/health", (c) =>
     c.json({ healthy: true, version: env.npm_package_version || "1.0.0" }))
+  if (options.daemon) {
+    const { identity, lifecycle } = options.daemon
+    const authorized = (provided: string | undefined) => {
+      const token = provided?.replace(/^Bearer\s+/i, "") ?? ""
+      const expectedBytes = Buffer.from(identity.token)
+      const providedBytes = Buffer.from(token)
+      return providedBytes.length === expectedBytes.length && timingSafeEqual(providedBytes, expectedBytes)
+    }
+    const unauthorized = (c: Context) =>
+      c.json({ error: { code: "daemon_identity_unauthorized", message: "Daemon token is invalid" } }, 401)
+    app.get("/api/claxedo/daemon", (c) => {
+      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      return c.json({
+        service: "claxedo-local-daemon",
+        protocol: identity.protocol,
+        generation: identity.generation,
+        pid: identity.pid,
+      })
+    })
+    app.get("/api/claxedo/daemon/state", (c) => {
+      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      return c.json(lifecycle.snapshot())
+    })
+    app.post("/api/claxedo/daemon/leases", (c) => {
+      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const lease = lifecycle.acquire(c.req.header("x-claxedo-daemon-client")?.trim() || "desktop")
+      if (!lease) return c.json({ error: { code: "daemon_stopping", message: "Daemon is stopping" } }, 409)
+      return c.json(lease, 201)
+    })
+    app.put("/api/claxedo/daemon/leases/:leaseId", (c) => {
+      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const lease = lifecycle.renew(c.req.param("leaseId"))
+      if (!lease) return c.json({ error: { code: "daemon_lease_not_found", message: "Daemon lease was not found" } }, 404)
+      return c.json(lease)
+    })
+    app.delete("/api/claxedo/daemon/leases/:leaseId", (c) => {
+      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      return c.json({ released: lifecycle.release(c.req.param("leaseId")) })
+    })
+  }
 
   app.route("/", BootstrapRoutes({ services, env, ...authRouteOptions(services) }))
   app.route("/", ProviderAuthRoutes(services, {

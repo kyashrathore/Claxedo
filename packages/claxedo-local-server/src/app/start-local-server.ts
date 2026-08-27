@@ -290,13 +290,26 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   let stopOperation: Promise<void> | undefined
   const stop = () => {
     if (stopOperation) return stopOperation
+    // Close ingress synchronously with the stop decision. Runtime and usage
+    // teardown awaits below; leaving the listener open until those drains
+    // finished allowed a new mutation to enter after lifecycle had already
+    // committed to idle shutdown.
+    const listenerClosed = new Promise<void>((resolve) => {
+      server.close(() => resolve())
+      // Idle shutdown has already proven there are no PTYs, harness turns,
+      // checkpoint writes, remote pins, or client leases. A stale HTTP/SSE
+      // keep-alive is transport residue, not work, and must not leave a
+      // listener-closed daemon resident forever.
+      ;(server as typeof server & { closeAllConnections?: () => void }).closeAllConnections?.()
+    })
     stopOperation = (async () => {
       try {
+        options.daemon?.lifecycle.stop()
         upstreamEvents?.close()
         shutdownEmbeddedWorkspaceRuntimes()
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
-        await new Promise<void>((resolve) => server.close(() => resolve()))
+        await listenerClosed
         disposeAgentConfig()
         ClaxedoDB.close()
         process.off("exit", release)

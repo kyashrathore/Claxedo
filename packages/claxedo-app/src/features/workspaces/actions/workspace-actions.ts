@@ -18,10 +18,11 @@ import { sessionRoute as canonicalSessionRoute, workspaceSessionRoute } from "@/
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { ensureDirectorySessionCache, sessionRefForActionWorkspace } from "@/features/workspaces/app-ports"
 import { recoverMissingWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
+import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
 export type WorkspaceActionProps = LocalWorkspaceProps & Pick<
   ActionProps,
-  "activeDirectory" | "directorySessionCacheActions" | "flowLog" | "params" | "projects"
+  "activeDirectory" | "directorySessionCacheActions" | "flowLog" | "params" | "projects" | "workspaceRouteId"
 > & {
   state: LocalWorkspaceProps["state"] & {
     layout: Pick<ActionProps["state"]["layout"], "openSession">
@@ -30,6 +31,8 @@ export type WorkspaceActionProps = LocalWorkspaceProps & Pick<
 }
 
 export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
+  const routeIdForSelection = (project: ProjectItem, workspaceDir: string) =>
+    workspaceRouteId([project], workspaceDir) ?? props.workspaceRouteId(workspaceDir)
   const focusedPaneId = (): string | undefined => props.state.wb.state.focusedPaneId ?? undefined
 
   const bindWorktree = (workspaceDir: string) => {
@@ -74,11 +77,13 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
     })
 
     if (recoverMissingWorkspace(props, workspaceDir, (created) => {
+      const routeId = routeIdForSelection(project, created)
+      if (!routeId) return
       void ensureDirectorySessionCache(props.directorySessionCacheActions, created)
       props.state.workspace.recordAccess(project.id, created)
       bindWorktree(created)
       const { id } = openOrCreateSession(created)
-      nav(workspaceSessionRoute(created), "workspace-select:recovered-workspace", {
+      nav(workspaceSessionRoute(routeId), "workspace-select:recovered-workspace", {
         projectId: project.id,
         workspaceDir,
         created,
@@ -86,12 +91,17 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
       })
     })) return
 
+    const existing = findExistingSessionContent(workspaceDir)
+    const reused = !!existing?.sessionId && existing.sessionId !== "new"
+    const routeId = reused ? undefined : routeIdForSelection(project, workspaceDir)
+    if (!reused && !routeId) return
+
     props.state.workspace.recordAccess(project.id, workspaceDir)
     bindWorktree(workspaceDir)
     void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
 
-    const { id, sessionId, reused } = openOrCreateSession(workspaceDir)
-    nav(reused ? canonicalSessionRoute(sessionId) : workspaceSessionRoute(workspaceDir), reused
+    const { id, sessionId } = openOrCreateSession(workspaceDir)
+    nav(reused ? canonicalSessionRoute(sessionId) : workspaceSessionRoute(routeId!), reused
       ? "workspace-select:reused-session"
       : "workspace-select:new-session",
     {

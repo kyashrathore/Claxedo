@@ -379,7 +379,13 @@ export function buildClaxedoServerCompileCache(input: {
     electronPath: input.electronPath,
     // Absent, not merely unset here: a developer shell that exports these would
     // otherwise let the build start a real server.
-    env: { CLAXEDO_CHILD_PORT: undefined, CLAXEDO_DESKTOP_PARENT_PID: undefined },
+    env: {
+      CLAXEDO_CHILD_PORT: undefined,
+      CLAXEDO_DAEMON_PROTOCOL: undefined,
+      CLAXEDO_DAEMON_TOKEN: undefined,
+      CLAXEDO_DAEMON_GENERATION: undefined,
+      CLAXEDO_DAEMON_DISCOVERY_PATH: undefined,
+    },
     expectRefusal: serverStartupRefusal(),
     ...(input.log ? { log: input.log } : {}),
   })

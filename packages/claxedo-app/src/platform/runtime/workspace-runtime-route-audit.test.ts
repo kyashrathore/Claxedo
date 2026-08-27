@@ -1272,7 +1272,7 @@ describe("workspace runtime route audit", () => {
     expect(route).toMatch(/workspacePageRoute\(resolved\.workspaceId, parsed\.pageId\)/)
     expect(route).toMatch(/workspaceTerminalRoute\(resolved\.workspaceId, parsed\.terminalId\)/)
     expect(route).toMatch(/shellRouteDirectory/)
-    expect(route).not.toMatch(/\brouteWorkspaceId\b/)
+    expect(route).not.toMatch(/\bcurrentRouteId\b/)
     expect(route).not.toMatch(/canonicalDirectory/)
   })
 
@@ -1320,9 +1320,9 @@ describe("workspace runtime route audit", () => {
 
     expect(text).not.toMatch(/base64Encode/)
     expect(text).toMatch(/routeWorkspaceKey/)
-    expect(text).toMatch(/routeMatchesSurface\(input\.route, dir, input\.surface, input\.routeWorkspaceKey\)/)
+    expect(text).toMatch(/routeMatchesSurface\(input\.route, workspaceId, input\.surface, input\.routeWorkspaceKey\)/)
     expect(actions).toMatch(/props\.routeDirectory\(\)/)
-    expect(actions).toMatch(/routeMatchesSurface\(props\.params, workspaceDir, tab, props\.routeDirectory\(\)\)/)
+    expect(actions).toMatch(/routeMatchesSurface\(props\.params, workspaceId, tab, currentRouteId\)/)
     expect(shared).toMatch(/routeDirectory:\s*Accessor<string \| undefined>/)
   })
 
@@ -2056,15 +2056,13 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, "overrides/features/session/composer/ui/submit.test.ts")).exists()).toBe(
       false,
     )
-    // Connection-scoping made created-session navigation host-aware via a
-    // createdSessionRoute helper: central-host sessions keep the canonical
-    // sessionRoute, workspace-host sessions use the typed workspaceSessionRoute
-    // (the sanctioned typed route — required by the draft-session surfaces test
-    // below). The real guard is "never a legacy base64 route string", still
-    // asserted via base64Encode below.
-    expect(handoff).toMatch(
-      /input\.sessionRef\?\.host === "central"[\s\S]*sessionRoute\(input\.sessionID\)[\s\S]*workspaceSessionRoute\(input\.sessionDirectory, input\.sessionID\)/,
-    )
+    // Created sessions may use a workspace-scoped URL only when the typed
+    // session ref carries an opaque workspace id. Local filesystem sessions
+    // use `/s/:sessionId`; the directory never becomes an intermediate URL.
+    expect(handoff).toMatch(/workspaceKey\(input\.sessionRef\)/)
+    expect(handoff).toMatch(/workspaceSessionRoute\(workspaceId, input\.sessionID\)/)
+    expect(handoff).toMatch(/sessionRoute\(input\.sessionID\)/)
+    expect(handoff).not.toMatch(/workspaceSessionRoute\(input\.sessionDirectory/)
     expect(handoff).toMatch(/input\.navigate\(createdSessionRoute\(\{/)
     expect(handoff).toMatch(/sessionContentPayload/)
     expect(handoff).toMatch(
@@ -2079,10 +2077,52 @@ describe("workspace runtime route audit", () => {
     expect(submitTest).not.toMatch(/navigate:\/ws_1\/session\/session-1/)
   })
 
+  test("workspace URL producers pass IDs directly and never rely on a navigation suppression gate", async () => {
+    const route = await Bun.file(path.join(root, "platform/identity/route.ts")).text()
+    expect(route).not.toMatch(/workspaceSafeNavigationTarget/)
+    expect(route).toMatch(/Workspace routes require an opaque workspace ID/)
+
+    const offenders: string[] = []
+    const glob = new Bun.Glob("**/*.{ts,tsx}")
+    for (const file of glob.scanSync({ cwd: root, onlyFiles: true })) {
+      if (file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.endsWith(".vitest.tsx")) continue
+      const text = await Bun.file(path.join(root, file)).text()
+      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute|WorkGraphRoute)|canonicalWorkspaceRoute|newTaskRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {
+        const argument = match[1]?.trim() ?? ""
+        if (argument === '""') continue
+        if (/workspace.*id|routeId/i.test(argument)) continue
+        const line = text.slice(0, match.index).split("\n").length
+        offenders.push(`${file}:${line}: ${argument}`)
+      }
+      if (file !== "platform/identity/route.ts" && /["'`]\/w\/\$\{/.test(text)) {
+        offenders.push(`${file}: constructs /w/ directly`)
+      }
+      if (/navigate\(\s*`\/\$\{[^}]+\}\/session/.test(text)) {
+        offenders.push(`${file}: constructs a directory-scoped session route directly`)
+      }
+    }
+    expect(offenders).toEqual([])
+
+    const scriptsRoot = path.resolve(root, "../scripts")
+    const scriptOffenders: string[] = []
+    for (const file of new Bun.Glob("**/*.{ts,mjs}").scanSync({ cwd: scriptsRoot, onlyFiles: true })) {
+      if (file.endsWith(".test.ts") || file === "workspace-capture-url.mjs") continue
+      const text = await Bun.file(path.join(scriptsRoot, file)).text()
+      if (/\/w\/%2f/i.test(text) || /\/w\/\$\{encodeURIComponent\((?:directory|dir|workspaceDirectory|repoRoot)/i.test(text)) {
+        scriptOffenders.push(file)
+      }
+      if (/\/w\/\$\{/.test(text) && !/workspaceCaptureUrl/.test(text)) scriptOffenders.push(file)
+    }
+    expect(scriptOffenders).toEqual([])
+
+    const fork = await Bun.file(path.join(root, "features/session/ui/dialogs/fork.tsx")).text()
+    expect(fork).toMatch(/navigate\(sessionRoute\(forked\.data\.id\)\)/)
+    expect(fork).not.toMatch(/base64Encode/)
+  })
+
   test("workspace browse fallbacks use typed workspace routes", async () => {
     const migrated = [
       "app/routes/home.tsx",
-      "app/providers/notification.tsx",
       appShellRouteSync,
       "app/workbench/state/surface-route.ts",
     ]

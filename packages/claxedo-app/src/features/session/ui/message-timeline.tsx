@@ -1118,7 +1118,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
       navigate(sessionRoute(nav.sessionID))
       return
     }
-    if (nav.kind === "root") navigate(workspaceSessionRoute(sdk.directory))
+    if (nav.kind === "root" && props.workspaceId) navigate(workspaceSessionRoute(props.workspaceId))
   }
 
   const archiveSession = async (sessionID: string) => {

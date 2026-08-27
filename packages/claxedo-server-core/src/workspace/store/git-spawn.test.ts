@@ -120,6 +120,18 @@ describe("workspace store git subprocess cost", () => {
     expect(defined(again.value).id).toBe(first.id)
   })
 
+  test("concurrent create resolves one canonical workspace for a directory", async () => {
+    const dir = await gitRepo("concurrent-create")
+
+    const results = await Promise.all([
+      store.resolveWorkspace({ directory: dir, create: true }),
+      store.resolveWorkspace({ directory: dir, create: true }),
+    ])
+
+    expect(new Set(results.map((workspace) => defined(workspace).id))).toHaveLength(1)
+    expect((await store.listWorkspaces()).filter((workspace) => workspace.directory === realpathSync(dir))).toHaveLength(1)
+  })
+
   test("rebinding a known id to a different directory still reads git identity", async () => {
     const before = await gitRepo("rebind-before")
     const after = await gitRepo("rebind-after")

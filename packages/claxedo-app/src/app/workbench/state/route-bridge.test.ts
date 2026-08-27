@@ -41,12 +41,12 @@ describe("route bridge deep links", () => {
   test("carries new-session prompt text in the routed workspace URL", () => {
     const routeFor = (directory: string) => `/w/${encodeURIComponent(directory)}/session`
 
-    expect(newSessionDeepLinkRoute({ directory: "/repo/main" }, routeFor)).toBe("/w/%2Frepo%2Fmain/session")
-    expect(newSessionDeepLinkRoute({ directory: "/repo/main", prompt: "  ship it  " }, routeFor)).toBe(
-      "/w/%2Frepo%2Fmain/session?prompt=ship%20it",
+    expect(newSessionDeepLinkRoute({ directory: "/repo/main" }, "ws_1", routeFor)).toBe("/w/ws_1/session")
+    expect(newSessionDeepLinkRoute({ directory: "/repo/main", prompt: "  ship it  " }, "ws_1", routeFor)).toBe(
+      "/w/ws_1/session?prompt=ship%20it",
     )
-    expect(newSessionDeepLinkRoute({ directory: "/repo/main", prompt: "line one\nline two & more" }, routeFor)).toBe(
-      "/w/%2Frepo%2Fmain/session?prompt=line%20one%0Aline%20two%20%26%20more",
+    expect(newSessionDeepLinkRoute({ directory: "/repo/main", prompt: "line one\nline two & more" }, "ws_1", routeFor)).toBe(
+      "/w/ws_1/session?prompt=line%20one%0Aline%20two%20%26%20more",
     )
   })
 

@@ -1,14 +1,17 @@
 import { chromium, type Page } from "playwright-core"
 import path from "node:path"
+import { workspaceCaptureUrl } from "./workspace-capture-url.mjs"
 
 const PACKAGE_DIR = path.resolve(import.meta.dir, "..")
-const REPO_ROOT = path.resolve(PACKAGE_DIR, "../..")
 const RESULT_DIR = path.resolve(
   Bun.env.CLAXEDO_STATUS_TITLE_INDICATORS_DIR ?? path.join(PACKAGE_DIR, "test-results/status-title-indicators"),
 )
 const RAW_VIDEO_DIR = path.join(RESULT_DIR, "raw")
-const baseURL = Bun.env.CLAXEDO_STATUS_TITLE_INDICATORS_URL ??
-  `http://localhost:4445/w/${encodeURIComponent(REPO_ROOT)}/session`
+const baseURL = workspaceCaptureUrl({
+  override: Bun.env.CLAXEDO_STATUS_TITLE_INDICATORS_URL,
+  workspaceId: Bun.env.CLAXEDO_WORKSPACE_ID,
+  origin: "http://localhost:4445",
+})
 const viewport = { width: 1440, height: 900 }
 
 type CapturedEvent = {
