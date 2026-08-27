@@ -316,23 +316,27 @@ So nothing in their pipeline calls a location-resolving endpoint against built
 or packed output. `health.get` passes, everything behind it is untested there,
 and the failure reaches consumers untouched.
 
-**Suspect, untested:** `packages/core/script/build.ts` is the only build in the
-family using `Bun.build({ splitting: true })`. Code splitting can duplicate a
-module across chunks, and Effect's `Context.Service` tags and `LayerNode`
-identities are module-level singletons — duplicated identity would produce
-exactly this failure shape (service lookup fails, handler 500s, nothing logged).
+**Splitting/identity hypothesis — tested and ELIMINATED.**
+`packages/core/script/build.ts` is the only build in the family using
+`Bun.build({ splitting: true })`, and splitting can duplicate a module across
+chunks. Effect's `Context.Service` tags are identity-bearing, so duplication
+would produce exactly this shape: service lookup fails, handler 500s, nothing
+logged. It was the best remaining theory.
 
-I tried to test it by rebuilding core with `splitting: false`. **Inconclusive:**
-that build emits an invalid package. `splitting: false` emits **397 files from
-404 source entrypoints** — seven are silently dropped, `bus.js` among them, so
-the package cannot even load (`Cannot find module '@opencode-ai/core/bus'`).
-The script's own "exactly one eager require helper" assertion also fires,
-because it assumes splitting. Flipping the flag does not produce a comparable
-artifact, so the result says nothing either way. Recorded as a lead for
-upstream, not a finding.
+It is wrong. In the published `core` dist, `"@opencode/Location"` and
+`"@opencode/Project"` each appear in exactly **one** JS chunk (the only other
+hit is the `.d.ts`). The service tags are not duplicated, so identity is intact.
 
-Worth noting for whoever picks this up: that Bun drops seven entrypoints when
-splitting is disabled is itself odd, and may or may not be related.
+Two incidental findings from testing it, both worth passing upstream:
+
+- Rebuilding `core` with `splitting: false` emits **397 files from 404 source
+  entrypoints**. Seven are silently dropped — `bus`, `environment/index`,
+  `filesystem`, `image`, `location`, `project`, `project/markers` — leaving a
+  package that cannot load (`Cannot find module '@opencode-ai/core/bus'`). That
+  the dropped set includes `location` and `project` is striking, though the
+  split build does emit them.
+- The build script's own "exactly one eager require helper" assertion assumes
+  splitting and fires when it is off.
 
 **Still not isolated:** which build step or emitted construct causes it. That
 needs instrumenting their build, which is upstream's to do — but the report now
