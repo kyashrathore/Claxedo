@@ -1,6 +1,8 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: BLOCKED, cause NOT isolated. The same calls succeed from the
+Status: BLOCKED. Isolated to `@opencode-ai/core`'s BUILD OUTPUT: in one
+published install, pointing only core's exports at `./src/*.ts` turns 4 errors
+into 4 successes, with every other package left as published (§2.2). The same calls succeed from the
 `sst/opencode` source tree (their own 15 embedded tests pass) and fail with
 empty 500s from an installed published package set, under the same runtime and
 the same `effect` version. Swapping locally built `sdk`, `core` and `server`
@@ -338,7 +340,29 @@ Two incidental findings from testing it, both worth passing upstream:
 - The build script's own "exactly one eager require helper" assertion assumes
   splitting and fires when it is off.
 
-**Still not isolated:** which build step or emitted construct causes it. That
+### ISOLATED: the defect is in `@opencode-ai/core`'s build output
+
+A clean, repeatable A/B in one isolated npm install of the published packages.
+Only one thing changes between runs — whether `@opencode-ai/core`'s
+`package.json` exports point at `./dist/*.js` or `./src/*.ts`. Every other
+package (`sdk`, `server`, `client`, `util`, `schema`, `plugin`, `protocol`,
+`ai`, `codemode`, `simulation`) stays exactly as published, and the runtime is
+the same Bun in both runs:
+
+| `@opencode-ai/core` exports | `config.get` · `agent.list` · `provider.list` |
+|---|---|
+| `./dist/*.js` (published build) | **4 errors** — 500, empty body |
+| `./src/*.ts` (the source it was built from) | **4 successes** |
+
+So the divergence lives entirely in **core's build output**. Nothing else in
+the family needs to change to make the failing calls work.
+
+Per-file bisection inside core is not possible from outside: `splitting: true`
+means the real modules live in shared chunks, so replacing `dist/location.js`
+changes nothing — the other built modules import `location` from the chunk, not
+from that shim. Narrowing further means instrumenting core's build.
+
+**Still not isolated:** which construct in core's build output causes it. That
 needs instrumenting their build, which is upstream's to do — but the report now
 points at a specific, checkable gap rather than a symptom.
 
