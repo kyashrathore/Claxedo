@@ -1,11 +1,11 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: BLOCKED on a PUBLISHED-ARTIFACT defect, not a design one. Upstream's own
-embedded test suite passes against `sst/opencode` source on the `beta` branch,
-and `config.get`/`agent.list`/`provider.list` all succeed there with a bare temp
-directory — while the published `0.0.0-beta-18314` tarball returns empty 500s
-for the same calls in the same runtime (§2.2). The cutover is likely blocked
-only until a corrected artifact ships.
+Status: BLOCKED, cause NOT isolated. The same calls succeed from the
+`sst/opencode` source tree (their own 15 embedded tests pass) and fail with
+empty 500s from an installed published package set, under the same runtime and
+the same `effect` version. Swapping locally built `sdk`, `core` and `server`
+dists into the published install does not fix it, so it is not simply those
+three artifacts. See §2.2 for the full elimination table.
 Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
 Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
 Planning commit: `8be1be76ce`
@@ -259,66 +259,51 @@ git-backed project directory, and sessions carrying the `workspaceID`,
 `config.get`, `agent.list`, `provider.list` and `sessions.prompt` still all
 return 500. So provisioning is not the missing piece either.
 
-### The published artifact is defective; its SOURCE is not
+### Source works, the installed package set does not — cause NOT isolated
 
-Cloning `sst/opencode`, checking out the `beta` branch and running the SDK's own
-suite settles this. **Upstream's 15 embedded tests pass here.** So the design
-works and the failure is not inherent.
+This section has been rewritten twice because I twice stated a cause I had not
+proven. What follows is only what tests show.
 
-Then the decisive A/B — the same four calls, one against source, one against the
-published tarball in an isolated install:
+**Observed, upstream workspace** (`sst/opencode`, `beta` branch, all deps
+resolving to workspace source, run under Bun):
 
-| Call | Upstream source (`../src/effect`) | Published `0.0.0-beta-18314` |
-|---|---|---|
-| `config.get` | **OK** — returns real entries | 500, empty body |
-| `agent.list` | **OK** | 500, empty body |
-| `provider.list` | **OK** | 500, empty body |
-| `plugin.list` | **OK** | (not retried) |
+- Their own 15 embedded SDK tests pass.
+- `config.get`, `agent.list`, `provider.list`, `plugin.list` all succeed with a
+  **bare temp directory** — no workspace provisioning, no overrides, no
+  schema-constructed location.
+- The same is true calling a locally built `packages/sdk/dist/effect/index.js`
+  (its dependencies still resolve to source).
 
-Source succeeds with a **bare temp directory** — no workspace provisioning, no
-overrides, no schema-constructed location. Everything I thought was required
-setup was not.
+**Observed, isolated npm install of the published packages** (same runtime,
+same `effect@4.0.0-rc.111`): the same four calls return **500 with an empty
+body**, and `sessions.prompt` likewise.
 
-Variables eliminated, each by test:
+**Eliminated by direct test:**
 
-- **Not usage.** Plain `{ directory }` and
-  `Location.Ref.make({ directory: AbsolutePath.make(dir) })` fail identically
-  against the tarball, and the request URL serializes the same either way.
-- **Not workspace provisioning.** Source works without any; the tarball fails
-  with a fully provisioned workspace.
-- **Not `effect` skew.** Both resolve `effect@4.0.0-rc.111`.
-- **Not the branch being ahead.** `beta` HEAD is `b731bc1`, authored
-  2026-08-26T16:44Z — 51 minutes *before* the 17:35Z publish.
-- **Not our bundle.** The tarball fails under Bun importing it directly.
+| Hypothesis | Result |
+|---|---|
+| Usage shape (plain object vs `Location.Ref.make`) | identical failure, identical request URL |
+| Workspace provisioning | source works without it; install fails with it |
+| `effect` version skew | both `4.0.0-rc.111` |
+| Duplicate `effect` copies breaking Context identity | exactly one install |
+| Global `~/.config/opencode/opencode.jsonc` | fails with it present |
+| Runtime | both under Bun |
+| Our Node bundle | fails importing the package directly |
+| **Published `sdk` dist contents** | swapping in the locally built dist does **not** fix it |
+| **Published `core` dist contents** | swapping in the locally built dist does **not** fix it |
+| **Published `server` dist contents** | swapping in the locally built dist does **not** fix it |
 
-Also VERIFIED: building the SDK from that source (`bun run build` in
-`packages/sdk`) and calling `../dist/effect/index.js` works too. So the build
-step does not introduce the defect — a dist built from this source is fine.
+**Cause: not isolated.** I previously wrote "the published artifact is
+defective; its source is not." The dist-swap results above falsify the precise
+form of that claim — replacing the three most likely published dists with
+locally built ones changes nothing. The remaining candidates are the other
+published packages (`util`, `client`, `schema`, `plugin`, `protocol`, `ai`,
+`codemode`, `simulation`) or something structural about the installed layout
+versus a workspace. I have not narrowed it further and will not guess again.
 
-**What is NOT isolated.** The working runs happen inside the upstream workspace,
-where `@opencode-ai/core`, `@opencode-ai/server` and friends resolve to
-workspace *source*. The failing runs use the published versions of all of them.
-So the fault could be in published `@opencode-ai/sdk`, in published
-`@opencode-ai/core`/`server`, or in how that set composes — I have not narrowed
-it to one package, and should not claim to have.
-
-**Also caveated:** I cannot prove the tarball was built from exactly `b731bc1`;
-it may come from a commit not on the branch I fetched.
-
-Eliminated as explanations, each by direct test rather than reasoning: usage
-shape, workspace provisioning, `effect` version skew, the presence of a global
-`~/.config/opencode/opencode.jsonc`, the runtime (both under Bun), and our
-Node bundle. What remains is that the published package set fails where the
-source tree succeeds.
-
-That reframes the upstream report entirely. It is not "the embedded SDK cannot
-resolve locations" — it is **"your published beta build does not match your
-source: config/agent/provider and prompting all return empty 500s from the
-tarball and pass from `packages/sdk/src`."** That is a packaging/build bug, and
-a far more actionable thing to file.
-
-It also means the cutover is likely blocked only until a corrected artifact is
-published — not by anything architectural.
+What is safe to say: **the same code path succeeds from the upstream source
+tree and fails from an installed published package set**, under identical
+runtime and dependency versions.
 
 ### The 500s carry an empty body (correcting a false finding)
 
