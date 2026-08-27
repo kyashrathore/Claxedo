@@ -31,6 +31,8 @@ import { sessionConfigSelectionQueryKey } from "../store/session-config-selectio
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
+import { cancelArchiveProjectionReads } from "../data/sync/archive-projection-boundary"
+import { flushQueryPersistence } from "@/platform/query/persister"
 
 const directorySessionCacheEnsureTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DIRECTORY_SESSION_CACHE_ENSURE_DELAY_MS = 8_000
@@ -351,6 +353,20 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         sessionID: sessionItem.id,
         time: { archived: archivedAt },
       })
+      const meta = sessionMeta(directory, sessionItem.id)
+      const wasActive =
+        props.params.id === sessionItem.id ||
+        props.state.wb.selectors.focusedContent() === meta?.id ||
+        (typeof window !== "undefined" && pathnameTargetsSession(window.location.pathname, sessionItem.id))
+      // Unmount the consumer before cancelling its reads. A mounted query
+      // observer immediately restarts a cancelled config request and can
+      // recreate the archived session cache after cleanup.
+      if (meta) props.state.layout.closeContent(meta.id)
+      await cancelArchiveProjectionReads({
+        baseUrl: props.globalSDK.url,
+        directory,
+        sessionId: sessionItem.id,
+      })
       removeDirectorySessionCacheRow(directory, sessionItem.id)
       removeSessionInventoryQueryData<SessionItem>({
         baseUrl: props.globalSDK.url,
@@ -369,13 +385,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         archivedAt,
       })
       cleanupSessionCaches(sessionItem.id)
-
-      const meta = sessionMeta(directory, sessionItem.id)
-      const wasActive =
-        props.params.id === sessionItem.id ||
-        props.state.wb.selectors.focusedContent() === meta?.id ||
-        (typeof window !== "undefined" && pathnameTargetsSession(window.location.pathname, sessionItem.id))
-      if (meta) props.state.layout.closeContent(meta.id)
+      await flushQueryPersistence()
 
       if (wasActive) {
         if (nextSessionId) {

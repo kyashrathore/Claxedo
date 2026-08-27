@@ -52,6 +52,7 @@ type PersistedClient = {
 }
 
 let uninstall: (() => void) | undefined
+let flushInstalledPersistence: (() => Promise<void>) | undefined
 
 export const queryPersisterKey = "claxedo-query-v3"
 export const MAX_QUERY_PERSISTENCE_BYTES = 2 * 1024 * 1024
@@ -228,7 +229,7 @@ function createThrottledQueryPersistence(input: {
   })
 
   const flush = () => {
-    if (!dirty || disposed) return
+    if (!dirty || disposed) return writes
     dirty = false
     const client = snapshot()
     writes = writes.then(async () => {
@@ -240,6 +241,7 @@ function createThrottledQueryPersistence(input: {
       }
       await input.storage.setItem(queryPersisterKey, serialized)
     }).catch(() => {})
+    return writes
   }
 
   const flushWhenInteractiveWorkIsQuiet = () => {
@@ -261,6 +263,11 @@ function createThrottledQueryPersistence(input: {
 
   return {
     schedule,
+    async flushNow() {
+      if (timer !== undefined) clearTimeout(timer)
+      timer = undefined
+      await flush()
+    },
     /**
      * The restore/remove half `persistQueryClientRestore` drives. `persistClient`
      * is present so the object still satisfies the library's `Persister`, and
@@ -332,6 +339,7 @@ export function installQueryPersister(input: {
       buster: input.buster ?? buildHash,
       quietDelay: input.quietDelay ?? (() => 0),
     })
+    flushInstalledPersistence = persistence.flushNow
 
     // Same order `persistQueryClient` uses: restore first, and only subscribe
     // once it settles, so hydrating the restored snapshot does not immediately
@@ -365,6 +373,7 @@ export function installQueryPersister(input: {
       cancelled = true
       unsubscribeCaches?.()
       persistence.dispose()
+      if (flushInstalledPersistence === persistence.flushNow) flushInstalledPersistence = undefined
     }
     return [uninstall, restore] as const
   }
@@ -399,7 +408,13 @@ export function installQueryPersister(input: {
   }
 }
 
+/** Flush the reconciled durable navigation snapshot before routing away. */
+export async function flushQueryPersistence() {
+  await flushInstalledPersistence?.()
+}
+
 export function resetQueryPersisterForTest() {
   uninstall?.()
   uninstall = undefined
+  flushInstalledPersistence = undefined
 }
