@@ -323,11 +323,16 @@ identities are module-level singletons — duplicated identity would produce
 exactly this failure shape (service lookup fails, handler 500s, nothing logged).
 
 I tried to test it by rebuilding core with `splitting: false`. **Inconclusive:**
-that build emits an invalid package (`bus.js` missing among 397 emitted files,
-and the script's own "exactly one eager require helper" assertion fires because
-it assumes splitting). Flipping the flag does not produce a comparable artifact,
-so the result says nothing either way. Recorded as a lead for upstream, not a
-finding.
+that build emits an invalid package. `splitting: false` emits **397 files from
+404 source entrypoints** — seven are silently dropped, `bus.js` among them, so
+the package cannot even load (`Cannot find module '@opencode-ai/core/bus'`).
+The script's own "exactly one eager require helper" assertion also fires,
+because it assumes splitting. Flipping the flag does not produce a comparable
+artifact, so the result says nothing either way. Recorded as a lead for
+upstream, not a finding.
+
+Worth noting for whoever picks this up: that Bun drops seven entrypoints when
+splitting is disabled is itself odd, and may or may not be related.
 
 **Still not isolated:** which build step or emitted construct causes it. That
 needs instrumenting their build, which is upstream's to do — but the report now
