@@ -34,6 +34,7 @@ import {
   type ParentProps,
   Show,
   Loading,
+  untrack,
   useContext,
 } from "solid-js"
 import type { JSX } from "@solidjs/web"
@@ -218,7 +219,16 @@ function ConnectionGate(props: ParentProps) {
         return true
       }
       const { http, type } = server.current
-      const revealBeforeHealth = location.pathname.startsWith("/s/") || location.pathname.startsWith("/w/")
+      // `untrack`: this loader runs inside a Solid 2 async signal, whose
+      // computation TRACKS its synchronous prefix — unlike Solid 1's
+      // `createResource` fetcher, which was untracked. A tracked
+      // `location.pathname` read makes every navigation re-run startup, which
+      // drops `startup.data()` back to undefined and so unmounts the entire app
+      // shell under `<Show when={startup.data()}>` — panes, rail, terminals and
+      // all in-memory chrome, mid-interaction. Which surface the user booted on
+      // is a boot-time fact; it must not be a dependency.
+      const bootPath = untrack(() => location.pathname)
+      const revealBeforeHealth = bootPath.startsWith("/s/") || bootPath.startsWith("/w/")
 
       // Poll until healthy, or give up after 10s — then drop to background mode.
       // (Plain async replaces an Effect.gen loop + timeoutOrElse + ensuring.)
