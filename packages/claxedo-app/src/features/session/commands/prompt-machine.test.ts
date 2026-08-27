@@ -253,6 +253,14 @@ describe("prompt machine", () => {
 
     expect(admitPromptSubmission({
       mode,
+      bodyMd: "wait, one more thing",
+      imageCount: 0,
+      commentCount: 0,
+      working: true,
+    })).toBe("abort-active")
+
+    expect(admitPromptSubmission({
+      mode,
       bodyMd: "   ",
       imageCount: 1,
       commentCount: 0,

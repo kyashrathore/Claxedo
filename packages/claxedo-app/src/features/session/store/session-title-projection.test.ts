@@ -65,6 +65,23 @@ describe("session title projection", () => {
     expect(projection.title(target)).toBe("Repair terminal resizing")
   })
 
+  test("fresh concrete inventory replaces a stale create-time provisional title", () => {
+    const projection = createSessionTitleProjection()
+    const target = { sessionId: "ses_1", directory: "/repo" }
+    projection.replaceInventory([row({ id: "ses_1", title: "New Session", directory: "/repo" })])
+    projection.publishProvisional({ ...target, title: "New Session" })
+
+    projection.replaceInventory([row({
+      id: "ses_1",
+      title: "Usage limit is not working",
+      directory: "/repo",
+      time: { created: 1, updated: 20 },
+    })])
+
+    expect(projection.title(target)).toBe("Usage limit is not working")
+    expect(projection.entry(target)?.provisionalTitle).toBeUndefined()
+  })
+
   test("rejects stale and equal-time conflicting canonical titles", () => {
     const projection = createSessionTitleProjection()
     const target = { sessionId: "ses_1", directory: "/repo" }

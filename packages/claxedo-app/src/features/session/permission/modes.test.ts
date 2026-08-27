@@ -226,10 +226,11 @@ describe("harness modes are shown in the harness's own words", () => {
    * Same rule as cursor's next-session caveat above, on the opencode path.
    */
   test("opencode's next-turn caveat is suppressed on a draft and present on a session", () => {
-    const draft = permissionModeOptions({ harness: "opencode", hasSession: false })
+    const opencode = report({ modes: [], appliesFrom: "next-turn" })
+    const draft = permissionModeOptions({ harness: "opencode", report: opencode, hasSession: false })
     for (const option of draft.claxedo) expect(option.caveat, option.id).toBeUndefined()
 
-    const live = permissionModeOptions({ harness: "opencode", hasSession: true })
+    const live = permissionModeOptions({ harness: "opencode", report: opencode, hasSession: true })
     for (const option of live.claxedo) expect(option.caveat, option.id).toMatch(/next message/i)
     // Both of Claxedo's options carry it, not just Auto — the off switch writes a
     // ruleset too, so it lands at the same moment.

@@ -1,10 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { ACP_DANGER_TOOL_KINDS, CLAXEDO_AUTO_ANSWERS } from "@/features/session/permission/modes"
 import {
+  autoResponseOwnsPermission,
   autoRespondsPermission,
+  autoRespondablePermissions,
   directoryAcceptKey,
   isAutoApprovablePermission,
   isDirectoryAutoAccepting,
+  permissionRequestPolicyReady,
+  reconcileAutoPermissionRequests,
   acceptKey,
 } from "./permission-auto-respond"
 
@@ -113,5 +117,101 @@ describe("autoRespondsPermission", () => {
   test("omitting the permission type reports switch state only", () => {
     expect(autoRespondsPermission(onFor(SESSION), [{ id: SESSION }], { sessionID: SESSION }, DIR)).toBe(true)
     expect(autoRespondsPermission({}, [{ id: SESSION }], { sessionID: SESSION }, DIR)).toBe(false)
+  })
+
+  test("reconciles only safe pending requests owned by auto sessions", () => {
+    const sessions = [{ id: SESSION }, { id: "ses_other" }]
+    const pending = [
+      { id: "safe", sessionID: SESSION, permission: "read" },
+      { id: "risky", sessionID: SESSION, permission: "bash" },
+      { id: "other", sessionID: "ses_other", permission: "read" },
+    ]
+
+    expect(autoRespondablePermissions(onFor(SESSION), sessions, pending, DIR).map((item) => item.id)).toEqual(["safe"])
+  })
+})
+
+describe("permission auto-response reconciliation", () => {
+  test("keeps requests hidden only while automatic handling still owns them", () => {
+    expect(autoResponseOwnsPermission({
+      policyAutoResponds: true,
+      reconciliation: "pending",
+      responseFailed: false,
+    })).toBe(true)
+    expect(autoResponseOwnsPermission({
+      policyAutoResponds: true,
+      reconciliation: "ready",
+      responseFailed: false,
+    })).toBe(true)
+    expect(autoResponseOwnsPermission({
+      policyAutoResponds: true,
+      reconciliation: "failed",
+      responseFailed: false,
+    })).toBe(false)
+    expect(autoResponseOwnsPermission({
+      policyAutoResponds: true,
+      reconciliation: "ready",
+      responseFailed: true,
+    })).toBe(false)
+  })
+
+  test("renders requests after reconciliation settles, including failure", () => {
+    expect(permissionRequestPolicyReady(false, "ready")).toBe(false)
+    expect(permissionRequestPolicyReady(true, undefined)).toBe(false)
+    expect(permissionRequestPolicyReady(true, "pending")).toBe(false)
+    expect(permissionRequestPolicyReady(true, "ready")).toBe(true)
+    expect(permissionRequestPolicyReady(true, "failed")).toBe(true)
+  })
+
+  test("reconciles a hydrated list through the real async orchestration", async () => {
+    const responses: string[] = []
+    const state = await reconcileAutoPermissionRequests({
+      directory: DIR,
+      active: () => true,
+      autoAccept: onForDirectory,
+      sessions: () => [{ id: SESSION }],
+      list: async () => [
+        { id: "safe", sessionID: SESSION, permission: "read" },
+        { id: "risky", sessionID: SESSION, permission: "execute" },
+      ],
+      respond: (permission) => responses.push(permission.id),
+    })
+
+    expect(state).toBe("ready")
+    expect(responses).toEqual(["safe"])
+  })
+
+  test("a list resolved after navigation cannot answer stale permissions", async () => {
+    let active = true
+    let release: ((value: Array<{ id: string; sessionID: string; permission: string }>) => void) | undefined
+    const pending = new Promise<Array<{ id: string; sessionID: string; permission: string }>>((resolve) => {
+      release = resolve
+    })
+    const responses: string[] = []
+    const reconciliation = reconcileAutoPermissionRequests({
+      directory: DIR,
+      active: () => active,
+      autoAccept: onForDirectory,
+      sessions: () => [{ id: SESSION }],
+      list: () => pending,
+      respond: (permission) => responses.push(permission.id),
+    })
+
+    active = false
+    release?.([{ id: "safe", sessionID: SESSION, permission: "read" }])
+
+    await expect(reconciliation).resolves.toBe("ready")
+    expect(responses).toEqual([])
+  })
+
+  test("a current list failure settles failed so the manual dock can recover", async () => {
+    await expect(reconcileAutoPermissionRequests({
+      directory: DIR,
+      active: () => true,
+      autoAccept: onForDirectory,
+      sessions: () => [{ id: SESSION }],
+      list: async () => { throw new Error("offline") },
+      respond: () => undefined,
+    })).resolves.toBe("failed")
   })
 })

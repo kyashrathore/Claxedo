@@ -116,12 +116,12 @@ export function dropSidebarSessionStatusBatches(groups: readonly RailSessionStat
 export function publishFocusedRailSessionMeta<TStatus, TPermission, TQuestion>(input: {
   focused: RailSessionStatusTarget | undefined
   group: RailSessionStatusTargetGroup
-  statuses: Record<string, TStatus>
-  permissions: TPermission[]
-  questions: TQuestion[]
+  statuses?: Record<string, TStatus>
+  permissions?: TPermission[]
+  questions?: TQuestion[]
   apply: (payload: {
     sessionID: string
-    status: Record<string, TStatus>
+    status?: Record<string, TStatus>
     permissions?: TPermission[]
     questions?: TQuestion[]
   }) => void
@@ -158,7 +158,57 @@ export function railBatchData<T>(what: string) {
   }
 }
 
+export async function readRailBatchLeg<T>(
+  what: string,
+  request: Promise<{ data?: T }>,
+): Promise<{ ok: true; value: T } | { ok: false }> {
+  try {
+    return { ok: true, value: railBatchData<T>(what)(await request) }
+  } catch {
+    return { ok: false }
+  }
+}
+
 export function sameRequestIds(previous: { id: string }[] | undefined, next: { id: string }[]) {
   if (!previous || previous.length !== next.length) return false
   return previous.every((item, index) => item.id === next[index]?.id)
+}
+
+export function mergeRailStatusRead(
+  current: Record<string, string | undefined>,
+  targets: readonly Pick<RailSessionStatusTarget, "key" | "sessionID">[],
+  statuses: Record<string, { type?: string }>,
+) {
+  const updates = Object.fromEntries(targets.map((target) => [target.key, statuses[target.sessionID]?.type]))
+  return Object.entries(updates).some(([key, value]) => current[key] !== value)
+    ? { ...current, ...updates }
+    : current
+}
+
+type RailRequests<P, Q> = Record<string, { permissions?: P[]; questions?: Q[] } | undefined>
+
+export function mergeRailRequestRead<P extends { id: string; sessionID: string }, Q extends { id: string; sessionID: string }>(
+  current: RailRequests<P, Q>,
+  targets: readonly Pick<RailSessionStatusTarget, "key" | "sessionID">[],
+  permissions?: P[],
+  questions?: Q[],
+) {
+  const next = { ...current }
+  let changed = false
+  for (const target of targets) {
+    const previous = current[target.key]
+    const nextPermissions = permissions?.filter((item) => item.sessionID === target.sessionID)
+    const nextQuestions = questions?.filter((item) => item.sessionID === target.sessionID)
+    const permissionsChanged = nextPermissions !== undefined && !sameRequestIds(previous?.permissions, nextPermissions)
+    const questionsChanged = nextQuestions !== undefined && !sameRequestIds(previous?.questions, nextQuestions)
+    if (!permissionsChanged && !questionsChanged) continue
+    const value = {
+      ...(previous ?? {}),
+      ...(nextPermissions !== undefined ? { permissions: nextPermissions } : {}),
+      ...(nextQuestions !== undefined ? { questions: nextQuestions } : {}),
+    }
+    next[target.key] = value
+    changed = true
+  }
+  return changed ? next : current
 }

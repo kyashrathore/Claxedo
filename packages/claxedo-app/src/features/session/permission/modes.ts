@@ -556,10 +556,17 @@ export function permissionModeOptions(input: {
   hasSession?: boolean
 }): { claxedo: readonly PermissionModeOption[]; harness: HarnessPermissionModes } {
   const harness = harnessPermissionModes(input)
+  const reportReady = !!input.report &&
+    !input.report.unsupported &&
+    Array.isArray(input.report.modes)
   // Exactly one of these is non-empty. `claxedoPermissionModes` returns nothing
   // once the harness has reported modes of its own, so the picker never renders
   // a Claxedo row above a list that already contains the mode it would apply.
-  return { claxedo: claxedoPermissionModes(input), harness }
+  // Loading/unreadable reports are a rendering state, not a delivery contract:
+  // native OpenCode policy delivery also calls `claxedoPermissionModes` before
+  // a report exists. Suppress fallback rows only at this picker boundary so the
+  // delivery path keeps its canonical ruleset.
+  return { claxedo: reportReady ? claxedoPermissionModes(input) : [], harness }
 }
 
 /**
@@ -605,6 +612,10 @@ export function findPermissionModeOption(input: {
   // property access once it is read inside a closure.
   const modeId = selection.modeId
   if (selection.kind === "claxedo") {
+    // A stored local choice is not display authority while a known harness's
+    // report is still loading. Resolve it only after the report proves that the
+    // harness contributes no competing policy rows.
+    if (!input.report || input.report.unsupported || !Array.isArray(input.report.modes)) return
     return claxedoPermissionModes(input).find((mode) => mode.id === modeId)
   }
   return harnessPermissionModes(input).modes.find((mode) => mode.id === modeId)

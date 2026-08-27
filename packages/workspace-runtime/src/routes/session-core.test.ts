@@ -9,6 +9,7 @@ import type {
   RuntimeDirectory,
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
+import { AgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import {
   AgentMessagePageError,
   type AgentHarnessAdapter,
@@ -724,6 +725,81 @@ describe("createSessionRoutes directory-less sessions", () => {
       // And it now classifies (a lost thread → session recovery, not the old workspace fallback).
       expect(error.data?.firstTurnErrorClass).toBe("session")
     }
+  })
+
+  test("does not publish a turn error when prompt admission rejects a concurrent send", async () => {
+    const events: CompatEnvelope[] = []
+    const runtime = {
+      turns: {
+        start: async () => {
+          throw new AgentRuntimeTurnAdmissionError("session_1")
+        },
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: (event) => events.push(event),
+    })
+
+    const res = await app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      body: JSON.stringify({
+        messageID: "msg_duplicate",
+        parts: [{ type: "text", text: "second" }],
+      }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "turn_already_active",
+        message: "Session session_1 is already processing a message",
+      },
+    })
+    expect(events).toEqual([])
+  })
+
+  test("message returns the same structured admission conflict without a session error", async () => {
+    const events: CompatEnvelope[] = []
+    const runtime = {
+      turns: {
+        start: async () => {
+          throw new AgentRuntimeTurnAdmissionError("session_1")
+        },
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: (event) => events.push(event),
+    })
+
+    const res = await app.request("http://localhost/session/session_1/message", {
+      method: "POST",
+      body: JSON.stringify({ parts: [{ type: "text", text: "second" }] }),
+    })
+
+    expect(res.status).toBe(409)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "turn_already_active",
+        message: "Session session_1 is already processing a message",
+      },
+    })
+    expect(events).toEqual([])
   })
 
   test("prompt_async continues after its accepted client request disconnects", async () => {

@@ -57,6 +57,49 @@ describe("applyDirectorySessionMeta", () => {
     expect(readRequests(SESSION)?.permissions).toEqual([permission("perm_mine", SESSION)])
   })
 
+  test("a failed status leg does not erase busy while successful requests reconcile", () => {
+    applyDirectorySessionMeta({
+      sessionID: SESSION,
+      status: { [SESSION]: { type: "busy" } },
+      permissions: [],
+      questions: [],
+    })
+
+    applyDirectorySessionMeta({
+      sessionID: SESSION,
+      permissions: [permission("perm_mine", SESSION)],
+      questions: [],
+    })
+
+    expect(readStatus(SESSION)).toEqual({ type: "busy" })
+    expect(readRequests(SESSION)?.permissions).toEqual([permission("perm_mine", SESSION)])
+  })
+
+  test("a failed cold status leg does not invent idle while requests reconcile", () => {
+    applyDirectorySessionMeta({
+      sessionID: SESSION,
+      permissions: [permission("perm_mine", SESSION)],
+      questions: [],
+    })
+
+    expect(readStatus(SESSION)).toBeUndefined()
+    expect(readRequests(SESSION)?.permissions).toEqual([permission("perm_mine", SESSION)])
+  })
+
+  test("a partial request read cannot erase cached busy with an idle status", () => {
+    queryClient.setQueryData(shellDataKeys.sessionId(SESSION, "status"), { type: "busy" })
+
+    applyDirectorySessionMeta({
+      sessionID: SESSION,
+      status: { [SESSION]: { type: "idle" } },
+      // Questions completed empty, but permissions failed and are unknown.
+      questions: [],
+    })
+
+    expect(readStatus(SESSION)).toEqual({ type: "busy" })
+    expect(readRequests(SESSION)).toEqual({ permissions: [], questions: [] })
+  })
+
   test("a real status change still reaches session-activity subscribers", () => {
     applyDirectorySessionMeta({ sessionID: SESSION, status: { [SESSION]: { type: "idle" } }, permissions: [], questions: [] })
     let notified = 0

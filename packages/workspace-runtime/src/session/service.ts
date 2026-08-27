@@ -1,5 +1,5 @@
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
-import { firstTurnErrorData } from "@claxedo/agent-sdk-runtime"
+import { firstTurnErrorData, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
 import type {
   AgentMessageRow,
@@ -93,6 +93,8 @@ export type RuntimePromptTurnInput = {
   publishStatus: (event: RuntimeSessionBusEvent) => void
   activeTurn?: ActiveTurnScope
   streamErrorMessage?: (error: unknown) => string
+  /** Called after the runtime has accepted and durably started this turn. */
+  onAdmitted?: () => void
 }
 
 function mkAssistantId(userMessageId?: string) {
@@ -246,6 +248,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
   let assistantId = ""
   let assistantMessagePublished = false
   let error: string | undefined
+  let admissionError: unknown
   try {
     turn = await input.runtime.turns.start({
       sessionId: input.sessionId,
@@ -261,6 +264,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
     })
+    input.onAdmitted?.()
     assistantId = turn.assistantMessageId
     const projection = createPromptEventProjection({
       sessionId: input.sessionId,
@@ -284,14 +288,19 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       if (isTerminalEvent(item.payload)) break
     }
   } catch (err) {
-    error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
-    input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
+    if (isAgentRuntimeTurnAdmissionError(err)) {
+      admissionError = err
+    } else {
+      error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
+      input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
+    }
   } finally {
     input.activeTurn?.dispose?.()
     const returned = iterator.return?.()
     if (returned) await Promise.resolve(returned).catch(() => {})
   }
 
+  if (admissionError) throw admissionError
   if (!turn) throw new Error(error ?? "Failed to start runtime turn")
 
   return {

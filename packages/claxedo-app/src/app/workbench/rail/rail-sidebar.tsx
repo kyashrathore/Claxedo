@@ -4,10 +4,11 @@ import {
   dropSidebarSessionStatusBatches,
   invalidateSidebarSessionStatusGroupsForSession,
   relativeTime,
-  sameRequestIds,
+  mergeRailRequestRead,
+  mergeRailStatusRead,
   pruneSidebarSessionStatusBatches,
   publishFocusedRailSessionMeta,
-  railBatchData,
+  readRailBatchLeg,
   sidebarRequestDebug,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
@@ -66,6 +67,7 @@ import {
   railProjectCaptionFromName,
   railProjectLabel,
   sessionProjectSort,
+  sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
   workspaceInventoryGroupFor,
@@ -121,7 +123,6 @@ import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigat
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
-import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
 import { createHoverEngagement, railHeaderActionsBox } from "./rail-hover-engagement"
@@ -270,9 +271,6 @@ type GlobalSection = {
   label: string
   rows: Row[]
 }
-
-const sessionRowTitle = (title?: string, provisionalTitle?: string, updatedAt?: number) =>
-  resolveSessionTitle({ inventoryTitle: title, inventoryUpdatedAt: updatedAt, provisionalTitle }) ?? "Untitled session"
 
 function sessionNavigationRefForRow(session: Row) {
   if (session.sessionRef) return session.sessionRef
@@ -469,7 +467,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const [clock, setClock] = createSignal(Date.now())
   const [sessionStatuses, setSessionStatuses] = createSignal<Record<string, string | undefined>>({})
   const [sessionRequests, setSessionRequests] = createSignal<
-    Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] } | undefined>
+    Record<string, { permissions?: PermissionRequest[]; questions?: QuestionRequest[] } | undefined>
   >({})
   const prefetchSidebarSessionMessages = createRailSessionMessagePrefetch({
     client: globalSDK.client.session,
@@ -895,39 +893,19 @@ export function RailSidebar(props: RailSidebarProps) {
           const controller = new AbortController()
           const request = Promise
             .all([
-              client.session.status(undefined, { signal: controller.signal }).then(railBatchData("session status")),
-              client.permission.list(undefined, { signal: controller.signal }).then(railBatchData("permissions")),
-              client.question.list(undefined, { signal: controller.signal }).then(railBatchData("questions")),
+              readRailBatchLeg("session status", client.session.status(undefined, { signal: controller.signal })),
+              readRailBatchLeg("permissions", client.permission.list(undefined, { signal: controller.signal })),
+              readRailBatchLeg("questions", client.question.list(undefined, { signal: controller.signal })),
             ])
-            .then(([statuses, permissions, questions]) => {
+            .then(([statusRead, permissionRead, questionRead]) => {
               if (controller.signal.aborted) return
-              const nextStatuses: Record<string, string | undefined> = {}
-              const nextRequests: Record<string, { permissions: PermissionRequest[]; questions: QuestionRequest[] }> = {}
-              for (const target of group.targets) {
-                // Absence IS idle: `/session/status` lists only active sessions. `railBatchData` keeps a FAILED read out of that assertion.
-                const status = statuses[target.sessionID]
-                const requests = {
-                  permissions: permissions.filter((item) => item.sessionID === target.sessionID),
-                  questions: questions.filter((item) => item.sessionID === target.sessionID),
-                }
-                nextStatuses[target.key] = status?.type
-                nextRequests[target.key] = requests
+              const statuses = statusRead.ok ? statusRead.value : undefined
+              const permissions = permissionRead.ok ? permissionRead.value : undefined
+              const questions = questionRead.ok ? questionRead.value : undefined
+              if (statuses) setSessionStatuses((current) => mergeRailStatusRead(current, group.targets, statuses))
+              if (permissions || questions) {
+                setSessionRequests((current) => mergeRailRequestRead(current, group.targets, permissions, questions))
               }
-              setSessionStatuses((current) => {
-                const changed = Object.entries(nextStatuses).some(([key, value]) => current[key] !== value)
-                if (!changed) return current
-                return { ...current, ...nextStatuses }
-              })
-              setSessionRequests((current) => {
-                const changed = group.targets.some((target) => {
-                  const previous = current[target.key]
-                  const next = nextRequests[target.key]
-                  return !sameRequestIds(previous?.permissions, next.permissions) ||
-                    !sameRequestIds(previous?.questions, next.questions)
-                })
-                if (!changed) return current
-                return { ...current, ...nextRequests }
-              })
               publishFocusedRailSessionMeta({
                 focused: focusedSessionStatusTarget(),
                 group,
@@ -941,7 +919,9 @@ export function RailSidebar(props: RailSidebarProps) {
               // queues a refresh in a microtask; writing the fresh timestamp
               // here means that refresh finds the batch fresh and skips,
               // instead of refetching what was just fetched.
-              sidebarSessionStatusBatches.set(batchKey, { updatedAt: Date.now() })
+              sidebarSessionStatusBatches.set(batchKey, {
+                updatedAt: statusRead.ok && permissionRead.ok && questionRead.ok ? Date.now() : 0,
+              })
               sidebarRequestDebug("complete-group", group.directory, group.targets.length)
             })
             .catch(() => {})

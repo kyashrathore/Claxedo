@@ -103,3 +103,65 @@ export function autoRespondsPermission(
   if (!("permission" in permission)) return true
   return isAutoApprovablePermission(permission.permission)
 }
+
+export function autoRespondablePermissions<T extends { sessionID: string; permission?: string }>(
+  autoAccept: Record<string, boolean>,
+  sessions: { id: string; parentID?: string }[],
+  permissions: T[],
+  directory?: string,
+) {
+  return permissions.filter((permission) =>
+    autoRespondsPermission(autoAccept, sessions, permission, directory)
+  )
+}
+
+export type PermissionAutoReconciliationState = "pending" | "ready" | "failed"
+
+export async function reconcileAutoPermissionRequests<T extends {
+  id?: string
+  sessionID: string
+  permission?: string
+}>(input: {
+  directory?: string
+  active(): boolean
+  autoAccept(): Record<string, boolean>
+  sessions(): { id: string; parentID?: string }[]
+  list(): Promise<T[]>
+  respond(permission: T): void
+}): Promise<PermissionAutoReconciliationState> {
+  try {
+    const permissions = await input.list()
+    // A completed read belongs to the directory/policy generation that
+    // started it. Navigation or provider teardown revokes its authority before
+    // it can answer anything on the user's behalf.
+    if (!input.active()) return "ready"
+    for (const permission of autoRespondablePermissions(
+      input.autoAccept(),
+      input.sessions(),
+      permissions,
+      input.directory,
+    )) {
+      if (!permission.id || !input.active()) continue
+      input.respond(permission)
+    }
+    return "ready"
+  } catch {
+    return input.active() ? "failed" : "ready"
+  }
+}
+
+export function permissionRequestPolicyReady(
+  persistedReady: boolean,
+  reconciliation: PermissionAutoReconciliationState | undefined,
+) {
+  return persistedReady && reconciliation !== undefined && reconciliation !== "pending"
+}
+
+export function autoResponseOwnsPermission(input: {
+  policyAutoResponds: boolean
+  reconciliation: PermissionAutoReconciliationState | undefined
+  responseFailed: boolean
+}) {
+  if (!input.policyAutoResponds || input.responseFailed) return false
+  return input.reconciliation !== "failed"
+}

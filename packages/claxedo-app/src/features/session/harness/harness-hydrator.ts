@@ -1,7 +1,6 @@
 import {
   decodeHarnessState,
   decodeSessionConfig,
-  failedHarness,
   harnessHasConfigOptions,
   type HarnessState,
   type HarnessType,
@@ -12,9 +11,7 @@ import type { DraftDefaultApplication } from "./draft-default-policy"
 import {
   harnessStateFromSessionConfig,
   refreshHarnessTypeForScope,
-  shouldFetchConfigOptionsForScope,
   shouldHydrateDraftFromHarnessStatus,
-  shouldRefreshDirectoryAfterHarnessStatus,
   type HarnessScopeInput,
 } from "./store-policy"
 import {
@@ -49,8 +46,8 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   markServer?(scope: string): void
   resetWorkspaceDraftHarness(scope: string): void
   applyStatus(scope: string, data: HarnessState, params?: ScopeInput): Promise<void>
+  setPollingHydration(scope: string, type?: HarnessType): void
   setReadyHydration(scope: string, type: HarnessType): void
-  setReadyFallback(scope: string, type: HarnessType): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   workspaceRuntime(params?: ScopeInput): boolean
@@ -91,6 +88,25 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       })
       const hit = harnessStateFromSessionConfig(decodeSessionConfig(config))
       if (hit) return hit
+      // A successful object response is not a transport retry. If it violates
+      // the existing-session config contract by omitting harness identity, keep
+      // the authoritative SessionRef identity visible and settle as unavailable
+      // instead of polling forever or exposing the seeded OpenCode selection.
+      const refType = params.sessionRef?.harness?.id
+      if (refType && config !== null && typeof config === "object" && !Array.isArray(config)) {
+        return {
+          type: refType,
+          activeType: refType,
+          ready: false,
+          status: "error",
+          error: "Session harness configuration is unavailable",
+        }
+      }
+      // Existing-session identity comes only from its persisted config. A
+      // directory harness status describes the workspace default, not this
+      // conversation, so falling through would overwrite Codex ownership with
+      // an unrelated OpenCode selection after a transient config failure.
+      return undefined
     }
     const res = await input.runtime.localHarnessConfigFetch(params)(
       harnessConfigUrl({
@@ -154,12 +170,11 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       const data = await status(params).catch(() => undefined)
       if (!active()) return
       if (!data) {
-        const fallback = params.sessionRef?.harness?.id ?? input.state(scope)?.harness ?? "opencode"
-        input.setReadyFallback(scope, fallback)
-        if (shouldRefreshDirectoryAfterHarnessStatus(params)) {
-          await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: fallback }), { draft: true })
-        }
-        if (active()) input.cache.setSeen(scope, key)
+        // A missing/failed config is not evidence that the existing session
+        // belongs to a different harness. Keep it retryable and, when the
+        // SessionRef already carries authoritative harness identity, expose
+        // that identity while the model/config is still connecting.
+        input.setPollingHydration(scope, params.sessionRef?.harness?.id)
         return
       }
       await applyAndMarkSeen(scope, data, params, key, active)

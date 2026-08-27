@@ -20,7 +20,7 @@ import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSes
  */
 export function applyDirectorySessionMeta(input: {
   sessionID: string
-  status: Record<string, SessionStatus>
+  status?: Record<string, SessionStatus>
   permissions?: PermissionRequest[]
   questions?: QuestionRequest[]
 }) {
@@ -33,14 +33,30 @@ export function applyDirectorySessionMeta(input: {
   const sessionQuestions = input.questions === undefined
     ? cachedRequests?.questions ?? []
     : pickSessionQuestions(input.questions, input.sessionID)
-  const nextStatus = mergeBusySessionStatus(
-    queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(input.sessionID, "status")),
-    input.status[input.sessionID],
-    isSessionTurnActive({ permissions: sessionPermissions, questions: sessionQuestions }),
-  ) ?? idleSessionStatus
-  dispatchSessionStatusEvent({
-    event: { type: "session.status", source: "server", sessionID: input.sessionID, status: nextStatus },
-  })
+  // A directory read is only authoritative about the absence of active
+  // requests when both request legs completed (or both were already cached).
+  // If either leg failed, treating its missing value as [] can let an idle
+  // status erase a locally-observed busy turn while its approval/question is
+  // still outstanding.
+  const requestEvidenceKnown = cachedRequests !== undefined || (
+    input.permissions !== undefined && input.questions !== undefined
+  )
+  const cachedStatus = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(input.sessionID, "status"))
+  const nextStatus = input.status === undefined
+    ? cachedStatus
+    : mergeBusySessionStatus(
+        cachedStatus,
+        input.status[input.sessionID],
+        !requestEvidenceKnown || isSessionTurnActive({ permissions: sessionPermissions, questions: sessionQuestions }),
+      ) ?? idleSessionStatus
+  // A failed status leg has no authority to initialize a cold session as idle.
+  // Preserve a cached value when one exists; otherwise let a later successful
+  // status read establish the first canonical state.
+  if (nextStatus) {
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: input.sessionID, status: nextStatus },
+    })
+  }
   if (input.permissions === undefined && input.questions === undefined) return
   dispatchSessionRequestsEvent({
     event: {
