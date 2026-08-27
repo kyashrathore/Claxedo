@@ -1,0 +1,10 @@
+{
+  "reviewer": "security-api",
+  "status": "complete",
+  "findings": [],
+  "coverage": [
+    "shutdown route uses the existing daemon bearer capability",
+    "shutdown body requires a lease ID",
+    "desktop sends only its current lease ID"
+  ]
+}

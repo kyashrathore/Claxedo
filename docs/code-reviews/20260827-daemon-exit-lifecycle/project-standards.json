@@ -1,0 +1,10 @@
+{
+  "reviewer": "project-standards",
+  "status": "complete",
+  "findings": [],
+  "coverage": [
+    "one authoritative daemon lifecycle owner",
+    "no synthesized renderer state or replacement reload path",
+    "caller-specific quit and handoff policy remains in Electron main"
+  ]
+}

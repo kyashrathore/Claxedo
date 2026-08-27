@@ -1,0 +1,24 @@
+{
+  "reviewer": "reliability",
+  "status": "complete",
+  "findings": [
+    {
+      "title": "Rejected daemon release requests were treated as success",
+      "severity": "P2",
+      "file": "packages/claxedo-desktop/src/main/server-daemon-lease.ts",
+      "line": "83",
+      "confidence": 100,
+      "autofix_class": "gated_auto",
+      "owner": "downstream-resolver",
+      "requires_verification": true,
+      "pre_existing": false,
+      "suggested_fix": "Check Response.ok and report non-success status through the existing onError callback.",
+      "first_evidence": "The release promise previously resolved for HTTP 4xx and 5xx responses.",
+      "why_it_matters": "A clean quit could appear to release daemon ownership even when the server rejected the request.",
+      "evidence": [
+        "The lease release and shutdown paths now share halt(), which checks Response.ok.",
+        "A 503 response is covered by server-daemon-lease.test.ts."
+      ]
+    }
+  ]
+}

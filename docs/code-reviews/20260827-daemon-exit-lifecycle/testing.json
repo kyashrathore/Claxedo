@@ -1,0 +1,12 @@
+{
+  "reviewer": "testing",
+  "status": "complete",
+  "findings": [],
+  "coverage": [
+    "desktop exit intent unit tests",
+    "desktop exit and restart wiring tests",
+    "daemon lease HTTP contract tests",
+    "local daemon grace, adoption, work pin, and shutdown tests",
+    "authenticated shutdown route behavior tests"
+  ]
+}

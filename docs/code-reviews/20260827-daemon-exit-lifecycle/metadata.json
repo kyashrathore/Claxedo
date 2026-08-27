@@ -1,0 +1,7 @@
+{
+  "run_id": "20260827-daemon-exit-lifecycle",
+  "branch": "codex/daemon-background-lifecycle",
+  "head_sha": "21655b0a7fa908ce07fb2a6fc3432f3eb11169d6",
+  "verdict": "Ready to merge",
+  "completed_at": "2026-08-27T17:30:26Z"
+}
