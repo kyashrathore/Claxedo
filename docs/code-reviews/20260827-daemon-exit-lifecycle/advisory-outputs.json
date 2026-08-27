@@ -1,0 +1,9 @@
+{
+  "residual_risks": [
+    "An adopted daemon from an older app version does not have the new shutdown endpoint. Its first clean quit after upgrade falls back to the 15-second lease expiry and 180-second idle grace.",
+    "The packaged Electron restart and updater flows were verified structurally and by unit tests, but not through a packaged GUI smoke run."
+  ],
+  "testing_gaps": [
+    "No packaged GUI smoke run was performed for restart, update installation, or deliberate quit."
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "status": "complete",
+  "findings": [],
+  "pre_existing_findings": [],
+  "suppressed_findings": [],
+  "suppressed_by_confidence": {},
+  "malformed_findings": [],
+  "malformed_returns": [],
+  "applied_findings": [
+    {
+      "#": 1,
+      "title": "Rejected daemon release requests were treated as success",
+      "severity": "P2",
+      "file": "packages/claxedo-desktop/src/main/server-daemon-lease.ts",
+      "line": "83",
+      "confidence": 100,
+      "reviewers": ["reliability"]
+    }
+  ]
+}

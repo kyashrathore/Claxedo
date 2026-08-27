@@ -1,0 +1,11 @@
+{
+  "reviewer": "correctness",
+  "status": "complete",
+  "findings": [],
+  "coverage": [
+    "normal quit releases the owning lease and requests shutdown",
+    "restart and update release only for handoff",
+    "crash recovery retains lease expiry and idle grace",
+    "active runtime and PTY work prevents daemon termination"
+  ]
+}
