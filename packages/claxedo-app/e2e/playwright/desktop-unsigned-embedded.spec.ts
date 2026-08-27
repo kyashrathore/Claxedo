@@ -234,6 +234,58 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     expect(url).toMatch(/^https?:\/\//)
   })
 
+  test("idle daemon follows packaged app background and focus lifecycle", async () => {
+    test.setTimeout(90_000)
+    packaged = await launchPackagedApp({
+      timeoutMs: BOOT_TIMEOUT,
+      env: {
+        // Production remains 120 seconds. This real-process lane shortens only
+        // the daemon-owned grace so it can exercise every boundary promptly.
+        CLAXEDO_DAEMON_IDLE_GRACE_MS: "1200",
+        CLAXEDO_DAEMON_POLL_INTERVAL_MS: "50",
+      },
+    })
+    const serverOrigin = new URL(await expectServerReachable(packaged, 45_000)).origin
+    const mainBrowserWindow = await packaged.app.browserWindow(packaged.page)
+    const health = () => fetch(new URL("/api/claxedo/health", serverOrigin))
+      .then((response) => response.ok)
+      .catch(() => false)
+
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
+    await expect.poll(() => mainBrowserWindow.evaluate((browserWindow) => browserWindow.isFocused())).toBe(true)
+
+    // Backgrounding for less than the grace keeps the daemon alive, and focus
+    // cancels the pending shutdown even after the original grace would pass.
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
+    await packaged.page.waitForTimeout(400)
+    expect(await health()).toBe(true)
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
+    await packaged.page.waitForTimeout(1_300)
+    expect(await health()).toBe(true)
+
+    // A full background grace shuts down the idle daemon. Returning focus then
+    // starts/adopts a generation and makes the same public health entrypoint
+    // available again without relaunching Electron.
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
+    await expect.poll(health, {
+      timeout: 10_000,
+      message: "the idle local daemon stayed reachable after the background grace",
+    }).toBe(false)
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
+    await expect.poll(() => packaged!.page.evaluate(async () => {
+      const desktopApi = (window as typeof window & {
+        api: { awaitInitialization: (onStep: () => void) => Promise<{ url: string }> }
+      }).api
+      const ready = await desktopApi.awaitInitialization(() => {})
+      return fetch(new URL("/api/claxedo/health", ready.url))
+        .then((response) => response.ok)
+        .catch(() => false)
+    }), {
+      timeout: 45_000,
+      message: "focus did not restart the daemon and reconnect the packaged renderer",
+    }).toBe(true)
+  })
+
   test("Usage opens on the Codex page canvas and every top-level view remains reachable", async () => {
     const dir = await makeScratchWorkspace("usage")
     packaged = await launchPackagedApp({ timeoutMs: BOOT_TIMEOUT })
