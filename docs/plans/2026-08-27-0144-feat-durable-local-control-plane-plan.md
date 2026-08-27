@@ -7,16 +7,9 @@ artifact_contract: ce-unified-plan/v1
 artifact_readiness: blocked-on-prerequisite-measurement
 product_contract_source: ce-brainstorm
 execution: code
-status: superseded
-superseded_by: docs/plans/2026-08-27-145-feat-durable-local-server-daemon-plan.md
 ---
 
 # Durable Local Control Plane and Standalone Workspace Runtimes - Plan
-
-> Superseded on 2026-08-27. The standalone-per-workspace design duplicated the
-> hosted supervisor locally and moved live state out of the process that already
-> owns it. The replacement plan keeps `claxedo-local-server` as the single
-> durable owner and is grounded in the implemented daemon-adoption slice.
 
 ## Goal Capsule
 
@@ -547,3 +540,4 @@ Complete only when:
 8. Update uses interlock and successor/rollback without terminating runtimes.
 9. Signed peak, steady, CPU, terminal, event, and runtime-start gates pass.
 10. Embedded ownership, path PTY auth, `LocalWorkspaceRuntimePort`, second lifecycle policy, and silent continuation fallback are absent.
+
