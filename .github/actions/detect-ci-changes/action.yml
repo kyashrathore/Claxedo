@@ -1,0 +1,57 @@
+name: Detect affected CI surfaces
+description: Selects repository CI gates from the canonical changed-file policy
+
+inputs:
+  base:
+    description: Git comparison base
+    required: false
+  head:
+    description: Git comparison head
+    required: false
+  force-full:
+    description: Run every non-release gate
+    required: false
+    default: "false"
+
+outputs:
+  full:
+    value: ${{ steps.detect.outputs.full }}
+  docs:
+    value: ${{ steps.detect.outputs.docs }}
+  unit:
+    value: ${{ steps.detect.outputs.unit }}
+  typecheck:
+    value: ${{ steps.detect.outputs.typecheck }}
+  windows:
+    value: ${{ steps.detect.outputs.windows }}
+  unit_matrix:
+    value: ${{ steps.detect.outputs.unit_matrix }}
+  mermaid:
+    value: ${{ steps.detect.outputs.mermaid }}
+  boundary_app:
+    value: ${{ steps.detect.outputs.boundary_app }}
+  boundary_local_server:
+    value: ${{ steps.detect.outputs.boundary_local_server }}
+  boundary_host_connector:
+    value: ${{ steps.detect.outputs.boundary_host_connector }}
+  boundary_server:
+    value: ${{ steps.detect.outputs.boundary_server }}
+  core_e2e:
+    value: ${{ steps.detect.outputs.core_e2e }}
+  onboarding:
+    value: ${{ steps.detect.outputs.onboarding }}
+  tier_real:
+    value: ${{ steps.detect.outputs.tier_real }}
+  reason:
+    value: ${{ steps.detect.outputs.reason }}
+
+runs:
+  using: composite
+  steps:
+    - id: detect
+      shell: bash
+      env:
+        CI_BASE_SHA: ${{ inputs.base }}
+        CI_HEAD_SHA: ${{ inputs.head }}
+        CI_FORCE_FULL: ${{ inputs.force-full }}
+      run: node "$GITHUB_ACTION_PATH/../../../script/ci-changes.mjs"

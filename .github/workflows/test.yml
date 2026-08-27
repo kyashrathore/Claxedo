@@ -21,9 +21,41 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  diagnostics:
-    name: local diagnostics release gate
-    runs-on: ubuntu-22.04
+  changes:
+    name: select affected CI surfaces
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.changed.outputs.full }}
+      docs: ${{ steps.changed.outputs.docs }}
+      unit: ${{ steps.changed.outputs.unit }}
+      unit_matrix: ${{ steps.changed.outputs.unit_matrix }}
+      mermaid: ${{ steps.changed.outputs.mermaid }}
+      boundary_app: ${{ steps.changed.outputs.boundary_app }}
+      boundary_local_server: ${{ steps.changed.outputs.boundary_local_server }}
+      boundary_host_connector: ${{ steps.changed.outputs.boundary_host_connector }}
+      boundary_server: ${{ steps.changed.outputs.boundary_server }}
+      core_e2e: ${{ steps.changed.outputs.core_e2e }}
+      onboarding: ${{ steps.changed.outputs.onboarding }}
+      tier_real: ${{ steps.changed.outputs.tier_real }}
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Select affected gates
+        id: changed
+        uses: ./.github/actions/detect-ci-changes
+        with:
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event.pull_request.head.sha || github.sha }}
+          force-full: ${{ github.event_name == 'workflow_dispatch' }}
+
+  docs:
+    name: documentation links
+    needs: changes
+    if: needs.changes.outputs.docs == 'true'
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -31,152 +63,17 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
-      - name: Build diagnostics package dependencies
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
-
-      - name: Build desktop diagnostics
-        working-directory: packages/claxedo-desktop
-        run: bun run build
-
-      - name: Verify exact diagnostics dependencies
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_VERIFY_ADVISORIES: "1"
-        run: bun run verify:diagnostics-dependencies
-
-      - name: Verify diagnostics privacy boundary
-        working-directory: packages/claxedo-desktop
-        run: bun run verify:diagnostics-privacy
-
-      - name: Run diagnostics contract and safety suite
-        working-directory: packages/claxedo-desktop
-        run: bun run test:diagnostics-release
-
-      - name: Run rendered diagnostics task evaluator
-        working-directory: packages/claxedo-app
-        run: bun run test:diagnostics-release
-
-      # perf-harness is an intentionally standalone package with its own lockfile;
-      # the repository-root workspace install does not install its dependencies.
-      - name: Install diagnostics performance harness dependencies
-        working-directory: packages/claxedo-app/perf-harness
-        run: bun install --frozen-lockfile
-
-      - name: Run diagnostics performance gates
-        working-directory: packages/claxedo-app/perf-harness
-        run: bun test
-
-      - name: Build real app performance target
-        working-directory: packages/claxedo-app
-        run: bun run build
-
-      # ---------------------------------------------------------------------
-      # Local product bundle boundary (emitted artifact, not source graph).
-      #
-      # `src/architecture/local-entry-closure.guard.test.ts` already runs in the
-      # `unit` job and proves the local entry's SOURCE closure never reaches the
-      # identity provider. It structurally CANNOT see Rollup configuration: the
-      # local config derives from the hosted one, so a `manualChunks` entry
-      # naming `@clerk/clerk-js/headless` was inherited by a build whose whole
-      # purpose is to have no identity provider in it, and the source guard was
-      # green throughout. A clean source graph and a contaminated artifact are
-      # indistinguishable without reading the emitted files. These steps read
-      # them.
-      #
-      # It lives in THIS job because this job already pays for a checkout, a
-      # `bun install`, the dist-resolved workspace build, and a production
-      # `vite build`. A dedicated job would repeat all of that to run two extra
-      # vite builds. It is deliberately NOT attached to turbo's generic `test`
-      # task: that would put a vite build in every package's test graph, which
-      # is the same mistake as wiring `^build` there (see turbo.json).
-      #
-      # Placed before the Playwright install/perf flows so a contaminated
-      # bundle fails in ~2 build-lengths instead of after the browser work.
-      # Measured 2026-08-09 on an M-series dev machine: `build:local` 20.6s,
-      # `build:marker-control` ~20s. Neither writes to `dist`, so the perf
-      # target built above is untouched.
-      #
-      # The marker control needs its OWN build rather than the `dist`
-      # produced earlier in this job. MEASURED, not assumed: `auth-client.ts` reaches
-      # `import("@clerk/clerk-js/headless")` only past `if (!clerkPubKey) return`,
-      # and `clerkPubKey` folds to "" when `VITE_CLERK_PUBLISHABLE_KEY` is unset —
-      # so Rollup drops the import and a plain CI `bun run build` (no `.env.local`
-      # on a runner) emits NO identity-provider code at all. Pointing the control
-      # at that `dist` fails all 7 markers and reds the gate for a reason that has
-      # nothing to do with the local bundle. `build:marker-control` sets the two
-      # env vars that keep the provider in the graph and writes to its own outDir.
-      # Without this control, "no hits" is a hope rather than a result: a marker
-      # list that stopped matching anything would pass silently forever.
-      # `verify:closure` composes the source guard, local build, marker-control
-      # build and emitted scanner in that order; CI runs the same public command
-      # a reviewer runs locally instead of restating its internals here.
-      - name: Verify local renderer product boundary
-        working-directory: packages/claxedo-app
-        run: bun run verify:closure
-
-      - name: Install performance browser
-        working-directory: packages/claxedo-app/perf-harness
-        run: bunx playwright install chromium
-
-      - name: Run paired disabled and profiler-enabled app flows
-        working-directory: packages/claxedo-app/perf-harness
-        env:
-          CLAXEDO_PERF_APP_SCRIPT: serve
-          # The diagnostics gate requires request/resource attribution for the
-          # user flows it evaluates. Keep GitHub and the Crabbox diagnostics
-          # lane on the same evidence contract.
-          CLAXEDO_PERF_CAUSAL: "1"
-          # Absolute 60 Hz renderer-task limits remain strict. This headroom
-          # applies only to the paired diagnostics-overhead delta, whose two
-          # sequential samples are noisy on shared runners.
-          CLAXEDO_PERF_HEADROOM: "1.0"
-        run: bun run run:all
-
-      - name: Run real-child diagnostics overhead smoke
-        working-directory: packages/claxedo-desktop
-        env:
-          CLAXEDO_DIAGNOSTICS_SMOKE_OUTPUT: .artifacts/diagnostics-source-linux.json
-        run: |
-          mkdir -p .artifacts
-          # The smoke's probe tree (bun child + metrics worker + pidusage) runs
-          # against the runner's default 1024-fd soft limit and has hit EMFILE
-          # at Bun.spawn; raise to the hard limit for this step only.
-          ulimit -n "$(ulimit -Hn)" || true
-          echo "fd soft limit: $(ulimit -n)"
-          bun run smoke:diagnostics
-
-      - name: Upload diagnostics evidence
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: diagnostics-source-linux-${{ github.run_attempt }}
-          path: packages/claxedo-desktop/.artifacts/diagnostics-source-linux.json
-          if-no-files-found: error
-          retention-days: 14
+      - name: Check repository documentation links
+        run: bun run docs:check-links
 
   unit:
     name: unit (${{ matrix.settings.name }})
+    needs: changes
+    if: needs.changes.outputs.unit == 'true'
     strategy:
       fail-fast: false
       matrix:
-        settings:
-          - name: linux
-            host: ubuntu-latest
-          - name: windows
-            host: windows-latest
+        settings: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}
     runs-on: ${{ matrix.settings.host }}
     defaults:
       run:
@@ -189,6 +86,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
+          fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node
@@ -213,13 +111,6 @@ jobs:
             turbo-${{ runner.os }}-${{ hashFiles('turbo.json', '**/package.json') }}-
             turbo-${{ runner.os }}-
 
-      # Repo-root guard, not a package suite, so it has no turbo task. Linux
-      # only: it reads Markdown off disk and is OS-independent, so running it
-      # again on the Windows leg buys nothing.
-      - name: Check documentation links
-        if: runner.os == 'Linux'
-        run: bun run docs:check-links
-
       # session-ui's mermaid path CANNOT be unit tested, so it rides here rather
       # than in `bun turbo test`: `bun test` has no DOM, happy-dom's HTML parser
       # drops every child of an <svg> while its XML parser makes DOMPurify a
@@ -238,7 +129,7 @@ jobs:
       # green the whole time, because a sanitizer cannot notice that nothing
       # calls it.
       - name: Read Playwright version
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
         id: playwright-version
         run: |
           version=$(node -e 'console.log(require("./package.json").workspaces.catalog["@playwright/test"])')
@@ -246,21 +137,21 @@ jobs:
 
       # Same key as the e2e jobs below, so this shares their cache entry.
       - name: Cache Playwright browsers
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
 
       - name: Install Playwright Chromium
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
         working-directory: packages/claxedo-app
         run: npx playwright install chromium
 
       # No `bun turbo build` needed: everything these two import
       # (@opencode-ai/ui, /core, /sdk) is exported from source, not dist.
       - name: Verify mermaid rendering (sanitizer + wiring)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && needs.changes.outputs.mermaid == 'true'
         timeout-minutes: 15
         working-directory: packages/session-ui
         run: bun run verify:mermaid
@@ -270,8 +161,8 @@ jobs:
       # these built first. turbo.json's generic `test` task deliberately does
       # NOT use `dependsOn: ["^build"]` to get this -- that edge reaches the
       # repo-wide-broken `opencode#build` (see the comment in turbo.json) -- so
-      # the build is scoped explicitly here instead. Same list the diagnostics
-      # and e2e jobs below use, plus typecheck.yml and release-claxedo.yml --
+      # the build is scoped explicitly here instead. Same list the e2e jobs
+      # below use, plus typecheck.yml and release-claxedo.yml --
       # `grep -rn 'filter=@claxedo/agent-event-runtime' .github/workflows/`
       # finds every copy; keep them in sync.
       - name: Build dist-resolved workspace packages
@@ -291,17 +182,25 @@ jobs:
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
 
-      # The app's emitted boundary runs in `diagnostics`, where the two Vite
-      # builds already lived. These four are source/package checks and are fast;
-      # run each product's public command so a future gate added to the shared
-      # command table is gated here automatically.
-      - name: Verify product package boundaries
-        if: runner.os == 'Linux'
-        run: |
-          bun run --cwd packages/claxedo-local-server verify:closure
-          bun run --cwd packages/claxedo-host-connector verify:closure
-          bun run --cwd packages/claxedo-server verify:closure
-          bun run --cwd packages/claxedo-desktop verify:closure
+      # Product boundaries are independent release artifacts. Keep each public
+      # command separately selectable so an app-only change does not build the
+      # server products, and ordinary CI never invokes Desktop's production
+      # build. The release workflows retain Desktop's complete boundary gate.
+      - name: Verify app package boundary
+        if: runner.os == 'Linux' && needs.changes.outputs.boundary_app == 'true'
+        run: bun run --cwd packages/claxedo-app verify:closure
+
+      - name: Verify local-server package boundary
+        if: runner.os == 'Linux' && needs.changes.outputs.boundary_local_server == 'true'
+        run: bun run --cwd packages/claxedo-local-server verify:closure
+
+      - name: Verify Host Connector package boundary
+        if: runner.os == 'Linux' && needs.changes.outputs.boundary_host_connector == 'true'
+        run: bun run --cwd packages/claxedo-host-connector verify:closure
+
+      - name: Verify server package boundary
+        if: runner.os == 'Linux' && needs.changes.outputs.boundary_server == 'true'
+        run: bun run --cwd packages/claxedo-server verify:closure
 
       # `bun turbo test` used to be a near-no-op: turbo.json declared only five
       # package-scoped `#test` entries, and turbo runs nothing for a package it
@@ -319,18 +218,26 @@ jobs:
       #
       # `--concurrency=2` matches the runner's core count and is load-bearing,
       # not tuning. Turbo defaults to 10 parallel tasks; several newly-wired
-      # suites assert on wall-clock behaviour (wakes' timer coalescing,
-      # workgraph's single-concurrent-winner effect lease, workspace-runtime's
-      # PTY byte forwarding) and fail their 5s timeouts when starved of CPU.
+      # suites assert on wall-clock behaviour (wakes' timer coalescing and
+      # workspace-runtime's PTY byte forwarding) and fail their 5s timeouts
+      # when starved of CPU. WorkGraph's tests are temporarily filtered while
+      # that product area is paused.
       # Measured: at 21-way parallelism on a fast many-core dev machine those
       # three went red; serialized on the same machine, all three pass. A
       # 2-core runner at concurrency 10 is strictly worse, and oversubscribing
       # two cores buys no wall clock anyway.
       - name: Run unit tests
         timeout-minutes: 35
-        run: bun turbo test --concurrency=2
+        run: |
+          if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
+            bun turbo test --concurrency=2 --filter='!@claxedo/workgraph'
+          else
+            bun turbo test --affected --concurrency=2 --filter='!@claxedo/workgraph'
+          fi
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Publish unit reports
         if: always()
@@ -369,6 +276,8 @@ jobs:
     # then one exact app artifact for each build-time auth composition. Keeping
     # this in one job avoids adding another setup-dominated dependency stage.
     name: e2e reusable builds
+    needs: changes
+    if: needs.changes.outputs.core_e2e == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -460,7 +369,8 @@ jobs:
     # 109 runner-minutes, with 48 minutes spent before their Playwright steps.
     # The app build is now owned by e2e-build above and reused by every shard.
     name: e2e (linux ${{ matrix.auth-mode }}, ${{ matrix.shard }}/6)
-    needs: e2e-build
+    needs: [changes, e2e-build]
+    if: needs.changes.outputs.core_e2e == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -555,8 +465,10 @@ jobs:
             packages/claxedo-app/e2e/playwright/test-results
             packages/claxedo-app/e2e/playwright/report
 
-  e2e-workgraph:
-    name: e2e (workgraph-real, ${{ matrix.auth-mode }})
+  e2e-onboarding:
+    name: e2e (onboarding, ${{ matrix.auth-mode }})
+    needs: changes
+    if: needs.changes.outputs.onboarding == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -619,13 +531,6 @@ jobs:
         working-directory: packages/claxedo-app
         run: npx playwright install chromium
 
-      - name: Run workgraph-real e2e
-        working-directory: packages/claxedo-app
-        timeout-minutes: 30
-        run: bun run test:e2e:workgraph
-        env:
-          CLAXEDO_E2E_SERVE_MODE: build-preview
-
       - name: Run onboarding-enabled e2e
         working-directory: packages/claxedo-app
         timeout-minutes: 15
@@ -641,7 +546,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: playwright-workgraph-real-${{ matrix.auth-mode }}-${{ github.run_attempt }}
+          name: playwright-onboarding-${{ matrix.auth-mode }}-${{ github.run_attempt }}
           if-no-files-found: ignore
           retention-days: 7
           path: |
@@ -650,12 +555,14 @@ jobs:
 
   # Tier R: real claxedo-server + real embedded engine + real harness binaries,
   # with ONLY the model endpoint scripted (e2e/helpers/scripted-model-server.ts).
-  # Its own job for the same reason as e2e-workgraph: the app build bakes
-  # VITE_CLAXEDO_SERVER_URL for this lane's backend port (4317), so it cannot
-  # share a shard's build. Hermetic — the harness CLIs are installed but never
+  # Its own job because the app build bakes VITE_CLAXEDO_SERVER_URL for this
+  # lane's backend port (4317), so it cannot share a shard's build. Hermetic —
+  # the harness CLIs are installed but never
   # authenticate; the scripted endpoint is the only network the model path sees.
   e2e-tier-real:
     name: e2e (tier-real)
+    needs: changes
+    if: needs.changes.outputs.tier_real == 'true'
     runs-on: ubuntu-latest
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
@@ -816,192 +723,50 @@ jobs:
             packages/claxedo-app/e2e/playwright/test-results
             packages/claxedo-app/e2e/playwright/report
 
-  # `desktop-unsigned-embedded` (Phase 2 of docs/plans/2026-08-06-001-test-full-
-  # matrix-real-e2e-plan.md): the ONLY lane that runs the PACKAGED Electron app,
-  # whose renderer is a `file://` document. Every other job in this file points
-  # a browser at an `http://localhost` dev/preview server, where
-  # `window.location.protocol` is `https?:` and the whole `file://` bug class
-  # (four defects shipped to users in v0.0.65 -- see the plan's coverage table)
-  # is structurally undetectable. This job is what closes that hole.
-  #
-  # macOS-only, and that is an accepted gap, not an oversight: the `file://`
-  # defect class follows from `win.loadFile()` vs `win.loadURL()` in
-  # packages/claxedo-desktop/src/main/windows.ts:177-186, which every platform
-  # shares -- it is not a macOS-specific code path -- so a mac-only lane still
-  # catches all four shipped defects (1, 3, 4 directly; 5/6 via the D2
-  # scenario). Linux would need `xvfb-run` in front of the packaged binary,
-  # the same way release-gates.yml's packaged diagnostics smoke already does
-  # for Linux; that is a follow-up, not required to close the gap this job
-  # exists for.
-  e2e-desktop:
-    name: e2e (desktop packaged lifecycle)
-    runs-on: macos-15
-    env:
-      # electron-vite runs under Node, whose default ~2GB old-space does not
-      # fit the renderer bundle -- this is the SAME OOM release-claxedo.yml's
-      # mac legs hit ("both OOM-killed in the first v0.0.65 build"; see its
-      # identical job-level NODE_OPTIONS and comment). Job-level, not
-      # step-level: `bun run build` here is `scripts/build.ts`, which spawns
-      # its own rebuild as a child process, and release-claxedo.yml's comment
-      # records that a step-level var did not reach that child -- the OOM
-      # just moved there.
-      NODE_OPTIONS: --max-old-space-size=4096
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          # Matches the other e2e jobs' pin in this file (Playwright 1.59 hangs
-          # extracting Chromium under 24.16). This job never extracts a
-          # Playwright browser (see the "Run desktop e2e" step below), but
-          # there is no reason to diverge from the version every other e2e job
-          # here already runs on.
-          node-version: "24.15"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          install-flags: --frozen-lockfile
-
-      # The packaged desktop matrix exercises the real Claude harness through
-      # a scripted endpoint. The CLI must be present even though the scenario
-      # does not require user credentials.
-      - name: Install Claude CLI
-        run: npm install -g @anthropic-ai/claude-code@2.1.150
-
-      # Same scoped list as the e2e/e2e-workgraph/e2e-tier-real jobs above --
-      # packages/*/dist is gitignored and the desktop build resolves these
-      # @claxedo/* workspace packages through their dist exports.
-      - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
-
-      # The signed desktop fixtures launch claxedo-server under Node. Its
-      # self-hosted composition imports @claxedo/local-server's production
-      # export, which is dist/self-hosted-execution.js (the `bun` condition
-      # points at source only for Bun-owned entrypoints). Build that canonical
-      # package artifact before Playwright starts; a fresh checkout has no
-      # ignored dist/ tree to resolve incidentally.
-      - name: Build local-server fixture export
-        run: bun run --cwd packages/claxedo-local-server build
-
-      # Builds the signed-capable packaged app ONCE for the whole job; every
-      # unsigned scenario in desktop-unsigned-embedded.spec.ts launches a fresh process from this
-      # same binary (e2e/helpers/electron-app.ts's launchPackagedApp), not a
-      # fresh build. `--dir` skips DMG assembly and notarisation (the full
-      # `package:mac` path is ~5 min / 1.4 GB) while still producing an
-      # asar-packed app whose renderer loads over `file://` -- asar is never
-      # disabled in electron-builder.config.ts, so packing, and therefore the
-      # bug class this lane exists to catch, is independent of the --dir
-      # target. This is the exact command electron-app.ts's own GATING error
-      # names when no packaged binary is found. Measured 2026-08-06: 42s / 403 MB.
-      - name: Build packaged desktop app (--dir, signed-capable)
-        working-directory: packages/claxedo-desktop
-        env:
-          VITE_AUTH_ENABLED: "true"
-        run: |
-          bun run build
-          npx electron-builder --dir --config electron-builder.config.ts
-
-      # No Playwright browser install here, unlike every e2e job above: this
-      # spec's only Playwright entry point is `_electron.launch()`
-      # (e2e/helpers/electron-app.ts), which drives the packaged binary's OWN
-      # bundled Chromium and never touches Playwright's `page`/`context`/
-      # `browser` fixtures or a downloaded browser. `test:e2e:core:base`'s
-      # `--grep-invert "@workgraph-real|@tier-real"` already carves this spec
-      # (tagged `@tier-real @surface-desktop`) out of the sharded PR lane, so
-      # it only ever runs here.
-      - name: Run desktop e2e (unsigned startup and embedded execution)
-        working-directory: packages/claxedo-app
-        timeout-minutes: 30
-        env:
-          # No web app is under test in this lane -- the packaged renderer is
-          # its own file:// document talking to its own embedded server -- so
-          # playwright.config.ts's default webServer (`bun run dev`) would
-          # boot a vite dev server that nothing in this spec ever navigates
-          # to. Skip it rather than pay for it.
-          PLAYWRIGHT_SKIP_WEBSERVER: "1"
-          PLAYWRIGHT_VIDEO: "0"
-        run: bun run test:e2e:desktop
-
-      - name: Run desktop e2e (signed account and Host Connector lifecycle)
-        working-directory: packages/claxedo-app
-        timeout-minutes: 30
-        env:
-          PLAYWRIGHT_VIDEO: "0"
-        run: bun run test:e2e:desktop:real
-
-      - name: Upload Playwright artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: playwright-desktop-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/claxedo-app/e2e/playwright/test-results
-            packages/claxedo-app/e2e/playwright/report
-
-  e2e-workgraph-journey:
-    name: e2e (workgraph-journey)
+  # Stable branch-protection target: optional jobs may be skipped by the change
+  # policy, while this one check still fails if any selected gate fails.
+  result:
+    name: CI result
+    if: always()
+    needs: [changes, docs, unit, e2e-build, e2e, e2e-onboarding, e2e-tier-real]
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        shell: bash
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Require every selected gate to pass
+        env:
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          DOCS_RESULT: ${{ needs.docs.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          E2E_BUILD_RESULT: ${{ needs.e2e-build.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
+          ONBOARDING_RESULT: ${{ needs.e2e-onboarding.result }}
+          TIER_REAL_RESULT: ${{ needs.e2e-tier-real.result }}
+          DOCS_SELECTED: ${{ needs.changes.outputs.docs }}
+          UNIT_SELECTED: ${{ needs.changes.outputs.unit }}
+          CORE_E2E_SELECTED: ${{ needs.changes.outputs.core_e2e }}
+          ONBOARDING_SELECTED: ${{ needs.changes.outputs.onboarding }}
+          TIER_REAL_SELECTED: ${{ needs.changes.outputs.tier_real }}
+        run: |
+          require_gate() {
+            label="$1"
+            selected="$2"
+            result="$3"
+            if [[ "$selected" == "true" && "$result" != "success" ]]; then
+              echo "$label was selected but concluded: $result" >&2
+              exit 1
+            fi
+            if [[ "$selected" != "true" && "$result" != "success" && "$result" != "skipped" ]]; then
+              echo "$label was not selected but concluded: $result" >&2
+              exit 1
+            fi
+          }
 
-      - name: Setup Node
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "24.15"
-
-      - name: Setup Bun
-        uses: ./.github/actions/setup-bun
-        with:
-          install-flags: --frozen-lockfile
-
-      - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
-
-      - name: Run headless WorkGraph journey
-        working-directory: packages/claxedo-app
-        timeout-minutes: 30
-        run: bun run test:e2e:journey
+          [[ "$CHANGES_RESULT" == "success" ]] || {
+            echo "Change selection concluded: $CHANGES_RESULT" >&2
+            exit 1
+          }
+          require_gate "Documentation" "$DOCS_SELECTED" "$DOCS_RESULT"
+          require_gate "Unit" "$UNIT_SELECTED" "$UNIT_RESULT"
+          require_gate "E2E build" "$CORE_E2E_SELECTED" "$E2E_BUILD_RESULT"
+          require_gate "Core E2E" "$CORE_E2E_SELECTED" "$E2E_RESULT"
+          require_gate "Onboarding E2E" "$ONBOARDING_SELECTED" "$ONBOARDING_RESULT"
+          require_gate "Tier-real E2E" "$TIER_REAL_SELECTED" "$TIER_REAL_RESULT"

@@ -182,7 +182,9 @@ no test, fails review.
      doctrine as Tier L. The oracle is mandatory. `core-workgraph.spec.ts`
      (`@workgraph-real`) is the pre-existing member of this tier family and is carved
      out of the sharded core lane the same way `@tier-real` is — via
-     `test:e2e:core:base`'s `--grep-invert`, run by its own CI job.
+     `test:e2e:core:base`'s `--grep-invert`. Its dedicated CI job is temporarily
+     paused while WorkGraph is not an active product focus; the explicit test command
+     remains available for local and manual remote runs.
    - **Tier L** (`e2e/playwright/live-*.spec.ts`) makes zero `page.route()` calls and
      fakes nothing at all — real models, real credentials. A missing credential/binary
      **fails** the test with a clear setup message (loud-skip) — silent `test.skip()` is

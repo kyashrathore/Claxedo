@@ -43,7 +43,8 @@ const LANE_TAGS = ["@core", "@live", "@marketing"] as const
  * Tags that refine a selection *within* a lane rather than granting one. A spec may
  * carry these, but never *only* these.
  *   `@workgraph-real` — carved out of the sharded core lane by `test:e2e:core:base`'s
- *     `--grep-invert`, run by the separate `e2e (workgraph-real)` CI job.
+ *     `--grep-invert`. Its dedicated CI jobs are temporarily paused; the explicit
+ *     local/manual commands remain available.
  *   `@tier-real` — Tier R (`real-*.spec.ts`): everything real except the scripted model
  *     endpoint. Carved out of the sharded core lane the same way `@workgraph-real` is,
  *     and run by the separate `e2e (tier-real)` CI job. See `e2e/INVARIANTS.md` rule 6.
