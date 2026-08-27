@@ -339,6 +339,8 @@ jobs:
         env:
           CLAXEDO_E2E_AUTH_MODE: test-user
           VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:3001
+          VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true"
+          VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true"
 
       - name: Upload reusable E2E app (test-user)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -354,6 +356,8 @@ jobs:
         env:
           CLAXEDO_E2E_AUTH_MODE: local-unsigned
           VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:3001
+          VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true"
+          VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true"
 
       - name: Upload reusable E2E app (local-unsigned)
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

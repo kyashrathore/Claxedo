@@ -28,6 +28,7 @@ const packageJson = JSON.parse(readFileSync(path.join(appRoot, "package.json"), 
   scripts: Record<string, string>
 }
 const coreE2EJob = workflow.slice(workflow.indexOf("\n  e2e:\n"), workflow.indexOf("\n  e2e-onboarding:\n"))
+const reusableE2EBuildJob = workflow.slice(workflow.indexOf("\n  e2e-build:\n"), workflow.indexOf("\n  e2e:\n"))
 
 describe("e2e auth mode matrix", () => {
   test("Playwright owns both explicit modes and a real no-user Vite composition", () => {
@@ -67,6 +68,8 @@ describe("e2e auth mode matrix", () => {
     expect(workflow).toContain("shard: [1, 2, 3, 4, 5, 6]")
     expect(workflow).toContain("--shard=${{ matrix.shard }}/6")
     expect(workflow).toContain("CLAXEDO_E2E_SERVE_MODE: preview")
+    expect(reusableE2EBuildJob.match(/VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true"/g)).toHaveLength(2)
+    expect(reusableE2EBuildJob.match(/VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true"/g)).toHaveLength(2)
     expect(workflow).not.toContain("CLAXEDO_E2E_PREBUILT")
     expect(crabboxCi).not.toContain("CLAXEDO_E2E_PREBUILT")
     expect(crabboxShard).not.toContain("CLAXEDO_E2E_PREBUILT")
