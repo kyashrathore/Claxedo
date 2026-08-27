@@ -12,9 +12,9 @@ export const IS_PACKAGED = window.__OPENCODE__?.packaged ?? false
  * item both land here. See `shared/restart-policy` for why this cannot be an
  * unconditional relaunch.
  *
- * The local server is a machine-owned daemon. Restarting Electron only drops
- * this renderer's client connection; the replacement process adopts the same
- * daemon so live turns and PTYs keep their authoritative owner.
+ * The local server is held for the Electron process lifetime. Restarting
+ * Electron hands its lease to the replacement process instead of requesting a
+ * clean daemon shutdown, so live turns and PTYs keep their authoritative owner.
  */
 export async function restartApp() {
   desktopApi().relaunch()

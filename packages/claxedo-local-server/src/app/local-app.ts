@@ -236,6 +236,14 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
       if (!authorized(c.req.header("authorization"))) return unauthorized(c)
       return c.json({ released: lifecycle.release(c.req.param("leaseId")) })
     })
+    app.post("/api/claxedo/daemon/shutdown", async (c) => {
+      if (!authorized(c.req.header("authorization"))) return unauthorized(c)
+      const body = await c.req.json().catch(() => undefined) as { leaseId?: unknown } | undefined
+      if (typeof body?.leaseId !== "string" || !body.leaseId) {
+        return c.json({ error: { code: "daemon_shutdown_invalid_body", message: "A lease ID is required" } }, 400)
+      }
+      return c.json(lifecycle.requestShutdown(body.leaseId))
+    })
   }
 
   app.route("/", BootstrapRoutes({ services, env, ...authRouteOptions(services) }))

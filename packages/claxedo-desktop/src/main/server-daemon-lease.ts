@@ -74,6 +74,19 @@ export async function holdClaxedoDaemonLease(
     return operation
   }
 
+  async function halt(release: () => Promise<Response>) {
+    if (stopped) return
+    stopped = true
+    if (timer) clearTimeout(timer)
+    timer = undefined
+    await operation?.catch(() => {})
+    await release()
+      .then((response) => {
+        if (!response.ok) throw new Error(`daemon lease release failed (${String(response.status)})`)
+      })
+      .catch((error) => options.onError?.(error))
+  }
+
   schedule()
   return {
     get id() {
@@ -81,16 +94,19 @@ export async function holdClaxedoDaemonLease(
     },
     renewNow,
     async stop() {
-      if (stopped) return
-      stopped = true
-      if (timer) clearTimeout(timer)
-      timer = undefined
-      await operation?.catch(() => {})
-      await request(`${base}/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
+      await halt(() => request(`${base}/api/claxedo/daemon/leases/${encodeURIComponent(lease.id)}`, {
         method: "DELETE",
         headers,
         signal: AbortSignal.timeout(requestTimeoutMs),
-      }).catch((error) => options.onError?.(error))
+      }))
+    },
+    async shutdown() {
+      await halt(() => request(`${base}/api/claxedo/daemon/shutdown`, {
+        method: "POST",
+        headers: { ...headers, "content-type": "application/json" },
+        body: JSON.stringify({ leaseId: lease.id }),
+        signal: AbortSignal.timeout(requestTimeoutMs),
+      }))
     },
   }
 }

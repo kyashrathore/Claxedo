@@ -144,6 +144,7 @@ describe("local composition — health and telemetry", () => {
       generation: "generation-1",
       pid: 42,
     }
+    const onIdle = vi.fn()
     const lifecycle = createLocalDaemonLifecycle({
       activity: () => ({
         pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
@@ -151,8 +152,9 @@ describe("local composition — health and telemetry", () => {
         residencyPins: 0,
         replacementBlockers: 0,
       }),
-      onIdle() {},
+      onIdle,
     })
+    lifecycle.start()
     const local = app({ daemon: { identity, lifecycle } })
 
     expect((await local.request("http://localhost/api/claxedo/daemon")).status).toBe(401)
@@ -185,6 +187,36 @@ describe("local composition — health and telemetry", () => {
       method: "DELETE",
       headers: { authorization: "Bearer installation-secret" },
     })).json()).toEqual({ released: true })
+
+    const replacementLease = await (await local.request("http://localhost/api/claxedo/daemon/leases", {
+      method: "POST",
+      headers: { authorization: "Bearer installation-secret" },
+    })).json() as { id: string }
+    expect((await local.request("http://localhost/api/claxedo/daemon/shutdown", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer wrong",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ leaseId: replacementLease.id }),
+    })).status).toBe(401)
+    expect((await local.request("http://localhost/api/claxedo/daemon/shutdown", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer installation-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })).status).toBe(400)
+    expect(await (await local.request("http://localhost/api/claxedo/daemon/shutdown", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer installation-secret",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ leaseId: replacementLease.id }),
+    })).json()).toEqual({ shutdownRequested: true, released: true })
+    expect(onIdle).toHaveBeenCalledTimes(1)
   })
 
   test("telemetry rejects a body that does not match the schema", async () => {

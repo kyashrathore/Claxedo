@@ -1,5 +1,9 @@
 import { describe, expect, test, vi } from "vitest"
-import { createLocalDaemonLifecycle, type LocalDaemonWorkActivity } from "./local-daemon-lifecycle"
+import {
+  createLocalDaemonLifecycle,
+  localDaemonResidencyPins,
+  type LocalDaemonWorkActivity,
+} from "./local-daemon-lifecycle"
 
 const empty = (): LocalDaemonWorkActivity => ({
   pty: { running: 0, committed: 0, provisional: 0, managed: 0, subscribers: 0 },
@@ -11,6 +15,82 @@ const empty = (): LocalDaemonWorkActivity => ({
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 describe("local daemon lifecycle", () => {
+  test("counts active sessions, terminals, and managed processes as daemon work", () => {
+    const cases: Array<[string, LocalDaemonWorkActivity["pty"], LocalDaemonWorkActivity["runtime"]]> = [
+      ["agent session", empty().pty, { ...empty().runtime, activeTurns: 1 }],
+      ["session write", empty().pty, { ...empty().runtime, activeWrites: 1 }],
+      ["session checkpoint", empty().pty, { ...empty().runtime, checkpointing: 1 }],
+      ["terminal", { ...empty().pty, running: 1, committed: 1 }, empty().runtime],
+      ["managed process", { ...empty().pty, running: 1, managed: 1 }, empty().runtime],
+    ]
+
+    for (const [label, pty, runtime] of cases) {
+      expect(localDaemonResidencyPins(pty, runtime), label).toBe(1)
+    }
+  })
+
+  test("an ordinary lease release keeps one 180-second crash and restart handoff window", async () => {
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle })
+      lifecycle.start()
+      const lease = lifecycle.acquire()!
+
+      lifecycle.release(lease.id)
+      await vi.advanceTimersByTimeAsync(179_999)
+      expect(onIdle).not.toHaveBeenCalled()
+
+      await vi.advanceTimersByTimeAsync(1)
+      expect(onIdle).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a replacement app lease acquired inside the handoff window cancels idle shutdown", async () => {
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle })
+      lifecycle.start()
+      const lease = lifecycle.acquire()!
+
+      lifecycle.release(lease.id)
+      await vi.advanceTimersByTimeAsync(179_999)
+      lifecycle.acquire()
+      await vi.advanceTimersByTimeAsync(180_001)
+
+      expect(onIdle).not.toHaveBeenCalled()
+      lifecycle.stop()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a clean app shutdown stops as soon as leases and active work are gone", async () => {
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      let pins = 1
+      const activity = () => ({ ...empty(), residencyPins: pins, replacementBlockers: pins })
+      const lifecycle = createLocalDaemonLifecycle({ activity, onIdle })
+      lifecycle.start()
+      const lease = lifecycle.acquire()!
+
+      lifecycle.requestShutdown(lease.id)
+      await vi.advanceTimersByTimeAsync(360_000)
+      expect(onIdle).not.toHaveBeenCalled()
+
+      pins = 0
+      lifecycle.reconcile()
+      await vi.advanceTimersByTimeAsync(1)
+      expect(onIdle).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   test("a pre-start state snapshot cannot consume lifecycle startup", () => {
     vi.useFakeTimers()
     try {

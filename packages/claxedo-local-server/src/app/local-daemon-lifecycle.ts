@@ -3,10 +3,19 @@ import { embeddedWorkspaceRuntimeActivity } from "../deployments/local/embedded-
 
 export type LocalDaemonWorkActivity = ReturnType<typeof localDaemonWorkActivity>
 
+export function localDaemonResidencyPins(
+  pty: ReturnType<typeof Pty.activity>,
+  runtime: ReturnType<typeof embeddedWorkspaceRuntimeActivity>,
+) {
+  // Every terminal and managed process is backed by a running PTY. Agent work
+  // remains pinned for active turns, writes, and checkpoint transitions.
+  return pty.running + runtime.activeTurns + runtime.activeWrites + runtime.checkpointing
+}
+
 export function localDaemonWorkActivity() {
   const pty = Pty.activity()
   const runtime = embeddedWorkspaceRuntimeActivity()
-  const residencyPins = pty.running + runtime.activeTurns + runtime.activeWrites + runtime.checkpointing
+  const residencyPins = localDaemonResidencyPins(pty, runtime)
   return {
     pty,
     runtime,
@@ -36,12 +45,13 @@ export function createLocalDaemonLifecycle(options: {
 }) {
   const activity = options.activity ?? localDaemonWorkActivity
   const leaseTtlMs = positive(options.leaseTtlMs, 15_000)
-  const idleGraceMs = positive(options.idleGraceMs, 30_000)
+  const idleGraceMs = positive(options.idleGraceMs, 180_000)
   const pollIntervalMs = positive(options.pollIntervalMs, 1_000)
   const now = options.now ?? Date.now
   const leases = new Map<string, LocalDaemonLease>()
   let timer: ReturnType<typeof setTimeout> | undefined
   let idleSince: number | undefined
+  let shutdownRequested = false
   let state: "created" | "running" | "idle" | "stopping" | "stopped" = "created"
 
   function clearTimer() {
@@ -81,7 +91,8 @@ export function createLocalDaemonLifecycle(options: {
     }
     idleSince ??= at
     if (state !== "stopping" && state !== "stopped") state = "idle"
-    return { at, work, residencyPins, idleRemainingMs: Math.max(0, idleGraceMs - (at - idleSince)) }
+    const graceMs = shutdownRequested ? 0 : idleGraceMs
+    return { at, work, residencyPins, idleRemainingMs: Math.max(0, graceMs - (at - idleSince)) }
   }
 
   function tick() {
@@ -127,6 +138,7 @@ export function createLocalDaemonLifecycle(options: {
       if (state === "stopping" || state === "stopped") return
       const lease = { id: crypto.randomUUID(), client, expiresAt: now() + leaseTtlMs }
       leases.set(lease.id, lease)
+      shutdownRequested = false
       idleSince = undefined
       changed()
       return lease
@@ -147,6 +159,12 @@ export function createLocalDaemonLifecycle(options: {
       if (released) changed()
       return released
     },
+    requestShutdown(leaseId: string) {
+      const released = leases.delete(leaseId)
+      shutdownRequested = true
+      changed()
+      return { shutdownRequested: true as const, released }
+    },
     reconcile: changed,
     snapshot() {
       const current = evaluate()
@@ -156,6 +174,7 @@ export function createLocalDaemonLifecycle(options: {
         leaseTtlMs,
         idleGraceMs,
         idleSince,
+        shutdownRequested,
         residencyPins: current.residencyPins,
         work: current.work,
       }
