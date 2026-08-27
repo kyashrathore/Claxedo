@@ -993,6 +993,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    // A pointer press on a control is an action, not a scroll gesture. Expanding
+    // the cold virtual range here used to replace the pressed row between
+    // pointerdown and click, so the browser never delivered the click to
+    // timeline controls such as WorkGroup and recovery-card buttons.
+    const target = event.target instanceof Element ? event.target : undefined
+    if (target?.closest("button, a, input, textarea, select, [role='button'], [role='menuitem']")) return
     prepareInteractionScroll()
     props.onMarkScrollGesture(event.target)
   }
