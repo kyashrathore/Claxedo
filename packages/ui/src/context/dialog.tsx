@@ -44,6 +44,9 @@ function init() {
     if (!current || lock.value) return
     lock.value = true
     current.onClose?.()
+    // Drives `data-closing` on the layer wrapper, which is what plays the exit
+    // animation (see dialog.css). It deliberately does NOT flip Kobalte's
+    // `open` — see the comment on `mount()`.
     current.setClosing(true)
 
     const closed = current.id
@@ -70,6 +73,31 @@ function init() {
     makeEventListener(window, "keydown", onKeyDown, { capture: true })
   }
 
+  /**
+   * A mounted dialog is torn down by disposing its root, never by flipping
+   * Kobalte's `open` to false.
+   *
+   * `@solidjs/signals@2.0.0-rc.3` defers a pure computation's child disposal:
+   * `recompute()` moves the node's children and cleanups onto a *pending* list
+   * and commits them later, in `commitPendingNode`. `disposeChildren()` only
+   * drains the live lists, so an owner disposed in the same flush in which a
+   * descendant memo recomputed loses that memo's cleanups outright — the owner
+   * is left ZOMBIE with its `onCleanup` handlers intact but never run.
+   *
+   * Flipping `open` walks straight into that: Kobalte's presence signal feeds
+   * both `Dialog.Portal`'s `<Show>` (which disposes the portal subtree) and
+   * `Dialog.Content`'s inner `<Show>` (which recomputes and stashes its pending
+   * disposal), in one flush. The cleanup that gets dropped is
+   * `DismissableLayer`'s, whose job is to `removeLayer()` and
+   * `restoreBodyPointerEvents()`. The page is then left with
+   * `body { pointer-events: none }` forever and swallows every subsequent
+   * click.
+   *
+   * Keeping `open` constant makes teardown a single, undeferred disposal pass,
+   * and the exit animation becomes ours (`data-closing`) instead of Kobalte's
+   * `data-expanded`. `onOpenChange` still fires for Escape and outside-pointer
+   * dismissal, because the `open` prop stays controlled by us.
+   */
   const mount = (element: DialogElement, owner: Owner, onClose: (() => void) | undefined, layer: number) => {
     const id = Math.random().toString(36).slice(2)
     const zIndex = 50 + layer * 10
@@ -82,7 +110,7 @@ function init() {
           node: (
             <Kobalte
               modal
-              open={!closing()}
+              open
               onOpenChange={(open: boolean) => {
                 if (open) return
                 close(id)
@@ -97,6 +125,7 @@ function init() {
                 />
                 <div
                   data-dialog-layer={layer}
+                  data-closing={closing() ? "" : undefined}
                   style={{
                     position: "fixed",
                     inset: "0",

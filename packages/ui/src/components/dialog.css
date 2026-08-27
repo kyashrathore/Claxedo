@@ -163,12 +163,19 @@
   }
 }
 
+/*
+ * The exit animation is keyed off `data-closing` on the layer wrapper that
+ * `context/dialog.tsx` renders, not off Kobalte's `data-expanded`: a mounted
+ * dialog keeps Kobalte's `open` true for its whole life and is torn down by
+ * disposing its root (see the `mount()` docblock in `context/dialog.tsx`), so
+ * `data-expanded` never comes off.
+ */
 [data-component="dialog"][data-transition] .ui-dialog-content {
-  animation: contentHide 100ms ease-in forwards;
+  animation: contentShow 150ms ease-out;
+}
 
-  &[data-expanded] {
-    animation: contentShow 150ms ease-out;
-  }
+[data-dialog-layer][data-closing] [data-component="dialog"][data-transition] .ui-dialog-content {
+  animation: contentHide 100ms ease-in forwards;
 }
 
 @keyframes overlayShow {
