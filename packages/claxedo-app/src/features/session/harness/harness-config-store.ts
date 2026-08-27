@@ -146,8 +146,8 @@ export function createHarnessConfigStore() {
     markServer: harnessStore.markServer,
     resetWorkspaceDraftHarness: statusActions.resetWorkspaceDraftHarness,
     applyStatus: statusActions.applyStatus,
+    setPollingHydration: statusActions.setPollingHydration,
     setReadyHydration: statusActions.setReadyHydration,
-    setReadyFallback: statusActions.setReadyFallback,
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },

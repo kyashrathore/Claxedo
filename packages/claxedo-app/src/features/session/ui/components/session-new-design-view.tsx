@@ -101,6 +101,8 @@ export function NewSessionDesignView(props: {
    * re-derived here, so every surface agrees on one signal.
    */
   signedControlPlane?: boolean
+  /** Whether cloud sandbox workspaces are enabled in this product build. */
+  sandboxEnabled?: boolean
   main?: JSX.Element
   children: JSX.Element
 }) {
@@ -237,6 +239,7 @@ export function NewSessionDesignView(props: {
     newSessionEnvironmentOptions({
       platform: platform.platform === "web" ? "web" : "desktop",
       signedControlPlane: !!props.signedControlPlane,
+      sandboxEnabled: props.sandboxEnabled,
     })
   )
   const createActionLabel = () =>
@@ -295,20 +298,22 @@ export function NewSessionDesignView(props: {
     ]
     if (selfHostedWorkspace()) return chips
 
-    chips.push({
-      slot: "context-chip-environment",
-      icon: <Icon name={props.workspaceKind === "cloud" ? "cloud" : "laptop"} size="small" />,
-      label: environmentLabel(props.workspaceKind),
-      ariaLabel: "Workspace environment",
-      emptyMessage: "No environments",
-      current: props.workspaceKind,
-      options: environmentOptions().map<ContextChipOption>((kind) => ({
-        value: kind,
-        label: environmentLabel(kind),
-        detail: kind === "cloud" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
-      })),
-      onSelect: (value) => props.onWorkspaceKindChange(value as NewSessionWorkspaceKind),
-    })
+    if (environmentOptions().length > 0) {
+      chips.push({
+        slot: "context-chip-environment",
+        icon: <Icon name={props.workspaceKind === "cloud" ? "cloud" : "laptop"} size="small" />,
+        label: environmentLabel(props.workspaceKind),
+        ariaLabel: "Workspace environment",
+        emptyMessage: "No environments",
+        current: props.workspaceKind,
+        options: environmentOptions().map<ContextChipOption>((kind) => ({
+          value: kind,
+          label: environmentLabel(kind),
+          detail: kind === "cloud" ? "Runs in a Claxedo sandbox" : "Runs on this machine",
+        })),
+        onSelect: (value) => props.onWorkspaceKindChange(value as NewSessionWorkspaceKind),
+      })
+    }
     chips.push({
       slot: "context-chip-worktree",
       icon: (

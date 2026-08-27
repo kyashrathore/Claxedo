@@ -687,10 +687,11 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 describe("AgentHarnessSelector — readiness UI", () => {
   test("readiness 'polling' shows the Connecting pill and not the Unavailable error", () => {
     readiness = "polling"
-    const { getByText, queryByText } = render(() => (
+    const { getAllByText, getByTestId, queryByText } = render(() => (
       <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
     ))
-    expect(getByText("Connecting")).toBeTruthy()
+    expect(getAllByText("Connecting")).toHaveLength(2)
+    expect(getByTestId("model-trigger-content").textContent).toBe("Connecting")
     expect(queryByText("Unavailable")).toBeNull()
   })
 
@@ -716,10 +717,10 @@ describe("AgentHarnessSelector — readiness UI", () => {
     })
     expect(patch.readiness).toBe("polling")
     readiness = patch.readiness!
-    const { getByText, queryByText } = render(() => (
+    const { getAllByText, queryByText } = render(() => (
       <TestAgentHarnessSelector active directory="/repo/main" sessionId="ses_1" sessionLocked={false} />
     ))
-    expect(getByText("Connecting")).toBeTruthy()
+    expect(getAllByText("Connecting")).toHaveLength(2)
     expect(queryByText("Unavailable")).toBeNull()
   })
 })

@@ -5,7 +5,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useTerminal } from "@/features/session/app-ports"
+import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useConfigOptional, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useTerminal } from "@/features/session/app-ports"
 import { addProjectAction } from "@/features/session/ui/components/session-add-project-action"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -99,6 +99,7 @@ export default function SessionPage() {
   const local = useLocal()
   const server = useServer()
   const terminal = useTerminal()
+  const config = useConfigOptional()
   const dialog = useDialog()
   const language = useLanguage()
   const navigate = useNavigate()
@@ -1260,6 +1261,7 @@ export default function SessionPage() {
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
                   signedControlPlane={signedControlPlane()}
+                  sandboxEnabled={config?.sandboxEnabled}
                   main={
                     <div class="flex min-h-[280px] items-center justify-start px-2">
                       <CloudStartupView
@@ -1370,6 +1372,7 @@ export default function SessionPage() {
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
                   onAddProject={addProject()}
                   signedControlPlane={signedControlPlane()}
+                  sandboxEnabled={config?.sandboxEnabled}
                   onProjectChange={(target, project) => {
                     if (target === dir()) return
                     const workspaceId = workspaceRouteId([project], target)
