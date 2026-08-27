@@ -959,12 +959,16 @@ READ from the pinned generated client.
 - **Forms exist**: `form.{request.list,list,create,get,state,reply,cancel}`,
   backing the structured-question decision.
 - `sessions.list` returns `{ data, cursor }` — paged. VERIFIED.
-- **`prompt` returns an INBOX entry, not a durable message.** VERIFIED
-  (`ports.integration.test.ts`). `sessions.prompt` answers with
+- **`prompt`'s id IS the durable message id — it is just not visible yet.**
+  VERIFIED (`gate-inbox-identity.mjs`). CORRECTS an earlier note here that read
+  the id as "an inbox entry, not a message". `sessions.prompt` answers with
   `{ id: "msg_...", sessionID, timeCreated, payload: { text }, delivery }`, and
-  that id is NOT yet in `message.list`. Staging a revert against it fails with
-  a typed `MessageNotFoundError`. Unit 4b's revert projector must take its
-  message id from the message page, never from the admission result.
+  that exact id later appears in `message.list` as the `user` message and as
+  `session.inbox.delivered`'s `inboxID`. Immediately after prompting,
+  `message.list` is EMPTY and staging a revert against the id fails
+  (`MessageNotFoundError` when idle, `SessionBusyError` while the turn runs).
+  So the rule for Unit 4b is a TIMING rule — hold the id from admission and
+  wait for `session.inbox.delivered` — not "look the id up again in the page".
 - **`revert.clear` on a session with nothing staged is a no-op**, not an
   error. VERIFIED. "Unrevert" therefore needs no prior-state bookkeeping in
   the adapter.
