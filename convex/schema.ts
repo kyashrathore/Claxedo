@@ -752,8 +752,7 @@ export default defineSchema({
     updated_at: v.number(),
   })
     .index("by_bucket", ["org_id", "user_id", "date"])
-    .index("by_org_date", ["org_id", "date"])
-    .index("by_org_user_date", ["org_id", "user_id", "date"]),
+    .index("by_org_date", ["org_id", "date"]),
 
   /** Transactionally maintained daily dimensions for bounded group queries. */
   llm_usage_breakdown_daily: defineTable({

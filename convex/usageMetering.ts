@@ -406,7 +406,7 @@ export const usageDashboard = serviceQuery({
     const to = usageDate(Math.min(8_640_000_000_000_000, args.until))
     const rows = args.user_id
       ? await ctx.db.query("llm_usage_daily")
-        .withIndex("by_org_user_date", (q: any) =>
+        .withIndex("by_bucket", (q: any) =>
           q.eq("org_id", args.org_id).eq("user_id", args.user_id).gte("date", from).lte("date", to))
         .take(400)
       : await ctx.db.query("llm_usage_daily")
