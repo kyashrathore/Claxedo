@@ -22,6 +22,7 @@ let statusResponse: Response
 let postRelease: (() => void) | undefined
 let workspaceCalls: number
 let remembered: Array<{ scope: string; type: HarnessType; directory?: string }>
+let publishedConfigs: Array<{ sessionId?: string; directory?: string; config: unknown }>
 
 beforeEach(() => {
   pending = {}
@@ -39,6 +40,7 @@ beforeEach(() => {
   postRelease = undefined
   workspaceCalls = 0
   remembered = []
+  publishedConfigs = []
 })
 
 describe("harness switcher", () => {
@@ -175,6 +177,11 @@ describe("harness switcher", () => {
     }])
     expect(optionFetches).toEqual([{ scope: "session:ses_1", type: "cursor-acp", directory: "/repo", sessionId: "ses_1" }])
     expect(refreshes).toEqual([{ directory: "/repo", type: "cursor-acp", draft: undefined }])
+    expect(publishedConfigs).toEqual([{
+      sessionId: "ses_1",
+      directory: "/repo",
+      config: { harness: { id: "cursor", access: "acp" } },
+    }])
   })
 
   test("switches a local existing session and clears non-config harness options", async () => {
@@ -254,6 +261,9 @@ function switcherFor(input?: {
     },
     fetchConfigOptions: (scope, type, params) => {
       optionFetches.push({ scope, type, directory: params?.directory, sessionId: params?.sessionId })
+    },
+    publishSessionConfig: (params, config) => {
+      publishedConfigs.push({ sessionId: params.sessionId, directory: params.directory, config })
     },
     errorMessage: async (res, fallback) => {
       const body = await res.json().catch(() => undefined) as { error?: string | { message?: string } } | undefined

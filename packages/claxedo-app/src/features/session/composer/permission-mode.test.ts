@@ -213,6 +213,7 @@ describe("what shows as current", () => {
       const { control } = harness({ harness: "claude-acp", report: REPORTED })
       expect(control.current()?.id).toBe("auto")
       expect(control.current()?.name).toBe("Auto-review")
+      expect(control.promptModeId()).toBeUndefined()
       dispose()
     })
   })
@@ -227,6 +228,28 @@ describe("what shows as current", () => {
         stored: { kind: "harness", modeId: "a-mode-that-vanished" },
       })
       expect(control.current()).toBeUndefined()
+      dispose()
+    })
+  })
+
+  test("does not submit a previous harness mode after switching harnesses", () => {
+    createRoot((dispose) => {
+      const { control } = harness({
+        harness: "codex-app-server",
+        report: {
+          modes: [
+            { id: "read-only", name: "Read only", level: "ask" },
+            { id: "workspace-write", name: "Workspace write", level: "auto" },
+            { id: "full-access", name: "Full access", level: "full" },
+          ],
+          currentModeId: "workspace-write",
+          appliesFrom: "next-turn",
+        },
+        stored: { kind: "harness", modeId: "auto" },
+      })
+
+      expect(control.current()).toBeUndefined()
+      expect(control.promptModeId()).toBeUndefined()
       dispose()
     })
   })

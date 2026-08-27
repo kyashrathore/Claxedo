@@ -1097,6 +1097,37 @@ describe("session prompt route", () => {
     expect(calls).toEqual([])
   })
 
+  it("delegates session config harness switches to the cross-harness owner", async () => {
+    const directory = process.cwd()
+    const calls: SessionConfigUpdate[] = []
+    const target = {
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+      variant: null,
+      agent: null,
+    } satisfies SessionConfig
+    const app = SessionRoutes(() => adapter({}), {
+      switchSessionHarness: async ({ update }) => {
+        calls.push(update)
+        return target
+      },
+    })
+
+    const patch = {
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.5" },
+    } satisfies SessionConfigUpdate
+    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    })
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(target)
+    expect(calls).toEqual([patch])
+  })
+
   it("accepts http transport spelling as a session config alias for streamable-http", async () => {
     const directory = process.cwd()
     const calls: SessionConfigUpdate[] = []

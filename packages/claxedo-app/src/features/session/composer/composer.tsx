@@ -603,10 +603,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // (the opencode ruleset write, or Claxedo answering prompts locally), and
     // forwarding one here would have the runtime try to set a mode that does
     // not exist.
-    permissionMode: () => {
-      const selection = permissionMode.selection()
-      return selection.kind === "harness" ? selection.modeId : undefined
-    },
+    permissionMode: permissionMode.promptModeId,
     sessionID: resolvedSessionId,
     sessionRef: () => props.sessionRef?.(),
     conversationDirectory: resolvedSessionDirectory,

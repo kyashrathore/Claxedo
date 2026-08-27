@@ -148,7 +148,7 @@ export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
   setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>
-  createAgentSession(input: { directory: string; title?: string; model: string }): Promise<string>
+  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
   deleteAgentSession?(sessionId: string, agentSessionId: string): void
@@ -321,9 +321,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return { id: sessionId }
   }
 
-  async createHandoffSession(directory: string, title: string | undefined, sessionId: string) {
+  async createHandoffSession(directory: string, title: string | undefined, sessionId: string, options: { system: string }) {
     directory = requireWorkspaceDirectory(directory)
-    const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel })
+    const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
     this.store.bindSession({ sessionId, directory, title, agentSessionId })
     return { id: sessionId, agentSessionId, ownerKey: null }
   }

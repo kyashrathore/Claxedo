@@ -37,6 +37,7 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
+import { setSessionConfigRawQueryData } from "../store/session-config-query-cache"
 
 type ScopeInput = HarnessScopeInput
 type ClaimInput = ScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
@@ -156,6 +157,17 @@ export function createHarnessConfigStore() {
     cache: createHarnessHydratorQueryCache(base),
   })
 
+  const publishSessionConfig = (input: ScopeInput, config: unknown) => {
+    if (!input.sessionId || !input.directory || config === undefined) return
+    setSessionConfigRawQueryData({
+      sessionID: input.sessionId,
+      directory: input.directory,
+      serverUrl: base,
+      sessionRef: input.sessionRef,
+      workspaceId: input.sessionRef?.workspaceId,
+    }, config)
+  }
+
   const modelWriter = createHarnessModelWriter<ScopeInput>({
     base,
     seed: harnessStore.seed,
@@ -167,6 +179,7 @@ export function createHarnessConfigStore() {
     rememberDraftModel: (scope, model, input, labels) => {
       rememberDraftModel(scope, model, input, labels)
     },
+    publishSessionConfig,
     dropPrepared: (scope) => {
       void preparedRuntimeSessions.drop(scope)
     },
@@ -196,6 +209,7 @@ export function createHarnessConfigStore() {
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
+    publishSessionConfig,
     errorMessage,
     runtime: harnessRuntime,
     cache: createHarnessSwitcherQueryCache(),

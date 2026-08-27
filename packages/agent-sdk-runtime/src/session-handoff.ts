@@ -35,11 +35,10 @@ export function renderSessionHandoff(messages: unknown[], from: SessionHarness) 
   const turns = rows.flatMap((message) => {
     if (message.info.role !== "user") return []
     const assistant = assistants.get(message.info.id)
-    if (!assistant) return []
     const user = message.parts.map(partText).filter(Boolean).join("\n")
-    const reply = assistant.parts.map(partText).filter(Boolean).join("\n")
-    if (!user || !reply) return []
-    return [`User:\n${quoted(user)}\n\nAssistant:\n${quoted(reply)}`]
+    if (!user) return []
+    const reply = assistant?.parts.map(partText).filter(Boolean).join("\n")
+    return [`User:\n${quoted(user)}${reply ? `\n\nAssistant:\n${quoted(reply)}` : ""}`]
   })
   const bounded: string[] = []
   let chars = 0

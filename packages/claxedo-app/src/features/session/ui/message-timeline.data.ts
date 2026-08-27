@@ -48,6 +48,9 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
+    const handoff = userParts.find((p) => (p.type as string) === "handoff") as unknown as {
+      to?: { id?: string; access?: string }
+    } | undefined
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
     // OpenCode-native aborts are durable on the message itself. SDK-runtime aborts are
     // durable on the Session turn outcome, which must match the exact assistant message.
@@ -120,6 +123,15 @@ export namespace Timeline {
         new TimelineRow.TurnDivider({
           userMessageID: userMessage.id,
           label: "compaction",
+        }),
+      )
+    }
+    if (handoff) {
+      rows.push(
+        new TimelineRow.TurnDivider({
+          userMessageID: userMessage.id,
+          label: "handoff",
+          harness: handoffHarnessLabel(handoff.to?.id),
         }),
       )
     }
@@ -430,7 +442,14 @@ const hiddenTools = new Set(["todowrite"])
 // Mirrors PART_MAPPING's registered part types (message-part.tsx): non-text/reasoning/
 // tool parts render only when a dedicated component exists. "file" carries assistant
 // image/audio/resource-link attachments to FilePartDisplay.
-const renderableParts = new Set(["compaction", "text", "reasoning", "tool", "file"])
+const renderableParts = new Set(["compaction", "handoff", "text", "reasoning", "tool", "file"])
+
+function handoffHarnessLabel(id?: string) {
+  if (!id) return "another harness"
+  if (id === "opencode") return "OpenCode"
+  if (id === "pi") return "Pi"
+  return `${id[0]?.toUpperCase() ?? ""}${id.slice(1)}`
+}
 
 export function assistantMessageSettled(message: AssistantMessage) {
   return typeof message.time.completed === "number" || !!message.error

@@ -37,6 +37,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   rememberDraftHarness(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
+  publishSessionConfig(params: ScopeInput, config: unknown): void
   errorMessage(res: Response, fallback: string): Promise<string>
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
@@ -178,7 +179,9 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       )
       if (!active()) return false
       if (!res.ok) throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))
-      return decodeHarnessState(await res.json().catch(() => undefined)) ?? true
+      const config = await res.json().catch(() => undefined)
+      input.publishSessionConfig(params, config)
+      return decodeHarnessState(config) ?? true
     } catch (err) {
       if (!active()) return false
       input.applyPatch(scope, {

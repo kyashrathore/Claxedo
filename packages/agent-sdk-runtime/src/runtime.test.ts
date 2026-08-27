@@ -11,7 +11,7 @@ import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
-import type { AgentRuntimeStreamEvent, SessionConfig } from "./index"
+import type { AgentMessage, AgentRuntimeStreamEvent, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
@@ -100,16 +100,20 @@ function handoffHarness(input: {
   id: "pi" | "claude"
   prompts?: string[]
   handoffs?: string[]
+  handoffSystems?: string[]
+  messages?: AgentMessage[]
   turnError?: string
   configError?: string
+  onAdapter?: (adapter: AgentHarnessAdapter) => void
 }): AgentHarnessFactory {
   let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
   const adapter: AgentHarnessAdapter = {
     async listSessions() { return [] },
     async getSession(id) { return { id } },
     async createSession(_directory, _title, id = "ses_handoff") { return { id } },
-    async createHandoffSession(_directory, _title, id) {
+    async createHandoffSession(_directory, _title, id, options) {
       input.handoffs?.push(id)
+      input.handoffSystems?.push(options.system)
       return { id, agentSessionId: `${input.id}-native-thread` }
     },
     async updateSession() { return null },
@@ -135,21 +139,78 @@ function handoffHarness(input: {
       yield messagePartUpdated({ id: `${id}-part`, sessionID: id, messageID: prompt.assistantMessageId, type: "text", text: `reply from ${input.id}` })
       yield { type: "finish", sessionId: id }
     },
-    async getMessages() { return [] },
+    async getMessages() { return input.messages ?? [] },
     dispose() {},
   }
+  input.onAdapter?.(adapter)
   return { id: input.id, access: "native", create: () => adapter } as unknown as AgentHarnessFactory
 }
 
 describe("createAgentRuntime", () => {
+  test("resolves a target harness lazily for conversation handoff", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const handoffs: string[] = []
+    const resolutions: string[] = []
+    let targetAdapter: AgentHarnessAdapter | undefined
+    handoffHarness({
+      id: "claude",
+      handoffs,
+      onAdapter(adapter) {
+        targetAdapter = adapter
+      },
+    })
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" })],
+      resolveHarness: async (harness) => {
+        resolutions.push(`${harness.id}:${harness.access}`)
+        if (!targetAdapter) throw new Error("target adapter was not created")
+        return targetAdapter
+      },
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_lazy",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.sessions.updateConfig(
+      session.id,
+      { harness: { id: "claude", access: "native" } },
+      "/repo",
+    )
+
+    expect(resolutions).toEqual(["claude:native"])
+    expect(handoffs).toEqual(["ses_lazy"])
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    runtime.dispose()
+  })
+
   test("continues across harnesses in a fresh native thread with the completed transcript", async () => {
     const store = createMemoryRuntimeStore()
     const rows = storeRows(store)
     const prompts: string[] = []
     const handoffs: string[] = []
+    const handoffSystems: string[] = []
     const runtime = createAgentRuntime({
       store,
-      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", prompts, handoffs })],
+      harnesses: [
+        handoffHarness({
+          id: "pi",
+          messages: [
+            {
+              info: { id: "u1", sessionID: "ses_cross", role: "user" },
+              parts: [{ id: "p1", sessionID: "ses_cross", messageID: "u1", type: "text", text: "inspect the bug" }],
+            },
+            {
+              info: { id: "u1_r", sessionID: "ses_cross", role: "assistant", parentID: "u1" },
+              parts: [{ id: "p1_r", sessionID: "ses_cross", messageID: "u1_r", type: "text", text: "reply from pi" }],
+            },
+          ] as AgentMessage[],
+        }),
+        handoffHarness({ id: "claude", prompts, handoffs, handoffSystems }),
+      ],
     })
     const session = await runtime.sessions.create({ id: "ses_cross", directory: "/repo", harness: { id: "pi", access: "native" } })
     await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect the bug" })
@@ -162,6 +223,18 @@ describe("createAgentRuntime", () => {
     const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
 
     expect(handoffs).toEqual(["ses_cross"])
+    expect(handoffSystems).toHaveLength(1)
+    expect(handoffSystems[0]).toContain("User:\ninspect the bug")
+    expect(handoffSystems[0]).toContain("Assistant:\nreply from pi")
+    expect(rows.getMessages(session.id)).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        parts: [expect.objectContaining({
+          type: "handoff",
+          from: { id: "pi", access: "native" },
+          to: { id: "claude", access: "native" },
+        })],
+      }),
+    ]))
     expect(continued.prompt.system).toContain('<session-handoff from="pi">')
     expect(continued.prompt.system).toContain("User:\ninspect the bug")
     expect(continued.prompt.system).toContain("Assistant:\nreply from pi")
@@ -169,6 +242,50 @@ describe("createAgentRuntime", () => {
     await tick()
     expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
     expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    expect(prompts).toHaveLength(1)
+    runtime.dispose()
+  })
+
+  test("snapshots canonical source-adapter history for a discovered session", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const prompts: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({
+          id: "pi",
+          messages: [
+            {
+              info: { id: "u-existing", sessionID: "ses_discovered", role: "user" },
+              parts: [{ id: "p-user", sessionID: "ses_discovered", messageID: "u-existing", type: "text", text: "my dog is Tommy" }],
+            },
+            {
+              info: { id: "a-existing", sessionID: "ses_discovered", role: "assistant", parentID: "u-existing" },
+              parts: [{ id: "p-assistant", sessionID: "ses_discovered", messageID: "a-existing", type: "text", text: "I will remember that." }],
+            },
+          ] as AgentMessage[],
+        }),
+        handoffHarness({ id: "claude", prompts }),
+      ],
+    })
+    const session = await runtime.sessions.create({ id: "ses_discovered", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+    expect(rows.getMessages(session.id)).toEqual([
+      expect.objectContaining({ parts: [expect.objectContaining({ type: "handoff" })] }),
+    ])
+    const pending = rows.getSessionConfig(session.id)?.handoff
+    expect(pending).toMatchObject({
+      from: { id: "pi", access: "native" },
+      pending: true,
+    })
+    expect(pending?.transcript).toContain("User:\nmy dog is Tommy")
+
+    const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u-next", text: "what is my dog's name?" })
+
+    expect(continued.prompt.system).toContain("Assistant:\nI will remember that.")
+    await tick()
     expect(prompts).toHaveLength(1)
     runtime.dispose()
   })
@@ -188,10 +305,12 @@ describe("createAgentRuntime", () => {
     await runtime.turns.start({ sessionId: session.id, messageId: "u2", text: "continue" })
     await tick()
 
-    expect(rows.getSessionConfig(session.id)?.handoff).toEqual({
+    const pending = rows.getSessionConfig(session.id)?.handoff
+    expect(pending).toMatchObject({
       from: { id: "pi", access: "native" },
       pending: true,
     })
+    expect(pending?.transcript).toContain('<session-handoff from="pi">')
     runtime.dispose()
   })
 

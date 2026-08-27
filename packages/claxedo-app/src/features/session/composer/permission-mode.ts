@@ -168,6 +168,24 @@ export function createComposerPermissionMode(input: {
     })
   })
 
+  /**
+   * Only an explicit, still-advertised harness choice may travel with a prompt.
+   * The derived default mirrors what the harness already reports as active, so
+   * resending it is redundant and can race a harness switch with the source
+   * harness's old default.
+   */
+  const promptModeId = () => {
+    const selected = input.selection()
+    const harness = input.harness()
+    if (!harness || selected?.kind !== "harness") return undefined
+    const option = findPermissionModeOption({
+      selection: selected,
+      harness,
+      report: input.report?.(),
+    })
+    return option?.origin === "harness" ? option.id : undefined
+  }
+
   const select = (option: PermissionModeOption) => {
     if (!permissionModeDeliverable(option.delivery.kind)) return
     const next: PermissionSelection = { kind: option.origin === "claxedo" ? "claxedo" : "harness", modeId: option.id }
@@ -181,7 +199,7 @@ export function createComposerPermissionMode(input: {
     void deliver({ option, sessionID }).catch((error) => input.onDeliveryError?.({ error, option }))
   }
 
-  return { groups, current, selection, select }
+  return { groups, current, promptModeId, selection, select }
 }
 
 function harnessGroupLabel(harness: HarnessId) {

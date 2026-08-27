@@ -18,6 +18,7 @@ let saved: { key: "model" | "agent"; value: string }[]
 let dropped: string[]
 let posts: { url: string; body: unknown }[]
 let remembered: Array<{ scope: string; model: { providerID: string; modelID: string }; directory?: string }>
+let publishedConfigs: unknown[]
 let useLocal: boolean
 
 beforeEach(() => {
@@ -30,6 +31,7 @@ beforeEach(() => {
   dropped = []
   posts = []
   remembered = []
+  publishedConfigs = []
   useLocal = true
 })
 
@@ -132,6 +134,10 @@ describe("harness model writer", () => {
     }])
     expect(remembered).toEqual([])
     expect(state["http://server\nses_1"]).toEqual({ desired: "anthropic/opus", synced: "anthropic/opus" })
+    expect(publishedConfigs).toEqual([{
+      harness: { id: "claude", access: "native" },
+      model: { providerID: "anthropic", modelID: "opus" },
+    }])
   })
 
   test("updates the canonical session config for existing non-local sessions", async () => {
@@ -173,6 +179,7 @@ function writerFor() {
       model,
       directory: input?.directory,
     }),
+    publishSessionConfig: (_input, config) => publishedConfigs.push(config),
     runtime: {
       useLocalHarnessConfig: () => useLocal,
       harnessSessionFetch: () => async (url, init) => {
@@ -180,7 +187,10 @@ function writerFor() {
           url: String(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
         })
-        return new Response(null, { status: 204 })
+        return Response.json({
+          harness: { id: "claude", access: "native" },
+          model: { providerID: "anthropic", modelID: "opus" },
+        })
       },
     },
     cache: fakeCache(),

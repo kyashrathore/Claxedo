@@ -373,6 +373,25 @@ describe("CodexHarnessAdapter", () => {
     expect(requests.find((request) => request.method === "turn/start")!.params?.model).toBe("gpt-5.5")
   })
 
+  test("installs a cross-harness transcript before the first Codex turn", async () => {
+    const fake = await makeFakeCodex()
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    const transcript = '<session-handoff from="claude">\nUser:\nMy dog is Tommy.\n</session-handoff>'
+
+    await adapter.createHandoffSession(fake.dir, undefined, "ses_handoff", { system: transcript })
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      method?: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.find((request) => request.method === "thread/start")?.params?.developerInstructions).toBe(transcript)
+  })
+
   test("uses prompt session model before workspace-global model for Codex app-server turns", async () => {
     const requests = await runWithModels({
       globalModel: "gpt-5.5",

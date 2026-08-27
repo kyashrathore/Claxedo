@@ -52,6 +52,11 @@ export type AgentInteractionResult = {
   events: CompatEvent[]
 }
 
+export type AgentHandoffSessionOptions = {
+  /** Canonical source transcript to install before the target's first turn. */
+  system: string
+}
+
 export { AgentMessagePageError } from "./message-page"
 export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 
@@ -63,7 +68,7 @@ export interface AgentHarnessAdapterCore {
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
-  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string): Promise<{ id: string; agentSessionId?: string; ownerKey?: string | null }>
+  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<{ id: string; agentSessionId?: string; ownerKey?: string | null }>
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
   getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
   updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>

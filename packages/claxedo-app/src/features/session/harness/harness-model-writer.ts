@@ -23,6 +23,7 @@ export function syncHarnessSessionModel(input: {
   key: string
   model: string
   request: () => Promise<Response>
+  publishConfig?: (config: unknown) => void
   cache: HarnessSessionModelSyncCache
 }) {
   const current = input.cache.getState(input.key) ?? {}
@@ -40,6 +41,8 @@ export function syncHarnessSessionModel(input: {
       const latest = input.cache.getState(input.key)
       if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Failed to update session model (${res.status})`)
       if (latest?.desired !== input.model) return
+      const config = await res.json().catch(() => undefined)
+      if (config !== undefined) input.publishConfig?.(config)
       input.cache.setState(input.key, {
         ...latest,
         synced: input.model,
@@ -60,6 +63,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   saveModel(scope: string, model: string): void
   saveAgent(scope: string, name: string): void
   rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
+  publishSessionConfig(input: ScopeInput, config: unknown): void
   dropPrepared(scope: string): void
   runtime: {
     harnessSessionFetch(params?: ScopeInput): typeof fetch
@@ -74,6 +78,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
       key,
       model: syncValue,
       cache: input.cache,
+      publishConfig: (config) => input.publishSessionConfig(params!, config),
       request: () =>
         input.runtime.harnessSessionFetch(params)(
           sessionResourceUrl({

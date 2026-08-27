@@ -2100,13 +2100,18 @@ describe("RuntimeStore", () => {
     first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
     first.updateSessionConfig("s1", {
       harness: { id: "claude", access: "native" },
-      handoff: { from: { id: "pi", access: "native" }, pending: true },
+      handoff: {
+        from: { id: "pi", access: "native" },
+        pending: true,
+        transcript: '<session-handoff from="pi">\n\nremember Tommy\n\n</session-handoff>',
+      },
     })
 
     const replayed = new RuntimeStore(root)
     assert.deepEqual(replayed.getSessionConfig("s1")?.handoff, {
       from: { id: "pi", access: "native" },
       pending: true,
+      transcript: '<session-handoff from="pi">\n\nremember Tommy\n\n</session-handoff>',
     })
 
     replayed.updateSessionConfig("s1", { handoff: null })

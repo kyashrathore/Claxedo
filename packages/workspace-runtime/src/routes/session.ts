@@ -170,6 +170,12 @@ export function SessionRoutes(
       sessionId: string
       update: SessionConfigUpdate
     }) => Promise<SessionConfig>
+    switchSessionHarness?: (input: {
+      adapter: AgentHarnessAdapter
+      directory: string
+      sessionId: string
+      update: SessionConfigUpdate
+    }) => Promise<SessionConfig>
     afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
     /**
      * Observe a session update (title, archive) after the adapter applies it.
@@ -314,6 +320,14 @@ export function SessionRoutes(
       : undefined,
     updateSessionConfig: options?.updateSessionConfig
       ? (_c, directory, sessionId, update, adapter) => options.updateSessionConfig!({
+          adapter,
+          directory: requiredDirectory(directory),
+          sessionId,
+          update,
+        })
+      : undefined,
+    switchSessionHarness: options?.switchSessionHarness
+      ? (_c, directory, sessionId, update, adapter) => options.switchSessionHarness!({
           adapter,
           directory: requiredDirectory(directory),
           sessionId,

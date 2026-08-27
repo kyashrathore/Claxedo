@@ -18,7 +18,7 @@ import type {
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import { renderSessionHandoff } from "./session-handoff"
 import { hasAdapterCapability } from "./capabilities"
-import { buildSession, eventSessionId, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
+import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent, type CompatPart } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
@@ -74,6 +74,7 @@ export type AgentHarnessFactory = {
 export type CreateAgentRuntimeInput = {
   store: AgentRuntimeStore
   harnesses: AgentHarnessFactory[]
+  resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
 }
 
 export type AgentRuntimeEventEnvelope = {
@@ -148,17 +149,20 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   ]))
   const subscribers = new Set<Subscriber>()
 
-  const adapterFor = (harness: Pick<SessionHarness, "id" | "access">) => {
-    const adapter = adapters.get(key(harness))
-    if (!adapter) throw new Error(`No harness registered for ${harness.id}:${harness.access}`)
-    return adapter
+  const adapterFor = async (harness: SessionHarness) => {
+    const existing = adapters.get(key(harness))
+    if (existing) return existing
+    if (!input.resolveHarness) throw new Error(`No harness registered for ${harness.id}:${harness.access}`)
+    const resolved = await input.resolveHarness(harness)
+    adapters.set(key(harness), resolved)
+    return resolved
   }
 
   const adapterForSession = async (sessionId: string, directory: RuntimeDirectory) => {
     const config = store.getSessionConfig(sessionId)
     if (!config && adapters.size === 1) return adapters.values().next().value!
     if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
-    return adapterFor(config.harness)
+    return await adapterFor(config.harness)
   }
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
@@ -385,7 +389,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   return {
     sessions: {
       async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
-        const adapter = adapterFor(create.harness)
+        const adapter = await adapterFor(create.harness)
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(create.model.modelID === "default" ? "" : create.model.modelID)
         }
@@ -411,7 +415,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const config = store.getSessionConfig(sessionId)
         if (!config) return store.getSession(sessionId) as AgentSession | null
         const projected = store.getSession(sessionId) as AgentSession | null
-        const live = await adapterFor(config.harness).getSession(sessionId, directory) as AgentSession | null
+        const adapter = await adapterFor(config.harness)
+        const live = await adapter.getSession(sessionId, directory) as AgentSession | null
         if (!live) return projected
         if (!projected) return live
         return {
@@ -441,11 +446,21 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const previousAgentSessionId = store.getAgentSessionId(sessionId)
         if (!previousAgentSessionId) throw new Error(`Session ${sessionId} has no native harness session`)
         const previousOwnerKey = store.getSessionOwnerKey?.(sessionId) ?? null
-        const target = adapterFor(update.harness!)
-        if (!target.createHandoffSession) throw new Error(`Harness ${update.harness!.id} does not support conversation handoff`)
         const targetDirectory = directory ?? session.directory
+        const source = await adapterFor(current!.harness)
+        const transcript = renderSessionHandoff(
+          await source.getMessages(sessionId, targetDirectory),
+          current!.harness,
+        )
+        const target = await adapterFor(update.harness!)
+        if (!target.createHandoffSession) throw new Error(`Harness ${update.harness!.id} does not support conversation handoff`)
         try {
-          const created = await target.createHandoffSession(targetDirectory, session.title ?? undefined, sessionId)
+          const created = await target.createHandoffSession(
+            targetDirectory,
+            session.title ?? undefined,
+            sessionId,
+            { system: transcript },
+          )
           store.bindSession({
             sessionId,
             directory: runtimeDirectory(targetDirectory),
@@ -463,14 +478,36 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             ...(update.variant === undefined ? { variant: null } : {}),
             ...(update.agent === undefined ? { agent: null } : {}),
           }, targetDirectory)
-          return store.updateSessionConfig(sessionId, {
+          const next = store.updateSessionConfig(sessionId, {
             ...configured,
             harness: update.harness!,
             model: configured.model ?? null,
             variant: configured.variant ?? null,
             agent: configured.agent ?? null,
-            handoff: { from: current!.harness, pending: true },
+            handoff: { from: current!.harness, pending: true, transcript },
           })!
+          const markerId = `handoff-${randomUUID()}`
+          const createdAt = Date.now()
+          const markerModel = configured.model ?? {
+            providerID: update.harness!.id,
+            modelID: "default",
+          }
+          commitAndPublish(sessionId, targetDirectory, messageUpdated(buildUserMessage({
+            id: markerId,
+            sessionID: sessionId,
+            agent: configured.agent ?? "build",
+            model: markerModel,
+            created: createdAt,
+          })), { dir: "out", method: "session/handoff" })
+          commitAndPublish(sessionId, targetDirectory, messagePartUpdated({
+            id: `${markerId}-part`,
+            sessionID: sessionId,
+            messageID: markerId,
+            type: "handoff",
+            from: current!.harness,
+            to: update.harness!,
+          } as unknown as CompatPart), { dir: "out", method: "session/handoff" })
+          return next
         } catch (error) {
           store.bindSession({
             sessionId,
@@ -503,7 +540,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const adapter = await adapterForSession(turn.sessionId, directory)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
-        const handoff = config?.handoff?.pending ? renderSessionHandoff(store.getMessages(turn.sessionId), config.handoff.from) : undefined
+        const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
           userMessageId,

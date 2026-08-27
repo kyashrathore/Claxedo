@@ -4,6 +4,31 @@ import { Timeline } from "./message-timeline.data"
 import { TimelineRow } from "./timeline-row-model"
 
 describe("timeline row reuse", () => {
+  test("renders a durable cross-harness boundary as a named divider", () => {
+    const marker = {
+      id: "part_handoff",
+      sessionID: "ses_1",
+      messageID: "msg_handoff",
+      type: "handoff",
+      from: { id: "claude", access: "native" },
+      to: { id: "codex", access: "native" },
+    } as unknown as Part
+
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_handoff"),
+      () => [marker],
+      [],
+      1,
+      false,
+      "idle",
+      false,
+    )
+
+    expect(rows.find((row) => row._tag === "TurnDivider")).toEqual(
+      expect.objectContaining({ label: "handoff", harness: "Codex" }),
+    )
+  })
+
   test("bounds cold assistant part rows without truncating canonical turn semantics", () => {
     const hidden = assistantMessage("msg_hidden", "msg_user", { completed: 15 })
     hidden.error = {

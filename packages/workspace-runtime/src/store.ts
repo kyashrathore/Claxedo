@@ -415,10 +415,10 @@ function sessionHandoff(input: string | null | undefined): SessionConfig["handof
   if (!input) return
   try {
     const value = JSON.parse(input) as SessionConfig["handoff"]
-    if (!value || value.pending !== true || !value.from?.id) return
+    if (!value || value.pending !== true || !value.from?.id || typeof value.transcript !== "string") return
     const from = normalizeHarnessIdentity(value.from)
     if (!from) return
-    return { from, pending: true }
+    return { from, pending: true, transcript: value.transcript }
   } catch {}
 }
 
