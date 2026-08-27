@@ -136,6 +136,24 @@ describe("timeline row reuse", () => {
     expect(later.find((row) => row._tag === "Error")).toEqual(expect.objectContaining({ recoveryClass: "credential" }))
   })
 
+  test("legacy turn-admission failures use compact inline treatment instead of a recovery card", () => {
+    const failed = assistantMessage("msg_assistant", "msg_user", { completed: 20 })
+    failed.error = {
+      name: "UnknownError",
+      data: {
+        message: "Session is already processing a message",
+        firstTurnErrorClass: "unknown",
+      },
+    } as AssistantMessage["error"]
+
+    const rows = Timeline.constructMessageRows(userMessage("msg_user"), () => [], [failed], 0, false, "idle", false)
+
+    expect(rows.find((row) => row._tag === "Error")).toEqual(expect.objectContaining({
+      presentation: "turn-conflict",
+      summary: "The previous message was still finishing. Try again.",
+    }))
+  })
+
   test("the error row carries the provider's status and body, not just the message", () => {
     const body = '{"type":"error","error":{"type":"authentication_error","message":"invalid x-api-key"}}'
     const failed = assistantMessage("msg_assistant", "msg_user", { completed: 20 })

@@ -40,7 +40,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { InlineInput } from "@opencode-ai/ui/inline-input"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-session-retry"
-import { FirstTurnRecoveryCard } from "@/features/session/onboarding/first-turn-recovery-card"
+import { TimelineErrorPresentation } from "@/features/session/onboarding/first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type {
   AssistantMessage,
@@ -1571,28 +1571,16 @@ export function MessageTimeline(props: MessageTimelineProps) {
         return (
           <TimelineRowFrame row={errorRow}>
             <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-              <Show
-                when={errorRow().recoveryClass}
-                fallback={
-                  <Card variant="error" class="error-card">
-                    {/* Human sentence, never the raw provider bytes: this
-                        fallback is what paints if the class is ever absent. */}
-                    {errorRow().summary ?? errorRow().text}
-                  </Card>
-                }
-              >
-                {(kind) => (
-                  <FirstTurnRecoveryCard
-                    kind={kind()}
-                    detail={errorRow().text}
-                    summary={errorRow().summary}
-                    error={errorRow().error}
-                    providerID={errorRow().providerID}
-                    modelID={errorRow().modelID}
-                    onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageID)}
-                  />
-                )}
-              </Show>
+              <TimelineErrorPresentation
+                presentation={errorRow().presentation}
+                recoveryClass={errorRow().recoveryClass}
+                text={errorRow().text}
+                summary={errorRow().summary}
+                error={errorRow().error}
+                providerID={errorRow().providerID}
+                modelID={errorRow().modelID}
+                onAction={(value) => props.onFirstTurnRecovery?.(value, errorRow().userMessageID)}
+              />
             </div>
           </TimelineRowFrame>
         )

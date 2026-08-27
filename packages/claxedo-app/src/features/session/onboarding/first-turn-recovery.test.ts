@@ -5,6 +5,7 @@ import {
   sessionRecoveryDescription,
   firstTurnOutcome,
   firstTurnFunnelEvents,
+  isTurnAdmissionConflict,
   nextHarnessRecoveryModel,
 } from "./first-turn-recovery"
 
@@ -131,6 +132,12 @@ describe("first-turn recovery", () => {
     expect(sessionRecoveryDescription("credential", { name: "UnknownError", data: {} })).toBe(
       "The provider rejected the credential for this workspace.",
     )
+  })
+
+  test("recognizes current and persisted turn-admission conflicts without matching unrelated errors", () => {
+    expect(isTurnAdmissionConflict({ data: { code: "turn_already_active" } })).toBe(true)
+    expect(isTurnAdmissionConflict({ data: { message: "Session is already processing a message" } })).toBe(true)
+    expect(isTurnAdmissionConflict({ data: { message: "Session is unavailable" } })).toBe(false)
   })
 
   test("emits a typed outcome only when the first turn settles", () => {
