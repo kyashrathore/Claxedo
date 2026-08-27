@@ -20,7 +20,14 @@ export async function runGitApply(directory: string, patch: string, args: string
   const gitDirectory = path.join(directory, `.claxedo-dependency-patch-no-git-${process.pid}-${randomUUID()}`)
   const child = Bun.spawn(["git", "apply", "--no-index", "--whitespace=nowarn", ...args, patch], {
     cwd: directory,
-    env: { ...process.env, GIT_DIR: gitDirectory },
+    env: {
+      ...process.env,
+      GIT_DIR: gitDirectory,
+      // An explicit work tree makes package-relative patch paths authoritative
+      // on every platform, including Git for Windows. GIT_DIR alone prevents
+      // repository discovery but does not consistently anchor the write target.
+      GIT_WORK_TREE: directory,
+    },
     stdout: "pipe",
     stderr: "pipe",
   })
