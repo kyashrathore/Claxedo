@@ -281,7 +281,7 @@ export async function buildAndServeWebApp(opts: {
           // `__CLAXEDO_TEST_AUTH_TOKEN__`, the `/__e2e/*` routes) alive in the
           // production bundle — tree-shaken out of any build that does NOT
           // set this flag, so real production is unaffected
-          // (`playwright.config.ts`'s own `CLAXEDO_E2E_PREBUILT` comment).
+          // (`playwright.config.ts`'s own production-preview comment).
           VITE_CLAXEDO_E2E: "1",
         },
         stdio: ["ignore", "pipe", "pipe"],

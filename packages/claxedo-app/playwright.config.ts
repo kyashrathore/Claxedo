@@ -1,4 +1,5 @@
 import { defineConfig, devices } from "@playwright/test"
+import { resolveE2EAuthMode } from "./e2e/auth-mode"
 
 const port = Number(process.env.PLAYWRIGHT_PORT ?? 4455)
 process.env.PLAYWRIGHT_PORT ??= String(port)
@@ -11,16 +12,7 @@ const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 // Keeping this at the Vite process boundary makes every spec in a run exercise
 // the same app composition; individual specs cannot accidentally drift back to
 // Test User because of Playwright's `navigator.webdriver` value.
-const authModes = ["test-user", "local-unsigned"] as const
-type AuthMode = (typeof authModes)[number]
-const authMode = process.env.CLAXEDO_E2E_AUTH_MODE ?? "test-user"
-if (!authModes.includes(authMode as AuthMode)) {
-  throw new Error(`CLAXEDO_E2E_AUTH_MODE="${authMode}" is not known. Known modes: ${authModes.join(", ")}.`)
-}
-const authViteEnv =
-  authMode === "local-unsigned"
-    ? "VITE_AUTH_ENABLED=true VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS=1 VITE_CLERK_PUBLISHABLE_KEY= "
-    : "VITE_AUTH_ENABLED=true VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS=0 "
+const authMode = resolveE2EAuthMode()
 // SUITE LANE REGISTRY — the single source of truth for `CLAXEDO_E2E_SUITE`.
 // A spec is only ever executed by a lane whose tag it carries, so a spec with no
 // recognised lane tag runs in NO lane and nobody notices: that is exactly how
@@ -31,7 +23,7 @@ const authViteEnv =
 // `e2e/playwright/` carries none of these tags.
 //   core      — Tier M (`installMockRuntime`, zero real network, per e2e/INVARIANTS.md
 //               rule 6). The lane CI actually watches: `test:e2e:core:base`, sharded
-//               12-way on every PR. This is the default, so a bare `test:e2e` runs
+//               six-way per auth mode on every PR. This is the default, so a bare `test:e2e` runs
 //               the watched lane instead of nothing.
 //   live      — Tier L (`live-*.spec.ts`): real claxedo-server / real agent binaries /
 //               real credentials. Deliberately NOT in CI — no credentials there.
@@ -85,26 +77,22 @@ const liveBackendPort = Number(process.env.CLAXEDO_E2E_LIVE_BACKEND_PORT ?? 3001
 // build — a shard cannot host it because a shard's build points at :3001.
 const tierReal = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const tierRealBackendPort = Number(process.env.CLAXEDO_TIER_REAL_BACKEND_PORT ?? 4317)
-// CLAXEDO_E2E_PREBUILT=1 serves a production build via `vite preview` instead
-// of the dev server. CI needs this: cold on-demand dev transforms on a 2-core
-// runner push every first navigation past the expect timeouts (the suite went
-// 188-failed/2.5h under dev serving, all toBeVisible timeouts). Mocks are
-// page.route interceptions, so serving mode is behavior-invisible.
-const prebuilt = process.env.CLAXEDO_E2E_PREBUILT === "1"
+// CI serves production output because cold on-demand dev transforms push first
+// navigations past the expect timeouts. `build-preview` preserves the local and
+// special-lane behavior of building before preview; `preview` consumes an exact
+// artifact built once by CI and must never silently rebuild it in a shard.
+const serveModes = ["dev", "build-preview", "preview"] as const
+type ServeMode = (typeof serveModes)[number]
+const serveMode = process.env.CLAXEDO_E2E_SERVE_MODE ?? "dev"
+if (!serveModes.includes(serveMode as ServeMode)) {
+  throw new Error(`CLAXEDO_E2E_SERVE_MODE="${serveMode}" is not known. Known modes: ${serveModes.join(", ")}.`)
+}
+const prebuilt = serveMode !== "dev"
 const webServer =
   process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
     ? undefined
     : {
-        command: `${workGraphReal ? `bun --cwd ../workgraph run build && ` : ""}${authViteEnv}${workGraphReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}${
-          prebuilt
-            ? // VITE_CLAXEDO_E2E=1 keeps the e2e-only harness seams (test-auth
-              // bypass, /__e2e/* routes, the server-URL override) alive in the
-              // production bundle — they are tree-shaken out of any build that
-              // does NOT set this flag, so real production is unaffected. The
-              // dev server needs no flag (import.meta.env.DEV covers it).
-              `VITE_CLAXEDO_E2E=1 bun run build && bun x vite preview --config vite.cloud.config.ts --port ${port} --strictPort`
-            : `bun run dev -- --port ${port}`
-        }`,
+        command: `${workGraphReal ? `bun --cwd ../workgraph run build && ` : ""}${workGraphReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}bun run serve:e2e -- ${serveMode} ${port}`,
         url: baseURL,
         reuseExistingServer: reuse,
         timeout: prebuilt ? 600_000 : 120_000,

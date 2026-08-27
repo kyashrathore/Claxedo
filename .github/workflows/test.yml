@@ -364,17 +364,107 @@ jobs:
             packages/*/.artifacts/unit/junit.xml
             packages/*/*/.artifacts/unit/junit.xml
 
+  e2e-build:
+    # Build every reusable input in one job: the production workspace exports,
+    # then one exact app artifact for each build-time auth composition. Keeping
+    # this in one job avoids adding another setup-dominated dependency stage.
+    name: e2e reusable builds
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Setup Bun
+        uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
+
+      - name: Build dist-resolved workspace packages
+        run: >-
+          bun turbo build
+          --filter=@claxedo/agent-event-runtime
+          --filter=@claxedo/agent-extensions
+          --filter=@claxedo/agent-sdk-runtime
+          --filter=@claxedo/channels
+          --filter=@claxedo/connections
+          --filter=@claxedo/mcp
+          --filter=@claxedo/sandbox-contract
+          --filter=@claxedo/sandbox-manager
+          --filter=@claxedo/wakes
+          --filter=@claxedo/workgraph
+          --filter=@claxedo/workspace-relay-protocol
+          --filter=@claxedo/workspace-relay
+          --filter=@claxedo/workspace-runtime
+
+      - name: Upload reusable workspace dist
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
+          path: |
+            packages/agent-event-runtime/dist
+            packages/agent-extensions/dist
+            packages/agent-sdk-runtime/dist
+            packages/claxedo-channels/dist
+            packages/claxedo-connections/dist
+            packages/claxedo-mcp/dist
+            packages/sandbox-contract/dist
+            packages/sandbox-manager/dist
+            packages/wakes/dist
+            packages/workgraph/dist
+            packages/workspace-relay-protocol/dist
+            packages/workspace-relay/dist
+            packages/workspace-runtime/dist
+          if-no-files-found: error
+          retention-days: 1
+
+      # Auth mode is a build-time composition boundary. Upload the first build
+      # before the second replaces dist/, and bind each manifest to this commit.
+      - name: Build reusable E2E app (test-user)
+        working-directory: packages/claxedo-app
+        run: bun run build:e2e
+        env:
+          CLAXEDO_E2E_AUTH_MODE: test-user
+          VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:3001
+
+      - name: Upload reusable E2E app (test-user)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: claxedo-app-e2e-test-user-${{ github.sha }}-${{ github.run_attempt }}
+          path: packages/claxedo-app/dist
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Build reusable E2E app (local-unsigned)
+        working-directory: packages/claxedo-app
+        run: bun run build:e2e
+        env:
+          CLAXEDO_E2E_AUTH_MODE: local-unsigned
+          VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:3001
+
+      - name: Upload reusable E2E app (local-unsigned)
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: claxedo-app-e2e-local-unsigned-${{ github.sha }}-${{ github.run_attempt }}
+          path: packages/claxedo-app/dist
+          if-no-files-found: error
+          retention-days: 1
+
   e2e:
-    # 12-way sharding: serialized (workers=1) the core suite runs ~50 min on a
-    # 2-core runner; each shard takes ~1/12 of the tests, so the wall clock is
-    # setup + build + a few minutes of tests. The @workgraph-real leg runs as
-    # its own job below (it boots a real workgraph API and builds with a baked
-    # VITE_ server URL, so it cannot share a shard's app build).
-    name: e2e (linux ${{ matrix.auth-mode }}, ${{ matrix.shard }}/12)
+    # Six shards per auth mode keep each browser leg bounded while avoiding the
+    # old setup-dominated 24-job matrix. Measured on 2026-08-27, the 24 jobs used
+    # 109 runner-minutes, with 48 minutes spent before their Playwright steps.
+    # The app build is now owned by e2e-build above and reused by every shard.
+    name: e2e (linux ${{ matrix.auth-mode }}, ${{ matrix.shard }}/6)
+    needs: e2e-build
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+        shard: [1, 2, 3, 4, 5, 6]
         auth-mode: [test-user, local-unsigned]
     runs-on: ubuntu-latest
     env:
@@ -396,6 +486,8 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
 
       - name: Read Playwright version
         id: playwright-version
@@ -410,34 +502,23 @@ jobs:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
 
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
-
-      # packages/*/dist is gitignored; the app (and the workgraph-real e2e
-      # suite) resolve @claxedo/* workspace packages through their dist
-      # exports (vite fails on @claxedo/workgraph/contracts otherwise), so
-      # build them before starting the Playwright web server. Same scoped
-      # list as typecheck.yml — keeps heavy app/binary builds out.
-      - name: Build dist-resolved workspace packages
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+      # Test discovery imports the same production dist/ exports as the Vite
+      # build. Restore the exact closure produced once by e2e-build.
+      - name: Download reusable workspace dist
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
+          path: packages
 
       - name: Install Playwright Chromium
         working-directory: packages/claxedo-app
         run: npx playwright install chromium
+
+      - name: Download reusable E2E app
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: claxedo-app-e2e-${{ matrix.auth-mode }}-${{ github.sha }}-${{ github.run_attempt }}
+          path: packages/claxedo-app/dist
 
       # claxedo-app's Playwright suite (packages/claxedo-app/e2e/playwright): the
       # @core-tagged specs run on every PR in these shards. Tier R (real backend +
@@ -446,33 +527,21 @@ jobs:
       # runs in NO CI lane — it is local/manual only, by design: it needs real
       # provider credentials. Do not describe it as "nightly" here unless a
       # scheduled workflow actually exists.
-      - name: Run claxedo-app e2e core suite (${{ matrix.auth-mode }}, shard ${{ matrix.shard }}/12)
+      - name: Run claxedo-app e2e core suite (${{ matrix.auth-mode }}, shard ${{ matrix.shard }}/6)
         working-directory: packages/claxedo-app
         timeout-minutes: 30
-        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/12
+        run: bun run test:e2e:core:base -- --shard=${{ matrix.shard }}/6
         env:
-          # Serve a production build via vite preview: cold on-demand dev
-          # transforms on 2-core runners push first navigations past the expect
-          # timeouts (188 toBeVisible timeouts / 2.5h under dev serving).
-          CLAXEDO_E2E_PREBUILT: "1"
+          # Preview the exact auth-mode artifact downloaded above. `preview`
+          # refuses to rebuild or serve an artifact whose manifest does not
+          # match this mode and commit.
+          CLAXEDO_E2E_SERVE_MODE: preview
           # Every watched browser flow runs twice: once with the historical
           # synthetic Test User and once as a loopback visitor with no user.
           # playwright.config.ts owns the corresponding Vite auth composition.
           CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}
           # Videos of passing tests bloat shard artifacts; failures keep theirs.
           PLAYWRIGHT_VIDEO: "0"
-          # The spec harness bakes these at build time (core-settings-auth.spec
-          # HARNESS NOTES): auth/sandbox surfaces only exist in the bundle when
-          # the flags are set, and the server URL mirrors the repo's .env.local
-          # assumption. Locally vite reads .env.local; CI must set them.
-          VITE_AUTH_ENABLED: "true"
-          VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
-          # Keep the e2e-only harness seams (test-auth bypass, /__e2e/* routes,
-          # the server-URL override) alive in the production bundle. Tree-shaken
-          # out of any build that does not set this flag, so production is
-          # unaffected. Without it, the prebuilt bundle strips the synthetic
-          # signed-in principal and every auth-dependent spec goes anonymous.
-          VITE_CLAXEDO_E2E: "1"
 
       - name: Upload Playwright artifacts
         if: always()
@@ -513,6 +582,8 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
 
       - name: Read Playwright version
         id: playwright-version
@@ -526,9 +597,6 @@ jobs:
         with:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Build dist-resolved workspace packages
         run: >-
@@ -556,14 +624,14 @@ jobs:
         timeout-minutes: 30
         run: bun run test:e2e:workgraph
         env:
-          CLAXEDO_E2E_PREBUILT: "1"
+          CLAXEDO_E2E_SERVE_MODE: build-preview
 
       - name: Run onboarding-enabled e2e
         working-directory: packages/claxedo-app
         timeout-minutes: 15
         run: bun run test:e2e:onboarding
         env:
-          CLAXEDO_E2E_PREBUILT: "1"
+          CLAXEDO_E2E_SERVE_MODE: build-preview
           PLAYWRIGHT_VIDEO: "0"
           VITE_AUTH_ENABLED: "true"
           VITE_CLAXEDO_SERVER_URL: "http://127.0.0.1:3001"
@@ -608,6 +676,8 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
+        with:
+          install-flags: --frozen-lockfile
 
       - name: Read Playwright version
         id: playwright-version
@@ -621,9 +691,6 @@ jobs:
         with:
           path: ${{ github.workspace }}/.playwright-browsers
           key: ${{ runner.os }}-${{ runner.arch }}-playwright-${{ steps.playwright-version.outputs.version }}-chromium
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       # The claude/codex CLIs the native-SDK scenarios spawn. No credentials —
       # the scripted endpoint answers everything, so these never authenticate.
@@ -666,6 +733,12 @@ jobs:
         working-directory: packages/claxedo-app
         run: npx playwright install chromium
 
+      - name: Build tier-real E2E app once
+        working-directory: packages/claxedo-app
+        run: bun run build:e2e
+        env:
+          VITE_CLAXEDO_SERVER_URL: http://127.0.0.1:4317
+
       # One Playwright invocation PER SCENARIO. The cross-scenario coupling is
       # FIXED (seedDefaultHarness makes hydration and the UI switch agree; full
       # runs are reproducible), but per-scenario isolation stays: it is the
@@ -701,11 +774,12 @@ jobs:
         working-directory: packages/claxedo-app
         timeout-minutes: 30
         env:
-          CLAXEDO_E2E_PREBUILT: "1"
+          CLAXEDO_E2E_SERVE_MODE: preview
           PLAYWRIGHT_VIDEO: "0"
         run: |
           set -euo pipefail
-          # Build once; each scenario run reuses the preview via the webServer.
+          # The step above builds once. Each isolated Playwright invocation
+          # starts a preview of that same verified artifact without rebuilding.
           for scenario in "behaviors 1,6,9" "behaviors 2,6,8,9" "behaviors 3,6,8,9" "behaviors 4,6,8,9" "behaviors 5,6,8,9" "behavior 7"; do
             echo "=== Tier R gate scenario: ${scenario} ==="
             bun run test:e2e:real -- --grep "${scenario}"
@@ -793,9 +867,8 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+        with:
+          install-flags: --frozen-lockfile
 
       # The packaged desktop matrix exercises the real Claude harness through
       # a scripted endpoint. The CLI must be present even though the scenario
@@ -908,9 +981,8 @@ jobs:
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+        with:
+          install-flags: --frozen-lockfile
 
       - name: Build dist-resolved workspace packages
         run: >-

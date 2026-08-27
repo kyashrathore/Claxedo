@@ -138,7 +138,7 @@ falling through to "run everything".
 
 | suite | tag | what it is |
 | --- | --- | --- |
-| `core` (**default**) | `@core` | Tier M — every route mocked, zero real network. The lane CI watches, sharded 12-way on every PR. |
+| `core` (**default**) | `@core` | Tier M — every route mocked, zero real network. The lane CI watches, sharded six-way per auth mode on every PR. |
 | `live` | `@live` | Tier L — real `claxedo-server`, real agent binaries, real credentials. Not in CI (no credentials there). |
 | `marketing` | `@marketing` | Screenshot capture tool; writes PNGs into `claxedo-web/public/screenshots`. Never in CI. |
 | `all` | — | No filter, including lanes CI cannot run. |

@@ -26,12 +26,12 @@ for i in "${!BOXES[@]}"; do
   (
     # Env mirrors .github/workflows/test.yml's e2e job EXACTLY. Dropping any of
     # it does not just lose coverage, it manufactures failures: without
-    # CLAXEDO_E2E_PREBUILT the dev server transforms on demand and every first
-    # navigation blows its expect timeout (the workflow comment records 188
+    # CLAXEDO_E2E_SERVE_MODE=build-preview, the dev server transforms on demand
+    # and every first navigation blows its expect timeout (the workflow records 188
     # toBeVisible timeouts / 2.5h that way), and without VITE_CLAXEDO_E2E the
     # bundle tree-shakes the test-auth seam so auth specs go anonymous.
     ./script/cbx run --id "$box" --no-sync -- bash -c "umask 022; cd packages/claxedo-app && \
-      CLAXEDO_E2E_PREBUILT=1 PLAYWRIGHT_VIDEO=0 VITE_AUTH_ENABLED=true \
+      CLAXEDO_E2E_SERVE_MODE=build-preview PLAYWRIGHT_VIDEO=0 VITE_AUTH_ENABLED=true \
       VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 VITE_CLAXEDO_E2E=1 CI=1 \
       bun run test:e2e:core:base -- \
       --workers=8 --shard=$shard/$N --reporter=list ${E2E_ARGS:-}" \

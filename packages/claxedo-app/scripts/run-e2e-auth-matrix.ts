@@ -1,4 +1,5 @@
-const authModes = ["test-user", "local-unsigned"] as const
+import { e2eAuthModes } from "../e2e/auth-mode"
+
 const scripts = process.argv.slice(2)
 
 if (scripts.length === 0) {
@@ -8,7 +9,7 @@ if (scripts.length === 0) {
 
 let firstFailure = 0
 
-for (const authMode of authModes) {
+for (const authMode of e2eAuthModes) {
   for (const script of scripts) {
     console.log(`\n[e2e auth matrix] ${authMode}: bun run ${script}`)
     const child = Bun.spawn(["bun", "run", script], {

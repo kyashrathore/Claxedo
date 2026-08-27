@@ -1099,7 +1099,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     // shifts when each stream's chunk mounts and starts reconnecting, so
     // ClaxedoEventsProvider's two rapid reconnects can swallow BOTH slots
     // before global-sdk's compat stream reconnects, starving the only
-    // consumer that patches the inventory (~coin-flip failure, CLAXEDO_E2E_PREBUILT=1).
+    // consumer that patches the inventory (~coin-flip failure in production-preview mode).
     // Fulfilling EVERY subsequent `/api/wr/events` GET with the same envelope
     // (no `times` cap) removes the timing dependency entirely: whichever poll
     // the compat stream lands on next carries the frame. The frame is a

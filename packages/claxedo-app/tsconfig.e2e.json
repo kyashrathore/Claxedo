@@ -26,7 +26,9 @@
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/opencode-compat": ["../agent-event-runtime/src/projections/opencode-compat/index.ts"],
+      "@claxedo/agent-event-runtime/opencode-compat": [
+        "../agent-event-runtime/src/projections/opencode-compat/index.ts"
+      ],
       // Type-only, for e2e/helpers/contracts/*: `SessionConfigUpdate` is the shape
       // `POST /session` actually consumes, but it is imported-not-re-exported by
       // `@claxedo/workspace-runtime/routes`, and agent-sdk-runtime is not a direct
@@ -54,9 +56,12 @@
   // `allowJs: true` the generated report bundle (report/trace/sw.bundle.js)
   // otherwise fails the gate on any tree that has ever run e2e locally — the gate
   // must judge authored code, not artifacts of having run it.
-  "include": ["e2e"],
-  "exclude": [
-    "e2e/playwright/report",
-    "e2e/playwright/test-results"
-  ]
+  "include": [
+    "e2e",
+    "playwright.config.ts",
+    "scripts/build-e2e-app.ts",
+    "scripts/run-e2e-auth-matrix.ts",
+    "scripts/serve-e2e-app.ts"
+  ],
+  "exclude": ["e2e/playwright/report", "e2e/playwright/test-results"]
 }
