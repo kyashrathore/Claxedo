@@ -37,6 +37,8 @@ name: deploy-control-plane
 #   WORKGRAPH_SMOKE_HARNESS / WORKGRAPH_SMOKE_AGENT — deployed execution catalog IDs
 #   WORKGRAPH_SMOKE_PROVIDER_ID / WORKGRAPH_SMOKE_MODEL_ID / WORKGRAPH_SMOKE_EFFORT
 #   WORKGRAPH_SMOKE_TOOLS_JSON — exact JSON array of tool IDs used by the no-op Task
+#   TENANT_MIGRATION_LEGACY_SESSION_ID — durable pre-rollout Session retained
+#     as the migration authorization/readability canary
 # The smoke targets this public repository at github.sha, proving the deployed
 # commit through the same per-Stream repository contract used by the product.
 #
@@ -124,6 +126,7 @@ jobs:
           WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
           WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
           WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
+          TENANT_MIGRATION_LEGACY_SESSION_ID: ${{ vars.TENANT_MIGRATION_LEGACY_SESSION_ID }}
           APP_URL: ${{ vars.CLAXEDO_APP_URL }}
           PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
           PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
@@ -138,6 +141,7 @@ jobs:
             WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
             WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
             WORKGRAPH_SMOKE_MODEL_ID WORKGRAPH_SMOKE_EFFORT WORKGRAPH_SMOKE_TOOLS_JSON
+            TENANT_MIGRATION_LEGACY_SESSION_ID
             APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CONVEX_URL
           )
           for name in "${required[@]}"; do
@@ -194,6 +198,24 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields"}'
+
+      - name: Backfill tenant identity contracts (staging)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"]}'
+
+      - name: Verify tenant identity contracts (staging)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"]}'
+
+      - name: Legacy Session tenant migration smoke (staging)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          LEGACY_SESSION_ID: ${{ vars.TENANT_MIGRATION_LEGACY_SESSION_ID }}
+        run: |
+          query=$(node -e 'const id=JSON.stringify(process.env.LEGACY_SESSION_ID);process.stdout.write(`const session=await ctx.db.query("session_history").withIndex("by_session_id",q=>q.eq("session_id",${id})).unique();if(!session)throw new Error("legacy_session_missing");const workspace=await ctx.db.get(session.workspace_id);if(!workspace||session.org_id!==workspace.org_id||session.project_id!==workspace.project_id||!session.created_by_user_id)throw new Error("legacy_session_tenant_mismatch");return {ok:true,session_id:session.session_id}`)')
+          bunx convex run --inline-query "$query"
 
       - name: Deploy workspace relay Worker (staging)
         working-directory: packages/workspace-relay
@@ -390,6 +412,7 @@ jobs:
           WORKGRAPH_SMOKE_MODEL_ID: ${{ vars.WORKGRAPH_SMOKE_MODEL_ID }}
           WORKGRAPH_SMOKE_EFFORT: ${{ vars.WORKGRAPH_SMOKE_EFFORT }}
           WORKGRAPH_SMOKE_TOOLS_JSON: ${{ vars.WORKGRAPH_SMOKE_TOOLS_JSON }}
+          TENANT_MIGRATION_LEGACY_SESSION_ID: ${{ vars.TENANT_MIGRATION_LEGACY_SESSION_ID }}
           APP_URL: ${{ vars.CLAXEDO_APP_URL }}
           PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
           PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
@@ -404,6 +427,7 @@ jobs:
             WORKGRAPH_SMOKE_ORGANIZATION_A_ID WORKGRAPH_SMOKE_ORGANIZATION_B_ID
             WORKGRAPH_SMOKE_HARNESS WORKGRAPH_SMOKE_AGENT WORKGRAPH_SMOKE_PROVIDER_ID
             WORKGRAPH_SMOKE_MODEL_ID WORKGRAPH_SMOKE_EFFORT WORKGRAPH_SMOKE_TOOLS_JSON
+            TENANT_MIGRATION_LEGACY_SESSION_ID
             APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CONVEX_URL
           )
           for name in "${required[@]}"; do
@@ -452,6 +476,24 @@ jobs:
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields"}'
+
+      - name: Backfill tenant identity contracts (production)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"]}' --prod
+
+      - name: Verify tenant identity contracts (production)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"]}' --prod
+
+      - name: Legacy Session tenant migration smoke (production)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+          LEGACY_SESSION_ID: ${{ vars.TENANT_MIGRATION_LEGACY_SESSION_ID }}
+        run: |
+          query=$(node -e 'const id=JSON.stringify(process.env.LEGACY_SESSION_ID);process.stdout.write(`const session=await ctx.db.query("session_history").withIndex("by_session_id",q=>q.eq("session_id",${id})).unique();if(!session)throw new Error("legacy_session_missing");const workspace=await ctx.db.get(session.workspace_id);if(!workspace||session.org_id!==workspace.org_id||session.project_id!==workspace.project_id||!session.created_by_user_id)throw new Error("legacy_session_tenant_mismatch");return {ok:true,session_id:session.session_id}`)')
+          bunx convex run --inline-query "$query" --prod
 
       - name: Deploy workspace relay Worker (production)
         working-directory: packages/workspace-relay

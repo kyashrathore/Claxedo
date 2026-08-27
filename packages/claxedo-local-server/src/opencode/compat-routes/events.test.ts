@@ -1,7 +1,13 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { createGlobalEventsHandler, globalEventSessionId, streamGlobalEvents } from "./events"
+import {
+  createGlobalEventsHandler,
+  globalEventSessionId,
+  signedGlobalEventVisibleTo,
+  streamGlobalEvents,
+} from "./events"
+import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 
 // Regression coverage for the BUG A root cause: `claxedoBus` (aka
 // `workspaceRuntimeBus`) carries `session.lifecycle`, the only notification a
@@ -82,6 +88,64 @@ describe("streamGlobalEvents", () => {
     expect(frame).toContain(`"directory":"/tmp/streamGlobalEvents-global-test"`)
     expect(frame).toContain(`"payload"`)
     expect(frame).toContain(`"type":"session.created"`)
+  })
+})
+
+describe("signed global event visibility", () => {
+  const principal = eventScopePrincipal({
+    mode: "signed",
+    token: "token",
+    user: {
+      subject: "user_1",
+      tokenIdentifier: "issuer|user_1",
+      issuer: "issuer",
+    },
+  }, "org_1")
+
+  test("uses canonical subject and organization scoping for sessionless events", async () => {
+    await expect(signedGlobalEventVisibleTo({
+      type: "workgraph.changed",
+      ownerUserId: "user_1",
+      ts: 1,
+    }, principal)).resolves.toBe(true)
+    await expect(signedGlobalEventVisibleTo({
+      type: "workgraph.changed",
+      ownerUserId: "user_2",
+      ts: 1,
+    }, principal)).resolves.toBe(false)
+    await expect(signedGlobalEventVisibleTo({
+      type: "document.changed",
+      orgId: "org_1",
+      projectId: "project_1",
+      documentId: "doc_1",
+      ts: 1,
+    }, principal)).resolves.toBe(true)
+    await expect(signedGlobalEventVisibleTo({
+      type: "document.changed",
+      orgId: "org_2",
+      projectId: "project_2",
+      documentId: "doc_2",
+      ts: 1,
+    }, principal)).resolves.toBe(false)
+  })
+
+  test("fails closed for unclassified envelopes and delegates session frames", async () => {
+    await expect(signedGlobalEventVisibleTo({
+      directory: "/tmp/other",
+      payload: { id: "evt_1", type: "provider.updated", properties: {} },
+    }, principal)).resolves.toBe(false)
+
+    const authorized: string[] = []
+    await expect(signedGlobalEventVisibleTo({
+      type: "session.lifecycle",
+      phase: "created",
+      sessionID: "ses_1",
+      ts: 1,
+    }, principal, async (sessionId) => {
+      authorized.push(sessionId)
+      return true
+    })).resolves.toBe(true)
+    expect(authorized).toEqual(["ses_1"])
   })
 })
 

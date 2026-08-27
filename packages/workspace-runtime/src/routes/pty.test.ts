@@ -234,6 +234,7 @@ describe("PtyRoutes", () => {
       close: spyOn({ call(_code?: number, _reason?: string) {} }, "call"),
     }
     const disconnected = spyOn({ call() {} }, "call")
+    const streamLeases: Array<string | undefined> = []
     const upgrade = ((createEvents: (c: Context) => WSEvents | Promise<WSEvents>) => async (c: Context) => {
       events = await createEvents(c)
       return new Response(null, { status: 200 })
@@ -258,6 +259,12 @@ describe("PtyRoutes", () => {
       authorize: async () => allowed
         ? { allowed: true }
         : { allowed: false, status: 403, code: "private_session", message: "Session is private" },
+      authorizeStream: async (_input, lease) => {
+        streamLeases.push(lease)
+        return allowed
+          ? { allowed: true, lease: "renewable-lease", expiresAt: Date.now() + 1_500 }
+          : { allowed: false, status: 403, code: "private_session", message: "Session is private" }
+      },
       filterSessions: async (input) => input.sessionIds,
       authorizePrefix: async () => ({ allowed: true }),
     }
@@ -285,6 +292,7 @@ describe("PtyRoutes", () => {
       expect(rawSocket.send).not.toHaveBeenCalled()
       expect(rawSocket.close).toHaveBeenCalledWith(1008, "Session access denied")
       expect(disconnected).toHaveBeenCalledTimes(1)
+      expect(streamLeases).toEqual([undefined, "renewable-lease"])
     } finally {
       get.mockRestore()
       connect.mockRestore()

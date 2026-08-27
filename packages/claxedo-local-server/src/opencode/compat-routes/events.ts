@@ -4,6 +4,10 @@ import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
+import {
+  eventVisibleTo,
+  type EventScopePrincipal,
+} from "@claxedo/server-core/platform/http/event-visibility"
 
 /** A `globalBus` envelope after `normalizeGlobalEvent` has filled in its defaults. */
 type NormalizedGlobalEvent = {
@@ -34,7 +38,7 @@ export type GlobalStreamGapEvent = {
  * envelope) and `claxedoBus` frames stay flat, because `ClaxedoEventsProvider`'s
  * `isClaxedoEvent` guard requires a top-level `.type` for the latter.
  */
-type CentralFrame = NormalizedGlobalEvent | ClaxedoEvent | GlobalStreamGapEvent
+export type CentralFrame = NormalizedGlobalEvent | ClaxedoEvent | GlobalStreamGapEvent
 
 /** The per-connection handshake/heartbeat wire frame, unchanged from before replay. */
 type ConnectedFrame = {
@@ -124,6 +128,27 @@ export function globalEventSessionId(frame: CentralFrame) {
   if (frame.type === "session.lifecycle") return frame.sessionID
   if (frame.type === "agent.lifecycle") return frame.sessionId
   return undefined
+}
+
+/**
+ * Canonical visibility for a signed subscriber on the process-global compat
+ * stream. Session frames are checked by the session authority supplied by the
+ * caller; tenant-scoped Claxedo events use the same subject/org predicate as
+ * the hosted event plane. Wrapped native events without a session identity are
+ * deliberately denied because their arbitrary properties carry no trusted
+ * tenant scope.
+ */
+export async function signedGlobalEventVisibleTo(
+  frame: CentralFrame,
+  principal: EventScopePrincipal,
+  authorizeSession?: (sessionId: string) => boolean | Promise<boolean>,
+) {
+  if (principal.mode !== "signed") return true
+  if ("type" in frame && frame.type === "stream.replay-gap") return true
+  const sessionId = globalEventSessionId(frame)
+  if (sessionId) return authorizeSession ? await authorizeSession(sessionId) : false
+  if (!("type" in frame)) return false
+  return eventVisibleTo(principal, frame)
 }
 
 /**

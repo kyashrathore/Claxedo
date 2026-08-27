@@ -681,6 +681,9 @@ async function relayHostTokenFor(
     const token = await trace.span("rht-mint", async () => {
       promise = mintRelayHostToken({
         subject: claims.sub,
+        // Preserve the authoritative RAT identifier so downstream renewable
+        // stream leases can be checked against the same revocation record.
+        jti: claims.jti,
         ...relayActorInput(claims),
         orgId: claims.org_id,
         role: claims.role,
@@ -711,6 +714,7 @@ async function uncachedRelayHostTokenFor(
   return await trace.span("rht-mint", async () =>
     await mintRelayHostToken({
       subject: claims.sub,
+      jti: claims.jti,
       ...relayActorInput(claims),
       orgId: claims.org_id,
       role: claims.role,
@@ -721,7 +725,7 @@ async function uncachedRelayHostTokenFor(
 }
 
 function relayActorInput(claims: RuntimeAccessTokenClaims) {
-  if (!claims.actor_id) return { actorId: undefined, actorKind: undefined } as const
+  if (!claims.actor_id || !claims.actor_kind) return { actorId: undefined, actorKind: undefined } as const
   return {
     actorId: claims.actor_id,
     actorKind: claims.actor_kind,

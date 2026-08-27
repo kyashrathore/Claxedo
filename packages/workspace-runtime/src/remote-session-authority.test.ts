@@ -76,6 +76,21 @@ describe("remote workspace session authority", () => {
     }).authorize({ ...input, operation: "message_read" })).allowed).toBe(false)
   })
 
+  test("preserves retryable 503 authority responses", async () => {
+    const decision = await remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/authorize",
+      fetch: async () => Response.json({
+        error: { code: "workspace_authority_unavailable", message: "retry later" },
+      }, { status: 503 }),
+    }).authorize({ ...input, operation: "message_read" })
+    expect(decision).toEqual({
+      allowed: false,
+      status: 503,
+      code: "workspace_authority_unavailable",
+      message: "retry later",
+    })
+  })
+
   test("fails closed when the remote authority exceeds its deadline", async () => {
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/authorize",

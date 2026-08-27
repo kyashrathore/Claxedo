@@ -71,6 +71,18 @@ function heartbeatPayload(input: { workspaceId: string; hostId: string; ttlMs?: 
 }
 
 describe("sqlite workspace authority", () => {
+  test("browser and CLI projections keep one immutable actor kind", async () => {
+    const authority = memoryAuthority()
+    const cli = { ...owner, tokenKind: "cli" as const }
+    const browserIdentity = await authority.usersMe(owner) as { actor_id: string; actor_kind: string }
+    const cliIdentity = await authority.usersMe(cli) as { actor_id: string; actor_kind: string }
+    const browserAgain = await authority.usersMe(owner) as { actor_id: string; actor_kind: string }
+    expect([browserIdentity.actor_id, cliIdentity.actor_id, browserAgain.actor_id])
+      .toEqual([owner.user.tokenIdentifier, owner.user.tokenIdentifier, owner.user.tokenIdentifier])
+    expect([browserIdentity.actor_kind, cliIdentity.actor_kind, browserAgain.actor_kind])
+      .toEqual(["human", "human", "human"])
+  })
+
   test("new authority databases keep event ordinals on session history only", () => {
     const { database } = fileAuthority()
     const db = database()
@@ -120,14 +132,16 @@ describe("sqlite workspace authority", () => {
     handle.close()
   })
 
-  test("session mirror attributes only admitted user messages to the signed actor", async () => {
+  test("session mirror uses producer-backed authors and leaves unknown history unattributed", async () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_author", displayName: "Author" })
+    const identity = await authority.usersMe(owner) as { actor_public_id: string }
     await authority.syncSessionMessages(owner, {
       workspaceId: "ws_author",
       sessionId: "ses_author",
       messages: [
-        { info: { id: "msg_user", role: "user" }, parts: [] },
+        { info: { id: "msg_unknown", role: "user" }, parts: [] },
+        { info: { id: "msg_user", role: "user", claxedo: { author: { id: identity.actor_public_id } } }, parts: [] },
         { info: { id: "msg_assistant", role: "assistant" }, parts: [] },
       ],
     })
@@ -135,6 +149,7 @@ describe("sqlite workspace authority", () => {
     expect(database().prepare(`
       SELECT message_id, author_actor_id FROM session_messages WHERE session_id = ? ORDER BY ordinal
     `).all("ses_author")).toEqual([
+      { message_id: "msg_unknown", author_actor_id: null },
       { message_id: "msg_user", author_actor_id: owner.user.tokenIdentifier },
       { message_id: "msg_assistant", author_actor_id: null },
     ])
@@ -586,13 +601,6 @@ describe("sqlite workspace authority", () => {
       info: {
         id: "msg_1",
         role: "user",
-        claxedo: {
-          author: {
-            id: expect.stringMatching(/^usr_[0-9a-f-]{36}$/),
-            name: "User",
-            kind: "human",
-          },
-        },
       },
       parts: [],
     }])

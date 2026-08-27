@@ -29,12 +29,15 @@ export type EventDeliveryPrincipal =
 
 export type EventDeliveryDecision = "deliver" | "omit" | "terminate"
 
-export type EventDeliveryPolicy<T> = (input: {
+export type EventDeliveryPolicy<T> = ((input: {
   principal: EventDeliveryPrincipal
   event: T
   sessionId?: string
   sensitive: boolean
-}) => EventDeliveryDecision | Promise<EventDeliveryDecision>
+}) => EventDeliveryDecision | Promise<EventDeliveryDecision>) & {
+  renew?: (principal: EventDeliveryPrincipal) => EventDeliveryDecision | Promise<EventDeliveryDecision>
+  release?: (principal: EventDeliveryPrincipal) => void
+}
 
 type Source<T> = {
   subscribe(listener: (event: T) => unknown): () => void
@@ -45,6 +48,7 @@ type Connection<T> = {
   push(event: T): unknown
   terminate(): unknown
   authorizedSessions: Set<string>
+  renewalTimer?: ReturnType<typeof setInterval>
 }
 
 type Scope<T> = {
@@ -56,6 +60,7 @@ type Scope<T> = {
   retainedCursor?: string
   tail: Promise<void>
   pending: boolean
+  queued: number
 }
 
 export type IdentityAwareEventSource<T> = {
@@ -111,37 +116,84 @@ export function defaultEventDeliveryPolicy<T>({
 }
 
 export function sessionEventDeliveryPolicy<T>(policy: SessionAccessPolicy): EventDeliveryPolicy<T> {
-  return ({ principal, sessionId, sensitive }) => {
+  const grants = new Map<string, {
+    principal: EventDeliveryPrincipal
+    sessionId: string
+    lease?: string
+    expiresAt: number
+    inflight?: Promise<EventDeliveryDecision>
+  }>()
+  const grantKey = (principal: EventDeliveryPrincipal, sessionId: string) => `${principal.connectionId}:${sessionId}`
+  const accessInput = (principal: EventDeliveryPrincipal, sessionId: string) => ({
+    ...(principal.mode === "verified"
+      ? { actor: { actorId: principal.actorId, actorKind: principal.actorKind } }
+      : {}),
+    ...(principal.mode === "unmanaged-local"
+      ? {}
+      : {
+          authority: {
+            managed: true as const,
+            workspaceId: principal.workspaceId,
+            orgId: principal.orgId,
+            role: principal.role,
+          },
+          ...(principal.credential ? { credential: principal.credential } : {}),
+        }),
+    operation: "session_event_stream" as const,
+    sessionId,
+  })
+  const authorizeGrant = async (
+    principal: EventDeliveryPrincipal,
+    sessionId: string,
+    force = false,
+  ): Promise<EventDeliveryDecision> => {
+    if (principal.mode === "unmanaged-local") return "deliver"
+    const key = grantKey(principal, sessionId)
+    const existing = grants.get(key) ?? { principal, sessionId, expiresAt: 0 }
+    grants.set(key, existing)
+    if (!force && existing.expiresAt > Date.now() + 1_000) return "deliver"
+    if (existing.inflight) return await existing.inflight
+    const pending = (async () => {
+      const decision = policy.authorizeStream
+        ? await policy.authorizeStream(accessInput(principal, sessionId), existing.lease)
+        : await policy.authorize(accessInput(principal, sessionId))
+      if (!decision.allowed) return eventDecision(decision)
+      existing.lease = "lease" in decision && typeof decision.lease === "string" ? decision.lease : undefined
+      existing.expiresAt = "expiresAt" in decision && typeof decision.expiresAt === "number"
+        ? decision.expiresAt
+        : Date.now() + 5_000
+      return "deliver" as const
+    })().catch(() => "terminate" as const).finally(() => {
+      existing.inflight = undefined
+    })
+    existing.inflight = pending
+    return await pending
+  }
+  const eventPolicy: EventDeliveryPolicy<T> = ({ principal, sessionId, sensitive }) => {
     if (principal.mode === "unmanaged-local") return "deliver"
     if (!sessionId) {
       if (!sensitive) return "deliver"
       return "omit"
     }
-    const context = {
-      ...(principal.mode === "verified"
-        ? { actor: { actorId: principal.actorId, actorKind: principal.actorKind } }
-        : {}),
-      authority: {
-        managed: true as const,
-        workspaceId: principal.workspaceId,
-        orgId: principal.orgId,
-        role: principal.role,
-      },
-      ...(principal.credential ? { credential: principal.credential } : {}),
-    }
-    const decision = policy.authorize({
-      ...context,
-      operation: "session_event_stream",
-      sessionId,
-    })
-    if (decision instanceof Promise) return decision.then(eventDecision)
-    return eventDecision(decision)
+    return authorizeGrant(principal, sessionId)
   }
+  eventPolicy.renew = async (principal) => {
+    const current = [...grants.values()].filter((grant) => grant.principal.connectionId === principal.connectionId)
+    if (current.length === 0) return "deliver"
+    const decisions = await Promise.all(current.map((grant) => authorizeGrant(principal, grant.sessionId, true)))
+    return decisions.every((decision) => decision === "deliver") ? "deliver" : "terminate"
+  }
+  eventPolicy.release = (principal) => {
+    for (const [key, grant] of grants) {
+      if (grant.principal.connectionId === principal.connectionId) grants.delete(key)
+    }
+  }
+  return eventPolicy
 }
 
 function eventDecision(decision: Awaited<ReturnType<SessionAccessPolicy["authorize"]>>): EventDeliveryDecision {
   if (decision.allowed) return "deliver"
-  return decision.code === "session_authority_proof_invalid" ? "terminate" : "omit"
+  return decision.status === 401 || decision.status === 503 ? "terminate" : "omit"
 }
 
 type AgentRuntimeEventDeliveryPolicy = (input: {
@@ -200,7 +252,13 @@ export function createIdentityAwareEventSource<T>(input: {
   sessionId: (event: T) => string | undefined
   sensitive?: (event: T) => boolean
   isTerminal?: (event: T) => boolean
+  maxQueuedPerScope?: number
+  replayConcurrency?: number
+  replayStartupDeadlineMs?: number
 }): IdentityAwareEventSource<T> {
+  const maxQueuedPerScope = input.maxQueuedPerScope ?? 256
+  const replayConcurrency = input.replayConcurrency ?? 8
+  const replayStartupDeadlineMs = input.replayStartupDeadlineMs ?? 10_000
   const scopes = new Map<string, Scope<T>>()
   const tombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
   const retained = createSseReplayBuffer<T>({ ...(input.isTerminal ? { isTerminal: input.isTerminal } : {}) })
@@ -224,8 +282,10 @@ export function createIdentityAwareEventSource<T>(input: {
     while (tombstones.size > 256) tombstones.delete(tombstones.keys().next().value!)
     scopes.delete(scope.key)
   }
-  const terminate = (scope: Scope<T>, connection: Connection<T>) => {
+  const disconnect = (scope: Scope<T>, connection: Connection<T>) => {
     scope.connections.delete(connection)
+    if (connection.renewalTimer) clearInterval(connection.renewalTimer)
+    input.policy.release?.(connection.principal)
     void Promise.resolve(connection.terminate()).catch(() => undefined)
   }
   const apply = (
@@ -239,11 +299,11 @@ export function createIdentityAwareEventSource<T>(input: {
     for (const result of decisions) {
       if (!scope.connections.has(result.connection)) continue
       if (result.next === "terminate") {
-        terminate(scope, result.connection)
+        disconnect(scope, result.connection)
         continue
       }
       if (result.next === "omit") {
-        if (sessionId && result.connection.authorizedSessions.has(sessionId)) terminate(scope, result.connection)
+        if (sessionId && result.connection.authorizedSessions.has(sessionId)) disconnect(scope, result.connection)
         continue
       }
       delivered = true
@@ -300,7 +360,15 @@ export function createIdentityAwareEventSource<T>(input: {
       })
       return
     }
-    const tail = scope.tail.then(() => evaluate(scope, event))
+    if (scope.queued >= maxQueuedPerScope) {
+      for (const connection of [...scope.connections]) disconnect(scope, connection)
+      return
+    }
+    scope.queued += 1
+    const tail = scope.tail.then(() => {
+      scope.queued -= 1
+      return evaluate(scope, event)
+    })
     scope.tail = tail
     void tail.finally(() => {
       if (scope.tail === tail) scope.pending = false
@@ -330,20 +398,45 @@ export function createIdentityAwareEventSource<T>(input: {
       ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
       tail: Promise.resolve(),
       pending: false,
+      queued: 0,
     }
     scopes.set(key, created)
     const retainedEvents = retained.replayAfter(tombstone?.retainedCursor)
     if (retainedEvents.length > 0) {
       created.pending = true
-      created.tail = retainedEvents.reduce(
-        (tail, event) => tail.then(async () => {
-          if (await decide(principal, event.payload).catch(() => "terminate" as const) === "deliver") {
-            replay.push(event.payload)
-            created.retainedCursor = event.id
+      created.tail = (async () => {
+        const results = new Array<EventDeliveryDecision>(retainedEvents.length).fill("omit")
+        let cursor = 0
+        const deadlineAt = Date.now() + replayStartupDeadlineMs
+        const decideBeforeDeadline = async (event: T) => {
+          const remaining = deadlineAt - Date.now()
+          if (remaining <= 0) return "terminate" as const
+          let timer: ReturnType<typeof setTimeout> | undefined
+          try {
+            return await Promise.race([
+              decide(principal, event).catch(() => "terminate" as const),
+              new Promise<"terminate">((resolve) => {
+                timer = setTimeout(() => resolve("terminate"), remaining)
+                ;(timer as { unref?: () => void }).unref?.()
+              }),
+            ])
+          } finally {
+            if (timer) clearTimeout(timer)
           }
-        }),
-        Promise.resolve(),
-      )
+        }
+        await Promise.all(Array.from({ length: Math.min(replayConcurrency, retainedEvents.length) }, async () => {
+          while (Date.now() < deadlineAt) {
+            const index = cursor++
+            if (index >= retainedEvents.length) return
+            results[index] = await decideBeforeDeadline(retainedEvents[index]!.payload)
+          }
+        }))
+        for (let index = 0; index < retainedEvents.length; index += 1) {
+          if (results[index] !== "deliver") continue
+          replay.push(retainedEvents[index]!.payload)
+          created.retainedCursor = retainedEvents[index]!.id
+        }
+      })()
       void created.tail.finally(() => {
         created.pending = false
       })
@@ -369,12 +462,23 @@ export function createIdentityAwareEventSource<T>(input: {
         replay: scope.replay,
         ready: scope.tail,
         subscribe(listener, terminate = () => undefined) {
-          const connection = { principal, push: listener, terminate, authorizedSessions }
+          const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions }
           scope.connections.add(connection)
+          if (input.policy.renew) {
+            connection.renewalTimer = setInterval(() => {
+              void Promise.resolve(input.policy.renew!(principal)).then((next) => {
+                if (next !== "deliver") terminateConnection()
+              }).catch(terminateConnection)
+            }, 5_000)
+            ;(connection.renewalTimer as { unref?: () => void }).unref?.()
+          }
           scope.reservations -= 1
           for (const event of retained.replayAfter(retainedCursor)) enqueue(scope, event.payload)
+          const terminateConnection = () => disconnect(scope, connection)
           return () => {
             scope.connections.delete(connection)
+            if (connection.renewalTimer) clearInterval(connection.renewalTimer)
+            input.policy.release?.(principal)
             evict(scope)
           }
         },
@@ -393,7 +497,11 @@ export function createIdentityAwareEventSource<T>(input: {
     close() {
       unsubscribeSource()
       for (const scope of scopes.values()) {
-        for (const connection of scope.connections) connection.terminate()
+        for (const connection of scope.connections) {
+          if (connection.renewalTimer) clearInterval(connection.renewalTimer)
+          input.policy.release?.(connection.principal)
+          connection.terminate()
+        }
         scope.connections.clear()
       }
       scopes.clear()

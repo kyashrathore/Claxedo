@@ -88,30 +88,7 @@ export const backfillWorkspaceTenantIdentity = migrations.define({
 
 export const backfillSessionTenantIdentity = migrations.define({
   table: "session_history",
-  migrateOne: async (ctx, session) => {
-    const workspace = await ctx.db.get(session.workspace_id)
-    if (!workspace) throw new Error(`session_workspace_missing:${session._id}`)
-    if (!workspace.org_id || !workspace.project_id) {
-      throw new Error(`session_workspace_not_migrated:${session._id}:${workspace._id}`)
-    }
-    const storedProject = session.project_id
-      ? await projectFromStoredIdentity(ctx, session.project_id)
-      : undefined
-    if (session.project_id && !storedProject) throw new Error(`session_project_missing:${session._id}`)
-    if (session.org_id && session.org_id !== workspace.org_id) {
-      throw new Error(`session_workspace_tenant_conflict:${session._id}:${workspace._id}`)
-    }
-    if (storedProject?.org_id && storedProject.org_id !== workspace.org_id) {
-      throw new Error(`session_project_tenant_conflict:${session._id}:${storedProject._id}`)
-    }
-    const projectId = storedProject?.project_id ?? workspace.project_id
-    if (!projectId) throw new Error(`session_project_unresolved:${session._id}`)
-    await ctx.db.patch(session._id, {
-      org_id: session.org_id ?? workspace.org_id,
-      project_id: projectId,
-      created_by_user_id: session.created_by_user_id ?? workspace.owner_user_id,
-    })
-  },
+  migrateOne: migrateSessionTenantIdentity,
 })
 
 // Contract probes are ledger-backed scans rather than an unbounded ad-hoc
@@ -159,12 +136,44 @@ export const verifyWorkspaceTenantIdentityContract = migrations.define({
 
 export const verifySessionTenantIdentityContract = migrations.define({
   table: "session_history",
-  migrateOne: (_ctx, session) => {
-    if (!session.org_id || !session.project_id || !session.created_by_user_id) {
-      throw new Error(`session_identity_incomplete:${session._id}`)
-    }
-  },
+  migrateOne: verifySessionTenantIdentity,
 })
+
+export async function migrateSessionTenantIdentity(ctx: any, session: any) {
+  const workspace = await ctx.db.get(session.workspace_id)
+  if (!workspace) throw new Error(`session_workspace_missing:${session._id}`)
+  if (!workspace.org_id || !workspace.project_id) {
+    throw new Error(`session_workspace_not_migrated:${session._id}:${workspace._id}`)
+  }
+  const storedProject = session.project_id
+    ? await projectFromStoredIdentity(ctx, session.project_id)
+    : undefined
+  if (session.project_id && !storedProject) throw new Error(`session_project_missing:${session._id}`)
+  if (session.org_id && session.org_id !== workspace.org_id) {
+    throw new Error(`session_workspace_tenant_conflict:${session._id}:${workspace._id}`)
+  }
+  if (storedProject?.org_id && storedProject.org_id !== workspace.org_id) {
+    throw new Error(`session_project_tenant_conflict:${session._id}:${storedProject._id}`)
+  }
+  if (storedProject?.project_id && storedProject.project_id !== workspace.project_id) {
+    throw new Error(`session_workspace_project_conflict:${session._id}:${workspace._id}:${storedProject._id}`)
+  }
+  await ctx.db.patch(session._id, {
+    org_id: session.org_id ?? workspace.org_id,
+    project_id: workspace.project_id,
+    created_by_user_id: session.created_by_user_id ?? workspace.owner_user_id,
+  })
+}
+
+export async function verifySessionTenantIdentity(ctx: any, session: any) {
+  if (!session.org_id || !session.project_id || !session.created_by_user_id) {
+    throw new Error(`session_identity_incomplete:${session._id}`)
+  }
+  const workspace = await ctx.db.get(session.workspace_id)
+  if (!workspace || session.org_id !== workspace.org_id || session.project_id !== workspace.project_id) {
+    throw new Error(`session_workspace_identity_mismatch:${session._id}:${session.workspace_id}`)
+  }
+}
 
 export async function migrateProjectTenantIdentity(ctx: any, project: any) {
   const projectId = stringValue(project.project_id) ?? stringValue(project.externalId) ?? `prj_legacy_${project._id}`

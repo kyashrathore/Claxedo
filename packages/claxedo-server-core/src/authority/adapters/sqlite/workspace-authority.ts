@@ -8,6 +8,7 @@ import {
   ensurePersonalOrg,
   ensureProject,
   openAuthorityDb,
+  orgAdminForUser,
   projectByPublicId,
   projectRoleForUser,
   sqliteRepoKey,
@@ -258,6 +259,18 @@ function jsonText(input: unknown) {
   }
 }
 
+function producerAuthorTokenIdentifier(db: SqliteAuthorityDb, message: unknown) {
+  const row = object(message)
+  const info = object(row?.info)
+  const claxedo = object(info?.claxedo)
+  const author = object(claxedo?.author)
+  const publicId = txt(author?.id)
+  if (!publicId) return
+  return (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(publicId) as {
+    token_identifier: string
+  } | undefined)?.token_identifier
+}
+
 function messageWithPublicAuthor(input: unknown, user?: {
   public_id: string | null
   name: string | null
@@ -328,7 +341,7 @@ export function createSqliteWorkspaceAuthority(
       token_identifier: auth.user.tokenIdentifier,
       subject: auth.user.subject,
       issuer: auth.user.issuer,
-      kind: auth.tokenKind === "cli" ? "agent" : "human",
+      kind: "human",
     })
   }
 
@@ -536,9 +549,9 @@ export function createSqliteWorkspaceAuthority(
       return {
         user_id: who.token_identifier,
         actor_id: who.token_identifier,
-        actor_kind: auth.tokenKind === "cli" ? "agent" as const : "human" as const,
+        actor_kind: who.kind === "agent" ? "agent" as const : "human" as const,
         actor_public_id: who.public_id,
-        actor_name: who.name ?? (auth.tokenKind === "cli" ? "Agent" : "User"),
+        actor_name: who.name ?? (who.kind === "agent" ? "Agent" : "User"),
         actor_avatar_url: who.image_url,
         subject: who.subject,
         token_identifier: who.token_identifier,
@@ -1298,13 +1311,10 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      const membership = workspace.org_id ? db.prepare(`
-        SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
-      `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined : undefined
+      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       if (
         session.created_by_token_identifier !== who.token_identifier
-        && membership?.role !== "admin"
-        && membership?.role !== "owner"
+        && !orgAdminForUser(db, who, workspace.org_id)
       ) denied()
       const participant = db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
         .get(args.participantTokenIdentifier) as AuthorityUser | undefined
@@ -1327,13 +1337,10 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      const membership = workspace.org_id ? db.prepare(`
-        SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
-      `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined : undefined
+      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       if (
         session.created_by_token_identifier !== who.token_identifier
-        && membership?.role !== "admin"
-        && membership?.role !== "owner"
+        && !orgAdminForUser(db, who, workspace.org_id)
       ) denied()
       if (args.participantTokenIdentifier === session.created_by_token_identifier) return { removed: false }
       const result = db.prepare(`
@@ -1347,9 +1354,7 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) return []
-      const membership = workspace.org_id ? db.prepare(`
-        SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
-      `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined : undefined
+      const canAdminSessions = orgAdminForUser(db, who, workspace.org_id)
       const participantSessions = new Set((db.prepare(`
         SELECT session_id FROM session_participants
         WHERE workspace_id = ? AND actor_token_identifier = ? AND revoked_at IS NULL
@@ -1360,8 +1365,7 @@ export function createSqliteWorkspaceAuthority(
         ORDER BY updated_at DESC
       `).all(args.workspaceId) as SessionRow[]).filter((session) =>
         session.created_by_token_identifier === who.token_identifier
-        || membership?.role === "admin"
-        || membership?.role === "owner"
+        || canAdminSessions
         || participantSessions.has(session.session_id)
       )
     },
@@ -1499,7 +1503,9 @@ export function createSqliteWorkspaceAuthority(
           const info = object(row?.info)
           const messageId = txt(row?.id) ?? txt(info?.id) ?? `${args.sessionId}:${ordinal}`
           const role = txt(row?.role) ?? txt(info?.role) ?? null
-          const author = role === "user" ? existingAuthors.get(messageId) ?? who.token_identifier : null
+          const author = role === "user"
+            ? existingAuthors.get(messageId) ?? producerAuthorTokenIdentifier(db, message) ?? null
+            : null
           insert.run(args.sessionId, args.workspaceId, messageId, author, role, ordinal, jsonText(message), now, now)
         }
         return args.maxEventOrdinal === undefined

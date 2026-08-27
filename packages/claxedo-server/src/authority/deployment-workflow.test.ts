@@ -39,6 +39,9 @@ describe("Claxedo Cloud deployment workflow", () => {
     const staging = [
       controlPlane.indexOf("- name: Deploy Convex (staging deployment)"),
       controlPlane.indexOf("- name: Normalize legacy runtime lease fields (staging)"),
+      controlPlane.indexOf("- name: Backfill tenant identity contracts (staging)"),
+      controlPlane.indexOf("- name: Verify tenant identity contracts (staging)"),
+      controlPlane.indexOf("- name: Legacy Session tenant migration smoke (staging)"),
       controlPlane.indexOf("- name: Deploy workspace relay Worker (staging)"),
       controlPlane.indexOf("- name: Deploy control-plane Worker (staging)"),
       controlPlane.indexOf("  smoke-staging:"),
@@ -47,6 +50,9 @@ describe("Claxedo Cloud deployment workflow", () => {
     const production = [
       controlPlane.indexOf("- name: Deploy Convex (production deployment)"),
       controlPlane.indexOf("- name: Normalize legacy runtime lease fields (production)"),
+      controlPlane.indexOf("- name: Backfill tenant identity contracts (production)"),
+      controlPlane.indexOf("- name: Verify tenant identity contracts (production)"),
+      controlPlane.indexOf("- name: Legacy Session tenant migration smoke (production)"),
       controlPlane.indexOf("- name: Deploy workspace relay Worker (production)"),
       controlPlane.indexOf("- name: Deploy control-plane Worker (production)"),
       controlPlane.indexOf("- name: Behavioral smoke (production)"),
@@ -62,6 +68,23 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(controlPlane).toContain("needs: deploy-app-staging")
     expect(controlPlane).toContain("deploy-app-production:\n    if:")
     expect(controlPlane).toContain("needs: promote-production")
+  })
+
+  test("gates relay publication on all tenant backfills, verifiers, and a legacy Session canary", () => {
+    for (const migration of [
+      "backfillUserActorIdentity",
+      "backfillProjectTenantIdentity",
+      "reconcileProjectMembershipProjectIds",
+      "backfillWorkspaceTenantIdentity",
+      "backfillSessionTenantIdentity",
+      "verifyUserActorIdentityContract",
+      "verifyProjectTenantIdentityContract",
+      "verifyProjectMembershipIdentityContract",
+      "verifyWorkspaceTenantIdentityContract",
+      "verifySessionTenantIdentityContract",
+    ]) expect(controlPlane.match(new RegExp(migration, "g"))?.length).toBe(2)
+    expect(controlPlane.match(/TENANT_MIGRATION_LEGACY_SESSION_ID/g)?.length).toBeGreaterThanOrEqual(5)
+    expect(controlPlane).toContain("legacy_session_tenant_mismatch")
   })
 
   test("fails before Convex mutation when release configuration is incomplete", () => {

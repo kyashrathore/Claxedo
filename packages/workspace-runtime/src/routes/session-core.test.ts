@@ -337,6 +337,8 @@ function routes(input: {
   getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
   getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSessionRow | null> | AgentSessionRow | null
+  sessionAccessPolicy?: SessionAccessPolicy
+  afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -354,7 +356,23 @@ function routes(input: {
     getSession: input.getSession
       ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
       : undefined,
+    sessionAccessPolicy: input.sessionAccessPolicy,
+    afterCreateSession: input.afterCreateSession
+      ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
+      : undefined,
   })
+}
+
+function registrationPolicy(
+  registerSession: NonNullable<SessionAccessPolicy["registerSession"]>,
+): SessionAccessPolicy {
+  return {
+    sessionAuthority: "managed-private",
+    authorize: async () => ({ allowed: true }),
+    authorizePrefix: async () => ({ allowed: true }),
+    filterSessions: async (input) => input.sessionIds,
+    registerSession,
+  }
 }
 
 describe("createSessionRoutes directory-less sessions", () => {
@@ -425,6 +443,127 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(calls).toEqual(["config", "delete:session_rejected"])
     expect(lifecycle.map((event) => event.phase)).toEqual(["creating", "failed"])
     expect(await res.json()).toMatchObject({ error: { message: "config unavailable" } })
+  })
+
+  test("rolls back an explicit registration denial so the same requested id can retry", async () => {
+    const persisted = new Set<string>()
+    const calls: string[] = []
+    let attempts = 0
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        createSession: async (_directory, _title, id = "generated") => {
+          if (persisted.has(id)) throw new Error("session already exists")
+          persisted.add(id)
+          calls.push(`create:${id}`)
+          return { id }
+        },
+        deleteSession: async (id) => {
+          calls.push(`delete:${id}`)
+          persisted.delete(id)
+        },
+      },
+      sessionAccessPolicy: registrationPolicy(async () => {
+        attempts += 1
+        return attempts === 1
+          ? { allowed: false, status: 403, code: "session_private", message: "Registration denied" }
+          : { allowed: true }
+      }),
+    })
+
+    const request = () => app.request("http://localhost/session", {
+      method: "POST",
+      body: JSON.stringify({ id: "session_stable" }),
+    })
+    expect((await request()).status).toBe(403)
+    expect((await request()).status).toBe(201)
+    expect(calls).toEqual([
+      "create:session_stable",
+      "delete:session_stable",
+      "create:session_stable",
+    ])
+  })
+
+  test("reconciles a timeout after registration commit before compensating", async () => {
+    const calls: string[] = []
+    let registrations = 0
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        createSession: async () => ({ id: "session_committed" }),
+        deleteSession: async (id) => { calls.push(`delete:${id}`) },
+      },
+      sessionAccessPolicy: registrationPolicy(async () => {
+        registrations += 1
+        if (registrations === 1) throw new Error("authority response timed out after commit")
+        return { allowed: true }
+      }),
+    })
+
+    const response = await app.request("http://localhost/session", { method: "POST", body: "{}" })
+
+    expect(response.status).toBe(201)
+    expect(registrations).toBe(2)
+    expect(calls).toEqual([])
+  })
+
+  test("registers and projects a forked child before returning it", async () => {
+    const calls: string[] = []
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        forkSession: async () => {
+          calls.push("fork")
+          return { id: "session_child" }
+        },
+      },
+      sessionAccessPolicy: registrationPolicy(async (input) => {
+        calls.push(`register:${input.sessionId}`)
+        return { allowed: true }
+      }),
+      afterCreateSession: async (_directory, session) => {
+        calls.push(`project:${(session as { id: string }).id}`)
+      },
+    })
+
+    const response = await app.request("http://localhost/session/session_parent/fork", {
+      method: "POST",
+      body: JSON.stringify({ messageId: "message_1" }),
+    })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toEqual({ id: "session_child" })
+    expect(calls).toEqual(["fork", "register:session_child", "project:session_child"])
+  })
+
+  test("deletes a forked child when registration is denied", async () => {
+    const calls: string[] = []
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        forkSession: async () => ({ id: "session_child" }),
+        deleteSession: async (id) => { calls.push(`delete:${id}`) },
+      },
+      sessionAccessPolicy: registrationPolicy(async () => ({
+        allowed: false,
+        status: 403,
+        code: "session_private",
+        message: "Registration denied",
+      })),
+      afterCreateSession: async () => { calls.push("project") },
+    })
+
+    const response = await app.request("http://localhost/session/session_parent/fork", {
+      method: "POST",
+      body: "{}",
+    })
+
+    expect(response.status).toBe(403)
+    expect(calls).toEqual(["delete:session_child"])
   })
 
   test("keeps a missing backend title empty in the created lifecycle row", async () => {

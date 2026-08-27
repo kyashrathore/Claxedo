@@ -108,6 +108,9 @@ async function requireSessionParticipantAdmin(
   if (!workspace || !session || session.workspace_id !== workspace._id || session.deleted_at) {
     throw new Error("Session not found")
   }
+  if (!await authorizeWorkspaceForUser(ctx, workspace, actor, "read")) {
+    throw new Error("session_participant_admin_required")
+  }
   if (session.created_by_user_id !== actor._id && !await orgAdminForUser(ctx.db, actor._id, workspace.org_id)) {
     throw new Error("session_participant_admin_required")
   }
