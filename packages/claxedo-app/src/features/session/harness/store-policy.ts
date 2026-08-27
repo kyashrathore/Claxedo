@@ -56,9 +56,8 @@ export function modelOptionsUnavailableMessage(input: {
   return input.stale ? "Model options unavailable" : "No model options available"
 }
 
-export function shouldFetchConfigOptionsForScope(type: HarnessType, failed: boolean, input?: HarnessScopeInput) {
-  const existingSession = !!input?.sessionId && input.sessionId !== "new"
-  return harnessHasConfigOptions(type) && !failed && !existingSession
+export function shouldFetchConfigOptionsForScope(type: HarnessType, failed: boolean, _input?: HarnessScopeInput) {
+  return harnessHasConfigOptions(type) && !failed
 }
 
 export function shouldRefreshDirectoryAfterHarnessStatus(input?: HarnessScopeInput) {
