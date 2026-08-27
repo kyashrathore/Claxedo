@@ -79,6 +79,7 @@ type StoredWorkspace = Omit<Workspace, "driver"> & {
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
 const listeners = new Set<() => void | Promise<void>>()
+const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
 let ready: Promise<void> | undefined
 let loaded: string | undefined
@@ -329,7 +330,7 @@ export async function getWorkspaceByDirectory(dir: string) {
   return key ? byId.get(key) : undefined
 }
 
-export async function ensureWorkspace(input: {
+type EnsureWorkspaceInput = {
   workspaceId?: string
   org_id?: string
   project_id?: string
@@ -342,7 +343,33 @@ export async function ensureWorkspace(input: {
   git_branch?: string
   remote_directory?: string
   status?: string
-}) {
+}
+
+export async function ensureWorkspace(input: EnsureWorkspaceInput) {
+  await boot()
+  if ((input.kind ?? "local") !== "local") return ensureWorkspaceUncoalesced(input)
+
+  const directory = directoryKey(input.directory)
+  if (isRejectedDir(directory) || trim(input.workspaceId) || byDir.has(directory)) {
+    return ensureWorkspaceUncoalesced(input)
+  }
+
+  const pending = localFirstTouch.get(directory)
+  if (pending) {
+    await pending.catch(() => undefined)
+    return ensureWorkspaceUncoalesced(input)
+  }
+
+  const task = ensureWorkspaceUncoalesced(input)
+  localFirstTouch.set(directory, task)
+  try {
+    return await task
+  } finally {
+    if (localFirstTouch.get(directory) === task) localFirstTouch.delete(directory)
+  }
+}
+
+async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
   await boot()
   const kind = input.kind ?? "local"
   const requestedId = trim(input.workspaceId)

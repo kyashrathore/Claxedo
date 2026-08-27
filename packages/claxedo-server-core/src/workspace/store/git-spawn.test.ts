@@ -110,6 +110,23 @@ describe("workspace store git subprocess cost", () => {
     expect(second.updated_at).toBeGreaterThanOrEqual(first.updated_at)
   })
 
+  test("concurrent first-touch ensures create one canonical workspace", async () => {
+    const dir = await gitRepo("concurrent-first-touch")
+
+    const ensured = await countingGitSpawns(() => Promise.all([
+      store.ensureWorkspace({ directory: dir }),
+      store.ensureWorkspace({ directory: dir }),
+      store.ensureWorkspace({ directory: dir }),
+    ]))
+    const workspaces = ensured.value.map(defined)
+    const stored = (await store.listWorkspaces()).filter((item) => item.directory === realpathSync(dir))
+
+    expect(new Set(workspaces.map((item) => item.id))).toHaveLength(1)
+    expect(stored).toHaveLength(1)
+    expect(stored[0]?.id).toBe(workspaces[0]?.id)
+    expect(ensured.spawns).toBe(4)
+  })
+
   test("resolveWorkspace(create=true) on a known directory spawns no git", async () => {
     const dir = await gitRepo("boot-request")
     const first = defined(await store.resolveWorkspace({ directory: dir, create: true }))
