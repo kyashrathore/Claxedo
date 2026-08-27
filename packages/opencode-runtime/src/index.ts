@@ -63,7 +63,28 @@ export {
 } from "./transfer"
 export {
   createSessionPort,
+  type AdmittedMessage,
+  type ForkBoundary,
+  type MessagePage,
   type OpenCodeSessionPort,
+  type PromptAttachment,
+  type PromptRequest,
+  type SessionMessage,
   type SessionPage,
   type SessionSummary,
 } from "./session-port"
+export {
+  createCatalogPort,
+  type AgentEntry,
+  type CommandEntry,
+  type ModelEntry,
+  type OpenCodeCatalogPort,
+} from "./catalog-port"
+export {
+  createInteractionPort,
+  type FormFieldValue,
+  type FormRequest,
+  type OpenCodeInteractionPort,
+  type PermissionReply,
+  type PermissionRequest,
+} from "./interaction-port"
