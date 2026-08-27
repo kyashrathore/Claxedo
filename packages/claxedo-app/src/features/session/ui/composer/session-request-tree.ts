@@ -42,6 +42,25 @@ export function sessionPermissionRequest(
   return sessionTreeRequest(session, request, sessionID, include)
 }
 
+export function sessionVisiblePermissionRequest(input: {
+  ready: boolean
+  sessions: Session[]
+  requests: Record<string, PermissionRequest[] | undefined>
+  sessionID?: string
+  include?: (item: PermissionRequest) => boolean
+}) {
+  // Until persisted permission policy has hydrated, the client cannot know
+  // whether this request is manual or will be answered by Auto. Rendering it
+  // in that gap makes the dock flash and then disappear without a user choice.
+  if (!input.ready) return
+  return sessionPermissionRequest(
+    input.sessions,
+    input.requests,
+    input.sessionID,
+    input.include,
+  )
+}
+
 export function sessionQuestionRequest(
   session: Session[],
   request: Record<string, QuestionRequest[] | undefined>,

@@ -134,8 +134,12 @@ function resolveEntry(
   resetInventoryResolution = false,
 ): SessionTitleProjectionEntry | undefined {
   if (!next.inventory && !next.provisionalTitle && !next.canonical) return
-  const prior = resetInventoryResolution &&
-      (previous?.resolved?.source === "inventory" || previous?.resolved?.source === "placeholder")
+  const concreteInventoryReplacesProvisional =
+    previous?.resolved?.source === "provisional" &&
+    isConcreteSessionTitle(normalized(next.inventory?.title))
+  const prior = (resetInventoryResolution &&
+      (previous?.resolved?.source === "inventory" || previous?.resolved?.source === "placeholder")) ||
+      concreteInventoryReplacesProvisional
     ? undefined
     : previous?.resolved
   const resolved = stableSessionTitle(prior, {
@@ -240,9 +244,14 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
         for (const alias of aliases) {
           const current = state.byKey[alias]
           const inventory = nextByKey.get(alias)
+          const inventoryIsConcrete = isConcreteSessionTitle(normalized(inventory?.title))
           setEntry(alias, resolveEntry(alias, current, {
             inventory,
-            provisionalTitle: current?.provisionalTitle ?? provisionalTitle,
+            // A provisional title only bridges the create→authoritative gap.
+            // Once inventory carries a concrete server title it must stop
+            // participating, otherwise create-time "New Session" can shadow
+            // the canonical title forever after a missed title event.
+            provisionalTitle: inventoryIsConcrete ? undefined : current?.provisionalTitle ?? provisionalTitle,
             canonical: current?.canonical ?? canonical,
           }, !sameInventory(current?.inventory, inventory)))
         }

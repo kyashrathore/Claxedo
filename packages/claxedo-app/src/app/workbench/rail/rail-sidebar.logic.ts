@@ -1,6 +1,18 @@
 import { getFilename } from "@/lib/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
+import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
+
+export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
+  return resolveSessionTitle({
+    // Projection output is already resolved state, not a new optimistic input.
+    // Treating it as provisional gives even a stale "New Session" placeholder
+    // precedence over fresh concrete inventory.
+    directoryTitle: projectedTitle,
+    inventoryTitle: title,
+    inventoryUpdatedAt: updatedAt,
+  }) ?? "Untitled session"
+}
 
 /**
  * The owner/repo label shown for a project in the rail, derived from (in order)

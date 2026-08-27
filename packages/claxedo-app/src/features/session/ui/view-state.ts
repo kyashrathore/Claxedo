@@ -160,6 +160,17 @@ export function timelineVirtualRowKey(input: {
   return input.rowKey ?? `removed:${input.index}`
 }
 
+export function timelineVirtualEntry<Item, Row>(input: {
+  rowKey: string
+  items: ReadonlyMap<string, Item>
+  rows: ReadonlyMap<string, Row>
+}) {
+  const item = input.items.get(input.rowKey)
+  const row = input.rows.get(input.rowKey)
+  if (!item || !row) return undefined
+  return { item, row }
+}
+
 export function sessionSwitchResetPlan(input: {
   locationHash: string
   pendingMessage: string | undefined

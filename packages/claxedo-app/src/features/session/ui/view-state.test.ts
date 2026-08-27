@@ -23,6 +23,7 @@ import {
   timelineInteractionPlan,
   timelineMountSessionKey,
   timelineShouldForceNativeBottom,
+  timelineVirtualEntry,
   timelineVirtualRowKey,
   visibleSessionUserMessages,
 } from "./view-state"
@@ -309,6 +310,27 @@ describe("Claxedo session loaded-empty rendering", () => {
     expect(timelineInitialRenderOverscan({ cachedMeasurementCount: 18 })).toBe(6)
     expect(timelineVirtualRowKey({ rowKey: "user:msg_1", index: 3 })).toBe("user:msg_1")
     expect(timelineVirtualRowKey({ rowKey: undefined, index: 3 })).toBe("removed:3")
+  })
+
+  test("does not pair a stale virtual item with a missing row during a session switch", () => {
+    const item = { index: 3, start: 120, size: 60 }
+    const row = { _tag: "TurnGap" }
+
+    expect(timelineVirtualEntry({
+      rowKey: "turn:msg_1",
+      items: new Map([["turn:msg_1", item]]),
+      rows: new Map<string, typeof row>(),
+    })).toBeUndefined()
+    expect(timelineVirtualEntry({
+      rowKey: "turn:msg_1",
+      items: new Map<string, typeof item>(),
+      rows: new Map([["turn:msg_1", row]]),
+    })).toBeUndefined()
+    expect(timelineVirtualEntry({
+      rowKey: "turn:msg_1",
+      items: new Map([["turn:msg_1", item]]),
+      rows: new Map([["turn:msg_1", row]]),
+    })).toEqual({ item, row })
   })
 
   test("timeline interaction scrolls expand overscan and yield after user gesture", () => {

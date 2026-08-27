@@ -87,6 +87,7 @@ import {
   timelineInitialRevealShouldScroll,
   timelineInitialRevealVisibility,
   timelineInteractionPlan,
+  timelineVirtualEntry,
 } from "./view-state"
 import {
   applyTimelinePrependAnchor,
@@ -726,9 +727,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
   const timelineRowByKey = createMemo(() => new Map(timelineRows().map((row) => [TimelineRow.key(row), row] as const)))
   const virtualItemByKey = createMemo(
-    () => new Map(virtualizer.getVirtualItems().map((item) => [item.key, item] as const)),
+    () => new Map(virtualizer.getVirtualItems().map((item) => [String(item.key), item] as const)),
   )
-  const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => item.key as string))
+  const virtualRowKeys = createMemo(() => virtualizer.getVirtualItems().map((item) => String(item.key)))
   const messageRowIndex = createMemo(() => {
     const result = new Map<string, number>()
     timelineRows().forEach((row, index) => {
@@ -1602,66 +1603,75 @@ export function MessageTimeline(props: MessageTimelineProps) {
   function TimelineRowView(props: { row: TimelineRow.TimelineRow; onSizeChange?: () => void }) {
     return renderTimelineRow(() => props.row, props.onSizeChange)
   }
-
   function VirtualTimelineRow(props: { rowKey: string }) {
-    let element: HTMLDivElement
-    const initialItem = virtualItemByKey().get(props.rowKey)!
-    const initialRow = timelineRowByKey().get(props.rowKey)!
-    const item = createMemo(() => virtualItemByKey().get(props.rowKey) ?? initialItem)
-    const row = createMemo(() => timelineRowByKey().get(props.rowKey) ?? initialRow)
-    const asyncFile = () => {
-      const value = row()
+    let element: HTMLDivElement | undefined
+    const entry = createMemo(() => timelineVirtualEntry({
+      rowKey: props.rowKey,
+      items: virtualItemByKey(),
+      rows: timelineRowByKey(),
+    }))
+    const asyncFile = (value: TimelineRow.TimelineRow) => {
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
       const part = getMsgPart(value.group.ref.messageID, value.group.ref.partID)
       return part?.type === "tool" && ["edit", "write", "apply_patch"].includes(part.tool)
     }
-    const [ready, setReady] = createSignal(initialItem.size <= timelineFallbackItemSize || !asyncFile())
-
+    const [contentReady, setContentReady] = createSignal(false)
+    const ready = () => {
+      const current = entry()
+      return contentReady() || !!current && (current.item.size <= timelineFallbackItemSize || !asyncFile(current.row))
+    }
     let contentMeasureFrame: number | undefined
     onCleanup(() => contentMeasureFrame !== undefined && cancelAnimationFrame(contentMeasureFrame))
-    onMount(() => virtualizer.measureElement(element))
-
+    onMount(() => element && virtualizer.measureElement(element))
     createEffect(
       on(
-        () => item().index,
+        () => entry()?.item.index,
         () => {
-          virtualizer.measureElement(element)
+          if (element) virtualizer.measureElement(element)
         },
         { defer: true },
       ),
     )
 
     return (
-      <div
-        data-timeline-key={props.rowKey}
-        data-timeline-row-rich-ready={ready() ? "true" : "false"}
-        style={{
-          position: "absolute",
-          top: `${item().start}px`,
-          left: "0",
-          width: "100%",
-          height: `${item().size}px`,
-          overflow: "clip",
-          "overflow-clip-margin": row()._tag === "TurnGap" ? undefined : "0.5px",
-        }}
-      >
-        <div
-          ref={(value) => {
-            element = value
-          }}
-          data-index={item().index}
-          style={timelineRowFrameStyle({ size: item().size, minHeight: ready() ? undefined : initialItem.size })}
-        >
-          <TimelineRowView
-            row={row()}
-            onSizeChange={() => {
-              setReady(true)
-              if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
-              contentMeasureFrame = scheduleConnectedMeasure(element, (el) => virtualizer.measureElement(el))
+      <Show when={entry()}>
+        {(current) => (
+          <div
+            data-timeline-key={props.rowKey}
+            data-timeline-row-rich-ready={ready() ? "true" : "false"}
+            style={{
+              position: "absolute",
+              top: `${current().item.start}px`,
+              left: "0",
+              width: "100%",
+              height: `${current().item.size}px`,
+              overflow: "clip",
+              "overflow-clip-margin": current().row._tag === "TurnGap" ? undefined : "0.5px",
             }}
-          />
-        </div>
-      </div>
+          >
+            <div
+              ref={(value) => {
+                element = value
+                virtualizer.measureElement(value)
+              }}
+              data-index={current().item.index}
+              style={timelineRowFrameStyle({
+                size: current().item.size,
+                minHeight: ready() ? undefined : current().item.size,
+              })}
+            >
+              <TimelineRowView
+                row={current().row}
+                onSizeChange={() => {
+                  setContentReady(true)
+                  if (contentMeasureFrame !== undefined) cancelAnimationFrame(contentMeasureFrame)
+                  if (element) contentMeasureFrame = scheduleConnectedMeasure(element, (el) => virtualizer.measureElement(el))
+                }}
+              />
+            </div>
+          </div>
+        )}
+      </Show>
     )
   }
 

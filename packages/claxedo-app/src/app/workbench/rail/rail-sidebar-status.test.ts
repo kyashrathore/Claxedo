@@ -2,9 +2,12 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
+  mergeRailRequestRead,
+  mergeRailStatusRead,
   pruneSidebarSessionStatusBatches,
   publishFocusedRailSessionMeta,
   railBatchData,
+  readRailBatchLeg,
   sidebarSessionStatusBatches,
 } from "./rail-sidebar-status"
 import {
@@ -13,6 +16,7 @@ import {
   isDisclosureToggleKey,
   isRootWorktreeRef,
   sessionProjectSort,
+  sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
   primedSessionStatusType,
@@ -102,6 +106,16 @@ describe("primedSessionStatusType", () => {
   test("preserves canonical busy state instead of replacing it with idle", () => {
     expect(primedSessionStatusType({ type: "busy" })).toBe("busy")
     expect(primedSessionStatusType()).toBe("idle")
+  })
+})
+
+describe("sessionRowTitle", () => {
+  test("fresh concrete inventory beats a stale projected placeholder", () => {
+    expect(sessionRowTitle(
+      "Usage limit is not working",
+      "New Session",
+      20,
+    )).toBe("Usage limit is not working")
   })
 })
 
@@ -362,6 +376,27 @@ describe("publishFocusedRailSessionMeta", () => {
     expect(published).toBe(false)
     expect(applied).toEqual([])
   })
+
+  test("publishes successful legs without inventing data for failed legs", () => {
+    const applied: unknown[] = []
+    const focused = target("central:ses_a", "ses_a")
+
+    publishFocusedRailSessionMeta({
+      focused,
+      group: group([focused]),
+      statuses: { ses_a: "busy" },
+      permissions: undefined,
+      questions: [{ id: "q1" }],
+      apply: (payload) => applied.push(payload),
+    })
+
+    expect(applied).toEqual([{
+      sessionID: "ses_a",
+      status: { ses_a: "busy" },
+      permissions: undefined,
+      questions: [{ id: "q1" }],
+    }])
+  })
 })
 
 describe("railBatchData", () => {
@@ -376,5 +411,35 @@ describe("railBatchData", () => {
     // used to answer that assertion with `{}` and clear every row to idle.
     expect(() => railBatchData("session status")({ data: undefined })).toThrow(/session status unavailable/)
     expect(() => railBatchData("permissions")({})).toThrow(/permissions unavailable/)
+  })
+
+  test("settles each read independently so one failed endpoint cannot erase the others", async () => {
+    const [status, permissions] = await Promise.all([
+      readRailBatchLeg("session status", Promise.resolve({ data: { ses_a: { type: "busy" } } })),
+      readRailBatchLeg("permissions", Promise.resolve({ data: undefined })),
+    ])
+
+    expect(status).toEqual({ ok: true, value: { ses_a: { type: "busy" } } })
+    expect(permissions).toEqual({ ok: false })
+  })
+})
+
+describe("rail batch projection", () => {
+  const targets = [{ key: "central:ses_a", sessionID: "ses_a" }]
+
+  test("preserves failed legs and returns the same reference for a repeated successful leg", () => {
+    const current = { "central:ses_a": { questions: [] as { id: string; sessionID: string }[] } }
+
+    const next = mergeRailRequestRead(current, targets, undefined, [])
+
+    expect(next).toBe(current)
+  })
+
+  test("projects successful status absence as idle exactly once", () => {
+    const current = { "central:ses_a": "busy" }
+    const settled = mergeRailStatusRead(current, targets, {})
+
+    expect(settled).toEqual({ "central:ses_a": undefined })
+    expect(mergeRailStatusRead(settled, targets, {})).toBe(settled)
   })
 })

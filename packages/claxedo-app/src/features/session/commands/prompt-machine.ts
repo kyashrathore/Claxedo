@@ -88,8 +88,12 @@ export function admitPromptSubmission(input: {
   readonly commentCount?: number
   readonly working?: boolean
 }): PromptAdmission {
+  // The composer has no queue contract. While a turn is active the primary
+  // control is Stop, regardless of whether the user has already drafted the
+  // next message; admitting that draft creates a competing durable turn.
+  if (input.working) return "abort-active"
   if (canStartSubmit(input.mode, input)) return "admit"
-  return input.working ? "abort-active" : "ignore"
+  return "ignore"
 }
 
 export function initialPromptMachineState(): PromptMachineState {
@@ -105,13 +109,15 @@ export function transitionPromptMachine(
 
   if (state.s === "draft") {
     if (event.t !== "SUBMIT") return unchanged(state)
-    if (!canStartSubmit(event.mode, {
+    const admission = admitPromptSubmission({
+      mode: event.mode,
       bodyMd: event.snapshot.bodyMd,
       imageCount: event.snapshot.images.length,
       commentCount: event.snapshot.comments.length,
-    })) {
-      return event.working ? { next: state, effects: effects("abortActivePrompt") } : unchanged(state)
-    }
+      working: event.working,
+    })
+    if (admission === "abort-active") return { next: state, effects: effects("abortActivePrompt") }
+    if (admission === "ignore") return unchanged(state)
     return startPromptSubmission(event.mode, event.snapshot)
   }
 

@@ -109,6 +109,11 @@
  *  12. Selecting Local -> New local worktree on a draft provisions a real Git
  *      worktree, waits for the server's real `worktree.ready` event, dispatches
  *      the first prompt in that new directory, and renders the scripted reply.
+ *  13. A native Codex command awaiting real app-server approval keeps its rail
+ *      title and permission dot, owns the permission dock across a session
+ *      switch, never exposes a second composer, and rehydrates as Codex with
+ *      the same model after denial. The permission-mode trigger must never
+ *      transiently claim Claxedo Auto before the authoritative Codex modes load.
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state
  *   (#3 in `e2e/INVARIANTS.md`): every oracle call here proves it against REAL
@@ -424,6 +429,10 @@
  *   busy/abort/error escalation UI (`core-busy-abort-errors`); real-credential
  *   coverage (`live-real-harness-smoke`, Tier L).
  */
+import {
+  CLAXEDO_ALLOW_SAFE_ID,
+  CLAXEDO_ASK_ALWAYS_ID,
+} from "../../src/features/session/permission/modes"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 // `node:sqlite` needs Node >= 22.5, but Playwright LOADS this file during
@@ -448,7 +457,7 @@ import {
 } from "../helpers/scripted-model-server"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
-import { expectRailRowVisible } from "../helpers/rail-oracle"
+import { expectRailRowVisible, expectRailStatusAbsent, expectRailTitleSettled } from "../helpers/rail-oracle"
 
 const execFileAsync = promisify(execFile)
 
@@ -1876,6 +1885,121 @@ test.describe("real harness journeys @core @tier-real", () => {
       option: /^Codex$/,
       harnessKey: "codex-app-server",
     })
+  })
+
+  test("codex pending approval survives session switches without duplicate prompt, rail, or hydration regressions — behavior 13", async ({
+    page,
+  }) => {
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    requireBinary(binary, "codex", "install the Codex CLI to exercise a real app-server approval request.")
+    const dir = await makeWorkspace("codex-sdk-pending-approval", "codex-app-server")
+    await seedOneProject(page, dir)
+    await page.addInitScript(() => {
+      const key = "tier-real:permission-mode-history"
+      const record = () => {
+        const prior = JSON.parse(sessionStorage.getItem(key) ?? "[]") as string[]
+        const modes = Array.from(document.querySelectorAll('[data-action="prompt-permission-mode"]'))
+          .filter((element) => element.getClientRects().length > 0)
+          .map((element) => element.getAttribute("data-mode") ?? "<unresolved>")
+        sessionStorage.setItem(key, JSON.stringify([...new Set([...prior, ...modes])]))
+        requestAnimationFrame(record)
+      }
+      requestAnimationFrame(record)
+    })
+
+    scripted?.resetCounts()
+    const firstInput = await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, "codex-app-server")
+    await waitForHarnessReady(page)
+    const firstMarker = `APPROVAL-SWITCH-TARGET-${Date.now().toString().slice(-6)}`
+    await composePrompt(page, firstInput, `Reply with exactly this one token and nothing else: ${firstMarker}`)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    await expectAssistantReplyVisible(page, firstMarker)
+    const firstSessionId = /(?:\/s\/|\/session\/)([^/]+)$/.exec(new URL(page.url()).pathname)?.[1]
+    expect(firstSessionId).toBeTruthy()
+    await expectRailTitleSettled({ page, sessionId: decodeURIComponent(firstSessionId!), timeout: 60_000 })
+
+    const pendingInput = await openDraftPrompt(page, dir)
+    await switchDraftHarness(page, "codex-app-server")
+    await waitForHarnessReady(page)
+    const permissionMode = page.locator('[data-action="prompt-permission-mode"]').last()
+    await expect(permissionMode).toHaveAttribute("data-mode", "workspace-write", { timeout: 30_000 })
+
+    const marker = `PENDING-APPROVAL-${Date.now().toString().slice(-6)}`
+    const outsidePath = path.join(os.tmpdir(), `claxedo-tier-real-denied-${Date.now()}.txt`)
+    const approvalTool = {
+      name: "exec_command",
+      input: {
+        cmd: `printf denied-write > ${JSON.stringify(outsidePath)}`,
+        sandbox_permissions: "require_escalated",
+        justification: "Tier R must exercise the real Codex approval boundary.",
+      },
+      whenPromptIncludes: marker,
+    }
+    scripted?.scriptTool(approvalTool)
+    await composePrompt(page, pendingInput, `Run the requested command, then reply with exactly ${marker}.`)
+    await page.locator(SELECTORS.submitControl).last().click()
+    await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 30_000 })
+    const pendingSessionId = /(?:\/s\/|\/session\/)([^/]+)$/.exec(new URL(page.url()).pathname)?.[1]
+    expect(pendingSessionId).toBeTruthy()
+    const pendingId = decodeURIComponent(pendingSessionId!)
+    await expect
+      .poll(() => scripted?.requests.some((request) => request.reply.kind === "tool") ?? false, {
+        timeout: 30_000,
+        message: "native Codex never received the scripted command tool call",
+      })
+      .toBe(true)
+    const approvalToolRequest = scripted?.requests.find((request) => request.reply.kind === "tool")
+    expect(approvalToolRequest?.reply).toEqual({
+      kind: "tool",
+      name: approvalTool.name,
+      input: approvalTool.input,
+    })
+    expectScriptedTraffic("responses", 2)
+
+    // Session surfaces stay mounted for fast switching; scope assertions to
+    // the dock the user can actually see, not a stashed background surface.
+    const permissionDock = page.locator('[data-component="dock-prompt"][data-kind="permission"]').filter({ visible: true })
+    await expect(permissionDock).toBeVisible({ timeout: 60_000 })
+    // A pending approval owns the composer. This is the user-visible guard
+    // against submitting a second prompt into an already-active runtime turn.
+    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+    await expect(page.locator(SELECTORS.submitControl)).toHaveCount(0)
+    const pendingRow = await expectRailRowVisible({ page, sessionId: pendingId, timeout: 30_000 })
+    await expect(pendingRow.locator('[data-slot="session-navigation-title"]')).toHaveText(/\S/)
+    await expect(pendingRow.locator('[data-sidebar-status="permission"]')).toHaveCount(1, { timeout: 30_000 })
+
+    const pageErrors: string[] = []
+    page.on("pageerror", (error) => pageErrors.push(error.message))
+    await page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${firstSessionId}"]`).click()
+    await expect.poll(() => new URL(page.url()).pathname.endsWith(firstSessionId!)).toBe(true)
+    await expect(permissionDock).toHaveCount(0)
+    await expect(pendingRow.locator('[data-sidebar-status="permission"]')).toHaveCount(1)
+    await pendingRow.click()
+    await expect.poll(() => new URL(page.url()).pathname.endsWith(pendingSessionId!)).toBe(true)
+    await expect(permissionDock).toBeVisible({ timeout: 30_000 })
+    expect(pageErrors.filter((message) => message.includes("_tag") || message.includes("Cannot read properties of undefined"))).toEqual([])
+
+    await page.getByRole("button", { name: "Deny", exact: true }).click()
+    await expect(permissionDock).toHaveCount(0, { timeout: 30_000 })
+    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toBeVisible({ timeout: 30_000 })
+    const modelControl = page.locator('[data-action="prompt-harness-model"]').filter({ visible: true }).last()
+    await expect(modelControl).toHaveAttribute("data-harness", "codex-app-server")
+    await expect(modelControl).not.toContainText(/OpenCode|Select model|Connecting/i, { timeout: 30_000 })
+    await expect(page.getByText("Session is already processing a message", { exact: false })).toHaveCount(0)
+    await expect(page.getByTestId("first-turn-recovery-card")).toHaveCount(0)
+    await expect(page.locator(".error-card")).toHaveCount(0)
+    await expectRailTitleSettled({ page, sessionId: pendingId, timeout: 60_000 })
+    await expectRailStatusAbsent({ page, sessionId: pendingId, timeout: 60_000 })
+    await expect.poll(() => fs.stat(outsidePath).then(() => true).catch(() => false)).toBe(false)
+
+    const permissionModes = await page.evaluate(() =>
+      JSON.parse(sessionStorage.getItem("tier-real:permission-mode-history") ?? "[]") as string[]
+    )
+    expect(permissionModes).toContain("workspace-write")
+    expect(permissionModes).not.toContain(CLAXEDO_ALLOW_SAFE_ID)
+    expect(permissionModes).not.toContain(CLAXEDO_ASK_ALWAYS_ID)
   })
 
   test("codex native SDK runs a provider-issued spawn_agent call as an openable subagent", async ({ page }) => {

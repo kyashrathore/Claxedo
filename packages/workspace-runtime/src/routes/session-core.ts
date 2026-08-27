@@ -31,6 +31,7 @@ import {
   type CompatEnvelope,
 } from "../compat-events"
 import { recovering } from "@claxedo/agent-sdk-runtime/status"
+import { isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import {
   compatScope,
@@ -754,33 +755,44 @@ export function createSessionRoutes(opts: Opts) {
       const activeTurn = runtime && opts.createActiveTurnScope
         ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
         : undefined
-      const turn = await (async () => {
-        try {
-          return runtime
-            ? await runRuntimePromptTurn({
-            runtime,
-            sessionId: id,
-            directory,
-            body,
-            publishGlobal: opts.publishGlobal,
-            publishStatus: (event) => opts.sessionBus.publish(event),
-            activeTurn,
-              })
-            : await runSessionPromptTurn({
-            adapter,
-            sessionId: id,
-            directory,
-            body,
-            publishGlobal: opts.publishGlobal,
-            publishStatus: (event) => opts.sessionBus.publish(event),
-            createActiveTurnScope: opts.createActiveTurnScope
-              ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
-              : undefined,
-              })
-        } finally {
-          await flushDocumentsAfterTurn(opts, id)
+      let turn: Awaited<ReturnType<typeof runRuntimePromptTurn>>
+      try {
+        turn = await (async () => {
+          try {
+            return runtime
+              ? await runRuntimePromptTurn({
+                  runtime,
+                  sessionId: id,
+                  directory,
+                  body,
+                  publishGlobal: opts.publishGlobal,
+                  publishStatus: (event) => opts.sessionBus.publish(event),
+                  activeTurn,
+                })
+              : await runSessionPromptTurn({
+                  adapter,
+                  sessionId: id,
+                  directory,
+                  body,
+                  publishGlobal: opts.publishGlobal,
+                  publishStatus: (event) => opts.sessionBus.publish(event),
+                  createActiveTurnScope: opts.createActiveTurnScope
+                    ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
+                    : undefined,
+                })
+          } finally {
+            await flushDocumentsAfterTurn(opts, id)
+          }
+        })()
+      } catch (error) {
+        if (isAgentRuntimeTurnAdmissionError(error)) {
+          return c.json(errorBody(
+            "turn_already_active",
+            `Session ${id} is already processing a message`,
+          ), 409)
         }
-      })()
+        throw error
+      }
       await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
       const output = sessionPromptReply(turn)
       if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
@@ -1031,6 +1043,17 @@ export function createSessionRoutes(opts: Opts) {
         }
       }
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
+      let settleRuntimeAdmission: ((outcome: "accepted" | "rejected") => void) | undefined
+      let runtimeAdmissionSettled = false
+      const runtimeAdmission = runtime
+        ? new Promise<"accepted" | "rejected">((resolve) => {
+            settleRuntimeAdmission = (outcome) => {
+              if (runtimeAdmissionSettled) return
+              runtimeAdmissionSettled = true
+              resolve(outcome)
+            }
+          })
+        : undefined
       ;(async () => {
         try {
           const activeTurn = runtime && opts.createActiveTurnScope
@@ -1046,6 +1069,7 @@ export function createSessionRoutes(opts: Opts) {
                 publishStatus: (event) => opts.sessionBus.publish(event),
                 activeTurn,
                 streamErrorMessage: streamTurnErrorMessage,
+                onAdmitted: () => settleRuntimeAdmission?.("accepted"),
               })
             : await runSessionPromptTurn({
                 adapter,
@@ -1062,16 +1086,35 @@ export function createSessionRoutes(opts: Opts) {
               })
           await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
         } catch (error) {
+          if (isAgentRuntimeTurnAdmissionError(error)) {
+            if (body.messageID) {
+              const admitted = promptAdmissions.get(id)
+              admitted?.delete(body.messageID)
+              if (admitted?.size === 0) promptAdmissions.delete(id)
+            }
+            settleRuntimeAdmission?.("rejected")
+            return
+          }
+          // Preserve prompt_async's established fire-and-forget contract for
+          // non-admission failures. They still publish the canonical turn error.
+          settleRuntimeAdmission?.("accepted")
           // Keep a human-safe headline but never discard the cause: route the real
           // message through sessionError (→ firstTurnErrorData), so it classifies
           // (unmatched → "unknown") and the original text reaches the raw-detail
           // disclosure instead of being flattened to the literal "Stream error".
           opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
         } finally {
+          settleRuntimeAdmission?.("accepted")
           await flushDocumentsAfterTurn(opts, id)
           await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))
         }
       })()
+      if (await runtimeAdmission === "rejected") {
+        return c.json(errorBody(
+          "turn_already_active",
+          `Session ${id} is already processing a message`,
+        ), 409)
+      }
       return c.body(null, 204)
     })
     .get("/agent", async (c) => {

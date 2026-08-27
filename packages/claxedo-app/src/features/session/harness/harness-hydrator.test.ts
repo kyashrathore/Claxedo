@@ -17,6 +17,7 @@ function createCache(): HarnessHydratorCache<ScopeInput> & { seen: Map<string, s
     pending,
     getSeen: (scope) => seen.get(scope),
     setSeen: (scope, key) => seen.set(scope, key),
+    clearSeen: (scope) => seen.delete(scope),
     getPending: (scope) => pending.get(scope),
     setPending: (scope, value) => pending.set(scope, value),
     removePending: (scope, value) => {
@@ -49,6 +50,7 @@ function createSubject(input?: {
   workspaceRuntime?: boolean
   workspaceKind?: "local" | "cloud" | "user-hosted" | null
   sessionConfig?: unknown
+  sessionConfigs?: unknown[]
   statusBody?: unknown
   statusOk?: boolean
 }) {
@@ -61,18 +63,22 @@ function createSubject(input?: {
     state: (scope) => state.get(scope),
     resetWorkspaceDraftHarness: (scope) => calls.push(`reset:${scope}`),
     applyStatus: async (_scope, data) => calls.push(`apply:${data.type ?? ""}:${data.model ?? ""}`),
+    setPollingHydration: (_scope, type) => calls.push(`polling:${type ?? ""}`),
     setReadyHydration: (_scope, type) => calls.push(`ready:${type}`),
-    setReadyFallback: (_scope, type) => calls.push(`fallback:${type}`),
     fetchConfigOptions: (_scope, type) => calls.push(`options:${type}`),
     refresh: async (directory, harness, opts) => calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
     workspaceRuntime: () => input?.workspaceRuntime ?? false,
     runtime: {
       useLocalHarnessConfig: () => input?.local ?? true,
       workspaceKind: () => input?.workspaceKind,
-      harnessSessionFetch: () => async () => response(input?.sessionConfig ?? {
-        harness: { type: "codex-acp" },
-        model: { modelID: "gpt-5.5" },
-      }),
+      harnessSessionFetch: () => async () => response(
+        input?.sessionConfigs?.length
+          ? input.sessionConfigs.shift()
+          : input?.sessionConfig ?? {
+            harness: { type: "codex-acp" },
+            model: { modelID: "gpt-5.5" },
+          },
+      ),
       localHarnessConfigFetch: () => async () =>
         response(input?.statusBody ?? {
           type: "claude-acp",
@@ -176,6 +182,72 @@ describe("harness hydrator", () => {
     expect(subject.cache.seen.get("scope")).toBe("session:ses_1")
   })
 
+  test("keeps an existing session polling and retries when canonical config is temporarily unavailable", async () => {
+    const subject = createSubject({
+      state: harnessState({ harnessMode: "opencode", harness: "opencode", selectedModel: "" }),
+      sessionConfigs: [null, {
+        harness: { type: "codex-app-server" },
+        model: { modelID: "gpt-5.5" },
+      }],
+      // A directory default is not authoritative for an existing session and
+      // must never replace its persisted Codex ownership.
+      statusBody: { type: "opencode", model: "" },
+    })
+    const params: ScopeInput = {
+      directory: "/repo",
+      sessionId: "ses_1",
+      sessionRef: {
+        host: "central",
+        sessionId: "ses_1",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "codex-app-server" },
+      },
+    }
+
+    await subject.hydrator.hydrate("scope", params)
+
+    expect(subject.calls).toEqual(["seed:scope", "polling:codex-app-server"])
+    expect(subject.cache.seen.has("scope")).toBe(false)
+
+    await subject.hydrator.reprobe("scope", params)
+
+    expect(subject.calls).toEqual([
+      "seed:scope",
+      "polling:codex-app-server",
+      "seed:scope",
+      "apply:codex-app-server:gpt-5.5",
+    ])
+    expect(subject.cache.seen.get("scope")).toContain("session:ses_1")
+  })
+
+  test("settles a successful config missing harness identity against the authoritative session ref", async () => {
+    const subject = createSubject({
+      state: harnessState({ harnessMode: "opencode", harness: "opencode", selectedModel: "" }),
+      sessionConfig: {},
+    })
+
+    const params: ScopeInput = {
+      directory: "/repo",
+      sessionId: "ses_1",
+      sessionRef: {
+        host: "central",
+        sessionId: "ses_1",
+        toolSandbox: { kind: "virtual" },
+        harness: { id: "codex-app-server" },
+      },
+    }
+
+    await expect(subject.hydrator.status(params)).resolves.toMatchObject({
+      type: "codex-app-server",
+      status: "error",
+      ready: false,
+    })
+    await subject.hydrator.hydrate("scope", params)
+
+    expect(subject.calls).toEqual(["seed:scope", "apply:codex-app-server:"])
+    expect(subject.cache.seen.get("scope")).toContain("session:ses_1")
+  })
+
   test("rehydrates an existing session when its authoritative ref is upgraded", async () => {
     const subject = createSubject({
       sessionConfig: { harness: { type: "pi" }, model: { modelID: "default" } },
@@ -217,8 +289,8 @@ describe("harness hydrator", () => {
         })
         subject.calls.push("apply")
       },
+      setPollingHydration: () => {},
       setReadyHydration: () => {},
-      setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async () => {},
       workspaceRuntime: () => false,
@@ -259,8 +331,8 @@ describe("harness hydrator", () => {
       },
       resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => {},
+      setPollingHydration: () => {},
       setReadyHydration: () => {},
-      setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async (directory) => {
         if (directory !== "/one") return
@@ -296,8 +368,8 @@ describe("harness hydrator", () => {
       state: (scope) => subject.state.get(scope),
       resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => subject.calls.push("stale-status-applied"),
+      setPollingHydration: () => {},
       setReadyHydration: () => {},
-      setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async () => {},
       workspaceRuntime: () => false,
@@ -336,8 +408,8 @@ describe("harness hydrator", () => {
       }),
       resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => subject.calls.push("status-selection"),
+      setPollingHydration: () => {},
       setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
-      setReadyFallback: () => {},
       fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
       refresh: async () => {},
       workspaceRuntime: () => false,
@@ -367,8 +439,8 @@ describe("harness hydrator", () => {
       }),
       resetWorkspaceDraftHarness: () => {},
       applyStatus: async (_scope, data) => subject.calls.push(`apply:${data.type ?? ""}:${data.model ?? ""}`),
+      setPollingHydration: () => {},
       setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
-      setReadyFallback: () => {},
       fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
       refresh: async (directory, harness, opts) => subject.calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
       workspaceRuntime: () => false,
@@ -399,8 +471,8 @@ describe("harness hydrator", () => {
       markServer: (scope) => marks.push(scope),
       resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => {},
+      setPollingHydration: () => {},
       setReadyHydration: () => {},
-      setReadyFallback: () => {},
       fetchConfigOptions: () => {},
       refresh: async () => {},
       workspaceRuntime: () => false,

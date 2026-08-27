@@ -1,4 +1,4 @@
-import { createEffect, createMemo, onCleanup } from "solid-js"
+import { createEffect, createMemo, createResource, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { createSimpleContext } from "@opencode-ai/ui/context"
@@ -14,6 +14,10 @@ import {
   directoryAcceptKey,
   isDirectoryAutoAccepting,
   autoRespondsPermission,
+  autoResponseOwnsPermission,
+  permissionRequestPolicyReady,
+  reconcileAutoPermissionRequests,
+  type PermissionAutoReconciliationState,
 } from "@/features/session/providers/permission-auto-respond"
 import {
   bumpPermissionAutoAcceptVersion,
@@ -30,6 +34,7 @@ type PermissionRespondFn = (input: {
   response: "once" | "always" | "reject"
   directory?: string
 }) => Promise<void>
+type PermissionDirectory = string
 
 function isNonAllowRule(rule: unknown) {
   if (!rule) return false
@@ -90,6 +95,7 @@ const permissionContextInput = {
         autoAccept: {} as Record<string, boolean>,
       }),
     )
+    const [failedAutoResponses, setFailedAutoResponses] = createStore<Record<string, boolean>>({})
 
     // When config has permission: "allow", auto-enable directory-level auto-accept
     createEffect(() => {
@@ -122,6 +128,11 @@ const permissionContextInput = {
     function respondOnce(permission: PermissionRequest, directory?: string) {
       const hit = markPermissionAutoResponded(permission.id)
       if (hit) return
+      setFailedAutoResponses(
+        produce((draft) => {
+          delete draft[permission.id]
+        }),
+      )
       // Claxedo answering on the user's behalf — "Approve for me" / directory
       // auto-accept — is always a grant; there is no auto-deny path.
       phCapture("permission_decided", {
@@ -134,7 +145,9 @@ const permissionContextInput = {
         permissionID: permission.id,
         response: "once",
         directory,
-      }).catch(() => undefined)
+      }).catch(() => {
+        setFailedAutoResponses(permission.id, true)
+      })
     }
 
     function isAutoAccepting(sessionID: string, directory?: string) {
@@ -165,6 +178,43 @@ const permissionContextInput = {
       respondOnce(perm, e.name)
     })
     onCleanup(unsubscribe)
+
+    // Events can arrive before persisted permission policy is ready. Model the
+    // authoritative pending-list reconciliation as a resource keyed by the
+    // active directory and hydrated policy. That keeps readiness derived from
+    // the request itself instead of mirroring query results through an effect.
+    const reconciliationSource = createMemo(() => {
+      if (!ready()) return
+      const currentDirectory = directory()
+      if (!currentDirectory) return
+      const policyKey = Object.entries(store.autoAccept)
+        .filter(([, enabled]) => enabled)
+        .map(([key]) => key)
+        .sort()
+        .join("\n")
+      return { directory: currentDirectory, policyKey }
+    })
+    const [autoReconciliation] = createResource(reconciliationSource, async (source): Promise<{
+      directory: PermissionDirectory
+      state: PermissionAutoReconciliationState
+    }> => {
+      if (!source.policyKey) return { directory: source.directory, state: "ready" }
+      const state = await reconcileAutoPermissionRequests({
+        directory: source.directory,
+        active: () => ready() && directory() === source.directory,
+        autoAccept: () => store.autoAccept,
+        sessions: () => directorySessions(source.directory),
+        list: async () => (await globalSDK.client.permission.list({ directory: source.directory })).data ?? [],
+        respond: (permission) => respondOnce(permission, source.directory),
+      })
+      return { directory: source.directory, state }
+    })
+
+    function reconciliationFor(target: PermissionDirectory): PermissionAutoReconciliationState | undefined {
+      if (reconciliationSource()?.directory === target && autoReconciliation.loading) return "pending"
+      const current = autoReconciliation()
+      return current?.directory === target ? current.state : undefined
+    }
 
     function enableDirectory(directory: string) {
       const key = directoryAcceptKey(directory)
@@ -234,9 +284,17 @@ const permissionContextInput = {
 
     return {
       ready,
+      requestPolicyReady(directory: PermissionDirectory) {
+        return permissionRequestPolicyReady(ready(), reconciliationFor(directory))
+      },
       respond,
       autoResponds(permission: PermissionRequest, directory?: string) {
-        return shouldAutoRespond(permission, directory)
+        const policyAutoResponds = shouldAutoRespond(permission, directory)
+        return autoResponseOwnsPermission({
+          policyAutoResponds,
+          reconciliation: directory ? reconciliationFor(directory) : undefined,
+          responseFailed: failedAutoResponses[permission.id] ?? false,
+        })
       },
       isAutoAccepting,
       isAutoAcceptingDirectory,

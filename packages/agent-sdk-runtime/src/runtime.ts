@@ -121,6 +121,22 @@ export type AgentRuntimeTurnStartResult = {
   prompt: PromptInput
 }
 
+export class AgentRuntimeTurnAdmissionError extends Error {
+  readonly code = "turn_already_active"
+
+  constructor(readonly sessionId: string) {
+    super("Session is already processing a message")
+    this.name = "AgentRuntimeTurnAdmissionError"
+  }
+}
+
+export function isAgentRuntimeTurnAdmissionError(error: unknown): error is AgentRuntimeTurnAdmissionError {
+  return error instanceof AgentRuntimeTurnAdmissionError || (
+    !!error && typeof error === "object" &&
+    (error as { code?: unknown }).code === "turn_already_active"
+  )
+}
+
 type Subscriber = {
   input: AgentRuntimeSubscribeInput
   push(event: AgentRuntimeEventEnvelope): void
@@ -148,6 +164,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     factory.create({ store, eventHub }),
   ]))
   const subscribers = new Set<Subscriber>()
+  // Prompt admission belongs to the runtime, not to a downstream harness
+  // iterator. Claim the session before persisting the user/assistant rows so a
+  // rejected concurrent prompt cannot manufacture a failed turn or overwrite
+  // the status of the turn that is actually running.
+  const activeTurnAdmissions = new Map<string, object>()
 
   const adapterFor = async (harness: SessionHarness) => {
     const existing = adapters.get(key(harness))
@@ -202,7 +223,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return committed
   }
 
-  const runTurn = async (sessionId: string, prompt: PromptInput, directory: RuntimeDirectory, adapter: AgentHarnessAdapter, clearsHandoff = false) => {
+  const runTurn = async (
+    sessionId: string,
+    prompt: PromptInput,
+    directory: RuntimeDirectory,
+    adapter: AgentHarnessAdapter,
+    admission: object,
+    clearsHandoff = false,
+  ) => {
+    const ownsAdmission = () => activeTurnAdmissions.get(sessionId) === admission
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
@@ -290,11 +319,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       assistantMessageId: stableAssistantMessageId,
       created: Date.now(),
       onEvent: () => {},
-      onRuntimeEvent: (event) => publish({
-        sessionId: event.sessionId,
-        directory: event.directory,
-        payload: event.payload,
-      }),
+      onRuntimeEvent: (event) => {
+        if (!ownsAdmission()) return
+        publish({
+          sessionId: event.sessionId,
+          directory: event.directory,
+          payload: event.payload,
+        })
+      },
     })
     const router = createChildEventRouter({
       parent: parentProjector,
@@ -309,15 +341,21 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         assistantMessageId: target.assistantMessageId,
         created: target.created,
         onEvent: () => {},
-        onRuntimeEvent: (event) => publish({
-          sessionId: event.sessionId,
-          directory: event.directory,
-          payload: event.payload,
-        }),
+        onRuntimeEvent: (event) => {
+          if (!ownsAdmission()) return
+          publish({
+            sessionId: event.sessionId,
+            directory: event.directory,
+            payload: event.payload,
+          })
+        },
       }),
-      onDiagnostic: (payload) => publish({ sessionId, directory, payload }),
+      onDiagnostic: (payload) => {
+        if (ownsAdmission()) publish({ sessionId, directory, payload })
+      },
     })
     const maybeEmitTitle = async () => {
+      if (!ownsAdmission()) return
       if (titleEmitted) return
       titleEmitted = true
       const session = store.getSession(sessionId) as { title?: string | null; time?: { created?: number } } | null
@@ -326,6 +364,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       if (!text) return
       const title = fallbackSessionTitle(text)
       await adapter.updateSession(sessionId, { title }, directory)
+      if (!ownsAdmission()) return
       commitAndPublish(sessionId, directory, sessionUpdated(buildSession({
         id: sessionId,
         directory: runtimeDirectory(directory),
@@ -337,6 +376,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     try {
       let terminal = false
       for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
+        // An acknowledged abort may release this session for a replacement
+        // turn before a misbehaving adapter closes its old iterator. Fence all
+        // late events from that superseded generation.
+        if (!ownsAdmission()) return
         terminal ||= isTerminalRuntimePayload(payload)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
         // A failed turn has one authoritative terminal publication path below.
@@ -359,7 +402,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         publish({ sessionId, directory, payload })
       }
+      if (!ownsAdmission()) return
       await maybeEmitTitle()
+      if (!ownsAdmission()) return
       if (!terminal) {
         const payload = sessionIdle(sessionId)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
@@ -384,6 +429,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       }
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
+      if (!ownsAdmission()) return
       const message = err instanceof Error ? err.message : "turn failed"
       const finished = store.finishTurn?.({
         sessionId,
@@ -567,24 +613,41 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
         }
-        const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
-        const started = store.startTurn({
-          sessionId: turn.sessionId,
-          ...(agentSessionId ? { agentSessionId } : {}),
-          userMessageId,
-          assistantMessageId,
-          agent: prompt.agent,
-          model: prompt.model,
-          parts: prompt.parts,
-          ...(turn.tools ? { tools: turn.tools } : {}),
-          ...(turn.format ? { format: turn.format } : {}),
-          ...(turn.system ? { system: turn.system } : {}),
-          ...(prompt.variant ? { variant: prompt.variant } : {}),
-        })
-        for (const payload of started?.events ?? []) {
-          publish({ sessionId: turn.sessionId, directory, payload })
+        if (activeTurnAdmissions.has(turn.sessionId)) {
+          throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
         }
-        void runTurn(turn.sessionId, prompt, directory, adapter, !!handoff)
+        const admission = {}
+        activeTurnAdmissions.set(turn.sessionId, admission)
+        try {
+          const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
+          const started = store.startTurn({
+            sessionId: turn.sessionId,
+            ...(agentSessionId ? { agentSessionId } : {}),
+            userMessageId,
+            assistantMessageId,
+            agent: prompt.agent,
+            model: prompt.model,
+            parts: prompt.parts,
+            ...(turn.tools ? { tools: turn.tools } : {}),
+            ...(turn.format ? { format: turn.format } : {}),
+            ...(turn.system ? { system: turn.system } : {}),
+            ...(prompt.variant ? { variant: prompt.variant } : {}),
+          })
+          for (const payload of started?.events ?? []) {
+            publish({ sessionId: turn.sessionId, directory, payload })
+          }
+          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff)
+            .finally(() => {
+              if (activeTurnAdmissions.get(turn.sessionId) === admission) {
+                activeTurnAdmissions.delete(turn.sessionId)
+              }
+            })
+        } catch (error) {
+          if (activeTurnAdmissions.get(turn.sessionId) === admission) {
+            activeTurnAdmissions.delete(turn.sessionId)
+          }
+          throw error
+        }
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
       },
       async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {
@@ -596,6 +659,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             sessionId,
             outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
           })
+          activeTurnAdmissions.delete(sessionId)
         }
         return result
       },
@@ -696,6 +760,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
     },
     dispose() {
+      activeTurnAdmissions.clear()
       for (const subscriber of subscribers) subscriber.close()
       for (const adapter of adapters.values()) adapter.dispose()
       store.close?.()

@@ -673,6 +673,49 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
+  test("rejects a concurrent turn before persisting any part of it", async () => {
+    let release!: () => void
+    const firstTurn = new Promise<void>((resolve) => {
+      release = resolve
+    })
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          await firstTurn
+          yield { type: "finish", sessionId: id }
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "first" })
+    await expect(runtime.turns.start({
+      sessionId: session.id,
+      messageId: "msg_2",
+      text: "second",
+    })).rejects.toThrow("Session is already processing a message")
+
+    expect(rows.getMessages(session.id)).toMatchObject([
+      { info: { id: "msg_1", role: "user" } },
+      { info: { id: "msg_1_r", role: "assistant" } },
+    ])
+    expect(rows.getMessages(session.id)).toHaveLength(2)
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
+      status: "busy",
+    })
+    expect(lastTurnOf(rows, session.id)).toBeUndefined()
+
+    release()
+    await tick()
+    runtime.dispose()
+  })
+
   test("lists sessions created without a directory", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
@@ -862,6 +905,69 @@ describe("createAgentRuntime", () => {
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       status: null,
       lastTurn: { status: "cancelled", reason: "abort", assistantMessageId: "msg_1_r" },
+    })
+    runtime.dispose()
+  })
+
+  test("an acknowledged abort releases admission and fences a stuck turn's late events", async () => {
+    let releaseFirst: (() => void) | undefined
+    const firstTurn = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id, prompt) {
+          if (prompt.userMessageId === "msg_1") {
+            await firstTurn
+            yield messagePartUpdated({
+              id: "stale-part",
+              sessionID: id,
+              messageID: prompt.assistantMessageId,
+              type: "text",
+              text: "stale reply",
+            })
+            yield { type: "finish", sessionId: id }
+            return
+          }
+          yield messagePartUpdated({
+            id: "replacement-part",
+            sessionID: id,
+            messageID: prompt.assistantMessageId,
+            type: "text",
+            text: "replacement reply",
+          })
+          yield { type: "finish", sessionId: id }
+        },
+        abort: async () => ({ ok: true, status: "cancelled" }),
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "first" })
+    await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "cancelled" })
+
+    const replacementEvents = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
+    await expect(runtime.turns.start({
+      sessionId: session.id,
+      messageId: "msg_2",
+      text: "replacement",
+    })).resolves.toMatchObject({ userMessageId: "msg_2" })
+    await replacementEvents
+
+    releaseFirst?.()
+    await tick()
+
+    expect(JSON.stringify(rows.getMessages(session.id))).toContain("replacement reply")
+    expect(JSON.stringify(rows.getMessages(session.id))).not.toContain("stale reply")
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
+      status: null,
+      lastTurn: { status: "completed", assistantMessageId: "msg_2_r" },
     })
     runtime.dispose()
   })

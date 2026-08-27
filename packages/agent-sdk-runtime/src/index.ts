@@ -3,7 +3,9 @@ import type { CompatEvent } from "./compat-events"
 import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport, SessionHarnessId } from "./harness-types"
 
 export {
+  AgentRuntimeTurnAdmissionError,
   createAgentRuntime,
+  isAgentRuntimeTurnAdmissionError,
 } from "./runtime"
 export type {
   AgentHarnessFactory,
