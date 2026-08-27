@@ -74,6 +74,7 @@ import {
   type ClaxedoDaemonDiscovery,
 } from "./server-daemon-discovery"
 import { holdClaxedoDaemonLease } from "./server-daemon-lease"
+import { createDaemonExitLifecycle } from "./daemon-exit-lifecycle"
 import { embeddedServerReadiness } from "./server-readiness"
 import { recordStartupClock } from "../shared/startup-clock-probe"
 import { createProfiler } from "./diagnostics/profiler"
@@ -125,6 +126,7 @@ let initStep: InitStep = { phase: "server_waiting" }
 
 let mainWindow: BrowserWindow | null = null
 let quitting = false
+const daemonExitLifecycle = createDaemonExitLifecycle()
 let daemonLease: Awaited<ReturnType<typeof holdClaxedoDaemonLease>> | undefined
 const loadingComplete = defer<void>()
 
@@ -675,7 +677,10 @@ function wireMenu() {
     restart: () =>
       runRestart({
         packaged: IS_PACKAGED,
-        relaunch: () => app.relaunch(),
+        relaunch: () => {
+          daemonExitLifecycle.handoff()
+          app.relaunch()
+        },
         quit: () => app.quit(),
         reload: () => mainWindow?.webContents.reloadIgnoringCache(),
       }),
@@ -849,8 +854,9 @@ if (browserTabSetup) {
 }
 
 async function shutdown() {
-  await daemonLease?.stop()
+  const lease = daemonLease
   daemonLease = undefined
+  await daemonExitLifecycle.release(lease)
   hostConnector?.dispose()
   diagnosticsSmokeFixtures.dispose()
   if (browserBridgePromise) {
@@ -1093,6 +1099,7 @@ async function checkUpdate() {
 
 async function installUpdate() {
   if (!updateReady) return
+  daemonExitLifecycle.handoff()
   autoUpdater.quitAndInstall()
 }
 
