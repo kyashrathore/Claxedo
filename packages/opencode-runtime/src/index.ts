@@ -7,6 +7,11 @@
  * the typed ports exported here.
  */
 export {
+  repairCoreLayerGraph,
+  UpstreamShapeError,
+  type RepairOutcome,
+} from "./upstream-repair"
+export {
   createOpenCodeHost,
   OpenCodeUnavailableError,
   type OpenCodeClient,

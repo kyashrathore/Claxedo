@@ -18,6 +18,7 @@
  * reason and never selects another transport. There is no fallback runtime.
  */
 import { OpenCode } from "@opencode-ai/sdk"
+import { repairCoreLayerGraph } from "./upstream-repair"
 import {
   canTransition,
   isTerminal,
@@ -85,6 +86,10 @@ export function createOpenCodeHost(options: OpenCodeHostOptions): OpenCodeHost {
   async function boot(): Promise<OpenCodeClient> {
     moveTo("migrating")
     try {
+      // Must precede the first `OpenCode.create()`: the layer graph it repairs
+      // is compiled during creation, and a hole in it makes every
+      // location-resolving request a 500. See upstream-repair.ts.
+      repairCoreLayerGraph()
       const created = await OpenCode.create({
         database: { path: options.databasePath },
         events: { persist: options.persistEvents ?? true },
