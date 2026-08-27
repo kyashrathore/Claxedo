@@ -10,7 +10,7 @@ import {
   type AgentSessionRow,
   type PromptInput,
   type SessionConfig,
-  type SessionConfigUpdate,
+  type SessionConfigRequestUpdate,
 } from "@claxedo/agent-sdk-runtime"
 import {
   type AgentMessagePage,
@@ -168,13 +168,13 @@ export function SessionRoutes(
       adapter: AgentHarnessAdapter
       directory: string
       sessionId: string
-      update: SessionConfigUpdate
+      update: SessionConfigRequestUpdate
     }) => Promise<SessionConfig>
     switchSessionHarness?: (input: {
       adapter: AgentHarnessAdapter
       directory: string
       sessionId: string
-      update: SessionConfigUpdate
+      update: SessionConfigRequestUpdate
     }) => Promise<SessionConfig>
     afterDeleteSession?: (input: { directory: string; sessionId: string }) => Promise<void> | void
     /**

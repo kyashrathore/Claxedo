@@ -5,14 +5,12 @@ import { TimelineRow } from "./timeline-row-model"
 
 describe("timeline row reuse", () => {
   test("renders a durable cross-harness boundary as a named divider", () => {
-    const marker = {
-      id: "part_handoff",
-      sessionID: "ses_1",
-      messageID: "msg_handoff",
-      type: "handoff",
+    const marker = textPart("part_handoff", "msg_handoff", "")
+    Object.assign(marker, {
       from: { id: "claude", access: "native" },
       to: { id: "codex", access: "native" },
-    } as unknown as Part
+    })
+    Object.defineProperty(marker, "type", { value: "handoff" })
 
     const rows = Timeline.constructMessageRows(
       userMessage("msg_handoff"),

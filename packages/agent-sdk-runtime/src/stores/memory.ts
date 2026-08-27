@@ -4,9 +4,11 @@ import {
   buildUserPromptParts,
   messagePartUpdated,
   messageUpdated,
+  sessionError,
   sessionStatus,
   type CompatEvent,
 } from "../compat-events"
+import type { AssistantMessage } from "@opencode-ai/sdk/v2"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
@@ -263,17 +265,19 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
     const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
     const status = input.outcome.status === "failed" ? "error" : null
+    const events: CompatEvent[] = []
     if (input.outcome.status === "failed") {
       const message = this.ensureMessage(input.sessionId, assistantMessageId)
-      const time = message.info.time && typeof message.info.time === "object" ? message.info.time : {}
-      this.upsertMessage(input.sessionId, {
-        ...message,
-        info: {
-          ...message.info,
-          time: { ...time, completed: input.outcome.completedAt },
+      const info = message.info as unknown as AssistantMessage
+      events.push(
+        messageUpdated({
+          ...info,
+          time: { ...info.time, completed: input.outcome.completedAt },
           error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
-        },
-      })
+        }),
+        sessionError(input.outcome.error ?? "turn failed", input.sessionId),
+      )
+      for (const event of events) this.applyEvent(input.sessionId, event)
     }
     this.sessions.set(input.sessionId, {
       ...prev,
@@ -284,6 +288,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       time: { ...prev.time, updated: Date.now() },
     })
     this.afterChange()
+    return { events }
   }
 
   appendEvent(input: {

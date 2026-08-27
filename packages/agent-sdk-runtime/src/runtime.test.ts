@@ -782,7 +782,15 @@ describe("createAgentRuntime", () => {
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
-    await events
+    const received = await events
+    const terminalIndex = received.findIndex((event) => event.payload.type === "session.error")
+    const messageErrorIndex = received.findIndex((event) =>
+      event.payload.type === "message.updated" &&
+      event.payload.properties.info.role === "assistant" &&
+      !!event.payload.properties.info.error
+    )
+    expect(messageErrorIndex).toBeGreaterThan(-1)
+    expect(messageErrorIndex).toBeLessThan(terminalIndex)
     await tick()
 
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
@@ -808,7 +816,15 @@ describe("createAgentRuntime", () => {
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "hello" })
-    expect((await events).map((event) => event.payload.type)).toContain("session.error")
+    const received = await events
+    const terminalIndex = received.findIndex((event) => event.payload.type === "session.error")
+    const messageErrorIndex = received.findIndex((event) =>
+      event.payload.type === "message.updated" &&
+      event.payload.properties.info.role === "assistant" &&
+      !!event.payload.properties.info.error
+    )
+    expect(messageErrorIndex).toBeGreaterThan(-1)
+    expect(messageErrorIndex).toBeLessThan(terminalIndex)
     await tick()
 
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
@@ -1207,11 +1223,13 @@ describe("createAgentRuntime", () => {
       model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
       parts: [{ type: "text", text: "hello" }],
     })
-    store.finishTurn({
+    const finished = store.finishTurn({
       sessionId: "ses_1",
       assistantMessageId: "msg_assistant",
       outcome: { status: "failed", completedAt: 123, error: "Codex authentication failed" },
     })
+
+    expect(finished?.events.map((event) => event.type)).toEqual(["message.updated", "session.error"])
 
     expect(store.getMessages("ses_1")[1]).toMatchObject({
       info: {

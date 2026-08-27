@@ -180,6 +180,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
       if (!active()) return false
       if (!res.ok) throw new Error(await input.errorMessage(res, `Failed to switch to ${type}`))
       const config = await res.json().catch(() => undefined)
+      if (!active()) return false
       input.publishSessionConfig(params, config)
       return decodeHarnessState(config) ?? true
     } catch (err) {

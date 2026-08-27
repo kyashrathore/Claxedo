@@ -35,6 +35,11 @@ export type AgentRuntimeTurnFinishInput = {
   outcome: AgentTurnOutcome
 }
 
+export type AgentRuntimeTurnFinishOutput = {
+  /** Terminal events already committed by the authoritative store, in publish order. */
+  events: CompatEvent[]
+}
+
 export type AgentRuntimeStoreCore = {
   listSessions(directory: string): unknown[]
   getSession(id: string): unknown | null
@@ -45,7 +50,7 @@ export type AgentRuntimeStoreCore = {
   deleteSession(id: string): void
   getAgentSessionId(id: string): string | null | undefined
   startTurn(input: unknown): AgentRuntimeTurnStartOutput | void
-  finishTurn?(input: AgentRuntimeTurnFinishInput): void
+  finishTurn?(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput | void
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string

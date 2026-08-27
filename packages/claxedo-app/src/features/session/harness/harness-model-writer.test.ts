@@ -93,6 +93,45 @@ describe("harness model writer", () => {
     expect(state["server\nses_1"]).toEqual({ desired: "opus", synced: "opus" })
   })
 
+  test("does not publish an older model response that finishes parsing after a newer choice", async () => {
+    let releaseOldJson: (config: unknown) => void = () => {}
+    let oldJsonStarted: () => void = () => {}
+    const parsing = new Promise<void>((resolve) => {
+      oldJsonStarted = resolve
+    })
+    const published: unknown[] = []
+    const oldWrite = syncHarnessSessionModel({
+      key: "server\nses_1",
+      model: "sonnet",
+      cache: fakeCache(),
+      publishConfig: (config) => published.push(config),
+      request: async () => ({
+        ok: true,
+        json: () => {
+          oldJsonStarted()
+          return new Promise((resolve) => {
+            releaseOldJson = resolve
+          })
+        },
+      }) as Response,
+    })
+    await parsing
+
+    const newConfig = { model: "opus" }
+    await syncHarnessSessionModel({
+      key: "server\nses_1",
+      model: "opus",
+      cache: fakeCache(),
+      publishConfig: (config) => published.push(config),
+      request: async () => Response.json(newConfig),
+    })
+    releaseOldJson({ model: "sonnet" })
+    await oldWrite
+
+    expect(published).toEqual([newConfig])
+    expect(state["server\nses_1"]).toEqual({ desired: "opus", synced: "opus" })
+  })
+
   test("rejects a failed canonical model update so recovery cannot resend early", async () => {
     const write = syncHarnessSessionModel({
       key: "server\nses_1",

@@ -965,6 +965,37 @@ describe("session prompt route", () => {
     })
   })
 
+  it("does not accept runtime-owned handoff state from a client config patch", async () => {
+    const directory = process.cwd()
+    const calls: SessionConfigUpdate[] = []
+    const app = SessionRoutes(() => ({
+      ...adapter({}),
+      updateSessionConfig: async (_id, patch) => {
+        calls.push(patch)
+        return {
+          harness: { id: "opencode", access: "native" },
+          variant: null,
+          agent: null,
+        }
+      },
+    }))
+
+    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        handoff: {
+          from: { id: "claude", access: "native" },
+          pending: true,
+          transcript: "client-authored transcript",
+        },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(calls).toEqual([{}])
+  })
+
   it("allows session config patches to set model for the same harness", async () => {
     const directory = process.cwd()
     const calls: SessionConfigUpdate[] = []

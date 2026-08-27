@@ -1943,11 +1943,13 @@ describe("RuntimeStore", () => {
       parts: [{ type: "text", text: "hello" }],
     })
 
-    store.finishTurn({
+    const finished = store.finishTurn({
       sessionId: "s1",
       assistantMessageId: "m1",
       outcome: { status: "failed", completedAt: 123, error: "The database connection is not open" },
     })
+
+    assert.deepEqual(finished?.events.map((event) => event.type), ["message.updated", "session.error"])
 
     const assistant = store.getMessages("s1")[1]?.info as {
       error?: { data?: { message?: string; firstTurnErrorClass?: string } }

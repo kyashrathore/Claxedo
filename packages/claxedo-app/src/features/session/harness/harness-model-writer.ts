@@ -38,10 +38,10 @@ export function syncHarnessSessionModel(input: {
 
   const run = input.request()
     .then(async (res) => {
-      const latest = input.cache.getState(input.key)
       if (!res.ok) throw new Error((await res.text().catch(() => "")) || `Failed to update session model (${res.status})`)
-      if (latest?.desired !== input.model) return
       const config = await res.json().catch(() => undefined)
+      const latest = input.cache.getState(input.key)
+      if (latest?.desired !== input.model) return
       if (config !== undefined) input.publishConfig?.(config)
       input.cache.setState(input.key, {
         ...latest,

@@ -1,6 +1,5 @@
 import type {
   AssistantMessage,
-  EventMessagePartUpdated,
   EventMessageUpdated,
   EventPermissionReplied,
   EventQuestionRejected,
@@ -8,13 +7,13 @@ import type {
   EventSessionCompacted,
   EventSessionDiff,
   Message,
-  Part,
   Session,
   Todo,
   UserMessage,
 } from "@opencode-ai/sdk/v2"
 import type {
   EventMessageCompleted,
+  EventMessagePartUpdated,
   EventMessagePartDelta,
   EventPermissionAsked,
   EventQuestionAsked,
@@ -29,13 +28,14 @@ import type {
   EventSessionUsage,
   EventTodoUpdated,
   OpenCodeCompatEvent,
+  OpenCodeCompatPart,
   PermissionRequest,
   QuestionRequest,
 } from "@claxedo/agent-event-runtime/opencode-compat"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 
-export type CompatPart = Part
+export type CompatPart = OpenCodeCompatPart
 export type CompatPromptFormat =
   | { type: "json_schema"; name?: string; schema?: unknown; strict?: boolean; provider_payload?: unknown }
   | { type: string; provider_payload?: unknown; [key: string]: unknown }

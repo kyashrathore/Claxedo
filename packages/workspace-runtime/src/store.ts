@@ -2555,11 +2555,12 @@ export class RuntimeStore {
     if (!active?.assistant_message_id) return
     if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return
     if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return
+    const events: CompatEvent[] = []
 
     if (input.outcome.status === "failed") {
       const control = JSON.parse(active.payload_json) as Partial<Turn>
       const session = this.getSession(input.sessionId) as { directory?: string } | null
-      this.appendEvent({
+      events.push(this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
         payload: messageUpdated(
@@ -2576,12 +2577,12 @@ export class RuntimeStore {
             ...(control.variant ? { variant: control.variant } : {}),
           }),
         ),
-      })
-      this.appendEvent({
+      }).payload)
+      events.push(this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
         payload: sessionError(input.outcome.error ?? "turn failed", input.sessionId),
-      })
+      }).payload)
     } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
       this.appendEvent({
         sessionId: input.sessionId,
@@ -2607,6 +2608,7 @@ export class RuntimeStore {
         outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
       },
     })
+    return { events }
   }
 
   private hasMessageCompleted(sessionId: string, messageId: string) {

@@ -4,7 +4,7 @@ import {
   type HarnessConnection,
   type PromptModel,
   type SessionConfig,
-  type SessionConfigUpdate,
+  type SessionConfigRequestUpdate,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
 
@@ -78,7 +78,7 @@ function promptModel(input: unknown): PromptModel | null | undefined {
   }
 }
 
-export function normalizeSessionConfigUpdate(input: unknown): SessionConfigUpdate {
+export function normalizeSessionConfigUpdate(input: unknown): SessionConfigRequestUpdate {
   const row = record(input) ?? {}
   const legacyRunner = record(row.runner)
   const harness = normalizeSessionHarness(row.harness ?? legacyRunner)
@@ -95,7 +95,7 @@ export function normalizeSessionConfigUpdate(input: unknown): SessionConfigUpdat
   }
 }
 
-export function normalizeSessionCreateConfig(input: unknown): SessionConfigUpdate {
+export function normalizeSessionCreateConfig(input: unknown): SessionConfigRequestUpdate {
   const row = record(input) ?? {}
   const model = record(row.model)
   return normalizeSessionConfigUpdate({

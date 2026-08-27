@@ -184,6 +184,46 @@ describe("harness switcher", () => {
     }])
   })
 
+  test("does not publish an older harness response that finishes parsing after a newer choice", async () => {
+    useLocal = false
+    let releaseOldJson: (config: unknown) => void = () => {}
+    let oldJsonStarted: () => void = () => {}
+    const parsing = new Promise<void>((resolve) => {
+      oldJsonStarted = resolve
+    })
+    let calls = 0
+    const switcher = switcherFor({
+      sessionFetch: async (_url, init) => {
+        calls += 1
+        const harness = JSON.parse(String(init?.body)).harness
+        if (calls === 1) {
+          return {
+            ok: true,
+            json: () => {
+              oldJsonStarted()
+              return new Promise((resolve) => {
+                releaseOldJson = resolve
+              })
+            },
+          } as Response
+        }
+        return Response.json({ harness })
+      },
+    })
+
+    const oldSwitch = switcher.setHarness("session:ses_1", "claude-sdk", { directory: "/repo", sessionId: "ses_1" })
+    await parsing
+    await switcher.setHarness("session:ses_1", "codex-app-server", { directory: "/repo", sessionId: "ses_1" })
+    releaseOldJson({ harness: { id: "claude", access: "native" } })
+    await oldSwitch
+
+    expect(publishedConfigs).toEqual([{
+      sessionId: "ses_1",
+      directory: "/repo",
+      config: { harness: { id: "codex", access: "native" } },
+    }])
+  })
+
   test("switches a local existing session and clears non-config harness options", async () => {
     const switcher = switcherFor()
 
@@ -243,6 +283,7 @@ describe("harness switcher", () => {
 
 function switcherFor(input?: {
   workspace?: () => Promise<WorkspaceBoot | undefined>
+  sessionFetch?: typeof fetch
 }) {
   return createHarnessSwitcher({
     base: "http://server",
@@ -292,7 +333,7 @@ function switcherFor(input?: {
         })
         return postResponse
       },
-      harnessSessionFetch: () => async (url, init) => {
+      harnessSessionFetch: () => input?.sessionFetch ?? (async (url, init) => {
         posts.push({
           url: String(url),
           body: typeof init?.body === "string" ? JSON.parse(init.body) : init?.body,
@@ -300,7 +341,7 @@ function switcherFor(input?: {
         return postResponse.status === 204
           ? Response.json({ harness: JSON.parse(String(init?.body)).harness })
           : postResponse
-      },
+      }),
       workspace: input?.workspace ?? (async () => workspace),
     },
     cache: fakeCache(),

@@ -18,7 +18,7 @@ import type {
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import { renderSessionHandoff } from "./session-handoff"
 import { hasAdapterCapability } from "./capabilities"
-import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent, type CompatPart } from "./compat-events"
+import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
@@ -339,6 +339,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
         terminal ||= isTerminalRuntimePayload(payload)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
+        // A failed turn has one authoritative terminal publication path below.
+        // Publishing a provider terminal first makes the UI clear its working
+        // state before the store has committed the assistant error row.
+        if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
         const compat = toCompatEvent(payload)
         if (compat) {
           if (compat.type === "session.idle") await maybeEmitTitle()
@@ -366,21 +370,31 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       // message.completed/session.idle, but only finishTurn records the
       // replayable turn.finish outcome. Stores make this call idempotent and
       // avoid duplicating terminal events that the adapter already committed.
-      store.finishTurn?.({
+      const finished = store.finishTurn?.({
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: outcome ?? { status: "completed", completedAt: Date.now() },
       })
+      if (outcome?.status === "failed") {
+        if (finished?.events.length) {
+          for (const payload of finished.events) publish({ sessionId, directory, payload })
+        } else {
+          commitAndPublish(sessionId, directory, sessionError(outcome.error, sessionId), { dir: "out", method: "runtime.error" })
+        }
+      }
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
       const message = err instanceof Error ? err.message : "turn failed"
-      const payload = sessionError(message, sessionId)
-      commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.error" })
-      store.finishTurn?.({
+      const finished = store.finishTurn?.({
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: { status: "failed", completedAt: Date.now(), error: message },
       })
+      if (finished?.events.length) {
+        for (const payload of finished.events) publish({ sessionId, directory, payload })
+      } else {
+        commitAndPublish(sessionId, directory, sessionError(message, sessionId), { dir: "out", method: "runtime.error" })
+      }
     } finally {
       router.dispose()
     }
@@ -506,7 +520,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             type: "handoff",
             from: current!.harness,
             to: update.harness!,
-          } as unknown as CompatPart), { dir: "out", method: "session/handoff" })
+          }), { dir: "out", method: "session/handoff" })
           return next
         } catch (error) {
           store.bindSession({

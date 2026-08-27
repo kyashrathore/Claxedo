@@ -48,9 +48,7 @@ export namespace Timeline {
     const userParts = getMessageParts(userMessage.id)
     const comments = userParts.flatMap((p) => MessageComment.fromPart(p) ?? [])
     const compaction = userParts.some((p) => p.type === "compaction")
-    const handoff = userParts.find((p) => (p.type as string) === "handoff") as unknown as {
-      to?: { id?: string; access?: string }
-    } | undefined
+    const handoff = userParts.flatMap(readHandoffPart)[0]
     const lastAssistantMessage = assistantMessages[assistantMessages.length - 1]
     // OpenCode-native aborts are durable on the message itself. SDK-runtime aborts are
     // durable on the Session turn outcome, which must match the exact assistant message.
@@ -449,6 +447,17 @@ function handoffHarnessLabel(id?: string) {
   if (id === "opencode") return "OpenCode"
   if (id === "pi") return "Pi"
   return `${id[0]?.toUpperCase() ?? ""}${id.slice(1)}`
+}
+
+function readHandoffPart(part: Part): Array<{ to?: { id?: string; access?: string } }> {
+  if ((part.type as string) !== "handoff" || !("to" in part) || !part.to || typeof part.to !== "object") return []
+  const to = part.to as Record<string, unknown>
+  return [{
+    to: {
+      ...(typeof to.id === "string" ? { id: to.id } : {}),
+      ...(typeof to.access === "string" ? { access: to.access } : {}),
+    },
+  }]
 }
 
 export function assistantMessageSettled(message: AssistantMessage) {
