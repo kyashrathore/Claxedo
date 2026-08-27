@@ -571,38 +571,37 @@ is unavailable in this release.
 Session execution, events, transfer/migration, permissions and forms are
 unaffected.
 
-### The SDK cannot execute a turn — correcting an earlier overstatement
+### RESOLVED: the SDK executes a turn once the layer graph is repaired
 
-I previously wrote that "session execution, events, transfer/migration,
-permissions and forms are unaffected". That was wrong on the most important
-word. Session **storage** is unaffected; session **execution** is not.
+VERIFIED (`gate-prompt-viability.mjs`, Node 22 against the bundled SDK, with
+`repairCoreLayerGraph()` applied — §2.3):
 
-VERIFIED (`gate-prompt-viability.mjs`):
+| Call | Before the repair | After |
+|---|---|---|
+| `sessions.create` | OK | OK |
+| `sessions.prompt` | **500** | **OK** — returns a real `msg_...` user message, `delivery: "steer"` |
+| `agent.list` | **500** | OK |
+| `provider.list` | **500** | OK |
+| `message.list` | `{ data: [] }` | `{ data: [] }` (nothing has run yet; no credentials in a bare temp workspace) |
 
-| Call | Result |
-|---|---|
-| `sessions.create` | OK |
-| `sessions.prompt` (no model, host resolves a default) | **500** |
-| `sessions.prompt` (explicit `anthropic/claude-opus-4-7`) | **500** |
-| `message.list` after both prompts | `{ data: [] }` — nothing was admitted |
+This retires the blocking finding recorded here earlier ("session execution is
+blocked; Unit 4 is unreachable; Unit 7 would ship a product that cannot run an
+agent"). Every one of those symptoms was the single `undefined` dependency in
+`@opencode/FileSystem`.
 
-Passing an explicit model matters: it removes agent/model *lookup* from the
-question. The execution path itself is blocked, not just catalog resolution.
+**API shape correction found while proving it.** V2's prompt input is FLAT:
 
-This is more fundamental than the catalog gap and it changes the verdict:
+```ts
+oc.sessions.prompt({ sessionID, text, files?, agents?, skills?, metadata?, delivery?, resume? })
+```
 
-- **Unit 4 (session parity) is unreachable.** Prompt, steer, interrupt, revert
-  and subagents all sit behind an execution path that returns 500.
-- **Unit 7 would ship a product that cannot run an agent.** Cutting the
-  deployments over is not a packaging exercise if the runtime cannot execute.
-- **Unit 8 would delete the only implementation that works.**
-
-The distinction to hold onto: everything Claxedo can drive *around* the SDK now
-works engine-free — config, catalog, migration, events plumbing, session
-records. The one thing only the SDK can do — actually run a turn — does not.
-
-That is the difference between "nearly done" and "cannot ship", and no amount
-of packaging work closes it.
+There is no `parts` array and no per-call `model`. The earlier probe passed
+`{ parts: [{ type: "text", text }] , model: {...} }` and got
+`InvalidRequestError: Missing key at ["text"]` — a typed schema rejection, not a
+defect. The model is resolved from agent/config, i.e. through the surfaces the
+repair restores. Unit 4's prompt projector must map Claxedo's part list onto
+this flat shape; `delivery: "steer" | "queue"` is how V2 expresses steer-vs-
+queue admission.
 
 ### The catalog decision, quantified
 
