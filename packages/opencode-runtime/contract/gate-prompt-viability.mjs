@@ -12,11 +12,13 @@
  *
  *   node gate-prompt-viability.mjs
  */
-import { OpenCode } from "./dist-node/sdk-entry.js"
+import { OpenCode, repairCoreLayerGraph } from "./dist-node/sdk-entry.js"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import * as util from "node:util"
+
+console.log("REPAIR", JSON.stringify(repairCoreLayerGraph()))
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-prompt-"))
 const ws = path.join(root, "ws")
@@ -36,20 +38,15 @@ async function attempt(label, run) {
   }
 }
 
-// Without an explicit model, the host must resolve a default — which is the
-// path that depends on the broken catalog.
-await attempt("sessions.prompt (no model)", () =>
-  oc.sessions.prompt({ sessionID: session.id, parts: [{ type: "text", text: "say hi" }] }),
+// V2's prompt input is FLAT: { sessionID, text, ... }. There is no `parts`
+// array and no per-call `model` — the model comes from agent/config
+// resolution, which is exactly the path that used to 500.
+await attempt("sessions.prompt (default agent/model)", () =>
+  oc.sessions.prompt({ sessionID: session.id, text: "say hi" }),
 )
 
-// With an explicit model, resolution is supplied rather than looked up.
-await attempt("sessions.prompt (explicit model)", () =>
-  oc.sessions.prompt({
-    sessionID: session.id,
-    model: { providerID: "anthropic", id: "claude-opus-4-7" },
-    parts: [{ type: "text", text: "say hi" }],
-  }),
-)
+await attempt("agent.list", () => oc.agent.list({ location: { directory: ws } }))
+await attempt("provider.list", () => oc.provider.list({ location: { directory: ws } }))
 
 await attempt("sessions.messages after prompt", () => oc.message.list({ sessionID: session.id }))
 
