@@ -48,8 +48,9 @@ export const desktopMainComposition: Policy = {
     requiredPackages: ["electron"],
   },
   // Renderer trust/readiness and native-rich-content supervision add nine
-  // reviewed main-process modules; keep the ceiling exact.
-  ceilings: { modules: 74, packages: 23 },
+  // reviewed main-process modules. Durable local-server startup then adds the
+  // daemon discovery and lease owners; keep the ceiling exact.
+  ceilings: { modules: 76, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -195,9 +196,11 @@ export const desktopRendererUnsigned: Policy = {
   // loaded-identity owners, a net increase of one. Reviewed closure is
   // therefore 945 + 30 = 975 modules. The discovery-driven ACP picker adds
   // one canonical connection-catalog owner to that already reachable
-  // composer path, bringing the reviewed closure to 976 modules, still with
-  // no new package edge (packages stay at 62).
-  ceilings: { modules: 976, packages: 62 },
+  // composer path, bringing the reviewed closure to 976 modules. Subsequent
+  // navigation, runtime ownership, keyboard hint, branch-source, and terminal
+  // status work adds eight named owners while removing four obsolete owners,
+  // bringing the reviewed closure to 980 modules with no new package edge.
+  ceilings: { modules: 980, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
