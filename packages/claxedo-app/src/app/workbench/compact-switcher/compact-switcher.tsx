@@ -345,7 +345,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                       aria-label={`${item().projectLabel ?? "Global"} / ${item().workspaceLabel ?? "Global"}`}
                       data-testid="switcher-prefix-trigger"
                       draggable={false}
-                      class="flex h-full w-full shrink-0 items-center border-none bg-transparent p-0 outline-none"
+                      class="relative flex h-full w-full shrink-0 items-center border-none bg-transparent p-0 outline-none"
                       onClick={(event) => select(event, item())}
                     >
                       <SwitcherPrefixMark
@@ -358,7 +358,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                           <span
                             aria-hidden="true"
                             data-testid="switcher-command-hint"
-                            class="hidden h-full shrink-0 items-center justify-center px-0.5 font-mono text-11-medium text-text-weak group-data-[command-hints]/switcher:flex"
+                            class="absolute left-1/2 z-10 hidden h-5 min-w-7 -translate-x-1/2 items-center justify-center rounded-full bg-surface-base-active px-1.5 text-11-medium text-text-base group-data-[command-hints]/switcher:flex"
                           >
                             {hint}
                           </span>
