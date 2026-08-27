@@ -156,7 +156,7 @@ beforeEach(() => {
 })
 
 function make(dir: string) {
-  const adds: Array<{ directory: string; sessionId: string; title: string }> = []
+  const adds: Array<{ directory: string; sessionId: string; title: string; workspaceRouteId?: string }> = []
   const acts: string[] = []
   const navs: Array<{ path: string; reason: string; details?: Record<string, unknown> }> = []
   const routes: string[] = []
@@ -225,8 +225,8 @@ function make(dir: string) {
         },
       },
       layout: {
-        openSession: (directory: string, sessionId: string, title: string) => {
-          adds.push({ directory, sessionId, title })
+        openSession: (directory: string, sessionId: string, title: string, opts?: { workspaceRouteId?: string }) => {
+          adds.push({ directory, sessionId, title, workspaceRouteId: opts?.workspaceRouteId })
           acts.push("tab-new")
           return "tab-new"
         },
@@ -333,7 +333,12 @@ describe("createProjectActions", () => {
       canDelete: true,
       available: true,
     })
-    expect(adds).toEqual([{ directory: dir, sessionId: "new", title: "New Session" }])
+    expect(adds).toEqual([{
+      directory: dir,
+      sessionId: "new",
+      title: "New Session",
+      workspaceRouteId: "ws_created",
+    }])
     expect(navs).toEqual([
       {
         path: workspaceSessionRoute("ws_created"),
@@ -405,7 +410,12 @@ describe("createProjectActions", () => {
       projectWorktree: "/workspace/main",
       canDelete: true,
     })
-    expect(adds).toEqual([{ directory: "workspace:ws_cloud_1", sessionId: "new", title: "New Session" }])
+    expect(adds).toEqual([{
+      directory: "workspace:ws_cloud_1",
+      sessionId: "new",
+      title: "New Session",
+      workspaceRouteId: "ws_cloud_1",
+    }])
     expect(navs).toEqual([
       {
         path: workspaceSessionRoute("ws_cloud_1"),

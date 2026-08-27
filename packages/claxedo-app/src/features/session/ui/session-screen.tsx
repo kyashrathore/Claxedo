@@ -20,7 +20,7 @@ import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/feature
 import { same } from "@/lib/same"
 import { createSessionHistoryWindow, emptyUserMessages } from "@/features/session/ui/history-window"
 import { createHistoryFill } from "@/features/session/ui/history-fill"
-import { groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
+import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
 import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
@@ -52,7 +52,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { placementFor } from "@/platform/runtime/placement"
-import { parseShellRoute, sessionRoute, shellRouteDirectory, workspaceSessionRoute } from "@/platform/identity/route"
+import { parseShellRoute, sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import { sessionViewKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -263,8 +263,7 @@ export default function SessionPage() {
   )
   const replayWorkspaceId = createMemo(() => inventorySession()?.workspaceId ?? signedWorkspaceId() ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.workspaceId ?? ((sdk.workspace(dir()) ?? ws()) as { id?: string; workspaceId?: string } | undefined)?.id)
   const routeIdForDirectory = (value: string) => (sameDirectory(value, dir()) ? routeSessionWorkspaceId() : undefined) ?? workspaceRouteId(projects(), value)
-  // Split drafts can lack `ws()` metadata. Resolve the transport kind from the
-  // full signed inventory so every pane agrees on cloud versus user-hosted.
+  // Resolve split-draft transport kind from full inventory so every pane agrees.
   const resolvedWorkspaceKind = createMemo<"cloud" | "user-hosted" | undefined>(() => {
     const inventoryKind = inventorySession()?.environment?.kind
     if (inventoryKind === "cloud" || inventoryKind === "user-hosted") return inventoryKind
@@ -363,21 +362,18 @@ export default function SessionPage() {
     setGate("err", undefined)
   })
 
-  // In-pane retargets stay mounted, so explicitly sync cross-workspace URLs;
-  // route-intent resolves the replace navigation back onto the existing pane.
+  // Sync cross-workspace URLs; route-intent resolves them onto the existing pane.
   const syncGroupNavigateUrl = (path: string) => {
     if (window.__NOSYNC__) return
     const sync = groupNavigateUrlSync({ targetPath: path, currentPathname: paneLocation().pathname })
     if (sync) navigate(sync, { replace: true })
   }
-
-  const groupNavigate = (path: string) => {
+  const groupNavigate = (path: string, targetDirectory?: string) => {
     const gid = sessionParams.paneId() ?? paneId
     const current = sessionParams.directory()
     if (gid && current && claxedoState) {
       const route = parseShellRoute(path)
-      const routeDir = shellRouteDirectory(route)
-      const dir = routeDir ?? current
+      const dir = groupNavigateDirectory({ targetPath: path, currentDirectory: current, targetDirectory })
       const sid = route.kind === "legacy-directory" ? route.sessionId : undefined
       const target = claxedoState.wb.state.panes.some((pane) => pane.id === gid)
         ? gid
@@ -414,7 +410,7 @@ export default function SessionPage() {
       return
     }
     const workspaceId = routeIdForDirectory(directory)
-    if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId))
+    if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId), directory)
   }
 
   const sessionController = createSessionController({
@@ -620,7 +616,7 @@ export default function SessionPage() {
         }
         if (nav.kind === "root") {
           const workspaceId = routeIdForDirectory(dir())
-          if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId))
+          if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId), dir())
         }
       })
       .catch((err) => {
@@ -749,9 +745,7 @@ export default function SessionPage() {
     if (value === "local" && platform.platform === "web" && signedControlPlane()) return
     setStore("newSessionControlsTouched", true)
     setStore("newSessionWorkspaceKind", value)
-    if (newSessionWorktree() === "create") {
-      return
-    }
+    if (newSessionWorktree() === "create") return
     if (newSessionWorkspaceOptions(value).includes(newSessionWorktree())) return
     const next = newSessionWorkspaceOptions(value)[0] ?? (value === "cloud" ? "create" : "main")
     newSessionBranchSource.syncWorktree(next)
@@ -771,7 +765,7 @@ export default function SessionPage() {
     const workspaceId = routeIdForDirectory(target)
     if (!workspaceId) return
     layout.projects.open(target)
-    groupNavigate(workspaceSessionRoute(workspaceId))
+    groupNavigate(workspaceSessionRoute(workspaceId), target)
   }
   let inputRef!: HTMLDivElement
   let promptDock: HTMLDivElement | undefined
@@ -1381,7 +1375,7 @@ export default function SessionPage() {
                     const workspaceId = workspaceRouteId([project], target)
                     if (!workspaceId) return
                     layout.projects.open(target)
-                    groupNavigate(workspaceSessionRoute(workspaceId))
+                    groupNavigate(workspaceSessionRoute(workspaceId), target)
                   }}
                 >
                   <PromptInput

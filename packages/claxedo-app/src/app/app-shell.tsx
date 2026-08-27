@@ -136,6 +136,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         projects={shell.projects()}
         activeProjectId={shell.activeProjectId()}
         activeDirectory={shell.activeDirectory()}
+        activeWorkspaceRouteId={shell.activeWorkspaceRouteId()}
         activeSessionId={shell.activeSessionId()}
         globalChatEnabled={shell.globalChat()}
         homedir={shell.pathQuery.data?.home}

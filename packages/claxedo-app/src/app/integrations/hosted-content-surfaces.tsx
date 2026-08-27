@@ -173,9 +173,9 @@ function WorkspaceWorkGraphSurface(props: { context: ContentSurfaceRenderContext
   return <WorkGraphSurface context={props.context} projectKey={projectKey()} />
 }
 
-export function taskComposerProjectRoute(project: WorkspaceRouteProject, directory = project.worktree ?? undefined) {
+export function taskComposerProjectTarget(project: WorkspaceRouteProject, directory = project.worktree ?? undefined) {
   const routeId = workspaceRouteId([project], directory)
-  return routeId ? newTaskRoute(routeId) : undefined
+  return routeId ? { workspaceRouteId: routeId, route: newTaskRoute(routeId) } : undefined
 }
 
 function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
@@ -185,14 +185,19 @@ function TaskComposerSurface(props: { context: ContentSurfaceRenderContext }) {
   const queryOptions = useQueryOptions()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const retarget = (nextDirectory: string, project: WorkspaceRouteProject) => {
-    const route = taskComposerProjectRoute(project, nextDirectory)
-    if (!route) return
+    const target = taskComposerProjectTarget(project, nextDirectory)
+    if (!target) return
     state.meta.patch(props.context.meta.id, {
       directory: nextDirectory,
       scope: "directory",
-      content: { type: "task-composer", directory: nextDirectory, title: "New task" },
+      content: {
+        type: "task-composer",
+        directory: nextDirectory,
+        title: "New task",
+        workspaceRouteId: target.workspaceRouteId,
+      },
     })
-    navigate(route, { replace: true })
+    navigate(target.route, { replace: true })
   }
   return (
     <Show

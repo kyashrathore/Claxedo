@@ -121,13 +121,13 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     return Array.isArray(projects) ? routeIdFromProjects(projects, dir) : undefined
   }
 
-  const openProjectSessionSurface = (workspaceDir: string) => {
+  const openProjectSessionSurface = (workspaceDir: string, workspaceRouteId: string) => {
     const paneId = props.state.wb.state.focusedPaneId
     if (paneId) {
       props.state.workspace.setPaneWorktreePinned(paneId, null)
       props.state.workspace.setPaneWorktreeDefault(paneId, workspaceDir)
     }
-    return props.state.layout.openSession(workspaceDir, "new", "New Session")
+    return props.state.layout.openSession(workspaceDir, "new", "New Session", { workspaceRouteId })
   }
   const handleNewProject = () => {
     async function handleProjectSelected(workspaceDir: string) {
@@ -168,7 +168,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       if (!routeId) return
       props.layout.projects.open(workspaceDir)
       void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
-      const id = openProjectSessionSurface(workspaceDir)
+      const id = openProjectSessionSurface(workspaceDir, routeId)
       if (id)
         nav(workspaceSessionRoute(routeId), "new-project-selected", {
           workspaceDir,
@@ -223,7 +223,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         onProgress?.("redirecting")
         const routeId = await ensureLocalWorkspaceRouteId(created)
         if (!routeId) return
-        const tabId = openProjectSessionSurface(created)
+        const tabId = openProjectSessionSurface(created, routeId)
         if (tabId) nav(workspaceSessionRoute(routeId), "new-workspace-created", { projectId: project.id, created, tabId })
       },
     })
@@ -320,7 +320,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       } satisfies WorkspaceBarItem
       props.state.workspace.recordAccess(project.id, result.workspaceId)
       if (opts?.openSession !== false) {
-        const tabId = openProjectSessionSurface(dir)
+        const tabId = openProjectSessionSurface(dir, result.workspaceId)
         if (tabId) nav(workspaceSessionRoute(result.workspaceId), "new-workspace-created", { projectId: project.id, created: dir, tabId })
       }
       return item

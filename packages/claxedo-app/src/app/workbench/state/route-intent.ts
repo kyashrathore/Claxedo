@@ -327,6 +327,8 @@ export function createRouteIntentAdapter(input: {
   }
 
   const focusedContentId = (): string | null => state.wb.selectors.focusedContent()
+  const matchesWorkspaceRoute = (content: ContentMeta, workspaceRouteId?: string) =>
+    !workspaceRouteId || content.content?.workspaceRouteId === workspaceRouteId
 
   const findContent = (predicate: (m: ContentMeta) => boolean): ContentMeta | undefined =>
     state.meta.find(predicate)
@@ -419,9 +421,10 @@ export function createRouteIntentAdapter(input: {
   const warmWorkspace = (directory: string) => {
     input.warmWorkspace?.(directory)
   }
-  const isWorkspaceDraftSession = (content: ContentMeta, workspaceId: string) =>
+  const isWorkspaceDraftSession = (content: ContentMeta, workspaceId: string, workspaceRouteId?: string) =>
     content.type === "session" &&
     contentDirectory(content) === workspaceId &&
+    matchesWorkspaceRoute(content, workspaceRouteId) &&
     (contentSessionId(content) ?? "new") === "new"
   const workspaceRootSessionRef = (workspaceId: string, explicitBacking?: WorkspaceSessionBacking) =>
     sessionRefForWorkspaceSession({
@@ -465,11 +468,11 @@ export function createRouteIntentAdapter(input: {
       return
     }
     if (intent.newTask) {
-      state.layout.openTaskComposer(intent.workspaceId)
+      state.layout.openTaskComposer(intent.workspaceId, { workspaceRouteId: intent.workspaceRouteId })
       return
     }
     if (intent.workspaceWorkGraph && intent.workspaceId) {
-      state.layout.openWorkspaceWorkGraph(intent.workspaceId)
+      state.layout.openWorkspaceWorkGraph(intent.workspaceId, { workspaceRouteId: intent.workspaceRouteId })
       return
     }
     const workspaceId = intent.workspaceId
@@ -575,8 +578,10 @@ export function createRouteIntentAdapter(input: {
       if (
         focused &&
         (
-          isWorkspaceDraftSession(focused, workspaceId) ||
-          ((focused.type === "session" || focused.type === "context") && contentDirectory(focused) === workspaceId)
+          isWorkspaceDraftSession(focused, workspaceId, intent.workspaceRouteId) ||
+          ((focused.type === "session" || focused.type === "context") &&
+            contentDirectory(focused) === workspaceId &&
+            matchesWorkspaceRoute(focused, intent.workspaceRouteId))
         )
       ) return
       // At narrow (collapsed) width the review panel forces full-width
@@ -607,10 +612,13 @@ export function createRouteIntentAdapter(input: {
         (m) =>
           m.type === "terminal" &&
           m.directory === workspaceId &&
-          m.terminalId === intent.terminalId,
+          m.terminalId === intent.terminalId &&
+          matchesWorkspaceRoute(m, intent.workspaceRouteId),
       )
       if (!existing?.id) {
-        const nextId = state.layout.openTerminal(workspaceId, intent.terminalId, "Terminal")
+        const nextId = state.layout.openTerminal(workspaceId, intent.terminalId, "Terminal", {
+          workspaceRouteId: intent.workspaceRouteId,
+        })
         if (nextId && focusedContentId() !== nextId) activate(nextId)
         return
       }
@@ -623,9 +631,14 @@ export function createRouteIntentAdapter(input: {
     if (intent.pageId) {
       if (intent.pageId === ROUTE_INTENT_INDEX) {
         const existing = findContent(
-          (m) => m.type === "pages-index" && m.directory === workspaceId,
+          (m) =>
+            m.type === "pages-index" &&
+            m.directory === workspaceId &&
+            matchesWorkspaceRoute(m, intent.workspaceRouteId),
         )
-        const nextId = existing?.id ?? state.layout.openPagesIndex(workspaceId)
+        const nextId = existing?.id ?? state.layout.openPagesIndex(workspaceId, {
+          workspaceRouteId: intent.workspaceRouteId,
+        })
         if (nextId && focusedContentId() !== nextId) activate(nextId)
         return
       }
@@ -637,7 +650,9 @@ export function createRouteIntentAdapter(input: {
       if (existing?.id && existing.sessionId) {
         state.meta.patch(existing.id, { sessionId: undefined })
       }
-      const nextId = state.layout.openPage(intent.pageId, "Untitled", workspaceId)
+      const nextId = state.layout.openPage(intent.pageId, "Untitled", workspaceId, undefined, {
+        workspaceRouteId: intent.workspaceRouteId,
+      })
       if (nextId && focusedContentId() !== nextId) activate(nextId)
       return
     }
@@ -648,12 +663,12 @@ export function createRouteIntentAdapter(input: {
       // state from another workspace can remain focused on first load.
       const focusedId = focusedContentId()
       const focused = focusedId ? state.meta.get(focusedId) : undefined
-      if (focused && isWorkspaceDraftSession(focused, workspaceId)) {
+      if (focused && isWorkspaceDraftSession(focused, workspaceId, intent.workspaceRouteId)) {
         upgradeWorkspaceDraftBacking(focused, workspaceId, intent.workspaceBacking)
         return
       }
 
-      const existing = findContent((m) => isWorkspaceDraftSession(m, workspaceId))
+      const existing = findContent((m) => isWorkspaceDraftSession(m, workspaceId, intent.workspaceRouteId))
       if (existing?.id) {
         upgradeWorkspaceDraftBacking(existing, workspaceId, intent.workspaceBacking)
         activate(existing.id)
@@ -662,6 +677,7 @@ export function createRouteIntentAdapter(input: {
 
       state.layout.openSession(workspaceId, "new", "New Session", {
         sessionRef: workspaceRootSessionRef(workspaceId, intent.workspaceBacking),
+        workspaceRouteId: intent.workspaceRouteId,
       })
       return
     }
@@ -671,7 +687,10 @@ export function createRouteIntentAdapter(input: {
     const focusedId = focusedContentId()
     const focused = focusedId ? state.meta.get(focusedId) : undefined
     const keepFocused =
-      !!focused && focused.type === "context" && focused.directory === workspaceId
+      !!focused &&
+      focused.type === "context" &&
+      focused.directory === workspaceId &&
+      matchesWorkspaceRoute(focused, intent.workspaceRouteId)
 
     const nextTitle = intent.sessionTitle || "Session"
     const nextSessionRef = sessionRefForWorkspaceSession({
@@ -680,7 +699,9 @@ export function createRouteIntentAdapter(input: {
       workspace: intent.workspaceBacking,
     })
     const existingSession = findContent((content) =>
-      contentMatchesSessionRoute(content, intent.sessionId!) && contentDirectory(content) === workspaceId
+      contentMatchesSessionRoute(content, intent.sessionId!) &&
+      contentDirectory(content) === workspaceId &&
+      matchesWorkspaceRoute(content, intent.workspaceRouteId)
     )
     if (
       intent.workspaceBacking &&
@@ -704,6 +725,7 @@ export function createRouteIntentAdapter(input: {
       {
         focus: !keepFocused,
         sessionRef: nextSessionRef,
+        workspaceRouteId: intent.workspaceRouteId,
       },
     )
 

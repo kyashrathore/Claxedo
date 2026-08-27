@@ -7,7 +7,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 // The packaged desktop renderer is a file:// document routed by MemoryRouter.
 // Three call sites wrote the route straight onto the document with
 // `history.replaceState` / `pushState`, which left the window at
-// `file:///w/<dir>/<session>`; reloading then asked Chromium to load that path
+// `file:///w/<workspaceId>/<session>`; reloading then asked Chromium to load that path
 // as a FILE and failed with net::ERR_FAILED, stranding the user on a blank
 // chrome-error:// page that only relaunching the app recovers. URL writes are
 // meaningful only on an http(s) document, so they must be gated on

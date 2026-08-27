@@ -706,6 +706,7 @@ describe("Claxedo behavior", async () => {
     byId.get("terminal.toggle")?.onSelect()
 
     expect(terminalOpenCalls[0]?.[0]).toBe("/repo/pane")
+    expect(terminalOpenCalls[0]?.[3]).toMatchObject({ workspaceRouteId: "ws_pane" })
     expect(terminalQueueCalls[0]?.[0]).toBe("terminal-content")
     expect(terminalQueueCalls[0]?.[1]).toBe("/repo/pane")
     expect(terminalCloseCalls).toEqual([])
@@ -789,6 +790,7 @@ describe("Claxedo behavior", async () => {
 
     byId.get("terminal.new")?.onSelect()
     expect(terminalOpenCalls[0]?.[0]).toBe("/repo/pane")
+    expect(terminalOpenCalls[0]?.[3]).toMatchObject({ workspaceRouteId: "ws_pane" })
     expect(terminalQueueCalls[0]?.[0]).toBe("terminal-content")
     expect(terminalQueueCalls[0]?.[1]).toBe("/repo/pane")
     expect(terminalQueueCalls[0]?.[4]).toBe("pane-1")

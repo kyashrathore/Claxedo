@@ -14,7 +14,7 @@ import { realDirectory, useClaxedoState } from "./workbench/state/index"
 import { projectToProjectItem } from "./workbench/state/route-bridge"
 import { resolveActiveDirectory } from "../features/workspaces/lib/active-workspace"
 import { openWorkspaceScopeIds } from "../features/workspaces/lib/workspace-scope-ids"
-import { workspaceRouteIdentity, workspaceRouteId } from "@/platform/identity/workspace-route"
+import { opaqueWorkspaceRouteId, workspaceRouteIdentity, workspaceRouteId } from "@/platform/identity/workspace-route"
 import { useConfigOptional } from "./providers/config"
 import type { SessionInventoryRow } from "../features/session/data/query/types"
 import { canAutoOpenProject } from "@/app/providers/layout-projects"
@@ -30,6 +30,7 @@ import { useShellAppStateSnapshot } from "./app-state-snapshot"
 import { routeSessionWorkspaceBacking } from "./workbench/state/route-bridge-resolution"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { projectWorktreeForDirectory } from "./providers/global-sync/project-owner"
+import { surfaceWorkspaceRouteKey } from "./workbench/state/surface-route"
 
 export type AppShellState = ReturnType<typeof useAppShellState>
 
@@ -99,7 +100,10 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
       workspaceId,
     }) ?? sessionWorkspaceRuntimeRef({ directory: workspaceId })
   })
-  const routeId = createMemo(() => routeIdentity()?.routeId)
+  // A canonical `/w/:workspaceId` route is already authoritative even while
+  // project inventory is loading. Do not erase that ID and make every action
+  // rediscover it from a directory later.
+  const routeId = createMemo(() => routeIdentity()?.routeId ?? opaqueWorkspaceRouteId(routeWorkspaceKey()))
   const routeIdForDirectory = (dir: string) => workspaceRouteId(projectsQuery.data ?? [], dir)
   const routeProjectWorktree = createMemo(() => {
     const workspaceKey = routeWorkspaceKey()
@@ -113,6 +117,15 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
       surfaceDir: realDirectory(activeSurface()?.directory),
     }),
   )
+  const activeWorkspaceRouteId = createMemo(() => {
+    const routed = routeId()
+    if (routed) return routed
+    const surface = activeSurface()
+    const carried = surface ? surfaceWorkspaceRouteKey(surface, undefined) : undefined
+    if (carried) return carried
+    const directory = activeDirectory()
+    return directory ? routeIdForDirectory(directory) : undefined
+  })
   const openWorkspaceIds = createMemo(() =>
     openWorkspaceScopeIds({
       activeDirectory: activeDirectory(),
@@ -176,6 +189,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
 
   return {
     activeProjectId,
+    activeWorkspaceRouteId,
     activeSessionId,
     activeSurface,
     activeDirectory,

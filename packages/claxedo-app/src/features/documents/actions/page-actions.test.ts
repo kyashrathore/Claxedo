@@ -19,6 +19,7 @@ function makeProps() {
     const props: PageActionProps & { canUseDocuments?: () => boolean } = {
       navigate: (path: string) => navigateCalls.push(path),
       activeDirectory: () => "/workspace/main",
+      activeWorkspaceRouteId: () => "p1",
       projects: () => [{ id: "p1", worktree: "/workspace/main" }],
       workspaceRouteId: (directory) => directory === "/workspace/main" ? "p1" : undefined,
       canUseDocuments: () => true,
@@ -47,6 +48,7 @@ describe("createPageActions", () => {
   test("handleNewPage falls back to first project when no active workspace", () => {
     const { props, openPagesIndexCalls } = makeProps()
     props.activeDirectory = () => undefined
+    props.activeWorkspaceRouteId = () => undefined
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual(["/workspace/main"])
@@ -55,11 +57,24 @@ describe("createPageActions", () => {
   test("handleNewPage skips navigation when no workspace dir is available", () => {
     const { props, navigateCalls, openPagesIndexCalls } = makeProps()
     props.activeDirectory = () => undefined
+    props.activeWorkspaceRouteId = () => undefined
     props.projects = () => []
     const actions = createPageActions(props)
     actions.handleNewPage()
     expect(openPagesIndexCalls).toEqual([undefined])
     expect(navigateCalls).toEqual([])
+  })
+
+  test("uses the active route identity when a shared physical directory is ambiguous", () => {
+    const { props, openPagesIndexCalls, navigateCalls } = makeProps()
+    props.activeDirectory = () => "/workspace"
+    props.activeWorkspaceRouteId = () => "ws_selected"
+    props.workspaceRouteId = () => undefined
+
+    createPageActions(props).handleNewPage()
+
+    expect(openPagesIndexCalls).toEqual(["/workspace"])
+    expect(navigateCalls).toEqual([workspacePageRoute("ws_selected", "__index__")])
   })
 
   test("handleNewPage opens pages-index even when signed page access is unavailable", () => {

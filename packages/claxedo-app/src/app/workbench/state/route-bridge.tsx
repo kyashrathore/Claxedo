@@ -243,7 +243,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       isFetching: projectsQuery.isFetching,
       isSuccess: projectsQuery.isSuccess,
       pathname: location.pathname,
-      routeId: routeIdentity()?.routeId,
+      routeId: routeId(),
       search: location.search,
     })
     if (target) navigate(target, { replace: true })

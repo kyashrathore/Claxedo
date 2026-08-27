@@ -1,7 +1,7 @@
 import type { ActionProps } from "../../../app/workbench/actions/shared"
 import { surfaceRoute } from "@/features/documents/app-ports"
 
-export type PageActionProps = Pick<ActionProps, "activeDirectory" | "navigate" | "projects" | "workspaceRouteId"> & {
+export type PageActionProps = Pick<ActionProps, "activeDirectory" | "activeWorkspaceRouteId" | "navigate" | "projects" | "workspaceRouteId"> & {
   state: {
     layout: Pick<ActionProps["state"]["layout"], "openPagesIndex">
   }
@@ -18,11 +18,13 @@ export function createPageActions(
     const dir = current || first
 
     if (dir) {
-      const workspaceId = props.workspaceRouteId(dir)
+      const workspaceId = current
+        ? props.activeWorkspaceRouteId() ?? props.workspaceRouteId(dir)
+        : props.workspaceRouteId(dir)
       if (!workspaceId) return
       // Open only after the route identity is known; this surface immediately
       // becomes the source of the browser URL.
-      props.state.layout.openPagesIndex(dir)
+      props.state.layout.openPagesIndex(dir, { workspaceRouteId: workspaceId })
       const route = surfaceRoute(workspaceId, { type: "pages-index" })
       if (route) navigate(route, "new-page", { workspaceDir: dir })
       return

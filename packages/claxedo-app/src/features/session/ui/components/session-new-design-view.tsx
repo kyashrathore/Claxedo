@@ -38,8 +38,8 @@ import {
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
-import type { NewSessionBranchChoice, NewSessionBranchState } from "./session-new-branch-source"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import type { NewSessionBranchChoice, NewSessionBranchState } from "./session-new-branch-source"
 
 export type { NewSessionWorkspaceKind } from "./session-new-workspace-options"
 

@@ -1905,10 +1905,12 @@ describe("workspace runtime route audit", () => {
     expect(orchestration).not.toMatch(/sessionRefForPane/)
     expect(orchestration).not.toMatch(/sessionRefForPayload/)
     expect(orchestration).not.toMatch(/sessionRefForSession/)
-    expect(orchestration).toMatch(/export type OpenSessionOptions = \{ focus\?: boolean; sessionRef\?: SessionRef \}/)
+    expect(orchestration).toMatch(/export type OpenSessionOptions = \{ focus\?: boolean; sessionRef\?: SessionRef; workspaceRouteId\?: string \}/)
     expect(orchestration).toMatch(/explicitSessionRef \?\? existing\.content\?\.sessionRef/)
     expect(orchestration).toMatch(/const sessionRef = opts\?\.sessionRef/)
-    expect(orchestration).toMatch(/sameWorkspaceSession\(m, directory, sessionId, opts\?\.sessionRef\)/)
+    expect(orchestration).toMatch(
+      /sameWorkspaceSession\(m, directory, sessionId, opts\?\.sessionRef, opts\?\.workspaceRouteId\)/,
+    )
     expect(orchestration).not.toMatch(
       /m\.type === "session" && m\.directory === directory && m\.sessionId === sessionId/,
     )
@@ -2079,8 +2081,10 @@ describe("workspace runtime route audit", () => {
 
   test("workspace URL producers pass IDs directly and never rely on a navigation suppression gate", async () => {
     const route = await Bun.file(path.join(root, "platform/identity/route.ts")).text()
+    const shellState = await Bun.file(path.join(root, "app/app-shell-state.ts")).text()
     expect(route).not.toMatch(/workspaceSafeNavigationTarget/)
     expect(route).toMatch(/Workspace routes require an opaque workspace ID/)
+    expect(shellState).toMatch(/routeIdentity\(\)\?\.routeId \?\? opaqueWorkspaceRouteId\(routeWorkspaceKey\(\)\)/)
 
     const offenders: string[] = []
     const glob = new Bun.Glob("**/*.{ts,tsx}")
@@ -2094,8 +2098,13 @@ describe("workspace runtime route audit", () => {
         const line = text.slice(0, match.index).split("\n").length
         offenders.push(`${file}:${line}: ${argument}`)
       }
-      if (file !== "platform/identity/route.ts" && /["'`]\/w\/\$\{/.test(text)) {
-        offenders.push(`${file}: constructs /w/ directly`)
+      if (file !== "platform/identity/route.ts" && [
+        /["'`]\/w\/\$\{/,
+        /["'`]\/w\/["'`]\s*\+/,
+        /(?:pathname|href)\s*=\s*["'`]\/w\//,
+        /new URL\(\s*["'`]\/w\//,
+      ].some((pattern) => pattern.test(text))) {
+        offenders.push(`${file}: constructs or mutates /w/ directly`)
       }
       if (/navigate\(\s*`\/\$\{[^}]+\}\/session/.test(text)) {
         offenders.push(`${file}: constructs a directory-scoped session route directly`)

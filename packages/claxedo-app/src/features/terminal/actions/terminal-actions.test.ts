@@ -17,7 +17,7 @@ beforeAll(async () => {
 })
 
 function makeProps() {
-  const opens: Array<{ directory: string; terminalId: string }> = []
+  const opens: Array<{ directory: string; terminalId: string; workspaceRouteId?: string }> = []
   const queued: Array<{ contentId: string; directory: string }> = []
   const navs: string[] = []
   const props = {
@@ -35,8 +35,8 @@ function makeProps() {
         split: { focus: () => undefined },
       },
       layout: {
-        openTerminal: (directory: string, terminalId: string) => {
-          opens.push({ directory, terminalId })
+        openTerminal: (directory: string, terminalId: string, _title?: string, opts?: { workspaceRouteId?: string }) => {
+          opens.push({ directory, terminalId, workspaceRouteId: opts?.workspaceRouteId })
           return "terminal-content"
         },
       },
@@ -63,6 +63,7 @@ describe("createTerminalActions", () => {
     )
 
     expect(opens).toHaveLength(1)
+    expect(opens[0]?.workspaceRouteId).toBe("p2")
     expect(queued).toEqual([{ contentId: "terminal-content", directory: "/workspace/shared" }])
     expect(navs).toEqual([workspaceTerminalRoute("p2", opens[0].terminalId)])
   })
@@ -75,5 +76,31 @@ describe("createTerminalActions", () => {
     expect(opens).toEqual([])
     expect(queued).toEqual([])
     expect(navs).toEqual([])
+  })
+
+  test("recovery persists the recovered workspace identity before opening", () => {
+    configureAppPortsForTest({
+      terminal: {
+        recoverMissingWorkspace: (_props, _directory, onReady) => {
+          void onReady(
+            "/workspace/recovered",
+            { id: "ws_recovered", worktree: "/workspace/recovered" } as never,
+            {} as never,
+          )
+          return true
+        },
+      },
+    })
+    const { props, opens, queued, navs, nav } = makeProps()
+
+    createTerminalActions(props, nav).handleNewTerminal("/workspace/missing", "claude")
+
+    expect(opens).toHaveLength(1)
+    expect(opens[0]).toMatchObject({
+      directory: "/workspace/recovered",
+      workspaceRouteId: "ws_recovered",
+    })
+    expect(queued).toEqual([{ contentId: "terminal-content", directory: "/workspace/recovered" }])
+    expect(navs[0]).toMatch(/^\/w\/ws_recovered\/terminal\/pending-/)
   })
 })

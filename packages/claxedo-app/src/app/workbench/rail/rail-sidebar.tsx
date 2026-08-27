@@ -1532,9 +1532,8 @@ export function RailSidebar(props: RailSidebarProps) {
   }) => {
     const [sharing, setSharing] = createSignal(false)
     const selectedRouteId = () => workspaceRouteId([input.project], input.workspaceDir)
-    const createTerminal = (command?: string, title?: string) => {
+    const createTerminal = (command?: string, title?: string) =>
       props.onNewTerminal?.(input.workspaceDir, command, title, selectedRouteId())
-    }
     // Opened directly rather than through `onNewTerminal`: the creator is a
     // surface, not a pty, so it needs none of that action's pty plumbing.
     const openTerminalCreator = () => {

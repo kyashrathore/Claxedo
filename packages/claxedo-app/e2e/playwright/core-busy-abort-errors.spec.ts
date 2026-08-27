@@ -211,7 +211,7 @@ const PIN_MODELS = { opencode: [{ id: "gpt-5", name: "GPT-5" }] }
 // `**/api/wr/events**` and `**/api/wr/runtime-events**` UNCONDITIONALLY on the primary
 // origin (mock-runtime.ts:1191-1192), fed by the shared `FanoutBus` that `emit()` writes
 // to; the `if (cloud)` block only begins at mock-runtime.ts:1637 and adds the
-// relay-origin/workspace-prefixed copies on top. `/w/<dir>/session/<id>` is exactly the
+// relay-origin/workspace-prefixed copies on top. `/w/<workspaceId>/session/<id>` is exactly the
 // route shape that channel serves.
 //
 // The bridge was actively HARMFUL: it registered its own `**/api/wr/events**` handler
@@ -534,7 +534,7 @@ test.describe("core busy / abort / errors @core", () => {
     const now = Date.now()
     // `mock.emit()` now reaches this local session directly: mock-runtime.ts mounts
     // the `/api/wr/events` SSE channel on the primary origin (the endpoint the app's
-    // live-event consumer reads for the `/w/<dir>/session/<id>` route shape via the
+    // live-event consumer reads for the `/w/<workspaceId>/session/<id>` route shape via the
     // `/global/event`→`/api/wr/events` rewrite), and the shared FanoutBus fans this
     // event out to it — the same proven path core-docks uses for its
     // permission/todo/status events. The prior bespoke SSE bridge is obsolete.

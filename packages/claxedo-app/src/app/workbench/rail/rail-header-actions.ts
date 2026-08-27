@@ -2,6 +2,7 @@ export function createRailHeaderActions(input: {
   focusedPaneWorkspaceDir: (paneId: string | undefined) => string | undefined
   focusedSplitPaneId: () => string | undefined
   focusedSurfaceWorkspaceToolsBlocked: () => boolean
+  workspaceRouteId: (workspaceDir: string) => string | undefined
   onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
   onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
   /**
@@ -22,14 +23,15 @@ export function createRailHeaderActions(input: {
   return {
     createSession: () => {
       const paneId = input.focusedSplitPaneId()
-      input.onNewSession?.(headerWorkspaceDir(paneId), paneId)
+      const workspaceDir = headerWorkspaceDir(paneId)
+      input.onNewSession?.(workspaceDir, paneId, workspaceDir ? input.workspaceRouteId(workspaceDir) : undefined)
     },
     createTerminal: (command?: string, title?: string) => {
       if (input.focusedSurfaceWorkspaceToolsBlocked()) return
       const paneId = input.focusedSplitPaneId()
       const workspaceDir = headerWorkspaceDir(paneId)
       if (!workspaceDir) return
-      input.onNewTerminal?.(workspaceDir, command, title, paneId)
+      input.onNewTerminal?.(workspaceDir, command, title, paneId, input.workspaceRouteId(workspaceDir))
     },
     createTerminalDraft: () => {
       // No `focusedSurfaceWorkspaceToolsBlocked()` guard, unlike `createTerminal`

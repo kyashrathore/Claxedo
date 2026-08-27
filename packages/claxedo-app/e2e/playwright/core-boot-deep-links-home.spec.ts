@@ -28,13 +28,12 @@
  *     classifies the pathname; `createRouteIntentAdapter.receive()`
  *     (`src/claxedo-ui/state/route-intent.ts`) turns that into
  *     `state.layout.openSession(...)` / `openCentralSession(...)` calls. For LOCAL
- *     projects the `/w/:workspaceId/...` form carries the raw directory as
- *     `workspaceId` (`workspaceRoute()`/`workspaceSessionRoute()` in route.ts just
- *     URI-encode the directory), so it resolves without any session inventory lookup.
+ *     projects the `/w/:workspaceId/...` form carries only the opaque project or
+ *     workspace ID; project inventory resolves that ID to the runtime directory.
  *     The bare `/s/:sessionId` form has no workspaceId and must resolve through the
  *     session inventory (workspace match, else a `central` fallback via
  *     `openCentralSession`). After a first send, `src/session/submit/handoff.ts`
- *     navigates to `workspaceSessionRoute(directory, id)` (or `sessionRoute(id)` only
+ *     navigates to `workspaceSessionRoute(workspaceId, id)` (or `sessionRoute(id)` only
  *     for sessions whose `sessionRef.host === "central"`).
  *   - Server connectivity gating ("startup gate"): `ConnectionGate`
  *     (`src/app/entry/app.tsx:184`) is a `createResource` that polls `GET /api/claxedo/health`
@@ -743,7 +742,7 @@ test.describe("core boot, deep links, and home @core", () => {
     // list endpoint both stop including it.
     // Bug fix (verified — not shared-helper territory): these patterns end in the same
     // suffix as the PAGE's own document-navigation URL below
-    // (`/w/<dir>/session/<id>` also ends in `/session/${SESSION_ID}`), so without a
+    // (`/w/<workspaceId>/session/<id>` also ends in `/session/${SESSION_ID}`), so without a
     // resourceType guard the "session 404" mock also intercepts `page.goto(primaryUrl)`
     // itself and serves raw JSON as the document — a bare `method !== "GET"` check
     // does not distinguish the two (both are GET).

@@ -95,6 +95,7 @@ export type AppShellLayoutProps = ParentProps<{
    * Currently active worktree directory (route)
    */
   activeDirectory?: string
+  activeWorkspaceRouteId?: string
 
   /**
    * Currently active session ID
@@ -270,6 +271,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   })
   const workbenchController = useRailWorkbenchController({
     activeDirectory: () => props.activeDirectory,
+    activeWorkspaceRouteId: () => props.activeWorkspaceRouteId,
     autoResponds: (request, workspaceDir) => permission.autoResponds(request, workspaceDir),
     canUseDocuments: () => props.canUseDocuments === true,
     closeTerminal: (terminalId) => terminal?.close(terminalId),

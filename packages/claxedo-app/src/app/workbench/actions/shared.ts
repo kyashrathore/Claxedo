@@ -40,6 +40,7 @@ export type ActionProps = {
   projects: Accessor<ProjectItem[]>
   routeDirectory: Accessor<string | undefined>
   activeDirectory: Accessor<string | undefined>
+  activeWorkspaceRouteId: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
   workspaceRouteId: (dir: string) => string | undefined
   canUseDocuments?: Accessor<boolean>

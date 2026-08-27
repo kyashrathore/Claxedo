@@ -31,6 +31,37 @@ describe("surface route mirroring", () => {
     })).toBe(newTaskRoute("ws_main"))
   })
 
+  test("uses a producer-carried route id when directory lookup is unavailable", () => {
+    expect(surfaceRoute(undefined, {
+      type: "terminal",
+      directory: "/workspace/shared",
+      terminalId: "new",
+      content: {
+        type: "terminal",
+        directory: "/workspace/shared",
+        terminalId: "new",
+        workspaceRouteId: "project_selected",
+      },
+    })).toBe(workspaceTerminalRoute("project_selected", "new"))
+  })
+
+  test("keeps a task composer on its producer-selected workspace when directories are shared", () => {
+    const surface: ContentMeta = {
+      id: "surface_task",
+      type: "task-composer",
+      scope: "directory",
+      directory: "/workspace",
+      content: {
+        type: "task-composer",
+        directory: "/workspace",
+        workspaceRouteId: "ws_selected",
+      },
+    }
+
+    expect(surfaceRoute(undefined, surface)).toBe(newTaskRoute("ws_selected"))
+    expect(routeMatchesSurface({ newTask: true }, "ws_selected", surface, "ws_selected")).toBe(true)
+  })
+
   test("does not navigate when the focused surface already matches the route", () => {
     expect(
       focusedSurfaceRouteTarget({

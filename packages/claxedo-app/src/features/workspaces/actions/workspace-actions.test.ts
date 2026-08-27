@@ -14,7 +14,7 @@ let createWorkspaceActions: typeof import("./workspace-actions").createWorkspace
 // removed when the Workbench replaced the tabs system.
 
 type ContentMeta =
-  | { id: string; type: "session"; directory: string; sessionId?: string; content?: { sessionRef?: unknown } }
+  | { id: string; type: "session"; directory: string; sessionId?: string; content?: { sessionRef?: unknown; workspaceRouteId?: string } }
   | { id: string; type: "process"; directory: string }
 
 function project(input: Pick<ProjectItem, "id" | "worktree"> & Partial<ProjectItem>): ProjectItem {
@@ -136,7 +136,7 @@ describe("createWorkspaceActions", () => {
 
   test("does not mutate workspace state before a new-session route identity exists", () => {
     const { props, opens, access, pinned, defaulted, navs, nav } = makeProps()
-    const selected = project({ id: "", worktree: "/workspace/main" })
+    const selected = project({ id: "/workspace/main", worktree: "/workspace/main" })
     props.workspaceRouteId = () => undefined
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(selected, selected.worktree)
@@ -156,7 +156,12 @@ describe("createWorkspaceActions", () => {
       "/workspace/feature",
     )
 
-    expect(opens).toEqual([{ directory: "/workspace/feature", sessionId: "new", title: "New Session" }])
+    expect(opens).toEqual([{
+      directory: "/workspace/feature",
+      sessionId: "new",
+      title: "New Session",
+      opts: { workspaceRouteId: "ws_feature" },
+    }])
     expect(access).toEqual([{ projectId: "p1", dir: "/workspace/feature" }])
     expect(navs).toEqual([
       {
@@ -175,7 +180,13 @@ describe("createWorkspaceActions", () => {
     const { props, opens, navs, nav, seedMeta } = makeProps()
     seedMeta(
       { id: "content-process", type: "process", directory: "/workspace/feature" },
-      { id: "content-session", type: "session", directory: "/workspace/feature", sessionId: "ses-1" },
+      {
+        id: "content-session",
+        type: "session",
+        directory: "/workspace/feature",
+        sessionId: "ses-1",
+        content: { workspaceRouteId: "ws_feature" },
+      },
     )
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(
@@ -196,6 +207,7 @@ describe("createWorkspaceActions", () => {
           cwd: "/workspace/feature",
           toolSandbox: { kind: "local", cwd: "/workspace/feature" },
         },
+        workspaceRouteId: "ws_feature",
       },
     }])
     expect(navs).toEqual([
@@ -226,7 +238,13 @@ describe("createWorkspaceActions", () => {
       },
     })
     props.projects = () => [cloudProject]
-    seedMeta({ id: "content-session", type: "session", directory: "workspace:ws_cloud", sessionId: "ses-cloud" })
+    seedMeta({
+      id: "content-session",
+      type: "session",
+      directory: "workspace:ws_cloud",
+      sessionId: "ses-cloud",
+      content: { workspaceRouteId: "ws_cloud" },
+    })
 
     createWorkspaceActions(props, nav).handleWorkspaceSelect(cloudProject, "workspace:ws_cloud")
 
@@ -245,6 +263,7 @@ describe("createWorkspaceActions", () => {
             hosting: "cloud",
           },
         },
+        workspaceRouteId: "ws_cloud",
       },
     }])
   })

@@ -284,7 +284,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),
       }).then((x) => x.data),
       markLocalWorktreePending: (directory) => WorktreeState.pending(directory),
-      bootstrap: () => globalBootstrapActions.bootstrap(),
+      bootstrap: () => globalBootstrapActions.bootstrap({ force: true }),
       showToast: (toast) => showToast(toast),
       errorMessage,
       text: {

@@ -380,7 +380,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const workspaceId = args.workspaceRouteId(dir)
         if (!workspaceId) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal")
+        const contentId = claxedoState.layout.openTerminal(dir, pendingId, "Terminal", { workspaceRouteId: workspaceId })
         claxedoState.workspacePanel.close()
         claxedoState.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
         navigate(workspaceTerminalRoute(workspaceId, pendingId))
@@ -422,7 +422,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         const workspaceId = args.workspaceRouteId(dir)
         if (!workspaceId) return
         const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
-        const contentId = state.layout.openTerminal(dir, pendingId, "Terminal")
+        const contentId = state.layout.openTerminal(dir, pendingId, "Terminal", { workspaceRouteId: workspaceId })
         state.workspacePanel.close()
         state.terminal.queueCreateForContent(contentId, dir, undefined, undefined, paneId)
         navigate(workspaceTerminalRoute(workspaceId, pendingId))

@@ -27,3 +27,22 @@ export function groupNavigateUrlSync(input: {
   if (targetDir === currentDir) return undefined
   return input.targetPath
 }
+
+/**
+ * Resolve the physical directory written into retained pane state.
+ *
+ * Canonical `/w/:workspaceId` routes carry identity, not a cwd. Callers that
+ * intentionally switch workspaces therefore carry the selected directory next
+ * to the route. Legacy inbound routes are the sole route shape that still owns
+ * a physical directory and may recover it from the URL.
+ */
+export function groupNavigateDirectory(input: {
+  targetPath: string
+  currentDirectory: string
+  targetDirectory?: string
+}) {
+  if (input.targetDirectory) return input.targetDirectory
+  const route = parseShellRoute(input.targetPath)
+  if (route.kind === "legacy-directory") return route.directory
+  return input.currentDirectory
+}

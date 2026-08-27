@@ -154,7 +154,12 @@ describe("createSessionActions", () => {
 
     expect(openedProjects).toEqual(["/workspace/main"])
     expect(workspaceDefaults).toEqual([{ paneId: "pane-1", directory: "/workspace/main" }])
-    expect(sessions).toEqual([{ directory: "/workspace/main", sessionId: "new", title: "New Session" }])
+    expect(sessions).toEqual([{
+      directory: "/workspace/main",
+      sessionId: "new",
+      title: "New Session",
+      opts: { workspaceRouteId: "p1" },
+    }])
     expect(navs).toEqual([
       {
         path: workspaceSessionRoute("p1"),
@@ -175,7 +180,12 @@ describe("createSessionActions", () => {
     await createSessionActions(props, nav).handleNewSession("/workspace/shared", undefined, "p2")
 
     expect(openedProjects).toEqual(["/workspace/shared"])
-    expect(sessions).toEqual([{ directory: "/workspace/shared", sessionId: "new", title: "New Session" }])
+    expect(sessions).toEqual([{
+      directory: "/workspace/shared",
+      sessionId: "new",
+      title: "New Session",
+      opts: { workspaceRouteId: "p2" },
+    }])
     expect(navs.map((item) => item.path)).toEqual([workspaceSessionRoute("p2")])
   })
 

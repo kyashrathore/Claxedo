@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { createSignal, type Accessor } from "solid-js"
 
 const h = vi.hoisted(() => ({
@@ -13,6 +13,7 @@ const h = vi.hoisted(() => ({
   terminalRender: vi.fn(),
   fit: vi.fn(),
   navigate: vi.fn(),
+  metaPatch: vi.fn(),
   pathname: "/w/%2Frepo/session",
   sdkWorkspaceId: "ws_terminal" as string | undefined,
   resolveRecovery: vi.fn((_alias: unknown, id: string) => id),
@@ -80,6 +81,7 @@ vi.mock("../../../../app/workbench/state/index", () => ({
     terminal: {
       own: vi.fn(),
       replaceId: vi.fn(),
+      queueCreateForContent: vi.fn(),
       peekCreateForContent: vi.fn(() => undefined),
       consumeCreateForContent: vi.fn(() => undefined),
       isTracked: vi.fn(() => false),
@@ -97,18 +99,29 @@ vi.mock("../../../../app/workbench/state/index", () => ({
 
 vi.mock("@/features/terminal/app-ports", () => ({
   SessionPaneScope: (props: { children: unknown }) => <>{props.children}</>,
+  TerminalNewView: (props: {
+    onLaunch: (input: { directory: string; workspaceId: string; title: string }) => void
+  }) => (
+    <button
+      data-testid="launch-terminal"
+      onClick={() => props.onLaunch({ directory: "/repo", workspaceId: "ws_selected", title: "Terminal" })}
+    >
+      Launch
+    </button>
+  ),
   useSDK: () => ({ get workspaceId() { return h.sdkWorkspaceId } }),
   useClaxedoState: () => ({
     terminal: {
       own: vi.fn(),
       replaceId: vi.fn(),
+      queueCreateForContent: vi.fn(),
       peekCreateForContent: vi.fn(() => undefined),
       consumeCreateForContent: vi.fn(() => undefined),
       isTracked: vi.fn(() => false),
       agentStatus: vi.fn(() => "idle"),
       setAgentStatus: vi.fn(),
     },
-    meta: { patch: vi.fn() },
+    meta: { patch: h.metaPatch },
     workspacePanel: { open: vi.fn() },
   }),
   workspacePlacement: () => undefined,
@@ -148,6 +161,7 @@ describe("TerminalContent switching", () => {
     h.terminalRender.mockClear()
     h.fit.mockClear()
     h.navigate.mockClear()
+    h.metaPatch.mockClear()
     h.pathname = "/w/%2Frepo/session"
     h.sdkWorkspaceId = "ws_terminal"
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id)
@@ -233,5 +247,44 @@ describe("TerminalContent switching", () => {
       workspaceTerminalRoute("ws_local", "pty-created"),
       { replace: true },
     ))
+  })
+
+  test("uses producer-carried route identity when a local SDK adopts a real pty id", async () => {
+    h.ptys.splice(0, h.ptys.length, { id: "pty-new", title: "Terminal 1", cwd: "/repo" })
+    h.sdkWorkspaceId = undefined
+    h.pathname = workspaceTerminalRoute("ws_selected", "pty-old")
+    h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id === "pty-old" ? "pty-new" : id)
+
+    render(() => (
+      <TerminalContent
+        meta={{
+          ...terminalMeta("pty-old", "Terminal 1"),
+          content: {
+            ...terminalMeta("pty-old", "Terminal 1").content,
+            workspaceRouteId: "ws_selected",
+          },
+        }}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByTestId("terminal-pty-new")).toBeTruthy())
+    expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("ws_selected", "pty-new"), { replace: true })
+  })
+
+  test("stores the selected route identity before launching a terminal creator", async () => {
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("new", "New Terminal")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await fireEvent.click(screen.getByTestId("launch-terminal"))
+
+    expect(h.metaPatch).toHaveBeenCalledWith("content-new", expect.objectContaining({
+      content: expect.objectContaining({ workspaceRouteId: "ws_selected" }),
+    }))
+    expect(h.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/w\/ws_selected\/terminal\/pending-/))
   })
 })

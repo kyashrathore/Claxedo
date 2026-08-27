@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { groupNavigateUrlSync } from "./group-navigate-route"
+import { groupNavigateDirectory, groupNavigateUrlSync } from "./group-navigate-route"
 import { legacyDirectoryRouteKey, workspaceSessionRoute } from "@/platform/identity/route"
 
 describe("groupNavigateUrlSync", () => {
@@ -59,5 +59,33 @@ describe("groupNavigateUrlSync", () => {
         currentPathname: `/${key}/session`,
       }),
     ).toBeUndefined()
+  })
+})
+
+describe("groupNavigateDirectory", () => {
+  test("keeps an opaque workspace route id out of pane directory state", () => {
+    expect(groupNavigateDirectory({
+      targetPath: workspaceSessionRoute("ws_other"),
+      currentDirectory: "/repo/main",
+      targetDirectory: "/repo/other",
+    })).toBe("/repo/other")
+  })
+
+  test("keeps the current directory for same-workspace and session-first navigation", () => {
+    expect(groupNavigateDirectory({
+      targetPath: workspaceSessionRoute("ws_main"),
+      currentDirectory: "/repo/main",
+    })).toBe("/repo/main")
+    expect(groupNavigateDirectory({
+      targetPath: "/s/ses_1",
+      currentDirectory: "/repo/main",
+    })).toBe("/repo/main")
+  })
+
+  test("continues to recover physical directories from legacy inbound routes", () => {
+    expect(groupNavigateDirectory({
+      targetPath: `/${legacyDirectoryRouteKey("/repo/legacy")}/session`,
+      currentDirectory: "/repo/main",
+    })).toBe("/repo/legacy")
   })
 })

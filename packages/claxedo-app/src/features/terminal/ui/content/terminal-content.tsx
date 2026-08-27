@@ -153,10 +153,6 @@ function TerminalContentInner(props: {
   const terminalId = () => props.meta.terminalId ?? props.meta.content?.terminalId
   const command = () => props.meta.content?.command
   const replaceTerminalRoute = (oldId: string, newId: string, dir: string) => {
-    // Local scopes deliberately have no SDK workspace id because they do not
-    // use relay transport. The surface still owns an opaque route identity;
-    // keep that identity on its content metadata and use it for the pending ->
-    // real PTY route swap. Hosted scopes can still supply it through the SDK.
     const workspaceId = props.meta.content?.workspaceRouteId ?? sdk.workspaceId
     if (!workspaceId || location.pathname !== workspaceTerminalRoute(workspaceId, oldId)) return
     navigate(workspaceTerminalRoute(workspaceId, newId), { replace: true })

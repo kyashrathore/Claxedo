@@ -567,7 +567,7 @@ test.describe("core sidebar tree @core", () => {
     // (`existing.sessionId && existing.sessionId !== "new"`), so a
     // project-header body click on a bare draft route no longer treats the draft
     // as a reusable session and navigates to the malformed `/s/new`. It routes
-    // to `workspaceSessionRoute(workspaceDir)` (`/w/<dir>/session`).
+    // to `workspaceSessionRoute(workspaceId)` (`/w/<workspaceId>/session`).
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "primary" }) })
     await seedProject(page, { dir: DIR })

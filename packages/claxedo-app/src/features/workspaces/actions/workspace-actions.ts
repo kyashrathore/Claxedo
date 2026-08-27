@@ -42,14 +42,17 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
     props.state.workspace.setPaneWorktreeDefault(paneId, workspaceDir)
   }
 
-  const findExistingSessionContent = (workspaceDir: string) => {
+  const findExistingSessionContent = (workspaceDir: string, workspaceRouteId?: string) => {
     return props.state.meta.find(
-      (m) => m.type === "session" && m.directory === workspaceDir,
+      (m) =>
+        m.type === "session" &&
+        m.directory === workspaceDir &&
+        (!workspaceRouteId || m.content?.workspaceRouteId === workspaceRouteId),
     )
   }
 
-  const openOrCreateSession = (workspaceDir: string): { id: string; sessionId: string; reused: boolean } => {
-    const existing = findExistingSessionContent(workspaceDir)
+  const openOrCreateSession = (workspaceDir: string, selectedRouteId: string): { id: string; sessionId: string; reused: boolean } => {
+    const existing = findExistingSessionContent(workspaceDir, selectedRouteId)
     // The "new" sentinel is a draft placeholder, not a persisted session id.
     // Treating it as reusable routes to the malformed canonical `/s/new`
     // (core-sidebar-tree:496); a draft must take the workspace route instead.
@@ -60,10 +63,11 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
           workspaceDir,
           sessionId: existing.sessionId,
         }),
+        workspaceRouteId: selectedRouteId,
       })
       return { id, sessionId: existing.sessionId, reused: true }
     }
-    const id = props.state.layout.openSession(workspaceDir, "new", "New Session")
+    const id = props.state.layout.openSession(workspaceDir, "new", "New Session", { workspaceRouteId: selectedRouteId })
     return { id, sessionId: "new", reused: false }
   }
 
@@ -82,7 +86,7 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
       void ensureDirectorySessionCache(props.directorySessionCacheActions, created)
       props.state.workspace.recordAccess(project.id, created)
       bindWorktree(created)
-      const { id } = openOrCreateSession(created)
+      const { id } = openOrCreateSession(created, routeId)
       nav(workspaceSessionRoute(routeId), "workspace-select:recovered-workspace", {
         projectId: project.id,
         workspaceDir,
@@ -91,17 +95,17 @@ export function createWorkspaceActions(props: WorkspaceActionProps, nav: Nav) {
       })
     })) return
 
-    const existing = findExistingSessionContent(workspaceDir)
+    const selectedRouteId = routeIdForSelection(project, workspaceDir)
+    if (!selectedRouteId) return
+    const existing = findExistingSessionContent(workspaceDir, selectedRouteId)
     const reused = !!existing?.sessionId && existing.sessionId !== "new"
-    const routeId = reused ? undefined : routeIdForSelection(project, workspaceDir)
-    if (!reused && !routeId) return
 
     props.state.workspace.recordAccess(project.id, workspaceDir)
     bindWorktree(workspaceDir)
     void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
 
-    const { id, sessionId } = openOrCreateSession(workspaceDir)
-    nav(reused ? canonicalSessionRoute(sessionId) : workspaceSessionRoute(routeId!), reused
+    const { id, sessionId } = openOrCreateSession(workspaceDir, selectedRouteId)
+    nav(reused ? canonicalSessionRoute(sessionId) : workspaceSessionRoute(selectedRouteId), reused
       ? "workspace-select:reused-session"
       : "workspace-select:new-session",
     {

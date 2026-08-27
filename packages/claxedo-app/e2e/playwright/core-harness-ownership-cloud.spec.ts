@@ -467,7 +467,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     })
     await seedProjects(page)
 
-    await page.goto(`/${slug(DIR)}/session`)
+    await page.goto(`/w/${PROJECT_ID}/session`)
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     const localInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
