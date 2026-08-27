@@ -303,3 +303,55 @@ export async function expectSurfaceStatus(opts: {
 
   return { sessionId, title: rail.title, sidebarStatus: rail.status, switcherStatus }
 }
+
+async function readTerminalRailStatus(page: Page, terminalId: string): Promise<SurfaceStatus> {
+  const selector = `[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${terminalId}"]`
+  const row = page.locator(selector)
+  await expect(
+    row,
+    `rail row for terminal "${terminalId}" never appeared (${selector})`,
+  ).toBeVisible({ timeout: 15_000 })
+  const dot = row.locator(SELECTORS.railStatus)
+  if ((await dot.count()) === 0) return "idle"
+  return (await dot.first().getAttribute("data-sidebar-status")) as SurfaceStatus
+}
+
+/**
+ * Assert sidebar/compact-tab parity for the active terminal. Terminal tabs do
+ * not expose their content id in CompactSwitcher DOM, so active selection is
+ * the canonical correlation signal for this terminal-specific oracle.
+ */
+export async function expectActiveTerminalSurfaceParity(opts: {
+  page: Page
+  terminalId: string
+  expected: SurfaceStatus
+}): Promise<{ terminalId: string; sidebarStatus: SurfaceStatus; switcherStatus: SurfaceStatus }> {
+  const { page, terminalId, expected } = opts
+  const sidebarStatus = await readTerminalRailStatus(page, terminalId)
+  expect(
+    sidebarStatus,
+    `rail row for terminal "${terminalId}" reports data-sidebar-status="${sidebarStatus}", expected "${expected}"`,
+  ).toBe(expected)
+
+  await closeSidebar(page)
+  const tab = page.locator(SELECTORS.switcherTab).filter({
+    has: page.locator('[data-slot="workbench-tab"][data-selected="true"]'),
+  }).first()
+  await expect(tab, `active compact-switcher tab for terminal "${terminalId}" never appeared`).toBeVisible({
+    timeout: 10_000,
+  })
+  const switcherStatus = await readSwitcherStatusFromTab(tab)
+  expect(
+    switcherStatus,
+    `active compact tab reports data-switcher-status="${switcherStatus}", expected "${expected}" for terminal "${terminalId}"`,
+  ).toBe(expected)
+  expect(
+    switcherStatus,
+    `terminal "${terminalId}" disagrees across surfaces: sidebar="${sidebarStatus}", compact-tab="${switcherStatus}"`,
+  ).toBe(sidebarStatus)
+
+  await openSidebar(page)
+  const restoredSidebarStatus = await readTerminalRailStatus(page, terminalId)
+  expect(restoredSidebarStatus).toBe(expected)
+  return { terminalId, sidebarStatus: restoredSidebarStatus, switcherStatus }
+}

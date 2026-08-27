@@ -11,16 +11,11 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { useClaxedoState } from "./provider"
 import type { ClaxedoStateApi } from "./provider"
-import { contentScopeDir, type ContentMeta, type TerminalAgentStatus } from "./types"
+import { contentScopeDir, type ContentMeta } from "./types"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
+import { terminalAgentStatusFromEventType } from "@/features/terminal/core/terminal-agent-status"
 
 type AgentLifecycleEvent = Extract<ClaxedoEvent, { type: "agent.lifecycle" }>
-
-function agentStatus(eventType: AgentLifecycleEvent["eventType"]): TerminalAgentStatus {
-  if (eventType === "Busy") return "working"
-  if (eventType === "Idle") return "idle"
-  return "permission"
-}
 
 export function sessionStatusForAgentLifecycle(
   input: Pick<AgentLifecycleEvent, "sessionId" | "terminalId" | "eventType">,
@@ -185,7 +180,8 @@ function useAgentLifecycleListener() {
 
       const actualTerminalId = terminalId || tabId
 
-      const terminalStatus = agentStatus(eventType)
+      const terminalStatus = terminalAgentStatusFromEventType(eventType)
+      if (!terminalStatus) return
 
       batch(() => {
         state.terminal.setAgentStatus(actualTerminalId, terminalStatus)

@@ -14,6 +14,14 @@ const h = vi.hoisted(() => ({
   fit: vi.fn(),
   navigate: vi.fn(),
   metaPatch: vi.fn(),
+  loadSessionPreview: vi.fn(async () => undefined as {
+    terminalId: string
+    eventType?: string
+    updatedAt: number
+  } | undefined),
+  isAgentStatusTracked: vi.fn(() => false),
+  agentStatus: vi.fn(() => "idle" as const),
+  setAgentStatus: vi.fn(),
   pathname: "/w/%2Frepo/session",
   sdkWorkspaceId: "ws_terminal" as string | undefined,
   resolveRecovery: vi.fn((_alias: unknown, id: string) => id),
@@ -54,7 +62,7 @@ vi.mock("../../workbench/terminal-fit", () => ({
 
 vi.mock("../../lib/terminal-session-preview", () => ({
   aliasTerminalSessionPreview: vi.fn(),
-  loadTerminalSessionPreview: vi.fn(async () => undefined),
+  loadTerminalSessionPreview: h.loadSessionPreview,
 }))
 
 vi.mock("../../lib/terminal-log-summary", () => ({
@@ -84,9 +92,9 @@ vi.mock("../../../../app/workbench/state/index", () => ({
       queueCreateForContent: vi.fn(),
       peekCreateForContent: vi.fn(() => undefined),
       consumeCreateForContent: vi.fn(() => undefined),
-      isTracked: vi.fn(() => false),
-      agentStatus: vi.fn(() => "idle"),
-      setAgentStatus: vi.fn(),
+      isTracked: h.isAgentStatusTracked,
+      agentStatus: h.agentStatus,
+      setAgentStatus: h.setAgentStatus,
     },
     meta: {
       patch: vi.fn(),
@@ -117,9 +125,9 @@ vi.mock("@/features/terminal/app-ports", () => ({
       queueCreateForContent: vi.fn(),
       peekCreateForContent: vi.fn(() => undefined),
       consumeCreateForContent: vi.fn(() => undefined),
-      isTracked: vi.fn(() => false),
-      agentStatus: vi.fn(() => "idle"),
-      setAgentStatus: vi.fn(),
+      isTracked: h.isAgentStatusTracked,
+      agentStatus: h.agentStatus,
+      setAgentStatus: h.setAgentStatus,
     },
     meta: { patch: h.metaPatch },
     workspacePanel: { open: vi.fn() },
@@ -162,6 +170,13 @@ describe("TerminalContent switching", () => {
     h.fit.mockClear()
     h.navigate.mockClear()
     h.metaPatch.mockClear()
+    h.loadSessionPreview.mockReset()
+    h.loadSessionPreview.mockResolvedValue(undefined)
+    h.isAgentStatusTracked.mockReset()
+    h.isAgentStatusTracked.mockReturnValue(false)
+    h.agentStatus.mockReset()
+    h.agentStatus.mockReturnValue("idle")
+    h.setAgentStatus.mockReset()
     h.pathname = "/w/%2Frepo/session"
     h.sdkWorkspaceId = "ws_terminal"
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id)
@@ -225,6 +240,47 @@ describe("TerminalContent switching", () => {
 
     await waitFor(() => expect(screen.getByTestId("terminal-pty-new")).toBeTruthy())
     expect(h.navigate).toHaveBeenCalledWith(workspaceTerminalRoute("ws_terminal", "pty-new"), { replace: true })
+  })
+
+  test("hydrates terminal agent status from the daemon snapshot after a route reload", async () => {
+    h.loadSessionPreview.mockResolvedValue({
+      terminalId: "pty-one",
+      eventType: "Busy",
+      updatedAt: Date.now(),
+    })
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.setAgentStatus).toHaveBeenCalledWith("pty-one", "working"))
+  })
+
+  test("does not overwrite a live lifecycle event with an older daemon snapshot", async () => {
+    let resolvePreview!: (value: {
+      terminalId: string
+      eventType: string
+      updatedAt: number
+    }) => void
+    h.loadSessionPreview.mockReturnValue(new Promise((resolve) => {
+      resolvePreview = resolve
+    }))
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.loadSessionPreview).toHaveBeenCalled())
+    h.isAgentStatusTracked.mockReturnValue(true)
+    resolvePreview({ terminalId: "pty-one", eventType: "Busy", updatedAt: Date.now() - 1_000 })
+    await waitFor(() => expect(h.isAgentStatusTracked).toHaveBeenCalledWith("pty-one"))
+    expect(h.setAgentStatus).not.toHaveBeenCalled()
   })
 
   test("replaces a local pending route from the surface workspace identity", async () => {

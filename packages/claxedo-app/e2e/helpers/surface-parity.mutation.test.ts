@@ -115,7 +115,7 @@ function parityFixtureHtml(opts: { railStatus: SurfaceStatus; switcherStatus: Su
     </script>`
 }
 
-describe("expectSurfaceParity (B9) — surface-parity.ts:185-235", () => {
+describe("expectSurfaceParity (B9)", () => {
   test("healthy: equal rail/switcher status passes and survives the sidebar round trip", async () => {
     await page.setContent(`<body>${parityFixtureHtml({ railStatus: "working", switcherStatus: "working" })}</body>`)
     const evidence = await expectSurfaceParity({ page, sessionId: SESSION_ID, expected: "working" })
@@ -193,7 +193,7 @@ describe("focusSwitcherTab", () => {
   })
 })
 
-describe("expectSurfaceStatus — surface-parity.ts:258-288 (no sidebar round trip)", () => {
+describe("expectSurfaceStatus (no sidebar round trip)", () => {
   // expectSurfaceStatus assumes closeSidebar has already run and the tab is already
   // mounted (its own doc comment, lines 244-245: "call closeSidebar(page) before the
   // first expectSurfaceStatus") — this is the "transition experiment" shape the file

@@ -126,6 +126,9 @@
  *   11. Reloading the page reattaches the terminal pane to the SAME persisted PTY id
  *      (`data-terminal-id` unchanged, sidebar row still present) without issuing another
  *      `POST /api/wr/pty` — the PTY create count is unchanged across reload.
+ *   12. Reloading an active terminal while its agent is working restores the daemon's
+ *      terminal-session lifecycle snapshot before another SSE frame arrives, so both the
+ *      sidebar and compact-tab status dots remain `working`.
  *
  * INVARIANTS — completed-turn oracle (`e2e/helpers/turn-oracle.ts`) does not apply here:
  *   this spec has no chat/session prompt sends, only terminal lifecycle. Harness-ownership
@@ -164,6 +167,7 @@
  *   streaming surface.
  */
 import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
+import { expectActiveTerminalSurfaceParity } from "../helpers/surface-parity"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import sharp from "sharp"
 
@@ -219,14 +223,30 @@ type ClaxedoEventSlot = { pending: ClaxedoTestEvent[]; waiters: Array<() => void
 
 class ClaxedoEventBus {
   private slots: ClaxedoEventSlot[] = []
+  private terminalSessions = new Map<string, Record<string, unknown>>()
 
   emit(payload: ClaxedoTestEvent) {
+    if (payload.type === "agent.lifecycle" && typeof payload.terminalId === "string") {
+      this.terminalSessions.set(payload.terminalId, {
+        terminalId: payload.terminalId,
+        ...(typeof payload.tabId === "string" ? { tabId: payload.tabId } : {}),
+        ...(typeof payload.workspaceId === "string" ? { workspaceId: payload.workspaceId } : {}),
+        ...(typeof payload.provider === "string" ? { provider: payload.provider } : {}),
+        ...(typeof payload.sessionId === "string" ? { sessionId: payload.sessionId } : {}),
+        ...(typeof payload.eventType === "string" ? { eventType: payload.eventType } : {}),
+        updatedAt: Date.now(),
+      })
+    }
     for (const slot of this.slots) {
       slot.pending.push(payload)
       const waiters = slot.waiters
       slot.waiters = []
       for (const resolve of waiters) resolve()
     }
+  }
+
+  terminalSession(terminalId: string) {
+    return this.terminalSessions.get(terminalId)
   }
 
   /** One call = one HTTP connection: claims an idle slot (or makes a new one). */
@@ -584,7 +604,19 @@ async function installPtyApi(page: Page, dir: string): Promise<PtyApi> {
 
   await page.route("**/api/wr/hook/terminal-session**", (route: Route) => {
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers })
-    return route.fulfill({ status: 200, contentType: "application/json", headers, body: "{}" })
+    const terminalId = new URL(route.request().url()).searchParams.get("terminalId") ?? ""
+    const session = claxedoEventBuses.get(page)?.terminalSession(terminalId) ?? null
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers,
+      body: JSON.stringify({
+        success: true,
+        source: session ? "memory" : "none",
+        terminalId,
+        session,
+      }),
+    })
   })
   await page.route("**/api/wr/process/logs**", (route: Route) => {
     if (route.request().method() === "OPTIONS") return route.fulfill({ status: 204, headers })
@@ -993,6 +1025,33 @@ test.describe("core terminal panel @core", () => {
 
     await emitClaxedoEvent(page, { type: "agent.lifecycle", tabId: id, terminalId: id, eventType: "Idle" })
     await expect(dot).toHaveAttribute("data-sidebar-status", "done", { timeout: 10_000 })
+  })
+
+  test("working status survives reload in both sidebar and compact tabs — behaviors 8/12", async ({ page }) => {
+    const DIR = "/tmp/e2e-core-terminal-status-reload"
+    await installAppBootMock(page, DIR)
+    await installFakeTerminalSocket(page)
+    const api = await installPtyApi(page, DIR)
+    await seedProject(page, DIR)
+    await openWorkspaceRoute(page, DIR)
+
+    const id = await createPlainTerminal(page, api)
+    await emitClaxedoEvent(page, {
+      type: "agent.lifecycle",
+      tabId: id,
+      terminalId: id,
+      eventType: "Busy",
+    })
+    await expectActiveTerminalSurfaceParity({ page, terminalId: id, expected: "working" })
+
+    // No lifecycle frame is emitted after navigation. `seedProject` clears
+    // browser persistence on every document load, and the typed terminal URL
+    // reconstructs the surface, so the daemon-style terminal-session snapshot
+    // is the only source capable of restoring this status.
+    await page.reload({ waitUntil: "domcontentloaded" })
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    await waitForTerminalMounted(page, id)
+    await expectActiveTerminalSurfaceParity({ page, terminalId: id, expected: "working" })
   })
 
   test("focusing a done terminal clears its status dot — behaviors 9", async ({ page }) => {

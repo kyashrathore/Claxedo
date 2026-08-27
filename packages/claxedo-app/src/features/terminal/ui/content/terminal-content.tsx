@@ -22,6 +22,7 @@ import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-su
 import { shouldMountTerminalPane } from "./terminal-content-policy"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
+import { terminalAgentStatusFromEventType } from "../../core/terminal-agent-status"
 
 /** See the note on the same alias in `app/workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
@@ -318,8 +319,8 @@ function TerminalContentInner(props: {
     if (visible && !wasVisible && activated()) requestTerminalFitOnPaneChange()
     wasVisible = visible
   })
-  createResource(realPtyId, (id) =>
-    loadTerminalSessionPreview(claxedoServerUrl, id, {
+  createResource(realPtyId, async (id) => {
+    const preview = await loadTerminalSessionPreview(claxedoServerUrl, id, {
       request: platform.fetch,
       directory: directory(),
       resolveWorkspaceRuntime: async ({ directory }) => {
@@ -334,8 +335,12 @@ function TerminalContentInner(props: {
           workspaceId: workspace.workspaceId,
         }
       },
-    }),
-  )
+    })
+    if (!id || !preview || preview.terminalId !== id) return
+    const status = terminalAgentStatusFromEventType(preview.eventType)
+    if (!status || state.terminal.isTracked(id)) return
+    state.terminal.setAgentStatus(id, status)
+  })
 
   const handleConnectError = async (error: unknown) => {
     setConnected(false)
