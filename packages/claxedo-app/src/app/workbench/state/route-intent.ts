@@ -358,6 +358,10 @@ export function createRouteIntentAdapter(input: {
     pendingSessionResolution.add(sessionId)
     void Promise.resolve(input.resolveSession(sessionId))
       .then((rawTarget) => {
+        // A resolver can outlive the route that launched it. Closing or
+        // archiving that session while metadata is in flight is authoritative;
+        // a late result must not recreate the surface that was just removed.
+        if (isRouteIntentClosed({ sessionId })) return
         if (input.currentSessionId?.() && input.currentSessionId() !== sessionId) return
         if (rawTarget && "unavailable" in rawTarget) {
           markRouteIntentClosed({ sessionId })

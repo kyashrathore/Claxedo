@@ -15,11 +15,11 @@ import {
   type Nav,
   type SessionItem,
 } from "@/features/session/app-ports"
-import { sessionRoute as canonicalSessionRoute, workspaceRoute, workspaceSessionRoute } from "@/platform/identity/route"
+import { parseShellRoute, sessionRoute as canonicalSessionRoute, workspaceRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { CloudStartupView, type CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { workspaceStartup } from "@/platform/runtime/workspace-startup"
-import { pathnameTargetsSession, shouldBlockRemoteSessionHistoryAction } from "./session-actions.logic"
+import { shouldBlockRemoteSessionHistoryAction } from "./session-actions.logic"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
 import { queryClient } from "@/platform/query/query-client"
@@ -34,6 +34,14 @@ import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity
 
 const directorySessionCacheEnsureTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DIRECTORY_SESSION_CACHE_ENSURE_DELAY_MS = 8_000
+
+function pathnameTargetsSession(pathname: string, sessionId: string) {
+  const route = parseShellRoute(pathname)
+  return (
+    (route.kind === "session" || route.kind === "workspace-session" || route.kind === "legacy-directory") &&
+    route.sessionId === sessionId
+  )
+}
 
 function sessionListRefForArchive(sessionItem: SessionItem, directory: string) {
   if (sessionItem.sessionRef) return sessionItem.sessionRef
@@ -51,6 +59,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     const next = canonicalSessionRoute(sessionId)
     if (window.location.pathname === next) return
     window.history.replaceState(window.history.state, "", next)
+    window.dispatchEvent(new PopStateEvent("popstate"))
   }
 
   const remoteHistoryReadOnly = (action: string) => {

@@ -892,6 +892,29 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("session:ses-coalesced")
   })
 
+  test("a pending session resolver cannot recreate a session closed while it was in flight", async () => {
+    let resolveTarget: ((target: { directory: string; title?: string }) => void) | undefined
+    const pendingTarget = new Promise<{ directory: string; title?: string }>((resolve) => {
+      resolveTarget = resolve
+    })
+    const harness = createHarness({
+      sessionInventory: { loaded: false },
+      resolveSession: async () => pendingTarget,
+    })
+
+    harness.receive({
+      workspaceId: undefined,
+      sessionId: "ses-closed-in-flight",
+      sessionTitle: "Closing",
+    })
+    markRouteIntentClosed({ sessionId: "ses-closed-in-flight" })
+    resolveTarget?.({ directory: "/repo/main", title: "Late result" })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(harness.opened).toEqual([])
+    expect(harness.focused()).toBeNull()
+  })
+
   test("session route without workspace builds a SessionRef from resolver metadata", async () => {
     const harness = createHarness({
       focused: "existing",

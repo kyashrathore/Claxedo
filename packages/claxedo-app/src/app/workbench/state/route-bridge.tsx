@@ -503,6 +503,15 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         if (directSessionRouteId() !== sessionId) return
         if (routeSessionMetaIsArchived(session)) {
           markRouteIntentClosed({ sessionId })
+          // A cold direct route may have materialized a provisional surface
+          // while authoritative metadata was still in flight. Archived
+          // metadata owns the outcome: remove every provisional copy before
+          // redirecting so the workspace root cannot retain a ghost row.
+          for (const surface of state.meta.findAll((item) =>
+            (item.type === "session" || item.type === "context") && item.sessionId === sessionId
+          )) {
+            state.layout.closeContent(surface.id)
+          }
           navigate(unavailableSessionRedirect(session), { replace: true })
           return
         }

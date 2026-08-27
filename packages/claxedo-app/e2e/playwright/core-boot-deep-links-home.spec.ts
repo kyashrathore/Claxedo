@@ -766,6 +766,14 @@ test.describe("core boot, deep links, and home @core", () => {
         body: JSON.stringify({ error: "session_not_found" }),
       })
     })
+    await page.route(`**/api/claxedo/session/${SESSION_ID}/meta**`, (route) => {
+      if (!isApiCall(route) || route.request().method() !== "GET") return route.fallback()
+      return route.fulfill({
+        status: 404,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "session_not_found" }),
+      })
+    })
     await page.route("**/session", (route) => {
       if (!isApiCall(route) || route.request().method() !== "GET") return route.fallback()
       return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })

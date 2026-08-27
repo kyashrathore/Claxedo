@@ -485,6 +485,8 @@ async function installWorkspaceRuntimeEventsBridge(page: Page, mock: MockRuntime
   }
 }
 
+const PROJECT_ID = "proj_harness_rendering_matrix"
+
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript(({ dir, projectId }: { dir: string; projectId: string }) => {
     localStorage.clear()
@@ -502,7 +504,7 @@ async function seedOneProject(page: Page, dir: string) {
         closedProjects: {},
       }),
     )
-  }, { dir, projectId: "project_harness_rendering_matrix" })
+  }, { dir, projectId: PROJECT_ID })
 }
 
 function sessionUrlPattern(sessionId: string) {
@@ -561,6 +563,8 @@ async function primeHarness(
   const mock = await installMockRuntime(page, {
     dir,
     sessionId,
+    projectId: PROJECT_ID,
+    workspaceId: PROJECT_ID,
     harness: harness as never,
     ...(subagents ? {
       subagents: { [`ses_harness_matrix_${harness}`]: subagents.rows },

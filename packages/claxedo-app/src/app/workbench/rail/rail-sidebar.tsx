@@ -421,6 +421,7 @@ function replaceSessionUrl(session: Row) {
   const route = workspaceId ? workspaceSessionRoute(workspaceId, session.id) : sessionRoute(session.id)
   if (window.location.pathname === route) return
   window.history.replaceState(window.history.state, "", route)
+  window.dispatchEvent(new PopStateEvent("popstate"))
 }
 export function RailSidebar(props: RailSidebarProps) {
   if (!railBodyMarked) {

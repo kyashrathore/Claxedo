@@ -2121,7 +2121,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(r)) return r.continue()
     const directory = new URL(r.request().url()).searchParams.get("directory") ?? DIR
     return json(r, workspaceResolveResponse({
-      id: directory,
+      id: options.workspaceId ?? directory,
       project_id: PROJECT_ID,
       directory,
       kind: "local",

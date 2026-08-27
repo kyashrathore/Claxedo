@@ -887,8 +887,9 @@ test.describe("core workspace lifecycle @core", () => {
     deliverWorktreeReady = true
 
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveCount(0, { timeout: 20_000 })
-    // The recovered session keeps the project's canonical opaque route ID;
+    // Recovery creates a new local workspace identity for the project. The
+    // authoritative resolve response above carries that opaque route ID;
     // filesystem directories never leak into browser URLs.
-    await expect(page).toHaveURL(`/w/${PROJECT_ID}`, { timeout: 10_000 })
+    await expect(page).toHaveURL(`/w/local-${PROJECT_ID}`, { timeout: 10_000 })
   })
 })
