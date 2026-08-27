@@ -293,6 +293,33 @@ body**, and `sessions.prompt` likewise.
 | **Published `core` dist contents** | swapping in the locally built dist does **not** fix it |
 | **Published `server` dist contents** | swapping in the locally built dist does **not** fix it |
 
+**Narrowed further: built output fails, source succeeds.** Swapping the
+locally built dists of *every* `@opencode-ai` package (`sdk`, `core`, `server`,
+`util`, `client`, `schema`, `plugin`, `protocol`, `ai`, `codemode`,
+`simulation`) into the published install — dists built from the exact source
+that works — still fails identically. So this is not a bad publish of one
+package: **anything produced by their build behaves differently from the source
+it was built from.**
+
+**And their pipeline cannot see it.** Two facts explain how this ships green:
+
+1. No SDK test imports `dist`. `packages/sdk/test/*.ts` all import `../src/...`,
+   so the entire suite — including the 15 embedded tests that pass — exercises
+   TypeScript source, never build output.
+2. The one script that does test real tarballs,
+   `packages/sdk/script/verify-package.ts`, packs every package and builds a
+   consumer whose only assertion is `opencode.health.get()`. That is precisely
+   the call that still works in the published install, because it resolves no
+   location.
+
+So nothing in their pipeline calls a location-resolving endpoint against built
+or packed output. `health.get` passes, everything behind it is untested there,
+and the failure reaches consumers untouched.
+
+**Still not isolated:** which build step or emitted construct causes it. That
+needs instrumenting their build, which is upstream's to do — but the report now
+points at a specific, checkable gap rather than a symptom.
+
 **Cause: not isolated.** I previously wrote "the published artifact is
 defective; its source is not." The dist-swap results above falsify the precise
 form of that claim — replacing the three most likely published dists with
