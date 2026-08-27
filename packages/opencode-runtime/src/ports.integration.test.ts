@@ -104,10 +104,13 @@ describe("session port against a real host", () => {
     const admitted = await sessions.prompt(alpha, session.id, { text: "work" })
     await sessions.interrupt(alpha, session.id)
 
-    // Contract fact worth pinning: the id `prompt` returns is an INBOX entry,
-    // not a message in `message.list`. Staging a revert against it is rejected
-    // with a typed MessageNotFoundError. Unit 4b's revert projector must take
-    // its message id from `messages()`, never from the admission result.
+    // Contract fact worth pinning, and it is a TIMING fact, not an identity
+    // one: the id `prompt` returns is the same id that later appears in
+    // `message.list` and in `session.inbox.delivered` (gate-inbox-identity.mjs).
+    // It is simply not durable yet, so staging a revert against it right after
+    // admission is rejected - MessageNotFoundError once the turn is idle,
+    // SessionBusyError while it is still running. Unit 4b holds the id from
+    // admission and waits for delivery rather than re-reading the page.
     await expect(sessions.revertTo(alpha, session.id, admitted.id)).rejects.toMatchObject({
       _tag: "MessageNotFoundError",
       sessionID: session.id,
