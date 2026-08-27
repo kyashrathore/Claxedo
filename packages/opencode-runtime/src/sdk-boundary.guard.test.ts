@@ -112,6 +112,24 @@ describe("public SDK boundary", () => {
     "./packages/workspace-runtime/src/sdk-transport-parity.test.ts",
   ]
 
+  /**
+   * `@opencode-ai/core` is a direct dependency of this package for exactly one
+   * reason: repairing the published build's broken layer graph
+   * (src/upstream-repair.ts). Confining it to one file keeps the deletion, once
+   * upstream ships the fix, a single-file deletion rather than an excavation.
+   */
+  test("this package touches @opencode-ai/core in exactly one module", () => {
+    const files = [
+      ...new Set(
+        search('from "@opencode-ai/core')
+          .filter((line) => !isSelfReference(line))
+          .filter((line) => line.startsWith("./packages/opencode-runtime/src/"))
+          .map((line) => line.split(":")[0]!),
+      ),
+    ].sort()
+    expect(files).toEqual(["./packages/opencode-runtime/src/upstream-repair.ts"])
+  })
+
   test("the pinned SDK family is imported only by its owning package", () => {
     // `@claxedo/opencode-runtime` is the sole owner of the public SDK
     // (Decision 2). Everything else consumes Claxedo ports and DTOs.

@@ -1,13 +1,15 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: BLOCKED. Isolated to `@opencode-ai/core`'s BUILD OUTPUT: in one
-published install, pointing only core's exports at `./src/*.ts` turns 4 errors
-into 4 successes, with every other package left as published (§2.2). The same calls succeed from the
-`sst/opencode` source tree (their own 15 embedded tests pass) and fail with
-empty 500s from an installed published package set, under the same runtime and
-the same `effect` version. Swapping locally built `sdk`, `core` and `server`
-dists into the published install does not fix it, so it is not simply those
-three artifacts. See §2.2 for the full elimination table.
+Status: ROOT-CAUSED AND REPAIRED IN-PROCESS. The published
+`@opencode-ai/core` build output carries a broken layer graph:
+`FileSystem.node.dependencies[2]` is `undefined`, so every request that
+resolves a location dies with `TypeError: undefined is not an object
+(evaluating 'node.name')` and the router returns an empty 500. Cause: a benign
+`filesystem.ts` <-> `filesystem/search.ts` import cycle that
+`Bun.build({ splitting: true })` linearises into one chunk in the wrong order
+(§2.3). `packages/opencode-runtime/src/upstream-repair.ts` restores the missing
+dependency before `OpenCode.create()`; the one-line upstream fix is verified
+and kept at `packages/opencode-runtime/contract/upstream-core-cycle.patch`.
 Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
 Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
 Planning commit: `8be1be76ce`
@@ -103,6 +105,14 @@ Development on the cutover branch currently proceeds with a local
 `--minimum-release-age=0`, which does **not** change the committed policy.
 Merging the lockfile entry is the actual adoption decision and must not happen
 until (1) or (2) holds.
+
+`@opencode-ai/core@0.0.0-beta-18314` was added to
+`@claxedo/opencode-runtime`'s dependencies (for §2.3's repair) under the same
+local `--minimum-release-age=0`. It is not a second adoption decision: the same
+tarball was already in the graph as a transitive dependency of the SDK, and
+`bun.lock` records the SAME integrity hash
+(`sha512-psy82L/z6tvhDfdXOmA9ldm07Pth74oYUSk0LdNY4T6Pv02/Kex0qYgjMzlvamAuA9YHx3HgJWmAcsbfz9yUWw==`)
+before and after. It rides on decision (1) or (2) above, not beside it.
 
 There is no age-eligible alternative worth taking: see §2.2 — the newest
 age-eligible V2 beta (`0.0.0-beta-17963`) cannot even be imported.
@@ -362,21 +372,109 @@ means the real modules live in shared chunks, so replacing `dist/location.js`
 changes nothing — the other built modules import `location` from the chunk, not
 from that shim. Narrowing further means instrumenting core's build.
 
-**Still not isolated:** which construct in core's build output causes it. That
-needs instrumenting their build, which is upstream's to do — but the report now
-points at a specific, checkable gap rather than a symptom.
+The construct responsible is named in §2.3. An earlier note here said
+per-file bisection was the only way forward and that the cause was upstream's
+to find; instrumenting the failing request instead of the build turned out to
+answer it in one step.
 
-**Cause: not isolated.** I previously wrote "the published artifact is
-defective; its source is not." The dist-swap results above falsify the precise
-form of that claim — replacing the three most likely published dists with
-locally built ones changes nothing. The remaining candidates are the other
-published packages (`util`, `client`, `schema`, `plugin`, `protocol`, `ai`,
-`codemode`, `simulation`) or something structural about the installed layout
-versus a workspace. I have not narrowed it further and will not guess again.
+## 2.3 ROOT CAUSE — a build-order hazard in core's filesystem module cycle
 
-What is safe to say: **the same code path succeeds from the upstream source
-tree and fails from an installed published package set**, under identical
-runtime and dependency versions.
+VERIFIED. Reproduced from a clean `bun run build` of `sst/opencode` at
+`b731bc1`, not only from the published tarball, and fixed by a one-line change
+to their source.
+
+**A. The observable.** `config.get`, `agent.list`, `provider.list`,
+`plugin.list` and `session.prompt` return HTTP 500 with an empty body.
+`health.get()` and `session.list` succeed. The dividing line is whether the
+request resolves a location.
+
+**B. The defect.** `EmbeddedHost.create` builds the router through
+`HttpEffect.toWebHandlerWith`, which converts an unhandled defect into a bare
+500 and logs nothing. Piping the router effect through `Effect.onError` before
+that conversion surfaces the cause:
+
+```
+TypeError: undefined is not an object (evaluating 'node.name')
+  at resolve (@opencode-ai/util/dist/effect/layer-node.js:105)
+  at recur   (@opencode-ai/util/dist/effect/layer-node.js:63)
+  at hoist   (@opencode-ai/util/dist/effect/layer-node.js:89)
+```
+
+`LayerNode.walk` calls `options.resolve(node)`, which reads `node.name`. Making
+`walk` report its stack instead of throwing names the owner exactly:
+
+```
+parent stack: [ "group", "@opencode/PluginSupervisor", "group", "@opencode/FileSystem" ]
+parent deps : [ "@opencode/FSUtil", "@opencode/Location", "undefined" ]
+```
+
+`@opencode/FileSystem`'s third dependency is `undefined`.
+
+**C. Why it is `undefined`.** `core/src/filesystem.ts` declares
+
+```ts
+export const node = makeLocationNode({
+  service: Service,
+  layer: baseLayer,
+  deps: [FSUtil.node, Location.node, FileSystemSearch.node],
+})
+```
+
+and imports `FileSystemSearch` from `./filesystem/search.js`, which in turn
+imports `FileSystem` from `../filesystem.js` — a cycle. As ESM source the cycle
+is harmless: `search.ts` only touches the `FileSystem` namespace lazily, inside
+layer bodies, so by the time `filesystem.ts`'s top-level `node` is evaluated
+the search module has finished. `core` is published through
+`Bun.build({ splitting: true })`, which merges both modules into ONE chunk and
+emits `filesystem.ts` first:
+
+```
+job-3675e63x.js:36   // src/filesystem.ts
+job-3675e63x.js:144  deps: [FSUtil.node, exports_location.node, exports_search.node]
+job-3675e63x.js:147  // src/filesystem/search.ts
+job-3675e63x.js:298  var node2 = configured();          <- the search node, 154 lines late
+```
+
+A bundled namespace object yields `undefined` for a not-yet-initialised binding
+rather than throwing a TDZ `ReferenceError`, so the hole is captured silently
+and survives into every consumer of every published build.
+
+**D. Why it ships green.** `packages/sdk/script/verify-package.ts` packs real
+tarballs and installs them, but the consumer it builds asserts only
+`opencode.health.get()` — the one call that resolves no location. None of
+upstream's 15 embedded tests imports `dist`; they all run against `src`, where
+the cycle is benign.
+
+**E. The upstream fix (verified).** `search.ts` uses only
+`FileSystem.FindInput` and `FileSystem.Entry`, both exported by
+`@opencode-ai/schema/filesystem`. Importing them from there breaks the cycle,
+and the bundler then emits the two modules in separate chunks with a real
+import edge between them:
+
+| `packages/core` at `b731bc1` | `config.get` · `agent.list` · `provider.list` · `plugin.list` |
+|---|---|
+| built dist, unmodified | 4 errors |
+| built dist, one-line import change | **4 successes** |
+
+The patch is `packages/opencode-runtime/contract/upstream-core-cycle.patch`.
+
+**F. What Claxedo does about it.**
+`packages/opencode-runtime/src/upstream-repair.ts` re-points that one array
+element at `FileSystemSearch.node` before the first `OpenCode.create()`. It is
+the whole workaround: no vendored tarball, no patched `node_modules`, no second
+copy of the engine. `@opencode-ai/core` is a declared dependency at the same
+pin and the SAME integrity hash (`sha512-psy82L/...`) the SDK already resolved,
+so it adds no supply-chain surface. `upstream-repair.test.ts` asserts in a
+subprocess that the defect is STILL present in the installed core — when
+upstream fixes it and the pin moves, that test fails and names every file to
+delete. It also proves the flip end to end: without the repair the three
+surfaces answer `status 500`, with it they answer `ok`.
+
+**G. Prior art.** Nothing in `sst/opencode`'s issues or pull requests mentions
+this (searched for `layer-node`, `splitting`, `circular`, `node.name`, and
+embedded-SDK 500s), and https://opencode.ai/v2/docs/build/sdk documents exactly
+the usage that fails — `OpenCode.create()` then a call with
+`location: { directory }` — with no caveat. Not yet reported upstream.
 
 ### The 500s carry an empty body (correcting a false finding)
 
