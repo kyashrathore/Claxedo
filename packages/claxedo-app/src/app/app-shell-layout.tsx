@@ -16,7 +16,7 @@
  * └────────┴────────────────────────────────────────────────────┘
  */
 
-import { createMemo, createSignal, lazy, onCleanup, onSettled, Show, type ParentProps } from "solid-js"
+import { createEffect, createMemo, createSignal, lazy, onCleanup, onSettled, Show, type ParentProps } from "solid-js"
 import type { JSX } from "@solidjs/web"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import { useClaxedoState, type ContentMeta } from "./workbench/state/index"
@@ -67,6 +67,13 @@ const DialogProcessDiagnostics = lazyDialog(() =>
     default: module.DialogProcessDiagnostics,
   })),
 )
+
+/**
+ * Document-scoped retention for the rail's pinned state. Module scope IS the
+ * document here: a reload re-evaluates this module and the value is gone, while
+ * a router-driven remount of the shell finds it still set.
+ */
+let retainedRailPinned: boolean | undefined
 
 export type AppShellLayoutProps = ParentProps<{
   /**
@@ -242,7 +249,16 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const initialRailWidth = claxedoState.rail.width() || 260
   const initialRailLayoutState = {
     collapsed: claxedoState.rail.collapsed(),
-    pinned: claxedoState.rail.pinned(),
+    // Whether the rail is pinned is in-memory shell chrome: it is deliberately
+    // NOT persisted, so a reload starts from the saved rail state. But the
+    // Solid 2 router re-creates this component on every navigation (it rebuilds
+    // its whole tree, root layout included — see `ConnectionGate`), so seeding
+    // only from the persisted value silently re-pinned a sidebar the user had
+    // just unpinned, the moment they opened anything. Solid 1's router kept the
+    // component, so the toggle simply survived.
+    // Retain it for the life of the DOCUMENT to restore that behaviour: a
+    // navigation keeps the user's choice, a reload still does not.
+    pinned: retainedRailPinned ?? claxedoState.rail.pinned(),
     width: initialRailWidth,
   }
   const initialPanel = claxedoState.workspacePanel.state()
@@ -291,6 +307,12 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   const sidebarWidth = () => (railRegion().size.unit === "px" ? railRegion().size.value : 260)
   const sidebarExpanded = () => sidebarWidth() > 0
   const sidebarPinned = () => railRegion().docked !== false
+  createEffect(
+    () => sidebarPinned(),
+    (pinned) => {
+      retainedRailPinned = pinned
+    },
+  )
   const sidebarHidden = () => !sidebarPinned() && sidebarWidth() === 0
   const workspacePanelFullWidth = () =>
     workspacePanelRegion().size.unit === "percent" && workspacePanelRegion().size.value === 100
