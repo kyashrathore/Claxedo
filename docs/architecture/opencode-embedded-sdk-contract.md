@@ -224,7 +224,67 @@ Ruled out, each by direct test:
   exact directory (and returned a resolved `projectID`).
 - **Not argument shape** — same with and without a `location` argument.
 
-### Root cause — established from source, not inferred
+### Correction: the empty registry is NOT the cause
+
+I earlier called `node = registryNode({})` the root cause. Reading the upstream
+`beta` branch (`sst/opencode`, not the published dist) disproves that.
+
+The public SDK has TWO entrypoints and they differ deliberately:
+
+| Entrypoint | `workspaceProviders` | Source |
+|---|---|---|
+| `@opencode-ai/sdk` (promise) | **omitted** | `packages/sdk/src/promise.ts:8` — `Omit<EmbeddedHost.CreateOptions, "workspaceProviders">` |
+| `@opencode-ai/sdk/effect` | **accepted** | `packages/sdk/src/effect/opencode.ts` — `export type CreateOptions = EmbeddedHost.CreateOptions` |
+
+`./effect` is a documented public export, so using it is not a Decision 15
+violation. Through it, with a local driver built on the published
+`EnvironmentLocal.makeLocalDriver`, VERIFIED working:
+
+```
+workspace.create      OK  wrk_04188900...
+workspace.provision   OK  provider "local", binding attached
+sessions.create       OK  with location { directory, workspaceID }
+```
+
+That is exactly the setup the SDK's own tests use
+(`packages/sdk/test/embedded.test.ts:545`). So workspace provisioning is
+available and works — the earlier `ProviderNotFound` was my failure to use the
+entrypoint that exposes it, not an upstream defect.
+
+**But the 500s persist anyway.** With a fully provisioned workspace, a real
+git-backed project directory, and sessions carrying the `workspaceID`,
+`config.get`, `agent.list`, `provider.list` and `sessions.prompt` still all
+return 500. So provisioning is not the missing piece either.
+
+### The error path is itself broken, which hides the real cause
+
+Every 500 carries this response body (VERIFIED):
+
+```
+{ _id: 'Effect', op: 'Suspend', args: [Function (anonymous)] }
+```
+
+That is an **unevaluated Effect object serialized as the response body** — the
+server's error path is returning the Effect rather than running it. Whatever
+actually fails inside those handlers is masked by it, which is why no amount of
+probing from outside recovers the real error, and why `log.emit` stays silent.
+
+That broken error path is the single most valuable thing to report upstream:
+until it renders properly, no embedder can diagnose their own failures.
+
+### What the source does explain
+
+`packages/core/src/location.ts:18` — `export const node =
+LayerNode.unbound(Service, tags.values.location)`. The location service is
+unbound by design and bound per request. `Config.layer`
+(`packages/core/src/config.ts:101`) requires `Location.Service`, which is why
+config, agents, providers and prompting share one failure: they all resolve a
+location. `createEmbeddedRoutes` includes `LocationServiceMap.node` on the same
+service set as `createRoutes` (`packages/server/src/routes.ts:89`), so the
+binding machinery is present — it is the binding or its error surface that
+misbehaves, not its absence.
+
+### Superseded: what I originally believed
 
 `@opencode-ai/core/dist/chunks/job-t14kykx1.js` defines the default workspace
 driver as, literally:
