@@ -99,6 +99,24 @@ describe("control plane session routes", () => {
     mocks.resolveHarnessHostForRequest.mockResolvedValue("workspace")
   })
 
+  test("rejects oversized participant mutations before parsing or authentication", async () => {
+    const response = await ControlPlaneSessionRoutes(services(), signedOptions).request(
+      "https://control.example.test/sessions/session-1/participants",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(17 * 1024),
+        },
+        body: JSON.stringify({ participantTokenIdentifier: "x".repeat(17 * 1024), workspaceId: "ws_1" }),
+      },
+    )
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(signedOptions.verifier).not.toHaveBeenCalled()
+  })
+
   test("does not expose direct sandbox URLs as hosted session gateways", async () => {
     const svc = services()
     svc.defaultHomeRegion = "eu-west"

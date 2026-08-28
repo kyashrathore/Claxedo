@@ -81,6 +81,9 @@ export async function cloudConnectionInfo(
     jti: token.jti,
     workspaceId: ws.id,
     hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role,
     expiresAt: token.tokenExpiresAt,
   })
   await authority.auditAllow(auth, {

@@ -29,6 +29,41 @@ async function grantedOrg(ctx: any, clerkOrgId: string | undefined) {
   return await orgByClerkOrgId(ctx.db, clerkOrgId) ?? undefined
 }
 
+function targetSelectorCount(args: {
+  grant_id?: unknown
+  granted_to_token_identifier?: string
+  granted_to_clerk_subject?: string
+  granted_to_clerk_org_id?: string
+}) {
+  return [
+    args.grant_id,
+    args.granted_to_token_identifier,
+    args.granted_to_clerk_subject,
+    args.granted_to_clerk_org_id,
+  ].filter(Boolean).length
+}
+
+async function grantsForTarget(ctx: any, workspaceId: unknown, target: {
+  user?: { _id: unknown }
+  org?: { _id: unknown }
+}) {
+  if (target.user) {
+    return await ctx.db
+      .query("workspace_share_grants")
+      .withIndex("by_workspace_user", (q: any) =>
+        q.eq("workspace_id", workspaceId).eq("granted_to_user_id", target.user!._id))
+      .collect()
+  }
+  if (target.org) {
+    return await ctx.db
+      .query("workspace_share_grants")
+      .withIndex("by_workspace_org", (q: any) =>
+        q.eq("workspace_id", workspaceId).eq("granted_to_org_id", target.org!._id))
+      .collect()
+  }
+  return []
+}
+
 async function revokeRuntimeTokensForUsers(ctx: any, workspaceId: unknown, userIds: unknown[]) {
   const now = Date.now()
   const rows = (await Promise.all(userIds.map(async (userId) =>
@@ -64,19 +99,29 @@ export const grant = authedMutation({
     granted_to_clerk_org_id: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (targetSelectorCount(args) !== 1) throw new Error("Share target must be exactly one user or org")
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "admin")) throw new Error("Workspace not found")
     const user = await grantedUser(ctx, args)
     const org = await grantedOrg(ctx, args.granted_to_clerk_org_id)
     if (!user && !org) throw new Error("Share target not found")
     const actor = await upsertUser(ctx)
+    const active = (await grantsForTarget(ctx, workspace._id, { user, org }))
+      .filter((item: any) => !item.revoked_at)
+    if (active.length === 1 && active[0].role === args.role) return active[0]._id
+    const now = Date.now()
+    for (const item of active) await ctx.db.patch(item._id, { revoked_at: now })
+    if (active.length > 0) {
+      const userIds = user ? [user._id] : org ? await orgUserIds(ctx, org._id) : []
+      await revokeRuntimeTokensForUsers(ctx, workspace._id, userIds)
+    }
     return await ctx.db.insert("workspace_share_grants", {
       workspace_id: workspace._id,
       granted_to_user_id: user?._id,
       granted_to_org_id: org?._id,
       role: args.role,
       created_by_user_id: actor._id,
-      created_at: Date.now(),
+      created_at: now,
     })
   },
 })
@@ -90,30 +135,30 @@ export const revoke = authedMutation({
     granted_to_clerk_org_id: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    if (targetSelectorCount(args) !== 1) {
+      throw new Error("Share revoke target must be exactly one grant, user, or org")
+    }
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "admin")) throw new Error("Workspace not found")
     const user = await grantedUser(ctx, args)
     const org = await grantedOrg(ctx, args.granted_to_clerk_org_id)
-    const grants = await ctx.db
-      .query("workspace_share_grants")
-      .withIndex("by_workspace", (q) => q.eq("workspace_id", workspace._id))
-      .collect()
-    const grant = grants.find((item) => {
-      if (args.grant_id) return item._id === args.grant_id
-      if (user) return item.granted_to_user_id === user._id
-      if (org) return item.granted_to_org_id === org._id
-      return false
-    })
-    if (!grant || grant.revoked_at) return { revoked: false }
-    await ctx.db.patch(grant._id, { revoked_at: Date.now() })
-    const userIds = grant.granted_to_user_id
-      ? [grant.granted_to_user_id]
-      : grant.granted_to_org_id
-        ? await orgUserIds(ctx, grant.granted_to_org_id)
-        : []
+    const grants = args.grant_id
+      ? [await ctx.db.get(args.grant_id)].filter((item: any) => item?.workspace_id === workspace._id)
+      : await grantsForTarget(ctx, workspace._id, { user, org })
+    const active = grants.filter((item: any) => item && !item.revoked_at)
+    if (active.length === 0) return { revoked: false }
+    const now = Date.now()
+    for (const grant of active) await ctx.db.patch(grant._id, { revoked_at: now })
+    const userIds = new Set<unknown>()
+    for (const grant of active) {
+      if (grant.granted_to_user_id) userIds.add(grant.granted_to_user_id)
+      if (grant.granted_to_org_id) {
+        for (const userId of await orgUserIds(ctx, grant.granted_to_org_id)) userIds.add(userId)
+      }
+    }
     return {
       revoked: true,
-      runtime_tokens_revoked: await revokeRuntimeTokensForUsers(ctx, workspace._id, userIds),
+      runtime_tokens_revoked: await revokeRuntimeTokensForUsers(ctx, workspace._id, [...userIds]),
     }
   },
 })

@@ -1,4 +1,5 @@
 import { Hono, type Context } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { randomUUID } from "node:crypto"
 import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
@@ -30,6 +31,8 @@ type Options = {
   beforeLocalList?: () => Promise<void>
   createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
 }
+
+const participantBodyLimitBytes = 16 * 1024
 
 async function signedAuth(req: Request, options: Options) {
   const auth = await controlPlaneAuthContext(req, {
@@ -283,7 +286,17 @@ function hybridHarness(input: unknown): string {
 }
 
 export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
-  return new Hono()
+  const app = new Hono()
+  app.use("/sessions/:sessionId/participants", bodyLimit({
+    maxSize: participantBodyLimitBytes,
+    onError: (c) => c.json({
+      error: {
+        code: "request_body_too_large",
+        message: `Request body exceeds the ${participantBodyLimitBytes}-byte limit`,
+      },
+    }, 413),
+  }))
+  return app
     .get("/session-list", async (c) => {
       try {
         const query = parseSessionListQuery(new URL(c.req.url))

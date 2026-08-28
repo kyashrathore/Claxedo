@@ -98,13 +98,19 @@ CREATE TABLE IF NOT EXISTS workspace_memberships (
 CREATE TABLE IF NOT EXISTS workspace_share_grants (
   grant_id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,
+  target_key TEXT NOT NULL,
   granted_to_token_identifier TEXT,
   granted_to_subject TEXT,
   granted_to_org_id TEXT,
   role TEXT NOT NULL,
   created_by_token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  revoked_at INTEGER
+  revoked_at INTEGER,
+  CHECK (
+    (granted_to_token_identifier IS NOT NULL)
+    + (granted_to_subject IS NOT NULL)
+    + (granted_to_org_id IS NOT NULL) = 1
+  )
 );
 CREATE TABLE IF NOT EXISTS host_attestation_challenges (
   challenge_id TEXT PRIMARY KEY,
@@ -188,6 +194,9 @@ CREATE TABLE IF NOT EXISTS runtime_access_tokens (
   workspace_id TEXT NOT NULL,
   host_id TEXT NOT NULL,
   minted_for_token_identifier TEXT NOT NULL,
+  principal_kind TEXT,
+  minted_for_actor_kind TEXT,
+  workspace_role TEXT,
   expires_at INTEGER NOT NULL,
   revoked_at INTEGER,
   created_at INTEGER NOT NULL
@@ -280,6 +289,70 @@ export function migrateAuthorityTenancySchema(db: SqliteAuthorityDb) {
     addColumn(db, "users", "name", "TEXT")
     addColumn(db, "users", "image_url", "TEXT")
     addColumn(db, "projects", "repo_key", "TEXT")
+    addColumn(db, "runtime_access_tokens", "workspace_role", "TEXT")
+    addColumn(db, "runtime_access_tokens", "principal_kind", "TEXT")
+    addColumn(db, "runtime_access_tokens", "minted_for_actor_kind", "TEXT")
+    addColumn(db, "workspace_share_grants", "target_key", "TEXT")
+
+    if (tableExists(db, "workspace_share_grants")) {
+      if (tableExists(db, "orgs")) {
+        db.exec(`
+          UPDATE workspace_share_grants AS share
+          SET granted_to_org_id = (
+            SELECT org_id FROM orgs
+            WHERE clerk_org_id = share.granted_to_org_id AND deleted_at IS NULL
+            LIMIT 1
+          )
+          WHERE granted_to_org_id IS NOT NULL
+            AND EXISTS (
+              SELECT 1 FROM orgs
+              WHERE clerk_org_id = share.granted_to_org_id AND deleted_at IS NULL
+            );
+        `)
+      }
+      const subjectTargetSql = tableExists(db, "users")
+        ? `WHEN granted_to_subject IS NOT NULL AND (
+            SELECT COUNT(*) FROM users WHERE subject = granted_to_subject
+          ) = 1 THEN 'token:' || (
+            SELECT token_identifier FROM users WHERE subject = granted_to_subject LIMIT 1
+          )
+          WHEN granted_to_subject IS NOT NULL THEN 'subject:' || granted_to_subject`
+        : "WHEN granted_to_subject IS NOT NULL THEN 'subject:' || granted_to_subject"
+      const invalidShare = db.prepare(`
+        SELECT grant_id FROM workspace_share_grants
+        WHERE revoked_at IS NULL AND (
+          (granted_to_token_identifier IS NOT NULL)
+          + (granted_to_subject IS NOT NULL)
+          + (granted_to_org_id IS NOT NULL) != 1
+        )
+        LIMIT 1
+      `).get() as { grant_id: string } | undefined
+      if (invalidShare) throw new Error(`workspace_share_target_invalid:${invalidShare.grant_id}`)
+      db.exec(`
+        UPDATE workspace_share_grants
+        SET target_key = CASE
+          WHEN granted_to_token_identifier IS NOT NULL THEN 'token:' || granted_to_token_identifier
+          ${subjectTargetSql}
+          WHEN granted_to_org_id IS NOT NULL THEN 'org:' || granted_to_org_id
+        END
+        WHERE target_key IS NULL;
+        UPDATE workspace_share_grants
+        SET revoked_at = created_at
+        WHERE grant_id IN (
+          SELECT grant_id FROM (
+            SELECT grant_id, ROW_NUMBER() OVER (
+              PARTITION BY workspace_id, target_key
+              ORDER BY created_at DESC, grant_id DESC
+            ) AS duplicate_rank
+            FROM workspace_share_grants
+            WHERE revoked_at IS NULL AND target_key IS NOT NULL
+          ) WHERE duplicate_rank > 1
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS workspace_share_grants_active_target
+        ON workspace_share_grants (workspace_id, target_key)
+        WHERE revoked_at IS NULL AND target_key IS NOT NULL;
+      `)
+    }
 
     db.exec(`
       UPDATE users
@@ -444,9 +517,14 @@ type LegacyProjectRow = {
 }
 
 function addColumn(db: SqliteAuthorityDb, table: string, column: string, definition: string) {
+  if (!tableExists(db, table)) return
   const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
   if (columns.some((item) => item.name === column)) return
   db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+}
+
+function tableExists(db: SqliteAuthorityDb, table: string) {
+  return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)
 }
 
 function userOrganizationIds(db: SqliteAuthorityDb, tokenIdentifier: string) {
@@ -704,6 +782,10 @@ const roleRank: Record<WorkspaceRole, number> = {
   owner: 4,
 }
 
+export function roleAtLeast(actual: WorkspaceRole, required: WorkspaceRole) {
+  return roleRank[actual] >= roleRank[required]
+}
+
 export function roleAllows(role: WorkspaceRole, action: WorkspaceAction) {
   if (role === "owner") return true
   if (role === "admin") return action !== "owner"
@@ -761,8 +843,13 @@ export function upsertUser(db: SqliteAuthorityDb, user: AuthorityUser & { issuer
 }
 
 export function userBySubject(db: SqliteAuthorityDb, subject: string) {
-  return db.prepare(`SELECT token_identifier, subject FROM users WHERE subject = ?`)
-    .get(subject) as AuthorityUser | undefined
+  const rows = usersBySubject(db, subject)
+  return rows.length === 1 ? rows[0] : undefined
+}
+
+export function usersBySubject(db: SqliteAuthorityDb, subject: string) {
+  return db.prepare(`SELECT token_identifier, subject FROM users WHERE subject = ? LIMIT 2`)
+    .all(subject) as AuthorityUser[]
 }
 
 /** The user's personal org, created on first touch (mirror of `personalOrgForUser`). */
@@ -868,11 +955,15 @@ export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgI
 }
 
 function shareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
-  const rows = db.prepare(`
+  const subjectOwner = user.subject ? userBySubject(db, user.subject) : undefined
+  const targetKeys = [
+    `token:${user.token_identifier}`,
+    ...(subjectOwner?.token_identifier === user.token_identifier ? [`subject:${user.subject}`] : []),
+  ]
+  const rows = targetKeys.flatMap((targetKey) => db.prepare(`
     SELECT role FROM workspace_share_grants
-    WHERE workspace_id = ? AND revoked_at IS NULL
-      AND (granted_to_token_identifier = ? OR (granted_to_subject IS NOT NULL AND granted_to_subject = ?))
-  `).all(workspaceId, user.token_identifier, user.subject ?? null) as Array<{ role: string }>
+    WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
+  `).all(workspaceId, targetKey) as Array<{ role: string }>)
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 
@@ -880,7 +971,8 @@ function orgShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: s
   const rows = db.prepare(`
     SELECT g.role AS role FROM workspace_share_grants g
     JOIN org_memberships m ON m.org_id = g.granted_to_org_id
-    WHERE g.workspace_id = ? AND g.revoked_at IS NULL AND m.token_identifier = ?
+    WHERE g.workspace_id = ? AND g.target_key = 'org:' || m.org_id
+      AND g.revoked_at IS NULL AND m.token_identifier = ?
   `).all(workspaceId, user.token_identifier) as Array<{ role: string }>
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }

@@ -82,7 +82,7 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
         orgId: input.orgId,
         workspaceId: input.workspaceId,
         hostId: input.hostId,
-        role: input.role ?? "viewer",
+        role: input.role,
         ...(ttlSeconds === undefined ? {} : { ttlSeconds }),
       })
       const result = {

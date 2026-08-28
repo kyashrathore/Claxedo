@@ -36,6 +36,10 @@ const roleRank: Record<WorkspaceRole, number> = {
   owner: 4,
 }
 
+export function roleAtLeast(actual: WorkspaceRole, required: WorkspaceRole) {
+  return roleRank[actual] >= roleRank[required]
+}
+
 function clerkIssuer() {
   return process.env.CLERK_JWT_ISSUER_DOMAIN ?? process.env.CLERK_JWT_ISSUER
 }
@@ -103,7 +107,7 @@ export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & Ident
       ? await ctx.db
           .query("users")
           .withIndex("by_clerk_subject", (q) => q.eq("clerk_subject", identity.subject))
-          .first()
+          .unique()
       : null)
   const patch = {
     public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
@@ -130,6 +134,20 @@ export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & Ident
   }
 }
 
+export async function serviceUserByIdentity(db: Db, input: {
+  token_identifier: string
+  subject?: string
+}) {
+  const [byToken, bySubject] = await Promise.all([
+    userByTokenIdentifier(db, input.token_identifier),
+    input.subject ? userByClerkSubject(db, input.subject) : null,
+  ])
+  if (byToken && bySubject && byToken._id !== bySubject._id) {
+    throw new Error("service_user_identity_conflict")
+  }
+  return byToken ?? bySubject
+}
+
 export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> }, input: {
   token_identifier: string
   subject?: string
@@ -139,12 +157,10 @@ export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> },
   image_url?: string
 }) {
   const now = Date.now()
-  const existing = await ctx.db
-    .query("users")
-    .withIndex("by_token_identifier", (q) => q.eq("token_identifier", input.token_identifier))
-    .unique()
+  const existing = await serviceUserByIdentity(ctx.db, input)
   const patch = {
     public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
+    token_identifier: input.token_identifier,
     clerk_subject: input.subject,
     issuer: input.issuer,
     email: input.email,
@@ -160,7 +176,6 @@ export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> },
     return { ...existing, ...patch }
   }
   const user = {
-    token_identifier: input.token_identifier,
     ...patch,
     created_at: now,
   }
@@ -203,10 +218,12 @@ async function directProjectRole(db: Db, userId: unknown, projectId: unknown) {
 async function shareRole(db: Db, userId: unknown, workspaceId: unknown) {
   const grants = await db
     .query("workspace_share_grants")
-    .withIndex("by_user", (q) => q.eq("granted_to_user_id", userId))
+    .withIndex("by_workspace_user", (q: any) =>
+      q.eq("workspace_id", workspaceId).eq("granted_to_user_id", userId))
     .collect()
-  const grant = grants.find((item) => item.workspace_id === workspaceId && !item.revoked_at)
-  return typeof grant?.role === "string" ? grant.role as WorkspaceRole : undefined
+  return maxRole(grants
+    .filter((grant) => !grant.revoked_at)
+    .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
 function orgWorkspaceRole(role: OrgRole) {
@@ -270,7 +287,8 @@ async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
   const org = await db.get(orgId as never)
   if (org?.deleted_at) return
   const role = await orgMembershipRole(db, userId, orgId)
-  return role ? orgWorkspaceRole(role) : undefined
+  if (role) return orgWorkspaceRole(role)
+  return org?.owner_user_id === userId ? "admin" : undefined
 }
 
 async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
@@ -281,11 +299,13 @@ async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
   const grants = (await Promise.all(memberships.map(async (membership) => {
     return await db
       .query("workspace_share_grants")
-      .withIndex("by_org", (q) => q.eq("granted_to_org_id", membership.org_id))
+      .withIndex("by_workspace_org", (q: any) =>
+        q.eq("workspace_id", workspaceId).eq("granted_to_org_id", membership.org_id))
       .collect()
   }))).flat()
-  const grant = grants.find((item) => item.workspace_id === workspaceId && !item.revoked_at)
-  return typeof grant?.role === "string" ? grant.role as WorkspaceRole : undefined
+  return maxRole(grants
+    .filter((grant) => !grant.revoked_at)
+    .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
 export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }) {

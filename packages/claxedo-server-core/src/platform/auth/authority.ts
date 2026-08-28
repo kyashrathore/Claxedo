@@ -312,6 +312,9 @@ export type WorkspaceAuthority = {
       jti: string
       workspaceId: string
       hostId: string
+      actorId: string
+      actorKind: "human" | "agent"
+      role: "viewer" | "editor" | "admin" | "owner"
       expiresAt: number
     },
   ) => Promise<unknown>
@@ -319,7 +322,10 @@ export type WorkspaceAuthority = {
     jti: string
     workspaceId: string
     hostId: string
-    subject: string
+    actorId: string
+    actorKind: "human" | "agent"
+    principalKind: "user" | "service"
+    role: "viewer" | "editor" | "admin" | "owner"
     expiresAt: number
   }) => Promise<unknown>
   runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>

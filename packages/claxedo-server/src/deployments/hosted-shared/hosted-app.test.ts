@@ -67,6 +67,8 @@ function fakePlane(
       usersMe: vi.fn(async () => ({
         id: "user_1",
         user_id: "user_1",
+        actor_id: "user_1",
+        actor_kind: "human",
         actor_public_id: "usr_public_1",
         actor_name: "Test User",
       })),
@@ -90,6 +92,7 @@ function fakePlane(
         },
       ]),
       listSessions: vi.fn(async () => []),
+      authorizeSessionWrite: vi.fn(async () => {}),
       resolveSession: vi.fn(async (_auth, args) => ({
         session_id: args.sessionId,
         workspace_id: "ws_1",
@@ -1044,7 +1047,7 @@ describe("hosted app", () => {
       }),
     )
 
-    expect(res.status).toBe(200)
+    expect(res.status, await res.clone().text()).toBe(200)
     await expect(res.json()).resolves.toMatchObject({ ok: true, messages: 0 })
     expect(target).toHaveBeenCalledWith("ws_1")
     expect(sandboxManager.ensure).not.toHaveBeenCalled()
@@ -1101,7 +1104,7 @@ describe("hosted app", () => {
       }),
     )
 
-    expect(res.status).toBe(409)
+    expect(res.status, await res.clone().text()).toBe(409)
     await expect(res.json()).resolves.toMatchObject({
       error: { code: "cloud_runtime_unavailable" },
     })

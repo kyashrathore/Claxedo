@@ -15,6 +15,7 @@ describe("SQLite workspace authority tenancy migration", () => {
     expect(required(database, "projects", "owner_token_identifier")).toBe(true)
     expect(required(database, "workspaces", "org_id")).toBe(true)
     expect(required(database, "workspaces", "project_id")).toBe(true)
+    expect(required(database, "workspace_share_grants", "target_key")).toBe(true)
     expect(database.pragma("user_version", { simple: true })).toBe(2)
     database.prepare(`
       INSERT INTO users (token_identifier, public_id, kind, created_at, updated_at)
@@ -25,6 +26,114 @@ describe("SQLite workspace authority tenancy migration", () => {
         (workspace_id, org_id, project_id, owner_token_identifier, backing, access, created_at, updated_at)
       VALUES ('ws_mismatch', 'org_one', 'prj_missing', 'owner', 'cloud-vm', 'cloud', 1, 1)
     `).run()).toThrow("workspace_project_tenant_conflict")
+  })
+
+  test("canonicalizes duplicate active share grants before enforcing uniqueness", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-migrate-")), "authority.db")
+    const legacy = new Database(file)
+    legacy.exec(`
+      CREATE TABLE workspace_share_grants (
+        grant_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        granted_to_token_identifier TEXT,
+        granted_to_subject TEXT,
+        granted_to_org_id TEXT,
+        role TEXT NOT NULL,
+        created_by_token_identifier TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      INSERT INTO workspace_share_grants
+        (grant_id, workspace_id, granted_to_subject, role, created_by_token_identifier, created_at)
+      VALUES
+        ('grant_old', 'ws_1', 'bob', 'admin', 'owner', 1),
+        ('grant_new', 'ws_1', 'bob', 'viewer', 'owner', 2);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })()
+    expect(database.prepare(`
+      SELECT grant_id, target_key, role, revoked_at
+      FROM workspace_share_grants ORDER BY created_at
+    `).all()).toEqual([
+      { grant_id: "grant_old", target_key: "subject:bob", role: "admin", revoked_at: 1 },
+      { grant_id: "grant_new", target_key: "subject:bob", role: "viewer", revoked_at: null },
+    ])
+    expect(() => database.prepare(`
+      INSERT INTO workspace_share_grants
+        (grant_id, workspace_id, target_key, granted_to_subject, role, created_by_token_identifier, created_at)
+      VALUES ('grant_duplicate', 'ws_1', 'subject:bob', 'editor', 'owner', 3)
+    `).run()).toThrow()
+    database.close()
+  })
+
+  test("collapses legacy subject and token grants for one known user", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-user-migrate-")), "authority.db")
+    const legacy = new Database(file)
+    createLegacyAuthorityTables(legacy)
+    legacy.exec(`
+      CREATE TABLE workspace_share_grants (
+        grant_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        granted_to_token_identifier TEXT,
+        granted_to_subject TEXT,
+        granted_to_org_id TEXT,
+        role TEXT NOT NULL,
+        created_by_token_identifier TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      INSERT INTO users (token_identifier, subject, issuer, kind, created_at, updated_at)
+      VALUES ('issuer|bob', 'bob', 'issuer', 'human', 1, 1);
+      INSERT INTO workspace_share_grants
+        (grant_id, workspace_id, granted_to_token_identifier, role, created_by_token_identifier, created_at)
+      VALUES ('grant_token', 'ws_1', 'issuer|bob', 'admin', 'owner', 1);
+      INSERT INTO workspace_share_grants
+        (grant_id, workspace_id, granted_to_subject, role, created_by_token_identifier, created_at)
+      VALUES ('grant_subject', 'ws_1', 'bob', 'editor', 'owner', 2);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })()
+    expect(database.prepare(`
+      SELECT grant_id, target_key, revoked_at FROM workspace_share_grants ORDER BY created_at
+    `).all()).toEqual([
+      { grant_id: "grant_token", target_key: "token:issuer|bob", revoked_at: 1 },
+      { grant_id: "grant_subject", target_key: "token:issuer|bob", revoked_at: null },
+    ])
+    database.close()
+  })
+
+  test("canonicalizes legacy provider organization share targets", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-share-org-migrate-")), "authority.db")
+    const legacy = new Database(file)
+    createLegacyAuthorityTables(legacy)
+    legacy.exec(`
+      CREATE TABLE workspace_share_grants (
+        grant_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        granted_to_token_identifier TEXT,
+        granted_to_subject TEXT,
+        granted_to_org_id TEXT,
+        role TEXT NOT NULL,
+        created_by_token_identifier TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER
+      );
+      INSERT INTO orgs (
+        org_id, name, kind, owner_token_identifier, clerk_org_id, created_at, updated_at
+      ) VALUES ('org_team', 'Team', 'team', 'owner', 'org_provider_team', 1, 1);
+      INSERT INTO workspace_share_grants (
+        grant_id, workspace_id, granted_to_org_id, role, created_by_token_identifier, created_at
+      ) VALUES ('grant_org', 'ws_1', 'org_provider_team', 'editor', 'owner', 1);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })()
+    expect(database.prepare(`
+      SELECT target_key, granted_to_org_id FROM workspace_share_grants WHERE grant_id = 'grant_org'
+    `).get()).toEqual({ target_key: "org:org_team", granted_to_org_id: "org_team" })
+    database.close()
   })
 
   test("upgrades legacy nullable rows, rebuilds constraints, and is idempotent", () => {

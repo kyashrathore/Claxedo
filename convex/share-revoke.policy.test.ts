@@ -109,4 +109,72 @@ describe("Convex workspace share revoke policy", () => {
       expect(tokens.find((row) => row.jti === "jti_other_active")).not.toHaveProperty("revoked_at")
     })
   })
+
+  test("grant is idempotent and a revoke removes every legacy duplicate", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(123_456)
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => {
+      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
+      const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token" }) as never)
+      const workspaceId = await ctx.db.insert("workspaces", stamped({
+        workspace_id: "ws_1",
+        owner_user_id: ownerId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Workspace 1",
+      }) as never)
+      for (const createdAt of [1, 2]) {
+        await ctx.db.insert("workspace_share_grants", {
+          workspace_id: workspaceId,
+          granted_to_user_id: targetId,
+          role: "editor",
+          created_by_user_id: ownerId,
+          created_at: createdAt,
+        } as never)
+      }
+    })
+    const owner = t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
+
+    await owner.mutation(api.workspaceShares.grant, {
+      workspace_id: "ws_1",
+      role: "viewer",
+      granted_to_token_identifier: "target_token",
+    } as never)
+    await t.run(async (ctx) => {
+      const active = (await ctx.db.query("workspace_share_grants").collect()).filter((row) => !row.revoked_at)
+      expect(active).toHaveLength(1)
+      expect(active[0]).toMatchObject({ role: "viewer", created_at: 123_456 })
+    })
+
+    await expect(owner.mutation(api.workspaceShares.revoke, {
+      workspace_id: "ws_1",
+      granted_to_token_identifier: "target_token",
+    } as never)).resolves.toMatchObject({ revoked: true })
+    await t.run(async (ctx) => {
+      expect((await ctx.db.query("workspace_share_grants").collect()).filter((row) => !row.revoked_at)).toEqual([])
+    })
+  })
+
+  test("rejects ambiguous targets at the public Convex mutation boundary", async () => {
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => {
+      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
+      await ctx.db.insert("users", stamped({ token_identifier: "target_token", clerk_subject: "target_subject" }) as never)
+      await ctx.db.insert("workspaces", stamped({
+        workspace_id: "ws_1",
+        owner_user_id: ownerId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Workspace 1",
+      }) as never)
+    })
+    const owner = t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
+
+    await expect(owner.mutation(api.workspaceShares.grant, {
+      workspace_id: "ws_1",
+      role: "editor",
+      granted_to_token_identifier: "target_token",
+      granted_to_clerk_subject: "target_subject",
+    } as never)).rejects.toThrow("Share target must be exactly one user or org")
+  })
 })

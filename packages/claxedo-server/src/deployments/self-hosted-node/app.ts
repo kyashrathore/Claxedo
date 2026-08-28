@@ -541,6 +541,11 @@ export function createSelfHostedApp(
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+    subject: "control-plane",
+    principalKind: "service" as const,
+    actorId: "control-plane",
+    actorKind: "agent" as const,
+    role: "owner" as const,
     ...(services.auth.config.enabled ? { requireRelayActor: true } : {}),
     ...(services.authority
       ? {
@@ -1151,7 +1156,10 @@ function localRelayFromEnv(
                 jti: input.jti,
                 workspaceId: input.workspaceId,
                 hostId: input.hostId,
-                subject: input.subject,
+                actorId: input.actorId,
+                actorKind: input.actorKind,
+                principalKind: input.principalKind,
+                role: input.role,
                 expiresAt: input.expiresAt,
               }),
           }),

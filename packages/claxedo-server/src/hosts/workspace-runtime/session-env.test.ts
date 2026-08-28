@@ -501,6 +501,11 @@ describe("cloud session-env caching", () => {
       sandboxManager,
       relayProvider,
       defaultHomeRegion: "us-east",
+      subject: "control-plane",
+      principalKind: "service",
+      actorId: "control-plane",
+      actorKind: "agent",
+      role: "owner",
     } as unknown as SandboxFetchOptions
     return { sandboxManager, relayProvider, options }
   }
@@ -532,6 +537,14 @@ describe("cloud session-env caching", () => {
     expect(firstUrl).toBe("https://relay.example/workspaces/ws-cloud/api/wr/session-env/file/exists?path=a")
     const headers = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Headers
     expect(headers.get("authorization")).toBe("Bearer tok-1")
+  })
+
+  test("rejects an incomplete service principal before creating a cloud requester", () => {
+    const { options } = cloudOptions()
+    delete options.role
+
+    expect(() => createWorkspaceRuntimeSessionEnv({ workspace: cloudWorkspace, fetchOptions: options }))
+      .toThrow("complete runtime principal required for runtime token minting: ws-cloud")
   })
 
   test("re-mints the token when it is near expiry", async () => {

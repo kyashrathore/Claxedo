@@ -225,6 +225,7 @@ describe("opencode compat error model", () => {
         services: {
           sandbox: { sandboxManager },
           relay: { provider: relayProvider },
+          localExecution: { enabled: true },
           defaultHomeRegion: "eu-west",
         } as never,
       }),

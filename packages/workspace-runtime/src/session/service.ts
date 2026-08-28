@@ -5,6 +5,7 @@ import type {
   AgentMessageRow,
   AgentRuntime,
   AgentRuntimeStreamEvent,
+  AgentRuntimeTurnStartInput,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -12,7 +13,6 @@ import type {
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   buildAssistantMessage,
-  messageUpdated,
   sessionError,
   withDir,
   type CompatEnvelope,
@@ -153,10 +153,6 @@ async function* sendMessageWithAbort(
   }
 }
 
-function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
 export function compatScope(directory: RuntimeDirectory, sessionId: string) {
   return directory ?? sessionId
 }
@@ -263,15 +259,15 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
     input.onAdmissionSettled?.(admissionError)
   }
   try {
-    const turns = input.runtime.turns as typeof input.runtime.turns & {
-      start(value: Parameters<typeof input.runtime.turns.start>[0] & {
-        actorId?: string
-        actorKind?: "human" | "agent"
-        author?: RuntimePromptTurnInput["author"]
-      }): ReturnType<typeof input.runtime.turns.start>
-    }
-    turn = await turns.start({
+    const turnInput = {
       sessionId: input.sessionId,
+      // The runtime invokes this only after winning its per-session admission
+      // lease and before it enters the harness. That keeps rejected concurrent
+      // turns out of the host activity count without leaving a window where a
+      // real turn is running but runner replacement cannot see it.
+      onAdmitted: () => {
+        activeTurn ??= input.createActiveTurnScope?.()
+      },
       parts: input.body.parts ?? [],
       ...(input.body.messageID ? { messageId: input.body.messageID } : {}),
       ...(input.body.agent ? { agent: input.body.agent } : {}),
@@ -283,11 +279,16 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.system ? { system: input.body.system } : {}),
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
-      ...(input.actor ? { actorId: input.actor.actorId, actorKind: input.actor.actorKind } : {}),
       ...(input.author ? { author: input.author } : {}),
-    })
+    } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
+    turn = await (input.actor
+      ? input.runtime.turns.start({
+          ...turnInput,
+          actorId: input.actor.actorId,
+          actorKind: input.actor.actorKind,
+        })
+      : input.runtime.turns.start(turnInput))
     settleAdmission()
-    activeTurn ??= input.createActiveTurnScope?.()
     assistantId = turn.assistantMessageId
     const projection = createPromptEventProjection({
       sessionId: input.sessionId,

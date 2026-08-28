@@ -72,6 +72,7 @@ describe("control-plane relay provider", () => {
 
     await expect(provider.mintRuntimeAccessToken({
       ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -94,6 +95,7 @@ describe("control-plane relay provider", () => {
     })
     expect(recordRuntimeAccessToken).toHaveBeenCalledWith({
       ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -124,7 +126,15 @@ describe("control-plane relay provider", () => {
       targetLookup: vi.fn(),
       recordRuntimeAccessToken: vi.fn(),
     })
-    const base = { ...actor, workspaceId: "ws_1", hostId: "host_1", subject: "user_1", orgId: "org_1" }
+    const base = {
+      ...actor,
+      principalKind: "user" as const,
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      subject: "user_1",
+      orgId: "org_1",
+      role: "viewer" as const,
+    }
 
     // In-bounds requests are honored exactly.
     await provider.mintRuntimeAccessToken({ ...base, ttlMs: 20 * 60_000 })
@@ -143,7 +153,7 @@ describe("control-plane relay provider", () => {
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith(expect.not.objectContaining({ ttlSeconds: expect.anything() }))
   })
 
-  test("fails closed without org and defaults runtime token role to viewer", async () => {
+  test("fails closed without org and preserves the explicit runtime role", async () => {
     const runtimeAccessTokenSigner = vi.fn(async () => ({
       runtimeAccessToken: "rat_1",
       tokenExpiresAt: 2_000,
@@ -159,18 +169,22 @@ describe("control-plane relay provider", () => {
 
     await expect(provider.mintRuntimeAccessToken({
       ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
+      role: "viewer",
       ttlMs: 60_000,
     })).rejects.toThrow("org id required")
 
     await provider.mintRuntimeAccessToken({
       ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
       orgId: "org_1",
+      role: "viewer",
       ttlMs: 60_000,
     })
 
@@ -203,10 +217,12 @@ describe("control-plane relay provider", () => {
 
     await expect(provider.mintRuntimeAccessToken({
       ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
       orgId: "org_1",
+      role: "viewer",
       ttlMs: 60_000,
     })).rejects.toThrow("authority unavailable")
   })

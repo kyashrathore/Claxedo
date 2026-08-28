@@ -83,7 +83,7 @@ describe("Convex project membership revocation", () => {
       subject: "bob",
       tokenIdentifier: "https://identity.example.test|bob",
     })
-    await Promise.all([alice.mutation(api.users.me), bob.mutation(api.users.me)])
+    const [, bobProfile] = await Promise.all([alice.mutation(api.users.me), bob.mutation(api.users.me)])
     await alice.mutation(api.workspaces.createCloud, {
       workspace_id: "ws_project_downgrade",
       display_name: "Project downgrade",
@@ -94,15 +94,33 @@ describe("Convex project membership revocation", () => {
         q.eq("workspace_id", "ws_project_downgrade")
       ).unique())!.project_id
     )
+    await expect(alice.mutation(api.projectMemberships.add, {
+      project_id: projectId,
+      token_identifier: "https://identity.example.test|bob",
+      clerk_subject: "bob",
+      role: "admin",
+    })).rejects.toThrow("Project membership target must be exactly one user")
     await alice.mutation(api.projectMemberships.add, {
       project_id: projectId,
       token_identifier: "https://identity.example.test|bob",
       role: "admin",
     })
+    await expect(bob.mutation(api.runtimeAccessTokens.recordMint, {
+      jti: "jti_wrong_actor_kind",
+      workspace_id: "ws_project_downgrade",
+      host_id: "host_project_downgrade",
+      actor_id: bobProfile.actor_id,
+      actor_kind: "agent",
+      role: "admin",
+      expires_at: Date.now() + 60_000,
+    })).rejects.toThrow("Workspace not found")
     await bob.mutation(api.runtimeAccessTokens.recordMint, {
       jti: "jti_project_downgrade",
       workspace_id: "ws_project_downgrade",
       host_id: "host_project_downgrade",
+      actor_id: bobProfile.actor_id,
+      actor_kind: bobProfile.actor_kind,
+      role: "admin",
       expires_at: Date.now() + 60_000,
     })
 
@@ -116,6 +134,30 @@ describe("Convex project membership revocation", () => {
         q.eq("jti", "jti_project_downgrade")
       ).unique()
     )).resolves.toMatchObject({ revoked_at: expect.any(Number) })
+
+    const previousServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "svc_secret"
+    try {
+      await backend.run(async (ctx) => {
+        const token = await ctx.db.query("runtime_access_tokens").withIndex("by_jti", (q) =>
+          q.eq("jti", "jti_project_downgrade")
+        ).unique()
+        await ctx.db.patch(token!._id, { revoked_at: undefined })
+      })
+      await expect(backend.query(api.runtimeAccessTokens.active, {
+        service_token: "svc_secret",
+        jti: "jti_project_downgrade",
+        workspace_id: "ws_project_downgrade",
+        host_id: "host_project_downgrade",
+      } as never)).resolves.toMatchObject({
+        active: false,
+        code: "runtime_access_token_revoked",
+        reason: "Runtime Access Token authorization has changed",
+      })
+    } finally {
+      if (previousServiceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+      else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = previousServiceToken
+    }
   })
 
   test("membership downgrade also revokes SERVICE-minted (hosted) tokens", async () => {
@@ -154,14 +196,35 @@ describe("Convex project membership revocation", () => {
         role: "admin",
       })
 
+      const bobId = await backend.run(async (ctx) =>
+        (await ctx.db.query("users").withIndex("by_token_identifier", (q) =>
+          q.eq("token_identifier", "https://identity.example.test|bob")
+        ).unique())!._id
+      )
+
+      await expect(backend.mutation(api.runtimeAccessTokens.recordMintForService, {
+        service_token: "svc_secret",
+        jti: "jti_service_wrong_kind",
+        workspace_id: "ws_service_revoke",
+        host_id: "host_service_revoke",
+        actor_id: bobId,
+        actor_kind: "agent",
+        principal_kind: "user",
+        role: "admin",
+        expires_at: Date.now() + 60_000,
+      })).rejects.toThrow("Workspace not found")
+
       // Mint a HOSTED (service) RAT for bob — the shape that previously escaped
-      // revocation. subject is bob's raw JWT subject (== his clerk_subject).
+      // revocation. The canonical actor pair is the same pair signed into the RAT.
       await backend.mutation(api.runtimeAccessTokens.recordMintForService, {
         service_token: "svc_secret",
         jti: "jti_service_revoke",
         workspace_id: "ws_service_revoke",
         host_id: "host_service_revoke",
-        subject: "bob",
+        actor_id: bobId,
+        actor_kind: "human",
+        principal_kind: "user",
+        role: "admin",
         expires_at: Date.now() + 60_000,
       })
 

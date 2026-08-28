@@ -174,6 +174,9 @@ describe("two-user managed-product proof", () => {
       jti: "jti_bob",
       workspace_id: "ws_private",
       host_id: "host_private",
+      actor_id: bobProfile.actor_id,
+      actor_kind: bobProfile.actor_kind,
+      role: "editor",
       expires_at: Date.now() + 60_000,
     })
     await alice.mutation(api.sessions.removeParticipant, {

@@ -9,11 +9,13 @@ import {
   ensureProject,
   openAuthorityDb,
   orgAdminForUser,
+  roleAtLeast,
   projectByPublicId,
   projectRoleForUser,
   sqliteRepoKey,
   upsertUser,
   userBySubject,
+  usersBySubject,
   workspaceByPublicId,
   workspaceRoleForUser,
   type AuthorityUser,
@@ -251,6 +253,63 @@ function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
 
+function shareTarget(db: SqliteAuthorityDb, args: {
+  grantedToTokenIdentifier?: string
+  grantedToClerkSubject?: string
+  grantedToClerkOrgId?: string
+}, options: { requireExisting: boolean }) {
+  const selectors = [args.grantedToTokenIdentifier, args.grantedToClerkSubject, args.grantedToClerkOrgId]
+    .filter(Boolean)
+  if (selectors.length !== 1) throw new Error("Share target must be exactly one user or org")
+
+  if (args.grantedToTokenIdentifier) {
+    const target = db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
+      .get(args.grantedToTokenIdentifier) as AuthorityUser | undefined
+    if (!target && options.requireExisting) throw new Error("Share target not found")
+    const legacySubjectKey = target?.subject && userBySubject(db, target.subject)?.token_identifier === target.token_identifier
+      ? `subject:${target.subject}`
+      : undefined
+    return {
+      primaryKey: `token:${args.grantedToTokenIdentifier}`,
+      activeKeys: [`token:${args.grantedToTokenIdentifier}`, legacySubjectKey].filter((value): value is string => !!value),
+      tokenIdentifier: args.grantedToTokenIdentifier,
+    }
+  }
+
+  if (args.grantedToClerkSubject) {
+    const subjectUsers = usersBySubject(db, args.grantedToClerkSubject)
+    if (subjectUsers.length > 1) denied()
+    const target = subjectUsers[0]
+    if (!target && options.requireExisting) throw new Error("Share target not found")
+    return target
+      ? {
+          primaryKey: `token:${target.token_identifier}`,
+          activeKeys: [`token:${target.token_identifier}`, `subject:${args.grantedToClerkSubject}`],
+          subject: args.grantedToClerkSubject,
+        }
+      : {
+          primaryKey: `subject:${args.grantedToClerkSubject}`,
+          activeKeys: [`subject:${args.grantedToClerkSubject}`],
+          subject: args.grantedToClerkSubject,
+        }
+  }
+
+  const orgSelector = args.grantedToClerkOrgId!
+  const org = db.prepare(`
+    SELECT org_id FROM orgs
+    WHERE deleted_at IS NULL AND (org_id = ? OR clerk_org_id = ?)
+    ORDER BY CASE WHEN org_id = ? THEN 0 ELSE 1 END
+    LIMIT 1
+  `).get(orgSelector, orgSelector, orgSelector) as { org_id: string } | undefined
+  if (!org && options.requireExisting) throw new Error("Share target not found")
+  const orgId = org?.org_id ?? orgSelector
+  return {
+    primaryKey: `org:${orgId}`,
+    activeKeys: [...new Set([`org:${orgId}`, `org:${orgSelector}`])],
+    orgId,
+  }
+}
+
 function jsonText(input: unknown) {
   try {
     return JSON.stringify(input) ?? "null"
@@ -259,16 +318,21 @@ function jsonText(input: unknown) {
   }
 }
 
-function producerAuthorTokenIdentifier(db: SqliteAuthorityDb, message: unknown) {
+function producerAuthorTokenIdentifier(
+  db: SqliteAuthorityDb,
+  message: unknown,
+  expectedTokenIdentifier: string,
+) {
   const row = object(message)
   const info = object(row?.info)
   const claxedo = object(info?.claxedo)
   const author = object(claxedo?.author)
   const publicId = txt(author?.id)
   if (!publicId) return
-  return (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(publicId) as {
+  const tokenIdentifier = (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(publicId) as {
     token_identifier: string
   } | undefined)?.token_identifier
+  return tokenIdentifier === expectedTokenIdentifier ? tokenIdentifier : undefined
 }
 
 function messageWithPublicAuthor(input: unknown, user?: {
@@ -279,19 +343,26 @@ function messageWithPublicAuthor(input: unknown, user?: {
 }) {
   const row = object(input)
   const info = object(row?.info)
-  if (!row || !info || info.role !== "user" || !user?.public_id) return input
-  return {
-    ...row,
-    info: {
-      ...info,
-      claxedo: {
+  if (!row || !info || info.role !== "user") return input
+  const claxedo = object(info.claxedo) ?? {}
+  const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
+  const { claxedo: _untrustedClaxedo, ...safeInfo } = info
+  const canonicalClaxedo = user?.public_id
+    ? {
+        ...safeClaxedo,
         author: {
           id: user.public_id,
           name: user.name ?? (user.kind === "agent" ? "Agent" : "User"),
           kind: user.kind === "agent" ? "agent" : "human",
           ...(user.image_url ? { avatarUrl: user.image_url } : {}),
         },
-      },
+      }
+    : safeClaxedo
+  return {
+    ...row,
+    info: {
+      ...safeInfo,
+      ...(Object.keys(canonicalClaxedo).length > 0 ? { claxedo: canonicalClaxedo } : {}),
     },
   }
 }
@@ -786,61 +857,96 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
-      if (!args.grantedToTokenIdentifier && !args.grantedToClerkSubject && !args.grantedToClerkOrgId) {
-        throw new Error("Share target not found")
-      }
-      const grantId = `grant_${randomToken()}`
-      db.prepare(`
-        INSERT INTO workspace_share_grants (
-          grant_id, workspace_id, granted_to_token_identifier, granted_to_subject, granted_to_org_id,
-          role, created_by_token_identifier, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        grantId,
-        args.workspaceId,
-        args.grantedToTokenIdentifier ?? null,
-        args.grantedToClerkSubject ?? null,
-        args.grantedToClerkOrgId ?? null,
-        args.role,
-        who.token_identifier,
-        Date.now(),
-      )
-      return grantId
+      const target = shareTarget(db, args, { requireExisting: true })
+      return db.transaction(() => {
+        const active = target.activeKeys.flatMap((targetKey) => db.prepare(`
+            SELECT grant_id, role FROM workspace_share_grants
+            WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
+          `).all(args.workspaceId, targetKey) as Array<{ grant_id: string; role: string }>)
+        if (active.length === 1 && active[0].role === args.role) return active[0].grant_id
+        const now = Date.now()
+        if (active.length > 0) {
+          for (const grant of active) {
+            db.prepare(`UPDATE workspace_share_grants SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL`)
+              .run(now, grant.grant_id)
+          }
+          const tokenIdentifiers = target.tokenIdentifier
+            ? [target.tokenIdentifier]
+            : args.grantedToClerkSubject
+              ? [userBySubject(db, args.grantedToClerkSubject)?.token_identifier]
+                .filter((item): item is string => !!item)
+              : (db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+                .all(target.orgId) as Array<{ token_identifier: string }>)
+                .map((item) => item.token_identifier)
+          revokeRuntimeTokensForUsers(db, args.workspaceId, tokenIdentifiers)
+        }
+        const grantId = `grant_${randomToken()}`
+        db.prepare(`
+          INSERT INTO workspace_share_grants (
+            grant_id, workspace_id, target_key, granted_to_token_identifier, granted_to_subject, granted_to_org_id,
+            role, created_by_token_identifier, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          grantId,
+          args.workspaceId,
+          target.primaryKey,
+          target.tokenIdentifier ?? null,
+          target.subject ?? null,
+          target.orgId ?? null,
+          args.role,
+          who.token_identifier,
+          now,
+        )
+        return grantId
+      })()
     },
     async revokeWorkspaceShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
-      const grants = db.prepare(`SELECT * FROM workspace_share_grants WHERE workspace_id = ?`)
-        .all(args.workspaceId) as Array<{
+      const selectorCount = [args.grantId, args.grantedToTokenIdentifier, args.grantedToClerkSubject, args.grantedToClerkOrgId]
+        .filter(Boolean).length
+      if (selectorCount !== 1) throw new Error("Share revoke target must be exactly one grant, user, or org")
+      const target = args.grantId ? undefined : shareTarget(db, args, { requireExisting: false })
+      const grants = (args.grantId
+        ? db.prepare(`SELECT * FROM workspace_share_grants WHERE workspace_id = ? AND grant_id = ? AND revoked_at IS NULL`)
+          .all(args.workspaceId, args.grantId)
+        : target!.activeKeys.flatMap((targetKey) => db.prepare(`
+            SELECT * FROM workspace_share_grants
+            WHERE workspace_id = ? AND target_key = ? AND revoked_at IS NULL
+          `).all(args.workspaceId, targetKey))) as Array<{
           grant_id: string
           granted_to_token_identifier: string | null
           granted_to_subject: string | null
           granted_to_org_id: string | null
           revoked_at: number | null
         }>
-      const grant = grants.find((item) => {
-        if (args.grantId) return item.grant_id === args.grantId
-        if (args.grantedToTokenIdentifier) return item.granted_to_token_identifier === args.grantedToTokenIdentifier
-        if (args.grantedToClerkSubject) return item.granted_to_subject === args.grantedToClerkSubject
-        if (args.grantedToClerkOrgId) return item.granted_to_org_id === args.grantedToClerkOrgId
-        return false
-      })
-      if (!grant || grant.revoked_at) return { revoked: false }
-      db.prepare(`UPDATE workspace_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(Date.now(), grant.grant_id)
-      const tokenIdentifiers = grant.granted_to_token_identifier
-        ? [grant.granted_to_token_identifier]
-        : grant.granted_to_subject
-          ? [userBySubject(db, grant.granted_to_subject)?.token_identifier].filter((item): item is string => !!item)
-          : grant.granted_to_org_id
-            ? (db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
-              .all(grant.granted_to_org_id) as Array<{ token_identifier: string }>)
-              .map((item) => item.token_identifier)
-            : []
-      return {
-        revoked: true,
-        runtime_tokens_revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, tokenIdentifiers),
-      }
+      if (grants.length === 0) return { revoked: false }
+      return db.transaction(() => {
+        const now = Date.now()
+        for (const grant of grants) {
+          db.prepare(`UPDATE workspace_share_grants SET revoked_at = ? WHERE grant_id = ? AND revoked_at IS NULL`)
+            .run(now, grant.grant_id)
+        }
+        const tokenIdentifiers = new Set<string>()
+        for (const grant of grants) {
+          if (grant.granted_to_token_identifier) tokenIdentifiers.add(grant.granted_to_token_identifier)
+          if (grant.granted_to_subject) {
+            const user = userBySubject(db, grant.granted_to_subject)
+            if (user) tokenIdentifiers.add(user.token_identifier)
+          }
+          if (grant.granted_to_org_id) {
+            for (const membership of db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+              .all(grant.granted_to_org_id) as Array<{ token_identifier: string }>) {
+              tokenIdentifiers.add(membership.token_identifier)
+            }
+          }
+        }
+        return {
+          revoked: true,
+          runtime_tokens_revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [...tokenIdentifiers]),
+        }
+      })()
     },
 
     // --- machine-wide enrollment (Unit 6) -----------------------------------
@@ -1504,7 +1610,9 @@ export function createSqliteWorkspaceAuthority(
           const messageId = txt(row?.id) ?? txt(info?.id) ?? `${args.sessionId}:${ordinal}`
           const role = txt(row?.role) ?? txt(info?.role) ?? null
           const author = role === "user"
-            ? existingAuthors.get(messageId) ?? producerAuthorTokenIdentifier(db, message) ?? null
+            ? existingAuthors.get(messageId)
+              ?? producerAuthorTokenIdentifier(db, message, who.token_identifier)
+              ?? null
             : null
           insert.run(args.sessionId, args.workspaceId, messageId, author, role, ordinal, jsonText(message), now, now)
         }
@@ -1564,23 +1672,44 @@ export function createSqliteWorkspaceAuthority(
     async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
-      requireWorkspace(db, who, args.workspaceId, "read")
+      if (who.token_identifier !== args.actorId || who.kind !== args.actorKind) denied()
+      const workspace = requireWorkspace(db, who, args.workspaceId, "read")
+      const currentRole = workspaceRoleForUser(db, workspace, who)
+      if (!currentRole || !roleAtLeast(currentRole, args.role)) denied()
       const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
       if (existing) throw new Error("Runtime Access Token already recorded")
       db.prepare(`
-        INSERT INTO runtime_access_tokens (jti, workspace_id, host_id, minted_for_token_identifier, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(args.jti, args.workspaceId, args.hostId, who.token_identifier, args.expiresAt, Date.now())
+        INSERT INTO runtime_access_tokens
+          (jti, workspace_id, host_id, minted_for_token_identifier, principal_kind, minted_for_actor_kind, workspace_role, expires_at, created_at)
+        VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?)
+      `).run(args.jti, args.workspaceId, args.hostId, who.token_identifier, args.actorKind, args.role, args.expiresAt, Date.now())
       return { ok: true }
     },
     async recordRuntimeAccessTokenForService(args) {
       const db = database()
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const who = args.principalKind === "user"
+        ? db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
+            .get(args.actorId) as AuthorityUser | undefined
+        : undefined
+      const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
+      const userAllowed = args.principalKind === "user"
+        && who
+        && who.kind === args.actorKind
+        && currentRole
+        && roleAtLeast(currentRole, args.role)
+      const serviceAllowed = args.principalKind === "service"
+        && args.actorKind === "agent"
+        && !!args.actorId.trim()
+        && args.role === "owner"
+      if (!workspace || workspace.deleted_at || (!userAllowed && !serviceAllowed)) denied()
       const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
       if (existing) throw new Error("Runtime Access Token already recorded")
       db.prepare(`
-        INSERT INTO runtime_access_tokens (jti, workspace_id, host_id, minted_for_token_identifier, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(args.jti, args.workspaceId, args.hostId, args.subject, args.expiresAt, Date.now())
+        INSERT INTO runtime_access_tokens
+          (jti, workspace_id, host_id, minted_for_token_identifier, principal_kind, minted_for_actor_kind, workspace_role, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(args.jti, args.workspaceId, args.hostId, args.actorId, args.principalKind, args.actorKind, args.role, args.expiresAt, Date.now())
       return { ok: true }
     },
     async runtimeAccessTokenActive(args) {
@@ -1588,6 +1717,10 @@ export function createSqliteWorkspaceAuthority(
       const token = db.prepare(`SELECT * FROM runtime_access_tokens WHERE jti = ?`).get(args.jti) as {
         workspace_id: string
         host_id: string
+        minted_for_token_identifier: string
+        principal_kind: "user" | "service" | null
+        minted_for_actor_kind: "human" | "agent" | null
+        workspace_role: "viewer" | "editor" | "admin" | "owner" | null
         expires_at: number
         revoked_at: number | null
       } | undefined
@@ -1602,6 +1735,34 @@ export function createSqliteWorkspaceAuthority(
       }
       if (token.expires_at <= Date.now()) {
         return { active: false, code: "runtime_access_token_expired", reason: "Runtime Access Token has expired" }
+      }
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const who = token.principal_kind === "user"
+        ? db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
+            .get(token.minted_for_token_identifier) as AuthorityUser | undefined
+        : undefined
+      const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
+      const authorizationChanged = !workspace
+        || !!workspace.deleted_at
+        || !token.workspace_role
+        || !token.principal_kind
+        || (token.principal_kind === "user" && (
+          !who
+          || who.kind !== token.minted_for_actor_kind
+          || !currentRole
+          || !roleAtLeast(currentRole, token.workspace_role)
+        ))
+        || (token.principal_kind === "service" && (
+          token.workspace_role !== "owner"
+          || token.minted_for_actor_kind !== "agent"
+          || !token.minted_for_token_identifier.trim()
+        ))
+      if (authorizationChanged) {
+        return {
+          active: false,
+          code: "runtime_access_token_revoked",
+          reason: "Runtime Access Token authorization has changed",
+        }
       }
       return { active: true }
     },

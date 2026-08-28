@@ -273,13 +273,19 @@ describe("runtimeBusEventsHandler — /api/wr/events replay", () => {
       fetch: async (_input, init) => {
         const authorization = new Headers(init?.headers).get("authorization") ?? ""
         const actorId = authorization.replace(/^Bearer rht-/, "")
-        const body = JSON.parse(String(init?.body)) as { action: string }
+        const body = JSON.parse(String(init?.body)) as { action: string; stream?: boolean }
         authorityCalls.push({ actorId, authorization, action: body.action })
         if (expiredProofs.has(actorId)) {
           return Response.json({ error: { code: "relay_host_token_invalid" } }, { status: 401 })
         }
         return participants.has(actorId)
-          ? Response.json({ allowed: true })
+          ? Response.json({
+              allowed: true,
+              // Keep this test's lease inside the policy's renewal window so
+              // the next private frame exercises live revocation rather than
+              // the cached-grant fast path.
+              ...(body.stream ? { lease: `lease-${actorId}`, expiresAt: Date.now() + 500 } : {}),
+            })
           : Response.json({ error: { code: "session_private" } }, { status: 403 })
       },
     })
