@@ -225,6 +225,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     HostedAuthProfileRoutes({
       authentication: options.authentication,
       listOrgs: (auth) => services.authority!.listOrgs(auth),
+      ...(options.product.productPosture === "user-deployed" ? { ownerBootstrap: "one-use-claim" as const } : {}),
     }),
   )
   app.route("/", JwksRoutes(plane.env))

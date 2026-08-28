@@ -6,6 +6,8 @@ import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeB
 import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import type { ProcessObserver } from "../managed-processes/process-observer"
+import { sessionAccessContext, sessionAccessDenied, type SessionAccessPolicy } from "../session-access-policy"
+import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 function invalidInput(details: Record<string, unknown>) {
   return errorBody("pty_invalid_input", "Invalid PTY request body", details)
@@ -32,7 +34,46 @@ function requestPort(url: string) {
   }
 }
 
-export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket, processObserver?: ProcessObserver) {
+type PtyRouteOptions = HostCapabilityAccessOptions & {
+  processObserver?: ProcessObserver
+}
+
+function canAdministerAll(c: Parameters<typeof sessionAccessContext>[0]) {
+  const role = sessionAccessContext(c).authority?.role
+  return role === "admin" || role === "owner"
+}
+
+function actorOwnsPty(c: Parameters<typeof sessionAccessContext>[0], id: string) {
+  const context = sessionAccessContext(c)
+  if (!context.authority) return true
+  if (canAdministerAll(c)) return true
+  return !!context.actor && Pty.accessOwner(id) === context.actor.actorId
+}
+
+function ptyPrivate() {
+  return sessionAccessDenied({
+    allowed: false,
+    status: 403,
+    code: "pty_private",
+    message: "Terminal access requires its creator or a workspace administrator",
+  })
+}
+
+function requestedPtyId(path: string) {
+  const parts = path.split("/").filter(Boolean)
+  if (parts.at(-1) === "connect") return parts.at(-2)
+  return parts.at(-1)
+}
+
+export function PtyRoutes(
+  upgradeWebSocket: UpgradeWebSocket,
+  processObserverOrOptions?: ProcessObserver | PtyRouteOptions,
+  sessionAccessPolicy?: SessionAccessPolicy,
+) {
+  const options: PtyRouteOptions = processObserverOrOptions && "register" in processObserverOrOptions
+    ? { processObserver: processObserverOrOptions, ...(sessionAccessPolicy ? { sessionAccessPolicy } : {}) }
+    : processObserverOrOptions ?? {}
+  const processObserver = options.processObserver
   return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
@@ -43,10 +84,21 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket, processObserver?: 
       if (c.get("relayHostAuth")?.role === "viewer") {
         return c.json(errorBody("relay_role_denied", "Workspace role does not allow terminal access"), 403)
       }
+      const write = !["GET", "HEAD", "OPTIONS"].includes(c.req.method)
+      const denied = await authorizeHostCapability(c, options, write ? "pty_write" : "pty_read")
+      if (denied) return denied
+
+      // Hono populates route params after wildcard middleware has run, so the
+      // guard derives the terminal candidate from the already-normalized path.
+      // It only treats it as an id when the canonical PTY store confirms it.
+      const candidate = requestedPtyId(c.req.path)
+      const id = candidate && Pty.get(candidate) ? candidate : undefined
+      if (id && Pty.get(id) && !actorOwnsPty(c, id)) return ptyPrivate()
       return await next()
     })
     .get("/", async (c) => {
-      return c.json(Pty.list())
+      if (!sessionAccessContext(c).authority || canAdministerAll(c)) return c.json(Pty.list())
+      return c.json(Pty.list().filter((info) => actorOwnsPty(c, info.id)))
     })
     .post("/", async (c) => {
       const body = await boundedJsonBody<unknown | null>(c, null)
@@ -92,6 +144,11 @@ export function PtyRoutes(upgradeWebSocket: UpgradeWebSocket, processObserver?: 
             }
           : undefined,
       )
+      const actorId = sessionAccessContext(c).actor?.actorId
+      if (actorId && !Pty.bindAccessOwner(info.id, actorId)) {
+        await Pty.remove(info.id)
+        return c.json(errorBody("pty_owner_bind_failed", "Terminal ownership could not be recorded"), 503)
+      }
       // Ownership transfers only once the public create path has completed.
       // From this point the PTY belongs to the user and must outlive any
       // renderer/WebSocket connection that happens to observe it.

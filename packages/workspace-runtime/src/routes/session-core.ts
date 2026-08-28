@@ -51,6 +51,11 @@ import {
   type SessionAccessOperation,
   type SessionAccessPolicy,
 } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  scopedReplay,
+  unknownEventSessionId,
+} from "./session-event-privacy"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -1455,10 +1460,17 @@ export function createSessionRoutes(opts: Opts) {
       )
       return c.json({ ok: true })
     })
-    .get("/event", async (c) =>
-      streamSSE(c, async (stream) => {
+    .get("/event", async (c) => {
+      const scope = await authorizeSessionEventScope(c, opts.sessionAccessPolicy, "sessionID")
+      if (scope instanceof Response) return scope
+      const allows = scope.managed
+        ? (event: unknown) => unknownEventSessionId(event) === scope.sessionId
+        : (_event: unknown) => true
+      return streamSSE(c, async (stream) => {
         const cleanup = attachSseFanout({
-          subscribe: opts.sessionBus.subscribe,
+          subscribe: (listener) => opts.sessionBus.subscribe((event) => {
+            if (allows(event)) listener(event)
+          }),
           write: (event, meta) => stream.writeSSE({
             ...(meta?.id ? { id: meta.id } : {}),
             data: JSON.stringify(event),
@@ -1466,7 +1478,7 @@ export function createSessionRoutes(opts: Opts) {
           heartbeat: { type: "heartbeat" },
           heartbeatMs: 2 * 60_000,
           lastEventId: c.req.header("last-event-id"),
-          replay: sessionBusReplay,
+          replay: scope.managed ? scopedReplay(sessionBusReplay, allows) : sessionBusReplay,
           replayLive: false,
         })
         await new Promise<void>((resolve) => {
@@ -1475,8 +1487,8 @@ export function createSessionRoutes(opts: Opts) {
             resolve()
           })
         })
-      }),
-    )
+      })
+    })
 
   if (opts.exposeCommandRoute !== false) {
     app.get("/command", async (c) => {

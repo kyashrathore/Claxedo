@@ -10,6 +10,8 @@ import {
   type ProcessObserver,
   type ProcessObserverEvent,
 } from "../managed-processes/process-observer"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 
 const prevDir = process.env.WORKSPACE_RUNTIME_DIRECTORY
 
@@ -85,6 +87,51 @@ async function readStdoutEvent(reader: ReadableStreamDefaultReader<Uint8Array>) 
 }
 
 describe("SessionEnvRoutes", () => {
+  test("rejects verified viewer file and shell mutations before side effects", async () => {
+    const directory = await temp()
+    const target = path.join(directory, "protected.txt")
+    await fs.promises.writeFile(target, "before")
+    const now = Math.floor(Date.now() / 1000)
+    const routed = new Hono<{ Variables: RelayHostAuthContext }>()
+    routed.use("*", async (c, next) => {
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        principal_kind: "user",
+        actor_id: "viewer_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "viewer",
+        access: "cloud",
+        backing: "cloud-vm",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+        parent_jti: "rat_1",
+      })
+      return await next()
+    })
+    routed.route("/api/wr/session-env", SessionEnvRoutes(undefined, managedWorkspaceSessionAccessPolicy({ requireActor: true })))
+
+    const write = await routed.request(url("/file/write", directory), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ path: "protected.txt", content: "after" }),
+    })
+    const exec = await routed.request(url("/exec", directory), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ command: "touch should-not-exist" }),
+    })
+
+    expect(write.status).toBe(403)
+    expect(exec.status).toBe(403)
+    expect(await fs.promises.readFile(target, "utf8")).toBe("before")
+    await expect(fs.promises.access(path.join(directory, "should-not-exist"))).rejects.toBeDefined()
+  })
+
   afterEach(() => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = prevDir
   })

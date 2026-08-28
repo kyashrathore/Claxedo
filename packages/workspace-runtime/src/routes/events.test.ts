@@ -4,6 +4,7 @@ import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../runtime-eve
 import { runtimeEventsHandler } from "./events"
 import { createWorkspaceHost } from "../workspace"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 const event = (sessionId: string, delta: string): Omit<RuntimeEventEnvelope, "contractVersion"> => ({
   directory: "/workspace",
@@ -34,6 +35,32 @@ function mount(input: { authorize?: (parentSessionId: string) => boolean }) {
   return { app, hub }
 }
 
+const managedPolicy = (authorize: SessionAccessPolicy["authorize"]): SessionAccessPolicy => ({
+  sessionAuthority: "managed-private",
+  authorize,
+  authorizePrefix: authorize,
+  filterSessions: (input) => input.sessionIds,
+  registerSession: () => ({ allowed: true }),
+})
+
+function managedMount(authorize: SessionAccessPolicy["authorize"] = () => ({ allowed: true })) {
+  const app = new Hono()
+  const hub = createRuntimeEventHub()
+  app.use("*", async (c, next) => {
+    ;(c as any).set("relayHostAuth", {
+      actor_id: "actor_1",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      host_id: "host_1",
+      role: "editor",
+    })
+    await next()
+  })
+  app.get("/runtime-events", runtimeEventsHandler(hub, undefined, managedPolicy(authorize)))
+  return { app, hub }
+}
+
 async function readUntil(response: Response, value: string) {
   const reader = response.body!.getReader()
   const decoder = new TextDecoder()
@@ -47,6 +74,49 @@ async function readUntil(response: Response, value: string) {
 }
 
 describe("runtime event parent authorization", () => {
+  test("managed streams require a parent scope and authorize it with verified relay identity", async () => {
+    const seen: Parameters<SessionAccessPolicy["authorize"]>[0][] = []
+    const { app } = managedMount((input) => {
+      seen.push(input)
+      return input.sessionId === "parent-a"
+        ? { allowed: true }
+        : { allowed: false, status: 403, code: "session_private", message: "private" }
+    })
+
+    const missing = await app.request("http://localhost/runtime-events")
+    const denied = await app.request("http://localhost/runtime-events?parentSessionId=parent-b")
+    const allowed = await app.request("http://localhost/runtime-events?parentSessionId=parent-a", {
+      signal: AbortSignal.timeout(20),
+    })
+
+    expect(missing.status).toBe(400)
+    expect(denied.status).toBe(403)
+    expect(allowed.status).toBe(200)
+    expect(seen.at(-1)).toMatchObject({
+      operation: "session_event_stream",
+      sessionId: "parent-a",
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority: { workspaceId: "ws_1", orgId: "org_1", role: "editor" },
+    })
+  })
+
+  test("managed runtime stream filters retained parent frames without custom authorization", async () => {
+    const { app, hub } = managedMount()
+    hub.publishRuntime(event("parent-b", "denied-managed-replay"))
+    hub.publishRuntime(event("parent-a", "allowed-managed-replay"))
+
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/runtime-events?parentSessionId=parent-a", {
+      headers: { "Last-Event-ID": "0" },
+      signal: controller.signal,
+    })
+    const text = await readUntil(response, "allowed-managed-replay")
+    controller.abort()
+
+    expect(text).toContain("allowed-managed-replay")
+    expect(text).not.toContain("denied-managed-replay")
+  })
+
   test("filters replayed child events to the authorized parent", async () => {
     const { app, hub } = mount({})
     hub.publishRuntime(event("child-parent-a", "allowed-replay"))

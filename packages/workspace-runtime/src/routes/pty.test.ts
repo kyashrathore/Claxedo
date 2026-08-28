@@ -5,17 +5,21 @@ import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
 const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
 
-function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
+function relayAuth(
+  role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"],
+  actorId = "user_1",
+): NonNullable<RelayHostAuthContext["relayHostAuth"]> {
   const now = Math.floor(Date.now() / 1000)
   return {
     iss: "workspace-relay",
     aud: "workspace-host-service",
     principal_kind: "user",
-    actor_id: "user_1",
+    actor_id: actorId,
     actor_kind: "human",
     org_id: "org_1",
     workspace_id: "ws_1",
@@ -30,13 +34,20 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
   }
 }
 
-function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
+const accessPolicy = managedWorkspaceSessionAccessPolicy({
+  requireActor: true,
+  authorizeSessionRead: () => true,
+  authorizeSessionWrite: () => true,
+  registerSession: () => true,
+})
+
+function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"], actorId = "user_1") {
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth(role))
+    c.set("relayHostAuth", relayAuth(role, actorId))
     return await next()
   })
-  app.route("/", PtyRoutes(upgradeWebSocket))
+  app.route("/", PtyRoutes(upgradeWebSocket, { sessionAccessPolicy: accessPolicy }))
   return app
 }
 
@@ -144,6 +155,38 @@ describe("PtyRoutes", () => {
     const res = await appForRole("editor").request("http://localhost/")
 
     expect(res.status).toBe(200)
+  })
+
+  test("filters terminals to their runtime-recorded actor and rejects another editor", async () => {
+    const list = spyOn(Pty, "list").mockReturnValue([
+      { id: "pty_own", title: "own", command: "/bin/sh", args: [], cwd: "/tmp", status: "running", pid: 1 },
+      { id: "pty_other", title: "other", command: "/bin/sh", args: [], cwd: "/tmp", status: "running", pid: 2 },
+    ])
+    const get = spyOn(Pty, "get").mockImplementation((id) => (
+      id === "pty_other"
+        ? { id, title: "other", command: "/bin/sh", args: [], cwd: "/tmp", status: "running", pid: 2 }
+        : undefined
+    ))
+    const owner = spyOn(Pty, "accessOwner").mockImplementation((id) => id === "pty_own" ? "user_1" : "user_2")
+    try {
+      const app = appForRole("editor", "user_1")
+      const visible = await app.request("http://localhost/")
+      expect(visible.status).toBe(200)
+      expect(await visible.json()).toEqual([expect.objectContaining({ id: "pty_own" })])
+
+      const privateTerminal = await app.request("http://localhost/pty_other")
+      expect(privateTerminal.status).toBe(403)
+      await expect(privateTerminal.json()).resolves.toEqual({
+        error: {
+          code: "pty_private",
+          message: "Terminal access requires its creator or a workspace administrator",
+        },
+      })
+    } finally {
+      list.mockRestore()
+      get.mockRestore()
+      owner.mockRestore()
+    }
   })
 
   test("rejects create requests outside the pinned workspace before spawning", async () => {

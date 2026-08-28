@@ -78,6 +78,38 @@ describe("hosted canonical auth profile", () => {
     }))
   })
 
+  test("mounts the explicit one-use owner bootstrap only for the user-deployed product", async () => {
+    const authenticate = vi.fn(authentication().authenticate)
+    const listOrgs = vi.fn(async () => [{ org_id: "org_deployment", name: "Deployment organization" }])
+    const app = HostedAuthProfileRoutes({
+      authentication: { ...authentication(), authenticate },
+      listOrgs,
+      ownerBootstrap: "one-use-claim",
+    })
+
+    const response = await app.fetch(new Request("https://core.test/api/claxedo/auth/bootstrap-owner", {
+      method: "POST",
+      headers: {
+        authorization: "Bearer opaque-valid-token",
+        "x-claxedo-bootstrap-owner-claim": "owner-claim",
+      },
+    }))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("no-store")
+    expect(await response.json()).toEqual({
+      user: { id: "usr_canonical" },
+      organizations: [{ id: "org_deployment", name: "Deployment organization" }],
+    })
+    expect(authenticate).toHaveBeenCalledWith(expect.objectContaining({ method: "POST" }))
+
+    const hosted = HostedAuthProfileRoutes({ authentication: authentication(), listOrgs })
+    expect((await hosted.fetch(new Request("https://core.test/api/claxedo/auth/bootstrap-owner", {
+      method: "POST",
+      headers: { authorization: "Bearer opaque-valid-token" },
+    }))).status).toBe(404)
+  })
+
   test.each([
     ["missing", undefined],
     ["invalid", "Bearer opaque-invalid-token"],

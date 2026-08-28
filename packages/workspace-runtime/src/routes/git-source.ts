@@ -4,6 +4,8 @@ import {
   commitGitSource,
   gitSourceSnapshot,
 } from "../workspace-files/git-source"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 function error(code: string, message: string, extra?: Record<string, unknown>) {
   return Response.json({ error: { code, message, ...(extra ?? {}) } }, { status: code === "git_source_conflict" ? 409 : 400 })
@@ -14,8 +16,16 @@ function clean(input?: string | null) {
   return value ? value : undefined
 }
 
-export function GitSourceRoutes() {
-  return new Hono()
+export function GitSourceRoutes(options: HostCapabilityAccessOptions = {}) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
+    .use("*", async (c, next) => {
+      const denied = await authorizeHostCapability(
+        c,
+        options,
+        c.req.method === "POST" ? "tool_write" : "tool_read",
+      )
+      return denied ?? await next()
+    })
     .get("/snapshot", async (c) => {
       const sourcePath = clean(c.req.query("path"))
       if (!sourcePath) return error("git_source_path_required", "path is required")

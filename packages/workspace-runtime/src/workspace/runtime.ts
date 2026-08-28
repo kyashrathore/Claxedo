@@ -63,6 +63,7 @@ import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { OpenCodeCompatRoutes } from "../routes/opencode-compat"
 import { SessionRoutes } from "../routes/session"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
+import { sessionV2Proxy } from "../routes/session-v2-proxy"
 import {
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
@@ -72,6 +73,11 @@ import {
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
+import {
+  authorizeSessionEventScope,
+  compatEnvelopeSessionId,
+  scopedReplay,
+} from "../routes/session-event-privacy"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -1922,12 +1928,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           eventHub,
           exposure: options.exposure,
           processObserver: hostOptions.processObserver,
+          sessionAccessPolicy: hostOptions.sessionAccessPolicy,
           runtimeEventAuthorization: hostOptions.runtimeEventAuthorization,
           transcripts: hostOptions.transcripts,
         })
       } else {
-        if (options.pty) mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver)
-        if (options.process) mountWorkspaceProcess(app)
+        if (options.pty) mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, hostOptions.sessionAccessPolicy)
+        if (options.process) mountWorkspaceProcess(app, hostOptions.sessionAccessPolicy)
         if (options.agentHooks) mountWorkspaceAgentHooks(app)
       }
       app.get("/api/wr/harness-config-options", async (c) => {
@@ -1976,15 +1983,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 502)
         }
-      })
-
-      app.get("/session/status", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
-          const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
-          return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       })
 
       app.get("/mcp", async (c) => {
@@ -2085,6 +2083,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/global/event", async (c) => {
+        const scope = await authorizeSessionEventScope(c, hostOptions.sessionAccessPolicy, "sessionID")
+        if (scope instanceof Response) return scope
+        const allows = scope.managed
+          ? (event: CompatEnvelope) => compatEnvelopeSessionId(event) === scope.sessionId
+          : (_event: CompatEnvelope) => true
         // Two changes meet here and BOTH are load-bearing.
         //
         // The shell opens this stream on every launch. Proxying it to OpenCode
@@ -2100,7 +2103,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // so a session pinned to a non-default harness gets ITS adapter. That
         // helper only creates and configures; it does not spawn, so it does not
         // reintroduce the start this gate exists to prevent.
-        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true
+        // A managed-private stream is served from the canonical hub so replay
+        // and live frames pass through one session filter. The raw upstream
+        // proxy cannot enforce that boundary.
+        const proxy = !scope.managed && runner.id === "opencode" && hostOptions.opencodeCompat === true
           ? await ensureSessionAdapter(runner)
           : undefined
         const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
@@ -2151,12 +2157,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         })
 
         const cleanup = attachSseFanout({
-          subscribe: eventHub.subscribeGlobal,
+          subscribe: (listener) => eventHub.subscribeGlobal((event) => {
+            if (allows(event)) listener(event)
+          }),
           write: (event, meta) => ctrl?.enqueue(encodeSseData(event, meta?.id)),
           heartbeat: { payload: { type: "server.heartbeat", properties: {} } },
           heartbeatMs: 10_000,
           lastEventId: c.req.header("last-event-id"),
-          replay: globalEventReplay,
+          replay: scope.managed ? scopedReplay(globalEventReplay, allows) : globalEventReplay,
           replayLive: false,
         })
 
@@ -2173,13 +2181,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // Session V2 and its model catalog are the durable agent-control
       // contracts used by hosted WorkGraph. Keep them on the authenticated
       // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
-      const proxySessionV2 = async (c: Context) => {
+      const forwardSessionV2 = async (c: Context) => {
         const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
           return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
         }
         return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       }
+      const proxySessionV2 = sessionV2Proxy({
+        ...(hostOptions.sessionAccessPolicy ? { policy: hostOptions.sessionAccessPolicy } : {}),
+        forward: forwardSessionV2,
+      })
       app.all("/api/model", proxySessionV2)
       app.all("/api/session", proxySessionV2)
       app.all("/api/session/*", proxySessionV2)
@@ -2255,6 +2267,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         },
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
+        getStatus: async (c, directory, adapter) => {
+          if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
+            return sessionStatusSnapshot(await adapter.listSessions(directory))
+          }
+          return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        },
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),

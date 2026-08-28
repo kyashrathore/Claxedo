@@ -528,11 +528,15 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
   if (worktrees) app.route(WorkspaceRuntimeRoutes.worktrees, WorktreeRoutes(worktrees))
-  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({ checkpoint: host.checkpoint, worktrees }))
+  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({
+    checkpoint: host.checkpoint,
+    worktrees,
+    sessionAccessPolicy,
+  }))
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
-  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes(options.processObserver))
+  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes(options.processObserver, sessionAccessPolicy))
   app.route("/", RuntimeDocumentHydrationRoutes({
     trustedTransport: options.exposure?.kind === "relay",
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),

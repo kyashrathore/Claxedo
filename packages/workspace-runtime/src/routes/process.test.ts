@@ -1,6 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { ProcessRoutes, createProcessRoutes } from "./process"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import { Hono } from "hono"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 
 let previousDirectory: string | undefined
 
@@ -9,6 +12,7 @@ const state = {
   names: new Map<string, { ptyId?: string }>(),
   ptys: new Map<string, { id: string }>(),
   snapshots: new Map<string, string>(),
+  owners: new Map<string, string>(),
 }
 
 const manager = {
@@ -33,6 +37,7 @@ const manager = {
 const pty = {
   get: mock((id: string) => state.ptys.get(id)),
   snapshot: mock((id: string) => state.snapshots.get(id) ?? ""),
+  accessOwner: mock((id: string) => state.owners.get(id)),
   listDetailed: mock(() => []),
   remove: mock(async () => {}),
 }
@@ -45,6 +50,7 @@ describe("ProcessRoutes logs", () => {
     state.names.clear()
     state.ptys.clear()
     state.snapshots.clear()
+    state.owners.clear()
   })
 
   afterEach(() => {
@@ -64,6 +70,56 @@ describe("ProcessRoutes logs", () => {
 
     expect(res.status).toBe(200)
     expect(await res.text()).toBe("three\nfour")
+  })
+
+  test("rejects another editor's raw PTY log while retaining canonical managed-process logs", async () => {
+    state.processes.set("proc_1", { ptyId: "pty_1" })
+    state.ptys.set("pty_1", { id: "pty_1" })
+    state.snapshots.set("pty_1", "private output")
+    state.owners.set("pty_1", "user_2")
+    const now = Math.floor(Date.now() / 1000)
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        principal_kind: "user",
+        actor_id: "user_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+        access: "cloud",
+        backing: "cloud-vm",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+        parent_jti: "rat_1",
+      })
+      return await next()
+    })
+    app.route("/", createProcessRoutes({ manager, pty }, {
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
+        requireActor: true,
+        authorizeSessionRead: () => true,
+        authorizeSessionWrite: () => true,
+        registerSession: () => true,
+      }),
+    }))
+
+    const raw = await app.request("http://localhost/logs?pty_id=pty_1")
+    expect(raw.status).toBe(403)
+    await expect(raw.json()).resolves.toEqual({
+      error: {
+        code: "process_log_private",
+        message: "Terminal logs require their creator or a workspace administrator",
+      },
+    })
+
+    const managed = await app.request("http://localhost/logs?process_id=proc_1")
+    expect(managed.status).toBe(200)
+    expect(await managed.text()).toBe("private output")
   })
 
   test("resolves logs by process name and clamps invalid line counts", async () => {

@@ -2,6 +2,12 @@ import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  scopedReplay,
+  workspaceRuntimeEventSessionId,
+} from "./session-event-privacy"
 
 /**
  * Synthetic frame written in place of a replay when the requested cursor has
@@ -97,7 +103,10 @@ type WorkspaceRuntimeBus = Pick<typeof workspaceRuntimeBus, "subscribe">
  * "the last frame I applied", so that a frame dropped from a saturated pending
  * queue is redelivered on the next reconnect instead of being skipped over.
  */
-export function runtimeBusEventsHandler(bus: WorkspaceRuntimeBus = workspaceRuntimeBus) {
+export function runtimeBusEventsHandler(
+  bus: WorkspaceRuntimeBus = workspaceRuntimeBus,
+  sessionAccessPolicy?: SessionAccessPolicy,
+) {
   // Retention matches `./events.ts` (256 frames, plus a 64-frame terminal
   // ring). Sizing is deliberate rather than copied: this bus carries control
   // frames only — pty/process lifecycle, agent lifecycle, session lifecycle —
@@ -112,40 +121,51 @@ export function runtimeBusEventsHandler(bus: WorkspaceRuntimeBus = workspaceRunt
   bus.subscribe((event) => {
     replay.push(event)
   })
-  return (c: Context) => streamSSE(c, async (stream) => {
-    const heartbeat = { type: "heartbeat" } as const
-    const cursor = c.req.header("last-event-id") ?? replay.lastId() ?? "0"
+  return async (c: Context) => {
+    const scope = await authorizeSessionEventScope(c, sessionAccessPolicy, "sessionID")
+    if (scope instanceof Response) return scope
+    const allows = scope.managed
+      ? (event: StreamFrame) => workspaceRuntimeEventSessionId(event as WorkspaceRuntimeEvent) === scope.sessionId
+      : (_event: StreamFrame) => true
+    const replayForScope = scope.managed ? scopedReplay(replay, allows) : replay
 
-    await stream
-      .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
-      .catch(() => {})
+    return streamSSE(c, async (stream) => {
+      const heartbeat = { type: "heartbeat" } as const
+      const cursor = c.req.header("last-event-id") ?? replay.lastId() ?? "0"
 
-    const cleanup = attachSseFanout<StreamFrame>({
-      subscribe: bus.subscribe,
-      write: (event, meta) => stream.writeSSE({
-        ...(meta?.id ? { id: meta.id } : {}),
-        data: JSON.stringify(event),
-      }),
-      heartbeat,
-      heartbeatMs: 30_000,
-      lastEventId: cursor,
-      replay,
-      replayLive: false,
-      replayGap: ({ lastEventId, throughId }) => ({
-        type: "stream.replay-gap",
-        code: "runtime.sse_replay_gap",
-        message: "Workspace runtime event replay cursor is no longer available; refetch runtime state.",
-        severity: "warn",
-        ...(lastEventId ? { lastEventId } : {}),
-        ...(throughId ? { throughId } : {}),
-      }),
-    })
+      await stream
+        .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
+        .catch(() => {})
 
-    await new Promise<void>((resolve) => {
-      stream.onAbort(() => {
-        cleanup()
-        resolve()
+      const cleanup = attachSseFanout<StreamFrame>({
+        subscribe: (listener) => bus.subscribe((event) => {
+          if (allows(event)) listener(event)
+        }),
+        write: (event, meta) => stream.writeSSE({
+          ...(meta?.id ? { id: meta.id } : {}),
+          data: JSON.stringify(event),
+        }),
+        heartbeat,
+        heartbeatMs: 30_000,
+        lastEventId: cursor,
+        replay: replayForScope,
+        replayLive: false,
+        replayGap: ({ lastEventId, throughId }) => ({
+          type: "stream.replay-gap",
+          code: "runtime.sse_replay_gap",
+          message: "Workspace runtime event replay cursor is no longer available; refetch runtime state.",
+          severity: "warn",
+          ...(lastEventId ? { lastEventId } : {}),
+          ...(throughId ? { throughId } : {}),
+        }),
+      })
+
+      await new Promise<void>((resolve) => {
+        stream.onAbort(() => {
+          cleanup()
+          resolve()
+        })
       })
     })
-  })
+  }
 }

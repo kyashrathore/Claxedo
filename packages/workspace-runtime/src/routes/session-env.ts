@@ -6,6 +6,9 @@ import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../tar
 import { buildSafeEnv } from "../pty/env"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { ProcessObserver } from "../managed-processes/process-observer"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { authorizeHostCapability } from "./host-capability-access"
 
 const EXEC_KILL_GRACE_MS = 250
 
@@ -268,11 +271,21 @@ function terminateExec(
   }, EXEC_KILL_GRACE_MS)
 }
 
-export function SessionEnvRoutes(processObserver?: ProcessObserver) {
-  return new Hono()
+export function SessionEnvRoutes(processObserver?: ProcessObserver, sessionAccessPolicy?: SessionAccessPolicy) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((cause, c) => {
       if (isRequestBodyTooLarge(cause)) return c.json(requestBodyTooLargeBody(), 413)
       throw cause
+    })
+    .use("*", async (c, next) => {
+      const mutation = ["/exec", "/file/write", "/file/mkdir", "/file/rm"]
+        .some((suffix) => c.req.path.endsWith(suffix))
+      const denied = await authorizeHostCapability(
+        c,
+        sessionAccessPolicy ? { sessionAccessPolicy } : {},
+        mutation ? "tool_write" : "tool_read",
+      )
+      return denied ?? await next()
     })
     .post("/exec", async (c) => {
       const base = root(c)

@@ -2,8 +2,47 @@ import { describe, expect, test } from "bun:test"
 import { createWorkspaceHost } from "../workspace"
 import { createWorkspaceRuntimeApp } from "../server"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { Hono } from "hono"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
+import { CheckpointRoutes } from "./checkpoint"
 
 describe("workspace checkpoint routes", () => {
+  test("rejects checkpoint mutation from a verified viewer before changing state", async () => {
+    const host = createWorkspaceHost()
+    const now = Math.floor(Date.now() / 1000)
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        principal_kind: "user",
+        actor_id: "viewer_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "viewer",
+        access: "cloud",
+        backing: "cloud-vm",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+        parent_jti: "rat_1",
+      })
+      return await next()
+    })
+    app.route("/", CheckpointRoutes({
+      checkpoint: host.checkpoint,
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({ requireActor: true }),
+    }))
+
+    const response = await app.request("/freeze", { method: "POST", body: "{}" })
+    expect(response.status).toBe(403)
+    expect(host.checkpoint.detail().state).toBe("active")
+    host.dispose()
+  })
+
   test("freeze fences writes until resume", async () => {
     const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
 

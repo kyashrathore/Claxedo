@@ -2,12 +2,19 @@ import { Hono } from "hono"
 import type { WorkspaceCheckpointControl, WorkspaceCheckpointDrainPolicy } from "../workspace/host"
 import type { WorkspaceWorktreeManager } from "../worktree"
 import { errorBody } from "./http"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 export function CheckpointRoutes(input: {
   checkpoint: WorkspaceCheckpointControl
   worktrees?: WorkspaceWorktreeManager
-}) {
-  return new Hono()
+} & HostCapabilityAccessOptions) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
+    .use("*", async (c, next) => {
+      const write = !["GET", "HEAD", "OPTIONS"].includes(c.req.method)
+      const denied = await authorizeHostCapability(c, input, write ? "checkpoint_write" : "checkpoint_read")
+      return denied ?? await next()
+    })
     .get("/", (c) => c.json(input.checkpoint.detail()))
     .post("/freeze", async (c) => {
       const body = await c.req.json().catch(() => ({})) as { policy?: unknown }

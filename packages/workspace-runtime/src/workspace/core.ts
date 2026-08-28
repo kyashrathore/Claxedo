@@ -14,11 +14,13 @@ import type { RuntimeEventHub } from "../runtime-event-hub"
 import { WorkspaceRuntimeApiPrefix, WorkspaceRuntimeRoutes } from "../routes/manifest"
 import { assertWorkspaceRuntimeExposure, type WorkspaceRuntimeExposure } from "../exposure"
 import type { ProcessObserver } from "../managed-processes/process-observer"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import { workspaceRuntimeBus } from "../bus"
 
 type Socket = Parameters<typeof PtyRoutes>[0]
 
-export function mountWorkspacePty(app: Hono, upgradeWebSocket: Socket, processObserver?: ProcessObserver) {
-  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, processObserver))
+export function mountWorkspacePty(app: Hono, upgradeWebSocket: Socket, processObserver?: ProcessObserver, sessionAccessPolicy?: SessionAccessPolicy) {
+  app.route(WorkspaceRuntimeRoutes.pty, PtyRoutes(upgradeWebSocket, { processObserver, sessionAccessPolicy }))
 }
 
 export function mountWorkspaceAgentHooks(app: Hono) {
@@ -28,9 +30,13 @@ export function mountWorkspaceAgentHooks(app: Hono) {
 export function mountWorkspaceEvents(app: Hono, options: {
   eventHub: RuntimeEventHub
   runtimeEventAuthorization?: RuntimeEventAuthorization
+  sessionAccessPolicy?: SessionAccessPolicy
 }) {
-  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler())
-  app.get(WorkspaceRuntimeRoutes.runtimeEvents, runtimeEventsHandler(options.eventHub, options.runtimeEventAuthorization))
+  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler(workspaceRuntimeBus, options.sessionAccessPolicy))
+  app.get(
+    WorkspaceRuntimeRoutes.runtimeEvents,
+    runtimeEventsHandler(options.eventHub, options.runtimeEventAuthorization, options.sessionAccessPolicy),
+  )
 }
 
 export type WorkspaceTranscriptRoutesOptions = {
@@ -51,13 +57,13 @@ export function mountWorkspaceTranscripts(app: Hono, options: WorkspaceTranscrip
   app.route(WorkspaceRuntimeRoutes.subagentTranscripts, TranscriptRoutes(options))
 }
 
-export function mountWorkspaceProcess(app: Hono) {
-  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes())
+export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
+  app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes({ sessionAccessPolicy }))
 }
 
-export function mountWorkspaceFiles(app: Hono) {
+export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
   app.route(WorkspaceRuntimeRoutes.diff, DiffRoutes())
-  app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes())
+  app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes(sessionAccessPolicy ? { sessionAccessPolicy } : {}))
   app.route(WorkspaceRuntimeApiPrefix, FileRoutes())
   // OpenCode-compatible adapter routes. The neutral public runtime API is
   // mounted above under /api/wr.
@@ -72,14 +78,15 @@ export function mountWorkspaceCore(
     exposure: WorkspaceRuntimeExposure
     processObserver?: ProcessObserver
     runtimeEventAuthorization?: RuntimeEventAuthorization
+    sessionAccessPolicy?: SessionAccessPolicy
     transcripts?: WorkspaceTranscriptRoutesOptions
   },
 ) {
   assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
-  mountWorkspacePty(app, upgradeWebSocket, options.processObserver)
+  mountWorkspacePty(app, upgradeWebSocket, options.processObserver, options.sessionAccessPolicy)
   mountWorkspaceAgentHooks(app)
   mountWorkspaceEvents(app, options)
   if (options.transcripts) mountWorkspaceTranscripts(app, options.transcripts)
-  mountWorkspaceProcess(app)
-  mountWorkspaceFiles(app)
+  mountWorkspaceProcess(app, options.sessionAccessPolicy)
+  mountWorkspaceFiles(app, options.sessionAccessPolicy)
 }

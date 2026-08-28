@@ -6,6 +6,8 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { promisify } from "node:util"
 import { GitSourceRoutes } from "./git-source"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 
 const execFileAsync = promisify(execFile)
 
@@ -38,6 +40,45 @@ function app() {
 }
 
 describe("GitSourceRoutes", () => {
+  test("rejects a verified viewer commit before changing the worktree", async () => {
+    await withGitRepo(async (directory) => {
+      const now = Math.floor(Date.now() / 1000)
+      const app = new Hono<{ Variables: RelayHostAuthContext }>()
+      app.use("*", async (c, next) => {
+        c.set("relayHostAuth", {
+          iss: "workspace-relay",
+          aud: "workspace-host-service",
+          principal_kind: "user",
+          actor_id: "viewer_1",
+          actor_kind: "human",
+          org_id: "org_1",
+          workspace_id: "ws_1",
+          host_id: "host_1",
+          role: "viewer",
+          access: "cloud",
+          backing: "cloud-vm",
+          exp: now + 60,
+          iat: now,
+          jti: "jti_1",
+          parent_jti: "rat_1",
+        })
+        return await next()
+      })
+      app.route("/", GitSourceRoutes({
+        sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({ requireActor: true }),
+      }))
+
+      const response = await app.request("/commit", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ path: path.join(directory, "doc.md"), content: "after\n", message: "mutate" }),
+      })
+      expect(response.status).toBe(403)
+      expect(await readFile(path.join(directory, "doc.md"), "utf8")).toBe("before\n")
+      expect(await git(directory, ["rev-list", "--count", "HEAD"])).toBe("1")
+    })
+  })
+
   test("returns a clean tracked snapshot", async () => {
     await withGitRepo(async () => {
       const res = await app().request("http://localhost/api/wr/git/snapshot?path=doc.md")

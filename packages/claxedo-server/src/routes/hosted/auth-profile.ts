@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import {
   ControlPlaneAuthError,
@@ -12,6 +12,7 @@ import { signedOrError } from "../../workspace/route-support"
 export type HostedAuthProfileRouteOptions = {
   authentication: RequestAuthenticationAdapter
   listOrgs(auth: SignedControlPlaneAuth): Promise<unknown>
+  ownerBootstrap?: "one-use-claim"
 }
 
 export type HostedAuthProfile = {
@@ -64,7 +65,7 @@ function authErrorResponse(error: ControlPlaneAuthError) {
  */
 export function HostedAuthProfileRoutes(options: HostedAuthProfileRouteOptions) {
   const app = new Hono()
-  app.get("/api/claxedo/auth/profile", async (context) => {
+  const response = async (context: Context) => {
     context.header("cache-control", "no-store")
     const authResult = await signedOrError(context.req.raw, {
       authentication: options.authentication,
@@ -81,7 +82,6 @@ export function HostedAuthProfileRoutes(options: HostedAuthProfileRouteOptions) 
         "Verified application principal is unavailable",
       ))
     }
-
     try {
       const profile: HostedAuthProfile = {
         user: { id: auth.principal.userId },
@@ -92,6 +92,14 @@ export function HostedAuthProfileRoutes(options: HostedAuthProfileRouteOptions) 
       if (error instanceof ControlPlaneAuthError) return authErrorResponse(error)
       throw error
     }
-  })
+  }
+
+  app.get("/api/claxedo/auth/profile", response)
+  if (options.ownerBootstrap === "one-use-claim") {
+    // Authentication owns verification and the selected application-authority
+    // adapter owns the atomic claim consumption. This route only gives that
+    // irreversible first write one explicit, auditable application entrypoint.
+    app.post("/api/claxedo/auth/bootstrap-owner", response)
+  }
   return app
 }

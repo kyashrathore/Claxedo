@@ -6,12 +6,14 @@
 
 import { Hono, type Context } from "hono"
 import z from "zod/v3"
-import { lazy } from "../lazy"
 import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { assertTarget, WorkspaceTargetError } from "../target"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { sessionAccessContext } from "../session-access-policy"
+import { authorizeHostCapability, type HostCapabilityAccessOptions } from "./host-capability-access"
 
 function dir(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): string {
   return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
@@ -33,6 +35,10 @@ function processLogNotFound(message: string, details?: Record<string, unknown>) 
   return errorBody("process_log_target_not_found", message, details)
 }
 
+function processLogPrivate() {
+  return errorBody("process_log_private", "Terminal logs require their creator or a workspace administrator")
+}
+
 export type CreateProcessRoutesDeps = {
   manager: {
     get(directory: string, id: string): { ptyId?: string } | undefined
@@ -41,6 +47,7 @@ export type CreateProcessRoutesDeps = {
   pty: {
     get(id: string): { id: string } | undefined
     snapshot(id: string): string
+    accessOwner?(id: string): string | undefined
   }
 }
 
@@ -55,7 +62,7 @@ function tailLogSnapshot(snapshot: string, linesParam?: string) {
   return snapshot.split("\n").slice(-maxLogLines(linesParam)).join("\n")
 }
 
-function processLogs(c: Context, directory: string, deps: CreateProcessRoutesDeps) {
+function processLogs(c: Context<{ Variables: RelayHostAuthContext }>, directory: string, deps: CreateProcessRoutesDeps) {
   const pty_id = c.req.query("pty_id")
   const terminal_id = c.req.query("terminal_id")
   const process_id = c.req.query("process_id")
@@ -80,6 +87,21 @@ function processLogs(c: Context, directory: string, deps: CreateProcessRoutesDep
     return c.json(processLogTargetRequired(), 400)
   }
 
+  // `process_id` and `name` resolve through the workspace process manager and
+  // therefore name a canonical workspace-owned process. Raw PTY selectors are
+  // a separate escape hatch; for remote actors they may address only a public
+  // terminal whose owner the runtime itself recorded at creation.
+  if (pty_id || terminal_id) {
+    const access = sessionAccessContext(c)
+    if (access.authority) {
+      const role = access.authority.role
+      const owns = !!access.actor && deps.pty.accessOwner?.(ptyId) === access.actor.actorId
+      if (role !== "admin" && role !== "owner" && !owns) {
+        return c.json(processLogPrivate(), 403)
+      }
+    }
+  }
+
   if (!deps.pty.get(ptyId)) return c.json(processLogNotFound(`PTY ${ptyId} not found`, { pty_id: ptyId }), 404)
   return c.text(tailLogSnapshot(deps.pty.snapshot(ptyId), c.req.query("lines")))
 }
@@ -91,8 +113,8 @@ async function init(c: { req: { query: (k: string) => string | undefined; header
   return directory
 }
 
-export const ProcessRoutes = lazy(() =>
-  new Hono()
+export function ProcessRoutes(options: HostCapabilityAccessOptions = {}) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) {
         return c.json(requestBodyTooLargeBody(), 413)
@@ -101,6 +123,11 @@ export const ProcessRoutes = lazy(() =>
         return c.json(errorBody("process_invalid_directory", "Process directory must match configured workspace"), 400)
       }
       throw err
+    })
+    .use("*", async (c, next) => {
+      const write = !["GET", "HEAD", "OPTIONS"].includes(c.req.method)
+      const denied = await authorizeHostCapability(c, options, write ? "pty_write" : "pty_read")
+      return denied ?? await next()
     })
     .get("/", async (c) => {
       const directory = await init(c)
@@ -202,16 +229,21 @@ export const ProcessRoutes = lazy(() =>
     .get("/logs", async (c) => {
       const directory = await init(c)
       return processLogs(c, directory, { manager: ProcessManager, pty: Pty })
-    }),
-)
+    })
+}
 
 /**
  * Dependency-injected variant of the /logs route used by the focused
  * routes/process.test.ts contract. The production route above uses the same
  * resolution helper with the global ProcessManager and Pty singletons.
  */
-export function createProcessRoutes(deps: CreateProcessRoutesDeps) {
-  return new Hono().get("/logs", async (c) => {
+export function createProcessRoutes(deps: CreateProcessRoutesDeps, options: HostCapabilityAccessOptions = {}) {
+  return new Hono<{ Variables: RelayHostAuthContext }>()
+    .use("*", async (c, next) => {
+      const denied = await authorizeHostCapability(c, options, "pty_read")
+      return denied ?? await next()
+    })
+    .get("/logs", async (c) => {
     try {
       return processLogs(c, dir(c), deps)
     } catch (err) {
@@ -220,5 +252,5 @@ export function createProcessRoutes(deps: CreateProcessRoutesDeps) {
       }
       throw err
     }
-  })
+    })
 }

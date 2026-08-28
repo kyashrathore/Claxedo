@@ -331,6 +331,9 @@ export namespace Pty {
     cleanupOperation?: Promise<void>
     removeOperation?: Promise<void>
     owner?: ProcessOwnerHandle
+    /** Verified relay actor that created this public terminal. Never accepted
+     * from request input and deliberately absent from the public PTY info. */
+    accessOwnerActorId?: string
   }
 
   function clearInterrupt(session: ActiveSession) {
@@ -505,6 +508,19 @@ export namespace Pty {
 
   export function get(id: string) {
     return sessions.get(id)?.info
+  }
+
+  /** Bind access only after the public route has created the PTY itself. */
+  export function bindAccessOwner(id: string, actorId: string) {
+    const session = sessions.get(id)
+    if (!session || session.removed) return false
+    if (session.accessOwnerActorId && session.accessOwnerActorId !== actorId) return false
+    session.accessOwnerActorId = actorId
+    return true
+  }
+
+  export function accessOwner(id: string) {
+    return sessions.get(id)?.accessOwnerActorId
   }
 
   export function hasAddrInUse(id: string) {

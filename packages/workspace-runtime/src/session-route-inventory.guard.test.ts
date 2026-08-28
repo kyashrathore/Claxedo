@@ -110,7 +110,6 @@ describe("private-session route inventory", () => {
       "GET /lsp",
       "GET /mcp",
       "GET /provider",
-      "GET /session/status",
       "GET /vcs",
       "POST /mcp/:name/connect",
       "POST /mcp/:name/disconnect",

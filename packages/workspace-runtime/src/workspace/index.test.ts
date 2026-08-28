@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { workspaceRuntimeBus } from "../bus"
 import { createRuntimeEventHub } from "../runtime-event-hub"
+import { sessionIdle, withDir } from "../compat-events"
+import type { SessionAccessPolicy } from "../session-access-policy"
 import {
   createWorkspaceHost,
   loopbackWorkspaceRuntimeExposure,
@@ -21,7 +23,94 @@ function has(paths: string[], prefix: string) {
 
 const loopbackExposure = loopbackWorkspaceRuntimeExposure()
 
+const managedPolicy = (): SessionAccessPolicy => ({
+  sessionAuthority: "managed-private",
+  authorize: (input) => input.sessionId === "session-a"
+    ? { allowed: true }
+    : { allowed: false, status: 403, code: "session_private", message: "private" },
+  authorizePrefix: () => ({ allowed: true }),
+  filterSessions: (input) => input.sessionIds,
+  registerSession: () => ({ allowed: true }),
+})
+
+function verifiedRelay(app: Hono) {
+  app.use("*", async (c, next) => {
+    ;(c as any).set("relayHostAuth", {
+      actor_id: "actor_1",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      host_id: "host_1",
+      role: "editor",
+    })
+    await next()
+  })
+}
+
+async function readUntil(response: Response, expected: string) {
+  const reader = response.body!.getReader()
+  const decoder = new TextDecoder()
+  let text = ""
+  for (let reads = 0; reads < 20 && !text.includes(expected); reads += 1) {
+    const next = await reader.read()
+    if (next.done) break
+    text += decoder.decode(next.value, { stream: true })
+  }
+  return text
+}
+
 describe("workspace module wiring", () => {
+  test("managed /global/event and /event reject unscoped access and isolate replay by session", async () => {
+    const eventHub = createRuntimeEventHub()
+    const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: managedPolicy() })
+    const app = new Hono()
+    verifiedRelay(app)
+    host.mount(app, { exposure: loopbackExposure })
+
+    expect((await app.request("http://localhost/global/event")).status).toBe(400)
+    expect((await app.request("http://localhost/event")).status).toBe(400)
+    expect((await app.request("http://localhost/global/event?sessionID=session-b")).status).toBe(403)
+
+    eventHub.publishGlobal(withDir("/workspace", sessionIdle("session-b")))
+    eventHub.publishGlobal(withDir("/workspace", sessionIdle("session-a")))
+    workspaceRuntimeBus.publish({
+      type: "agent.lifecycle",
+      tabId: "private-b",
+      sessionId: "session-b",
+      prompt: "secret-b",
+      eventType: "UserActionRequired",
+    })
+    workspaceRuntimeBus.publish({
+      type: "agent.lifecycle",
+      tabId: "private-a",
+      sessionId: "session-a",
+      prompt: "allowed-a",
+      eventType: "UserActionRequired",
+    })
+
+    const globalAbort = new AbortController()
+    const global = await app.request("http://localhost/global/event?sessionID=session-a", {
+      headers: { "Last-Event-ID": "0" },
+      signal: globalAbort.signal,
+    })
+    const globalText = await readUntil(global, '"sessionID":"session-a"')
+    globalAbort.abort()
+
+    const eventAbort = new AbortController()
+    const session = await app.request("http://localhost/event?sessionID=session-a", {
+      headers: { "Last-Event-ID": "0" },
+      signal: eventAbort.signal,
+    })
+    const sessionText = await readUntil(session, "allowed-a")
+    eventAbort.abort()
+    host.dispose()
+
+    expect(globalText).toContain('"sessionID":"session-a"')
+    expect(globalText).not.toContain('"sessionID":"session-b"')
+    expect(sessionText).toContain("allowed-a")
+    expect(sessionText).not.toContain("secret-b")
+  })
+
   test("mountWorkspaceCore registers the workspace routes", async () => {
     const app = new Hono()
     mountWorkspaceCore(app, (() => () => ({})) as never, { eventHub: createRuntimeEventHub(), exposure: loopbackExposure })

@@ -2,12 +2,36 @@ import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { createBus, type WorkspaceRuntimeEvent } from "../bus"
 import { runtimeBusEventsHandler } from "./runtime-events"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
-function mount(bus: ReturnType<typeof createBus<WorkspaceRuntimeEvent>>) {
+function mount(bus: ReturnType<typeof createBus<WorkspaceRuntimeEvent>>, policy?: SessionAccessPolicy) {
   const app = new Hono()
-  app.get("/api/wr/events", runtimeBusEventsHandler(bus))
+  if (policy) {
+    app.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+  }
+  app.get("/api/wr/events", runtimeBusEventsHandler(bus, policy))
   return app
 }
+
+const managedPolicy = (): SessionAccessPolicy => ({
+  sessionAuthority: "managed-private",
+  authorize: (input) => input.sessionId === "session-a"
+    ? { allowed: true }
+    : { allowed: false, status: 403, code: "session_private", message: "private" },
+  authorizePrefix: () => ({ allowed: true }),
+  filterSessions: (input) => input.sessionIds,
+  registerSession: () => ({ allowed: true }),
+})
 
 type Connection = {
   /** Everything decoded from the stream so far. */
@@ -17,9 +41,11 @@ type Connection = {
   close: () => void
 }
 
-async function connect(app: Hono, lastEventId?: string): Promise<Connection> {
+async function connect(app: Hono, lastEventId?: string, sessionID?: string): Promise<Connection> {
   const ac = new AbortController()
-  const res = await app.request("http://localhost/api/wr/events", {
+  const url = new URL("http://localhost/api/wr/events")
+  if (sessionID) url.searchParams.set("sessionID", sessionID)
+  const res = await app.request(url, {
     ...(lastEventId === undefined ? {} : { headers: { "Last-Event-ID": lastEventId } }),
     signal: ac.signal,
   })
@@ -77,6 +103,31 @@ function bootstrapId(text: string) {
 }
 
 describe("runtimeBusEventsHandler — /api/wr/events replay", () => {
+  test("managed stream requires an authorized session scope", async () => {
+    const bus = createBus<WorkspaceRuntimeEvent>()
+    const app = mount(bus, managedPolicy())
+
+    expect((await app.request("http://localhost/api/wr/events")).status).toBe(400)
+    expect((await app.request("http://localhost/api/wr/events?sessionID=session-b")).status).toBe(403)
+  })
+
+  test("managed stream filters replay and live lifecycle frames to the authorized session", async () => {
+    const bus = createBus<WorkspaceRuntimeEvent>()
+    const app = mount(bus, managedPolicy())
+    bus.publish({ type: "agent.lifecycle", tabId: "b-before", sessionId: "session-b", eventType: "UserActionRequired", prompt: "secret-b" })
+    bus.publish({ type: "agent.lifecycle", tabId: "a-before", sessionId: "session-a", eventType: "UserActionRequired", prompt: "allowed-a" })
+
+    const stream = await connect(app, "0", "session-a")
+    let text = await stream.until((seen) => seen.includes("allowed-a"), "authorized replay missing")
+    bus.publish({ type: "agent.lifecycle", tabId: "b-live", sessionId: "session-b", eventType: "Busy", lastAssistantMessage: "secret-live-b" })
+    bus.publish({ type: "session.lifecycle", phase: "created", sessionID: "session-a", message: "allowed-live-a", ts: 1 })
+    text = await stream.until((seen) => seen.includes("allowed-live-a"), "authorized live frame missing")
+    stream.close()
+
+    expect(text).not.toContain("secret-b")
+    expect(text).not.toContain("secret-live-b")
+  })
+
   test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
     const bus = createBus<WorkspaceRuntimeEvent>()
     const app = mount(bus)
