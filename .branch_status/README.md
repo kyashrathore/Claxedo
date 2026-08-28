@@ -1,22 +1,27 @@
 # Single-Tenant to Multiplayer-Ready Branch Status
 
-Status: **NOT READY TO MERGE**
+Status: **REVIEW FINDINGS CLOSED — E2E FOLLOW-UP REQUIRED**
 
-Last updated: 2026-08-27
+Last updated: 2026-08-28
 
 Branch: `codex/single-tenant-multiplayer-ready`
 
-Implementation commit: `c97d1fe3cefed0f6aeb9da1e0f38bc6b4b308924`
+Implementation commit: `593dd1f94f047c9269a56b2afea75cce2cb6419e`
 
-Base: `codex/claxedo-platform-release-hardening` at `866feaabe2fa1f80f51aa05d7788626ae7a3bf5b`
+Base: `dev` at `834307041e8b01eef532833b8deb3703f03dc647`
 
-Diff: 209 files, 12,392 insertions, 891 deletions
+Diff: 265 files, 17,875 insertions, 1,302 deletions
 
 ## Executive summary
 
-This branch converts Claxedo's single-user session assumptions into a tenant-aware, multiplayer-ready model. It adds explicit organization, project, workspace, and actor identity; private-session authority; participant management; atomic prompt admission; message attribution; and identity-aware live and replay delivery. It preserves OpenCode as the external compatibility boundary.
+All 18 validated review findings are closed in `fc2c5fc51a` and `593dd1f94f`. The branch now has canonical tenant and actor identity, current-role runtime-token validation, private-session participant authority, bounded renewable event authorization, durable prompt admission, backend parity, and an enforced deployment migration gate.
 
-The implementation has the intended foundation, but the validated review found 15 P1 and 3 P2 defects. The branch must not merge or deploy until the tenant/event leaks, session lifecycle gaps, long-lived stream authorization, backend identity drift, and migration gate are resolved.
+The security and authority review is clear, and all affected package suites pass. The branch is not marked fully merge-ready because the complete real-provider browser lane still exposes two product/harness lifecycle failures outside the reviewed authority changes:
+
+- Pi receives the correct canonical model from both session metadata and control-plane config, but the app picker hydrates with an empty model.
+- Codex ACP reaches the scripted tool and enters `Working`, but its external child lifecycle never reaches `Completed` within the 90-second acceptance window.
+
+The Claude ACP failure discovered during verification was fixed by removing a duplicate pre-turn permission-mode write; Claude ACP now passes. Live-provider, packaged desktop, and public-web lanes remain environment-blocked as recorded in `verification-and-rollout.md`.
 
 ## Documents
 
@@ -24,51 +29,28 @@ The implementation has the intended foundation, but the validated review found 1
 |----------|---------|
 | [status.json](status.json) | Machine-readable branch state and artifact manifest |
 | [product-requirements.md](product-requirements.md) | Product requirements, constraints, acceptance criteria, and metrics |
-| [architecture.md](architecture.md) | Current and target architecture, authoritative owners, data flows, and invariants |
+| [architecture.md](architecture.md) | Architecture, authoritative owners, data flows, and invariants |
 | [user-journeys.md](user-journeys.md) | Human, collaborator, administrator, and failure/recovery journeys |
-| [decisions.md](decisions.md) | Settled product and technical decisions plus unresolved design gates |
-| [change-inventory.md](change-inventory.md) | Package-level map of the 209 changed files and their responsibilities |
-| [review-findings.md](review-findings.md) | Complete validated findings, rejected candidates, residual risks, and fix order |
-| [verification-and-rollout.md](verification-and-rollout.md) | Pre-merge tests, schema rollout, deployment, observability, and rollback |
+| [decisions.md](decisions.md) | Settled product and technical decisions |
+| [change-inventory.md](change-inventory.md) | Package-level change map |
+| [review-findings.md](review-findings.md) | Stable finding ids, closure commits, and verification evidence |
+| [verification-and-rollout.md](verification-and-rollout.md) | Verification results, remaining E2E gaps, rollout, and rollback |
 
 ## Capability scorecard
 
-| Capability | State | Blocking findings |
-|------------|-------|-------------------|
-| Explicit tenant and actor identity | Partial | #2, #6, #16 |
-| Atomic prompt admission | Partial | #23 |
-| Message attribution | Partial | #28 |
-| Private-session HTTP authorization | Partial | #3, #12, #13, #14, #24 |
-| Live, replay, and reconnect authorization | Partial | #5, #8, #9, #10, #11, #15 |
-| Long-lived PTY authorization | Broken after about 60 seconds | #21 |
-| Schema and deployment migration | Not release-gated | #16, #18 |
-| OpenCode compatibility | Present, with outage-status regression | #11 |
-| Two-user proof | Focused tests exist; deployed proof missing | #18 and rollout gaps |
+| Capability | State | Evidence |
+|------------|-------|----------|
+| Explicit tenant and actor identity | Closed | #2, #6, #16, #28 |
+| Atomic prompt admission | Closed | #23 plus two-runtime tests |
+| Private-session HTTP authorization | Closed | #3, #12, #13, #14, #24 |
+| Live, replay, reconnect authorization | Closed | #5, #8-#11, #15 |
+| Long-lived PTY authorization | Closed | #21 renewable lease and revocation tests |
+| Runtime-token role and principal integrity | Closed | live Convex/SQLite role validation and user/service discrimination |
+| Schema and deployment migration | Closed in code | #18 workflow gate and migration-policy tests |
+| OpenCode compatibility | Closed for reviewed behavior | 503 semantics and browser matrix |
+| Two-user proof | Closed locally | signed transport, runtime transport, and product acceptance tests |
+| Complete real-provider browser lane | Follow-up required | Pi hydration and Codex ACP completion lifecycle |
 
-## Required order of work
+## Readiness rule
 
-1. Close tenant and transcript leaks: #5, #12, #3.
-2. Make session create and fork atomic: #13, #14.
-3. Define one renewable, bounded stream authorization model: #8, #9, #10, #11, #15, #21.
-4. Stabilize canonical identity and backend parity: #2, #6, #16, #24, #28.
-5. Make turn admission durable: #23.
-6. Add the deployment migration and verification gate: #18.
-7. Run the complete two-user, revocation, reconnect, and rollback matrix.
-
-## Source documents retained in the branch
-
-- `docs/plans/2026-08-01-002-refactor-single-tenant-today-multiplayer-ready-plan.md`
-- `docs/tech-docs/access-model.md`
-- `docs/tech-docs/tenant-identity-schema-rollout.md`
-
-These `.branch_status` files summarize the live branch and its review. The original plan and technical documents remain the historical design record.
-
-## Update protocol
-
-When a finding is fixed:
-
-1. Keep its stable number from `review-findings.md`.
-2. Add the fixing commit and verification evidence to that row.
-3. Update `status.json` counts and status.
-4. Update the capability scorecard if the fix changes readiness.
-5. Do not mark the branch ready until all P1 findings and the release gate are closed.
+The original review is complete: no P1 or P2 finding remains open. Merge should wait for an owner decision on the two real-provider failures, or for those failures to be fixed and the full real-harness lane rerun. Deployment additionally requires the credentialed staging migration rehearsal and legacy-session smoke described in `verification-and-rollout.md`.

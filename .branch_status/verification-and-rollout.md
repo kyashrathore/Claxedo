@@ -1,14 +1,49 @@
 # Verification and Rollout Plan
 
+## Current verification result — 2026-08-28
+
+All 18 validated review findings are closed. The implementation is rebased on `dev` at `834307041e8b01eef532833b8deb3703f03dc647`; `origin/dev` is an ancestor of `593dd1f94f047c9269a56b2afea75cce2cb6419e`.
+
+Passed:
+
+- `@claxedo/server`: 3,068 passed, 14 skipped; its canonical command also ran the 397-test Convex suite.
+- `@claxedo/server-core`: 484 passed.
+- `@claxedo/local-server`: 227 passed.
+- `@claxedo/agent-sdk-runtime`: 492 passed; typecheck and distribution build passed.
+- `@claxedo/workspace-runtime`: 893 unit, 37 relay, and 59 real PTY/storage tests passed.
+- App non-browser E2E: 26 Bun tests and 6 journey tests passed.
+- Browser WorkGraph: 20/20 in both signed test-user and local-unsigned modes.
+- Browser mobile matrix: 5/5 in both auth modes.
+- The three deterministic core-browser failures were rerun after their fixes in both auth modes: 3/3 and 3/3 passed.
+- All affected package typechecks passed.
+- Root lint passed with 17,185 warnings and zero errors.
+- `git diff --check` passed.
+
+Remaining real-harness failures:
+
+- Pi: the authoritative session metadata and control-plane config both contain `anthropic/claude-sonnet-4-6`, and the provider catalog contains the model, but the UI hydrates `data-model=""` and displays “Choose a model to continue.”
+- Codex ACP: the scripted provider is reached and the UI enters `Working`, but the external child lifecycle does not reach `Completed` within 90 seconds.
+
+Claude ACP now passes after removing the duplicate pre-turn permission-mode write. These two failures must be resolved (or explicitly waived by the product owner) and the complete real-harness lane rerun before merge.
+
+Environment-limited lanes:
+
+- Live-provider E2E requires credentials not available in this run.
+- Desktop E2E requires a packaged Electron artifact.
+- The public-web package currently has no discoverable E2E tests (`No tests found`).
+- The monorepo-wide typecheck is blocked in this nested worktree because shared `dist` symlinks point to the parent checkout, causing TypeScript to load duplicate Hono/Zod declarations. The 36 other tasks passed; all affected packages pass independently.
+
 ## Merge gates
 
 The branch may merge only when:
 
-1. All P1 findings in `review-findings.md` are closed.
-2. P2 findings #23, #24, and #28 are closed or explicitly deferred by the owner with recorded consequences.
-3. The deployment migration gate (#18) is implemented and rehearsed.
-4. The targeted unit/integration matrix passes on the rebased branch.
-5. The two-user production-like smoke passes.
+1. All P1 findings in `review-findings.md` are closed. **Passed.**
+2. P2 findings #23, #24, and #28 are closed. **Passed.**
+3. The deployment migration gate (#18) is implemented. **Passed in code; staging rehearsal remains a deploy gate.**
+4. The targeted unit/integration matrix passes on the rebased branch. **Passed.**
+5. The local two-user production-like smoke passes. **Passed.**
+6. The Pi and Codex ACP real-harness lifecycle failures are resolved or explicitly waived. **Open.**
+7. The complete real-harness lane is rerun. **Open.**
 
 ## Focused verification matrix
 

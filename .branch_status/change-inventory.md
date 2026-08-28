@@ -2,24 +2,26 @@
 
 ## Scope
 
-Compared with `codex/claxedo-platform-release-hardening` at `866feaabe2`, the implementation commit changes 209 files with 12,392 insertions and 891 deletions.
+Compared with `dev` at `834307041e`, implementation commit `593dd1f94f` changes 265 files with 17,875 insertions and 1,302 deletions.
 
 ## Files by major area
 
 | Area | Changed files | Primary responsibility |
 |------|--------------:|------------------------|
-| `packages/claxedo-server` | 69 | Control-plane authority, hosted runtimes, deployment composition, routes, tests |
-| `packages/workspace-runtime` | 55 | Session routes/policy, event delivery, PTY/process access, runtime store |
-| `packages/claxedo-server-core` | 16 | Shared auth, Convex/SQLite authority adapters, event visibility |
-| `packages/claxedo-app` | 16 | Prompt collision UX, author rendering, live event preparation |
-| `packages/agent-sdk-runtime` | 14 | Turn admission lease and runtime attribution contracts |
-| `convex` | 14 | Tenant schema, migrations, sessions, participants, token revocation |
+| `packages/claxedo-server` | 87 | Control-plane authority, hosted runtimes, deployment composition, routes, tests |
+| `packages/workspace-runtime` | 58 | Session routes/policy, event delivery, PTY/process access, runtime store |
+| `convex` | 24 | Tenant schema, migrations, sessions, participants, token revocation |
+| `packages/claxedo-server-core` | 20 | Shared auth, Convex/SQLite authority adapters, event visibility |
+| `packages/claxedo-app` | 20 | Prompt collision UX, author rendering, live event preparation, browser acceptance |
+| `packages/agent-sdk-runtime` | 15 | Turn admission lease and runtime attribution contracts |
+| `packages/claxedo-local-server` | 10 | OpenCode compatibility, canonical runtime principals, and local runtime dispatch |
+| `.branch_status` | 9 | Review dossier and verification record |
 | `packages/workspace-relay` | 6 | Runtime token and relay host proof claims |
-| `packages/claxedo-local-server` | 6 | OpenCode compatibility and local runtime dispatch |
 | `packages/sandbox-manager` | 4 | Hosted driver configuration |
 | `packages/agent-event-runtime` | 4 | OpenCode-compatible event projection |
 | `packages/schema` | 2 | Public/shared schema changes |
 | `docs` | 2 | Access model and tenant rollout documentation |
+| Repository workflow/root | 3 | Deployment gate and dependency/script wiring |
 | `packages/workspace-relay-protocol` | 1 | Relay protocol identity contract |
 
 ## Logical change sets
@@ -95,7 +97,7 @@ Key review finding: #18.
 The exact path list remains reproducible from Git:
 
 ```bash
-git diff --name-status 866feaabe2fa1f80f51aa05d7788626ae7a3bf5b..c97d1fe3cefed0f6aeb9da1e0f38bc6b4b308924
+git diff --name-status 834307041e8b01eef532833b8deb3703f03dc647..593dd1f94f047c9269a56b2afea75cce2cb6419e
 ```
 
-The implementation tree is `062fc24c33c72d10fab3cede8f9267e97a66174b`, which is the same tree independently reviewed before the final rebase.
+The implementation tree is `6c42070016448f272ce8008fd9b8db98e80c9d21`.
