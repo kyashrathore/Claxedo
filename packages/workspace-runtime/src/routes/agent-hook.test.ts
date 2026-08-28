@@ -1,7 +1,7 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, spyOn, test } from "bun:test"
 import { Hono } from "hono"
 import { workspaceRuntimeBus } from "../bus"
-import { AgentHookRoutes } from "./agent-hook"
+import { AgentHookRoutes, lifecycleLogMetadata, TERMINAL_SESSION_MAX_ENTRIES } from "./agent-hook"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
@@ -53,6 +53,36 @@ describe("AgentHookRoutes", () => {
       body,
     },
   )
+
+  test("never includes transcript content or paths in lifecycle logs", () => {
+    const metadata = lifecycleLogMetadata({
+      tabId: "tab_private",
+      terminalId: "pty_private",
+      workspaceId: "workspace_private",
+      provider: "codex",
+      sessionId: "session_private",
+      transcriptPath: "/private/transcript.jsonl",
+      refName: "@private-customer-name",
+      prompt: "private customer prompt",
+      lastAssistantMessage: "private assistant response",
+      eventType: "Idle",
+    })
+
+    expect(metadata).toEqual({
+      tabId: "tab_private",
+      terminalId: "pty_private",
+      workspaceId: "workspace_private",
+      provider: "codex",
+      sessionId: "session_private",
+      eventType: "Idle",
+      hasPrompt: true,
+      hasLastAssistantMessage: true,
+    })
+    expect(JSON.stringify(metadata)).not.toContain("private customer prompt")
+    expect(JSON.stringify(metadata)).not.toContain("private assistant response")
+    expect(JSON.stringify(metadata)).not.toContain("/private/transcript.jsonl")
+    expect(JSON.stringify(metadata)).not.toContain("@private-customer-name")
+  })
 
   test("exposes lifecycle ingestion as POST-only", async () => {
     expect((await AgentHookRoutes().request("http://localhost/agent-lifecycle?tabId=leaked&eventType=Busy")).status).toBe(404)
@@ -129,6 +159,17 @@ describe("AgentHookRoutes", () => {
           prompt: "attacker prompt",
         }),
       })).status).toBe(403)
+      expect((await editorB.request("http://localhost/agent-lifecycle", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tabId: "tab_private_hook",
+          terminalId,
+          sessionId: "session_b",
+          eventType: "Idle",
+          prompt: "attacker-owned session",
+        }),
+      })).status).toBe(403)
       expect((await editorA.request("http://localhost/agent-lifecycle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -145,6 +186,13 @@ describe("AgentHookRoutes", () => {
         sessionId: "session_a",
         prompt: "private prompt",
         lastAssistantMessage: "private assistant response",
+      })
+      const preserved = await editorA.request(`http://localhost/terminal-session?terminalId=${terminalId}`)
+      await expect(preserved.json()).resolves.toMatchObject({
+        session: {
+          sessionId: "session_a",
+          prompt: "private prompt",
+        },
       })
     } finally {
       unsubscribe()
@@ -238,5 +286,41 @@ describe("AgentHookRoutes", () => {
     expect(res.status).toBe(413)
     await expect(res.json()).resolves.toEqual(errorBody("request_body_too_large", "Request body is too large"))
     expect(events).toHaveLength(0)
+
+    const form = await app.request("http://localhost/agent-lifecycle", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Content-Length": String(JSON_BODY_LIMIT_BYTES + 1),
+      },
+      body: "tabId=tab_big&eventType=Busy",
+    })
+    expect(form.status).toBe(413)
+    await expect(form.json()).resolves.toEqual(errorBody("request_body_too_large", "Request body is too large"))
+  })
+
+  test("bounds retained terminal lifecycle sessions", async () => {
+    const app = AgentHookRoutes()
+    const first = "pty_cache_oldest"
+    const write = spyOn(process.stderr, "write").mockImplementation(() => true)
+    try {
+      expect((await postLifecycle(app, new URLSearchParams({
+        tabId: "tab_cache_oldest",
+        terminalId: first,
+        eventType: "Busy",
+      }))).status).toBe(200)
+      for (let index = 0; index < TERMINAL_SESSION_MAX_ENTRIES; index += 1) {
+        expect((await postLifecycle(app, new URLSearchParams({
+          tabId: `tab_cache_${index}`,
+          terminalId: `pty_cache_${index}`,
+          eventType: "Busy",
+        }))).status).toBe(200)
+      }
+
+      const evicted = await app.request(`http://localhost/terminal-session?terminalId=${first}`)
+      await expect(evicted.json()).resolves.toMatchObject({ source: "none", session: null })
+    } finally {
+      write.mockRestore()
+    }
   })
 })

@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
+import { migrationStatusDecision } from "../../../../scripts/wait-for-convex-migrations"
 
 const root = path.resolve(import.meta.dirname, "../../../..")
 const controlPlane = fs.readFileSync(path.join(root, ".github/workflows/deploy-control-plane.yml"), "utf8")
@@ -24,6 +25,26 @@ const deployedBrowserConfig = fs.readFileSync(
 const appPlaywrightConfig = fs.readFileSync(path.join(root, "packages/claxedo-app/playwright.config.ts"), "utf8")
 
 describe("Claxedo Cloud deployment workflow", () => {
+  test("the migration waiter fails closed and completes only on successful terminal states", () => {
+    const names = ["migrations:first", "migrations:second"]
+    expect(migrationStatusDecision(names, [
+      { name: names[0], state: "success", isDone: true },
+      { name: names[1], state: "inProgress", isDone: false },
+    ])).toBe(false)
+    expect(migrationStatusDecision(names, names.map((name) => ({ name, state: "success", isDone: true })))).toBe(true)
+    expect(() => migrationStatusDecision(names, [{ name: names[0], state: "success", isDone: true }]))
+      .toThrow("incomplete migration status set")
+    expect(() => migrationStatusDecision(names, names.map(() => ({
+      name: names[0],
+      state: "success",
+      isDone: true,
+    })))).toThrow("mismatched migration status set")
+    expect(() => migrationStatusDecision(names, [
+      { name: names[0], state: "success", isDone: true },
+      { name: names[1], state: "failed", isDone: false, error: "contract violation" },
+    ])).toThrow("contract violation")
+  })
+
   test("serializes every top-level deploy while the reusable app inherits its caller's lock", () => {
     expect(controlPlane).toContain("group: claxedo-cloud-deploy")
     expect(convex).toContain("group: claxedo-cloud-deploy")
@@ -82,9 +103,31 @@ describe("Claxedo Cloud deployment workflow", () => {
       "verifyProjectMembershipIdentityContract",
       "verifyWorkspaceTenantIdentityContract",
       "verifySessionTenantIdentityContract",
-    ]) expect(controlPlane.match(new RegExp(migration, "g"))?.length).toBe(2)
+    ]) expect(controlPlane.match(new RegExp(migration, "g"))?.length).toBe(4)
     expect(controlPlane.match(/TENANT_MIGRATION_LEGACY_SESSION_ID/g)?.length).toBeGreaterThanOrEqual(5)
     expect(controlPlane).toContain("legacy_session_tenant_mismatch")
+  })
+
+  test("waits for every asynchronous tenant migration before advancing the release gate", () => {
+    const stagingWaits = [
+      "bun scripts/wait-for-convex-migrations.ts migrations:normalizeRuntimeLeaseLegacyFields",
+      "bun scripts/wait-for-convex-migrations.ts migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity",
+      "bun scripts/wait-for-convex-migrations.ts migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract",
+    ]
+    const productionWaits = stagingWaits.map((command) => command.replace(".ts ", ".ts --prod "))
+    for (const command of [...stagingWaits, ...productionWaits]) {
+      expect(controlPlane).toContain(command)
+    }
+    expect(controlPlane.indexOf(stagingWaits[0]!)).toBeLessThan(
+      controlPlane.indexOf("- name: Backfill tenant identity contracts (staging)"),
+    )
+    expect(controlPlane.indexOf(stagingWaits[1]!)).toBeLessThan(
+      controlPlane.indexOf("- name: Verify tenant identity contracts (staging)"),
+    )
+    expect(controlPlane.indexOf(stagingWaits[2]!)).toBeLessThan(
+      controlPlane.indexOf("- name: Legacy Session tenant migration smoke (staging)"),
+    )
+    expect(controlPlane.match(/"reset":true/g)).toHaveLength(6)
   })
 
   test("fails before Convex mutation when release configuration is incomplete", () => {

@@ -64,7 +64,7 @@ function jsonBodyLimit() {
     : 5 * 1024 * 1024
 }
 
-async function boundedTextBody(c: JsonBodyContext, limit: number) {
+export async function boundedTextBody(c: JsonBodyContext, limit = JSON_BODY_LIMIT_BYTES) {
   const contentLength = readContentLength(c)
   if (contentLength !== undefined && contentLength > limit) {
     throw new RequestBodyTooLargeError(limit)

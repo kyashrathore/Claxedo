@@ -92,6 +92,53 @@ describe("Convex session visibility policy", () => {
     } as never)).resolves.toEqual({ ok: true })
   })
 
+  test("an authoritative member role overrides the durable organization-owner fallback", async () => {
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => {
+      const orgOwnerId = await ctx.db.insert("users", stamped({
+        token_identifier: "demoted_org_owner_token",
+        clerk_subject: "demoted_org_owner",
+        kind: "human",
+      }) as never)
+      const creatorId = await ctx.db.insert("users", stamped({
+        token_identifier: "session_creator_token",
+        kind: "human",
+      }) as never)
+      const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme", owner_user_id: orgOwnerId }) as never)
+      await ctx.db.insert("org_memberships", stamped({
+        org_id: orgId,
+        user_id: orgOwnerId,
+        role: "member",
+      }) as never)
+      const workspaceId = await ctx.db.insert("workspaces", stamped({
+        workspace_id: "ws_demoted_org_owner",
+        org_id: orgId,
+        owner_user_id: creatorId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Demoted org owner workspace",
+      }) as never)
+      await ctx.db.insert("session_history", stamped({
+        session_id: "ses_private_creator",
+        workspace_id: workspaceId,
+        org_id: orgId,
+        created_by_user_id: creatorId,
+      }) as never)
+    })
+
+    const demotedOwner = t.withIdentity({
+      tokenIdentifier: "demoted_org_owner_token",
+      subject: "demoted_org_owner",
+    })
+    await expect(demotedOwner.query(api.sessions.list, {
+      workspace_id: "ws_demoted_org_owner",
+    } as never)).resolves.toEqual([])
+    await expect(demotedOwner.query(api.sessions.authorizeRead, {
+      workspace_id: "ws_demoted_org_owner",
+      session_id: "ses_private_creator",
+    } as never)).resolves.toEqual({ allowed: false })
+  })
+
   test("service projection reuses the webhook-mirrored user identity", async () => {
     const previousServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
     process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "svc_secret"

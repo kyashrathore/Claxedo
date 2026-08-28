@@ -9,7 +9,7 @@ import { Hono } from "hono"
 import z from "zod/v3"
 import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
-import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { boundedJsonBody, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import {
   setupAgentHooks,
   getTerminalEnvVars,
@@ -43,6 +43,15 @@ function managedLifecycleActorRequired() {
   }, { status: 403 })
 }
 
+function managedTerminalOwnerConflict() {
+  return Response.json({
+    error: {
+      code: "terminal_session_actor_conflict",
+      message: "Terminal lifecycle state belongs to another actor",
+    },
+  }, { status: 403 })
+}
+
 export const AgentEventType = z.enum(["Busy", "Idle", "UserActionRequired", "Error"])
 export type AgentEventType = z.infer<typeof AgentEventType>
 
@@ -70,16 +79,21 @@ const normalizeAgentEventType = (value: unknown): AgentEventType | undefined => 
   return parsed.data as AgentEventType
 }
 
+const lifecycleId = z.string().max(512)
+const lifecyclePath = z.string().max(4_096)
+const lifecyclePrompt = z.string().max(800)
+const lifecycleAssistantMessage = z.string().max(1_500)
+
 export const AgentLifecyclePayload = z.object({
-  tabId: z.string(),
-  terminalId: z.string().optional(),
-  workspaceId: z.string().optional(),
-  provider: z.string().optional(),
-  sessionId: z.string().optional(),
-  transcriptPath: z.string().optional(),
-  refName: z.string().optional(),
-  prompt: z.string().optional(),
-  lastAssistantMessage: z.string().optional(),
+  tabId: lifecycleId.trim().min(1),
+  terminalId: lifecycleId.optional(),
+  workspaceId: lifecycleId.optional(),
+  provider: lifecycleId.optional(),
+  sessionId: lifecycleId.optional(),
+  transcriptPath: lifecyclePath.optional(),
+  refName: lifecycleId.optional(),
+  prompt: lifecyclePrompt.optional(),
+  lastAssistantMessage: lifecycleAssistantMessage.optional(),
   eventType: AgentEventType,
 })
 export type AgentLifecyclePayload = z.infer<typeof AgentLifecyclePayload>
@@ -89,28 +103,45 @@ const AgentLifecycleInputPayload = AgentLifecyclePayload.extend({
 })
 
 const TerminalSessionPayload = z.object({
-  terminalId: z.string(),
-  tabId: z.string().optional(),
-  workspaceId: z.string().optional(),
-  provider: z.string().optional(),
-  sessionId: z.string().nullable().optional(),
-  transcriptPath: z.string().nullable().optional(),
-  refName: z.string().optional(),
-  prompt: z.string().optional(),
-  lastAssistantMessage: z.string().optional(),
+  terminalId: lifecycleId,
+  tabId: lifecycleId.optional(),
+  workspaceId: lifecycleId.optional(),
+  provider: lifecycleId.optional(),
+  sessionId: lifecycleId.nullable().optional(),
+  transcriptPath: lifecyclePath.nullable().optional(),
+  refName: lifecycleId.optional(),
+  prompt: lifecyclePrompt.optional(),
+  lastAssistantMessage: lifecycleAssistantMessage.optional(),
   eventType: AgentEventType.optional(),
   updatedAt: z.number(),
 })
 type TerminalSessionPayload = z.infer<typeof TerminalSessionPayload>
+type TerminalSessionRecord = TerminalSessionPayload & { ownerActorId?: string }
 
 const TERMINAL_SESSION_TTL_MS = (() => {
   const v = Number(process.env.WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS)
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 30 * 24 * 60 * 60 * 1000
 })()
 
-const terminalSessions = new Map<string, TerminalSessionPayload>()
+const terminalSessions = new Map<string, TerminalSessionRecord>()
+
+export const TERMINAL_SESSION_MAX_ENTRIES = (() => {
+  const value = Number(process.env.WORKSPACE_RUNTIME_TERMINAL_SESSION_MAX_ENTRIES)
+  return Number.isSafeInteger(value) && value > 0 ? Math.min(value, 1_024) : 256
+})()
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim() : "")
+
+export const lifecycleLogMetadata = (payload: AgentLifecyclePayload) => ({
+  tabId: payload.tabId,
+  terminalId: payload.terminalId,
+  workspaceId: payload.workspaceId,
+  provider: payload.provider,
+  sessionId: payload.sessionId,
+  eventType: payload.eventType,
+  hasPrompt: !!payload.prompt,
+  hasLastAssistantMessage: !!payload.lastAssistantMessage,
+})
 
 const normalizeProvider = (value: unknown) => clean(value).toLowerCase()
 
@@ -211,8 +242,14 @@ const pruneTerminalSessions = () => {
   }
 }
 
-const rememberTerminalSession = (session: TerminalSessionPayload) => {
+const rememberTerminalSession = (session: TerminalSessionRecord) => {
+  terminalSessions.delete(session.terminalId)
   terminalSessions.set(session.terminalId, session)
+  while (terminalSessions.size > TERMINAL_SESSION_MAX_ENTRIES) {
+    const oldest = terminalSessions.keys().next().value
+    if (oldest === undefined) break
+    terminalSessions.delete(oldest)
+  }
 }
 
 const upsertTerminalSession = (input: {
@@ -226,6 +263,7 @@ const upsertTerminalSession = (input: {
   prompt?: string
   lastAssistantMessage?: string
   eventType?: AgentEventType
+  ownerActorId?: string
 }) => {
   pruneTerminalSessions()
   const terminalId = clean(input.terminalId)
@@ -250,7 +288,7 @@ const upsertTerminalSession = (input: {
       provider,
       sessionId: sessionId || previousSessionId,
     })
-  const next: TerminalSessionPayload = {
+  const next: TerminalSessionRecord = {
     terminalId,
     tabId: clean(input.tabId) || clean(previous?.tabId) || undefined,
     workspaceId: clean(input.workspaceId) || clean(previous?.workspaceId) || undefined,
@@ -265,6 +303,7 @@ const upsertTerminalSession = (input: {
         ? undefined
         : clean(previous?.lastAssistantMessage) || undefined,
     eventType: input.eventType || previous?.eventType,
+    ownerActorId: input.ownerActorId || previous?.ownerActorId,
     updatedAt: Date.now(),
   }
   rememberTerminalSession(next)
@@ -276,7 +315,7 @@ const clearTerminalSession = (terminalId: string) => {
   const id = clean(terminalId)
   if (!id) return
   const previous = terminalSessions.get(id)
-  const next: TerminalSessionPayload = {
+  const next: TerminalSessionRecord = {
     terminalId: id,
     tabId: clean(previous?.tabId) || undefined,
     workspaceId: clean(previous?.workspaceId) || undefined,
@@ -287,6 +326,7 @@ const clearTerminalSession = (terminalId: string) => {
     prompt: clean(previous?.prompt) || undefined,
     lastAssistantMessage: clean(previous?.lastAssistantMessage) || undefined,
     eventType: "Idle",
+    ownerActorId: previous?.ownerActorId,
     updatedAt: Date.now(),
   }
   rememberTerminalSession(next)
@@ -310,7 +350,10 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
   const terminalId = resolveTerminalId(input)
   if (!terminalId) return
   const mapped = terminalSessions.get(terminalId)
-  if (mapped) return { source: "memory" as const, terminalId, session: mapped }
+  if (mapped) {
+    const { ownerActorId: _ownerActorId, ...session } = mapped
+    return { source: "memory" as const, terminalId, session }
+  }
 }
 
 // Subscribe to PTY exit/delete events to clear terminal sessions
@@ -331,7 +374,7 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
     })
     .post("/agent-lifecycle", async (c) => {
       const body = c.req.header("content-type")?.includes("application/x-www-form-urlencoded")
-        ? Object.fromEntries(new URLSearchParams(await c.req.text()))
+        ? Object.fromEntries(new URLSearchParams(await boundedTextBody(c)))
         : await boundedJsonBody<unknown | null>(c, null)
       const parsed = AgentLifecycleInputPayload.safeParse(body)
       if (!parsed.success) {
@@ -361,6 +404,12 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
         tabId: payload.tabId,
         terminalId: payload.terminalId,
       })
+      const existingTerminal = resolvedTerminalId ? terminalSessions.get(resolvedTerminalId) : undefined
+      if (
+        access.authority
+        && existingTerminal?.ownerActorId
+        && existingTerminal.ownerActorId !== access.actor?.actorId
+      ) return managedTerminalOwnerConflict()
 
       // A managed session-less status event must not recover content from a
       // prior terminal mapping merely because it guessed the terminal id.
@@ -376,6 +425,7 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
             prompt: payload.prompt,
             lastAssistantMessage: payload.lastAssistantMessage,
             eventType,
+            ownerActorId: access.actor?.actorId,
           })
         : undefined
 
@@ -392,7 +442,7 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
         eventType,
       }
 
-      log.info("agent lifecycle (POST)", normalized)
+      log.info("agent lifecycle (POST)", lifecycleLogMetadata(normalized))
       workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...normalized })
 
       return c.json({ success: true })
