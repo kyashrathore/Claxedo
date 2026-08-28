@@ -14,7 +14,9 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
   return {
     iss: "workspace-relay",
     aud: "workspace-host-service",
-    sub: "user_1",
+    principal_kind: "user",
+    actor_id: "user_1",
+    actor_kind: "human",
     org_id: "org_1",
     workspace_id: "ws_1",
     host_id: "host_1",
@@ -24,6 +26,7 @@ function relayAuth(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["rol
     exp: now + 60,
     iat: now,
     jti: "jti_1",
+    parent_jti: "rat_jti_1",
   }
 }
 

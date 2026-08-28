@@ -34,12 +34,7 @@ const srcRoot = path.join(appRoot, "src")
  */
 
 /** Packages a local build has no way to use. */
-const FORBIDDEN = [
-  "@clerk/clerk-js",
-  "@clerk/clerk-js/headless",
-  "convex",
-  "convex/browser",
-]
+const FORBIDDEN = ["@clerk/clerk-js", "@clerk/clerk-js/headless", "better-auth", "convex", "convex/browser"]
 
 function chainTo(entry: string) {
   return shortestForbiddenImportChain({
@@ -184,7 +179,9 @@ describe("the local entry", () => {
     // auth edge was just cut, so this fails loudly if the edge comes back under
     // some other name.
     expect(importersOf("app/entry/local.tsx", "platform/api/api.ts")).toContain("app/entry/app.tsx")
-    expect(importersOf("app/entry/main.tsx", "platform/auth/auth-client.ts")).toContain("app/entry/main.tsx")
+    expect(importSpecifiers(readFileSync(path.join(srcRoot, "app/entry/main.tsx"), "utf8"))).toContain(
+      "#browser-auth-adapter",
+    )
   })
 
   test("the asymmetry that keeps the transport out of the chain is a call site, not a type", () => {
@@ -200,8 +197,9 @@ describe("the local entry", () => {
     // WorkGraph its entire live-sync doorbell with a green suite.
     const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
 
-    expect(hosted).toMatch(/configureApiRuntime\(\{\s*bearerToken:\s*getAuthToken\s*\}\)/)
-    expect(importSpecifiers(hosted)).toContain("@/platform/auth/auth-client")
+    expect(hosted).toMatch(/bearerToken:\s*browserAuthAdapter\.transport === "bearer"/)
+    expect(hosted).toMatch(/browserCredentials:\s*browserAuthAdapter\.transport === "cookie"/)
+    expect(importSpecifiers(hosted)).toContain("#browser-auth-adapter")
 
     // The auth-session port has exactly the same shape and therefore exactly
     // the same hazard, one seam over. `platform/auth/auth-session.ts` now takes
@@ -209,7 +207,7 @@ describe("the local entry", () => {
     // is what removed the shell's provider tree from the local closure. Delete
     // the binding and every signed-in build compiles, renders, and reports
     // ANONYMOUS — account menu stuck on "Local workspace", with a green suite.
-    expect(hosted).toMatch(/configureAuthSession\s*\(\s*useAuth\s*\)/)
+    expect(hosted).toMatch(/configureAuthSession\s*\(\s*browserAuthAdapter\.useAuth\s*\)/)
 
     // The desktop is signed through Electron main, not a second renderer auth
     // provider. Its base and optional contribution chunk therefore bind neither
@@ -261,10 +259,13 @@ describe("the local entry", () => {
     expect(local).not.toMatch(/configure(Http|Desktop)?MachineRemoteAccess\s*\(/)
   })
 
-  test("the hosted entry reaches it too, so the measurement is not local-specific", () => {
-    // Positive control for the walk itself: a walker that resolved nothing
-    // would report `null` for the local entry and look like success.
-    expect(chainTo("app/entry/main.tsx")).not.toBeNull()
+  test("the hosted entry delegates identity to the mandatory build-time selector", () => {
+    const hosted = readFileSync(path.join(srcRoot, "app/entry/main.tsx"), "utf8")
+    const selection = readFileSync(path.join(appRoot, "vite.browser-auth.ts"), "utf8")
+    expect(importSpecifiers(hosted)).toContain("#browser-auth-adapter")
+    expect(selection).toContain("better-auth-browser-auth.ts")
+    expect(selection).toContain("clerk-browser-auth.ts")
+    expect(selection).toContain("there is no browser auth fallback")
   })
 
   test("the local vite config builds the local html, not the hosted one", () => {

@@ -1,17 +1,25 @@
 import { v } from "convex/values"
-import { authedMutation, authorizeWorkspace, serviceMutation, serviceQuery, upsertUser, workspaceByPublicId } from "./model"
+import { authedMutation, authorizeWorkspace, authorizeWorkspaceForUser, serviceMutation, serviceQuery, upsertUser, workspaceByPublicId } from "./model"
+
+const actorKind = v.union(v.literal("human"), v.literal("agent"))
+const principalKind = v.union(v.literal("user"), v.literal("service"))
+const role = v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin"), v.literal("owner"))
 
 export const recordMint = authedMutation({
   args: {
     jti: v.string(),
     workspace_id: v.string(),
     host_id: v.string(),
+    actor_id: v.string(),
+    actor_kind: actorKind,
+    role,
     expires_at: v.number(),
   },
   handler: async (ctx, args) => {
     const user = await upsertUser(ctx)
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (!workspace || !await authorizeWorkspace(ctx, workspace, "read")) throw new Error("Workspace not found")
+    if (!workspace || !await authorizeWorkspace(ctx, workspace, roleAction(args.role))) throw new Error("Workspace not found")
+    if (args.actor_id !== String(user._id) || args.actor_kind !== "human") throw new Error("Runtime actor mismatch")
     const existing = await ctx.db
       .query("runtime_access_tokens")
       .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
@@ -21,6 +29,10 @@ export const recordMint = authedMutation({
       jti: args.jti,
       workspace_id: workspace._id,
       host_id: args.host_id,
+      principal_kind: "user",
+      actor_id: args.actor_id,
+      actor_kind: "human",
+      role: args.role,
       minted_for_user_id: user._id,
       expires_at: args.expires_at,
       created_at: Date.now(),
@@ -34,10 +46,16 @@ export const recordMintForService = serviceMutation({
     jti: v.string(),
     workspace_id: v.string(),
     host_id: v.string(),
-    subject: v.string(),
+    actor_id: v.string(),
+    actor_kind: actorKind,
+    principal_kind: principalKind,
+    role,
     expires_at: v.number(),
   },
   handler: async (ctx, args) => {
+    if (args.principal_kind !== "service" || args.actor_id !== "control-plane" || args.actor_kind !== "agent" || args.role !== "owner") {
+      throw new Error("Invalid runtime service actor")
+    }
     const existing = await ctx.db
       .query("runtime_access_tokens")
       .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
@@ -47,7 +65,10 @@ export const recordMintForService = serviceMutation({
       jti: args.jti,
       workspace_public_id: args.workspace_id,
       host_id: args.host_id,
-      minted_for_subject: args.subject,
+      principal_kind: "service",
+      actor_id: args.actor_id,
+      actor_kind: "agent",
+      role: "owner",
       expires_at: args.expires_at,
       created_at: Date.now(),
     })
@@ -101,9 +122,24 @@ export const active = serviceQuery({
         reason: "Runtime Access Token has expired",
       }
     }
+    if (token.principal_kind === "service") {
+      if (token.actor_id !== "control-plane" || token.actor_kind !== "agent" || token.role !== "owner" || token.minted_for_user_id) {
+        return { active: false, code: "runtime_access_token_revoked", reason: "Runtime Access Token service authority has been revoked" }
+      }
+    } else {
+      const workspace = token.workspace_id ? await ctx.db.get(token.workspace_id) : undefined
+      const user = token.minted_for_user_id ? await ctx.db.get(token.minted_for_user_id) : undefined
+      if (!workspace || !user || token.actor_id !== String(user._id) || token.actor_kind !== "human" || !await authorizeWorkspaceForUser(ctx, workspace, user, roleAction(token.role))) {
+        return { active: false, code: "runtime_access_token_revoked", reason: "Runtime Access Token authority has been revoked" }
+      }
+    }
     return { active: true }
   },
 })
+
+function roleAction(value: "viewer" | "editor" | "admin" | "owner") {
+  return value === "viewer" ? "read" as const : value === "editor" ? "write" as const : value
+}
 
 export const revoke = authedMutation({
   args: {

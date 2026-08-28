@@ -64,7 +64,15 @@ const relay = Bun.serve({
 })
 
 const token = await mintRuntimeAccessToken(
-  { subject: "user_1", orgId: "org_1", workspaceId: "ws_1", hostId: "host_1", role: "editor" },
+  {
+    principalKind: "user",
+    actorId: "user_1",
+    actorKind: "human",
+    orgId: "org_1",
+    workspaceId: "ws_1",
+    hostId: "host_1",
+    role: "editor",
+  },
   runtimeAccessKey.privateKey,
   "EdDSA",
 )

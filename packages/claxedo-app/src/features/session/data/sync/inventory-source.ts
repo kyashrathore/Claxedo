@@ -626,8 +626,16 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       const sessions = await fetchLocalControlSessions()
       const byDir = new Map<string, InventoryGlobalSession[]>()
       for (const session of sessions) {
-        const key = session.directory || session.projectID || session.id
-        byDir.set(key, [...(byDir.get(key) ?? []), session])
+        // A central session is owned by the control-plane route and has no
+        // workspace runtime directory. Grouping one under its session id made
+        // that id look like a directory, so a cold direct route could briefly
+        // open a workspace session before authoritative central metadata won
+        // the race. Workspace groups must be produced only from sessions with
+        // a real workspace directory; `sessionRef` remains the authoritative
+        // host discriminator even if a central row later gains workspace
+        // metadata for display.
+        if (session.sessionRef?.startsWith("central:") || !session.directory) continue
+        byDir.set(session.directory, [...(byDir.get(session.directory) ?? []), session])
       }
       return [...byDir.entries()].map(([directory, group]) => ({
         key: directory,

@@ -386,7 +386,9 @@ export function createHostedWorkGraphRuntime(
               const token = await provider.mintRuntimeAccessToken({
                 workspaceId,
                 hostId: placement.hostId,
-                subject: claim.ownerSubject,
+                principalKind: "user",
+                actorId: claim.ownerUserId,
+                actorKind: "human",
                 orgId: claim.orgId,
                 role: "owner",
                 ttlMs: 10 * 60_000,
@@ -544,7 +546,9 @@ export function createHostedWorkGraphRuntime(
               const token = await provider.mintRuntimeAccessToken({
                 workspaceId: run.workspaceId,
                 hostId: placement.hostId,
-                subject: run.ownerUserId,
+                principalKind: "user",
+                actorId: run.ownerUserId,
+                actorKind: "human",
                 orgId: run.orgId,
                 role: "owner",
                 ttlMs: 10 * 60_000,
@@ -855,7 +859,9 @@ async function reconcileHostedMaster(
     const token = await provider.mintRuntimeAccessToken({
       workspaceId,
       hostId: placement.hostId,
-      subject: claim.ownerSubject,
+      principalKind: "user",
+      actorId: input.intent.ownerUserId,
+      actorKind: "human",
       orgId: input.intent.organizationId,
       role: "owner",
       ttlMs: 10 * 60_000,
@@ -1117,7 +1123,9 @@ async function drainControlEffects(
           const token = await provider.mintRuntimeAccessToken({
             workspaceId,
             hostId: placement.hostId,
-            subject: control.ownerUserId,
+            principalKind: "user",
+            actorId: control.ownerUserId,
+            actorKind: "human",
             orgId: control.orgId,
             role: "owner",
             ttlMs: 10 * 60_000,
@@ -1246,7 +1254,9 @@ async function reconcileSourcePlanning(
         const token = await provider.mintRuntimeAccessToken({
           workspaceId,
           hostId: placement.hostId,
-          subject: claim.ownerUserId,
+          principalKind: "user",
+          actorId: claim.ownerUserId,
+          actorKind: "human",
           orgId: claim.orgId,
           role: "owner",
           ttlMs: 10 * 60_000,
@@ -1352,7 +1362,9 @@ async function reconcileSourcePlanning(
         const token = await provider.mintRuntimeAccessToken({
           workspaceId: plan.workspaceId,
           hostId: placement.hostId,
-          subject: plan.ownerUserId,
+          principalKind: "user",
+          actorId: plan.ownerUserId,
+          actorKind: "human",
           orgId: plan.orgId,
           role: "owner",
           ttlMs: 10 * 60_000,
@@ -1760,14 +1772,16 @@ export function createHostedSessionTranscriptRetention(
   if (!provider || !manager) return
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
-  return async (input: { organizationId: string; ownerSubject: string; workspaceId: string; sessionId: string }) => {
+  return async (input: { organizationId: string; ownerUserId: string; workspaceId: string; sessionId: string }) => {
     try {
       const placement = await manager.target(input.workspaceId)
       if (placement.status !== "ready") throw new Error("Hosted workspace is unavailable for transcript retention")
       const token = await provider.mintRuntimeAccessToken({
         workspaceId: input.workspaceId,
         hostId: placement.hostId,
-        subject: input.ownerSubject,
+        principalKind: "user",
+        actorId: input.ownerUserId,
+        actorKind: "human",
         orgId: input.organizationId,
         role: "owner",
         ttlMs: 10 * 60_000,
@@ -1790,7 +1804,7 @@ export function createHostedSessionTranscriptRetention(
       await client.mutation(api.sessions.retainWorkGraphSessionTranscript, {
         service_token: serviceToken,
         organization_id: input.organizationId,
-        owner_subject: input.ownerSubject,
+        owner_subject: input.ownerUserId,
         workspace_id: input.workspaceId,
         session_id: input.sessionId,
         updated_at: now(),

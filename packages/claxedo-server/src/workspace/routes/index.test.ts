@@ -232,6 +232,8 @@ function services(): ControlPlaneServices {
       authorizeProject: vi.fn(async () => ({ ok: false as const })),
       authorizeChannelProject: vi.fn(async () => ({ ok: false as const })),
       authorizeChannelWorkspace: vi.fn(async () => {}),
+      bindChannelIdentity: vi.fn(async () => ({ bindingId: "chn_1", created: true, userId: "user_1", actorId: "user_1", actorKind: "human" as const })),
+      revokeChannelIdentity: vi.fn(async () => ({ revoked: true })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -3213,7 +3215,7 @@ describe("workspace routes signed control plane authority", () => {
       },
       body: JSON.stringify({
         role: "viewer",
-        grantedToClerkSubject: "user_2",
+        target: { kind: "actor", actorId: "actor_2" },
       }),
     })
     const revoke = await app.request("http://localhost/ws_1/shares", {
@@ -3223,7 +3225,7 @@ describe("workspace routes signed control plane authority", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        grantedToClerkSubject: "user_2",
+        target: { kind: "actor", actorId: "actor_2" },
       }),
     })
 
@@ -3234,14 +3236,14 @@ describe("workspace routes signed control plane authority", () => {
       {
         workspaceId: "ws_1",
         role: "viewer",
-        grantedToClerkSubject: "user_2",
+        target: { kind: "actor", actorId: "actor_2" },
       },
     )
     expect(svc.authority?.revokeWorkspaceShare).toHaveBeenCalledWith(
       expect.objectContaining({ token: "user_1" }),
       {
         workspaceId: "ws_1",
-        grantedToClerkSubject: "user_2",
+        target: { kind: "actor", actorId: "actor_2" },
       },
     )
   })
@@ -3258,7 +3260,7 @@ describe("workspace routes signed control plane authority", () => {
       },
       body: JSON.stringify({
         role: "viewer",
-        grantedToOrgId: "org_1",
+        target: { kind: "org", orgId: "org_1" },
       }),
     })
     const revoke = await app.request("http://localhost/ws_1/shares", {
@@ -3268,7 +3270,7 @@ describe("workspace routes signed control plane authority", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        grantedToOrgId: "org_1",
+        target: { kind: "org", orgId: "org_1" },
       }),
     })
 
@@ -3279,19 +3281,19 @@ describe("workspace routes signed control plane authority", () => {
       {
         workspaceId: "ws_1",
         role: "viewer",
-        grantedToClerkOrgId: "org_1",
+        target: { kind: "org", orgId: "org_1" },
       },
     )
     expect(svc.authority?.revokeWorkspaceShare).toHaveBeenCalledWith(
       expect.objectContaining({ token: "user_1" }),
       {
         workspaceId: "ws_1",
-        grantedToClerkOrgId: "org_1",
+        target: { kind: "org", orgId: "org_1" },
       },
     )
   })
 
-  test("signed workspace share grant and revoke reject mixed target types", async () => {
+  test("signed workspace share mutations reject legacy flat targets and ambiguous canonical targets", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
@@ -3315,7 +3317,7 @@ describe("workspace routes signed control plane authority", () => {
       },
       body: JSON.stringify({
         grantId: "grant_1",
-        grantedToSubject: "user_2",
+        target: { kind: "actor", actorId: "actor_2" },
       }),
     })
 
@@ -3323,14 +3325,14 @@ describe("workspace routes signed control plane authority", () => {
     expect(revoke.status).toBe(400)
     await expect(grant.json()).resolves.toEqual({
       error: {
-        code: "workspace_share_target_ambiguous",
-        message: "Share target must be exactly one user or org",
+        code: "workspace_share_target_invalid",
+        message: "Share target is invalid",
       },
     })
     await expect(revoke.json()).resolves.toEqual({
       error: {
         code: "workspace_share_target_ambiguous",
-        message: "Share revoke target must be exactly one grant, user, or org",
+        message: "Share revoke target must be exactly one grant or canonical target",
       },
     })
     expect(svc.authority?.grantWorkspaceShare).not.toHaveBeenCalled()
@@ -3357,6 +3359,14 @@ describe("workspace routes signed control plane authority", () => {
       },
       body: JSON.stringify({}),
     })
+    const blank = await app.request("http://localhost/ws_1/shares", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ role: "viewer", target: { kind: "actor", actorId: "   " } }),
+    })
 
     for (const res of [grant, revoke]) {
       expect(res.status).toBe(400)
@@ -3367,6 +3377,13 @@ describe("workspace routes signed control plane authority", () => {
         },
       })
     }
+    expect(blank.status).toBe(400)
+    await expect(blank.json()).resolves.toEqual({
+      error: {
+        code: "workspace_share_target_invalid",
+        message: "Share target is invalid",
+      },
+    })
     expect(svc.authority?.grantWorkspaceShare).not.toHaveBeenCalled()
     expect(svc.authority?.revokeWorkspaceShare).not.toHaveBeenCalled()
   })

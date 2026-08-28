@@ -149,7 +149,7 @@ jobs:
     #
     # Switching this to `production` is a ONE-WORD change, but it must not
     # happen until the production environment carries real values for
-    # CLAXEDO_CONTROL_PLANE_URL and CLAXEDO_ACCOUNT_* public-client values.
+    # CLAXEDO_CONTROL_PLANE_URL, the desktop's sole authentication trust anchor.
     # Flipping it first would ship builds pointing at nothing, which is worse
     # than the current mislabelling. The production environment already holds
     # the correct PostHog project (337043); that registration is what remains.
@@ -283,16 +283,10 @@ jobs:
           # Emit the optional hosted-contribution chunk, while keeping the
           # renderer's base document and account boundary local/tokenless.
           VITE_AUTH_ENABLED: "true"
-          # Public OAuth-client registration baked into Electron main. These
-          # are endpoints/client identity, never a client secret; the PKCE
-          # verifier and refreshable credential remain in Electron + the OS
-          # protected store. Missing registration leaves the same artifact's
-          # unsigned local product usable and reports signed mode unavailable.
-          CLAXEDO_ACCOUNT_AUTHORIZE_URL: ${{ vars.CLAXEDO_ACCOUNT_AUTHORIZE_URL }}
-          CLAXEDO_ACCOUNT_TOKEN_URL: ${{ vars.CLAXEDO_ACCOUNT_TOKEN_URL }}
-          CLAXEDO_ACCOUNT_CLIENT_ID: ${{ vars.CLAXEDO_ACCOUNT_CLIENT_ID }}
-          CLAXEDO_ACCOUNT_SCOPE: ${{ vars.CLAXEDO_ACCOUNT_SCOPE }}
-          CLAXEDO_SERVER_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
+          # The selected core origin is the only baked authentication trust
+          # anchor. Its live descriptor selects Better Auth or Clerk and owns
+          # all public-client endpoints, ids, resources and scopes.
+          CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           # Telemetry has to be BAKED here, in both halves of the app, because
           # a packaged build runs on a user's machine where none of these
           # variables exist. Reading them only at runtime is why shipped

@@ -9,6 +9,7 @@ import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 
@@ -177,7 +178,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
   // causing Z_DATA_ERROR (incorrect header check) during decompression.
   // Requesting identity encoding avoids the mismatch entirely.
   headers.set("accept-encoding", "identity")
-  // SECURITY — this branch mints a `subject:"control-plane"`, `role:"owner"`
+  // SECURITY — this branch mints a canonical control-plane service actor with owner role.
   // Relay Host Token. Two callers reach it: the signed/hosted path via
   // `resolveWorkspaceHit`, and `localWorkspaceRelayProxy`, which serves
   // BROWSER-ORIGINATED traffic and is the path the app actually takes for a
@@ -195,7 +196,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
     const token = await options.relayProvider.mintRuntimeAccessToken({
       workspaceId: hit.workspaceId,
       hostId: hit.relay.hostId,
-      subject: "control-plane",
+      ...CONTROL_PLANE_RUNTIME_ACTOR,
       orgId: hit.relay.orgId,
       role: "owner",
       ttlMs: 10 * 60_000,

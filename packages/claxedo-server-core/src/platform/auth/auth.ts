@@ -1,10 +1,7 @@
-import { createClerkTokenVerifier } from "@claxedo/workspace-relay-protocol"
-import { verifyCliAccessBearer } from "./cli-session-token"
-
-const ALGORITHMS = ["ES256", "EdDSA", "RS256"] as const
-
 export type EnabledConfig = {
   enabled: true
+  /** Static composition identity. Only Clerk owns the retained legacy CLI verifier. */
+  adapter?: "clerk" | "better-auth" | "custom"
   issuer: string
   jwksUrl: string
   audience?: string
@@ -20,8 +17,10 @@ export type ControlPlaneAuthConfig = EnabledConfig | DisabledConfig
 
 export type SignedControlPlaneAuth = {
   mode: "signed"
-  token: string
+  /** Present only for Authorization transport. Browser cookies are never copied into this field. */
+  token?: string
   tokenKind?: "cli"
+  principal?: ControlPlanePrincipal
   user: {
     subject: string
     tokenIdentifier: string
@@ -45,6 +44,12 @@ export class ControlPlaneAuthError extends Error {
       | "signed_cloud_auth_disabled"
       | "missing_bearer_token"
       | "invalid_bearer_token"
+      | "auth_verifier_unavailable"
+      | "ambiguous_credentials"
+      | "insufficient_assurance"
+      | "identity_provisioning"
+      | "account_suspended"
+      | "account_deleted"
       | "invalid_session_id"
       | "workspace_authority_unavailable"
       | "workspace_authorization_denied"
@@ -70,9 +75,35 @@ export type VerifiedClerkAuth = Omit<SignedControlPlaneAuth, "token">
 
 export type ClerkVerifier = (token: string, config: EnabledConfig) => Promise<VerifiedClerkAuth>
 
+export type AdapterNativeSessionTokenSet = {
+  access_token: string
+  refresh_token: string
+  token_type: "Bearer"
+  expires_in: number
+  refresh_expires_in: number
+  session_expires_in: number
+  identity: string
+}
+
+/**
+ * Retained-adapter ownership for Claxedo-issued native sessions. Better Auth
+ * does not implement this port: its OAuth server owns device authorization,
+ * refresh, introspection, and RFC 7009 revocation directly.
+ */
+export type AdapterNativeSessionAuthPort = {
+  adapter: "clerk"
+  acceptsAccessToken(token: string): boolean
+  acceptsRefreshToken(token: string): boolean
+  issue(auth: SignedControlPlaneAuth): Promise<AdapterNativeSessionTokenSet>
+  refresh(refreshToken: string): Promise<AdapterNativeSessionTokenSet>
+  authenticate(accessToken: string): Promise<VerifiedClerkAuth>
+  revoke(token: string): Promise<{ revokedAt: number }>
+}
+
 export type ControlPlaneAuthAdapter = {
   config: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
+  native?: AdapterNativeSessionAuthPort
 }
 
 export type BetterAuthSession = {
@@ -94,52 +125,15 @@ export type BetterAuthSession = {
 
 export type BetterAuthVerifier = (token: string) => Promise<BetterAuthSession | null | undefined>
 
-/** Adapt a unified TokenVerifier to the control-plane signed-auth contract. */
-export function tokenVerifierAsClerk(
-  verifier: import("@claxedo/workspace-relay-protocol").TokenVerifier,
-): ClerkVerifier {
-  return async (token, config) => {
-    const verified = await verifier.verify(token)
-    const claims = verified.claims as Record<string, unknown>
-    const aud = claims.aud
-    const iss = claims.iss
-    const orgClaim = orgId(claims)
-    const issuer = typeof iss === "string" ? iss : config.issuer
-    return {
-      mode: "signed" as const,
-      user: {
-        subject: verified.subject,
-        tokenIdentifier: `${issuer}|${verified.subject}`,
-        issuer,
-        ...(typeof aud === "string" || Array.isArray(aud)
-          ? { audience: aud as string | string[] }
-          : {}),
-        ...(typeof orgClaim === "string" && orgClaim ? { orgId: orgClaim } : {}),
-      },
-    }
-  }
-}
-
-function clean(input?: string) {
-  const value = input?.trim()
-  return value ? value : undefined
-}
-
-function enabled(input?: string) {
-  return ["1", "true", "yes"].includes((input ?? "").trim().toLowerCase())
-}
-
-function orgId(payload: { org_id?: unknown; orgId?: unknown; o?: unknown }) {
-  const organization = payload.o && typeof payload.o === "object" && !Array.isArray(payload.o)
-    ? (payload.o as Record<string, unknown>).id
-    : undefined
-  const value = payload.org_id ?? payload.orgId ?? organization
-  return typeof value === "string" && value.trim() ? value : undefined
-}
-
-function adapterConfig(input: { issuer: string; jwksUrl?: string; audience?: string }): EnabledConfig {
+function adapterConfig(input: {
+  adapter: "clerk" | "better-auth" | "custom"
+  issuer: string
+  jwksUrl?: string
+  audience?: string
+}): EnabledConfig {
   return {
     enabled: true,
+    adapter: input.adapter,
     issuer: input.issuer,
     jwksUrl: input.jwksUrl ?? `custom-verifier:${encodeURIComponent(input.issuer)}`,
     ...(input.audience ? { audience: input.audience } : {}),
@@ -164,26 +158,15 @@ export function devAuthAdapter(reason = "signed/cloud auth is disabled"): Contro
   return localOnlyAuthAdapter(reason)
 }
 
-export function clerkAuthAdapter(input: {
-  env?: NodeJS.ProcessEnv
-  verifier?: ClerkVerifier
-  /** Whether the composition resolved a workspace-authority backend. See `controlPlaneAuthConfig`. */
-  authorityConfigured?: boolean
-} = {}): ControlPlaneAuthAdapter {
-  return {
-    config: controlPlaneAuthConfig(input.env, { authorityConfigured: input.authorityConfigured }),
-    ...(input.verifier ? { verifier: input.verifier } : {}),
-  }
-}
-
 export function customVerifierAuthAdapter(input: {
+  adapter?: "better-auth" | "custom"
   issuer: string
   audience?: string
   jwksUrl?: string
   verifier: ClerkVerifier
 }): ControlPlaneAuthAdapter {
   return {
-    config: adapterConfig(input),
+    config: adapterConfig({ ...input, adapter: input.adapter ?? "custom" }),
     verifier: input.verifier,
   }
 }
@@ -195,6 +178,7 @@ export function betterAuthAdapter(input: {
   verifier: BetterAuthVerifier
 }): ControlPlaneAuthAdapter {
   return customVerifierAuthAdapter({
+    adapter: "better-auth",
     issuer: input.issuer,
     audience: input.audience,
     jwksUrl: input.jwksUrl ?? `better-auth:${encodeURIComponent(input.issuer)}`,
@@ -202,11 +186,7 @@ export function betterAuthAdapter(input: {
       const session = await input.verifier(token)
       const subject = session ? betterAuthSubject(session) : undefined
       if (!session || !subject) {
-        // Plain Error (NOT ControlPlaneAuthError): `controlPlaneAuthContext`
-        // rethrows ControlPlaneAuthError immediately, which would skip the
-        // CLI-access-token fallback. A bearer the Better Auth issuer doesn't
-        // recognize may still be a valid CLI session token.
-        throw new Error("Bearer token is not a known Better Auth session")
+        throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
       }
       const audience = session.audience ?? config.audience
       const org = session.orgId ?? session.org_id ?? session.organizationId
@@ -222,51 +202,7 @@ export function betterAuthAdapter(input: {
         },
       }
     },
-  })
-}
-
-/** True when the deployment asked for signed/cloud auth (CLAXEDO_SIGNED_CLOUD_AUTH). */
-export function signedCloudAuthRequested(env: NodeJS.ProcessEnv = process.env) {
-  return enabled(env.CLAXEDO_SIGNED_CLOUD_AUTH)
-}
-
-export function controlPlaneAuthConfig(
-  env: NodeJS.ProcessEnv = process.env,
-  input: {
-    /**
-     * Whether the composition root resolved a workspace-authority backend.
-     * Signed/cloud auth is useless without one, so an explicit `false` fails
-     * the config closed. This module deliberately knows NO backend URL env
-     * names — the storage adapter owns those; the composition passes the
-     * resolved presence in.
-     */
-    authorityConfigured?: boolean
-  } = {},
-): ControlPlaneAuthConfig {
-  if (!enabled(env.CLAXEDO_SIGNED_CLOUD_AUTH)) {
-    return {
-      enabled: false,
-      mode: "local-only",
-      reason: "signed/cloud auth is disabled",
-    }
-  }
-
-  const issuer = clean(env.CLERK_JWT_ISSUER) ?? clean(env.CLERK_ISSUER_URL)
-  const jwksUrl = clean(env.CLERK_JWKS_URL)
-  if (!issuer || !jwksUrl || input.authorityConfigured === false) {
-    return {
-      enabled: false,
-      mode: "misconfigured",
-      reason: "CLERK_JWT_ISSUER, CLERK_JWKS_URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
-    }
-  }
-
-  return {
-    enabled: true,
-    issuer,
-    jwksUrl,
-    ...(clean(env.CLERK_JWT_AUDIENCE) ? { audience: clean(env.CLERK_JWT_AUDIENCE) } : {}),
-  }
+  }) satisfies ControlPlaneAuthAdapter
 }
 
 export function bearerToken(header: string | null) {
@@ -275,35 +211,40 @@ export function bearerToken(header: string | null) {
   return match?.[1]?.trim() || undefined
 }
 
-export async function verifyClerkBearer(token: string, config: EnabledConfig): Promise<VerifiedClerkAuth> {
-  const verified = await createClerkTokenVerifier({
-    issuer: config.issuer,
-    algorithms: [...ALGORITHMS],
-    jwksUrl: config.jwksUrl,
-    ...(config.audience ? { audience: config.audience } : {}),
-  }).verify(token)
-
-  return {
-    mode: "signed",
-    user: {
-      subject: verified.subject,
-      tokenIdentifier: `${verified.claims.iss ?? config.issuer}|${verified.subject}`,
-      issuer: verified.claims.iss ?? config.issuer,
-      ...(verified.claims.aud ? { audience: verified.claims.aud } : {}),
-      ...(orgId(verified.claims) ? { orgId: orgId(verified.claims) } : {}),
-    },
-  }
-}
-
 export async function controlPlaneAuthContext(
   request: Request,
   options: {
     config?: ControlPlaneAuthConfig
     verifier?: ClerkVerifier
     cliTokenEnv?: Record<string, string | undefined>
+    authentication?: RequestAuthenticationAdapter
   } = {},
 ): Promise<ControlPlaneAuthContext> {
-  const config = options.config ?? controlPlaneAuthConfig()
+  if (options.authentication) {
+    try {
+      const principal = await options.authentication.authenticate(request)
+      const token = bearerToken(request.headers.get("authorization"))
+      return {
+        mode: "signed",
+        ...(token ? { token } : {}),
+        principal,
+        user: {
+          subject: principal.userId,
+          tokenIdentifier: `${principal.identity.issuer}|${principal.identity.subject}`,
+          issuer: principal.identity.issuer,
+        },
+      }
+    } catch (error) {
+      if (!(error instanceof AuthenticationError)) throw error
+      const code = error.code === "invalid_credentials"
+        ? "invalid_bearer_token"
+        : error.code === "auth_unavailable" || error.code === "auth_configuration_invalid"
+          ? "auth_verifier_unavailable"
+          : error.code
+      throw new ControlPlaneAuthError(error.status, code, error.message)
+    }
+  }
+  const config = options.config ?? localOnlyAuthAdapter().config
   if (!config.enabled) {
     if (config.mode === "misconfigured") {
       throw new ControlPlaneAuthError(503, "signed_cloud_auth_disabled", config.reason)
@@ -320,19 +261,23 @@ export async function controlPlaneAuthContext(
   }
 
   try {
+    if (!options.verifier) {
+      throw new ControlPlaneAuthError(503, "auth_verifier_unavailable", "Authentication verifier is unavailable")
+    }
+    const verified = await options.verifier(token, config)
     return {
-      ...await (options.verifier ?? verifyClerkBearer)(token, config),
+      ...verified,
       token,
     }
   } catch (err) {
     if (err instanceof ControlPlaneAuthError) throw err
-    try {
-      return {
-        ...await verifyCliAccessBearer(token, options.cliTokenEnv),
-        token,
-      }
-    } catch {}
-    throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
+    const status = typeof err === "object" && err !== null && "status" in err
+      ? Number((err as { status?: unknown }).status)
+      : undefined
+    if (status === 401 || status === 403) {
+      throw new ControlPlaneAuthError(status, "invalid_bearer_token", "Bearer token is invalid")
+    }
+    throw new ControlPlaneAuthError(503, "auth_verifier_unavailable", "Authentication verifier is unavailable")
   }
 }
 
@@ -344,3 +289,8 @@ export function controlPlaneAuthErrorBody(err: ControlPlaneAuthError) {
     },
   }
 }
+import {
+  AuthenticationError,
+  type ControlPlanePrincipal,
+  type RequestAuthenticationAdapter,
+} from "./authentication"

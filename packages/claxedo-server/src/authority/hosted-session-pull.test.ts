@@ -47,6 +47,11 @@ const signed = {
   },
 }
 
+const canonicalUsersMe = () => vi.fn(async () => ({
+  actor_id: "actor_user_1",
+  actor_kind: "human" as const,
+}))
+
 describe("hosted session pull", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -71,6 +76,7 @@ describe("hosted session pull", () => {
     svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
@@ -147,6 +153,7 @@ describe("hosted session pull", () => {
     }))
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
@@ -205,6 +212,7 @@ describe("hosted session pull", () => {
       getRelayEndpoint: vi.fn(),
     } as never
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
@@ -257,6 +265,7 @@ describe("hosted session pull", () => {
     } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
@@ -317,6 +326,7 @@ describe("hosted session pull", () => {
     } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },

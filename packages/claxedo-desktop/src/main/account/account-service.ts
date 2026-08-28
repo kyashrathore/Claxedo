@@ -1,29 +1,10 @@
-/**
- * Electron main's account: the credential, and the only calls it will make.
- *
- * The three modules beside this one each own one decision — `oauth-flow.ts` how
- * a sign-in proceeds, `credential-store.ts` where the result may be kept,
- * `hosted-operations.ts` what may be asked for. This assembles them and is the
- * only thing the IPC layer talks to.
- *
- * The credential never leaves this process. `run()` returns a DECODED result;
- * there is no method here that returns a token, a header, or a raw Response,
- * and `account-service.test.ts` asserts that rather than leaving it to review.
- *
- * Effects stay injected. A service that reached for `net.fetch` directly would
- * be testable only inside Electron, which in practice means the renewal paths —
- * the ones that matter, because they only run once a session has been open long
- * enough for nobody to be watching — would never be tested at all.
- *
- * A 401 is NOT a renewal trigger. Renewal happens ahead of expiry, off
- * `shouldRefresh`; a 401 arriving despite that is the server saying this
- * session is over, and the disposition for it is sign-out. See `run()`.
- */
-
-import { createOAuthFlow, type OAuthConfig, type OAuthSeams, type SignInResult } from "./oauth-flow"
-import { shouldRefresh } from "./secure-storage"
+import { DesktopAuthDescriptorError, type BoundDesktopCredential } from "./auth-descriptor"
+import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
+import type { DesktopNativeAuth, RefreshOutcome } from "./desktop-native-auth"
 import { resolveHostedOperation, type HostedOperationName } from "./hosted-operations"
-import type { CredentialStore, TokenSet } from "./credential-store"
+import { shouldRefresh } from "./secure-storage"
+
+export type { RefreshOutcome } from "./desktop-native-auth"
 
 export type AccountIdentity = {
   userId: string
@@ -34,64 +15,32 @@ export type AccountIdentity = {
 }
 
 export type AccountState =
-  | { status: "unsigned" }
+  | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
   | { status: "pending" }
   | { status: "signed"; identity: AccountIdentity }
   | { status: "unavailable"; reason: "no-secure-storage" | "callback-failed" | "revoked"; detail: string }
 
-/**
- * What a refresh-token exchange can say.
- *
- * A result rather than a thrown error, because the two failures have opposite
- * dispositions and an exception carries no reliable way to tell them apart:
- *
- * - `revoked` — the authorization server named this grant dead (`invalid_grant`,
- *   or a 401 on the token endpoint). The session really is over; keeping it
- *   would leave the user looking at a signed-in shell that can do nothing.
- * - `unavailable` — nobody said anything about the credential: the network was
- *   down, the endpoint 5xx'd, the answer was unparseable. Signing out on this
- *   means an offline laptop logs the user out of a session that is still
- *   perfectly valid, and the refresh token is gone by the time they reconnect.
- */
-export type RefreshOutcome =
-  | { ok: true; tokens: TokenSet }
-  | { ok: false; reason: "revoked" | "unavailable"; detail: string }
-
-/** The access token to use for one request, or why there is none. */
 type Credential = { ok: true; token: string } | { ok: false; detail: string }
 
 export type AccountServiceOptions = {
-  config: OAuthConfig
-  seams: OAuthSeams
+  auth: DesktopNativeAuth
   store: CredentialStore
-  /** Hosted Server's origin. Owned here so the renderer cannot choose it. */
-  serverOrigin: string
-  /** Injected transport; receives an absolute URL built from the table. */
   fetch: (
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
   ) => Promise<Response>
-  /** Exchanges a refresh token. Absent means refresh is unsupported. */
-  refresh?: (refreshToken: string) => Promise<RefreshOutcome>
   now: () => number
   onError?: (stage: string, error: unknown) => void
-  /** Canonical state transition feed for main-process lifecycle consumers. */
   onStateChange?: (next: AccountState, previous: AccountState) => void
 }
 
 export function createAccountService(options: AccountServiceOptions) {
-  const flow = createOAuthFlow(options.config, options.seams)
   let state: AccountState = { status: "unsigned" }
-  let tokens: TokenSet | undefined
-  /** The one refresh exchange allowed to be in flight. See `renew`. */
+  let credential: StoredDesktopCredential | undefined
   let renewing: Promise<Credential> | undefined
-  const activeRequests = new Set<AbortController>()
-  /**
-   * Bumped by every sign-out. A refresh that was already in flight when the
-   * user signed out must not adopt its answer on arrival — that would put a
-   * live token back into a process the user just cleared.
-   */
+  let logoutInFlight: Promise<void> | undefined
   let era = 0
+  const activeRequests = new Set<AbortController>()
 
   const setState = (next: AccountState) => {
     const previous = state
@@ -101,194 +50,296 @@ export function createAccountService(options: AccountServiceOptions) {
   }
 
   const cancelActiveWork = () => {
-    flow.cancel()
+    options.auth.cancel()
     for (const request of activeRequests) request.abort(new Error("account session ended"))
     activeRequests.clear()
   }
 
-  /**
-   * Take a token set as this process's credential — persisted first.
-   *
-   * The order is the point. Assigning `tokens` and then storing would, on a
-   * keyring that has gone away, leave a live token in memory that `run()` will
-   * happily spend while `state` is stuck at whatever it was mid-transition. A
-   * credential this process cannot keep is a credential it does not have, so a
-   * failed write leaves nothing adopted and nothing pending.
-   */
-  const adopt = (next: TokenSet): { ok: true } | { ok: false; detail: string } => {
+  const clearLocal = () => {
+    credential = undefined
+    options.store.clear()
+  }
+
+  const rejectHeld = (held: StoredDesktopCredential, reason: string) => {
+    options.store.reject(held.revision, reason)
+    if (credential?.revision === held.revision) credential = undefined
+  }
+
+  const adopt = (
+    next: BoundDesktopCredential,
+    expectedRevision?: string | null,
+  ): { ok: true; credential: StoredDesktopCredential } | { ok: false; detail: string } => {
     try {
-      options.store.save(next)
+      const stored = options.store.save(next, expectedRevision)
+      credential = stored
+      return { ok: true, credential: stored }
     } catch (error) {
       options.onError?.("persist", error)
-      tokens = undefined
-      // `no-secure-storage` because that is what `save` refuses over: the store
-      // checks the backend at write time precisely so a keyring that vanished
-      // mid-session is caught here. The detail carries the real cause either
-      // way, and the renderer's reading of the reason — "retrying will not
-      // help" — is right for both.
+      credential = undefined
       const detail = `the credential could not be stored: ${String(error)}`
       setState({ status: "unavailable", reason: "no-secure-storage", detail })
       return { ok: false, detail }
     }
-    tokens = next
-    return { ok: true }
   }
 
-  /** The access token to use now, refreshing first when it is close to expiry. */
-  const currentAccessToken = async (): Promise<Credential> => {
-    const held = tokens
-    if (!held) return { ok: false, detail: "not signed in" }
-    if (!shouldRefresh({ expiresAt: held.expiresAt, now: options.now() })) return { ok: true, token: held.accessToken }
-    if (!options.refresh || !held.refreshToken) {
-      // Expired with no way to renew — a provider that issued no refresh token
-      // ends here. Signing the user out rather than sending a token we know is
-      // dead means they see "signed out" instead of a screen of failed
-      // requests.
-      signOutLocally("revoked", "the session expired and could not be renewed")
-      return { ok: false, detail: "not signed in" }
+  const invalidate = (detail: string) => {
+    era++
+    cancelActiveWork()
+    clearLocal()
+    setState({ status: "unavailable", reason: "revoked", detail })
+  }
+
+  const validated = async (held: StoredDesktopCredential) => {
+    try {
+      await options.auth.validate(held)
+      return true
+    } catch (error) {
+      options.onError?.("descriptor", error)
+      if (error instanceof DesktopAuthDescriptorError && error.code === "credential_binding_mismatch") {
+        rejectHeld(held, error.message)
+      }
+      setState({
+        status: "unavailable",
+        reason: "callback-failed",
+        detail: `the selected deployment could not validate this credential: ${String(error)}`,
+      })
+      return false
     }
-    return await renew(held.refreshToken)
   }
 
-  /**
-   * One refresh in flight, shared by every waiter.
-   *
-   * Concurrent `run()` calls arrive in bursts — a renderer painting a screen
-   * asks for four things at once — and they all cross the skew window
-   * together. Unserialized, each would POST its own exchange with the same
-   * refresh token; against a server that rotates them, the first response
-   * invalidates the token the other three are still using, and three
-   * `invalid_grant`s sign the user out of the session that was just renewed.
-   */
-  const renew = (refreshToken: string): Promise<Credential> => {
-    renewing ??= exchangeRefresh(refreshToken).finally(() => {
+  const exchangeRefresh = async (held: StoredDesktopCredential): Promise<Credential> => {
+    const startedIn = era
+    let outcome: RefreshOutcome
+    try {
+      outcome = await options.auth.refresh(held)
+    } catch (error) {
+      options.onError?.("refresh", error)
+      return { ok: false, detail: `could not renew the session: ${String(error)}` }
+    }
+    if (startedIn !== era || credential?.revision !== held.revision) return { ok: false, detail: "not signed in" }
+    if (!outcome.ok) {
+      options.onError?.("refresh", outcome.detail)
+      if (outcome.reason === "revoked") {
+        invalidate(outcome.detail)
+        return { ok: false, detail: "not signed in" }
+      }
+      return { ok: false, detail: `could not renew the session: ${outcome.detail}` }
+    }
+
+    const nextRefreshToken = outcome.tokens.refreshToken ?? held.tokens.refreshToken
+    const next: BoundDesktopCredential = {
+      binding: held.binding,
+      tokens: { ...outcome.tokens, refreshToken: nextRefreshToken },
+    }
+    try {
+      const stored = options.store.save(next, held.revision)
+      credential = stored
+      return { ok: true, token: stored.tokens.accessToken }
+    } catch (error) {
+      if (error instanceof CredentialStoreConflict) {
+        const winner = options.store.load(options.now())
+        if (
+          winner &&
+          (await validated(winner)) &&
+          !shouldRefresh({ expiresAt: winner.tokens.expiresAt, now: options.now() })
+        ) {
+          credential = winner
+          return { ok: true, token: winner.tokens.accessToken }
+        }
+        return { ok: false, detail: "another refresh changed the session; retry after it completes" }
+      }
+      options.onError?.("persist", error)
+      credential = undefined
+      const detail = `the renewed credential could not be stored: ${String(error)}`
+      setState({ status: "unavailable", reason: "no-secure-storage", detail })
+      return { ok: false, detail }
+    }
+  }
+
+  const renew = (held: StoredDesktopCredential) => {
+    // Electron's app-level single-instance lock makes this the one live writer
+    // for a profile. The promise serializes that process; the persisted
+    // revision rejects stale ownership/re-entrancy. This is not claimed as a
+    // cross-process filesystem CAS (rename alone cannot provide one).
+    renewing ??= exchangeRefresh(held).finally(() => {
       renewing = undefined
     })
     return renewing
   }
 
-  /** Never throws: every outcome is a `Credential`, and only revocation signs out. */
-  const exchangeRefresh = async (refreshToken: string): Promise<Credential> => {
-    const startedIn = era
-    let outcome: RefreshOutcome
-    try {
-      outcome = await options.refresh!(refreshToken)
-    } catch (error) {
-      // A seam that threw told us nothing about the credential, so it is
-      // treated as the failure that does not destroy one.
-      options.onError?.("refresh", error)
-      return { ok: false, detail: `could not renew the session: ${String(error)}` }
+  const currentAccessToken = async (): Promise<Credential> => {
+    const held = credential
+    if (!held) return { ok: false, detail: "not signed in" }
+    if (!(await validated(held))) return { ok: false, detail: "not signed in" }
+    if (!shouldRefresh({ expiresAt: held.tokens.expiresAt, now: options.now() })) {
+      return { ok: true, token: held.tokens.accessToken }
     }
-    // The session this renewal belonged to ended while it was in flight.
-    if (startedIn !== era) return { ok: false, detail: "not signed in" }
-    if (!outcome.ok) {
-      options.onError?.("refresh", outcome.detail)
-      if (outcome.reason === "revoked") {
-        signOutLocally("revoked", outcome.detail)
-        return { ok: false, detail: "not signed in" }
-      }
-      // Transient. The credential stays exactly where it is, so the next call
-      // after the network comes back renews normally.
-      return { ok: false, detail: `could not renew the session: ${outcome.detail}` }
-    }
-    const adopted = adopt(outcome.tokens)
-    if (!adopted.ok) return { ok: false, detail: adopted.detail }
-    return { ok: true, token: outcome.tokens.accessToken }
+    return await renew(held)
   }
 
-  function signOutLocally(reason: "revoked" | "callback-failed", detail: string) {
-    era++
-    cancelActiveWork()
-    tokens = undefined
-    options.store.clear()
-    setState({ status: "unavailable", reason, detail })
+  const reconcilePendingRevocation = async () => {
+    const pending = options.store.load(options.now())
+    if (pending?.persistenceState !== "revocation-pending") return true
+    setState({
+      status: "unsigned",
+      remoteRevocation: "uncertain",
+      detail: "remote logout is pending confirmation",
+    })
+    const outcome = await options.auth.revoke(pending)
+    const confirmed = outcome.state === "confirmed" && options.store.completeRevocation(pending.revision)
+    setState({
+      status: "unsigned",
+      remoteRevocation: confirmed ? "confirmed" : "uncertain",
+      ...(!confirmed
+        ? {
+            detail:
+              outcome.state === "uncertain"
+                ? outcome.detail
+                : "remote logout was confirmed, but the persisted revocation intent changed",
+          }
+        : {}),
+    })
+    return confirmed
   }
 
   return {
     state: () => state,
 
-    /** Restores a stored credential at boot. Never throws — this runs on launch. */
-    restore() {
+    async restore() {
       try {
         const storage = options.store.available()
         if (!storage.usable) {
-          setState({
-            status: "unavailable",
-            reason: "no-secure-storage",
-            detail: storage.detail,
-          })
-          // Give the store one non-decrypting pass so it can discard a legacy
-          // `basic_text` record while preserving ciphertext behind a locked or
-          // temporarily unavailable protected backend.
+          setState({ status: "unavailable", reason: "no-secure-storage", detail: storage.detail })
           options.store.load(options.now())
           return state
         }
         const stored = options.store.load(options.now())
         if (!stored) return state
-        tokens = stored
+        if (stored.persistenceState === "revocation-pending") {
+          await reconcilePendingRevocation()
+          return state
+        }
+        if (!(await validated(stored))) return state
+        credential = stored
         setState({ status: "signed", identity: { userId: "" } })
       } catch (error) {
         options.onError?.("restore", error)
+        setState({
+          status: "unavailable",
+          reason: "callback-failed",
+          detail: `credential restore failed: ${String(error)}`,
+        })
       }
       return state
     },
 
-    async signIn(): Promise<SignInResult> {
-      const startedIn = era
-      setState({ status: "pending" })
-      const result = await flow.signIn()
-      if (startedIn !== era) {
-        return { ok: false, reason: "callback-failed", detail: "sign-in was cancelled" }
+    async signIn() {
+      await logoutInFlight
+      if (!(await reconcilePendingRevocation())) {
+        return {
+          ok: false as const,
+          reason: "callback-failed" as const,
+          detail: "remote logout is still pending confirmation; sign-in did not replace its retryable intent",
+        }
       }
+      const startedIn = ++era
+      setState({ status: "pending" })
+      let result: Awaited<ReturnType<DesktopNativeAuth["signIn"]>>
+      try {
+        result = await options.auth.signIn()
+      } catch (error) {
+        const detail = `sign-in could not load the selected deployment: ${String(error)}`
+        setState({ status: "unavailable", reason: "callback-failed", detail })
+        return { ok: false as const, reason: "callback-failed" as const, detail }
+      }
+      if (startedIn !== era)
+        return { ok: false as const, reason: "callback-failed" as const, detail: "sign-in was cancelled" }
       if (!result.ok) {
-        setState(
-          result.reason === "already-running"
-            ? state
-            : { status: "unavailable", reason: mapReason(result.reason), detail: result.detail },
-        )
+        setState({
+          status: "unavailable",
+          reason: result.reason === "no-secure-storage" ? "no-secure-storage" : "callback-failed",
+          detail: result.detail,
+        })
         return result
       }
-      const adopted = adopt(result.tokens)
-      if (!adopted.ok) {
-        // `adopt` has already put the service in `unavailable`. Reporting
-        // success here would leave the caller believing in a session that was
-        // never stored, and leave `pending` as the resting state of a sign-in
-        // that is over.
-        return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
-      }
+      const adopted = adopt(result.credential)
+      if (!adopted.ok) return { ok: false as const, reason: "no-secure-storage" as const, detail: adopted.detail }
       setState({ status: "signed", identity: { userId: "" } })
-      return result
+      return { ok: true as const }
     },
 
     async signOut() {
-      era++
-      cancelActiveWork()
-      tokens = undefined
-      options.store.clear()
-      setState({ status: "unsigned" })
+      if (logoutInFlight) return await logoutInFlight
+      const operation = (async () => {
+        const held = credential
+        const logoutEra = ++era
+        cancelActiveWork()
+        if (!held) {
+          const stored = options.store.load(options.now())
+          if (stored?.persistenceState === "revocation-pending") {
+            await reconcilePendingRevocation()
+          } else {
+            options.store.clear()
+            setState({ status: "unsigned" })
+          }
+          return
+        }
+        let pendingRevision: string | undefined
+        try {
+          pendingRevision = options.store.beginRevocation(held.revision)
+        } catch (error) {
+          options.onError?.("logout-persist", error)
+          try {
+            options.store.reject(held.revision, "logout could not persist a retryable revocation intent")
+          } catch (rejectError) {
+            options.onError?.("logout-quarantine", rejectError)
+          }
+        }
+        credential = undefined
+        setState({
+          status: "unsigned",
+          remoteRevocation: "uncertain",
+          detail: pendingRevision
+            ? "remote logout is pending confirmation"
+            : "local access ended, but remote logout cannot be retried from this device",
+        })
+        const outcome = await options.auth.revoke(held)
+        if (era !== logoutEra) return
+        if (outcome.state === "confirmed" && pendingRevision) {
+          options.store.completeRevocation(pendingRevision)
+        }
+        setState({
+          status: "unsigned",
+          remoteRevocation: outcome.state,
+          ...(outcome.state === "uncertain" ? { detail: outcome.detail } : {}),
+        })
+      })()
+      logoutInFlight = operation
+      try {
+        await operation
+      } finally {
+        if (logoutInFlight === operation) logoutInFlight = undefined
+      }
     },
 
-    /**
-     * Perform one named operation.
-     *
-     * The renderer reaches this with a NAME. The method, the path and the
-     * Authorization header are all decided here, which is the whole reason the
-     * credential can live in this process at all.
-     */
     async run(name: HostedOperationName, input: Record<string, unknown> = {}): Promise<unknown> {
       const startedIn = era
-      const credential = await currentAccessToken()
-      if (!credential.ok) throw new Error(credential.detail)
-      if (startedIn !== era) throw new Error("not signed in")
+      const access = await currentAccessToken()
+      if (!access.ok) throw new Error(access.detail)
+      const held = credential
+      if (startedIn !== era || !held) throw new Error("not signed in")
       const request = resolveHostedOperation(name, input)
       const controller = new AbortController()
       activeRequests.add(controller)
       let response: Response
       try {
-        response = await options.fetch(`${options.serverOrigin}${request.path}`, {
+        response = await options.fetch(`${held.binding.controlPlaneOrigin}${request.path}`, {
           method: request.method,
+          // Deliberately no invented desktop-version header/426 state: the
+          // selected core exposes no version-admission contract yet. Add both
+          // ends together when that server response is real and testable.
           headers: {
-            authorization: `Bearer ${credential.token}`,
+            authorization: `Bearer ${access.token}`,
             ...(request.body ? { "content-type": "application/json" } : {}),
           },
           ...(request.body ? { body: JSON.stringify(request.body) } : {}),
@@ -299,33 +350,13 @@ export function createAccountService(options: AccountServiceOptions) {
       }
       if (startedIn !== era) throw new Error("not signed in")
       if (response.status === 401) {
-        // The server disagrees with our credential. Not refreshed-and-retried
-        // here: renewal already happened ahead of expiry on the way in, so a
-        // 401 is not staleness — it is revocation, and a retry loop against a
-        // revoked token is how a signed-out desktop hammers the control plane
-        // while showing the user nothing.
-        signOutLocally("revoked", "the server rejected this session")
+        invalidate("the server rejected this session")
         throw new Error("session rejected")
       }
       if (!response.ok) throw new Error(`operation "${name}" failed: ${response.status}`)
-      if (startedIn !== era) throw new Error("not signed in")
-      // Decoded. Returning the Response would hand the renderer the headers,
-      // and one of them is the one thing this design exists to withhold.
       const value = await response.json().catch(() => undefined)
       if (startedIn !== era) throw new Error("not signed in")
       return value
     },
   }
-}
-
-/**
- * The flow's failure reasons, narrowed to the ones the renderer can act on.
- *
- * `timeout` and `callback-failed` are the same thing to a user — sign-in did
- * not complete, try again — and giving the UI a third case to handle would buy
- * nothing. `no-secure-storage` is genuinely different: retrying will never
- * work, and the message has to say why.
- */
-function mapReason(reason: "no-secure-storage" | "callback-failed" | "timeout") {
-  return reason === "no-secure-storage" ? ("no-secure-storage" as const) : ("callback-failed" as const)
 }

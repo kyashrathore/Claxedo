@@ -16,6 +16,7 @@ import {
   IDEMPOTENCY_KEY_MAX_LENGTH,
 } from "./idempotency"
 import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import type { RelayRole } from "@claxedo/workspace-relay"
 import { WorkspaceRuntimeTargetError } from "../runtime-target"
 
 export type ControlPlaneHttpOptions = {
@@ -26,6 +27,7 @@ export type ControlPlaneHttpOptions = {
     workspaceId: string
     ws: Workspace
     authorityWorkspace?: WorkspaceRecord
+    authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
     path: string
     init?: RequestInit

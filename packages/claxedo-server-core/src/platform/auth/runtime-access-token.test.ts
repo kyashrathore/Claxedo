@@ -51,6 +51,12 @@ afterEach(() => {
   }
 })
 
+const runtimeActor = (actorId: string) => ({
+  principalKind: "user" as const,
+  actorId,
+  actorKind: "human" as const,
+})
+
 describe("runtimeAccessTokenSigner", () => {
   test("mints a token whose protected header carries a kid", async () => {
     const { privatePem, publicPem } = await ed25519PrivateKeyPem()
@@ -60,7 +66,7 @@ describe("runtimeAccessTokenSigner", () => {
 
     const sign = runtimeAccessTokenSigner()
     const result = await sign({
-      subject: "user_kid_test",
+      ...runtimeActor("user_kid_test"),
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -81,10 +87,10 @@ describe("runtimeAccessTokenSigner", () => {
 
     const sign = runtimeAccessTokenSigner()
     const a = await sign({
-      subject: "u1", orgId: "o", workspaceId: "w", hostId: "h", role: "editor",
+      ...runtimeActor("u1"), orgId: "o", workspaceId: "w", hostId: "h", role: "editor",
     })
     const b = await sign({
-      subject: "u2", orgId: "o", workspaceId: "w", hostId: "h", role: "viewer",
+      ...runtimeActor("u2"), orgId: "o", workspaceId: "w", hostId: "h", role: "viewer",
     })
 
     const headerA = decodeProtectedHeader(a.runtimeAccessToken)
@@ -101,7 +107,7 @@ describe("runtimeAccessTokenSigner", () => {
 
     const sign = runtimeAccessTokenSigner()
     const result = await sign({
-      subject: "u",
+      ...runtimeActor("u"),
       orgId: "o",
       workspaceId: "w",
       hostId: "h",
@@ -121,7 +127,7 @@ describe("runtimeAccessTokenSigner", () => {
     const sign = runtimeAccessTokenSigner()
     const before = Date.now()
     const result = await sign({
-      subject: "u",
+      ...runtimeActor("u"),
       orgId: "o",
       workspaceId: "w",
       hostId: "h",
@@ -139,7 +145,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...runtimeActor("u"), orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toThrow(/signer/i)
   })
 
@@ -148,7 +154,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...runtimeActor("u"), orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toMatchObject({ code: "runtime_access_token_public_key_missing" })
   })
 
@@ -159,7 +165,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "ES256"
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...runtimeActor("u"), orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toMatchObject({ code: "runtime_access_token_algorithm_unsupported" })
   })
 
@@ -170,7 +176,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = published.publicPem
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...runtimeActor("u"), orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toMatchObject({ code: "runtime_access_token_key_pair_mismatch" })
   })
 })
@@ -291,7 +297,7 @@ describe("supervisorBackplaneToken", () => {
 
     const ratSign = runtimeAccessTokenSigner()
     const rat = await ratSign({
-      subject: "u",
+      ...runtimeActor("u"),
       orgId: "o",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -357,7 +363,7 @@ describe("supervisorBackplaneToken", () => {
 
     const ratSign = runtimeAccessTokenSigner()
     const rat = await ratSign({
-      subject: "u",
+      ...runtimeActor("u"),
       orgId: "o",
       workspaceId: "ws_1",
       hostId: "host_1",

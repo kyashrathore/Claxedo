@@ -95,6 +95,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
       merged,
       storedMessage(message) ?? ({ id: message.id, role: message.role } as Message),
       indexById,
+      options?.canonicalMessageIDs,
     )
     if (index === -1) {
       indexById.set(message.id, merged.length)
@@ -392,7 +393,12 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
  * would silently lose a real message. The `_r` convention is what makes "these
  * two are the same reply" a fact rather than a guess.
  */
-function assistantTurnIndex(current: UIMessage[], message: Message, indexById?: Map<string, number>) {
+function assistantTurnIndex(
+  current: UIMessage[],
+  message: Message,
+  indexById?: Map<string, number>,
+  canonicalMessageIDs?: ReadonlySet<string>,
+) {
   const byId = indexById ? (indexById.get(message.id) ?? -1) : current.findIndex((item) => item.id === message.id)
   if (byId !== -1) return byId
   if (message.role !== "assistant") return -1
@@ -405,12 +411,21 @@ function assistantTurnIndex(current: UIMessage[], message: Message, indexById?: 
     const candidates = current.flatMap((item, index) => {
       const stored = storedMessage(item)
       return stored?.role === "assistant" && (stored as { parentID?: unknown }).parentID === parentID
+        && !(canonicalMessageIDs?.has(message.id) && canonicalMessageIDs.has(stored.id))
         ? [index]
         : []
     })
     return candidates.length === 1 ? candidates[0]! : -1
   }
-  return indexById ? (indexById.get(announced) ?? -1) : current.findIndex((item) => item.id === announced)
+  const announcedIndex = indexById
+    ? (indexById.get(announced) ?? -1)
+    : current.findIndex((item) => item.id === announced)
+  if (announcedIndex === -1) return -1
+  const announcedMessage = storedMessage(current[announcedIndex])
+  if (canonicalMessageIDs?.has(message.id) && announcedMessage && canonicalMessageIDs.has(announcedMessage.id)) {
+    return -1
+  }
+  return announcedIndex
 }
 
 function removeMessage(chat: ConversationChatHandle, messageID: string | undefined) {

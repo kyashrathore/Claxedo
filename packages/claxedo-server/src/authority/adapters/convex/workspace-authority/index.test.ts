@@ -357,21 +357,21 @@ describe("convex authority", () => {
     await authority.grantWorkspaceShare(auth, {
       workspaceId: "ws_1",
       role: "editor",
-      grantedToClerkSubject: "user_2",
+      target: { kind: "actor", actorId: "user_2" },
     })
     await authority.revokeWorkspaceShare(auth, {
       workspaceId: "ws_1",
-      grantedToClerkSubject: "user_2",
+      target: { kind: "actor", actorId: "user_2" },
     })
 
     expect(mutation).toHaveBeenNthCalledWith(1, expect.anything(), {
       workspace_id: "ws_1",
       role: "editor",
-      granted_to_clerk_subject: "user_2",
+      target_actor_id: "user_2",
     })
     expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
       workspace_id: "ws_1",
-      granted_to_clerk_subject: "user_2",
+      target_actor_id: "user_2",
     })
   })
 
@@ -550,13 +550,19 @@ describe("convex authority", () => {
       jti: "jti_1",
       workspaceId: "ws_1",
       hostId: "host_1",
+      actorId: "user_1",
+      actorKind: "human",
+      role: "owner",
       expiresAt: 123,
     })
     await authority.recordRuntimeAccessTokenForService({
       jti: "jti_service",
       workspaceId: "wg_1",
       hostId: "host_2",
-      subject: "user_1",
+      actorId: "control-plane",
+      actorKind: "agent",
+      principalKind: "service",
+      role: "owner",
       expiresAt: 456,
     })
     await expect(
@@ -585,6 +591,9 @@ describe("convex authority", () => {
       jti: "jti_1",
       workspace_id: "ws_1",
       host_id: "host_1",
+      actor_id: "user_1",
+      actor_kind: "human",
+      role: "owner",
       expires_at: 123,
     })
     expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
@@ -592,7 +601,10 @@ describe("convex authority", () => {
       jti: "jti_service",
       workspace_id: "wg_1",
       host_id: "host_2",
-      subject: "user_1",
+      actor_id: "control-plane",
+      actor_kind: "agent",
+      principal_kind: "service",
+      role: "owner",
       expires_at: 456,
     })
     expect(query).toHaveBeenCalledWith(expect.anything(), {

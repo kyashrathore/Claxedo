@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { classifyAcpSubagentUpdate } from "./subagent"
+import { acpCodexCollaborationStates, classifyAcpSubagentUpdate } from "./subagent"
 
 describe("classifyAcpSubagentUpdate", () => {
   test("recognizes Claude lifecycle metadata and its message transcript", () => {
@@ -103,6 +103,48 @@ describe("classifyAcpSubagentUpdate", () => {
         },
       })
     }
+  })
+
+  test("does not confuse completion of a Codex activity item with completion of its child", () => {
+    const started = classifyAcpSubagentUpdate("codex-acp", {
+      sessionUpdate: "tool_call",
+      toolCallId: "activity-started",
+      title: "Start subagent worker",
+      status: "in_progress",
+      rawInput: { agentThreadId: "thread-1", activityKind: "started" },
+      _meta: { codex: { subagent: { threadId: "thread-1", activity: "started" } } },
+    })
+
+    expect(classifyAcpSubagentUpdate("codex-acp", {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "activity-started",
+      status: "completed",
+      rawInput: { agentThreadId: "thread-1", activityKind: "started" },
+      _meta: { codex: { subagent: { threadId: "thread-1", activity: "started" } } },
+    }, started?.kind === "lifecycle" ? started.observation : undefined)).toMatchObject({
+      kind: "lifecycle",
+      observation: { status: "running" },
+    })
+  })
+
+  test("reads terminal child state from the canonical Codex collaboration snapshot", () => {
+    expect(acpCodexCollaborationStates("codex-acp", {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "wait-1",
+      title: "wait",
+      status: "completed",
+      rawInput: {
+        receiverThreadIds: ["thread-1", "thread-2"],
+        agentsStates: {
+          "thread-1": { status: "completed", message: null },
+          "thread-2": { status: "errored", message: "failed" },
+        },
+      },
+      _meta: { codex: { collaboration: { tool: "wait" } } },
+    })).toEqual([
+      { providerId: "thread-1", status: "completed", observationId: "wait-1:collaboration:thread-1:completed" },
+      { providerId: "thread-2", status: "failed", observationId: "wait-1:collaboration:thread-2:failed" },
+    ])
   })
 
   test("recognizes Cursor tasks without fabricating a transcript", () => {

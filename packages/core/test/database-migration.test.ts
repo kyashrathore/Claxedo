@@ -16,6 +16,8 @@ import contextEpochAgentMigration from "@opencode-ai/core/database/migration/202
 import simplifyIntegrationCredentialsMigration from "@opencode-ai/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@opencode-ai/core/database/migration/20260622202450_simplify_session_input"
 import partOrderMigration from "@opencode-ai/core/database/migration/20260823234255_part_order"
+import nativeAuthBindingMigration from "@opencode-ai/core/database/migration/20260828020559_native_auth_binding"
+import canonicalAccountUserMigration from "@opencode-ai/core/database/migration/20260828020954_canonical_account_user"
 import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { EventV2 } from "@opencode-ai/core/event"
@@ -695,6 +697,46 @@ describe("DatabaseMigration", () => {
         yield* DatabaseMigration.applyOnly(db, [])
 
         expect(yield* db.all(sql`SELECT id FROM migration ORDER BY id`)).toEqual([{ id: "existing" }])
+      }),
+    )
+  })
+
+  test("quarantines legacy native accounts while preserving their local credential evidence", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        yield* db.run(sql`
+          CREATE TABLE account (
+            id text PRIMARY KEY,
+            email text NOT NULL,
+            url text NOT NULL,
+            access_token text NOT NULL,
+            refresh_token text NOT NULL,
+            token_expiry integer,
+            time_created integer NOT NULL,
+            time_updated integer NOT NULL
+          )
+        `)
+        yield* db.run(sql`
+          INSERT INTO account (
+            id, email, url, access_token, refresh_token, token_expiry, time_created, time_updated
+          ) VALUES (
+            'legacy', 'legacy@example.com', 'https://legacy.example.com', 'access', 'refresh', 1000, 1, 1
+          )
+        `)
+
+        yield* DatabaseMigration.applyOnly(db, [nativeAuthBindingMigration, canonicalAccountUserMigration])
+
+        expect(yield* db.get(sql`
+          SELECT email, user_id, auth_adapter, auth_deployment_id, auth_scopes
+          FROM account WHERE id = 'legacy'
+        `)).toEqual({
+          email: "legacy@example.com",
+          user_id: null,
+          auth_adapter: null,
+          auth_deployment_id: null,
+          auth_scopes: null,
+        })
       }),
     )
   })

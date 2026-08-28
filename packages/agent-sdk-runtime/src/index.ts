@@ -210,6 +210,9 @@ export type AgentSession = {
   version?: string
   directory?: string
   parentID?: string
+  sessionRef?: string
+  host?: "central" | "workspace"
+  workspaceID?: string
   rootID?: string
   projectID?: string
   tags?: unknown[]

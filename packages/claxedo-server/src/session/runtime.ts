@@ -113,6 +113,9 @@ function metaRow(meta: SessionMeta): AgentSessionRow {
     title: meta.title ?? null,
     slug: meta.sessionID,
     version: "central",
+    host: meta.host,
+    ...(meta.host === "central" ? { sessionRef: `central:${meta.sessionID}` } : {}),
+    ...(meta.workspaceID ? { workspaceID: meta.workspaceID } : {}),
     ...(meta.parentID ? { parentID: meta.parentID } : {}),
     ...(meta.rootID ? { rootID: meta.rootID } : {}),
     ...(meta.projectID ? { projectID: meta.projectID } : {}),
@@ -602,12 +605,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         .filter((meta) => meta.host === "central")
         .map(metaRow),
     getSession: async (_c, _directory, sessionId) => {
-      const session = await adapter.getSession(sessionId, undefined)
-      if (session) return session
       const meta = await services.projectionStore.session_meta(sessionId)
       if (meta?.host !== "central") return null
+      const session = await adapter.getSession(sessionId, undefined)
+      if (session) return { ...session, ...metaRow(meta) }
       await ensureCentralRuntimeSession(sessionId)
-      return metaRow(meta)
+      const recovered = await adapter.getSession(sessionId, undefined)
+      return recovered ? { ...recovered, ...metaRow(meta) } : metaRow(meta)
     },
     getMessages: async (_c, _directory, sessionId) => {
       const messages: unknown[] = services.projectionStore.read_session_messages(sessionId)
@@ -956,6 +960,9 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       payload: {
         type: "session-info",
         title: input.title ?? "Hybrid Session",
+        sessionRef: `central:${session.id}`,
+        host: "central",
+        ...(workspaceId ? { workspaceID: workspaceId } : {}),
         ...(input.parentID ? { parentID: input.parentID } : {}),
         updatedAt: new Date(boundSession.time.updated).toISOString(),
       },

@@ -2,7 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { credentialFile, loopbackListener, refreshExchange, tokenExchange } from "./electron-seams"
+import { credentialFile, loopbackListener, readCredentialFile, refreshExchange, tokenExchange } from "./electron-seams"
 
 /**
  * The seams, against real sockets and a real filesystem.
@@ -75,7 +75,7 @@ describe("credentialFile", () => {
     const file = credentialFile(tempDir())
 
     expect(file.read()).toBeUndefined()
-    file.write('{"a":1}')
+    file.replace('{"a":1}')
     expect(file.read()).toBe('{"a":1}')
     file.clear()
     expect(file.read()).toBeUndefined()
@@ -86,14 +86,31 @@ describe("credentialFile", () => {
     expect(() => credentialFile(tempDir()).clear()).not.toThrow()
   })
 
+  test("treats only ENOENT as absence and surfaces permission or I/O failures", () => {
+    const missing = Object.assign(new Error("missing"), { code: "ENOENT" })
+    const denied = Object.assign(new Error("denied"), { code: "EACCES" })
+
+    expect(
+      readCredentialFile("missing", () => {
+        throw missing
+      }),
+    ).toBeUndefined()
+    expect(() =>
+      readCredentialFile("denied", () => {
+        throw denied
+      }),
+    ).toThrow("denied")
+  })
+
   test("writes owner-only", () => {
     const dir = tempDir()
-    credentialFile(dir).write("{}")
+    credentialFile(dir).replace("{}")
     const stored = join(dir, "account-credential.json")
 
-    expect(readFileSync(new URL("./electron-seams.ts", import.meta.url), "utf8")).toContain(
-      "writeFileSync(path, contents, { mode: 0o600 })",
-    )
+    const source = readFileSync(new URL("./electron-seams.ts", import.meta.url), "utf8")
+    expect(source).toContain('openSync(temporary, "wx", 0o600)')
+    expect(source).toContain("fsyncSync(descriptor)")
+    expect(source).toContain("renameSync(temporary, path)")
     if (process.platform === "win32") {
       // Windows applies the userData directory's inherited ACL; POSIX mode
       // bits are synthetic there and cannot represent that access control.
@@ -142,7 +159,7 @@ describe("tokenExchange", () => {
     let body = ""
     const exchange = tokenExchange((async (_url, init) => {
       body = String((init as RequestInit).body)
-      return new Response(JSON.stringify({ access_token: "at", expires_in: 60 }), { status: 200 })
+      return new Response(JSON.stringify({ access_token: "at", token_type: "Bearer", expires_in: 60 }), { status: 200 })
     }) as typeof fetch)
 
     await exchange({
@@ -163,9 +180,12 @@ describe("tokenExchange", () => {
     // Storing `expires_in` would make every reader remember when it was issued.
     const exchange = tokenExchange(
       (async () =>
-        new Response(JSON.stringify({ access_token: "at", refresh_token: "rt", expires_in: 3_600 }), {
-          status: 200,
-        })) as typeof fetch,
+        new Response(
+          JSON.stringify({ access_token: "at", refresh_token: "rt", token_type: "Bearer", expires_in: 3_600 }),
+          {
+            status: 200,
+          },
+        )) as typeof fetch,
     )
 
     const tokens = await exchange({
@@ -226,7 +246,10 @@ describe("refreshExchange", () => {
     // production wiring could never supply, so every session ended at the first
     // access-token expiry.
     const { exchange, bodies } = stub(
-      () => new Response(JSON.stringify({ access_token: "at_2", expires_in: 3_600 }), { status: 200 }),
+      () =>
+        new Response(JSON.stringify({ access_token: "at_2", token_type: "Bearer", expires_in: 3_600 }), {
+          status: 200,
+        }),
     )
 
     await exchange(INPUT)
@@ -243,7 +266,10 @@ describe("refreshExchange", () => {
     // have". Dropping it would quietly downgrade the session to unrenewable and
     // sign the user out one access token later, with nothing to explain why.
     const { exchange } = stub(
-      () => new Response(JSON.stringify({ access_token: "at_2", expires_in: 3_600 }), { status: 200 }),
+      () =>
+        new Response(JSON.stringify({ access_token: "at_2", token_type: "Bearer", expires_in: 3_600 }), {
+          status: 200,
+        }),
     )
 
     const outcome = await exchange(INPUT)
@@ -255,7 +281,11 @@ describe("refreshExchange", () => {
 
   test("takes a rotated refresh token over the old one", async () => {
     const { exchange } = stub(
-      () => new Response(JSON.stringify({ access_token: "at_2", refresh_token: "rt_2" }), { status: 200 }),
+      () =>
+        new Response(
+          JSON.stringify({ access_token: "at_2", refresh_token: "rt_2", token_type: "Bearer", expires_in: 3_600 }),
+          { status: 200 },
+        ),
     )
 
     const outcome = await exchange(INPUT)

@@ -16,6 +16,7 @@ const authMode = resolveE2EAuthMode()
 const env = {
   ...process.env,
   ...e2eAuthViteEnvironment(authMode),
+  VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
   VITE_CLAXEDO_E2E: "1",
 }
 

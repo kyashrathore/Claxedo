@@ -13,10 +13,12 @@ import type {
   RelayTarget,
   RelayToken,
   RelayTokenInput,
+  HostTunnelTokenInput,
 } from "@claxedo/server-core/adapters/relay-port"
 import type { RelayTargetLookup } from "@claxedo/server-core/adapters/relay-port"
 
 export type {
+  HostTunnelTokenInput,
   RelayProvider,
   RelayTarget,
   RelayToken,
@@ -43,6 +45,17 @@ function clampedRelayTtlSeconds(ttlMs: number, bounds: { readonly min: number; r
   return clampTtlSeconds(ttlMs / 1000, bounds, bounds.min)
 }
 
+function requireRuntimeTokenText(value: string, label: string) {
+  if (!value.trim()) throw new Error(`${label} required`)
+}
+
+function validateRuntimeTokenInput(input: RelayTokenInput) {
+  requireRuntimeTokenText(input.orgId, "org id")
+  requireRuntimeTokenText(input.workspaceId, "workspace id")
+  requireRuntimeTokenText(input.hostId, "host id")
+  requireRuntimeTokenText(input.actorId, "actor id")
+}
+
 export function createControlPlaneRelayProvider(options: ControlPlaneRelayProviderOptions): RelayProvider {
   return {
     getRelayEndpoint: (_workspaceId, homeRegion) => {
@@ -65,14 +78,26 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
       }
     },
     mintRuntimeAccessToken: async (input) => {
-      if (!input.orgId) throw new Error("org id required")
+      // Validate the complete authorization scope before calling the signer.
+      // Recording still runs before the token is returned, but a malformed
+      // scope must never become a signed credential even transiently.
+      validateRuntimeTokenInput(input)
       const ttlSeconds = clampedRelayTtlSeconds(input.ttlMs, RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS)
       const token = await options.runtimeAccessTokenSigner({
-        subject: input.subject,
+        principalKind: input.principalKind,
+        actorId: input.actorId,
+        actorKind: input.actorKind,
+        ...(input.actorPublicId && input.actorName
+          ? {
+              actorPublicId: input.actorPublicId,
+              actorName: input.actorName,
+              ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
+            }
+          : {}),
         orgId: input.orgId,
         workspaceId: input.workspaceId,
         hostId: input.hostId,
-        role: input.role ?? "viewer",
+        role: input.role,
         ...(ttlSeconds === undefined ? {} : { ttlSeconds }),
       })
       const result = {

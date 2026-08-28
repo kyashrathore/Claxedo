@@ -77,6 +77,8 @@ export type AuthorizeRequest = {
   clientId: string
   redirectUri: string
   scope: string
+  /** RFC 8707 resource, supplied by adapters whose issuer supports it. */
+  resource?: string
   pkce: PkcePair
   state: string
 }
@@ -87,15 +89,14 @@ export function buildAuthorizeUrl(input: AuthorizeRequest) {
   url.searchParams.set("client_id", input.clientId)
   url.searchParams.set("redirect_uri", input.redirectUri)
   url.searchParams.set("scope", input.scope)
+  if (input.resource) url.searchParams.set("resource", input.resource)
   url.searchParams.set("state", input.state)
   url.searchParams.set("code_challenge", input.pkce.challenge)
   url.searchParams.set("code_challenge_method", input.pkce.method)
   return url.toString()
 }
 
-export type CallbackResult =
-  | { ok: true; code: string }
-  | { ok: false; reason: string }
+export type CallbackResult = { ok: true; code: string } | { ok: false; reason: string }
 
 /**
  * Read the authorization server's redirect back to our loopback listener.
@@ -111,7 +112,8 @@ export function readCallback(input: { url: string; expectedState: string; redire
   } catch {
     return { ok: false, reason: "callback url could not be parsed" }
   }
-  if (parsed.pathname !== input.redirectPath) return { ok: false, reason: `unexpected callback path ${parsed.pathname}` }
+  if (parsed.pathname !== input.redirectPath)
+    return { ok: false, reason: `unexpected callback path ${parsed.pathname}` }
 
   const error = parsed.searchParams.get("error")
   if (error) return { ok: false, reason: `authorization server returned ${error}` }

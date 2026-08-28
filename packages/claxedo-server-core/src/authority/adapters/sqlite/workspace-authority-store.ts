@@ -20,6 +20,85 @@ export type SqliteWorkspaceAuthorityOptions = {
   path?: string
 }
 
+const CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA = `
+CREATE TABLE runtime_access_tokens (
+  jti TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  host_id TEXT NOT NULL,
+  principal_kind TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  actor_kind TEXT NOT NULL,
+  role TEXT NOT NULL,
+  minted_for_token_identifier TEXT,
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  created_at INTEGER NOT NULL
+);`
+
+const CANONICAL_CHANNEL_IDENTITIES_SCHEMA = `
+CREATE TABLE channel_identities (
+  binding_id TEXT PRIMARY KEY,
+  channel TEXT NOT NULL,
+  external_user_id TEXT NOT NULL,
+  token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS channel_identities_active_external
+  ON channel_identities (channel, external_user_id)
+  WHERE revoked_at IS NULL;`
+
+const CANONICAL_PRIVATE_SESSIONS_SCHEMA = `
+CREATE TABLE session_registration_operations (
+  operation_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL UNIQUE,
+  workspace_id TEXT NOT NULL,
+  creator_actor_id TEXT NOT NULL,
+  operation_kind TEXT NOT NULL,
+  parent_session_id TEXT,
+  requested_title TEXT,
+  state TEXT NOT NULL,
+  state_reason TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE session_history (
+  session_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  creator_actor_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL UNIQUE,
+  title TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
+  deleted_at INTEGER
+);
+CREATE INDEX session_history_by_workspace_updated
+  ON session_history (workspace_id, updated_at DESC);
+CREATE TABLE session_participants (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  participant_actor_id TEXT NOT NULL,
+  added_by_actor_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (session_id, participant_actor_id)
+);
+CREATE INDEX session_participants_by_actor
+  ON session_participants (participant_actor_id, revoked_at);
+CREATE TABLE session_messages (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  author_actor_id TEXT,
+  role TEXT,
+  ordinal INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, message_id)
+);`
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   token_identifier TEXT PRIMARY KEY,
@@ -178,15 +257,7 @@ CREATE INDEX IF NOT EXISTS host_enrollment_requests_by_owner ON host_enrollment_
 -- rows, but it scans every row to find them — which is the growth it exists to
 -- stop, paid on the create path instead of in storage.
 CREATE INDEX IF NOT EXISTS host_enrollment_requests_by_expires_at ON host_enrollment_requests (expires_at);
-CREATE TABLE IF NOT EXISTS runtime_access_tokens (
-  jti TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  host_id TEXT NOT NULL,
-  minted_for_token_identifier TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  created_at INTEGER NOT NULL
-);
+${CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")}
 CREATE TABLE IF NOT EXISTS agent_extension_installs (
   workspace_id TEXT NOT NULL,
   extension_id TEXT NOT NULL,
@@ -210,27 +281,9 @@ CREATE TABLE IF NOT EXISTS agent_extension_policy_overrides (
   deleted_at INTEGER,
   PRIMARY KEY (scope, scope_key, extension_id)
 );
-CREATE TABLE IF NOT EXISTS session_history (
-  session_id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  created_by_token_identifier TEXT NOT NULL,
-  title TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
-  deleted_at INTEGER
-);
-CREATE TABLE IF NOT EXISTS session_messages (
-  session_id TEXT NOT NULL,
-  workspace_id TEXT NOT NULL,
-  message_id TEXT NOT NULL,
-  role TEXT,
-  ordinal INTEGER NOT NULL,
-  data TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (session_id, message_id)
-);
+${CANONICAL_PRIVATE_SESSIONS_SCHEMA
+  .replaceAll("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")
+  .replaceAll("CREATE INDEX ", "CREATE INDEX IF NOT EXISTS ")}
 CREATE TABLE IF NOT EXISTS audit_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token_identifier TEXT,
@@ -241,15 +294,73 @@ CREATE TABLE IF NOT EXISTS audit_events (
   metadata TEXT,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS channel_identities (
-  channel TEXT NOT NULL,
-  external_user_id TEXT NOT NULL,
-  token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (channel, external_user_id)
-);
+${CANONICAL_CHANNEL_IDENTITIES_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")}
 `
+
+function hardCutCanonicalIdentityTables(db: SqliteAuthorityDb) {
+  const columns = (table: string) => new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
+  )
+  const runtimeColumns = columns("runtime_access_tokens")
+  const channelInfo = db.prepare("PRAGMA table_info(channel_identities)").all() as Array<{ name: string; pk: number }>
+  const channelColumns = new Set(channelInfo.map((column) => column.name))
+  const runtimeIsCanonical = ["principal_kind", "actor_id", "actor_kind", "role"]
+    .every((column) => runtimeColumns.has(column))
+    && !runtimeColumns.has("subject")
+    && !runtimeColumns.has("minted_for_subject")
+  const channelIsCanonical = channelColumns.has("binding_id")
+    && !channelColumns.has("subject")
+    && !channelColumns.has("clerk_subject")
+    && channelInfo.find((column) => column.name === "binding_id")?.pk === 1
+    && channelInfo.find((column) => column.name === "channel")?.pk === 0
+    && channelInfo.find((column) => column.name === "external_user_id")?.pk === 0
+
+  if (runtimeIsCanonical && channelIsCanonical) return
+
+  // These rows are credentials/projections, not durable user content. Legacy
+  // runtime tokens cannot be safely attributed to a canonical actor, and a
+  // provider-shaped channel binding cannot prove who claimed it. The hard cut
+  // therefore invalidates tokens and requires re-pairing instead of inventing
+  // an actor during migration. One transaction prevents a half-upgraded DB.
+  db.transaction(() => {
+    if (!runtimeIsCanonical) {
+      db.exec("DROP TABLE runtime_access_tokens")
+      db.exec(CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA)
+    }
+    if (!channelIsCanonical) {
+      db.exec("DROP TABLE channel_identities")
+      db.exec(CANONICAL_CHANNEL_IDENTITIES_SCHEMA)
+    }
+  })()
+}
+
+function hardCutCanonicalPrivateSessionTables(db: SqliteAuthorityDb) {
+  const columns = (table: string) => new Set(
+    (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name),
+  )
+  const history = columns("session_history")
+  const messages = columns("session_messages")
+  const operations = columns("session_registration_operations")
+  const participants = columns("session_participants")
+  const canonical = history.has("creator_actor_id")
+    && history.has("operation_id")
+    && messages.has("author_actor_id")
+    && operations.has("operation_id")
+    && participants.has("participant_actor_id")
+  if (canonical) return
+
+  // Private sessions have no safe legacy attribution: a workspace-visible row
+  // does not prove creator or participant authority. This migration is a hard
+  // cut by design, so discard those projections instead of synthesizing an
+  // actor and accidentally widening access.
+  db.transaction(() => {
+    db.exec("DROP TABLE IF EXISTS session_messages")
+    db.exec("DROP TABLE IF EXISTS session_participants")
+    db.exec("DROP TABLE IF EXISTS session_history")
+    db.exec("DROP TABLE IF EXISTS session_registration_operations")
+    db.exec(CANONICAL_PRIVATE_SESSIONS_SCHEMA)
+  })()
+}
 
 export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
   const entry: TrackedAuthorityDb = {
@@ -261,13 +372,11 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
       db.pragma("synchronous = NORMAL")
       db.pragma("busy_timeout = 5000")
       db.exec(SCHEMA)
+      hardCutCanonicalIdentityTables(db)
+      hardCutCanonicalPrivateSessionTables(db)
       const localHostColumns = db.prepare("PRAGMA table_info(local_host_links)").all() as Array<{ name: string }>
       if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
         db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
-      }
-      const sessionHistoryColumns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
-      if (!sessionHistoryColumns.some((column) => column.name === "max_event_ordinal")) {
-        db.exec("ALTER TABLE session_history ADD COLUMN max_event_ordinal INTEGER NOT NULL DEFAULT 0")
       }
       entry.db = db
       tracked.add(entry)
@@ -479,8 +588,8 @@ function shareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: stri
   const rows = db.prepare(`
     SELECT role FROM workspace_share_grants
     WHERE workspace_id = ? AND revoked_at IS NULL
-      AND (granted_to_token_identifier = ? OR (granted_to_subject IS NOT NULL AND granted_to_subject = ?))
-  `).all(workspaceId, user.token_identifier, user.subject ?? null) as Array<{ role: string }>
+      AND granted_to_token_identifier = ?
+  `).all(workspaceId, user.token_identifier) as Array<{ role: string }>
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 

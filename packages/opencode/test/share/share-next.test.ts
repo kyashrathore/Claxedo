@@ -68,12 +68,24 @@ const seed = (url: string, org?: string) =>
   AccountRepo.Service.use((repo) =>
     repo.persistAccount({
       id: AccountID.make("account-1"),
-      email: "user@example.com",
+      userId: "user@example.com",
       url,
       accessToken: AccessToken.make("st_test_token"),
       refreshToken: RefreshToken.make("rt_test_token"),
       expiry: Date.now() + 10 * 60_000,
       orgID: org ? Option.some(OrgID.make(org)) : Option.none(),
+      binding: {
+        adapter: "better-auth",
+        deploymentId: `deployment:${url}`,
+        configurationVersion: "auth-v1",
+        issuer: `${url}/api/auth`,
+        tokenEndpointOrigin: url,
+        controlPlaneOrigin: url,
+        clientId: "claxedo-cli",
+        resource: `${url}/control-plane`,
+        scopes: ["offline_access", "workspace:read", "workspace:write"],
+        tokenKind: "access-token",
+      },
     }),
   )
 
@@ -131,7 +143,39 @@ describe("ShareNext", () => {
           authorization: "Bearer st_test_token",
           "x-org-id": "org-1",
         })
-      }).pipe(Effect.provide(requestLayer(none))),
+      }).pipe(
+        Effect.provide(
+          requestLayer(
+            HttpClient.make((req) =>
+              Effect.succeed(
+                json(req, {
+                  adapter: "better-auth",
+                  deploymentId: "deployment:https://control.example.com",
+                  configurationVersion: "auth-v1",
+                  expiresAt: Date.now() + 60_000,
+                  issuer: "https://control.example.com/api/auth",
+                  browser: { trustedOrigins: ["https://control.example.com"] },
+                  native: {
+                    cli: {
+                      flow: "device-authorization",
+                      clientId: "claxedo-cli",
+                      resource: "https://control.example.com/control-plane",
+                      scopes: ["offline_access", "workspace:read", "workspace:write"],
+                      tokenEndpointOrigin: "https://control.example.com",
+                      controlPlaneOrigin: "https://control.example.com",
+                      revocation: {
+                        protocol: "rfc7009",
+                        endpoint: "https://control.example.com/api/auth/oauth2/revoke",
+                        tokenEndpointAuthMethod: "none",
+                      },
+                    },
+                  },
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
     ),
   )
 

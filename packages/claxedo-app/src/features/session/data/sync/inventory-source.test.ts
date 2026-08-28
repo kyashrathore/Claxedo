@@ -673,6 +673,34 @@ describe("global sync inventory source helpers", () => {
     expect(requests.map((item) => new URL(item).pathname)).toEqual(["/api/claxedo/session"])
   })
 
+  test("loopback workspace groups exclude central sessions instead of inventing a session-id directory", async () => {
+    const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async () => jsonResponse({
+        sessions: [{
+          sessionID: "ses_central",
+          sessionRef: "central:ses_central",
+          host: "central",
+          workspaceID: "ws_1",
+          title: "Pi session",
+          createdAt: 1,
+          updatedAt: 2,
+          model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+          tags: ["harness:pi"],
+        }],
+      }),
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    const groups = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(groups).toEqual([])
+  })
+
   test("inventory page source dedupes concurrent workspace group requests", async () => {
     let calls = 0
     const source = createInventoryPageSource({

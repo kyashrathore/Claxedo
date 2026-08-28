@@ -327,9 +327,10 @@ function portEntry(value: DocumentIndexEntry): DocumentEntry {
 
 function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAuth) {
   const provider = {
-    mintRuntimeAccessToken: async (input: { workspaceId: string; hostId: string; subject: string; orgId: string; role: "viewer" | "editor" | "owner" }) => ({
+    mintRuntimeAccessToken: async (input: { workspaceId: string; hostId: string; principalKind: "user" | "service"; actorId: string; actorKind: "human" | "agent"; orgId: string; role: "viewer" | "editor" | "owner" }) => ({
       token: await mintRuntimeAccessToken({
-        subject: input.subject, orgId: input.orgId, workspaceId: input.workspaceId, hostId: input.hostId, role: input.role,
+        principalKind: input.principalKind, actorId: input.actorId, actorKind: input.actorKind,
+        orgId: input.orgId, workspaceId: input.workspaceId, hostId: input.hostId, role: input.role,
       }, privateKey, "EdDSA"),
       expiresAt: Date.now() + 300_000,
     }),
@@ -338,7 +339,7 @@ function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAut
   return {
     auth: { config: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" }, verifier: async () => auth },
     authority: {
-      usersMe: async () => ({ id: "user_1" }),
+      usersMe: async () => ({ id: "user_1", actor_id: "user_1", actor_kind: "human" as const }),
       resolveOrgId: async () => "org_1",
       authorizeProject: async () => ({ ok: true, role: "editor", orgId: "org_1" }),
       resolveSession: async (_auth: SignedControlPlaneAuth, input: { sessionId: string }) => ({ workspace_id: "cloud_ws", session_id: input.sessionId }),

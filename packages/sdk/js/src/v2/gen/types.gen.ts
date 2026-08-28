@@ -7804,7 +7804,7 @@ export type ExperimentalConsoleListOrgsResponses = {
   200: {
     orgs: Array<{
       accountID: string
-      accountEmail: string
+      accountUserId: string
       accountUrl: string
       orgID: string
       orgName: string
@@ -9689,6 +9689,7 @@ export type SessionListResponse = SessionListResponses[keyof SessionListResponse
 
 export type SessionCreateData = {
   body?: {
+    id?: string
     parentID?: string
     title?: string
     agent?: string
@@ -10140,6 +10141,7 @@ export type SessionMessageResponse = SessionMessageResponses[keyof SessionMessag
 
 export type SessionForkData = {
   body?: {
+    id?: string
     messageID?: string
   }
   path: {

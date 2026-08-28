@@ -39,9 +39,17 @@ import {
   type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { requestHasAuthenticationCredential } from "@claxedo/server-core/platform/auth/authentication"
+import {
+  EMPTY_SERVICE_CATALOG,
+  projectServiceCatalogForBrowser,
+  type FirstPartyServiceCatalog,
+} from "@claxedo/service-contract"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 
 export type HostedShellRouteOptions = {
+  authentication?: RequestAuthenticationAdapter
   authConfig: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   /** Reported by /global/health and the bootstrap aggregate. */
@@ -70,6 +78,8 @@ export type HostedShellRouteOptions = {
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
   /** Idempotent owner setup scheduled only from signed bootstrap on Worker waitUntil. */
   activateOwner?: (auth: SignedControlPlaneAuth) => Promise<void>
+  /** Authenticated, data-only first-party installation catalog. */
+  serviceCatalog?: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
 }
 
 function rec(input: unknown) {
@@ -264,6 +274,7 @@ function directoryInput(c: Context) {
 
 async function signedAuth(c: Context, options: HostedShellRouteOptions) {
   const context = await controlPlaneAuthContext(c.req.raw, {
+    authentication: options.authentication,
     config: options.authConfig,
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
@@ -281,7 +292,9 @@ function guardedWaitUntil(c: Context) {
 }
 
 async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
-  if (!bearerToken(c.req.header("authorization") ?? null)) return []
+  if (options.authentication) {
+    if (!requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)) return []
+  } else if (!bearerToken(c.req.header("authorization") ?? null)) return []
   const auth = await signedAuth(c, options)
   if (!auth) return []
   if (activateOwner && options.activateOwner) {
@@ -290,6 +303,27 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
   if (!options.listWorkspaces) return []
   const workspaces = await options.listWorkspaces(auth)
   return signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now())
+}
+
+async function signedBootstrapState(c: Context, options: HostedShellRouteOptions) {
+  const hasCredential = options.authentication
+    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
+    : !!bearerToken(c.req.header("authorization") ?? null)
+  if (!hasCredential) {
+    return { authenticated: false, projects: [], services: EMPTY_SERVICE_CATALOG }
+  }
+  const auth = await signedAuth(c, options)
+  if (!auth) return { authenticated: false, projects: [], services: EMPTY_SERVICE_CATALOG }
+  if (options.activateOwner) guardedWaitUntil(c)?.(options.activateOwner(auth))
+  const [workspaces, services] = await Promise.all([
+    options.listWorkspaces ? options.listWorkspaces(auth) : [],
+    options.serviceCatalog ? options.serviceCatalog(auth) : EMPTY_SERVICE_CATALOG,
+  ])
+  return {
+    authenticated: true,
+    projects: signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now()),
+    services: projectServiceCatalogForBrowser(services),
+  }
 }
 
 function authErrorResponse(c: Context, err: unknown) {
@@ -372,6 +406,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // scoping the local Node bus does — to REPLAYED frames as much as live
       // ones, since a room's retention ring is shared by every member of an org.
       const authorize = () => controlPlaneAuthContext(c.req.raw, {
+        authentication: options.authentication,
         config: options.authConfig,
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
@@ -403,6 +438,23 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     }
   }
   return new Hono()
+    // Public discovery surface for browser and native clients. Keep this
+    // separate from the aggregate bootstrap so a CLI never has to interpret
+    // application boot state in order to bind a credential to one deployment.
+    // `AuthAdapterDescriptor` is deliberately public configuration: adapter
+    // implementations retain every provider secret and signing key.
+    .get("/api/claxedo/auth/descriptor", (c) => {
+      c.header("Cache-Control", "no-store")
+      if (!options.authentication) {
+        return c.json({
+          error: {
+            code: "auth_configuration_invalid",
+            message: "Authentication adapter is not configured",
+          },
+        }, 503)
+      }
+      return c.json(options.authentication.descriptor)
+    })
     // Mirrors routes/events.ts: every bus subscriber passes the
     // same control-plane auth gate as the other claxedo routes. There is no
     // loopback bypass on a hosted central.
@@ -412,11 +464,18 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     .get("/api/claxedo/bootstrap", async (c) => {
       try {
         const provider = emptyProvider()
+        const state = await signedBootstrapState(c, options)
         return c.json({
           healthy: true,
           version: version(options),
+          // Public, origin-bound client configuration. It contains no provider
+          // secret and is returned before sign-in so browser/native clients can
+          // choose the selected adapter without build-time vendor coupling.
+          auth: options.authentication?.descriptor,
           path: hostedPath(),
-          project: await signedProjects(c, options, true),
+          authenticated: state.authenticated,
+          project: state.projects,
+          services: state.services,
           provider,
           provider_auth: {},
           config: {},

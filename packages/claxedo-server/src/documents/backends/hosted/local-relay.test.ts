@@ -221,7 +221,9 @@ describe("hosted local document relay", () => {
       ).toBe(403)
       const wrongAudience = await mintRuntimeAccessToken(
         {
-          subject: "user_1",
+          principalKind: "user",
+          actorId: "user_1",
+          actorKind: "human",
           orgId: "org_1",
           workspaceId: "local_ws",
           hostId: "host_1",
@@ -257,6 +259,7 @@ describe("hosted local document relay", () => {
       let role = "viewer"
       const services = {
         authority: {
+          usersMe: vi.fn(async () => ({ actor_id: "user_1", actor_kind: "human" as const })),
           openWorkspace: vi.fn(async () => ({
             role,
             workspace: {
@@ -274,7 +277,9 @@ describe("hosted local document relay", () => {
             mintRuntimeAccessToken: vi.fn(async () => ({
               token: await mintRuntimeAccessToken(
                 {
-                  subject: "user_1",
+                  principalKind: "user",
+                  actorId: "user_1",
+                  actorKind: "human",
                   orgId: "org_1",
                   workspaceId: "local_ws",
                   hostId: "host_1",
@@ -467,6 +472,7 @@ async function relayFixture() {
     },
     services: {
       authority: {
+        usersMe: vi.fn(async () => ({ actor_id: "user_1", actor_kind: "human" as const })),
         openWorkspace: vi.fn(async () => ({
           role: "editor",
           workspace: {

@@ -9,12 +9,18 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
       jti: string
       workspaceId: string
       hostId: string
+      actorId: string
+      actorKind: "human" | "agent"
+      role: "viewer" | "editor" | "admin" | "owner"
       expiresAt: number
     }) {
       return requireExecutor(input, auth).mutation(convexApi.runtimeAccessTokens.recordMint, {
         jti: args.jti,
         workspace_id: args.workspaceId,
         host_id: args.hostId,
+        actor_id: args.actorId,
+        actor_kind: args.actorKind,
+        role: args.role,
         expires_at: args.expiresAt,
       })
     },
@@ -22,7 +28,10 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
       jti: string
       workspaceId: string
       hostId: string
-      subject: string
+      actorId: string
+      actorKind: "human" | "agent"
+      principalKind: "user" | "service"
+      role: "viewer" | "editor" | "admin" | "owner"
       expiresAt: number
     }) {
       return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
@@ -32,7 +41,10 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
           jti: args.jti,
           workspace_id: args.workspaceId,
           host_id: args.hostId,
-          subject: args.subject,
+          actor_id: args.actorId,
+          actor_kind: args.actorKind,
+          principal_kind: args.principalKind,
+          role: args.role,
           expires_at: args.expiresAt,
         },
       )

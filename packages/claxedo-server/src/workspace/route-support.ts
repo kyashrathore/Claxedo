@@ -10,6 +10,7 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
@@ -17,6 +18,7 @@ import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 export type WorkspaceRouteOptions = {
+  authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   cliTokenEnv?: Record<string, string | undefined>
@@ -71,7 +73,7 @@ export function relayRole(input?: string): RelayRole {
 export function signedAccessOptions(request: Request, options: WorkspaceRouteOptions) {
   return {
     ...options,
-    ...(options.authConfig?.enabled && !isLoopbackLocalRequest(request)
+    ...((options.authentication || options.authConfig?.enabled) && !isLoopbackLocalRequest(request)
       ? { requireSigned: true as const }
       : {}),
   }
@@ -137,6 +139,7 @@ export function captureWorkspaceTelemetry(input: {
 export async function routeAuth(
   request: Request,
   options: {
+    authentication?: RequestAuthenticationAdapter
     authConfig?: ControlPlaneAuthConfig
     verifier?: ClerkVerifier
     cliTokenEnv?: Record<string, string | undefined>
@@ -145,6 +148,7 @@ export async function routeAuth(
 ) {
   if (!options.requireSigned && !bearerToken(request.headers.get("authorization"))) return
   const context = await controlPlaneAuthContext(request, {
+    authentication: options.authentication,
     config: options.authConfig,
     verifier: options.verifier,
     cliTokenEnv: options.cliTokenEnv,
@@ -155,6 +159,7 @@ export async function routeAuth(
 export async function signedOrError(
   request: Request,
   options: {
+    authentication?: RequestAuthenticationAdapter
     authConfig?: ControlPlaneAuthConfig
     verifier?: ClerkVerifier
     requireSigned?: boolean

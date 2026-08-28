@@ -14,6 +14,7 @@ import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/re
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments } from "../../documents/session-hydration"
 
@@ -130,7 +131,7 @@ function createCloudSandboxRequester(
     const minted = await relayProvider!.mintRuntimeAccessToken({
       workspaceId: ws.id,
       hostId: active.hostId,
-      subject: options.subject ?? "control-plane",
+      ...(options.runtimeActor ?? CONTROL_PLANE_RUNTIME_ACTOR),
       orgId: orgId!,
       role: options.role ?? "owner",
       ttlMs: 10 * 60_000,

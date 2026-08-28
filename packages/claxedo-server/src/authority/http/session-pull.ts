@@ -5,6 +5,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
 import { ControlPlaneProtocolError, num, rec, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./runtime-transport"
+import type { RelayRole } from "@claxedo/workspace-relay"
 
 export async function resolveSessionGateway(
   services: ControlPlaneServices,
@@ -74,6 +75,7 @@ export async function pullControlSession(
     workspaceId: ws.id,
     ws,
     ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+    ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
@@ -100,6 +102,7 @@ export async function pullControlSessionMessages(
     workspaceId: ws.id,
     ws,
     ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+    ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
@@ -111,6 +114,7 @@ export async function pullControlSessionMessages(
       workspaceId: ws.id,
       ws,
       ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+      ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
       auth,
       path: "/session/status",
     }).then(
@@ -216,7 +220,7 @@ async function workspaceForPull(
   if (hit) {
     const authoritativeOrgId = txt(opened?.workspace?.org_id)
     const ws = authoritativeOrgId && !hit.org_id ? { ...hit, org_id: authoritativeOrgId } : hit
-    return { ws, authorityWorkspace: opened?.workspace }
+    return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
   }
   if (auth?.mode !== "signed") {
     throw new ControlPlaneProtocolError(404, "workspace_not_found", `workspace ${workspaceId} not found`)
@@ -232,7 +236,11 @@ async function workspaceForPull(
     created_at: stamp,
     updated_at: stamp,
   } satisfies Workspace
-  return { ws, authorityWorkspace: opened?.workspace }
+  return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
+}
+
+function relayRole(value: unknown): RelayRole | undefined {
+  return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
 function sessionStamp(input: Record<string, unknown>) {

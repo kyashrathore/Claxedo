@@ -145,7 +145,9 @@ async function readHostedCatalog(
   const token = await input.relayProvider.mintRuntimeAccessToken({
     workspaceId,
     hostId: placement.hostId,
-    subject: auth.user.subject,
+    principalKind: "user",
+    actorId: context.ownerUserId,
+    actorKind: "human",
     orgId,
     role: "owner",
     ttlMs: 10 * 60_000,

@@ -63,10 +63,15 @@ export const RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS = { min: 15 * 60, max: 60 *
 export const HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS = { min: 60, max: 30 * 60 } as const
 
 export type RuntimeAccessTokenSignerInput = {
-  subject: string
   orgId: string
   workspaceId: string
   hostId: string
+  principalKind: "user" | "service"
+  actorId: string
+  actorKind: "human" | "agent"
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
   role: RelayRole
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
@@ -214,6 +219,16 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
     const kid = await resolveMintKid(env, privateKey)
     const issuedAt = Math.floor(now / 1000)
     const token = await new SignJWT({
+      principal_kind: input.principalKind,
+      actor_id: input.actorId,
+      actor_kind: input.actorKind,
+      ...(input.actorPublicId && input.actorName
+        ? {
+            actor_public_id: input.actorPublicId,
+            actor_name: input.actorName,
+            ...(input.actorAvatarUrl ? { actor_avatar_url: input.actorAvatarUrl } : {}),
+          }
+        : {}),
       org_id: input.orgId,
       workspace_id: input.workspaceId,
       host_id: input.hostId,
@@ -222,7 +237,6 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(input.subject)
       .setIssuedAt(issuedAt)
       .setExpirationTime(issuedAt + ttl)
       .setJti(jti)

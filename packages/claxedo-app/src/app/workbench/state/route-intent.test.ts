@@ -53,21 +53,28 @@ beforeEach(() => {
 })
 
 test("central inventory identity is not reclassified as a workspace route", () => {
+  const central = {
+    id: "ses_central",
+    sessionRef: "central:ses_central",
+    title: "Central",
+    directory: "/repo/main",
+    workspaceId: "ws_1",
+    projectID: "project_1",
+    tags: [],
+    attachments: [],
+    time: { created: 1, updated: 1 },
+  }
   expect(sessionInventoryTarget("ses_central", {
     loaded: true,
-    global: [{
-      id: "ses_central",
-      sessionRef: "central:ses_central",
-      title: "Central",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-      projectID: "project_1",
-      tags: [],
-      attachments: [],
-      time: { created: 1, updated: 1 },
-    }],
-    byWorkspace: {},
-    byProject: {},
+    global: [central],
+    byWorkspace: {
+      ws_1: {
+        workspaceId: "ws_1",
+        directory: "/repo/main",
+        sessions: [central],
+      },
+    },
+    byProject: { project_1: [central] },
   })).toBeUndefined()
 })
 

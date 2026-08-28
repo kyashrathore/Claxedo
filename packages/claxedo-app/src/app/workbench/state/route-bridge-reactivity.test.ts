@@ -1,11 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { createComputed, createRoot, createSignal } from "solid-js"
 import {
+  activeSurfaceIsDirectSessionChild,
   collectRouteResolutionDirectories,
   directSessionResolutionDependencies,
 } from "./route-bridge-reactivity"
 
 describe("route bridge reactive dependencies", () => {
+  test("a subagent surface belongs to the direct route of its recorded parent", () => {
+    expect(activeSurfaceIsDirectSessionChild("parent-1", {
+      sessionId: "child-1",
+      returnFocus: { parentSessionId: "parent-1" },
+    })).toBe(true)
+    expect(activeSurfaceIsDirectSessionChild("other-parent", {
+      sessionId: "child-1",
+      returnFocus: { parentSessionId: "parent-1" },
+    })).toBe(false)
+    expect(activeSurfaceIsDirectSessionChild("parent-1", { sessionId: "parent-1" })).toBe(false)
+  })
+
   test("ordinary session switches do not wake the direct-session resolver", () => {
     createRoot((dispose) => {
       const [directSessionId, setDirectSessionId] = createSignal<string>()

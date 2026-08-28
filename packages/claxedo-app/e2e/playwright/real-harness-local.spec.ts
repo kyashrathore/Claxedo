@@ -1250,7 +1250,12 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
     await expect(card, `${harness.id} never rendered its native delegation as a subagent card`).toBeVisible({
       timeout: 60_000,
     })
-    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working/, { timeout: 30_000 })
+    // A fast provider may complete before the card's first render. Requiring a
+    // visible transient would force the UI to synthesize or delay canonical
+    // completion; the durable acceptance below remains strictly Completed.
+    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working|Completed/, {
+      timeout: 30_000,
+    })
     await demoBeat(page)
     await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", {
       timeout: 90_000,

@@ -2,6 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
+import Database from "better-sqlite3"
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority, localControlPlaneAuth } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
@@ -24,6 +25,32 @@ const other = signedAuth("user_other")
 
 function memoryAuthority() {
   return createSqliteWorkspaceAuthority({ path: ":memory:" })
+}
+
+async function registerPrivateSession(input: {
+  authority: ReturnType<typeof memoryAuthority>
+  auth: SignedControlPlaneAuth
+  workspaceId: string
+  sessionId: string
+  title?: string
+}) {
+  const operationId = `operation_${input.workspaceId}_${input.sessionId}`
+  await input.authority.reserveSession(input.auth, {
+    operationId,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+    kind: "create",
+    ...(input.title ? { title: input.title } : {}),
+  })
+  await input.authority.registerRuntimeSession({
+    principalKind: "user",
+    actorId: input.auth.user.tokenIdentifier,
+    actorKind: "human",
+    operationId,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+    ...(input.title ? { title: input.title } : {}),
+  })
 }
 
 function fileAuthority() {
@@ -81,6 +108,70 @@ describe("sqlite workspace authority", () => {
     database.close()
   })
 
+  test("hard-cuts legacy runtime credentials and provider-shaped channel bindings", () => {
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-authority-legacy-")), "authority.db")
+    const legacy = new Database(file)
+    legacy.exec(`
+      CREATE TABLE runtime_access_tokens (
+        jti TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        host_id TEXT NOT NULL,
+        minted_for_token_identifier TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        created_at INTEGER NOT NULL
+      );
+      INSERT INTO runtime_access_tokens VALUES ('legacy-jti', 'ws_legacy', 'host_legacy', 'issuer|subject', 9, NULL, 1);
+      CREATE TABLE channel_identities (
+        channel TEXT NOT NULL,
+        external_user_id TEXT NOT NULL,
+        token_identifier TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        revoked_at INTEGER,
+        PRIMARY KEY (channel, external_user_id)
+      );
+      INSERT INTO channel_identities VALUES ('telegram', 'external-legacy', 'issuer|subject', 1, NULL);
+    `)
+    legacy.close()
+
+    const database = openAuthorityDb({ path: file })
+    const db = database()
+    const columns = (table: string) =>
+      (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>).map((column) => column.name)
+
+    expect(columns("runtime_access_tokens")).toEqual(expect.arrayContaining([
+      "principal_kind", "actor_id", "actor_kind", "role",
+    ]))
+    expect(columns("channel_identities")).toContain("binding_id")
+    expect(db.prepare("SELECT COUNT(*) AS count FROM runtime_access_tokens").get()).toEqual({ count: 0 })
+    expect(db.prepare("SELECT COUNT(*) AS count FROM channel_identities").get()).toEqual({ count: 0 })
+    database.close()
+  })
+
+  test("makes channel revocation retryable without letting a prior actor clear a replacement", async () => {
+    const authority = memoryAuthority()
+    expect(await authority.bindChannelIdentity(owner, {
+      channel: "telegram",
+      externalUserId: "external-7",
+    })).toMatchObject({ created: true, userId: owner.user.tokenIdentifier })
+    expect(await authority.revokeChannelIdentity(owner, {
+      channel: "telegram",
+      externalUserId: "external-7",
+    })).toEqual({ revoked: true })
+    expect(await authority.revokeChannelIdentity(owner, {
+      channel: "telegram",
+      externalUserId: "external-7",
+    })).toEqual({ revoked: true })
+    expect(await authority.bindChannelIdentity(other, {
+      channel: "telegram",
+      externalUserId: "external-7",
+    })).toMatchObject({ created: true, userId: other.user.tokenIdentifier })
+    expect(await authority.revokeChannelIdentity(owner, {
+      channel: "telegram",
+      externalUserId: "external-7",
+    })).toEqual({ revoked: false })
+  })
+
   test("creator owns the workspace; others are denied until a share grant flips it", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_1", displayName: "One" })
@@ -103,7 +194,7 @@ describe("sqlite workspace authority", () => {
     await authority.grantWorkspaceShare(owner, {
       workspaceId: "ws_1",
       role: "editor",
-      grantedToClerkSubject: "user_other",
+      target: { kind: "actor", actorId: other.user.tokenIdentifier },
     })
     const shared = await authority.openWorkspace(other, { workspaceId: "ws_1" })
     expect(shared.role).toBe("editor")
@@ -111,7 +202,7 @@ describe("sqlite workspace authority", () => {
 
     const revoked = await authority.revokeWorkspaceShare(owner, {
       workspaceId: "ws_1",
-      grantedToClerkSubject: "user_other",
+      target: { kind: "actor", actorId: other.user.tokenIdentifier },
     })
     expect(revoked).toMatchObject({ revoked: true })
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
@@ -300,12 +391,18 @@ describe("sqlite workspace authority", () => {
       jti: "jti_1",
       workspaceId: "ws_rt",
       hostId: "host_a",
+      actorId: owner.user.tokenIdentifier,
+      actorKind: "human",
+      role: "owner",
       expiresAt,
     })
     await expect(authority.recordRuntimeAccessToken(owner, {
       jti: "jti_1",
       workspaceId: "ws_rt",
       hostId: "host_a",
+      actorId: owner.user.tokenIdentifier,
+      actorKind: "human",
+      role: "owner",
       expiresAt,
     })).rejects.toThrow("Runtime Access Token already recorded")
 
@@ -392,6 +489,7 @@ describe("sqlite workspace authority", () => {
   test("session visibility + message sync stay workspace-scoped", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_s", displayName: "S" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_s", sessionId: "ses_1", title: "First" })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_s",
       sessions: [{ sessionId: "ses_1", title: "First" }],
@@ -419,6 +517,8 @@ describe("sqlite workspace authority", () => {
   test("pages workspace-authority transcripts backward without changing the legacy full read", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_page", displayName: "Paged" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_page", sessionId: "ses_page" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_page", sessionId: "ses_other" })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_page",
       sessions: [{ sessionId: "ses_page" }, { sessionId: "ses_other" }],
@@ -467,6 +567,7 @@ describe("sqlite workspace authority", () => {
   test("session message sync atomically rejects an older event ordinal", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_ordinal", displayName: "Ordinal" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_ordinal", sessionId: "ses_ordinal" })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_ordinal",
       sessions: [{ sessionId: "ses_ordinal" }],
@@ -497,6 +598,20 @@ describe("sqlite workspace authority", () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_batch_a", displayName: "A" })
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_batch_b", displayName: "B" })
+    await registerPrivateSession({
+      authority,
+      auth: owner,
+      workspaceId: "ws_batch_b",
+      sessionId: "ses_conflict",
+      title: "Conflict",
+    })
+    await registerPrivateSession({
+      authority,
+      auth: owner,
+      workspaceId: "ws_batch_a",
+      sessionId: "ses_should_rollback",
+      title: "Original",
+    })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_batch_b",
       sessions: [{ sessionId: "ses_conflict", title: "Conflict" }],
@@ -508,13 +623,21 @@ describe("sqlite workspace authority", () => {
         { sessionId: "ses_should_rollback", title: "Transient" },
         { sessionId: "ses_conflict", title: "Conflict" },
       ],
-    })).rejects.toThrow("Session not found")
-    expect(await authority.listSessions(owner, { workspaceId: "ws_batch_a" })).toEqual([])
+    })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.resolveSession(owner, { sessionId: "ses_should_rollback" }))
+      .toMatchObject({ title: "Original" })
   })
 
   test("rolls back visibility tombstones when message deletion fails", async () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_delete_rollback", displayName: "Delete" })
+    await registerPrivateSession({
+      authority,
+      auth: owner,
+      workspaceId: "ws_delete_rollback",
+      sessionId: "ses_delete_rollback",
+      title: "Keep",
+    })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_delete_rollback",
       sessions: [{ sessionId: "ses_delete_rollback", title: "Keep" }],

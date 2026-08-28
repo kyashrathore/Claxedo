@@ -13,6 +13,11 @@ const signedAuth = {
   user: { subject: "user_1", tokenIdentifier: "issuer|user_1", issuer: "issuer" },
 }
 
+const canonicalUsersMe = () => vi.fn(async () => ({
+  actor_id: "actor_user_1",
+  actor_kind: "human" as const,
+}))
+
 function stubFetch(fetch: unknown) {
   globalThis.fetch = fetch as typeof globalThis.fetch
 }
@@ -116,6 +121,7 @@ describe("control plane HTTP protocol", () => {
     const svc = services()
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({})),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
@@ -404,7 +410,9 @@ describe("control plane HTTP protocol", () => {
     }))
     svc.sandbox.sandboxManager = { target } as never
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
+        role: "owner",
         workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
       })),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -446,7 +454,9 @@ describe("control plane HTTP protocol", () => {
       last_seen_at: Date.now(),
     }))
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
+        role: "owner",
         workspace: {
           workspace_id: "ws_1",
           org_id: "org_1",
@@ -503,6 +513,7 @@ describe("control plane HTTP protocol", () => {
       status: "ready",
     })
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({ workspace })),
       activeLocalHostLink,
     } as never
@@ -536,6 +547,7 @@ describe("control plane HTTP protocol", () => {
       return { allowed: true, role: "owner", workspace: { workspace_id: "ws_1" } }
     })
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace,
       upsertSessionVisibility: vi.fn(async () => undefined),
     } as never

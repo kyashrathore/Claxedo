@@ -8,6 +8,8 @@ export const me = authedMutation({
     const org = await personalOrgForUser(ctx, user)
     return {
       user_id: user._id,
+      actor_id: user._id,
+      actor_kind: "human" as const,
       subject: user.clerk_subject,
       token_identifier: user.token_identifier,
       org_id: org?._id,

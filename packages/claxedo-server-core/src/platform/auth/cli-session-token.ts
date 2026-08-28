@@ -1,7 +1,12 @@
 import { ClaxedoError } from "../errors/base"
-import { exportJWK, importPKCS8, importSPKI, jwtVerify, SignJWT, type JWTPayload } from "jose"
+import { decodeJwt, exportJWK, importPKCS8, importSPKI, jwtVerify, SignJWT, type JWTPayload } from "jose"
 import { randomToken, sha256Hex16 } from "./web-crypto"
-import type { SignedControlPlaneAuth, VerifiedClerkAuth } from "./auth"
+import type {
+  AdapterNativeSessionAuthPort,
+  AdapterNativeSessionTokenSet,
+  SignedControlPlaneAuth,
+  VerifiedClerkAuth,
+} from "./auth"
 import {
   resolveCliSessionTokenRegistry,
   type CliSessionTokenKind,
@@ -262,6 +267,19 @@ export function isCliRefreshToken(input: string | undefined): input is string {
   return input?.startsWith(REFRESH_PREFIX) === true
 }
 
+/**
+ * Route a bearer to the retained CLI verifier without trying providers in
+ * sequence. The claim is untrusted and selects only which verifier runs; that
+ * verifier still checks the signature, audience, kind, registry, and expiry.
+ */
+export function isCliAccessTokenCandidate(input: string) {
+  try {
+    return decodeJwt(input).claxedo_token_kind === ACCESS_KIND
+  } catch {
+    return false
+  }
+}
+
 export function isCliAccessAuth(input: SignedControlPlaneAuth) {
   return input.tokenKind === "cli"
 }
@@ -370,7 +388,7 @@ export async function mintCliSessionTokens(
   // unregistered token would fail verification anyway.
   for (const record of records) await registry.recordMint(record)
 
-  return response
+  return response as AdapterNativeSessionTokenSet
 }
 
 /**
@@ -474,7 +492,7 @@ export async function refreshCliSessionTokens(
     minted: records,
   })
   if (!rotated.ok) throw new CliSessionTokenError(rotated.code, rotated.reason)
-  return response
+  return response as AdapterNativeSessionTokenSet
 }
 
 export async function verifyCliAccessBearer(
@@ -529,4 +547,47 @@ export async function revokeCliSessionTokensForUser(
   options: CliSessionTokenOptions = {},
 ) {
   return resolveCliSessionTokenRegistry(options.registry).revokeForUser(args)
+}
+
+/** Revoke a presented credential after validating its signature and owner. */
+export async function revokeCliSessionCredential(
+  token: string,
+  env: Env = process.env,
+  options: CliSessionTokenOptions = {},
+) {
+  const registry = resolveCliSessionTokenRegistry(options.registry)
+  const refresh = isCliRefreshToken(token)
+  const verified = await verifyCliToken(
+    refresh ? token.slice(REFRESH_PREFIX.length) : token,
+    refresh ? REFRESH_KIND : ACCESS_KIND,
+    refresh ? `${audience(env)}:refresh` : audience(env),
+    env,
+    registry,
+  )
+  const result = await registry.revoke({
+    jti: verified.jti,
+    tokenIdentifier: verified.tokenIdentifier,
+  })
+  if (result.revoked !== 1) {
+    throw new CliSessionTokenError("cli_session_token_revoked", "CLI session token could not be revoked")
+  }
+  return { revokedAt: Date.now() }
+}
+
+/** Explicit retained-Clerk native-session issuer/verifier composition. */
+export function createClerkNativeSessionAuthPort(input: {
+  env?: Env
+  registry?: CliSessionTokenRegistry
+} = {}): AdapterNativeSessionAuthPort {
+  const env = input.env ?? process.env
+  const options = input.registry ? { registry: input.registry } : {}
+  return {
+    adapter: "clerk",
+    acceptsAccessToken: isCliAccessTokenCandidate,
+    acceptsRefreshToken: isCliRefreshToken,
+    issue: (auth) => mintCliSessionTokens(auth, env, options),
+    refresh: (token) => refreshCliSessionTokens(token, env, options),
+    authenticate: (token) => verifyCliAccessBearer(token, env, options),
+    revoke: (token) => revokeCliSessionCredential(token, env, options),
+  }
 }

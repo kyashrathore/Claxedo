@@ -3,13 +3,14 @@ import { localWorkspaceRuntime } from "../local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider, RelayTokenInput } from "../../adapters/relay/index"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "../../platform/auth/runtime-actor"
 
 export type SandboxFetchOptions = {
   sandboxManager?: SandboxManagerPort
   relayProvider?: RelayProvider
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
-  subject?: string
+  runtimeActor?: Pick<RelayTokenInput, "principalKind" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
   orgId?: string
   role?: RelayTokenInput["role"]
   /** Inspect an already-ready runtime without waking or reprovisioning it. */
@@ -48,7 +49,7 @@ export async function sandboxFetch(
   const token = await options.relayProvider.mintRuntimeAccessToken({
     workspaceId: ws.id,
     hostId: target.hostId,
-    subject: options.subject ?? "control-plane",
+    ...(options.runtimeActor ?? CONTROL_PLANE_RUNTIME_ACTOR),
     orgId,
     role: options.role ?? "owner",
     ttlMs: 10 * 60_000,

@@ -7,10 +7,10 @@ import {
 import {
   ControlPlaneAuthError,
   bearerToken,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import {
   listSandboxDrivers as listSandboxDriverCatalog,
   sandboxDriverId,

@@ -4,19 +4,18 @@
  * The one place electron, node, and the account modules meet. Everything it
  * does is wiring; every decision lives in the module it belongs to.
  *
- * Configuration comes from the environment because the OAuth client is
- * registered by the release owner in the identity provider, not by this code.
- * When it is absent the account is still constructed and still registers its
- * IPC — sign-in then refuses with a reason. The alternative, not registering,
- * would leave `window.api.account` missing, the renderer would fall back to the
- * BROWSER port, and a desktop build would quietly try to run Clerk in the
- * renderer — which is the arrangement this unit exists to end.
+ * The environment selects only one exact HTTPS core origin. That core's live,
+ * short-lived descriptor selects Better Auth or Clerk and supplies every
+ * public native-client value. When the origin is absent the account still
+ * registers its refusing IPC service; the renderer never falls back to a
+ * browser provider implementation.
  */
 
 import { app, safeStorage, shell } from "electron"
 import { createAccountService, type AccountState } from "./account-service"
 import { createCredentialStore } from "./credential-store"
 import { credentialFile, loopbackListener, nodeTimer, refreshExchange, tokenExchange } from "./electron-seams"
+import { createDesktopNativeAuth } from "./desktop-native-auth"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
 import type { OAuthSeams } from "./oauth-flow"
@@ -59,6 +58,7 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     return {
       configured: false as const,
       missing: config.missing,
+      ready: Promise.resolve(),
       service: {
         state: () => unavailable,
         signIn: async () => unavailable,
@@ -92,25 +92,18 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     setTimeout: nodeTimer(),
   }
 
-  // The refresh grant, bound to the same client and token endpoint the sign-in
-  // used. Supplying it is what makes a session outlive one access token: with
-  // no `refresh` the service can only sign the user out at expiry, which for a
-  // typical one-hour token means every day starts signed out.
-  const refresh = refreshExchange()
+  const auth = createDesktopNativeAuth({
+    coreOrigin: config.coreOrigin,
+    seams,
+    refresh: refreshExchange(),
+    fetch,
+    timeoutMs: SIGN_IN_TIMEOUT_MS,
+  })
 
   const service = createAccountService({
-    config: {
-      authorizeUrl: config.authorizeUrl,
-      tokenUrl: config.tokenUrl,
-      clientId: config.clientId,
-      scope: config.scope,
-      timeoutMs: SIGN_IN_TIMEOUT_MS,
-    },
-    seams,
+    auth,
     store,
-    serverOrigin: config.serverOrigin,
     fetch: (url, init) => fetch(url, init),
-    refresh: (refreshToken) => refresh({ tokenUrl: config.tokenUrl, clientId: config.clientId, refreshToken }),
     now: () => Math.floor(Date.now() / 1000),
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
@@ -118,8 +111,8 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
 
   // Before registering: a renderer that asks for state during its first frame
   // should get the restored answer, not `unsigned` followed by a correction.
-  service.restore()
-  return { configured: true as const, service }
+  const ready = service.restore().then(() => undefined)
+  return { configured: true as const, service, ready }
 }
 
 export type AccountAssembly = ReturnType<typeof createAccountAssembly>
@@ -129,5 +122,5 @@ export function setupAccount(input: AccountAssemblyInput) {
   const { channels } = registerAccountIpc({ ipcMain: input.ipcMain, service: account.service })
   return account.configured
     ? { ...account, channels }
-    : { configured: false as const, missing: account.missing, channels }
+    : { configured: false as const, missing: account.missing, channels, ready: account.ready }
 }

@@ -19,20 +19,15 @@ import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../convex/work
 import { cliSessionTokenAuthority } from "../convex/cli-session-tokens"
 import { createUserHostedTargetResolver } from "../convex/user-hosted-relay-target"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import {
   authorityCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
 } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { UserHostedTargetResolver } from "../../sandbox-relay-target"
+import { HostedWorkerCompositionError } from "../../composition-error"
 
-export class HostedWorkerCompositionError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-  ) {
-    super(message)
-  }
-}
+export { HostedWorkerCompositionError } from "../../composition-error"
 
 export type HostedWorkerEnv = Record<string, string | undefined>
 
@@ -107,7 +102,7 @@ export function composeWorkerSandboxManager(input: {
 }
 
 /** Build the hosted workspace authority from env. */
-export function composeWorkerAuthority(env: HostedWorkerEnv): WorkspaceAuthority {
+export function composeWorkerAuthority(env: HostedWorkerEnv): WorkspaceAuthority & PrivateSessionAuthority {
   return createConvexAuthority({
     url: storageUrl(env),
     serviceToken: required(

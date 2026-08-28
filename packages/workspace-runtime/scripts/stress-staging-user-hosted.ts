@@ -262,21 +262,34 @@ async function mintAndRecordRuntimeAccessToken(input: {
     pem(requireEnv(input.env, "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM")),
     algorithm,
   )
+  const client = new ConvexHttpClient(requireEnv(input.env, "CLAXEDO_WORKSPACE_AUTHORITY_URL"))
+  client.setAuth(input.authToken)
+  const principal = await client.mutation(api.users.me, {}) as {
+    actor_id?: unknown
+    actor_kind?: unknown
+    org_id?: unknown
+  }
+  if (typeof principal.actor_id !== "string" || principal.actor_kind !== "human" || typeof principal.org_id !== "string") {
+    throw new Error("Authenticated staging identity did not resolve to a canonical human actor and organization")
+  }
   const runtimeAccessToken = await mintRuntimeAccessToken({
-    subject: "staging-stress",
-    orgId: "org_staging_stress",
+    principalKind: "user",
+    actorId: principal.actor_id,
+    actorKind: principal.actor_kind,
+    orgId: principal.org_id,
     workspaceId: input.workspaceId,
     hostId: input.hostId,
     role: "editor",
     ttlSeconds,
     jti,
   }, privateKey, algorithm)
-  const client = new ConvexHttpClient(requireEnv(input.env, "CLAXEDO_WORKSPACE_AUTHORITY_URL"))
-  client.setAuth(input.authToken)
   await client.mutation(api.runtimeAccessTokens.recordMint, {
     jti,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
+    actor_id: principal.actor_id,
+    actor_kind: principal.actor_kind,
+    role: "editor",
     expires_at: expiresAt,
   })
   return { runtimeAccessToken, tokenExpiresAt: expiresAt, jti }

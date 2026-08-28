@@ -29,12 +29,15 @@ async function app(input: { trustedDirectToken?: string } = {}) {
 }
 
 const tokenInput = {
-  subject: "user_1",
+  principalKind: "user" as const,
+  actorId: "user_1",
+  actorKind: "human" as const,
   orgId: "org_1",
   workspaceId: "ws_1",
   hostId: "host_1",
   role: "editor" as const,
   jti: "jti_1",
+  parentJti: "rat_jti_1",
 }
 
 describe("workspace host service relay auth", () => {
@@ -320,11 +323,14 @@ describe("createRelayHostAuthMiddleware with a JWKS resolver", () => {
     app.get("/api/wr/health", (c) => c.json({ ok: true, kid: c.get("relayHostAuth")?.workspace_id }))
 
     const token = await mintRelayHostToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
       role: "editor",
+      parentJti: "rat_jti_current",
       access: "cloud",
       backing: "cloud-vm",
       kid: "kid-current",
@@ -365,11 +371,14 @@ describe("createRelayHostAuthMiddleware with a JWKS resolver", () => {
     app.get("/api/wr/health", (c) => c.json({ ok: true }))
 
     const token = await mintRelayHostToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
       role: "editor",
+      parentJti: "rat_jti_other",
       access: "cloud",
       backing: "cloud-vm",
       kid: "kid-other",
@@ -546,12 +555,13 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const staticVerifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
       tokens: {
         "static-rht-1": {
-          subject: "u-static",
           scopes: [],
           claims: {
             iss: "workspace-relay",
             aud: "workspace-host-service",
-            sub: "u-static",
+            principal_kind: "user",
+            actor_id: "u-static",
+            actor_kind: "human",
             org_id: "org_static",
             workspace_id: "ws_static",
             host_id: "host_static",
@@ -561,6 +571,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
             jti: "jti-static",
+            parent_jti: "rat-jti-static",
           },
         },
       },
@@ -597,7 +608,9 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const claims = {
       iss: "workspace-relay",
       aud: "workspace-host-service",
-      sub: "u-static",
+      principal_kind: "user",
+            actor_id: "u-static",
+            actor_kind: "human",
       org_id: "org_static",
       workspace_id: "ws_static",
       host_id: "host_static",
@@ -606,14 +619,14 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
       iat: now,
       exp: now + 60,
       jti: "jti-static",
+      parent_jti: "rat-jti-static",
       // NOTE: `role` is deliberately absent — this is the "missing role" half
       // of the case. The cast below keeps it that way.
     } as const
     const verifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
       tokens: {
-        missing: { subject: "u-static", scopes: [], claims: claims as unknown as RelayHostVerifierClaims },
+        missing: { scopes: [], claims: claims as unknown as RelayHostVerifierClaims },
         malformed: {
-          subject: "u-static",
           scopes: [],
           // Deliberately invalid: "maintainer" is not a RelayHostVerifierClaims
           // role. The point of the case is that the middleware rejects claims a
@@ -656,12 +669,13 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const staticVerifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
       tokens: {
         "static-rht-bad-host": {
-          subject: "u-static",
           scopes: [],
           claims: {
             iss: "workspace-relay",
             aud: "workspace-host-service",
-            sub: "u-static",
+            principal_kind: "user",
+            actor_id: "u-static",
+            actor_kind: "human",
             org_id: "org_static",
             workspace_id: "ws_static",
             host_id: "host_other",
@@ -671,6 +685,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
             jti: "jti-static",
+            parent_jti: "rat-jti-static",
           },
         },
       },
@@ -706,12 +721,13 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
     const staticVerifier = createStaticTokenVerifier<RelayHostVerifierClaims>({
       tokens: {
         "static-rht-bad-pair": {
-          subject: "u-static",
           scopes: [],
           claims: {
             iss: "workspace-relay",
             aud: "workspace-host-service",
-            sub: "u-static",
+            principal_kind: "user",
+            actor_id: "u-static",
+            actor_kind: "human",
             org_id: "org_static",
             workspace_id: "ws_static",
             host_id: "host_static",
@@ -724,6 +740,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             iat: Math.floor(Date.now() / 1000),
             exp: Math.floor(Date.now() / 1000) + 60,
             jti: "jti-static",
+            parent_jti: "rat-jti-static",
           } as unknown as RelayHostVerifierClaims,
         },
       },

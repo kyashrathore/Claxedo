@@ -77,11 +77,10 @@ import {
 } from "../../authority/services"
 import {
   betterAuthAdapter,
-  clerkAuthAdapter,
   controlPlaneAuthContext,
   ControlPlaneAuthError,
-  signedCloudAuthRequested,
 } from "@claxedo/server-core/platform/auth/auth"
+import { clerkAuthAdapter, signedCloudAuthRequested } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import {
   assertHostedBootRequirements,
   deploymentMode,
@@ -1123,7 +1122,10 @@ function localRelayFromEnv(
                 jti: input.jti,
                 workspaceId: input.workspaceId,
                 hostId: input.hostId,
-                subject: input.subject,
+                actorId: input.actorId,
+                actorKind: input.actorKind,
+                principalKind: input.principalKind,
+                role: input.role,
                 expiresAt: input.expiresAt,
               }),
           }),

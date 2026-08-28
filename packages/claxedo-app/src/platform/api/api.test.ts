@@ -17,6 +17,7 @@ const calls: Array<{
   auth: string | null
   body: string
   cache: RequestCache
+  credentials: RequestCredentials
   dir: string | null
   url: string
 }> = []
@@ -109,6 +110,7 @@ beforeEach(() => {
       auth: req.headers.get("Authorization"),
       body: await req.clone().text(),
       cache: init?.cache ?? req.cache ?? "default",
+      credentials: init?.credentials ?? req.credentials,
       dir: req.headers.get("x-opencode-directory"),
       url: req.url,
     })
@@ -125,7 +127,6 @@ afterAll(() => {
 })
 
 describe("demo routing", () => {
-
   test("matches only the demo path prefix", () => {
     expect(isDemoPath("/")).toBe(false)
     expect(isDemoPath("/demo")).toBe(true)
@@ -206,6 +207,16 @@ describe("authFetch", () => {
     expect(tokenRequests).toEqual([])
   })
 
+  test("includes the browser session cookie only when the selected adapter binds cookie transport", async () => {
+    configureApiRuntime({ browserCredentials: "include" })
+
+    await authFetch("https://api.example.test/api/claxedo/bootstrap")
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.credentials).toBe("include")
+    expect(calls[0]?.auth).toBeNull()
+  })
+
   test("force-refreshes the bearer once when the server rejects it as invalid", async () => {
     // The retry that keeps a stale Clerk JWT from wedging every panel in
     // "loading" forever. It is also the only caller that passes an option
@@ -217,6 +228,7 @@ describe("authFetch", () => {
         auth: req.headers.get("Authorization"),
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
+        credentials: init?.credentials ?? req.credentials,
         dir: req.headers.get("x-opencode-directory"),
         url: req.url,
       })
@@ -264,6 +276,7 @@ describe("authFetch", () => {
         auth: req.headers.get("Authorization"),
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
+        credentials: init?.credentials ?? req.credentials,
         dir: req.headers.get("x-opencode-directory"),
         url: req.url,
       })
@@ -287,7 +300,7 @@ describe("authFetch", () => {
     await api.put("http://localhost/test", 0)
     await api.patch("http://localhost/test", "")
 
-    expect(calls.map((call) => call.body)).toEqual(["false", "0", "\"\""])
+    expect(calls.map((call) => call.body)).toEqual(["false", "0", '""'])
   })
 
   test("routes root-relative API calls through the configured desktop server", async () => {
@@ -334,7 +347,6 @@ describe("apiBearerToken", () => {
 })
 
 describe("authFetch workspace routing boundary", () => {
-
   test("leaves unrelated remote URLs on the normal authenticated fetch path", async () => {
     token = "tok_123"
     setServerEnv({

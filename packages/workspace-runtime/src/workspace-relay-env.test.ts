@@ -181,11 +181,14 @@ describe("workspace relay runtime env", () => {
     app.get("/api/wr/health", (c) => c.json({ ok: true }))
 
     const goodToken = await mintRelayHostToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
       role: "editor",
+      parentJti: "rat_jti_good",
       access: "cloud",
       backing: "cloud-vm",
       kid: "kid-rotated",
@@ -202,11 +205,14 @@ describe("workspace relay runtime env", () => {
 
     const otherKey = await generateKeyPair("EdDSA", { extractable: true })
     const badToken = await mintRelayHostToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
       role: "editor",
+      parentJti: "rat_jti_bad",
       access: "cloud",
       backing: "cloud-vm",
       kid: "kid-not-in-jwks",

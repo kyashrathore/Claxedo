@@ -19,7 +19,12 @@ export type RelayRole = "viewer" | "editor" | "admin" | "owner"
 export type RuntimeAccessTokenClaims = {
   iss: typeof runtimeAccessTokenIssuer
   aud: typeof runtimeAccessTokenAudience
-  sub: string
+  principal_kind: "user" | "service"
+  actor_id: string
+  actor_kind: "human" | "agent"
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
   org_id: string
   workspace_id: string
   host_id: string
@@ -32,7 +37,12 @@ export type RuntimeAccessTokenClaims = {
 export type RelayHostTokenClaims = {
   iss: typeof relayHostTokenIssuer
   aud: typeof relayHostTokenAudience
-  sub: string
+  principal_kind: "user" | "service"
+  actor_id: string
+  actor_kind: "human" | "agent"
+  actor_public_id?: string
+  actor_name?: string
+  actor_avatar_url?: string
   org_id: string
   workspace_id: string
   host_id: string
@@ -40,6 +50,8 @@ export type RelayHostTokenClaims = {
   exp: number
   iat: number
   jti: string
+  /** Durable parent Runtime Access Token id used for revocation checks. */
+  parent_jti: string
 } & RelayClaimPair
 
 export type HostTunnelTokenClaims = {
@@ -67,7 +79,12 @@ export class WorkspaceRelayAuthError extends Error {
 }
 
 type RuntimeInput = {
-  subject: string
+  principalKind: "user" | "service"
+  actorId: string
+  actorKind: "human" | "agent"
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
   orgId: string
   workspaceId: string
   hostId: string
@@ -78,6 +95,8 @@ type RuntimeInput = {
 }
 
 type RelayHostInput = RuntimeInput & RelayClaimPair & {
+  /** The Runtime Access Token jti from which this one-request RHT is derived. */
+  parentJti: string
   /**
    * Optional `kid` to embed in the JWT protected header. Verifiers using a
    * JWKS resolver dispatch on this to pick the matching key, so a freshly
@@ -211,6 +230,16 @@ type RelaySigningKey = CryptoKey | Uint8Array
 export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySigningKey, alg: RelayJwtAlgorithm) {
   const now = seconds(input.now)
   return await new SignJWT({
+    principal_kind: input.principalKind,
+    actor_id: input.actorId,
+    actor_kind: input.actorKind,
+    ...(input.actorPublicId && input.actorName
+      ? {
+          actor_public_id: input.actorPublicId,
+          actor_name: input.actorName,
+          ...(input.actorAvatarUrl ? { actor_avatar_url: input.actorAvatarUrl } : {}),
+        }
+      : {}),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
@@ -219,7 +248,6 @@ export async function mintRuntimeAccessToken(input: RuntimeInput, key: RelaySign
     .setProtectedHeader({ alg: requireAlgorithm(alg) })
     .setIssuer(runtimeAccessTokenIssuer)
     .setAudience(runtimeAccessTokenAudience)
-    .setSubject(input.subject)
     .setIssuedAt(now)
     .setExpirationTime(now + (input.ttlSeconds ?? 30 * 60))
     .setJti(input.jti ?? jti())
@@ -305,17 +333,27 @@ export async function mintRelayHostToken(input: RelayHostInput, key: RelaySignin
   const protectedHeader: { alg: RelayJwtAlgorithm; kid?: string } = { alg: requireAlgorithm(alg) }
   if (input.kid) protectedHeader.kid = input.kid
   return await new SignJWT({
+    principal_kind: input.principalKind,
+    actor_id: input.actorId,
+    actor_kind: input.actorKind,
+    ...(input.actorPublicId && input.actorName
+      ? {
+          actor_public_id: input.actorPublicId,
+          actor_name: input.actorName,
+          ...(input.actorAvatarUrl ? { actor_avatar_url: input.actorAvatarUrl } : {}),
+        }
+      : {}),
     org_id: input.orgId,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
     role: input.role,
     access: input.access,
     backing: input.backing,
+    parent_jti: input.parentJti,
   })
     .setProtectedHeader(protectedHeader)
     .setIssuer(relayHostTokenIssuer)
     .setAudience(relayHostTokenAudience)
-    .setSubject(input.subject)
     .setIssuedAt(now)
     .setExpirationTime(now + (input.ttlSeconds ?? 60))
     .setJti(input.jti ?? jti())
@@ -338,17 +376,33 @@ export async function verifyRelayHostToken(token: string, key: RelayKey, expecte
 function runtimeClaims(payload: JWTPayload): RuntimeAccessTokenClaims | undefined {
   const exp = numberClaim(payload, "exp")
   const iat = numberClaim(payload, "iat")
-  const sub = stringClaim(payload, "sub")
+  const principal_kind = stringClaim(payload, "principal_kind")
+  const actor_id = stringClaim(payload, "actor_id")
+  const actor_kind = stringClaim(payload, "actor_kind")
   const jti = stringClaim(payload, "jti")
   const org_id = stringClaim(payload, "org_id")
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
-  if (!exp || !iat || !sub || !jti || !org_id || !workspace_id || !host_id || !role) return
+  if (
+    !exp || !iat || !jti || !org_id || !workspace_id || !host_id || !role || !actor_id
+    || (principal_kind !== "user" && principal_kind !== "service")
+    || (actor_kind !== "human" && actor_kind !== "agent")
+    || (principal_kind === "user" && actor_kind !== "human")
+    || (principal_kind === "service" && actor_kind !== "agent")
+  ) return
+  const actor_public_id = stringClaim(payload, "actor_public_id")
+  const actor_name = stringClaim(payload, "actor_name")
+  const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
   return {
     iss: runtimeAccessTokenIssuer,
     aud: runtimeAccessTokenAudience,
-    sub,
+    principal_kind,
+    actor_id,
+    actor_kind,
+    ...(actor_public_id && actor_name
+      ? { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
+      : {}),
     org_id,
     workspace_id,
     host_id,
@@ -367,12 +421,14 @@ function relayHostClaims(payload: JWTPayload): RelayHostTokenClaims | undefined 
   })
   const access = stringClaim(payload, "access")
   const backing = stringClaim(payload, "backing")
+  const parent_jti = stringClaim(payload, "parent_jti")
   const pair = { access, backing }
-  if (!base || !isRelayClaimPair(pair)) return
+  if (!base || !parent_jti || !isRelayClaimPair(pair)) return
   return {
     ...base,
     iss: relayHostTokenIssuer,
     aud: relayHostTokenAudience,
+    parent_jti,
     ...pair,
   }
 }

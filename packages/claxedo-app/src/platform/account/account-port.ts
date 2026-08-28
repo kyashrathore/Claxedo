@@ -20,6 +20,7 @@
  * Neither implementation hands a token, a cookie, a URL, or a method back to
  * the renderer.
  */
+import type { BrowserAuthSignInOptions } from "../auth/browser-auth"
 
 /** Sanitized identity. Deliberately the same shape a `Principal` may hold. */
 export type AccountIdentity = {
@@ -40,7 +41,7 @@ export type AccountIdentity = {
 }
 
 export type AccountState =
-  | { status: "unsigned" }
+  | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
   /** Sign-in is in flight — the system browser is open, or IPC is awaiting it. */
   | { status: "pending" }
   | { status: "signed"; identity: AccountIdentity }
@@ -96,7 +97,7 @@ export type AccountPort = {
    * `redirectUrl` is where the browser flow lands after the provider returns;
    * the desktop port ignores it — main owns that flow end to end.
    */
-  signIn: (options?: { redirectUrl?: string }) => Promise<void>
+  signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
   signOut: () => Promise<void>
   /**
    * Runs one named hosted operation and returns its decoded result.

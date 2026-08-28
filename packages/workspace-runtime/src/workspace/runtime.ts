@@ -49,6 +49,7 @@ import {
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
+import type { SessionAccessPolicy } from "../session-access-policy"
 import type { Context, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
@@ -178,6 +179,8 @@ export type WorkspaceHostOptions = {
   opencodeCompat?: boolean
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  /** Private-session authority selected by the host composition. */
+  sessionAccessPolicy?: SessionAccessPolicy
   /** Host-owned credential/model resolver for concrete Pi model turns. */
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
@@ -2183,6 +2186,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
+        ...(hostOptions.sessionAccessPolicy ? { sessionAccessPolicy: hostOptions.sessionAccessPolicy } : {}),
         resolveRuntime: (input) => runtimeForSession(input),
         createSession: async (c, directory, title, id) => {
           // Write through to the durable store on CREATE.

@@ -6,6 +6,7 @@ import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
 import { previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 export async function cloudConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
@@ -53,6 +54,7 @@ export async function cloudConnectionInfo(
   }
   const hostId = target.hostId
   const role = relayRole(result.role)
+  const actor = await resolveRuntimeActor(authority, auth)
   const relayUrl = configuredRelayUrl(options)
   if (!relayUrl) {
     throw new ControlPlaneAuthError(
@@ -69,7 +71,8 @@ export async function cloudConnectionInfo(
   if (previousToken) return previousToken
   const orgId = await authority.resolveOrgId(auth)
   const token = await configuredRuntimeAccessTokenSigner(options)({
-    subject: auth.user.subject,
+    principalKind: "user",
+    ...actor,
     orgId,
     workspaceId: ws.id,
     hostId,
@@ -79,6 +82,9 @@ export async function cloudConnectionInfo(
     jti: token.jti,
     workspaceId: ws.id,
     hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role,
     expiresAt: token.tokenExpiresAt,
   })
   await authority.auditAllow(auth, {
@@ -185,7 +191,7 @@ export async function localLoopbackCloudConnectionInfo(
   const orgId = current.org_id ?? ws.org_id
   const token = options.runtimeAccessTokenSigner && orgId
     ? await options.runtimeAccessTokenSigner({
-        subject: "local",
+        ...CONTROL_PLANE_RUNTIME_ACTOR,
         orgId,
         workspaceId: ws.id,
         hostId,

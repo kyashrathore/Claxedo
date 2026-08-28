@@ -70,7 +70,9 @@ export type WorkspaceRelayAuditEvent = {
     | "host_tunnel.disconnected"
   result: "allow" | "deny"
   reason?: string
-  subject?: string
+  actorId?: string
+  actorKind?: "human" | "agent"
+  principalKind?: "user" | "service"
   role?: RelayRole
   workspaceId?: string
   hostId?: string
@@ -541,7 +543,9 @@ function relayHostTokenCacheKey(
 ) {
   return [
     claims.jti,
-    claims.sub,
+    claims.actor_id,
+    claims.actor_kind,
+    claims.principal_kind,
     claims.org_id,
     claims.role,
     claims.workspace_id,
@@ -671,7 +675,17 @@ async function relayHostTokenFor(
   try {
     const token = await trace.span("rht-mint", async () => {
       promise = mintRelayHostToken({
-        subject: claims.sub,
+        principalKind: claims.principal_kind,
+        actorId: claims.actor_id,
+        actorKind: claims.actor_kind,
+        parentJti: claims.jti,
+        ...(claims.actor_public_id && claims.actor_name
+          ? {
+              actorPublicId: claims.actor_public_id,
+              actorName: claims.actor_name,
+              ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+            }
+          : {}),
         orgId: claims.org_id,
         role: claims.role,
         ...target,
@@ -700,7 +714,17 @@ async function uncachedRelayHostTokenFor(
 ) {
   return await trace.span("rht-mint", async () =>
     await mintRelayHostToken({
-      subject: claims.sub,
+      principalKind: claims.principal_kind,
+      actorId: claims.actor_id,
+      actorKind: claims.actor_kind,
+      parentJti: claims.jti,
+      ...(claims.actor_public_id && claims.actor_name
+        ? {
+            actorPublicId: claims.actor_public_id,
+            actorName: claims.actor_name,
+            ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+          }
+        : {}),
       orgId: claims.org_id,
       role: claims.role,
       ...target,
@@ -919,7 +943,9 @@ async function deny(options: WorkspaceRelayOptions, input: {
     action: "relay.request.denied",
     result: "deny",
     reason: input.code,
-    subject: input.claims?.sub,
+    actorId: input.claims?.actor_id,
+    actorKind: input.claims?.actor_kind,
+    principalKind: input.claims?.principal_kind,
     ...(input.claims ? { role: input.claims.role } : {}),
     workspaceId: input.claims?.workspace_id,
     hostId: input.claims?.host_id,
@@ -1028,7 +1054,9 @@ export async function authorizeWorkspaceRelayRequest(
     await span("audit", async () => await audit(options, {
       action: "relay.request.accepted",
       result: "allow",
-      subject: claims.sub,
+      actorId: claims.actor_id,
+      actorKind: claims.actor_kind,
+      principalKind: claims.principal_kind,
       role: claims.role,
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,

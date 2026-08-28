@@ -1,4 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceShareTarget } from "@claxedo/server-core/platform/auth/authority"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireAllowed, requireExecutor } from "./executor"
@@ -221,31 +222,27 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     async grantWorkspaceShare(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
       role: "viewer" | "editor" | "admin"
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
+      target: WorkspaceShareTarget
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.grant, {
         workspace_id: args.workspaceId,
         role: args.role,
-        ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
-        ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
-        ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.target.kind === "actor" ? { target_actor_id: args.target.actorId } : {}),
+        ...(args.target.kind === "user" ? { target_user_id: args.target.userId } : {}),
+        ...(args.target.kind === "org" ? { target_org_id: args.target.orgId } : {}),
       })
     },
     async revokeWorkspaceShare(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
+      target?: WorkspaceShareTarget
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.revoke, {
         workspace_id: args.workspaceId,
         ...(args.grantId ? { grant_id: args.grantId } : {}),
-        ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
-        ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
-        ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.target?.kind === "actor" ? { target_actor_id: args.target.actorId } : {}),
+        ...(args.target?.kind === "user" ? { target_user_id: args.target.userId } : {}),
+        ...(args.target?.kind === "org" ? { target_org_id: args.target.orgId } : {}),
       })
     },
   }

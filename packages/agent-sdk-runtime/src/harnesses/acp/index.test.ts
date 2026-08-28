@@ -259,6 +259,222 @@ describe("AcpHarnessAdapter subagent routing", () => {
       payload: expect.objectContaining({ type: "text-delta", delta: "child result" }),
     }))
   })
+
+  test("uses Codex collaboration state, not parent prompt completion, to finish a status-only child", async () => {
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = new MemoryRuntimeStore()
+    store.bindSession({
+      sessionId: "parent-session",
+      directory: path.resolve("/work"),
+      title: "Parent",
+      agentSessionId: "parent-agent-session",
+    })
+    store.updateSessionConfig("parent-session", {
+      harness: { id: "codex", access: "acp" },
+      model: { providerID: "codex-acp", modelID: "default" },
+      agent: "build",
+      variant: null,
+    })
+    const adapter = new AcpHarnessAdapter({
+      binary: "codex-acp",
+      harness: "codex",
+      store,
+      eventHub,
+    })
+    internalsOf<{
+      getOrSpawnProcess: () => Promise<{ proc: {
+        permissionPushers: Map<string, unknown>
+        syncSession: () => Promise<void>
+        prompt: (_sessionId: string, _input: unknown, forward: (update: SessionUpdate) => void) => Promise<{ stopReason: "end_turn" }>
+        cancel: () => Promise<void>
+      }; isNew: false }>
+    }>(adapter).getOrSpawnProcess = async () => ({
+      isNew: false,
+      proc: {
+        permissionPushers: new Map(),
+        async syncSession() {},
+        async prompt(_sessionId, _input, forward) {
+          // codex-acp may only see item/completed for this activity. Completion
+          // of the activity means "spawn was performed", not "child finished".
+          forward({
+            sessionUpdate: "tool_call",
+            toolCallId: "activity-1",
+            title: "Start subagent demo_child",
+            status: "completed",
+            rawInput: { agentThreadId: "child-thread-1", activityKind: "started" },
+            _meta: { codex: { subagent: { threadId: "child-thread-1", activity: "started" } } },
+          })
+          forward({
+            sessionUpdate: "tool_call_update",
+            toolCallId: "wait-1",
+            title: "wait",
+            status: "completed",
+            rawInput: {
+              receiverThreadIds: ["child-thread-1"],
+              agentsStates: { "child-thread-1": { status: "completed", message: null } },
+            },
+            _meta: {
+              codex: {
+                collaboration: {
+                  tool: "wait",
+                  senderThreadId: "parent-agent-session",
+                  receiverThreadIds: ["child-thread-1"],
+                },
+              },
+            },
+          })
+          return { stopReason: "end_turn" }
+        },
+        async cancel() {},
+      },
+    })
+
+    for await (const _event of adapter.sendMessage("parent-session", {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "codex-acp", modelID: "default" },
+    }, path.resolve("/work"))) {}
+
+    expect(runtimeEvents.filter((event) => event.payload.type === "subagent-updated").map((event) =>
+      event.payload.type === "subagent-updated" ? event.payload.status : undefined
+    )).toEqual(["running", "completed"])
+    expect(store.listSubagents("parent-session")).toEqual([
+      expect.objectContaining({ providerId: "child-thread-1", status: "completed", transcript: { kind: "none" } }),
+    ])
+  })
+
+  test("does not synthesize child completion when a Codex parent prompt ends", async () => {
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = new MemoryRuntimeStore()
+    store.bindSession({ sessionId: "parent-session", directory: path.resolve("/work"), agentSessionId: "parent-agent-session" })
+    const adapter = new AcpHarnessAdapter({ binary: "codex-acp", harness: "codex", store, eventHub })
+    internalsOf<{ getOrSpawnProcess: () => Promise<{ proc: {
+      permissionPushers: Map<string, unknown>
+      syncSession: () => Promise<void>
+      prompt: (_sessionId: string, _input: unknown, forward: (update: SessionUpdate) => void) => Promise<{ stopReason: "end_turn" }>
+      cancel: () => Promise<void>
+    }; isNew: false }> }>(adapter).getOrSpawnProcess = async () => ({
+      isNew: false,
+      proc: {
+        permissionPushers: new Map(),
+        async syncSession() {},
+        async prompt(_sessionId, _input, forward) {
+          forward({
+            sessionUpdate: "tool_call",
+            toolCallId: "activity-1",
+            title: "Start subagent demo_child",
+            status: "completed",
+            rawInput: { agentThreadId: "child-thread-1", activityKind: "started" },
+            _meta: { codex: { subagent: { threadId: "child-thread-1", activity: "started" } } },
+          })
+          return { stopReason: "end_turn" }
+        },
+        async cancel() {},
+      },
+    })
+
+    for await (const _event of adapter.sendMessage("parent-session", {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "codex-acp", modelID: "default" },
+    }, path.resolve("/work"))) {}
+
+    expect(runtimeEvents.filter((event) => event.payload.type === "subagent-updated").map((event) =>
+      event.payload.type === "subagent-updated" ? event.payload.status : undefined
+    )).toEqual(["running"])
+    expect(store.listSubagents("parent-session")).toEqual([
+      expect.objectContaining({ providerId: "child-thread-1", status: "running" }),
+    ])
+  })
+
+  test("persists a canonical Codex child terminal update after the parent prompt has returned", async () => {
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = new MemoryRuntimeStore()
+    store.bindSession({ sessionId: "parent-session", directory: path.resolve("/work"), agentSessionId: "parent-agent-session" })
+    const adapter = new AcpHarnessAdapter({ binary: "codex-acp", harness: "codex", store, eventHub })
+    let observe!: (update: SessionUpdate) => void
+    internalsOf<{ getOrSpawnProcess: () => Promise<{ proc: {
+      permissionPushers: Map<string, unknown>
+      syncSession: () => Promise<void>
+      observeSession: (_sessionId: string, observer: (update: SessionUpdate) => void) => () => void
+      prompt: (_sessionId: string, _input: unknown, forward: (update: SessionUpdate) => void) => Promise<{ stopReason: "end_turn" }>
+      cancel: () => Promise<void>
+    }; isNew: false }> }>(adapter).getOrSpawnProcess = async () => ({
+      isNew: false,
+      proc: {
+        permissionPushers: new Map(),
+        async syncSession() {},
+        observeSession(_sessionId, observer) {
+          observe = observer
+          return () => {}
+        },
+        async prompt(_sessionId, _input, forward) {
+          const started = {
+            sessionUpdate: "tool_call" as const,
+            toolCallId: "activity-1",
+            title: "Start subagent demo_child",
+            status: "in_progress" as const,
+            rawInput: { agentThreadId: "child-thread-1", activityKind: "started" },
+            _meta: { codex: { subagent: { threadId: "child-thread-1", activity: "started" } } },
+          }
+          forward(started)
+          return { stopReason: "end_turn" }
+        },
+        async cancel() {},
+      },
+    })
+
+    for await (const _event of adapter.sendMessage("parent-session", {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "build",
+      model: { providerID: "codex-acp", modelID: "default" },
+    }, path.resolve("/work"))) {}
+
+    observe({
+      sessionUpdate: "tool_call_update",
+      toolCallId: "activity-1",
+      status: "completed",
+      rawInput: { agentThreadId: "child-thread-1", activityKind: "started" },
+      _meta: {
+        codex: {
+          subagent: {
+            threadId: "child-thread-1",
+            activity: "started",
+            threadStatus: { type: "idle" },
+          },
+        },
+      },
+    })
+    await Bun.sleep(0)
+
+    expect(runtimeEvents.filter((event) => event.payload.type === "subagent-updated").map((event) =>
+      event.payload.type === "subagent-updated" ? event.payload.status : undefined
+    )).toEqual(["running", "completed"])
+    expect(store.listSubagents("parent-session")).toEqual([
+      expect.objectContaining({ providerId: "child-thread-1", status: "completed" }),
+    ])
+    const tool = store.getMessages("parent-session")
+      .flatMap((message) => message.parts)
+      .find((part) => {
+        const value = part as { type?: unknown; callID?: unknown }
+        return value.type === "tool" && value.callID === "activity-1"
+      })
+    expect(tool).toMatchObject({
+      state: { status: "completed" },
+    })
+  })
 })
 
 describe("AcpHarnessAdapter active turn cleanup", () => {

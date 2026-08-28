@@ -30,6 +30,7 @@ import {
   createAgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
 import {
+  acpCodexCollaborationStates,
   createAcpEventTranslator,
   classifyAcpSubagentUpdate,
   type AcpSubagentObservation,
@@ -1070,14 +1071,26 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       : this.subagentAdmissionStore()
     const subagentAdmission = createSubagentAdmissionBoundary({
       store: admissionStore,
-      publish: (_parentSessionId, event) => router.project(event, {
-        dir: "in",
-        method: "sessionUpdate.subagent",
-        frame: event,
-      }),
+      publish: (parentSessionId, event) => {
+        log.info("ACP subagent lifecycle published", {
+          parentSessionId,
+          subagentKey: event.subagentKey,
+          revision: event.revision,
+          status: event.status,
+        })
+        this.options.eventHub?.publishRuntime({
+          directory,
+          sessionId: parentSessionId,
+          agentSessionId,
+          assistantMessageId: input.assistantMessageId,
+          payload: event,
+        })
+      },
     })
     const pendingSubagentUpdates = new Set<Promise<void>>()
     const subagentByToolCall = new Map<string, AcpSubagentObservation>()
+    const subagentByProviderId = new Map<string, AcpSubagentObservation>()
+    const codexStatusByProviderId = new Map<string, { observationId: string; status: NonNullable<AcpSubagentObservation["status"]> }>()
     const childByToolCall = new Map<string, {
       sessionId: string
       agentSessionId: string
@@ -1159,6 +1172,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         ...(child ? { childSessionId: child.sessionId } : {}),
       }
       subagentByToolCall.set(observation.toolCallId, observation)
+      if (observation.providerId) subagentByProviderId.set(observation.providerId, observation)
       return subagentAdmission.admit(id, admitted).then(async (event) => {
         if (child) {
           materializeChild(child, observation, correlationKey)
@@ -1188,6 +1202,19 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       }))
     }
     const scheduleSubagentUpdate = (update: SessionUpdate) => {
+      for (const state of acpCodexCollaborationStates(this.acpClient(), update)) {
+        codexStatusByProviderId.set(state.providerId, state)
+        const existing = subagentByProviderId.get(state.providerId)
+        if (!existing) continue
+        const observation = {
+          ...existing,
+          observationId: state.observationId,
+          status: state.status,
+        }
+        const task = admitSubagent(observation, existing.toolCallId, update)
+        pendingSubagentUpdates.add(task)
+        void task.finally(() => pendingSubagentUpdates.delete(task))
+      }
       const toolCallId = "toolCallId" in update ? update.toolCallId : undefined
       const classified = classifyAcpSubagentUpdate(
         this.acpClient(),
@@ -1195,22 +1222,23 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         toolCallId ? subagentByToolCall.get(toolCallId) : undefined,
       )
       if (!classified || classified.kind === "child") return classified
-      const task = admitSubagent(classified.observation, classified.correlationKey, update)
+      const canonical = classified.observation.providerId
+        ? codexStatusByProviderId.get(classified.observation.providerId)
+        : undefined
+      const observation = canonical
+        ? { ...classified.observation, observationId: canonical.observationId, status: canonical.status }
+        : classified.observation
+      log.info("ACP subagent lifecycle observed", {
+        toolCallId: observation.toolCallId,
+        providerId: observation.providerId,
+        status: observation.status,
+        observationId: observation.observationId,
+      })
+      const task = admitSubagent(observation, classified.correlationKey, update)
       pendingSubagentUpdates.add(task)
       void task.finally(() => pendingSubagentUpdates.delete(task))
-      return classified
+      return canonical ? { ...classified, observation } : classified
     }
-    const completeForegroundSubagents = () => Promise.all([...subagentByToolCall.values()].flatMap((observation) => {
-      if (observation.mode === "background") return []
-      if (["completed", "failed", "killed", "interrupted"].includes(observation.status ?? "")) return []
-      const completed = {
-        ...observation,
-        observationId: `${observation.toolCallId}:prompt:completed`,
-        status: "completed" as const,
-      }
-      subagentByToolCall.set(observation.toolCallId, completed)
-      return [admitSubagent(completed, observation.toolCallId, completed)]
-    }))
 
     const wait = () =>
       new Promise<void>((resolve) => {
@@ -1283,15 +1311,19 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
 
     if (!promptError) {
-      const forward = (update: SessionUpdate) => {
-        const subagent = scheduleSubagentUpdate(update)
+      const observesLifecycle = typeof proc.observeSession === "function"
+      const projectUpdate = (
+        update: SessionUpdate,
+        subagent: ReturnType<typeof scheduleSubagentUpdate>,
+        project: typeof router.project,
+      ) => {
         const result = eventRuntime.ingest({
           source: "acp.jsonrpc",
           method: "session/update",
           payload: update,
         })
         for (const runtimeEvent of result.events) {
-          router.project(runtimeEvent, {
+          project(runtimeEvent, {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
@@ -1302,6 +1334,22 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           assistantMsgId = router.assistantMessageId()
           created = router.created()
         }
+      }
+      const forward = (update: SessionUpdate) => {
+        const subagent = scheduleSubagentUpdate(update)
+        projectUpdate(update, subagent, router.project)
+      }
+      const observeLateSubagentUpdate = (update: SessionUpdate) => {
+        const toolCallId = "toolCallId" in update ? update.toolCallId : undefined
+        if (!toolCallId || !subagentByToolCall.has(toolCallId)) return
+        const subagent = scheduleSubagentUpdate(update)
+        if (!subagent || subagent.kind === "child") return
+        // A canonical terminal tool frame may follow the ACP prompt response.
+        // Persist it through the still-authoritative parent projector so the
+        // host does not later terminalize the already-completed tool as an
+        // interruption. The child router is intentionally not used here: its
+        // correlation buffers are turn-scoped and may already be disposed.
+        projectUpdate(update, subagent, (runtimeEvent, source) => parentProjector.project(runtimeEvent, source))
       }
       const install = () => {
         proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
@@ -1336,6 +1384,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       let retried = false
       const run = async (): Promise<void> => {
         install()
+        if (observesLifecycle) proc.observeSession(agentSessionId, observeLateSubagentUpdate)
         try {
           // The PROMPT turn runs for as long as the model thinks/streams — it
           // must use the prompt timeout (5 min default), NOT the 10s
@@ -1406,7 +1455,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
             })
             push(event)
           }
-          await completeForegroundSubagents()
           stop(result.stopReason)
         } catch (err) {
           proc.permissionPushers.delete(agentSessionId)
@@ -1559,7 +1607,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async forkSession(id: string, _messageId: string, directory: string): Promise<{ id: string }> {
+  async forkSession(id: string, _messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
     log.info("forkSession: called", { id, directory })
     const row = this.getSession(id, directory) as Promise<{ agent_session_id?: string; title?: string | null } | null>
@@ -1578,7 +1626,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const newAgentSessionId = await proc.forkSession(agentSessionId, directory)
     log.info("forkSession: ACP fork succeeded", { newAgentSessionId })
 
-    const newId = randomUUID()
+    const newId = childSessionId ?? randomUUID()
     const processKey = this.sessionProcessMap().get(id)
       ?? this.store.getSessionOwnerKey?.(id)
       ?? (this.options ? this.keyForSession(id, directory) : null)

@@ -22,6 +22,7 @@ export type OAuthConfig = {
   tokenUrl: string
   clientId: string
   scope: string
+  resource?: string
   /** How long to wait for the user to finish in the browser. */
   timeoutMs: number
 }
@@ -52,6 +53,7 @@ export type OAuthSeams = {
     code: string
     codeVerifier: string
     redirectUri: string
+    resource?: string
     signal?: AbortSignal
   }) => Promise<TokenSet>
   safeStorage: () => SafeStorageReport
@@ -146,6 +148,7 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams, signal: AbortSign
         clientId: config.clientId,
         redirectUri: loopbackRedirectUri(server.port, REDIRECT_PATH),
         scope: config.scope,
+        ...(config.resource ? { resource: config.resource } : {}),
         pkce,
         state,
       }),
@@ -162,6 +165,7 @@ async function attempt(config: OAuthConfig, seams: OAuthSeams, signal: AbortSign
       code: arrival.code,
       codeVerifier: pkce.verifier,
       redirectUri: loopbackRedirectUri(server.port, REDIRECT_PATH),
+      ...(config.resource ? { resource: config.resource } : {}),
       signal,
     })
     return { ok: true, tokens }

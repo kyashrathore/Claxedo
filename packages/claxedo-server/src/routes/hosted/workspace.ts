@@ -23,30 +23,22 @@
 
 import { Hono, type Context } from "hono"
 import { z } from "zod"
-import { anyApi } from "convex/server"
 import { hostedSandboxNetworkPolicy } from "@claxedo/sandbox-manager"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthConfig,
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
-import {
-  requireExecutor,
-  requireServiceToken,
-} from "../../authority/adapters/convex/workspace-authority/executor"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
-import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"
-import { productIdentity } from "../../platform/telemetry/product/product"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 // `requireCloudWorkspaceEntitlement` (the paid-capability gate for both
 // create and wake) now lives on the shared WorkspaceRouteOptions so the wake
@@ -69,6 +61,20 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
   sandboxLeaseCap?: number
   /** Injection seam for the cap's Convex read (tests, alternative authorities). */
   countActiveOrgSandboxLeases?: ActiveSandboxLeaseCounter
+  /** Product-owned usage side effects; absent in user-deployed core. */
+  sandboxUsage?: {
+    leaseOpened(input: {
+      auth: SignedControlPlaneAuth
+      workspaceId: string
+      driver: string
+      startedAt: number
+      services?: ControlPlaneServices
+    }): void
+    recordLeaseTenant(input: {
+      auth: SignedControlPlaneAuth
+      workspaceId: string
+    }): Promise<void>
+  }
   /**
    * Extra hostnames appended to the hosted sandbox egress allowlist.
    *
@@ -114,37 +120,7 @@ const DEFAULT_CREATE_WINDOW_MS = 60_000
  */
 const DEFAULT_SANDBOX_LEASE_CAP = 25
 
-const leaseApi = anyApi as unknown as {
-  sandboxLeases: { countActiveForOrg: unknown }
-}
-
-/**
- * Default lease counter: the `sandboxLeases.countActiveForOrg` service query on
- * the same Convex deployment the rest of the control plane uses. Resolves url +
- * service token at CALL time (matching `recordSandboxLeaseTenant`) so a Worker
- * that gains its secret after boot starts enforcing without a redeploy.
- *
- * Returns `undefined` — "could not count" — rather than throwing. See
- * `sandboxLeaseCapError` for why that is safe.
- */
-const convexActiveLeaseCounter: ActiveSandboxLeaseCounter = async ({ orgId, ownerSubject }) => {
-  try {
-    const executor = requireExecutor({}, undefined, { allowUnsigned: true })
-    const result = await executor.query(leaseApi.sandboxLeases.countActiveForOrg, {
-      // Spread conditionally rather than passing `undefined`: both scopes are
-      // optional args on the Convex side and at least one is required, so an
-      // omitted key and a present-but-empty one must stay distinguishable.
-      // Passing both is a union — a lease matching both is counted once.
-      ...(orgId ? { org_id: orgId } : {}),
-      ...(ownerSubject ? { owner_subject: ownerSubject } : {}),
-      service_token: requireServiceToken(),
-    })
-    const active = rec(result)?.active
-    return typeof active === "number" ? active : undefined
-  } catch {
-    return undefined
-  }
-}
+const unavailableActiveLeaseCounter: ActiveSandboxLeaseCounter = async () => undefined
 
 const refreshConnectionBody = z
   .object({
@@ -275,11 +251,10 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       windowMs: DEFAULT_CREATE_WINDOW_MS,
     })
   const sandboxLeaseCap = options.sandboxLeaseCap ?? DEFAULT_SANDBOX_LEASE_CAP
-  const countActiveOrgSandboxLeases = options.countActiveOrgSandboxLeases ?? convexActiveLeaseCounter
+  const countActiveOrgSandboxLeases = options.countActiveOrgSandboxLeases ?? unavailableActiveLeaseCounter
 
   const authOptions = () => ({
     ...options,
-    authConfig: options.authConfig ?? controlPlaneAuthConfig(),
     requireSigned: true as const,
   })
   const connectionResponse = async (c: Context, previousJti?: string) => {
@@ -520,16 +495,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // fixes deployment_mode; a personal-account token carries no org claim
         // and falls through to the ops plane rather than inventing an org id.
         const leaseStartedAt = Date.now()
-        const leaseIdentity = productIdentity(auth, { surface: "workspace", deployment_mode: "cloud" })
-        emitSandboxLeaseOpened({
-          identity: leaseIdentity,
-          sink: services?.telemetry,
-          lease: {
-            workspace_id: workspaceId,
-            driver: services?.sandbox.defaultDriver ?? "unknown",
-            started_at: leaseStartedAt,
-          },
-          systemReason: "workspace_create_without_org_claim",
+        options.sandboxUsage?.leaseOpened({
+          auth,
+          workspaceId,
+          driver: services?.sandbox.defaultDriver ?? "unknown",
+          startedAt: leaseStartedAt,
+          ...(services ? { services } : {}),
         })
 
         const source = {
@@ -639,13 +610,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    `personal:<subject>`) would corrupt every per-org aggregate
             //    downstream, which is why the owner is a separate column rather
             //    than an org id we invent to make the count work.
-            void recordSandboxLeaseTenant({
-              workspace_id: workspaceId,
-              owner_subject: auth.user.subject,
-              ...(leaseIdentity
-                ? { metering: { org_id: leaseIdentity.org_id, user_id: leaseIdentity.user_id } }
-                : {}),
-            })
+            void options.sandboxUsage?.recordLeaseTenant({ auth, workspaceId })
           })
           .catch(() => undefined)
 

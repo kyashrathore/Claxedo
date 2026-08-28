@@ -1,14 +1,24 @@
 import { Hono } from "hono"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "../route-support"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+
+type CheckpointRouteOptions = {
+  loopbackRelayUrl?: string
+  defaultHomeRegion?: string
+  allowUnsignedLocal?: boolean
+  authentication?: RequestAuthenticationAdapter
+}
+
 export function WorkspaceCheckpointRoutes(
   services?: ControlPlaneServices,
-  options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean } = {},
+  options: CheckpointRouteOptions = {},
 ) {
   return new Hono()
     .get("/:id/checkpoints", async (c) => {
@@ -92,13 +102,14 @@ async function authorized(
   request: Request,
   workspaceId: string,
   services: ControlPlaneServices | undefined,
-  options: { allowUnsignedLocal?: boolean },
+  options: Pick<CheckpointRouteOptions, "allowUnsignedLocal" | "authentication">,
 ) {
   if (options.allowUnsignedLocal && services && !services.auth.config.enabled) {
     return { auth: undefined }
   }
   const auth = await signedOrError(request, {
-    authConfig: services?.auth.config ?? controlPlaneAuthConfig(),
+    authentication: options.authentication,
+    authConfig: services?.auth.config,
     requireSigned: true,
   }, services)
   if ("error" in auth) {
@@ -121,7 +132,7 @@ async function authorized(
 function service(
   auth: SignedControlPlaneAuth | undefined,
   services: ControlPlaneServices,
-  options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean },
+  options: CheckpointRouteOptions,
 ) {
   const sandboxManager = services.sandbox.sandboxManager
   if (!sandboxManager) throw new Error("sandbox_manager_unavailable")
@@ -139,7 +150,7 @@ function service(
       relayProvider: services.relay.provider,
       loopbackRelayUrl: options.loopbackRelayUrl,
       defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
-      subject: auth?.user.subject,
+      ...(auth ? { runtimeActor: { principalKind: "user" as const, ...await resolveRuntimeActor(services.authority!, auth) } } : {}),
       orgId: auth?.user.orgId,
       resume: false,
     }),
@@ -155,7 +166,7 @@ function service(
       relayProvider: services.relay.provider,
       loopbackRelayUrl: options.loopbackRelayUrl,
       defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
-      subject: auth?.user.subject,
+      ...(auth ? { runtimeActor: { principalKind: "user" as const, ...await resolveRuntimeActor(services.authority!, auth) } } : {}),
       orgId: auth?.user.orgId,
     }),
   })

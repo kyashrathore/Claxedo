@@ -174,7 +174,9 @@ describe("hosted Connection operation endpoint", () => {
   it("derives owner and org only from a verified exact-workspace RAT", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace",
       hostId: "host",
@@ -199,7 +201,9 @@ describe("hosted Connection operation endpoint", () => {
   it("denies missing tokens and tokens minted for another workspace", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "other",
       hostId: "host",
@@ -231,7 +235,9 @@ describe("hosted Connection operation endpoint", () => {
   it("maps typed Connection and provider failures without exposing their messages", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace",
       hostId: "host",
@@ -298,7 +304,9 @@ describe("hosted Connection operation endpoint", () => {
   it("reports an unavailable runtime token verifier as retryable service unavailability", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace",
       hostId: "host",

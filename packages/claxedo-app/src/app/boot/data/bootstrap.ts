@@ -35,6 +35,7 @@ import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { synchronizeServiceCatalogFromBootstrap } from "@/app/composition/service-contributions"
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
 export type GlobalBootstrapSdk = Pick<OpencodeClient, "global" | "path" | "project" | "provider">
@@ -53,6 +54,9 @@ export type GlobalBootstrapState = {
 
 type Boot = {
   healthy?: boolean
+  authenticated?: boolean
+  auth?: unknown
+  services?: unknown
   version?: string
   path?: Path
   project?: Project[]
@@ -121,6 +125,7 @@ async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, 
   try {
     const res = await fetchFn(claxedoBootstrapUrl({ serverUrl: baseUrl, harnessType }), {
       headers: { Accept: "application/json" },
+      credentials: "include",
     })
     if (!res.ok) return undefined
     const data: unknown = await res.json().catch(() => undefined)
@@ -242,6 +247,7 @@ export async function bootstrapGlobal(input: {
 }) {
   const boot = await bootstrapData(input.baseUrl, input.fetch, input.harnessType)
   if (boot?.healthy) {
+    await synchronizeServiceCatalogFromBootstrap(boot)
     const projects = normalizeProjectList(boot.project)
     input.setGlobalState({ path: boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" } })
     queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" })

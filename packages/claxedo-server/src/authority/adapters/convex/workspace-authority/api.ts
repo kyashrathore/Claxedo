@@ -7,6 +7,8 @@ type ConvexApi = {
   channelIdentities: {
     authorizeProject: ConvexQuery
     authorizeWorkspace: ConvexQuery
+    bind: ConvexMutation
+    revoke: ConvexMutation
   }
   users: { me: ConvexMutation }
   orgs: {
@@ -30,6 +32,25 @@ type ConvexApi = {
     replaceVisibilityForService: ConvexMutation
     deleteVisibility: ConvexMutation
     deleteVisibilityForService: ConvexMutation
+  }
+  privateSessions: {
+    reserve: ConvexMutation
+    registerRuntime: ConvexMutation
+    markRegistrationAmbiguous: ConvexMutation
+    beginCompensation: ConvexMutation
+    completeCompensation: ConvexMutation
+    authorizeRead: ConvexQuery
+    authorizeWrite: ConvexQuery
+    authorizeRuntime: ConvexQuery
+    grantParticipant: ConvexMutation
+    revokeParticipant: ConvexMutation
+    list: ConvexQuery
+    resolve: ConvexQuery
+    readMessages: ConvexQuery
+    syncMessages: ConvexMutation
+    upsertVisibility: ConvexMutation
+    replaceVisibility: ConvexMutation
+    deleteVisibility: ConvexMutation
   }
   workspaces: {
     open: ConvexQuery

@@ -15,6 +15,7 @@ import {
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 export async function userHostedConnectionInfo(
   services: ControlPlaneServices | undefined,
@@ -86,8 +87,10 @@ export async function userHostedConnectionInfo(
 
   const signer = configuredRuntimeAccessTokenSigner(options)
   const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
+  const actor = await resolveRuntimeActor(authority, auth)
   const token = await signer({
-    subject: auth.user.subject,
+    principalKind: "user",
+    ...actor,
     orgId,
     workspaceId,
     hostId,
@@ -98,6 +101,9 @@ export async function userHostedConnectionInfo(
       jti: token.jti,
       workspaceId,
       hostId,
+      actorId: actor.actorId,
+      actorKind: actor.actorKind,
+      role,
       expiresAt: token.tokenExpiresAt,
     }),
     authority.auditAllow(auth, {

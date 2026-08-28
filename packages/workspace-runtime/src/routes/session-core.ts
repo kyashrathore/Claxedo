@@ -44,6 +44,13 @@ import {
 } from "../session/service"
 import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig } from "../session-config"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
+import {
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessDecision,
+  type SessionAccessOperation,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -239,6 +246,7 @@ type Opts = {
       operation: string
     },
   ) => Promise<Response | void> | Response | void
+  sessionAccessPolicy?: SessionAccessPolicy
   createActiveTurnScope?: (input: {
     c: Ctx
     adapter: AgentHarnessAdapter
@@ -476,13 +484,121 @@ function harnessSwitchUnsupported(
   })
 }
 
-function sessionOperationGuard(
+async function sessionOperationGuard(
   opts: Opts,
   c: Ctx,
   sessionId: string,
-  operation: string,
+  operation: SessionAccessOperation,
 ) {
+  const decision = await opts.sessionAccessPolicy?.authorize({
+    ...sessionAccessContext(c as never),
+    sessionId,
+    operation,
+    method: c.req.method,
+    path: c.req.path,
+  })
+  if (decision && !decision.allowed) return sessionAccessDenied(decision)
   return opts.beforeSessionOperation?.(c, { sessionId, operation })
+}
+
+function managedRegistration(opts: Opts) {
+  return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
+}
+
+function registrationOperationId(c: Ctx) {
+  const value = c.req.header("x-claxedo-session-registration-operation")?.trim()
+  return value || undefined
+}
+
+function registrationInput(opts: Opts, c: Ctx, sessionId: string, operationId: string, title?: string) {
+  return {
+    ...sessionAccessContext(c as never),
+    operation: "session_create" as const,
+    sessionId,
+    registrationOperationId: operationId,
+    ...(title ? { sessionTitle: title } : {}),
+    method: c.req.method,
+    path: c.req.path,
+  }
+}
+
+async function markRegistrationAmbiguous(
+  opts: Opts,
+  c: Ctx,
+  sessionId: string,
+  operationId: string,
+  reason: string,
+) {
+  return await opts.sessionAccessPolicy?.markRegistrationAmbiguous?.({
+    ...registrationInput(opts, c, sessionId, operationId),
+    reason,
+  })
+}
+
+async function compensateRegistration(input: {
+  opts: Opts
+  c: Ctx
+  adapter: AgentHarnessAdapter
+  directory: RuntimeDirectory
+  sessionId: string
+  operationId: string
+  reason: string
+}) {
+  const policy = input.opts.sessionAccessPolicy
+  if (!policy?.beginRegistrationCompensation || !policy.completeRegistrationCompensation) {
+    throw new Error("Managed session compensation authority is unavailable")
+  }
+  const registration = registrationInput(input.opts, input.c, input.sessionId, input.operationId)
+  const begun = await policy.beginRegistrationCompensation({ ...registration, reason: input.reason })
+  if (!begun.allowed) throw new Error(`Session compensation was denied: ${begun.code}`)
+  try {
+    await input.adapter.deleteSession(input.sessionId, input.directory)
+    await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
+  } catch (error) {
+    throw new AggregateError([error], "Session compensation could not delete runtime state")
+  }
+  const completed = await policy.completeRegistrationCompensation({ ...registration, reason: input.reason })
+  if (!completed.allowed) throw new Error(`Session compensation completion was denied: ${completed.code}`)
+}
+
+async function filterSessionRows<T>(
+  opts: Opts,
+  c: Ctx,
+  operation: "session_list" | "permission_list" | "question_list",
+  rows: T[],
+) {
+  if (!opts.sessionAccessPolicy) return rows
+  const id = (row: T) => {
+    const value = rec(row)
+    return typeof value?.sessionID === "string" ? value.sessionID
+      : typeof value?.sessionId === "string" ? value.sessionId
+        : typeof value?.id === "string" ? value.id : ""
+  }
+  const allowed = new Set(await opts.sessionAccessPolicy.filterSessions({
+    ...sessionAccessContext(c as never),
+    operation,
+    method: c.req.method,
+    path: c.req.path,
+    sessionIds: [...new Set(rows.map(id).filter(Boolean))],
+  }))
+  return rows.filter((row) => allowed.has(id(row)))
+}
+
+async function filterSessionStatus(opts: Opts, c: Ctx, value: unknown) {
+  if (!opts.sessionAccessPolicy || !value || typeof value !== "object" || Array.isArray(value)) return value
+  const entries = Object.entries(value as Record<string, unknown>)
+  const allowed = new Set(await opts.sessionAccessPolicy.filterSessions({
+    ...sessionAccessContext(c as never),
+    operation: "session_status",
+    method: c.req.method,
+    path: c.req.path,
+    sessionIds: entries.map(([sessionId]) => sessionId),
+  }))
+  return Object.fromEntries(entries.filter(([sessionId]) => allowed.has(sessionId)))
+}
+
+function unavailableRegistration(message: string): Exclude<SessionAccessDecision, { allowed: true }> {
+  return { allowed: false, status: 503, code: "session_registration_unavailable", message }
 }
 
 /**
@@ -548,7 +664,8 @@ export function createSessionRoutes(opts: Opts) {
         ? await opts.listSessions(c, directory)
         : await (await opts.resolveAdapter(c)).listSessions(directory)
       await after(opts.afterListSessions?.(c, directory, sessions))
-      const data = (sessions as unknown[]).map((session) => normalizeSession(session, directory))
+      const visible = await filterSessionRows(opts, c, "session_list", sessions)
+      const data = (visible as unknown[]).map((session) => normalizeSession(session, directory))
       return c.json(data)
     })
     .get("/experimental/session", async (c) => {
@@ -560,7 +677,8 @@ export function createSessionRoutes(opts: Opts) {
         ? await opts.listSessions(c, directory)
         : await (await opts.resolveAdapter(c)).listSessions(directory)
       await after(opts.afterListSessions?.(c, directory, sessions))
-      const data = (sessions as unknown[])
+      const visible = await filterSessionRows(opts, c, "session_list", sessions)
+      const data = (visible as unknown[])
           .map(summarizeSession)
           .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
           .filter((item) => !roots || typeof item.parentID !== "string")
@@ -572,12 +690,30 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c)
       const adapter = await opts.resolveAdapter(c)
       const status = await opts.getStatus?.(c, directory, adapter)
-      if (status instanceof Response) return status
-      return c.json(status ?? {})
+      if (status instanceof Response) {
+        if (!opts.sessionAccessPolicy) return status
+        const body = await status.clone().json().catch(() => undefined)
+        if (body === undefined) return status
+        return c.json(
+          await filterSessionStatus(opts, c, body),
+          status.status as ContentfulStatusCode,
+          Object.fromEntries(status.headers.entries()),
+        )
+      }
+      return c.json(await filterSessionStatus(opts, c, status ?? {}))
     })
     .post("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string }
+      const guarded = await sessionOperationGuard(opts, c, "", "session_create")
+      if (guarded) return guarded
+      const operationId = registrationOperationId(c)
+      if (managedRegistration(opts) && (!body.id || !operationId)) {
+        return c.json(errorBody(
+          "session_reservation_required",
+          "Managed session creation requires a preassigned session id and reservation operation",
+        ), 400)
+      }
       const config = normalizeSessionCreateConfig(body)
       const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
       const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
@@ -594,9 +730,10 @@ export function createSessionRoutes(opts: Opts) {
         if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
         }
-        const session = opts.createSession
+        const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+        const session = existing ?? (opts.createSession
           ? await opts.createSession(c, directory, body.title, body.id)
-          : await adapter.createSession(directory, body.title, body.id)
+          : await adapter.createSession(directory, body.title, body.id))
         if (Object.keys(config).length > 0) {
           try {
             if (opts.updateSessionConfig) {
@@ -605,15 +742,76 @@ export function createSessionRoutes(opts: Opts) {
               await adapter.updateSessionConfig(session.id, config, directory)
             }
           } catch (error) {
-            try {
-              await adapter.deleteSession(session.id, directory)
-            } catch (cleanupError) {
-              throw new AggregateError([error, cleanupError], "Session config persistence and creation rollback failed")
+            if (managedRegistration(opts) && operationId) {
+              await compensateRegistration({
+                opts,
+                c,
+                adapter,
+                directory,
+                sessionId: session.id,
+                operationId,
+                reason: "session config persistence failed",
+              })
+            } else {
+              try {
+                await adapter.deleteSession(session.id, directory)
+              } catch (cleanupError) {
+                throw new AggregateError([error, cleanupError], "Session config persistence and creation rollback failed")
+              }
             }
             throw error
           }
         }
-        await after(opts.afterCreateSession?.(c, directory, session))
+        if (managedRegistration(opts)) {
+          let registration: SessionAccessDecision
+          try {
+            registration = await opts.sessionAccessPolicy!.registerSession(
+              registrationInput(opts, c, session.id, operationId!, body.title),
+            )
+          } catch (error) {
+            await markRegistrationAmbiguous(
+              opts,
+              c,
+              session.id,
+              operationId!,
+              errorMessage(error),
+            ).catch(() => undefined)
+            return sessionAccessDenied(unavailableRegistration("Session registration outcome is ambiguous; retry the same operation"))
+          }
+          if (!registration.allowed) {
+            if (registration.status === 503) {
+              await markRegistrationAmbiguous(
+                opts,
+                c,
+                session.id,
+                operationId!,
+                registration.message,
+              ).catch(() => undefined)
+              return sessionAccessDenied(registration)
+            }
+            try {
+              await compensateRegistration({
+                opts,
+                c,
+                adapter,
+                directory,
+                sessionId: session.id,
+                operationId: operationId!,
+                reason: registration.message,
+              })
+            } catch {
+              return sessionAccessDenied(unavailableRegistration("Session registration denial could not be compensated"))
+            }
+            return sessionAccessDenied(registration)
+          }
+          try {
+            await opts.afterCreateSession?.(c, directory, session)
+          } catch {
+            return sessionAccessDenied(unavailableRegistration("Session projection is incomplete; retry the same operation"))
+          }
+        } else {
+          await after(opts.afterCreateSession?.(c, directory, session))
+        }
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
           phase: "created",
@@ -656,7 +854,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/capabilities", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "capabilities")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_capabilities_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -672,7 +870,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "get_session")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -683,7 +881,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "get_config")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -694,7 +892,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .patch("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "update_session")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_write")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -706,7 +904,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .patch("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "update_config")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_write")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -734,7 +932,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .delete("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "delete_session")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "delete")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -745,7 +943,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session/:id/message", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "message")
+      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
@@ -800,7 +998,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "messages")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const snapshotRequested = c.req.query("snapshot") === "1"
@@ -850,7 +1048,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/todo", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "todos")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "todo_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -893,6 +1091,8 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/permission-mode", async (c) => {
       const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode_read")
+      if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       // No `unsupportedIfUnavailable` here, unlike the neighbouring routes: an
@@ -911,7 +1111,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .put("/session/:id/permission-mode", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode_write")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -992,8 +1192,63 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "fork", "forkSession", "fork", sessionId)
       if (unsupported) return unsupported
-      const body = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-      return c.json(await adapter.forkSession!(sessionId, body.messageId ?? "", directory), 201)
+      const body = (await c.req.json().catch(() => ({}))) as { id?: string; messageId?: string }
+      const operationId = registrationOperationId(c)
+      if (managedRegistration(opts) && (!body.id || !operationId)) {
+        return c.json(errorBody(
+          "session_reservation_required",
+          "Managed session fork requires a preassigned child session id and reservation operation",
+        ), 400)
+      }
+      try {
+        const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+        const forked = existing ?? await adapter.forkSession!(sessionId, body.messageId ?? "", directory, body.id)
+        if (managedRegistration(opts)) {
+          let registration: SessionAccessDecision
+          try {
+            registration = await opts.sessionAccessPolicy!.registerSession(
+              registrationInput(opts, c, forked.id, operationId!),
+            )
+          } catch (error) {
+            await markRegistrationAmbiguous(opts, c, forked.id, operationId!, errorMessage(error)).catch(() => undefined)
+            return sessionAccessDenied(unavailableRegistration("Session fork registration outcome is ambiguous; retry the same operation"))
+          }
+          if (!registration.allowed) {
+            if (registration.status === 503) {
+              await markRegistrationAmbiguous(opts, c, forked.id, operationId!, registration.message).catch(() => undefined)
+              return sessionAccessDenied(registration)
+            }
+            try {
+              await compensateRegistration({
+                opts,
+                c,
+                adapter,
+                directory,
+                sessionId: forked.id,
+                operationId: operationId!,
+                reason: registration.message,
+              })
+            } catch {
+              return sessionAccessDenied(unavailableRegistration("Session fork denial could not be compensated"))
+            }
+            return sessionAccessDenied(registration)
+          }
+          try {
+            await opts.afterCreateSession?.(c, directory, forked)
+          } catch {
+            return sessionAccessDenied(unavailableRegistration("Session fork projection is incomplete; retry the same operation"))
+          }
+        } else {
+          await after(opts.afterCreateSession?.(c, directory, forked))
+        }
+        return c.json(forked, 201)
+      } catch (error) {
+        if (managedRegistration(opts) && body.id && operationId) {
+          await markRegistrationAmbiguous(opts, c, body.id, operationId, errorMessage(error)).catch(() => undefined)
+          return sessionAccessDenied(unavailableRegistration("Session fork outcome is ambiguous; retry the same operation"))
+        }
+        throw error
+      }
     })
     .post("/session/:id/command", async (c) => {
       const sessionId = c.req.param("id")
@@ -1009,7 +1264,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt_async")
+      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
@@ -1140,14 +1395,14 @@ export function createSessionRoutes(opts: Opts) {
       const rows = opts.listPermissions
         ? await opts.listPermissions(c, directory)
         : await (await opts.resolveAdapter(c)).listPermissions?.(directory) ?? []
-      return c.json(rows)
+      return c.json(await filterSessionRows(opts, c, "permission_list", rows))
     })
     .get("/question", async (c) => {
       const directory = await opts.resolveDirectory(c)
       const rows = opts.listQuestions
         ? await opts.listQuestions(c, directory)
         : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
-      return c.json(rows)
+      return c.json(await filterSessionRows(opts, c, "question_list", rows))
     })
     .post("/session/:sessionId/permissions/:permId", async (c) => {
       const guarded = await sessionOperationGuard(opts, c, c.req.param("sessionId"), "permission_response")

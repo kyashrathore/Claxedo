@@ -43,6 +43,16 @@ export type WorkspaceVisibility = {
   updatedAt?: number
 }
 
+export type RuntimeActorIdentity = {
+  actorId: string
+  actorKind: "human" | "agent"
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
+}
+
+export type RuntimePrincipalKind = "user" | "service"
+
 export type WorkspaceRecord = {
   workspace_id?: string
   org_id?: string
@@ -63,6 +73,11 @@ export type WorkspaceOpenResult = {
   workspace?: WorkspaceRecord
 }
 
+export type WorkspaceShareTarget =
+  | { kind: "actor"; actorId: string }
+  | { kind: "user"; userId: string }
+  | { kind: "org"; orgId: string }
+
 /**
  * Neutral authority capability. Every method mirrors a concrete route or
  * pull-flow call site; the shapes are the structural contract the core relies
@@ -81,14 +96,22 @@ export type WorkspaceAuthority = {
     threadKey: string
     projectId: string
     action: ProjectAction
-  }) => Promise<AuthorizeProjectResult>
+  }) => Promise<AuthorizeProjectResult & Partial<RuntimeActorIdentity>>
   authorizeChannelWorkspace: (args: {
     channel: string
     externalUserId: string
     threadKey: string
     workspaceId: string
     action: ProjectAction
-  }) => Promise<void>
+  }) => Promise<RuntimeActorIdentity | void>
+  bindChannelIdentity: (
+    auth: SignedControlPlaneAuth,
+    args: { channel: string; externalUserId: string },
+  ) => Promise<{ bindingId: string; created: boolean; userId: string } & RuntimeActorIdentity>
+  revokeChannelIdentity: (
+    auth: SignedControlPlaneAuth,
+    args: { channel: string; externalUserId: string },
+  ) => Promise<{ revoked: boolean }>
 
   // workspaces
   authorizeWorkspaceOpen: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
@@ -209,9 +232,7 @@ export type WorkspaceAuthority = {
     args: {
       workspaceId: string
       role: "viewer" | "editor" | "admin"
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
+      target: WorkspaceShareTarget
     },
   ) => Promise<unknown>
   revokeWorkspaceShare: (
@@ -219,9 +240,7 @@ export type WorkspaceAuthority = {
     args: {
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
+      target?: WorkspaceShareTarget
     },
   ) => Promise<unknown>
 
@@ -275,6 +294,9 @@ export type WorkspaceAuthority = {
       jti: string
       workspaceId: string
       hostId: string
+      actorId: string
+      actorKind: "human" | "agent"
+      role: ProjectRole
       expiresAt: number
     },
   ) => Promise<unknown>
@@ -282,7 +304,10 @@ export type WorkspaceAuthority = {
     jti: string
     workspaceId: string
     hostId: string
-    subject: string
+    actorId: string
+    actorKind: "human" | "agent"
+    principalKind: RuntimePrincipalKind
+    role: ProjectRole
     expiresAt: number
   }) => Promise<unknown>
   runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>

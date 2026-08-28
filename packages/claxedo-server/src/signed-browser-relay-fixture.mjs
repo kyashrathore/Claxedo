@@ -848,7 +848,7 @@ built.app.get("/__fixture/authority-identity", async (c) => {
   await authority.grantWorkspaceShare(browserAuth, {
     workspaceId,
     role,
-    grantedToTokenIdentifier: tokenIdentifier,
+    target: { kind: "actor", actorId: tokenIdentifier },
   })
   const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })
   return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token })

@@ -38,6 +38,7 @@ import { securityHeaders } from "@claxedo/server-core/platform/http/security-hea
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
+import { convexActiveSandboxLeaseCounter, convexHostedSandboxUsage } from "../../routes/hosted/workspace-convex-usage"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
 import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
@@ -49,7 +50,6 @@ import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import { HostedControlRoutes } from "../../routes/hosted/control"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
-import { configureCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
 import {
   createFixedWindowConnectionRateLimiter,
@@ -59,6 +59,7 @@ import {
 import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../platform/auth/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
+import { createBillingStore } from "../../billing/store"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
@@ -82,7 +83,11 @@ import {
 } from "../../hosts/workgraph/hosted/run-operation"
 import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/hosted/runtime"
 import { createHostedConnectionsSetup, createHostedRepositoryAccess } from "../../hosts/workgraph/hosted/connections-setup"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "../../documents/routes/index"
+import {
+  DOCUMENTS_ROUTE_GUARD_EXEMPTION,
+  DocumentsRoutes,
+  type DocumentsRouteBackend,
+} from "../../documents/routes/index"
 import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-telemetry"
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
@@ -113,7 +118,7 @@ export type HostedAppOverrides = {
   /** Test seam for the complete_run transcript-retention gate. */
   runTranscriptRetention?: (input: {
     organizationId: string
-    ownerSubject: string
+    ownerUserId: string
     workspaceId: string
     sessionId: string
   }) => Promise<void>
@@ -295,15 +300,6 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
  * boot gate quietly stops covering the thing it was written for.
  */
 export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
-  // Install the plane's durable CLI session token registry process-wide.
-  //
-  // This is the `configureX(...)` composition seam the registry port defines,
-  // and this is the right moment to call it: the CLI routes are mounted below,
-  // and CLI bearer verification happens deep inside `controlPlaneAuthContext`
-  // on every request, far from any place a registry could be threaded through
-  // by hand. Without this line minting returns 503 and no CLI bearer verifies —
-  // the port fails closed when nothing is configured, on purpose.
-  configureCliSessionTokenRegistry(plane.cliSessionTokenRegistry)
   const { services } = plane
   // Every `app.route()` below is recorded against one owner. Unit 7 splits this
   // file into a shared signed core plus deployment adapters, and two
@@ -443,7 +439,10 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // route-level limiters keep their own tuned budgets untouched.
   app.use(
     defaultRequestGuard({
-      exemptions: hostedRouteGuardExemptions([BILLING_WEBHOOK_GUARD_EXEMPTION]),
+      exemptions: hostedRouteGuardExemptions([
+        BILLING_WEBHOOK_GUARD_EXEMPTION,
+        DOCUMENTS_ROUTE_GUARD_EXEMPTION,
+      ]),
       rateLimiter: createLayeredRateLimiter({
         local: createFixedWindowConnectionRateLimiter({
           limit: plane.safetyLimits.defaultRequestRateLimit,
@@ -459,7 +458,8 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // caller's ACTIVE org (Clerk org claim if a member, else the personal org),
   // resolved through the same authority call the rest of the control plane
   // uses. Gate errors resolve to fail-closed denials inside the gate.
-  const entitlementGate = overrides.entitlementGate ?? createEntitlementGate({ env: plane.env })
+  const billingStore = createBillingStore(plane.env)
+  const entitlementGate = overrides.entitlementGate ?? createEntitlementGate({ env: plane.env, store: billingStore })
   const connectionsSetupInput = {
     env: plane.env,
     authConfig: services.auth.config,
@@ -499,6 +499,8 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     requireCloudWorkspaceEntitlement,
     connections: { repositoryForAuth: hostedRepositoryForAuth },
+    countActiveOrgSandboxLeases: convexActiveSandboxLeaseCounter,
+    sandboxUsage: convexHostedSandboxUsage,
     // Omitted when empty rather than passed as `[]`: the route option is
     // optional, and an absent key is the shape that means "the baseline stands".
     ...(egressExtraHosts.length ? { sandboxEgressExtraHosts: egressExtraHosts } : {}),
@@ -572,7 +574,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       ...(plane.deviceAuthProvider ? { provider: plane.deviceAuthProvider } : {}),
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-      env: plane.env,
+      ...(services.auth.native ? { native: services.auth.native } : {}),
       ...(services.authority ? { ensureCliUser: (auth) => services.authority!.usersMe(auth) } : {}),
     }),
   )
@@ -650,6 +652,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
     "/api/billing",
     BillingRoutes({
       env: plane.env,
+      store: billingStore,
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
     }),

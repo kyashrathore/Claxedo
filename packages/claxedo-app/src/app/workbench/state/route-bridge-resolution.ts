@@ -4,6 +4,7 @@
 
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
+import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
 
@@ -37,6 +38,28 @@ export function routeSessionMetaIsCentral(input: unknown) {
   return row.host === "central" ||
     (typeof row.sessionRef === "string" && row.sessionRef.startsWith("central:")) ||
     (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
+}
+
+type CachedRouteSessionRow = {
+  id: string
+  directory?: string
+  host?: unknown
+  sessionRef?: unknown
+  session_ref?: unknown
+  time?: { archived?: unknown }
+}
+
+export function routeCachedWorkspaceSessionCandidate<T extends CachedRouteSessionRow>(
+  sessionId: string,
+  caches: Array<{ directory: AgentRuntimeDirectory; sessions: T[] }>,
+) {
+  const matches = caches.flatMap(({ directory, sessions }) =>
+    sessions
+      .filter((session) => session.id === sessionId && !session.time?.archived)
+      .map((session) => ({ cacheDirectory: directory, session })),
+  )
+  if (matches.some(({ session }) => routeSessionMetaIsCentral(session))) return
+  return matches[0]
 }
 
 export function routeSessionMetaIsArchived(input: unknown) {

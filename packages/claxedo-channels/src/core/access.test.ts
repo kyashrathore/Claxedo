@@ -142,6 +142,46 @@ describe("DM pairing gate", () => {
     expect(binding).toMatchObject({ status: "pending", accountId: null, boundBy: "owner:1" })
   })
 
+  test("authenticated claim persists the canonical binding before consuming the pairing code", async () => {
+    const store = createMemoryChannelAccessStore()
+    const bindings = createMemoryChannelIdentityBindingStore()
+    const clock = fixedClock()
+    const access = createChannelAccess({ dmPolicy: "pairing", store, bindings, now: clock.now, random: seq([0.1]) })
+
+    await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })
+    const [pending] = await access.listPending("telegram")
+    const bind = vi.fn()
+      .mockRejectedValueOnce(new Error("canonical authority unavailable"))
+      .mockResolvedValueOnce({ accountId: "user_canonical", boundBy: "actor:actor_canonical" })
+
+    await expect(access.approve(pending.code, "authenticated-claim", bind)).rejects.toThrow(
+      "canonical authority unavailable",
+    )
+    expect(await access.listPending("telegram")).toEqual([pending])
+    expect(await bindings.get("telegram", "42")).toBeUndefined()
+
+    await expect(access.approve(pending.code, "authenticated-claim", bind)).resolves.toEqual({
+      ok: true,
+      channel: "telegram",
+      externalUserId: "42",
+    })
+    expect(await access.listPending("telegram")).toEqual([])
+    expect(await bindings.get("telegram", "42")).toMatchObject({
+      status: "bound",
+      accountId: "user_canonical",
+      boundBy: "actor:actor_canonical",
+    })
+    expect((await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })).admission).toBe("allow")
+
+    await access.revoke("telegram", "42")
+    await access.revoke("telegram", "42")
+    expect(await bindings.get("telegram", "42")).toBeUndefined()
+    expect(await access.gate({ channel: "telegram", externalUserId: "42", chatType: "dm" })).toMatchObject({
+      admission: "drop",
+      reason: "dm_pairing_required",
+    })
+  })
+
   test("approve rejects unknown and expired codes", async () => {
     const store = createMemoryChannelAccessStore()
     const clock = fixedClock()

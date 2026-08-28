@@ -1,9 +1,11 @@
 import { v } from "convex/values"
 import {
+  authedMutation,
   authorizeProjectForUser,
   authorizeWorkspaceForUser,
   projectByPublicId,
   serviceQuery,
+  upsertUser,
   workspaceByPublicId,
 } from "./model"
 
@@ -44,7 +46,8 @@ export const authorizeProject = serviceQuery({
     if (!user) return { ok: false }
     const project = await projectByPublicId(ctx.db, args.project_id)
     if (!project) return { ok: false }
-    return authResult(project, await authorizeProjectForUser(ctx, project, user, args.action))
+    const result = authResult(project, await authorizeProjectForUser(ctx, project, user, args.action))
+    return result.ok ? { ...result, actor_id: String(user._id), actor_kind: "human" as const } : result
   },
 })
 
@@ -61,6 +64,70 @@ export const authorizeWorkspace = serviceQuery({
     if (!workspace) return { allowed: false }
     const role = await authorizeWorkspaceForUser(ctx, workspace, user, args.action)
     if (!role) return { allowed: false }
-    return { allowed: true, role }
+    return { allowed: true, role, actor_id: String(user._id), actor_kind: "human" as const }
+  },
+})
+
+export const bind = authedMutation({
+  args: {
+    channel: v.string(),
+    external_user_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await upsertUser(ctx)
+    const rows = await ctx.db
+      .query("channel_identities")
+      .withIndex("by_channel_external_user", (q: any) =>
+        q.eq("channel", args.channel).eq("external_user_id", args.external_user_id))
+      .collect()
+    const active = rows.find((item: any) => !item.revoked_at)
+    if (active) {
+      if (active.user_id !== user._id) throw new Error("Channel identity is already bound")
+      return {
+        binding_id: String(active._id),
+        created: false,
+        user_id: String(user._id),
+        actor_id: String(user._id),
+        actor_kind: "human" as const,
+      }
+    }
+    const now = Date.now()
+    const bindingId = await ctx.db.insert("channel_identities", {
+      channel: args.channel,
+      external_user_id: args.external_user_id,
+      user_id: user._id,
+      created_at: now,
+      updated_at: now,
+    })
+    return {
+      binding_id: String(bindingId),
+      created: true,
+      user_id: String(user._id),
+      actor_id: String(user._id),
+      actor_kind: "human" as const,
+    }
+  },
+})
+
+export const revoke = authedMutation({
+  args: {
+    channel: v.string(),
+    external_user_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const user = await upsertUser(ctx)
+    const rows = await ctx.db
+      .query("channel_identities")
+      .withIndex("by_channel_external_user", (q: any) =>
+        q.eq("channel", args.channel).eq("external_user_id", args.external_user_id))
+      .collect()
+    const active = rows.find((item: any) => !item.revoked_at)
+    if (!active) {
+      const latest = rows.sort((left: any, right: any) => right._creationTime - left._creationTime)[0]
+      return { revoked: latest?.user_id === user._id }
+    }
+    if (active.user_id !== user._id) return { revoked: false }
+    await ctx.db.patch(active._id, { revoked_at: Date.now(), updated_at: Date.now() })
+    return { revoked: true }
   },
 })

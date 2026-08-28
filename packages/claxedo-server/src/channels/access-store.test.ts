@@ -46,6 +46,9 @@ describe("sqlite channel access store", () => {
     // Idempotent upsert.
     await store.allow("telegram", "42", "owner:2")
     expect(await store.isAllowed("telegram", "42")).toBe(true)
+    await store.disallow("telegram", "42")
+    await store.disallow("telegram", "42")
+    expect(await store.isAllowed("telegram", "42")).toBe(false)
   })
 })
 
@@ -66,5 +69,8 @@ describe("sqlite identity binding store", () => {
 
     await store.put({ channel: "telegram", externalUserId: "42", accountId: "acct_9", status: "blocked", boundAt: 3 })
     expect(boundAccountId("telegram", "42")).toBeNull() // blocked → no account served
+    await store.delete("telegram", "42")
+    await store.delete("telegram", "42")
+    expect(await store.get("telegram", "42")).toBeUndefined()
   })
 })

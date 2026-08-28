@@ -22,7 +22,15 @@ import { walk as walkAll } from "../../test-support/guards"
  */
 
 const SRC = path.resolve(import.meta.dirname, "../..")
-const ENTRYPOINTS = ["deployments/hosted-workerd/worker.ts", "deployments/hosted-shared/hosted-app.ts"]
+const LEGACY_ENTRYPOINTS = [
+  "deployments/hosted-workerd/worker.ts",
+  "deployments/hosted-shared/hosted-app.ts",
+]
+const CORE_ENTRYPOINTS = [
+  "deployments/hosted-workerd/core-worker.cf.ts",
+  "deployments/hosted-shared/hosted-core-app.ts",
+]
+const ENTRYPOINTS = [...LEGACY_ENTRYPOINTS, ...CORE_ENTRYPOINTS]
 
 function sourceRelative(file: string) {
   return path.relative(SRC, file).split(path.sep).join("/")
@@ -119,10 +127,10 @@ function resolveRelative(fromFile: string, spec: string): string | undefined {
   return candidates.find((c) => fs.existsSync(c) && fs.statSync(c).isFile())
 }
 
-function walk() {
+function walk(entrypoints: readonly string[] = ENTRYPOINTS) {
   const visited = new Set<string>()
   const bareImports: Array<{ from: string; spec: string }> = []
-  const queue = ENTRYPOINTS.map((e) => path.join(SRC, e))
+  const queue = entrypoints.map((e) => path.join(SRC, e))
 
   while (queue.length) {
     const file = queue.shift()!
@@ -145,6 +153,8 @@ function walk() {
 describe("worker import-graph", () => {
   const { visited, bareImports } = walk()
   const visitedRel = [...visited].map(sourceRelative)
+  const coreGraph = walk(CORE_ENTRYPOINTS)
+  const coreVisitedRel = [...coreGraph.visited].map(sourceRelative)
 
   test("Worker deployment keeps native SDK compatibility and public Worker-to-Worker fetch enabled", () => {
     // The Daytona SDK now enters the Worker bundle through the extracted
@@ -170,6 +180,8 @@ describe("worker import-graph", () => {
   test("entrypoints are actually reachable (sanity)", () => {
     expect(visitedRel).toContain("deployments/hosted-workerd/worker.ts")
     expect(visitedRel).toContain("deployments/hosted-shared/hosted-app.ts")
+    expect(visitedRel).toContain("deployments/hosted-workerd/core-worker.cf.ts")
+    expect(visitedRel).toContain("deployments/hosted-shared/hosted-core-app.ts")
     expect(visitedRel).toContain("hosts/workgraph/hosted/index.ts")
     expect(visitedRel).toContain("hosts/workgraph/hosted/runtime.ts")
     expect(visitedRel).toContain("documents/routes/index.ts")
@@ -178,6 +190,30 @@ describe("worker import-graph", () => {
     expect(visitedRel).not.toContain("doc-store.ts")
     // A representative deep node-safe dependency should be reachable.
     expect(visitedRel).toContain("routes/hosted/workspace.ts")
+  })
+
+  test("the clean core graph contains no optional-service implementation", () => {
+    const forbiddenFiles = coreVisitedRel.filter((file) => [
+      "hosts/workgraph/",
+      "hosts/wakes/",
+      "documents/",
+      "billing/",
+      "settlement-dispatcher.cf.ts",
+      "wake-lane.cf.ts",
+    ].some((fragment) => file.includes(fragment)))
+    const forbiddenPackages = coreGraph.bareImports.filter(({ spec }) => [
+      "@claxedo/workgraph",
+      "@claxedo/workgraph-service",
+      "@claxedo/documents-service",
+      "@claxedo/wakes",
+      "@polar-sh/sdk",
+    ].includes(spec))
+
+    expect(coreVisitedRel).toContain("deployments/hosted-workerd/core-worker.cf.ts")
+    expect(coreVisitedRel).toContain("deployments/hosted-shared/hosted-core-app.ts")
+    expect(coreVisitedRel).toContain("deployments/hosted-workerd/live-sync-room.cf.ts")
+    expect(forbiddenFiles).toEqual([])
+    expect(forbiddenPackages).toEqual([])
   })
 
   test("no local-only source module is in the Worker graph", () => {

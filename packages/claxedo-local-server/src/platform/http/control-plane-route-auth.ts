@@ -1,12 +1,12 @@
 import type { MiddlewareHandler } from "hono"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
 
 /**
  * The per-route bearer gate for control-plane routers that have no finer-grained

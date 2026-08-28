@@ -34,12 +34,13 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import type { RouteGuardExemption } from "../platform/auth/request-guard"
 import { durableIdempotencyStore, type DurableIdempotencyStore } from "../authority/http/idempotency"
 import { polarWebhookCacheKey } from "./polar-webhook-dedup"
 import { reportPaymentError } from "../platform/telemetry/errors/report"
-import { createBillingStore, type BillingStore, type CheckoutContext } from "./store"
+import type { BillingStore, CheckoutContext } from "./store-contract"
 import { webhookEventToApplyArgs, isBillingRelevantEventType, type PolarProductConfig } from "./apply-polar-state"
 import { verifyStandardWebhook, WebhookSignatureError } from "./standard-webhooks"
 
@@ -161,10 +162,11 @@ export function polarClientFromEnv(env: BillingEnv): PolarClientLike | undefined
 
 export type BillingRouteOptions = {
   env: BillingEnv
+  authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   /** Test seams. Defaults: Convex-backed store; SDK client from env. */
-  store?: BillingStore
+  store: BillingStore
   polar?: PolarClientLike
   rateLimiter?: ConnectionRateLimiter
   /** W3.3 IP-keyed limiter for the unauthenticated webhook route. */
@@ -299,7 +301,7 @@ class PolarWebhookInFlightError extends Error {
 
 export function BillingRoutes(options: BillingRouteOptions) {
   const env = options.env
-  const store = () => options.store ?? createBillingStore(env)
+  const store = () => options.store
   const polar = () => options.polar ?? polarClientFromEnv(env)
   const products = polarProductConfig(env)
   // Same fixed-window pattern the workspace routes use (control-plane class):
@@ -386,6 +388,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
   > => {
     try {
       const context = await controlPlaneAuthContext(c.req.raw, {
+        authentication: options.authentication,
         ...(options.authConfig ? { config: options.authConfig } : {}),
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
@@ -413,6 +416,9 @@ export function BillingRoutes(options: BillingRouteOptions) {
     | { context: CheckoutContext }
     | { error: { status: 403 | 503; body: unknown } }
   > => {
+    if (!auth.token) {
+      return { error: { status: 503, body: unavailable("The selected billing adapter does not accept browser-session identity") } }
+    }
     let context: CheckoutContext
     try {
       context = await store().checkoutContext(auth.token, auth.user.orgId)

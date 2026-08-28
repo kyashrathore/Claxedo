@@ -44,6 +44,45 @@ describe("conversation hydrator", () => {
     ])
   })
 
+  test("keeps every canonical assistant in a multi-assistant latest-turn hydrate", () => {
+    const user = userMessage("msg_user")
+    const announced = { ...settledMessage("msg_user_r"), parentID: user.id } as Message
+    const final = { ...settledMessage("msg_final"), parentID: user.id } as Message
+    const task = {
+      id: "part_task",
+      sessionID: "ses_1",
+      messageID: announced.id,
+      type: "tool",
+      callID: "call_1",
+      tool: "task",
+      state: {
+        status: "completed",
+        input: { sessionId: "child-session" },
+        output: "",
+        title: "Start subagent",
+        metadata: { sessionId: "child-session" },
+        time: { start: 1, end: 2 },
+      },
+    } as Part
+
+    hydrateConversationPage({
+      directory: "/repo",
+      sessionID: "ses_1",
+      ...canonicalPage,
+      mode: "replace-window",
+      rows: [
+        { info: user, parts: [part("part_user", user.id)] },
+        { info: announced, parts: [task] },
+        { info: final, parts: [part("part_final", final.id)] },
+      ],
+    })
+
+    const snapshot = registeredConversationSnapshot("/repo", "ses_1")
+    expect(snapshot.messages.map((item) => item.id)).toEqual([user.id, announced.id, final.id])
+    expect(snapshot.parts[announced.id]?.map((item) => item.id)).toEqual([task.id])
+    expect(snapshot.parts[final.id]?.map((item) => item.id)).toEqual(["part_final"])
+  })
+
   test("merges parts by id so streamed parts survive stale snapshots", () => {
     expect(resolveStoredParts([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }], [{ id: "part_2", text: "stale" }, { id: "part_3", text: "snapshot" }]))
       .toEqual([{ id: "part_2", text: "streamed" }, { id: "part_1", text: "local" }, { id: "part_3", text: "snapshot" }])
