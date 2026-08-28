@@ -84,6 +84,11 @@ export function contains(root: string, candidate: string) {
   return target === base || target.startsWith(base + path.sep)
 }
 
+export async function containsCanonical(root: string, candidate: string) {
+  const [base, target] = await Promise.all([canon(root), canon(candidate)])
+  return contains(base, target)
+}
+
 export async function locate(rows: { path?: string; branch?: string }[], dir: string) {
   const key = await canon(dir)
   for (const row of rows) {

@@ -37,7 +37,7 @@ process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 const { Hono } = await import("hono")
-const { contains, gitRun, locate, trees } = await import("./git")
+const { contains, containsCanonical, gitRun, locate, trees } = await import("./git")
 const { OpenCodeCompatRoutes } = await import("./index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { dataDir } = await import("@claxedo/server-core/platform/runtime/lib/paths")
@@ -202,7 +202,7 @@ describe("DELETE /experimental/worktree keeps deletions inside the workspace", (
     // `<dataDir>/worktree/<project_id>` (nextWorktreeInfo) — not inside it. The
     // containment guard has to allow that root too, or every legitimate delete
     // would be refused.
-    expect(contains(path.join(dataDir(), "worktree", "proj_a"), info.directory)).toBe(true)
+    expect(await containsCanonical(path.join(dataDir(), "worktree", "proj_a"), info.directory)).toBe(true)
     expect(contains(project, info.directory)).toBe(false)
 
     const res = await app.request(

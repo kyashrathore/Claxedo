@@ -141,17 +141,22 @@ describe("local daemon lifecycle", () => {
   })
 
   test("renewal keeps the daemon resident and release starts a fresh grace", async () => {
-    const onIdle = vi.fn()
-    const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle, leaseTtlMs: 30, idleGraceMs: 15, pollIntervalMs: 2 })
-    lifecycle.start()
-    const lease = lifecycle.acquire()!
-    await wait(20)
-    expect(lifecycle.renew(lease.id)).toBeDefined()
-    await wait(20)
-    expect(onIdle).not.toHaveBeenCalled()
-    expect(lifecycle.release(lease.id)).toBe(true)
-    await wait(20)
-    expect(onIdle).toHaveBeenCalledTimes(1)
+    vi.useFakeTimers()
+    try {
+      const onIdle = vi.fn()
+      const lifecycle = createLocalDaemonLifecycle({ activity: empty, onIdle, leaseTtlMs: 30, idleGraceMs: 15, pollIntervalMs: 2 })
+      lifecycle.start()
+      const lease = lifecycle.acquire()!
+      await vi.advanceTimersByTimeAsync(20)
+      expect(lifecycle.renew(lease.id)).toBeDefined()
+      await vi.advanceTimersByTimeAsync(20)
+      expect(onIdle).not.toHaveBeenCalled()
+      expect(lifecycle.release(lease.id)).toBe(true)
+      await vi.advanceTimersByTimeAsync(20)
+      expect(onIdle).toHaveBeenCalledTimes(1)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test("authoritative work survives every client lease", async () => {
