@@ -2,13 +2,14 @@ import { describe, expect, test } from "vitest"
 import { unifiedUsageQuery, usageQueryKey } from "./usage-query"
 
 describe("usage query", () => {
-  test("keys cache by range, timezone, and group while retaining only the same view", () => {
+  test("keys cache by range, timezone, group, and metric while retaining only the same ordered view", () => {
     const input = {
       since: 1,
       until: 2,
       timeZone: "UTC",
       view: "total" as const,
       group: "model" as const,
+      metric: "tokens" as const,
       filters: { app: "claude", location: "local" },
       after: "cursor",
       modelAfter: "model-cursor",
@@ -21,6 +22,7 @@ describe("usage query", () => {
       "UTC",
       "total",
       "model",
+      "tokens",
       "app=claude&location=local",
       "cursor",
       "model-cursor",
@@ -39,6 +41,11 @@ describe("usage query", () => {
     expect(
       placeholder(previous, {
         queryKey: usageQueryKey({ ...input, since: 0 }),
+      } as never),
+    ).toBeUndefined()
+    expect(
+      placeholder(previous, {
+        queryKey: usageQueryKey({ ...input, metric: "cost" }),
       } as never),
     ).toBeUndefined()
     expect(

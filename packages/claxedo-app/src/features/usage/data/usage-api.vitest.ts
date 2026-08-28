@@ -9,7 +9,7 @@ vi.mock("@/platform/api/api", () => ({
 
 describe("usage API", () => {
   beforeEach(() => authFetch.mockReset())
-  test("encodes range, view, group, filters, pagination, and refresh", async () => {
+  test("encodes range, view, group, metric, filters, pagination, and refresh", async () => {
     authFetch.mockResolvedValue(new Response(JSON.stringify({ version: 1 }), { status: 200 }))
     const { fetchUnifiedUsage } = await import("./usage-api")
     await fetchUnifiedUsage({
@@ -18,6 +18,7 @@ describe("usage API", () => {
       timeZone: "Asia/Kolkata",
       view: "total",
       group: "model",
+      metric: "cost",
       filters: { app: "claude", location: "local" },
       after: "anthropic/claude",
       modelAfter: "openai/gpt-5",
@@ -32,6 +33,7 @@ describe("usage API", () => {
       timezone: "Asia/Kolkata",
       view: "total",
       group: "model",
+      metric: "cost",
       filter_app: "claude",
       filter_location: "local",
       after: "anthropic/claude",
