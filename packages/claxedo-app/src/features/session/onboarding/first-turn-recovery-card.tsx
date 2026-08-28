@@ -1,4 +1,4 @@
-import { createSignal, Show } from "solid-js"
+import { createSignal, Show, type ParentProps } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -63,12 +63,12 @@ function RawDetail(props: { detail: string }) {
   )
 }
 
-function InlineErrorStatus(props: {
+function InlineErrorStatus(props: ParentProps<{
   testId: string
   title: string
   description: string
   recoveryClass?: SessionErrorClass
-}) {
+}>) {
   return (
     <div
       role="status"
@@ -77,9 +77,10 @@ function InlineErrorStatus(props: {
       class="mt-2 flex items-start gap-2 px-1 py-1 text-text-weaker"
     >
       <Icon name="circle-alert" size="small" class="mt-0.5 shrink-0 text-icon-weak-base" />
-      <div class="min-w-0">
+      <div class="min-w-0 flex-1">
         <div class="text-12-regular">{props.title}</div>
         <div class="mt-0.5 text-12-regular">{props.description}</div>
+        {props.children}
       </div>
     </div>
   )
@@ -181,28 +182,26 @@ export function FirstTurnRecoveryCard(props: {
   }
 
   return (
-    <div class="mt-2 rounded-lg border border-border-weak-base bg-transparent px-4 py-3" data-testid="first-turn-recovery-card" data-recovery-class={props.kind}>
-      <div class="flex items-start gap-3">
-        <Icon name="warning" class="translate-y-px size-4 m-0.5 shrink-0 text-icon-warning-base" />
-        <div class="min-w-0 flex-1">
-          <div class="text-14-medium text-text-strong">{recovery().title}</div>
-          <div class="mt-1 text-13-regular text-text-base">{description()}</div>
-          <Show when={detail()}>{(value) => <RawDetail detail={value()} />}</Show>
-          <Show when={actionError()}>{(value) => (
-            <div class="mt-2 text-12-regular text-icon-critical-base" role="alert">{value()}</div>
-          )}</Show>
-          <Button
-            class="mt-3"
-            size="small"
-            variant="secondary"
-            disabled={pending()}
-            aria-busy={pending()}
-            onClick={() => void act()}
-          >
-            {recovery().label}
-          </Button>
-        </div>
-      </div>
-    </div>
+    <InlineErrorStatus
+      testId="first-turn-recovery-card"
+      recoveryClass={props.kind}
+      title={recovery().title}
+      description={description()}
+    >
+      <Show when={detail()}>{(value) => <RawDetail detail={value()} />}</Show>
+      <Show when={actionError()}>{(value) => (
+        <div class="mt-2 text-12-regular text-icon-critical-base" role="alert">{value()}</div>
+      )}</Show>
+      <Button
+        class="mt-2"
+        size="small"
+        variant="secondary"
+        disabled={pending()}
+        aria-busy={pending()}
+        onClick={() => void act()}
+      >
+        {recovery().label}
+      </Button>
+    </InlineErrorStatus>
   )
 }

@@ -33,14 +33,25 @@ export type CodexAppServerAdapterState = {
     itemType?: string
   }>
   turnUsage?: CodexTurnUsageState
+  /**
+   * Last account-level limit that actually fired (`rateLimitReachedType` set).
+   * Thread `systemError` and failed turns do not carry that sentence, so the
+   * adapter keeps it across turn pruning and stamps it onto the terminal error.
+   */
+  lastLimitedRateLimitMessage?: string
 }
 
 function createCodexAppServerAdapterState(): CodexAppServerAdapterState {
   return { assistantTextByItemId: {}, toolOutputByCallId: {}, toolsByItemId: {} }
 }
 
-function pruneTurnState() {
-  return createCodexAppServerAdapterState()
+function pruneTurnState(state?: CodexAppServerAdapterState): CodexAppServerAdapterState {
+  return {
+    ...createCodexAppServerAdapterState(),
+    ...(state?.lastLimitedRateLimitMessage
+      ? { lastLimitedRateLimitMessage: state.lastLimitedRateLimitMessage }
+      : {}),
+  }
 }
 
 function payload(event: { payload: unknown }) {
@@ -310,12 +321,19 @@ function usage(
   }
 }
 
-function completionEvents(event: { payload: unknown; threadId?: unknown }, context: HarnessEventAdapterContext) {
+function completionEvents(
+  event: { payload: unknown; threadId?: unknown },
+  context: HarnessEventAdapterContext,
+  lastLimitedRateLimitMessage?: string,
+) {
   const row = payload(event)
   const turn = object(row.turn) ?? row
   const status = text(turn.status)
   if (status === "failed" || status === "error") {
-    const message = text(object(turn.error)?.message) ?? text(row.message) ?? "Codex turn failed"
+    const message = turnErrorMessage(object(turn.error), lastLimitedRateLimitMessage)
+      ?? text(row.message)
+      ?? lastLimitedRateLimitMessage
+      ?? "Codex turn failed"
     return [
       { type: "session-status", status: "error" },
       { type: "error", error: message },
@@ -525,12 +543,77 @@ function rateLimitEvent(row: Record<string, unknown>) {
   } satisfies AgentRuntimeEvent
 }
 
-function threadStatusEvents(row: Record<string, unknown>) {
+function rateLimitErrorMessage(event: Extract<AgentRuntimeEvent, { type: "rate-limit" }>) {
+  const reset = formatRateLimitReset(event.resetsAt, event.windowDurationMins)
+  const reason = event.reason
+  if (reason === "workspace_owner_credits_depleted" || reason === "workspace_member_credits_depleted") {
+    return `You've reached your Codex credits limit.${reset}`
+  }
+  if (reason === "rate_limit_reached") {
+    return `You've reached your Codex rate limit.${reset}`
+  }
+  if (reason === "workspace_owner_usage_limit_reached" || reason === "workspace_member_usage_limit_reached") {
+    return `You've reached your Codex usage limit.${reset}`
+  }
+  if (event.limitName) {
+    return `You've reached your ${event.limitName} limit.${reset}`
+  }
+  return `You've reached your Codex usage limit.${reset}`
+}
+
+function formatRateLimitReset(resetsAt?: number | null, windowDurationMins?: number | null) {
+  if (typeof resetsAt === "number" && resetsAt > 1_000_000_000) {
+    const millis = resetsAt > 1_000_000_000_000 ? resetsAt : resetsAt * 1000
+    return ` It will reset at ${new Date(millis).toLocaleString()}.`
+  }
+  if (typeof windowDurationMins === "number" && windowDurationMins > 0) {
+    const hours = Math.round(windowDurationMins / 60)
+    if (hours >= 2) return ` It will reset in about ${hours} hours.`
+    if (hours === 1) return " It will reset in about 1 hour."
+    return ` It will reset in ${windowDurationMins} minutes.`
+  }
+  return ""
+}
+
+function codexErrorInfoMessage(info: unknown) {
+  if (info === "usageLimitExceeded") return "You've reached your Codex usage limit."
+  if (info === "serverOverloaded") return "Codex is overloaded. Try again in a moment."
+  if (info === "unauthorized") {
+    return "Codex rejected the credential. Run `codex login` or sync a valid Codex credential, then retry."
+  }
+  if (info === "contextWindowExceeded") return "This turn exceeded the Codex context window."
+  if (info === "cyberPolicy") return "Codex refused this request due to a safety policy."
+  return
+}
+
+function turnErrorMessage(error: Record<string, unknown> | undefined, lastLimitedRateLimitMessage?: string) {
+  const message = text(error?.message) ?? text(object(error?.message)?.message)
+  const details = text(error?.additionalDetails)
+  const fromInfo = codexErrorInfoMessage(error?.codexErrorInfo)
+  const generic = !message || message.trim().toLowerCase() === "session error"
+  const head = generic ? fromInfo ?? lastLimitedRateLimitMessage : message
+  if (!head) return details
+  if (details && !head.includes(details)) return `${head.replace(/\.$/, "")}. ${details}`
+  return head
+}
+
+function threadStatusEvents(row: Record<string, unknown>, lastLimitedRateLimitMessage?: string) {
   const status = object(row.status)
   const type = text(status?.type)
   if (type === "active") return [{ type: "session-status", status: "busy" }] satisfies AgentRuntimeEvent[]
   if (type === "idle" || type === "notLoaded") return [{ type: "session-status", status: "idle" }] satisfies AgentRuntimeEvent[]
-  if (type === "systemError") return [{ type: "session-status", status: "error" }] satisfies AgentRuntimeEvent[]
+  if (type === "systemError") {
+    const message = lastLimitedRateLimitMessage
+      ?? turnErrorMessage(object(status) ?? object(row.error), lastLimitedRateLimitMessage)
+      ?? text(object(status)?.message)
+      ?? text(row.message)
+      ?? text(object(row.error)?.message)
+      ?? "session error"
+    return [
+      { type: "session-status", status: "error" },
+      { type: "error", error: message },
+    ] satisfies AgentRuntimeEvent[]
+  }
   return []
 }
 
@@ -680,14 +763,14 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
           return [{ type: "session-status", status: "busy" }]
 
         case "turn/completed":
-          return { state: pruneTurnState(), events: completionEvents(event, context) }
+          return { state: pruneTurnState(state), events: completionEvents(event, context, state.lastLimitedRateLimitMessage) }
 
         case "thread/status/changed":
-          return threadStatusEvents(row)
+          return threadStatusEvents(row, state.lastLimitedRateLimitMessage)
 
         case "thread/closed":
           return {
-            state: pruneTurnState(),
+            state: pruneTurnState(state),
             events: [
               { type: "session-status", status: "idle" },
               { type: "finish", sessionId: sessionId(event, context) },
@@ -772,8 +855,16 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
               : []),
           ]
 
-        case "account/rateLimits/updated":
-          return [rateLimitEvent(row)]
+        case "account/rateLimits/updated": {
+          const event = rateLimitEvent(row)
+          return {
+            state: {
+              ...state,
+              lastLimitedRateLimitMessage: event.status === "limited" ? rateLimitErrorMessage(event) : undefined,
+            },
+            events: [event],
+          }
+        }
 
         case "mcpServer/startupStatus/updated":
           return [{
@@ -844,8 +935,10 @@ export function codexAppServerAdapter(): HarnessEventAdapter<CodexAppServerAdapt
 
         case "error": {
           const error = object(row.error)
-          const detail = object(error?.message) ?? error
-          const message = text(detail?.message) ?? text(error?.message) ?? text(row.message) ?? "Codex provider error"
+          const message = turnErrorMessage(error, state.lastLimitedRateLimitMessage)
+            ?? text(row.message)
+            ?? state.lastLimitedRateLimitMessage
+            ?? "Codex provider error"
           if (row.willRetry === true) {
             return [diagnosticForEvent({ code: "codex_app_server.retryable_error", message, severity: "warn", event })]
           }

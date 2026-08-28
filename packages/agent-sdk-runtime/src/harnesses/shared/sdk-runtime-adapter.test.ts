@@ -566,4 +566,52 @@ describe("SdkRuntimeAdapter busy lock", () => {
     releaseReplacement?.()
     expect(lifecycle.busySessions.has("s1")).toBe(false)
   })
+
+  test("yields the provider error instead of a placeholder session.error", async () => {
+    const store = storeRows(createMemoryRuntimeStore())
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        createRuntime: () => ({
+          ingest: () => ({
+            events: [
+              { type: "session-status", status: "error" },
+              { type: "error", error: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+            ],
+            snapshot: { harness: "codex", threadId: "thread-1", adapterState: {} },
+          }),
+          snapshot: () => ({ harness: "codex", threadId: "thread-1", adapterState: {} }),
+        }) as never,
+        runTurn: async (input) => {
+          input.ingest(
+            { source: "codex.app-server", method: "thread/status/changed", payload: {} },
+            { dir: "in", method: "thread/status/changed" },
+          )
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"))
+    const events: AgentRuntimeStreamEvent[] = []
+    for await (const event of adapter.sendMessage(session.id, {
+      parts: [{ type: "text", text: "go" }],
+      assistantMessageId: "assistant",
+      agent: "general",
+      model: { providerID: "codex", modelID: "test" },
+    }, path.resolve("/repo"))) {
+      events.push(event)
+    }
+
+    const errors = events.filter((event) => event.type === "session.error")
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toMatchObject({
+      type: "session.error",
+      properties: {
+        error: {
+          data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+        },
+      },
+    })
+    adapter.dispose()
+  })
 })

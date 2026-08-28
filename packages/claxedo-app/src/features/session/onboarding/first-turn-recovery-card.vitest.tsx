@@ -162,4 +162,15 @@ describe("FirstTurnRecoveryCard", () => {
     const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="detail" onAction={vi.fn()} />)
     expect(view.getByTestId("first-turn-recovery-card")).toHaveClass("mt-2")
   })
+
+  test("renders a classified turn error as inline status, not a bordered card", () => {
+    const view = render(() => <FirstTurnRecoveryCard kind="unknown" detail="session error" onAction={vi.fn()} />)
+    const card = view.getByTestId("first-turn-recovery-card")
+    expect(card).toHaveAttribute("role", "status")
+    expect(card).toHaveClass("text-text-weaker")
+    expect(card.className).not.toMatch(/\brounded-lg\b/)
+    expect(card.className).not.toMatch(/\bborder\b/)
+    expect(view.getByRole("button", { name: "Resend last prompt" })).toBeTruthy()
+    expect(view.getByText("That turn didn't complete")).toHaveClass("text-12-regular")
+  })
 })

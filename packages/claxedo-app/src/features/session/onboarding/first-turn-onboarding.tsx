@@ -1,6 +1,7 @@
 import { createComputed, on, type Accessor } from "solid-js"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { loadAIConnectDialog, loadSelectProviderDialog, useFirstTurnFunnel } from "@/features/session/app-ports"
+import { openSettingsProviders } from "@/features/settings/open-settings-providers"
+import { useFirstTurnFunnel } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
@@ -64,11 +65,7 @@ export function createFirstTurnOnboarding(input: {
       return
     }
     if (kind === "credential") {
-      void loadAIConnectDialog().then((module) => dialog.show(() => (
-        <module.DialogAIConnect onConnected={() => {
-          retry?.(failedPrompt)
-        }} />
-      )))
+      void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
       return
     }
     if (kind === "model" || kind === "usage_limit") {
@@ -91,7 +88,7 @@ export function createFirstTurnOnboarding(input: {
       })
       const next = candidates.find((model) => model.provider.id === current?.provider.id) ?? candidates[0]
       if (!next) {
-        void loadSelectProviderDialog().then((module) => dialog.show(() => <module.DialogSelectProvider />))
+        void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
         return
       }
       local.model.set({ providerID: next.provider.id, modelID: next.id }, { recent: true })

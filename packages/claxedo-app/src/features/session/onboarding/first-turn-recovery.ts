@@ -90,7 +90,7 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
     classified === "workspace" || classified === "session" || classified === "unknown"
   ) return classified
   const message = typeof data?.message === "string" ? data.message : ""
-  if (/(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)/i.test(message)) return "usage_limit"
+  if (/(?:reached|hit)\s+(?:your|the)\s+.+?\s+limit|usage\s+(?:limit|cap)\s+(?:reached|exceeded)|limit.*(?:reset|usage credits)|usage_limit_reached|rate_limit_reached|credits_depleted/i.test(message)) return "usage_limit"
   if (/\b(401|403|unauthori[sz]ed|api[ _-]?key|oauth|token|credential|authentication|billing|payment|quota|rate[ _-]?limit)\b/i.test(message)) return "credential"
   if (/(thread not found|session not found|conversation not found|no such (thread|session))/i.test(message)) return "session"
   if (/(harness|adapter|acp|agent process|spawn|executable|binary|capabilit(?:y|ies)|unsupported operation)/i.test(message)) return "harness"
