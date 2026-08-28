@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import {
   directorySessionCache,
+  directorySessionCacheOwnsSession,
   directorySessionCacheQuery,
   directorySessions,
   ensureDirectorySessionCache,
@@ -13,6 +14,7 @@ import {
   reconcileUnrevertedDirectorySession,
   sessionLoadMetaKey,
   setDirectorySessionCache,
+  shouldScheduleDirectorySessionHydration,
   updateDirectorySession,
   upsertDirectorySession,
   useDirectorySessionCacheActions,
@@ -33,6 +35,30 @@ function session(input: { id: string; parentID?: string }): Session {
 }
 
 describe("directory session-cache shell-data boundary", () => {
+  test("does not project a central session's tool-sandbox directory into workspace inventory", () => {
+    expect(directorySessionCacheOwnsSession({
+      sessionId: "ses_central",
+      host: "central",
+      toolSandbox: { kind: "virtual" },
+    })).toBe(false)
+    expect(shouldScheduleDirectorySessionHydration({
+      directory: "/workspace/project",
+      sessionID: "ses_central",
+      hasSessionInfo: false,
+      sessionRef: { sessionId: "ses_central", host: "central", toolSandbox: { kind: "virtual" } },
+    })).toBe(false)
+  })
+
+  test("hydrates an uncached workspace session and stops once canonical info exists", () => {
+    const input = {
+      directory: "/workspace/project",
+      sessionID: "ses_workspace",
+      sessionRef: { sessionId: "ses_workspace", host: "workspace", toolSandbox: { kind: "workspace" } },
+    } as const
+    expect(shouldScheduleDirectorySessionHydration({ ...input, hasSessionInfo: false })).toBe(true)
+    expect(shouldScheduleDirectorySessionHydration({ ...input, hasSessionInfo: true })).toBe(false)
+  })
+
   test("exposes the disabled session cache query under the shell-data owner", () => {
     expect(directorySessionCacheQuery("/workspace/project")).toMatchObject({
       queryKey: directorySessionCacheQueryOptions({ directory: "/workspace/project" }).queryKey,

@@ -749,6 +749,49 @@ describe("createCentralSessionRuntime", () => {
     })
   })
 
+  test("stamps authoritative central identity on compat session updates", async () => {
+    const runtime = createCentralSessionRuntime(services())
+    const session = await runtime.createHybridSession({ title: "Central", workspaceId: "ws_1" })
+    const events: Array<{ payload: { type: string; properties?: unknown } }> = []
+    runtime.eventHub.subscribeGlobal((event) => events.push(event))
+
+    runtime.publishGlobal({
+      directory: session.id,
+      payload: {
+        id: `session.updated:${session.id}`,
+        type: "session.updated",
+        properties: {
+          sessionID: session.id,
+          info: {
+            id: session.id,
+            slug: session.id,
+            projectID: session.id,
+            directory: session.id,
+            title: "Central title",
+            version: "local",
+            time: { created: 1, updated: 2 },
+          },
+        },
+      },
+    })
+
+    expect(events).toContainEqual(expect.objectContaining({
+      payload: expect.objectContaining({
+        properties: expect.objectContaining({
+          info: expect.objectContaining({
+            id: session.id,
+            projectID: "ws_1",
+            workspaceID: "ws_1",
+            metadata: {
+              host: "central",
+              sessionRef: `central:${session.id}`,
+            },
+          }),
+        }),
+      }),
+    }))
+  })
+
   test("late-binds central hybrid envs with explicit placement", async () => {
     const svc = services()
     const placements: SessionEnvFactoryInput[] = []

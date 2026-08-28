@@ -7,6 +7,7 @@ import {
   markRouteIntentClosed,
   resetRouteIntentClosedForTest,
   routeIntentClosedSizeForTest,
+  sessionInventoryCentralSession,
   sessionInventoryTarget,
   type RouteIntentStateApi,
   type RouteIntent,
@@ -52,8 +53,8 @@ beforeEach(() => {
   resetRouteIntentClosedForTest()
 })
 
-test("central inventory identity is not reclassified as a workspace route", () => {
-  expect(sessionInventoryTarget("ses_central", {
+test("central inventory identity is explicit and is not reclassified as a workspace route", () => {
+  const inventory = {
     loaded: true,
     global: [{
       id: "ses_central",
@@ -68,7 +69,13 @@ test("central inventory identity is not reclassified as a workspace route", () =
     }],
     byWorkspace: {},
     byProject: {},
-  })).toBeUndefined()
+  }
+
+  expect(sessionInventoryCentralSession("ses_central", inventory)).toMatchObject({
+    id: "ses_central",
+    sessionRef: "central:ses_central",
+  })
+  expect(sessionInventoryTarget("ses_central", inventory)).toBeUndefined()
 })
 
 test("archived inventory rows are never direct-route targets", () => {
@@ -86,6 +93,30 @@ test("archived inventory rows are never direct-route targets", () => {
       project_1: [{ id: "ses_archived", archived: true, workspaceId: "ws_1" }],
     },
   })).toBeUndefined()
+})
+
+test("local workspace identity does not replace its filesystem transport directory", () => {
+  expect(sessionInventoryTarget("ses_local", {
+    loaded: true,
+    global: [],
+    byWorkspace: {
+      ws_local: {
+        key: "ws_local",
+        workspaceId: "ws_local",
+        directory: "/repo/local",
+        sessions: [{ id: "ses_local", title: "Local", environment: { kind: "local" } }],
+      },
+    },
+    byProject: {},
+  })).toMatchObject({
+    directory: "/repo/local",
+    sessionRef: {
+      sessionId: "ses_local",
+      host: "workspace",
+      cwd: "/repo/local",
+      toolSandbox: { kind: "local", cwd: "/repo/local" },
+    },
+  })
 })
 
 function createHarness(input: {

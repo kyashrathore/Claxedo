@@ -118,6 +118,7 @@ describe("global sync inventory source helpers", () => {
       hasSignedAccess: true,
       baseUrl: "http://127.0.0.1:4096",
       directory: "/repo/local",
+      workspaceID: "ws_local",
     })).toBe(false)
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,
@@ -133,6 +134,7 @@ describe("global sync inventory source helpers", () => {
       hasSignedAccess: true,
       baseUrl: "https://app.test",
       directory: "/repo/local",
+      workspaceID: "ws_local",
     })).toBe(true)
   })
 
@@ -671,6 +673,65 @@ describe("global sync inventory source helpers", () => {
     expect(page.data.map((item) => item.id)).toEqual(["ses_3", "ses_2"])
     expect(page.cursor).toBe(2)
     expect(requests.map((item) => new URL(item).pathname)).toEqual(["/api/claxedo/session"])
+  })
+
+  test("loopback grouping preserves a central session's authoritative workspace identity", async () => {
+    const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async () => jsonResponse({
+        sessions: [{
+          sessionID: "ses_central",
+          sessionRef: "central:ses_central",
+          workspaceID: "ws_authoritative",
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }),
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    const groups = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({
+      key: "ws_authoritative",
+      directory: "ws_authoritative",
+      workspaceId: "ws_authoritative",
+      sessions: [{ id: "ses_central", sessionRef: "central:ses_central", workspaceId: "ws_authoritative" }],
+    })
+  })
+
+  test("loopback grouping keeps a local workspace's filesystem transport directory", async () => {
+    const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async () => jsonResponse({
+        sessions: [{
+          sessionID: "ses_local",
+          workspaceID: "ws_local",
+          directory: "/repo/local",
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }),
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    const groups = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(groups).toMatchObject([{
+      key: "ws_local",
+      directory: "/repo/local",
+      workspaceId: "ws_local",
+      sessions: [{ id: "ses_local", directory: "/repo/local", workspaceId: "ws_local" }],
+    }])
   })
 
   test("inventory page source dedupes concurrent workspace group requests", async () => {

@@ -729,6 +729,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
    * message completes.
    */
   function publishGlobal(event: CompatEnvelope) {
+    const published = centralSessionCompatEnvelope(event)
     const sessionId = eventSessionId(event.payload)
     const messageId = event.payload.type === "session.usage"
       ? event.payload.properties.messageID
@@ -759,7 +760,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     if (terminal && options.onUsageTerminal) {
       void metered.then(() => options.onUsageTerminal?.()).catch((error) => console.error("[central-runtime] usage terminal sync wake failed:", error))
     }
-    eventHub.publishGlobal(event)
+    eventHub.publishGlobal(published)
     if (event.payload.type === "session.updated") {
       const title = typeof event.payload.properties.info.title === "string"
         ? event.payload.properties.info.title
@@ -776,6 +777,31 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       })
     }
     if (sessionId) services.durableSessionLog.persist_message_event(sessionId, event.payload)
+  }
+
+  function centralSessionCompatEnvelope(event: CompatEnvelope): CompatEnvelope {
+    if (event.payload.type !== "session.updated") return event
+    const info = event.payload.properties.info
+    const placement = sessionPlacements.get(info.id)
+    const workspaceID = placement?.workspaceId
+    return {
+      ...event,
+      payload: {
+        ...event.payload,
+        properties: {
+          ...event.payload.properties,
+          info: {
+            ...info,
+            ...(workspaceID ? { workspaceID, projectID: workspaceID } : {}),
+            metadata: {
+              ...info.metadata,
+              host: "central",
+              sessionRef: `central:${info.id}`,
+            },
+          },
+        },
+      },
+    }
   }
 
   // Demo B — placement swap: attach/detach a session's tool sandbox

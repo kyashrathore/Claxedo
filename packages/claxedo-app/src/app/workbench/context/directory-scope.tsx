@@ -68,6 +68,7 @@ function DirectoryDataProvider(props: ParentProps<{
   const platform = usePlatform()
   const subagents = globalSDK.event.subagents.registry
   const [subagentRevision, setSubagentRevision] = createSignal(0)
+  const [subagentHydrationRevision, setSubagentHydrationRevision] = createSignal(0)
   let subagentsDirtyWhileInactive = false
   const publishSubagentChange = () => {
     if (!props.active()) {
@@ -79,6 +80,7 @@ function DirectoryDataProvider(props: ParentProps<{
   }
   onCleanup(subagents.subscribe((change) => {
     if (change.type !== "reset" && change.parentSessionId !== props.sessionId?.()) return
+    if (change.type === "reset") setSubagentHydrationRevision((revision) => revision + 1)
     publishSubagentChange()
   }))
   createEffect(() => {
@@ -130,6 +132,7 @@ function DirectoryDataProvider(props: ParentProps<{
     if (!hydrateSessionSubagents()) return
     const sessionID = props.sessionId?.()
     if (!sessionID) return
+    subagentHydrationRevision()
     const controller = new AbortController()
     void ensureSubagents(sessionID, controller.signal).catch(() => undefined)
     onCleanup(() => controller.abort())

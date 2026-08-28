@@ -183,21 +183,22 @@ function workspaceRootBacking(workspaceId: string, inventory: RouteIntentInvento
 }
 
 export function sessionInventoryTarget(sessionId: string, inventory: RouteIntentInventory) {
-  const inventoryRows = [
-    ...(inventory.global ?? []),
-    ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
-    ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
-  ]
-  if (inventoryRows.some((session) => !session.archived && session.id === sessionId && session.sessionRef?.startsWith("central:"))) return
+  const central = sessionInventoryCentralSession(sessionId, inventory)
+  if (central) return
 
   const workspaceMatches = Object.entries(inventory.byWorkspace)
     .filter(([, group]) => group.sessions?.some((session) => session.id === sessionId && !session.archived))
     .map(([key, group]): InventorySessionTarget => {
       const session = group.sessions?.find((session) => session.id === sessionId && !session.archived)
+      const backing = workspaceBacking({
+        workspaceId: group.workspaceId,
+        kind: session?.environment?.kind,
+      })
       const directory =
-        group.workspaceId ??
-        (group.key && group.key !== "/workspace" ? group.key : undefined) ??
+        backing?.workspaceId ??
         (group.directory && group.directory !== "/workspace" ? group.directory : undefined) ??
+        session?.directory ??
+        (group.key && group.key !== "/workspace" ? group.key : undefined) ??
         key
       const harness = routeSessionHarness(session)
       return {
@@ -206,10 +207,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
         sessionRef: sessionRefForWorkspaceSession({
           sessionId,
           directory,
-          workspace: workspaceBacking({
-            workspaceId: group.workspaceId,
-            kind: session?.environment?.kind,
-          }),
+          workspace: backing,
           ...(harness ? { harness } : {}),
         }),
       }
@@ -218,7 +216,8 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     .flatMap((sessions) => sessions)
     .filter((session) => session.id === sessionId && !session.archived)
     .flatMap((session): InventorySessionTarget[] => {
-      const directory = session.workspaceId ?? session.directory
+      const backing = workspaceBacking({ workspaceId: session.workspaceId, kind: session.environment?.kind })
+      const directory = backing?.workspaceId ?? session.directory ?? session.workspaceId
       const harness = routeSessionHarness(session)
       return directory
         ? [{
@@ -227,10 +226,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory,
-            workspace: workspaceBacking({
-                workspaceId: session.workspaceId,
-                kind: session.environment?.kind,
-              }),
+              workspace: backing,
               ...(harness ? { harness } : {}),
             }),
           }]
@@ -239,7 +235,8 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
   const globalMatches = (inventory.global ?? [])
     .filter((session) => session.id === sessionId && !session.archived)
     .flatMap((session): InventorySessionTarget[] => {
-      const directory = session.workspaceId ?? session.directory
+      const backing = workspaceBacking({ workspaceId: session.workspaceId, kind: session.environment?.kind })
+      const directory = backing?.workspaceId ?? session.directory ?? session.workspaceId
       const harness = routeSessionHarness(session)
       return directory
         ? [{
@@ -248,10 +245,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory,
-            workspace: workspaceBacking({
-                workspaceId: session.workspaceId,
-                kind: session.environment?.kind,
-              }),
+              workspace: backing,
               ...(harness ? { harness } : {}),
             }),
           }]
@@ -266,6 +260,18 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     )
   if (matches.length !== 1) return
   return matches[0]
+}
+
+export function sessionInventoryCentralSession(sessionId: string, inventory: RouteIntentInventory) {
+  return [
+    ...(inventory.global ?? []),
+    ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
+    ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
+  ].find((session) =>
+    !session.archived &&
+    session.id === sessionId &&
+    session.sessionRef?.startsWith("central:") === true
+  )
 }
 
 function resolvedSessionTarget(sessionId: string, target: ResolvedSessionTarget): InventorySessionTarget {

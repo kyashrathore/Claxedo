@@ -61,7 +61,7 @@ import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
 import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import {
-  scheduleDirectorySessionHydration,
+  scheduleDirectorySessionHydration, shouldScheduleDirectorySessionHydration,
   removeDirectorySession,
   updateDirectorySession,
   useDirectorySessionCacheActions,
@@ -446,7 +446,7 @@ export default function SessionPage() {
     if (!paneActive()) return
     const sessionIDValue = sessionID()
     const directory = dir()
-    if (!sessionIDValue || sessionIDValue === "new" || !directory || info()) return
+    if (!sessionIDValue || !shouldScheduleDirectorySessionHydration({ directory, sessionID: sessionIDValue, hasSessionInfo: !!info(), sessionRef: activeSessionRef() })) return
     const cancel = scheduleDirectorySessionHydration({
       directory, sessionID: sessionIDValue,
       getSession: (parameters) => sdk.client.session.get(parameters).then((result) => result.data),

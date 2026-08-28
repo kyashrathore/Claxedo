@@ -17,7 +17,7 @@ beforeAll(async () => {
 })
 
 function makeProps() {
-  const opens: Array<{ directory: string; terminalId: string; workspaceRouteId?: string }> = []
+  const opens: Array<{ directory: string; terminalId: string; workspaceRouteId?: string; sessionId?: string }> = []
   const queued: Array<{ contentId: string; directory: string }> = []
   const navs: string[] = []
   const props = {
@@ -32,11 +32,13 @@ function makeProps() {
     state: {
       wb: {
         state: { focusedPaneId: "pane-1" },
+        selectors: { focusedContent: () => "session-content" },
         split: { focus: () => undefined },
       },
+      meta: { get: () => ({ sessionId: "session-1" }) },
       layout: {
-        openTerminal: (directory: string, terminalId: string, _title?: string, opts?: { workspaceRouteId?: string }) => {
-          opens.push({ directory, terminalId, workspaceRouteId: opts?.workspaceRouteId })
+        openTerminal: (directory: string, terminalId: string, _title?: string, opts?: { workspaceRouteId?: string; sessionId?: string }) => {
+          opens.push({ directory, terminalId, workspaceRouteId: opts?.workspaceRouteId, sessionId: opts?.sessionId })
           return "terminal-content"
         },
       },
@@ -64,6 +66,7 @@ describe("createTerminalActions", () => {
 
     expect(opens).toHaveLength(1)
     expect(opens[0]?.workspaceRouteId).toBe("p2")
+    expect(opens[0]?.sessionId).toBe("session-1")
     expect(queued).toEqual([{ contentId: "terminal-content", directory: "/workspace/shared" }])
     expect(navs).toEqual([workspaceTerminalRoute("p2", opens[0].terminalId)])
   })
