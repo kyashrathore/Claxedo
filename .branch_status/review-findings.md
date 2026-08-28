@@ -2,233 +2,75 @@
 
 ## Review scope
 
-Reviewed implementation tree: `062fc24c33c72d10fab3cede8f9267e97a66174b`
+Reviewed implementation commit: `593dd1f94f047c9269a56b2afea75cce2cb6419e`
 
-Rebased implementation commit: `c97d1fe3cefed0f6aeb9da1e0f38bc6b4b308924`
+Implementation tree: `6c42070016448f272ce8008fd9b8db98e80c9d21`
 
-Base: `866feaabe2fa1f80f51aa05d7788626ae7a3bf5b`
+Base: `dev` at `834307041e8b01eef532833b8deb3703f03dc647`
 
 Review coverage: correctness, project standards, testing, maintainability, agent-native behavior, security, performance, API compatibility, data migrations, reliability, adversarial analysis, and deployment verification.
 
-Independent validation checked 23 candidates. Eighteen survived and five were rejected. One preference-only P1 was removed during synthesis. Four P2 advisories moved to residual/testing risks.
-
-Verdict: **NOT READY**
-
-## P1 findings
-
-### #2: Human and agent clients overwrite one shared actor kind
-
-Location: `convex/model.ts:153`
-
-Impact: Browser and CLI requests update the same user row to different kinds. `authorizeRuntime` rejects an active token after the other client changes the stored kind.
-
-Required response: Make actor kind immutable for a stable actor or introduce a distinct linked agent actor. Add a concurrent browser/CLI test.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #3: Revoked creators retain participant-management authority
-
-Location: `convex/sessions.ts:108` and SQLite authority equivalents
-
-Impact: A creator who lost workspace/org authority can still add or remove participants because creator status bypasses the current workspace-authority check.
-
-Required response: Require current workspace read authority before creator/admin participant management in both backends. Add revocation parity tests.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #5: Sessionless global events bypass tenant scoping
-
-Location: `packages/claxedo-local-server/src/opencode/compat-routes/index.ts:120`
-
-Impact: Signed subscribers can receive another tenant's document, workgraph, or provisioning events when the frame has no recognized session id.
-
-Required response: Apply canonical `eventVisibleTo` subject/org filtering and default-deny unclassified signed frames.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #6: SQLite and Convex derive different repository keys
-
-Location: `packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority-store.ts:462`
-
-Impact: One backend can merge distinct case-sensitive repositories or fail to match equivalent SSH/HTTPS repositories. Project identity and membership then differ by backend.
-
-Required response: Use one dependency-light canonicalizer and a shared parity table.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #8: Identity-aware SSE repeats authorization per frame
-
-Location: `packages/workspace-runtime/src/event-delivery.ts:262`
-
-Impact: The event source authorizes during enqueue and the writer authorizes the same frame again. Authority load grows with frames times connections.
-
-Required response: Carry the enqueue decision to the writer and coalesce bounded connection/session grants.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #9: Authority work enters an unbounded promise queue
-
-Location: `packages/workspace-runtime/src/event-delivery.ts:303`
-
-Impact: Slow authority calls accumulate unlimited pending closures before SSE backpressure, growing memory and stream delay.
-
-Required response: Cap per-scope work, coalesce safe events, and terminate overflowed streams for replay recovery.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #10: Reconnect serially authorizes every retained frame
-
-Location: `packages/workspace-runtime/src/event-delivery.ts:339`
-
-Impact: A 256-event replay can wait for roughly 21 minutes when each authority call reaches its five-second timeout.
-
-Required response: Use bounded concurrency, per-session caching, preserved ordering, and a total startup deadline.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #11: Authority 503 responses become permanent 403 denials
-
-Location: `packages/workspace-runtime/src/remote-session-authority.ts:36`
-
-Impact: Clients and streams treat a retryable authority outage as a permanent private-session denial.
-
-Required response: Preserve 503 and its canonical error code; reserve 401 for invalid proof and 403 for denied authority.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #12: Removed participants can replay private PTY logs
-
-Location: `packages/workspace-runtime/src/routes/process.ts:85`
-
-Impact: A removed participant who knows a PTY id can read its snapshot through `/process/logs` because the compatibility route checks only workspace role and PTY existence.
-
-Required response: Pass `SessionAccessPolicy` into `ProcessRoutes` and authorize every PTY lookup alias.
-
-Owner: downstream resolver. Confidence: 100. Corroborated by testing and adversarial reviewers.
-
-### #13: Forked sessions are never registered
-
-Location: `packages/workspace-runtime/src/routes/session-core.ts:1189`
-
-Impact: Fork returns HTTP 201, but the child has no creator/participant authority record. Later reads and prompts fail closed.
-
-Required response: Register and project the child like ordinary creation; delete it on registration failure.
-
-Owner: downstream resolver. Confidence: 100. Corroborated by testing and correctness reviewers.
-
-### #14: Failed registration leaves sessions created
-
-Location: `packages/workspace-runtime/src/routes/session-core.ts:801`
-
-Impact: The client receives a denial after the runtime persisted a session. Retries can conflict or accumulate hidden sessions.
-
-Required response: Compensate V1 and V2 creation with deletion, preserve cleanup errors, and prove retry with the same id.
-
-Owner: downstream resolver. Confidence: 100. Corroborated by four reviewers.
-
-### #15: Proxy SSE waits on authority for every frame
-
-Location: `packages/workspace-runtime/src/workspace/runtime.ts:972`
-
-Impact: Message delta delivery is limited by a central HTTP authority round trip per frame.
-
-Required response: Use a renewable short session grant and terminate on renewal failure instead of authorizing inside every transform.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #16: A session can retain a project different from its workspace
-
-Location: `convex/migrations.ts:107`
-
-Impact: A same-org legacy project reference is preserved even when it differs from `workspace.project_id`; verification checks only presence.
-
-Required response: Enforce equality or stop with a row-specific conflict. Add the equality check to the verification migration.
-
-Owner: downstream resolver. Confidence: 75.
-
-### #18: Deployment skips the tenant migration gate
-
-Location: `docs/tech-docs/tenant-identity-schema-rollout.md:58` and `.github/workflows/deploy-control-plane.yml`
-
-Impact: New private-session authorization can deploy before legacy creator/participant/tenant data is backfilled, making legacy sessions inaccessible.
-
-Required response: Run all five backfills and five verification migrations before relay/runtime publication in staging and production. Require a legacy-session smoke.
-
-Owner: release. Confidence: 75. This is a release decision gate, not an automatic code fix.
-
-### #21: Minute-old credentials disconnect valid private PTYs
-
-Location: `packages/workspace-runtime/src/routes/pty.ts:273`
-
-Impact: The socket rechecks authority each second with the fixed 60-second establishment proof, so an otherwise authorized PTY closes after about one minute.
-
-Required response: Add a renewable stream lease linked to revocable parent runtime authority.
-
-Owner: downstream resolver. Confidence: 75.
-
-## P2 findings
-
-### #23: Turn leasing falls back to an instance-local map
-
-Location: `packages/agent-sdk-runtime/src/runtime.ts:194`
-
-Impact: Runtime reconstruction loses the lease and can admit a second turn for the same durable session.
-
-Required response: Make durable lease methods required on the runtime store and add a two-runtime reconstruction test.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #24: SQLite omits the durable organization-owner fallback
-
-Location: `packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts:443`
-
-Impact: An organization owner without a legacy membership row loses session authority only in SQLite, while Convex honors the durable owner field.
-
-Required response: Add the owner fallback to SQLite session role, participant administration, and listing. Add backend parity coverage.
-
-Owner: downstream resolver. Confidence: 100.
-
-### #28: Cold transcript sync assigns messages to the sync caller
-
-Location: `packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts:1502`
-
-Impact: When stored authors are absent, historical messages by other people are displayed as if the actor running sync wrote them.
-
-Required response: Carry producer-backed actor identity through projection and leave unknown historical authors unattributed.
-
-Owner: downstream resolver. Confidence: 75.
+Verdict: **ALL 18 VALIDATED FINDINGS CLOSED**
+
+The primary closure is `fc2c5fc51a` (`fix(multiplayer): close tenant authority review gaps`). The follow-up hardening and parity closure is `593dd1f94f` (`fix(multiplayer): harden tenant authority contracts`). No validated security finding remains open.
+
+## Closure matrix
+
+| ID | Priority | Status | Implemented response | Focused evidence |
+|----|----------|--------|----------------------|------------------|
+| #2 | P1 | Closed | Stable users no longer drift between human and agent kinds; runtime actor id/kind is a paired contract and live token checks reject kind drift. | `convex/actor-kind.policy.test.ts`, `convex/runtime-access-tokens.policy.test.ts`, runtime actor tests |
+| #3 | P1 | Closed | Creator/admin participant management now requires current workspace authority in Convex and SQLite; revocation also invalidates runtime tokens. | Convex session policy, SQLite authority policy/parity, project-membership revocation tests |
+| #5 | P1 | Closed | Signed sessionless events use canonical subject/org visibility and unknown signed frames default-deny. | local-server compatibility event tests and two-user event acceptance |
+| #6 | P1 | Closed | Convex and SQLite share the dependency-light canonical repository key implementation and parity corpus. | `convex/repository-key.policy.test.ts`, SQLite repository-key tests |
+| #8 | P1 | Closed | Event authorization is decided once per scoped enqueue/lease path; the writer no longer repeats the same per-frame decision. | workspace-runtime event-delivery tests |
+| #9 | P1 | Closed | Per-scope authorization queues are bounded; overflow disconnects for replay recovery instead of accumulating closures. | high-volume/stalled-authority event-delivery tests |
+| #10 | P1 | Closed | Reconnect replay uses bounded concurrency, ordered results, cached scope decisions, and a fixed startup deadline. | replay deadline, ordering, and retained-window tests |
+| #11 | P1 | Closed | Runtime authority preserves 401 invalid proof, 403 denial, and retryable 503 unavailability semantics. | remote-session-authority and compatibility error tests |
+| #12 | P1 | Closed | Process-log and PTY aliases resolve through the session access policy before transcript-bearing data is returned. | workspace-runtime process-route alias tests |
+| #13 | P1 | Closed | Fork registration uses the ordinary authority/projection path and compensates by deleting the child on failure. | session-core fork registration/cleanup tests |
+| #14 | P1 | Closed | V1 and V2 create compensate failed registration, retain cleanup errors, and permit retry with the same id. | session-core creation failure/retry tests |
+| #15 | P1 | Closed | Proxy SSE uses renewable bounded session grants and terminates on renewal denial/unavailability instead of calling authority for every delta. | workspace-runtime proxy and lease-renewal tests |
+| #16 | P1 | Closed | Session project must equal the canonical workspace project; missing/conflicting authority fails closed in live writes and migrations. | Convex session policy/migration tests and hosted session-pull conflict tests |
+| #18 | P1 | Closed in code | Staging and production workflow gates now run ordered tenant backfills, verification migrations, ledger assertions, and legacy-session smoke before runtime/relay enforcement. | `.github/workflows/deploy-control-plane.yml`, deployment-workflow and migration-discipline tests |
+| #21 | P1 | Closed | Long-lived PTY/SSE connections renew a revocable parent-linked session lease; expiry of the establishment proof no longer disconnects an authorized client. | PTY >60-second, revocation, and renewal tests |
+| #23 | P2 | Closed | Durable store lease methods are required and `AgentRuntime` is the single admission owner; runtime admission now invokes host activity only after winning the lease. | two-runtime reconstruction, collision, admission, and 492-test runtime suite |
+| #24 | P2 | Closed | SQLite and Convex both honor the durable organization owner when membership rows are absent. | SQLite/Convex authority parity tests |
+| #28 | P2 | Closed | Transcript sync accepts only producer-backed canonical author ids, preserves known authors, and leaves unknown history unattributed; caller identity is never substituted. | SQLite authority and Convex session attribution tests |
+
+## Follow-up hardening completed after closure
+
+`593dd1f94f` also closes secondary issues found while validating the original findings:
+
+- Runtime access tokens distinguish user and service principals, record the signed role, and revalidate the user, actor kind, workspace existence, and current role in Convex and SQLite.
+- Workspace shares require exactly one authoritative target, are idempotent per canonical target, revoke aliases and duplicate grants together, and use compound indexes for exact lookups.
+- Service-user projection reconciles subject and token identities and fails on conflicts.
+- Session pulls reject local-versus-authority org/project disagreement and require session write authority before transcript projection.
+- Checkpoint and agent-config runtime requests use the authority workspace org and the caller's actual role.
+- Public participant, share, and runtime-authority mutation bodies are capped at 16 KiB.
+- Reconnect scopes remember replay-authorized sessions so later revocation closes the stream.
+- The runtime permission mode is applied by the admitted harness turn only; the duplicate pre-session ACP write was removed.
 
 ## Rejected or reclassified candidates
 
 | Candidate | Disposition | Reason |
 |-----------|-------------|--------|
-| #1 migration-generated opaque ids | Rejected | The migration can be the canonical producer when tenant provenance is unambiguous |
-| #4 split the session module | Rejected | File size alone did not prove a current defect |
-| #7 separate WorkGraph service actor | Rejected | Current behavior intentionally attributes owner-initiated work to the owner |
-| #17 revoke tokens on org deletion | Pre-existing risk | The behavior predates this feature diff |
+| #1 migration-generated opaque ids | Rejected | The migration is the canonical producer when tenant provenance is unambiguous |
+| #4 split the session module | Rejected | File size alone did not prove a defect |
+| #7 separate WorkGraph service actor | Rejected | Owner-initiated work is intentionally attributed to the owner |
+| #17 revoke tokens on org deletion | Reclassified | Pre-existing risk outside the original feature diff; live workspace/role validation now covers active RAT use |
 | #19 support concurrent old SQLite writers | Rejected | Supported rollout is a stopped-service hard cut |
-| #20 fetch bridge lacks authority URL | Unproven | External bridge can inject its runtime environment |
-| Session-list participant N+1 | Residual performance risk | No production load failure was established |
-| Tenancy inventory text-window test | Testing gap | The gate can be stronger, but it is not the primary tenant contract |
-| One-second PTY authority polling | Residual performance risk | Superseded by the blocking stream-lease finding #21 |
-| Per-row session filter authority calls | Residual performance risk | Requires load bounds and batching design |
+| #20 fetch bridge lacks authority URL | Rejected after hardening | Every runtime fetch now requires an explicit principal and authoritative org/role |
 
-## Fix order
+## Verification summary
 
-1. #5 and #12: close direct data exposure.
-2. #3, #13, and #14: complete session revocation and lifecycle atomicity.
-3. #11 and #21: establish correct outage and long-lived proof semantics.
-4. #8, #9, #10, and #15: implement one bounded event grant/queue design.
-5. #2, #6, #16, #24, and #28: restore canonical identity and backend parity.
-6. #23: make admission durable.
-7. #18: gate deployment on migration and verification.
+- `@claxedo/server`: 3,068 passed, 14 skipped.
+- Convex policy suite: 397 passed.
+- `@claxedo/server-core`: 484 passed.
+- `@claxedo/local-server`: 227 passed.
+- `@claxedo/agent-sdk-runtime`: 492 passed.
+- `@claxedo/workspace-runtime`: 893 unit, 37 relay, and 59 real PTY/storage tests passed.
+- Affected-package typechecks and agent runtime build passed.
+- Root lint passed with 17,185 warnings and zero errors.
+- Signed two-user product, runtime-transport, and relay acceptance paths passed.
 
-## Completion evidence required per finding
-
-Every closed finding must record:
-
-- Fixing commit.
-- Focused positive and negative tests.
-- Backend parity evidence where applicable.
-- Public entrypoint or deployed smoke evidence where applicable.
-- Any remaining product/release decision.
+The remaining real-harness E2E failures are tracked in `verification-and-rollout.md`; they are not open findings in this review matrix.

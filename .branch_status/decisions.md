@@ -72,42 +72,23 @@ Authority unavailability fails closed but remains a retryable 503. Permission de
 
 Convex schema changes use ledger-backed ordered migrations. Required fields become contractual only after verification succeeds. SQLite uses the documented transactional stopped-service hard cut.
 
-## Open design gates
+## Resolved design gates
 
 ### O1: Human and agent actor representation
 
-Problem: browser and CLI requests currently rewrite one shared actor between `human` and `agent` (#2).
-
-Options:
-
-1. Immutable actor kind for the stable principal.
-2. Separate agent actor linked to the human principal with explicit grants.
-
-Required decision: choose one model before fixing token, session, and attribution tests.
+Resolution: a stable authenticated user keeps its canonical kind. Runtime calls carry an explicit paired `actorId`/`actorKind`; incomplete or conflicting pairs fail closed. Internal control-plane work is a separate service principal with agent kind. Runtime access tokens persist and revalidate both principal kind and actor kind.
 
 ### O2: Renewable stream authorization
 
-Problem: one-request relay host proofs expire after 60 seconds, while PTY/SSE connections are intentionally longer-lived (#21).
-
-Required properties:
-
-- Linked to revocable parent runtime authority.
-- Renewable without trusting an expired establishment proof.
-- Current session membership checked on renewal.
-- Bounded revocation propagation.
-- Shared by PTY and SSE where the security semantics match.
+Resolution: PTY and SSE use a renewable session lease linked to the active runtime access token. Renewal rechecks current session authority, remains bounded, and terminates the connection on denial or unavailable renewal. The expired establishment proof is not reused as authority.
 
 ### O3: Event grant cache semantics
 
-Problem: per-frame central authority calls create duplicate work, unbounded queues, and reconnect stalls (#8-#10, #15).
-
-Required decision: define lease duration, cache key, invalidation, concurrency bound, overflow behavior, and replay ordering.
+Resolution: grants are scoped by principal/session, short-lived, renewable, and shared by live/replay delivery. Per-scope queues and reconnect authorization concurrency are bounded; overflow disconnects for replay recovery. Replay results retain source order and have a total startup deadline. A later denial after prior authorization is revocation and terminates the stream.
 
 ### O4: Ambiguous registration outcome
 
-Definitive denial can compensate by deleting the session. A timeout may mean authority registration committed but the response was lost.
-
-Required decision: use a preassigned id plus idempotent registration/reservation, or persist reconciliation state for ambiguous outcomes.
+Resolution: callers preassign stable session ids and registration is idempotent. Definitive registration failure compensates by deleting the runtime session; cleanup failure is retained as part of the error. A retry with the same id reconciles the authoritative row instead of creating a second identity.
 
 ## Rejected review proposals
 
