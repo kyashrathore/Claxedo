@@ -1,0 +1,473 @@
+---
+import DownloadMenu from "./DownloadMenu.astro"
+import HarnessMark from "./HarnessMark.astro"
+import { site } from "../content/site"
+
+interface Props { canvasOnly?: boolean; initialSurface?: "chat" | "terminal" }
+const { canvasOnly = false, initialSurface = "chat" } = Astro.props
+
+const demoSessions = [
+  { id: "sandbox-provider-flag", title: "I need to test cloud sandbox usage thing...", user: "I need to test cloud sandbox usage thing works or not.\n\ncurrently setting sandbox provider is behind flag but still sees option to select local/cloud in session composer. lets first fix that", responses: ["I’ll trace the sandbox-provider flag from configuration through the session composer, identify why the provider selector is still rendered, then patch the canonical visibility logic and run focused checks.", "The selector is currently governed only by platform and transport. The recent UI flag hides the Settings section, while the default config hard-codes sandbox enabled, so that flag cannot affect the composer.", "I’m checking the intended config contract before wiring the visibility gate."], tools: ["Worked for 2m 48s", "Read 14 files", "Tracing sandbox-provider visibility"], context: "packages/claxedo-app", branch: "fix/sandbox-provider-flag" },
+  { id: "sandbox-usage-limits", title: "usage limit is not working", user: "Show the active sandbox quota before starting a cloud workspace and keep provider errors actionable.", responses: ["I’m tracing the workspace creation boundary so quota comes from the selected provider instead of a UI estimate.", "The provider response already carries the canonical limit. I’ll surface it in the create flow and preserve the original error when the provider rejects a workspace.", "The settings and launch paths now read the same provider state. I’m verifying Daytona and Cloudflare independently."], tools: ["Worked for 1m 36s", "Changed 4 files", "Running provider contract tests"], context: "packages/claxedo-app", branch: "fix/sandbox-limits" },
+  { id: "new-session", title: "New Session", user: "Start a fresh implementation session in this workspace.", responses: ["What would you like to work on?", "I’ll keep the implementation scoped to this project and preserve the current workspace state.", "Ready when you are."], tools: ["New local session", "Workspace ready", "Waiting for prompt"], context: "packages/claxedo-app", branch: "main" },
+  { id: "release-planning", title: "I am planning releasing claxedo...", user: "I am planning releasing Claxedo. Help me verify the release path.", responses: ["I’ll walk the release contract from packaged app through update metadata and hosted downloads.", "The desktop artifacts and update manifest have one canonical owner.", "I’m checking the signed release path now."], tools: ["Worked for 3m 12s", "Read release workflow", "Checking artifacts"], context: "packages/claxedo-app", branch: "release/desktop" },
+  { id: "done", title: "done", user: "Finish the remaining checks and summarize the result.", responses: ["The requested changes are complete and the focused checks pass.", "I’ve preserved the existing contracts and removed the replaced path.", "The work is ready for review."], tools: ["Ran focused checks", "Build passed", "Ready for review"], context: "packages/claxedo-app", branch: "main" },
+] as const
+
+const terminalSessions = [
+  { id: "terminal-codex", title: "Codex", surface: "terminal", harness: "codex", user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" },
+  { id: "terminal-claude", title: "Claude", surface: "terminal", harness: "claude", user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" },
+] as const
+const canvasSessions = initialSurface === "terminal" ? terminalSessions : demoSessions
+---
+
+<section class:list={["hero", { "canvas-only": canvasOnly }]} id={canvasOnly ? undefined : "product"} aria-labelledby={canvasOnly ? undefined : "hero-title"} aria-label={canvasOnly ? "Claxedo terminal application canvas" : undefined}>
+  {!canvasOnly && <div class="hero-copy">
+    <div>
+      <p class="hero-kicker"><i></i>{site.hero.eyebrow}</p>
+      <h1 id="hero-title">Your coding agents,<br /><span>finally in one place.</span></h1>
+    </div>
+    <div class="hero-detail">
+      <p>{site.hero.lead}</p>
+      <div class="hero-actions"><DownloadMenu placement="hero" /></div>
+      <ul aria-label="Claxedo highlights">{site.hero.proof.map((item) => <li><i></i>{item}</li>)}</ul>
+    </div>
+  </div>}
+
+  <div class="app-window" data-app-replica data-sidebar="closed" data-surface={initialSurface} data-panel="closed" data-panel-width="split" data-panel-view-active="changes" data-environment="expanded" data-account="closed" data-composer-menu="closed" data-active-session={canvasSessions[0].id} data-demo-sessions={JSON.stringify(canvasSessions)}>
+    <svg class="replica-icon-sprite" aria-hidden="true">
+      <symbol id="replica-layout-right-partial" viewBox="0 0 20 20"><g transform="rotate(180 10 10)"><path d="M16.835 8.66301C16.835 7.71885 16.8347 7.05065 16.792 6.52824C16.7605 6.14232 16.7073 5.86904 16.6299 5.65227L16.5439 5.45207C16.32 5.01264 15.9796 4.64498 15.5615 4.3886L15.3779 4.28606C15.1308 4.16013 14.8165 4.08006 14.3018 4.03801C13.7794 3.99533 13.1112 3.99504 12.167 3.99504H7.83301C6.88885 3.99504 6.22065 3.99533 5.69824 4.03801C5.31232 4.06954 5.03904 4.12266 4.82227 4.20012L4.62207 4.28606C4.18264 4.50996 3.81498 4.85035 3.55859 5.26848L3.45605 5.45207C3.33013 5.69922 3.25006 6.01354 3.20801 6.52824C3.16533 7.05065 3.16504 7.71885 3.16504 8.66301V11.3271C3.16504 12.2712 3.16533 12.9394 3.20801 13.4618C3.25006 13.9766 3.33013 14.2909 3.45605 14.538L3.55859 14.7216C3.81498 15.1397 4.18266 15.4801 4.62207 15.704L4.82227 15.79C5.03904 15.8674 5.31234 15.9205 5.69824 15.9521C6.22065 15.9947 6.88885 15.995 7.83301 15.995H12.167C13.1112 15.995 13.7794 15.9947 14.3018 15.9521C14.8164 15.91 15.1308 15.8299 15.3779 15.704L15.5615 15.6015C15.9797 15.3451 16.32 14.9774 16.5439 14.538L16.6299 14.3378C16.7074 14.121 16.7605 13.8478 16.792 13.4618C16.8347 12.9394 16.835 12.2712 16.835 11.3271V8.66301ZM5.00195 13.3329V6.66692C5.00195 6.29965 5.29972 6.00188 5.66699 6.00188C6.03412 6.00204 6.33203 6.29975 6.33203 6.66692V13.3329C6.33203 13.7001 6.03412 13.9978 5.66699 13.998C5.29972 13.998 5.00195 13.7002 5.00195 13.3329ZM18.165 11.3271C18.165 12.2493 18.1653 12.9811 18.1172 13.5702C18.0745 14.0924 17.9916 14.5472 17.8125 14.9648L17.7295 15.1415C17.394 15.8 16.8834 16.3511 16.2568 16.7353L15.9814 16.8896C15.5157 17.1268 15.0069 17.2285 14.4102 17.2773C13.821 17.3254 13.0893 17.3251 12.167 17.3251H7.83301C6.91071 17.3251 6.17898 17.3254 5.58984 17.2773C5.06757 17.2346 4.61294 17.1508 4.19531 16.9716L4.01855 16.8896C3.36014 16.5541 2.80898 16.0434 2.4248 15.4169L2.27051 15.1415C2.03328 14.6758 1.93158 14.167 1.88281 13.5702C1.83468 12.9811 1.83496 12.2493 1.83496 11.3271V8.66301C1.83496 7.74072 1.83468 7.00898 1.88281 6.41985C1.93157 5.82309 2.03329 5.31432 2.27051 4.84856L2.4248 4.57317C2.80898 3.94666 3.36012 3.436 4.01855 3.10051L4.19531 3.0175C4.61285 2.83843 5.06771 2.75548 5.58984 2.71281C6.17898 2.66468 6.91071 2.66496 7.83301 2.66496H12.167C13.0893 2.66496 13.821 2.66468 14.4102 2.71281C15.0069 2.76157 15.5157 2.86329 15.9814 3.10051L16.2568 3.25481C16.8833 3.63898 17.394 4.19012 17.7295 4.84856L17.8125 5.02531C17.9916 5.44285 18.0745 5.89771 18.1172 6.41985C18.1653 7.00898 18.165 7.74072 18.165 8.66301V11.3271Z" /></g></symbol>
+      <symbol id="replica-layout-right-full" viewBox="0 0 20 20"><g transform="rotate(180 10 10)"><path d="M6.83496 3.99992C6.38353 4.00411 6.01421 4.0122 5.69824 4.03801C5.31232 4.06954 5.03904 4.12266 4.82227 4.20012L4.62207 4.28606C4.18264 4.50996 3.81498 4.85035 3.55859 5.26848L3.45605 5.45207C3.33013 5.69922 3.25006 6.01354 3.20801 6.52824C3.16533 7.05065 3.16504 7.71885 3.16504 8.66301V11.3271C3.16504 12.2712 3.16533 12.9394 3.20801 13.4618C3.25006 13.9766 3.33013 14.2909 3.45605 14.538L3.55859 14.7216C3.81498 15.1397 4.18266 15.4801 4.62207 15.704L4.82227 15.79C5.03904 15.8674 5.31234 15.9205 5.69824 15.9521C6.01398 15.9779 6.383 15.986 6.83398 15.9902L6.83496 3.99992ZM18.165 11.3271C18.165 12.2493 18.1653 12.9811 18.1172 13.5702C18.0745 14.0924 17.9916 14.5472 17.8125 14.9648L17.7295 15.1415C17.394 15.8 16.8834 16.3511 16.2568 16.7353L15.9814 16.8896C15.5157 17.1268 15.0069 17.2285 14.4102 17.2773C13.821 17.3254 13.0893 17.3251 12.167 17.3251H7.83301C6.91071 17.3251 6.17898 17.3254 5.58984 17.2773C5.06757 17.2346 4.61294 17.1508 4.19531 16.9716L4.01855 16.8896C3.36014 16.5541 2.80898 16.0434 2.4248 15.4169L2.27051 15.1415C2.03328 14.6758 1.93158 14.167 1.88281 13.5702C1.83468 12.9811 1.83496 12.2493 1.83496 11.3271V8.66301C1.83496 7.74072 1.83468 7.00898 1.88281 6.41985C1.93157 5.82309 2.03329 5.31432 2.27051 4.84856L2.4248 4.57317C2.80898 3.94666 3.36012 3.436 4.01855 3.10051L4.19531 3.0175C4.61285 2.83843 5.06771 2.75548 5.58984 2.71281C6.17898 2.66468 6.91071 2.66496 7.83301 2.66496H12.167C13.0893 2.66496 13.821 2.66468 14.4102 2.71281C15.0069 2.76157 15.5157 2.86329 15.9814 3.10051L16.2568 3.25481C16.8833 3.63898 17.394 4.19012 17.7295 4.84856L17.8125 5.02531C17.9916 5.44285 18.0745 5.89771 18.1172 6.41985C18.1653 7.00898 18.165 7.74072 18.165 8.66301V11.3271ZM8.16406 15.995H12.167C13.1112 15.995 13.7794 15.9947 14.3018 15.9521C14.8164 15.91 15.1308 15.8299 15.3779 15.704L15.5615 15.6015C15.9797 15.3451 16.32 14.9774 16.5439 14.538L16.6299 14.3378C16.7074 14.121 16.7605 13.8478 16.792 13.4618C16.8347 12.9394 16.835 12.2712 16.835 11.3271V8.66301C16.835 7.71885 16.8347 7.05065 16.792 6.52824C16.7605 6.14232 16.7073 5.86904 16.6299 5.65227L16.5439 5.45207C16.32 5.01264 15.9796 4.64498 15.5615 4.3886L15.3779 4.28606C15.1308 4.16013 14.8165 4.08006 14.3018 4.03801C13.7794 3.99533 13.1112 3.99504 12.167 3.99504H8.16406C8.16407 3.99667 8.16504 3.99829 8.16504 3.99992L8.16406 15.995Z" /></g></symbol>
+      <symbol id="replica-panel-expand" viewBox="0 0 20 20"><path d="M4.33496 11C4.33496 10.6327 4.63273 10.335 5 10.335C5.36727 10.335 5.66504 10.6327 5.66504 11V14.335H9L9.13379 14.3486C9.43692 14.4106 9.66504 14.6786 9.66504 15C9.66504 15.3214 9.43692 15.5894 9.13379 15.6514L9 15.665H5C4.63273 15.665 4.33496 15.3673 4.33496 15V11ZM14.335 9V5.66504H11C10.6327 5.66504 10.335 5.36727 10.335 5C10.335 4.63273 10.6327 4.33496 11 4.33496H15L15.1338 4.34863C15.4369 4.41057 15.665 4.67857 15.665 5V9C15.665 9.36727 15.3673 9.66504 15 9.66504C14.6327 9.66504 14.335 9.36727 14.335 9Z" /></symbol>
+      <symbol id="replica-panel-restore" viewBox="0 0 20 20"><g transform="scale(1.25)"><path d="M6.1664 8.80845C6.7325 8.80845 7.1918 9.26774 7.1918 9.83384V13.3338C7.19155 13.6236 6.9562 13.8592 6.6664 13.8592C6.37672 13.8591 6.14126 13.6235 6.14101 13.3338V10.5936L2.70547 14.0379C2.50071 14.243 2.16753 14.2435 1.9623 14.0389C1.75709 13.8342 1.75665 13.501 1.96133 13.2957L5.39101 9.85923H2.6664C2.37672 9.85909 2.14126 9.6235 2.14101 9.33384C2.14101 9.04397 2.37657 8.80858 2.6664 8.80845H6.1664Z"/><path d="M13.2943 1.96274C13.4989 1.75743 13.8311 1.75731 14.0365 1.96177C14.2419 2.16637 14.243 2.49854 14.0385 2.70395L10.6127 6.14145H13.3334C13.6233 6.14145 13.8588 6.37689 13.8588 6.66684C13.8587 6.95674 13.6233 7.19223 13.3334 7.19223H9.8334C9.26734 7.19223 8.80807 6.73288 8.80801 6.16684V2.66684C8.80801 2.37689 9.04345 2.14145 9.3334 2.14145C9.62335 2.14145 9.85879 2.37689 9.85879 2.66684V5.41098L13.2943 1.96274Z"/></g></symbol>
+    </svg>
+    <header class="shell-header">
+      <div class="rail-titlebar">
+        <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+        <button type="button" class="icon-button rail-hide" data-sidebar-toggle aria-label="Hide Sidebar" aria-pressed="true">
+          <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.6"></rect><path d="M5.7 2.75v10.5"></path></svg>
+        </button>
+      </div>
+      <div class="header-columns">
+        <div class="workbench-l1">
+          <div class="closed-chrome">
+            <div class="traffic-lights" aria-hidden="true"><i></i><i></i><i></i></div>
+            <button type="button" class="icon-button" data-sidebar-toggle aria-label="Show Sidebar" aria-pressed="false">
+              <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.25" y="2.75" width="11.5" height="10.5" rx="1.6"></rect><path d="M5.7 2.75v10.5"></path></svg>
+            </button>
+            <span class="drag-gap"></span>
+          </div>
+          <nav class="compact-tabs" role="tablist" aria-label="Workbench panes">
+            {canvasSessions.slice(0, 2).map((session, index) => (
+              <div class="compact-tab" data-selected={index === 0 ? "true" : "false"}>
+                <button type="button" class="tab-prefix" tabindex="-1" aria-label={`Claxedo / ${session.title}`} data-session-tab-id={session.id}>{"harness" in session ? <span class="tab-harness-mark"><HarnessMark name={session.harness} /></span> : <span class="tab-project-mark">C</span>}<i></i></button>
+                <button type="button" class="tab-title" role="tab" aria-selected={index === 0 ? "true" : "false"} data-session-tab-id={session.id}>{session.title}</button>
+                <button type="button" class="tab-close" aria-label={`Close ${session.title}`}><svg viewBox="0 0 16 16"><path d="m5 5 6 6m0-6-6 6"></path></svg></button>
+              </div>
+            ))}
+          </nav>
+          <div class="header-drag"></div>
+          <div class="scope-actions">
+            <button type="button" class="icon-button" data-surface-button="new" aria-label="New Session"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg></button>
+            <button type="button" class="icon-button" data-surface-button="terminal" aria-label="New Terminal"><svg viewBox="0 0 16 16"><rect x="2.5" y="2.75" width="11" height="10.5" rx="1.7"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg></button>
+            <button type="button" class="icon-button" aria-label="More actions"><svg viewBox="0 0 16 16"><path d="m4.5 6.5 3.5 3 3.5-3"></path></svg></button>
+          </div>
+          <button type="button" class="icon-button workspace-toggle" data-workspace-toggle aria-label="Open workspace panel" aria-pressed="false">
+            <svg class="source-fill-icon" viewBox="0 0 20 20"><use href="#replica-layout-right-partial"></use></svg>
+          </button>
+        </div>
+        <div class="workspace-l1">
+          <div class="workspace-tabs">
+            <button type="button" class="workspace-tab active" data-panel-button="changes"><svg viewBox="0 0 16 16"><rect x="3" y="3" width="10" height="10" rx="1.5"></rect><path d="M5.5 6h5M5.5 9h3"></path></svg><span>Review</span><i>×</i></button>
+            <button type="button" class="workspace-tab" data-panel-button="files"><svg viewBox="0 0 16 16"><path d="M4 2.5h5l3 3V13.5H4zM9 2.5v3h3"></path></svg><span>Files</span></button>
+            <button type="button" class="icon-button" aria-label="New workspace tab"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg></button>
+          </div>
+          <span></span>
+          <button type="button" class="icon-button panel-width-toggle" data-panel-maximize aria-label="Maximize workspace panel" aria-pressed="false"><svg class="source-fill-icon panel-expand-icon" viewBox="0 0 20 20"><use href="#replica-panel-expand"></use></svg><svg class="source-fill-icon panel-restore-icon" viewBox="0 0 20 20"><use href="#replica-panel-restore"></use></svg></button>
+          <button type="button" class="icon-button" data-panel-close aria-label="Close workspace panel"><svg class="source-fill-icon" viewBox="0 0 20 20"><use href="#replica-layout-right-full"></use></svg></button>
+        </div>
+      </div>
+    </header>
+
+    <div class="app-body">
+      <aside class="project-rail" aria-label="Projects and sessions">
+        <div class="rail-global">
+          <button type="button"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg><span>New Project</span></button>
+          <button type="button"><svg viewBox="0 0 16 16"><path d="M5 6V4.8A3 3 0 0 1 8 2a3 3 0 0 1 3 2.8V6m-7 0h8l-.5 7h-7z"></path></svg><span>Marketplace</span></button>
+        </div>
+        <div class="rail-divider"></div>
+        <div class="rail-scroll">
+          <span class="rail-label">Projects</span>
+          <button type="button" class="project-row"><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg><b>agent-app-benchmark</b></button>
+          <button type="button" class="project-row"><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg><b>Claxedo</b></button>
+          <div class="session-list">
+            {canvasSessions.map((session, index) => <button type="button" class:list={["session-row", { active: index === 0 }]} data-session-id={session.id}><span>{session.title}</span><small>{index === 0 ? "now" : `${index + 7}h`}</small></button>)}
+            <button type="button" class="load-row">Load more</button>
+          </div>
+          <button type="button" class="project-row second-project"><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg><b>formlink</b></button>
+          <div class="session-list"><button type="button" class="session-row"><span></span><span>Project overview</span><small>9h</small></button></div>
+        </div>
+        <div class="workspace-account-wrap">
+          <div class="workspace-account-menu" aria-label="Workspace menu">
+            <div class="account-identity"><span><svg viewBox="0 0 16 16"><path d="M2.5 4h11v7.2h-11zm3 9h5M8 11v2"></path></svg></span><b>Local workspace</b></div>
+            <i></i>
+            <button type="button"><svg viewBox="0 0 16 16"><path d="m8 2 6 11H2zm0 4v3m0 2.2v.2"></path></svg><span>Diagnostics</span></button>
+            <button type="button"><svg viewBox="0 0 16 16"><path d="M3 12a5.5 5.5 0 1 1 10 0M8 8l3-2"></path></svg><span>Usage</span></button>
+            <button type="button"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="2"></circle><path d="M8 2v2m0 8v2M2 8h2m8 0h2M3.8 3.8l1.4 1.4m5.6 5.6 1.4 1.4m0-8.4-1.4 1.4m-5.6 5.6-1.4 1.4"></path></svg><span>Settings</span></button>
+            <button type="button"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"></circle><path d="M6.5 6a1.6 1.6 0 0 1 3 .8c0 1.2-1.5 1.4-1.5 2.7m0 2v.1"></path></svg><span>Help</span></button>
+          </div>
+          <button type="button" class="workspace-account" data-account-toggle aria-expanded="false"><span class="account-device"><svg viewBox="0 0 16 16"><path d="M2.5 4h11v7.2h-11zm3 9h5M8 11v2"></path></svg></span><span>Local workspace</span><svg class="account-chevron" viewBox="0 0 16 16"><path d="m4.5 9.5 3.5-3 3.5 3"></path></svg></button>
+        </div>
+      </aside>
+
+      <div class="stage-columns">
+        <main class="workbench">
+          <section class="session-surface chat-surface" aria-label="Claxedo graphical session">
+            <div class="session-content">
+              <div class="timeline-scroll">
+                <div class="timeline-column">
+                  <div class="session-name-row"><h2 data-session-title>{canvasSessions[0].title}</h2><button type="button" aria-label="Session options"><svg viewBox="0 0 16 16"><circle cx="3" cy="8" r="1"></circle><circle cx="8" cy="8" r="1"></circle><circle cx="13" cy="8" r="1"></circle></svg></button></div>
+                  <article class="message user-message"><div data-transcript-user>{canvasSessions[0].user}</div></article>
+                  <article class="message assistant-message"><p data-transcript-response="0">{canvasSessions[0].responses[0]}</p></article>
+                  <button type="button" class="turn-fold" data-tool-card="0" aria-expanded="false"><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"></path></svg><b data-transcript-tool="0">{canvasSessions[0].tools[0]}</b><i></i></button>
+                  <button type="button" class="tool-summary" data-tool-card="1" aria-expanded="false"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg><b data-transcript-tool="1">{canvasSessions[0].tools[1]}</b><span>⌄</span></button>
+                  <article class="message assistant-message"><p data-transcript-response="1">{canvasSessions[0].responses[1]}</p></article>
+                  <button type="button" class="tool-summary" data-tool-card="2" aria-expanded="false"><svg viewBox="0 0 16 16"><path d="M3 3h10v10H3zM3 7h10M7 3v10"></path></svg><b>Read config defaults</b><span>⌄</span></button>
+                  <article class="message assistant-message"><p data-transcript-response="2">{canvasSessions[0].responses[2]}</p></article>
+                  <button type="button" class="tool-summary running" data-tool-card="3" aria-expanded="false"><i></i><b data-transcript-tool="2">{canvasSessions[0].tools[2]}</b><span>⌄</span></button>
+                </div>
+              </div>
+
+              <aside class="environment-card" aria-label="Session environment">
+                <div class="environment-expanded">
+                  <header><b>Environment</b><button type="button" data-environment-toggle aria-label="Collapse Environment"><svg viewBox="0 0 16 16"><path d="m5 4 4 4-4 4m4-8 4 4-4 4"></path></svg></button></header>
+                  <div class="env-facts">
+                    <div><svg viewBox="0 0 16 16"><path d="M3 3h4l1.5 2H13v8H3z"></path></svg><span data-session-context>{canvasSessions[0].context}</span></div>
+                    <div><svg viewBox="0 0 16 16"><circle cx="5" cy="4" r="1.5"></circle><circle cx="11" cy="12" r="1.5"></circle><path d="M5 5.5v3A3.5 3.5 0 0 0 8.5 12H9.5M5 8.5h4A2 2 0 0 0 11 6.5V5"></path></svg><span data-session-branch>{canvasSessions[0].branch}</span></div>
+                  </div>
+                  <section><small>Workspace</small><button type="button" data-panel-button="changes"><svg viewBox="0 0 16 16"><path d="m3 4 2-2 2 2M5 2v8m8 2-2 2-2-2m2 2V6"></path></svg><span>Changes</span><em><b>+34</b> −8</em></button><button type="button" data-panel-button="files"><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg><span>Files</span></button><button type="button" data-panel-button="processes"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg><span>Processes</span><i></i><em>2</em></button></section>
+                  <section><small>Repository</small><button type="button"><svg viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.5"></circle><path d="M5.7 12.7c.3-1 .1-1.8-.5-2.4-2-.2-2.2-1.4-2.2-1.4m7.3 3.8c-.3-1-.1-1.8.5-2.4 2-.2 2.2-1.4 2.2-1.4M6 5.2c1.2-.7 2.8-.7 4 0"></path></svg><span>claxedo/claxedo</span><em>↗</em></button></section>
+                </div>
+                <div class="environment-collapsed"><button type="button" data-panel-button="changes" aria-label="Open changes"><svg viewBox="0 0 16 16"><path d="m3 4 2-2 2 2M5 2v8m8 2-2 2-2-2m2 2V6"></path></svg></button><button type="button" data-panel-button="files" aria-label="Open files"><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg></button><button type="button" data-panel-button="processes" aria-label="Open processes"><svg viewBox="0 0 16 16"><rect x="2.5" y="3" width="11" height="10" rx="1.5"></rect><path d="m5 6 2 2-2 2m4 0h2"></path></svg></button><i></i><button type="button" data-environment-toggle aria-label="Expand Environment"><svg viewBox="0 0 16 16"><path d="m11 4-4 4 4 4M7 4 3 8l4 4"></path></svg></button></div>
+              </aside>
+
+              <div class="composer-zone">
+                <button type="button" class="scroll-latest" data-scroll-latest aria-label="Scroll to latest message"><svg viewBox="0 0 16 16"><path d="M8 3v9m-4-4 4 4 4-4"></path></svg></button>
+                <form class="composer" data-composer-form>
+                  <textarea class="composer-input" data-composer-input aria-label="Session prompt" rows="2" placeholder="Ask anything, / for commands, @ for context..."></textarea>
+                  <div class="composer-context-chip" data-composer-context-chip hidden><span>＠</span><b data-composer-context-label>Files</b><button type="button" data-context-remove aria-label="Remove context">×</button></div>
+                  <div class="composer-controls">
+                    <div class="composer-left">
+                      <div class="composer-popover add-popover" data-composer-popover="context" hidden><small>Add</small><button type="button" data-context-option="Images and files"><b>Images and files</b><em>⌘U</em></button><button type="button" data-context-option="Commands"><b>Commands</b><em>/</em></button><button type="button" data-context-option="Context"><b>Context</b><em>@</em></button><button type="button" data-context-option="Shell command"><b>Shell command</b><em>!</em></button></div>
+                      <div class="composer-popover permission-popover" data-composer-popover="permission" hidden><small>Codex</small><button type="button" data-permission="Read only"><svg viewBox="0 0 20 20"><path d="M10 2.5 4.5 5v4c0 3.7 2.2 6.2 5.5 8 3.3-1.8 5.5-4.3 5.5-8V5z"></path><path d="m7 8 2 2-2 2m4 0h2"></path></svg><span><b>Read only</b><i>Never asks; the sandbox permits reads only, so writes fail</i></span><em></em></button><button type="button" data-permission="Workspace write" class="selected"><svg viewBox="0 0 20 20"><path d="M10 2.5 4.5 5v4c0 3.7 2.2 6.2 5.5 8 3.3-1.8 5.5-4.3 5.5-8V5z"></path><path d="m7 8 2 2-2 2m4 0h2"></path></svg><span><b>Workspace write</b><i>Runs commands inside the workspace without asking; escalates outside it</i></span><em>✓</em></button><button type="button" data-permission="Untrusted"><svg viewBox="0 0 20 20"><path d="M10 2.5 4.5 5v4c0 3.7 2.2 6.2 5.5 8 3.3-1.8 5.5-4.3 5.5-8V5z"></path><path d="m7 8 2 2-2 2m4 0h2"></path></svg><span><b>Untrusted</b><i>Only trusted commands run without asking; anything else escalates</i></span><em></em></button><button type="button" data-permission="Full access"><svg viewBox="0 0 20 20"><path d="M10 2.5 4.5 5v4c0 3.7 2.2 6.2 5.5 8 3.3-1.8 5.5-4.3 5.5-8V5z"></path><path d="m7 8 2 2-2 2m4 0h2"></path></svg><span><b>Full access</b><i>Never asks; full filesystem and network access</i></span><em></em></button></div>
+                      <button type="button" class="round-control" data-composer-menu-trigger="context" aria-label="Add context" aria-expanded="false"><svg viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"></path></svg></button><button type="button" class="permission-control" data-composer-menu-trigger="permission" aria-label="Select permission mode" aria-expanded="false"><svg viewBox="0 0 16 16"><path d="M8 2 3.5 4v3.5c0 3 1.8 5 4.5 6.5 2.7-1.5 4.5-3.5 4.5-6.5V4z"></path><path d="m5.5 7 1.7 1.7-1.7 1.7m3 0h2"></path></svg><b data-permission-label>Workspace write</b></button>
+                    </div>
+                    <div class="composer-right">
+                      <div class="composer-popover harness-popover" data-composer-popover="harness" data-picker-open="model" hidden>
+                        <button type="button" class="picker-section" data-harness-section="harness"><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"></path></svg><b>Harness</b><span data-current-harness>Codex</span></button>
+                        <div class="picker-options harness-options" data-harness-panel="harness" hidden><small>Native SDK</small><button type="button" data-hero-harness="Claude" data-hero-model="Opus 5"><span class="harness-logo"><HarnessMark name="claude" /></span><b>Claude</b><em></em></button><button type="button" data-hero-harness="Codex" data-hero-model="GPT-5.6-Luna" class="selected"><span class="harness-logo"><HarnessMark name="codex" /></span><b>Codex</b><em>✓</em></button><button type="button" data-hero-harness="Cursor" data-hero-model="Composer 1"><span class="harness-logo"><HarnessMark name="cursor" /></span><b>Cursor</b><em></em></button><small>Direct</small><button type="button" data-hero-harness="Pi" data-hero-model="Pi"><span class="harness-logo"><HarnessMark name="pi" /></span><b>Pi</b><em></em></button><button type="button" data-hero-harness="OpenCode" data-hero-model="GPT-5.4"><span class="harness-logo"><HarnessMark name="opencode" /></span><b>OpenCode</b><em></em></button></div>
+                        <button type="button" class="picker-section active" data-harness-section="model"><svg viewBox="0 0 16 16"><path d="m4 6 4 4 4-4"></path></svg><b>Model</b><span data-hero-model-label>GPT-5.6-Luna</span></button>
+                        <div class="picker-options model-options" data-harness-panel="model"><label><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4"></circle><path d="m10 10 3 3"></path></svg><input type="search" aria-label="Search models" placeholder="Search models" /></label><div class="model-provider"><span>Codex App Server</span><b>Configured</b></div><button type="button" data-hero-model-choice="GPT-5.5"><span><b>GPT-5.5</b><i>Frontier model for complex coding, research, and real-world work.</i></span><em></em></button><button type="button" data-hero-model-choice="GPT-5.6-Luna" class="selected"><span><b>GPT-5.6-Luna</b><i>Fast and affordable agentic coding model.</i></span><em>✓</em></button><button type="button" data-hero-model-choice="GPT-5.6-Sol"><span><b>GPT-5.6-Sol</b><i>Latest frontier agentic coding model.</i></span><em></em></button><button type="button" data-hero-model-choice="GPT-5.6-Terra"><span><b>GPT-5.6-Terra</b><i>Balanced agentic coding model for everyday work.</i></span><em></em></button></div>
+                        <button type="button" class="picker-section" data-harness-section="effort"><svg viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"></path></svg><b>Effort</b><span data-hero-effort-label>Low</span></button>
+                        <div class="picker-options effort-options" data-harness-panel="effort" hidden>{['Low','Medium','High','Xhigh','Max','Ultra'].map((effort) => <button type="button" data-hero-effort={effort} class:list={{ selected: effort === 'Low' }}><b>{effort}</b><em>{effort === 'Low' ? '✓' : ''}</em></button>)}</div>
+                      </div>
+                      <button type="button" class="harness-control" data-composer-menu-trigger="harness" aria-label="Select harness and model" aria-expanded="false"><span class="harness-logo" data-hero-harness-mark><HarnessMark name="codex" /></span><span data-hero-model-trigger>GPT-5.6-Luna</span><small data-hero-effort-trigger>Low</small><svg viewBox="0 0 16 16"><path d="m4.5 6.5 3.5 3 3.5-3"></path></svg></button><button type="submit" class="send" aria-label="Send"><svg viewBox="0 0 16 16"><path d="M8 12V4m-4 4 4-4 4 4"></path></svg></button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+            </div>
+          </section>
+
+          <section class="session-surface terminal-surface" aria-label="Claxedo terminal session">
+            <div class="terminal-content" data-terminal-session="terminal-codex" hidden={initialSurface !== "terminal"}><p><b>›_ OpenAI Codex</b> <span class="term-muted">(v0.150.1)</span></p><p></p><p>model:       <strong>gpt-5.6-sol high · fast</strong></p><p>directory:   <strong>~/test/opencode</strong></p><p>permissions: <strong>YOLO mode</strong></p><p></p><p><span class="term-muted">MCP startup incomplete (failed: figma)</span></p><p></p><p>› <span class="term-muted">Ask Codex to do anything</span> <i class="term-cursor"></i></p></div>
+            <div class="terminal-content" data-terminal-session="terminal-claude" hidden><p><b>✦ Claude Code</b> <span class="term-muted">v2.1.247</span></p><p>Opus 5 (1M context) · high effort</p><p>~/test/opencode</p><p></p><p><span class="term-muted">△ 1 MCP server needs authentication · run /mcp</span></p><p></p><p>❯ <span class="term-muted">Try “edit server.ts to…”</span> <i class="term-cursor"></i></p></div>
+            <div class="terminal-content" data-terminal-session="default" hidden={initialSurface === "terminal"}><p><span class="term-path">~/claxedo</span> <span class="term-branch">dev*</span> codex --resume release-performance</p><p><span class="term-green">✓</span> Codex resumed release-performance</p><p>Tracing session switch and draft ownership…</p><p class="term-muted">$ bun test session-selection composer-isolation</p><p><span class="term-green">✓</span> 18 tests passed</p><p><span class="term-path">~/claxedo</span> <span class="term-branch">dev*</span> <i class="term-cursor"></i></p></div>
+          </section>
+        </main>
+
+        <aside class="workspace-panel" aria-label="Workspace panel">
+          <div class="workspace-l2"><div class="review-toolbar"><button type="button" class="commit-scope"><span>Uncommitted</span><span>136</span><svg viewBox="0 0 16 16"><path d="m5 6 3 3 3-3"></path></svg></button><b>+335</b><i>−10,008</i><span></span><button type="button" aria-label="Sort changes"><svg viewBox="0 0 20 20"><path d="M6 8V3.5M6 3.5 3.75 5.75M6 3.5l2.25 2.25M6 12v4.5M6 16.5l-2.25-2.25M6 16.5l2.25-2.25M10.5 6.5H16M10.5 10h4M10.5 13.5H16"></path></svg></button><button type="button" data-panel-button="changes" aria-label="Open review"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"></rect><path d="M10 4.75v10.5M5 7h3M12 7h3M5 10h3M12 10h3M5 13h3M12 13h3"></path></svg></button><button type="button" data-panel-button="files" aria-label="Open files"><svg viewBox="0 0 20 20"><path d="M5.4 3.5h5.2l3.9 3.9v9.1h-9zM10.5 3.5v4h4"></path></svg></button><button type="button" aria-label="Open changed file"><svg viewBox="0 0 20 20"><path d="M7 13 15 5M10 5h5v5"></path></svg></button><button type="button" data-panel-button="processes" aria-label="Open processes"><svg viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"></rect><path d="m6.5 8 2 2-2 2M11 12h3"></path></svg></button></div></div>
+          <div class="panel-view review-view" data-panel-view="changes">
+            <div class="change-list">
+              <div class="file-change removed"><span>YML</span><b>.github/workflows/docs-links.yml</b><small>Removed</small></div>
+              <div class="file-change"><span>MD</span><b>CONTRIBUTING.md</b><small>+1 −1</small></div>
+              <div class="file-change"><span>MD</span><b>README.md</b><small>+4 −4</small></div>
+              <div class="file-change"><span>◉</span><b>bun.lock</b><small>+14 −1,652</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/e2e/playwright/marketing-screenshots.spec.ts</b><small>+4 −4</small></div>
+              <div class="file-change"><span>TSX</span><b>packages/claxedo-app/src/app/workbench/rail/onboarding-empty-state.tsx</b><small>+1 −1</small></div>
+              <div class="file-change"><span>TSX</span><b>packages/claxedo-app/src/app/workbench/workbench/workbench.tsx</b><small>+4 −5</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/src/features/terminal/core/backend/xterm.ts</b><small>−10</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/src/features/terminal/core/config.test.ts</b><small>+2 −5</small></div>
+              <div class="file-change"><span>TS</span><b>packages/claxedo-app/src/features/terminal/core/config.ts</b><small>+2 −2</small></div>
+              <div class="file-change"><span>CSS</span><b>packages/claxedo-app/src/features/terminal/core/terminal.css</b><small>+8 −32</small></div>
+              <div class="file-change removed"><span>MD</span><b>packages/claxedo-docs/LICENSE</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MD</span><b>packages/claxedo-docs/README.md</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/channels.mdx</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/connections.mdx</b><small>−121</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/mcp.mdx</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/api/overview.mdx</b><small>Removed</small></div>
+              <div class="file-change removed"><span>MDX</span><b>packages/claxedo-docs/concepts/credentials.mdx</b><small>Removed</small></div>
+            </div>
+            <aside class="repo-tree">
+              <label class="file-search"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4"></circle><path d="m10 10 3 3"></path></svg><input type="search" aria-label="Search files" placeholder="Search files..." /></label>
+              {['.agent-extensions','.agents','.artifacts','.claude','.claxedo','.codex','.context','.crabbox','.cursor','.github','.husky','.opencode','.turborepo','.vercel','.vscode','.workspace-runtime','.worktrees','.wrangler','agent-extensions','convex','docs'].map((name) => <button type="button" class:list={["repo-row", { changed: name === '.github', active: name === 'docs' }]} data-repo-folder={name} aria-expanded="false"><svg class="repo-chevron" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4"></path></svg><svg class="repo-folder" viewBox="0 0 20 20"><path d="M3.5 6.5h5l1.4 1.5h6.6v7.5h-13z"></path></svg><b>{name}</b><i></i></button>)}
+              <div class="repo-children" data-repo-children hidden><span>README.md</span><span>index.ts</span></div>
+              <button type="button" class="show-more">Show 24 more</button>
+            </aside>
+          </div>
+          <div class="panel-view" data-panel-view="files" hidden><label class="file-search"><svg viewBox="0 0 16 16"><circle cx="7" cy="7" r="4"></circle><path d="m10 10 3 3"></path></svg><input type="search" aria-label="Search files" placeholder="Search files" /></label><div class="tree-row"><span>⌄</span><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg><b>packages</b></div><div class="tree-row indent"><span>⌄</span><svg viewBox="0 0 16 16"><path d="M2 5.5h12v7.5H2zM2 5.5l2-2h4l1.2 2"></path></svg><b>claxedo-app</b></div><div class="tree-row indent-2"><span></span><small>TS</small><b>session-selection.ts</b></div><div class="tree-row indent-2"><span></span><small>TSX</small><b>composer.tsx</b></div></div>
+          <div class="panel-view" data-panel-view="processes" hidden><div class="process-head">Running processes <span>2</span></div><div class="process-row"><i></i><div><b>bun run dev</b><small>localhost:4321</small></div><button type="button">•••</button></div><div class="process-row"><i></i><div><b>Claxedo daemon</b><small>pid 2593</small></div><button type="button">•••</button></div></div>
+        </aside>
+      </div>
+    </div>
+  </div>
+</section>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-app-replica]")) {
+    type DemoSession = { id: string; title: string; user: string; responses: string[]; tools: string[]; context: string; branch: string; surface?: "chat" | "terminal" }
+    const sessions = new Map((JSON.parse(root.dataset.demoSessions!) as DemoSession[]).map((session) => [session.id, session]))
+    const drafts = new Map<string, string>()
+    const composerInput = root.querySelector<HTMLTextAreaElement>("[data-composer-input]")
+
+    const setSurface = (surface: string) => { root.dataset.surface = surface === "new" ? "chat" : surface }
+
+    const setSidebar = (open: boolean) => {
+      root.dataset.sidebar = open ? "open" : "closed"
+      root.querySelectorAll<HTMLButtonElement>("[data-sidebar-toggle]").forEach((toggle) => {
+        const isRailToggle = toggle.closest(".rail-titlebar") !== null
+        toggle.setAttribute("aria-pressed", String(isRailToggle && open))
+        toggle.setAttribute("aria-label", isRailToggle ? "Hide Sidebar" : "Show Sidebar")
+      })
+    }
+    root.querySelectorAll<HTMLButtonElement>("[data-sidebar-toggle]").forEach((button) => button.addEventListener("click", () => setSidebar(root.dataset.sidebar !== "open")))
+
+    const selectSession = (id: string) => {
+      const session = sessions.get(id)
+      if (!session) return
+      setSurface(session.surface ?? "chat")
+      if (session.surface === "terminal") {
+        const views = Array.from(root.querySelectorAll<HTMLElement>("[data-terminal-session]"))
+        const activeView = views.find((view) => view.dataset.terminalSession === id) ?? views.find((view) => view.dataset.terminalSession === "default")
+        views.forEach((view) => view.hidden = view !== activeView)
+      }
+      root.dataset.activeSession = id
+      root.querySelectorAll<HTMLElement>("[data-session-id]").forEach((item) => item.classList.toggle("active", item.dataset.sessionId === id))
+      root.querySelectorAll<HTMLElement>(".compact-tab").forEach((tab) => {
+        const selected = tab.querySelector<HTMLElement>("[data-session-tab-id]")?.dataset.sessionTabId === id
+        tab.dataset.selected = selected ? "true" : "false"
+        tab.querySelector<HTMLButtonElement>("[role=tab]")?.setAttribute("aria-selected", String(selected))
+      })
+      root.querySelector<HTMLElement>("[data-session-title]")!.textContent = session.title
+      root.querySelector<HTMLElement>(".timeline-column")?.classList.toggle("empty-session", session.user.length === 0)
+      root.querySelector<HTMLElement>("[data-transcript-user]")!.textContent = session.user
+      root.querySelector<HTMLElement>("[data-session-context]")!.textContent = session.context
+      root.querySelector<HTMLElement>("[data-session-branch]")!.textContent = session.branch
+      session.responses.forEach((copy, index) => { const row = root.querySelector<HTMLElement>(`[data-transcript-response="${index}"]`); if (row) row.textContent = copy })
+      session.tools.forEach((copy, index) => { const row = root.querySelector<HTMLElement>(`[data-transcript-tool="${index}"]`); if (row) row.textContent = copy })
+      if (composerInput) composerInput.value = drafts.get(id) ?? ""
+      if (window.innerWidth < 768) setSidebar(false)
+    }
+    const bindSessionRow = (button: HTMLButtonElement) => button.addEventListener("click", () => selectSession(button.dataset.sessionId ?? ""))
+    root.querySelectorAll<HTMLButtonElement>("[data-session-id]").forEach(bindSessionRow)
+    root.querySelector<HTMLElement>(".compact-tabs")?.addEventListener("click", (event) => {
+      const target = event.target as Element
+      const close = target.closest<HTMLButtonElement>(".tab-close")
+      if (close) {
+        const tab = close.closest<HTMLElement>(".compact-tab")
+        if (!tab) return
+        tab.hidden = true
+        if (tab.dataset.selected === "true") {
+          const next = root.querySelector<HTMLElement>(".compact-tab:not([hidden]) [data-session-tab-id]")?.dataset.sessionTabId
+          if (next) selectSession(next)
+        }
+        return
+      }
+      const tabButton = target.closest<HTMLButtonElement>("[data-session-tab-id]")
+      if (tabButton) selectSession(tabButton.dataset.sessionTabId ?? "")
+    })
+    composerInput?.addEventListener("input", () => drafts.set(root.dataset.activeSession!, composerInput.value))
+    root.querySelector<HTMLFormElement>("[data-composer-form]")?.addEventListener("submit", (event) => event.preventDefault())
+    root.querySelector<HTMLButtonElement>("[data-scroll-latest]")?.addEventListener("click", () => root.querySelector<HTMLElement>(".timeline-scroll")?.scrollTo({ top: root.querySelector<HTMLElement>(".timeline-scroll")?.scrollHeight ?? 0, behavior: "smooth" }))
+    let createdSessionCount = 0
+    let createdTerminalCount = 0
+    const addSessionEntry = (session: DemoSession) => {
+      const row = root.querySelector<HTMLButtonElement>(".session-list [data-session-id]")!.cloneNode(true) as HTMLButtonElement
+      row.classList.remove("active")
+      row.dataset.sessionId = session.id
+      row.querySelector("span")!.textContent = session.title
+      row.querySelector("small")!.textContent = "now"
+      root.querySelector(".session-list .load-row")?.before(row)
+      bindSessionRow(row)
+
+      const tab = root.querySelector<HTMLElement>(".compact-tab")!.cloneNode(true) as HTMLElement
+      tab.hidden = false
+      tab.dataset.selected = "false"
+      const tabTargets = tab.querySelectorAll<HTMLElement>("[data-session-tab-id]")
+      tabTargets.forEach((target) => target.dataset.sessionTabId = session.id)
+      const prefix = tab.querySelector<HTMLButtonElement>(".tab-prefix")!
+      prefix.setAttribute("aria-label", `Claxedo / ${session.title}`)
+      const title = tab.querySelector<HTMLButtonElement>(".tab-title")!
+      title.textContent = session.title
+      title.setAttribute("aria-selected", "false")
+      tab.querySelector<HTMLButtonElement>(".tab-close")!.setAttribute("aria-label", `Close ${session.title}`)
+      root.querySelector(".compact-tabs")?.append(tab)
+    }
+    const createSession = (surface: "chat" | "terminal") => {
+      const isTerminal = surface === "terminal"
+      const sequence = isTerminal ? ++createdTerminalCount : ++createdSessionCount
+      const title = isTerminal ? `Terminal ${sequence}` : sequence === 1 ? "New Session" : `New Session ${sequence}`
+      const session: DemoSession = { id: `created-${surface}-${sequence}`, title, surface, user: "", responses: ["", "", ""], tools: ["", "", ""], context: "packages/claxedo-app", branch: "main" }
+      sessions.set(session.id, session)
+      addSessionEntry(session)
+      selectSession(session.id)
+    }
+    root.querySelectorAll<HTMLButtonElement>("[data-surface-button]").forEach((button) => button.addEventListener("click", () => {
+      const surface = button.dataset.surfaceButton ?? "chat"
+      if (surface === "new") createSession("chat")
+      else if (surface === "terminal") createSession("terminal")
+      else setSurface(surface)
+    }))
+
+    const setPanelWidth = (full: boolean) => {
+      root.dataset.panelWidth = full ? "full" : "split"
+      root.querySelectorAll<HTMLButtonElement>("[data-panel-maximize]").forEach((button) => {
+        button.setAttribute("aria-pressed", String(full))
+        button.setAttribute("aria-label", full ? "Restore workspace panel width" : "Maximize workspace panel")
+      })
+    }
+    const closePanel = () => { root.dataset.panel = "closed"; setPanelWidth(false); const toggle = root.querySelector<HTMLButtonElement>("[data-workspace-toggle]"); toggle?.setAttribute("aria-pressed", "false"); toggle?.setAttribute("aria-label", "Open workspace panel") }
+    const setPanel = (panel: string) => {
+      root.dataset.panel = "open"; root.dataset.panelViewActive = panel
+      root.querySelectorAll<HTMLButtonElement>("[data-panel-button]").forEach((button) => button.classList.toggle("active", button.dataset.panelButton === panel))
+      root.querySelectorAll<HTMLElement>("[data-panel-view]").forEach((view) => view.hidden = view.dataset.panelView !== panel)
+      const toggle = root.querySelector<HTMLButtonElement>("[data-workspace-toggle]"); toggle?.setAttribute("aria-pressed", "true"); toggle?.setAttribute("aria-label", "Close workspace panel")
+    }
+    root.querySelectorAll<HTMLButtonElement>("[data-panel-button]").forEach((button) => button.addEventListener("click", () => setPanel(button.dataset.panelButton ?? "changes")))
+    root.querySelectorAll<HTMLButtonElement>("[data-repo-folder]").forEach((button) => button.addEventListener("click", () => {
+      const open = button.getAttribute("aria-expanded") === "true"
+      root.querySelectorAll<HTMLButtonElement>("[data-repo-folder]").forEach((folder) => folder.setAttribute("aria-expanded", "false"))
+      button.setAttribute("aria-expanded", String(!open))
+      const children = root.querySelector<HTMLElement>("[data-repo-children]")
+      if (children) {
+        children.hidden = open
+        if (!open) button.insertAdjacentElement("afterend", children)
+      }
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-panel-close]").forEach((button) => button.addEventListener("click", closePanel))
+    root.querySelectorAll<HTMLButtonElement>("[data-panel-maximize]").forEach((button) => button.addEventListener("click", () => setPanelWidth(root.dataset.panelWidth !== "full")))
+    root.querySelector<HTMLButtonElement>("[data-workspace-toggle]")?.addEventListener("click", () => root.dataset.panel === "closed" ? setPanel(root.dataset.panelViewActive ?? "changes") : closePanel())
+    type ResponsiveBand = "mobile" | "compact" | "wide"
+    const responsiveBand = (): ResponsiveBand => window.innerWidth < 768 ? "mobile" : window.innerWidth <= 920 ? "compact" : "wide"
+    let currentBand: ResponsiveBand | undefined
+    const applyResponsiveDefaults = () => {
+      const nextBand = responsiveBand()
+      if (nextBand === currentBand) return
+      currentBand = nextBand
+      setSidebar(false)
+      if (nextBand === "wide") {
+        root.dataset.environment = "expanded"
+        closePanel()
+      } else {
+        root.dataset.environment = "collapsed"
+        closePanel()
+      }
+    }
+    applyResponsiveDefaults()
+    window.addEventListener("resize", applyResponsiveDefaults, { passive: true })
+    root.querySelectorAll<HTMLButtonElement>("[data-environment-toggle]").forEach((button) => button.addEventListener("click", () => root.dataset.environment = root.dataset.environment === "expanded" ? "collapsed" : "expanded"))
+    root.querySelectorAll<HTMLButtonElement>("[data-tool-card]").forEach((button) => button.addEventListener("click", () => button.setAttribute("aria-expanded", String(button.getAttribute("aria-expanded") !== "true"))))
+
+    const setComposerMenu = (menu: string) => { root.dataset.composerMenu = menu; root.querySelectorAll<HTMLElement>("[data-composer-popover]").forEach((popover) => popover.hidden = popover.dataset.composerPopover !== menu); root.querySelectorAll<HTMLButtonElement>("[data-composer-menu-trigger]").forEach((button) => button.setAttribute("aria-expanded", String(button.dataset.composerMenuTrigger === menu))) }
+    root.querySelectorAll<HTMLButtonElement>("[data-composer-menu-trigger]").forEach((button) => button.addEventListener("click", () => { const menu = button.dataset.composerMenuTrigger ?? "closed"; setComposerMenu(root.dataset.composerMenu === menu ? "closed" : menu) }))
+    root.querySelectorAll<HTMLButtonElement>("[data-context-option]").forEach((button) => button.addEventListener("click", () => { const chip = root.querySelector<HTMLElement>("[data-composer-context-chip]"); const label = root.querySelector<HTMLElement>("[data-composer-context-label]"); if (chip) chip.hidden = false; if (label) label.textContent = button.dataset.contextOption ?? "Files"; setComposerMenu("closed") }))
+    root.querySelector<HTMLButtonElement>("[data-context-remove]")?.addEventListener("click", () => { const chip = root.querySelector<HTMLElement>("[data-composer-context-chip]"); if (chip) chip.hidden = true })
+    root.querySelectorAll<HTMLButtonElement>("[data-permission]").forEach((button) => button.addEventListener("click", () => { root.querySelectorAll<HTMLButtonElement>("[data-permission]").forEach((item) => { const selected = item === button; item.classList.toggle("selected", selected); const mark = item.querySelector("em"); if (mark) mark.textContent = selected ? "✓" : "" }); root.querySelector<HTMLElement>("[data-permission-label]")!.textContent = button.dataset.permission ?? "Workspace Write"; setComposerMenu("closed") }))
+    root.querySelectorAll<HTMLButtonElement>("[data-harness-section]").forEach((button) => button.addEventListener("click", () => {
+      const section = button.dataset.harnessSection ?? "model"
+      const popover = button.closest<HTMLElement>("[data-picker-open]")
+      if (!popover) return
+      popover.dataset.pickerOpen = section
+      popover.querySelectorAll<HTMLButtonElement>("[data-harness-section]").forEach((row) => row.classList.toggle("active", row.dataset.harnessSection === section))
+      popover.querySelectorAll<HTMLElement>("[data-harness-panel]").forEach((panel) => panel.hidden = panel.dataset.harnessPanel !== section)
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-hero-harness]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll<HTMLButtonElement>("[data-hero-harness]").forEach((item) => { item.classList.toggle("selected", item === button); const check = item.querySelector("em"); if (check) check.textContent = item === button ? "✓" : "" })
+      const harness = button.dataset.heroHarness ?? "Codex"
+      const model = button.dataset.heroModel ?? "GPT-5.6-Luna"
+      root.querySelector<HTMLElement>("[data-current-harness]")!.textContent = harness
+      root.querySelector<HTMLElement>("[data-hero-model-label]")!.textContent = model
+      root.querySelector<HTMLElement>("[data-hero-model-trigger]")!.textContent = model
+      const source = button.querySelector<HTMLElement>(".harness-logo")
+      const triggerMark = root.querySelector<HTMLElement>("[data-hero-harness-mark]")
+      if (source && triggerMark) triggerMark.innerHTML = source.innerHTML
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-hero-model-choice]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll<HTMLButtonElement>("[data-hero-model-choice]").forEach((item) => { item.classList.toggle("selected", item === button); const check = item.querySelector("em"); if (check) check.textContent = item === button ? "✓" : "" })
+      const model = button.dataset.heroModelChoice ?? "GPT-5.6-Luna"
+      root.querySelector<HTMLElement>("[data-hero-model-label]")!.textContent = model
+      root.querySelector<HTMLElement>("[data-hero-model-trigger]")!.textContent = model
+    }))
+    root.querySelectorAll<HTMLButtonElement>("[data-hero-effort]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll<HTMLButtonElement>("[data-hero-effort]").forEach((item) => { item.classList.toggle("selected", item === button); const check = item.querySelector("em"); if (check) check.textContent = item === button ? "✓" : "" })
+      const effort = button.dataset.heroEffort ?? "Low"
+      root.querySelector<HTMLElement>("[data-hero-effort-label]")!.textContent = effort
+      root.querySelector<HTMLElement>("[data-hero-effort-trigger]")!.textContent = effort
+    }))
+    root.querySelector<HTMLButtonElement>("[data-account-toggle]")?.addEventListener("click", (event) => { const open = root.dataset.account === "open"; root.dataset.account = open ? "closed" : "open"; (event.currentTarget as HTMLButtonElement).setAttribute("aria-expanded", String(!open)) })
+  }
+</script>
+
+<style>
+  .hero { --background-base:#101010; --background-stronger:#151515; --surface-base:rgba(255,255,255,.031); --surface-base-hover:rgba(255,255,255,.055); --surface-raised:rgba(255,255,255,.059); --surface-overlay:#202020; --brand:#fab283; --text-base:rgba(255,255,255,.66); --text-weak:rgba(255,255,255,.44); --text-weaker:rgba(255,255,255,.28); --text-strong:rgba(255,255,255,.94); --blue:#9dbefe; --border:#292929; --border-weak:#222; position:relative; padding:clamp(4rem,8vw,7.5rem) var(--gutter) clamp(3rem,7vw,6rem); background:var(--background-base); color:var(--text-strong); overflow:clip; }
+  .hero.canvas-only{padding:0;background:transparent;overflow:visible}.hero.canvas-only .app-window{width:100%;height:min(46rem,62vw);min-height:35rem;aspect-ratio:auto}
+  .hero-copy { width:min(100%,78rem); display:grid; grid-template-columns:minmax(0,1.1fr) minmax(22rem,.9fr); align-items:end; gap:clamp(2.5rem,8vw,9rem); margin:0 auto clamp(3rem,6vw,5rem); }
+  .hero-kicker { display:flex; align-items:center; gap:.6rem; margin:0 0 1.35rem; color:var(--text-weak); font:500 .67rem var(--font-mono); letter-spacing:.09em; text-transform:uppercase; }.hero-kicker i{width:.42rem;height:.42rem;border-radius:50%;background:var(--brand);box-shadow:0 0 0 4px rgba(250,178,131,.08)}
+  h1{max-width:13ch;margin:0;font:500 clamp(3rem,6.2vw,5.5rem)/.96 var(--font-sans);letter-spacing:-.064em;text-wrap:balance}h1 span{color:var(--text-base)}
+  .hero-detail>p{max-width:38rem;margin:0 0 1.5rem;color:var(--text-base);font-size:clamp(1rem,1.4vw,1.15rem);line-height:1.65}.hero-actions{display:flex;flex-wrap:wrap;align-items:center;gap:1rem}.hero-actions :global(.btn-primary){background:var(--text-strong);color:var(--background-base)}.hero-actions>a{color:var(--text-base);font-size:.82rem;text-decoration:none}.hero-actions>a:hover{color:var(--text-strong)}.hero-actions>a span{display:inline-block;margin-left:.25rem}.hero-detail ul{display:flex;flex-wrap:wrap;gap:.65rem 1.2rem;margin:1.35rem 0 0;padding:0;list-style:none}.hero-detail li{display:flex;align-items:center;gap:.42rem;color:var(--text-weak);font:.62rem var(--font-mono)}.hero-detail li i{width:.34rem;height:.34rem;border-radius:50%;background:#12c905}
+
+  .app-window{position:relative;width:min(100%,90rem);aspect-ratio:1.646;min-height:39rem;margin:auto;border:1px solid rgba(255,255,255,.2);border-radius:12px;background:#0b0b0b;box-shadow:0 48px 100px -36px rgba(0,0,0,.92),0 0 0 1px rgba(255,255,255,.02);overflow:hidden;container-type:inline-size;font-family:var(--font-sans);font-size:13px}
+  button,input,textarea{font:inherit}.app-window svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round}.shell-header{height:36px;display:flex;border-bottom:1px solid var(--border-weak);background:var(--background-base)}
+  .rail-titlebar{width:260px;flex:0 0 260px;display:flex;align-items:center;border-right:1px solid var(--border);background:#151515;overflow:hidden;transition:width .12s cubic-bezier(.2,0,0,1),flex-basis .12s cubic-bezier(.2,0,0,1)}.app-window[data-sidebar=closed] .rail-titlebar{width:0;flex-basis:0;border-right:0}.traffic-lights{width:78px;flex:0 0 78px;display:flex;align-items:center;gap:8px;padding-left:14px}.traffic-lights i{width:12px;height:12px;border-radius:50%;background:#ff5f57}.traffic-lights i:nth-child(2){background:#febc2e}.traffic-lights i:nth-child(3){background:#28c840}
+  .icon-button{width:24px;height:24px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak);cursor:pointer}.icon-button:hover,.icon-button[aria-pressed=true]{background:var(--surface-base-hover);color:var(--text-base)}.icon-button svg{width:15px;height:15px}.rail-hide{margin-left:4px}.header-columns{min-width:0;flex:1;display:flex}.workbench-l1{min-width:0;flex:1;display:flex;align-items:center;gap:4px;padding:0 4px;overflow:hidden}.closed-chrome{display:none;align-items:center;margin-left:-4px}.app-window[data-sidebar=closed] .closed-chrome{display:flex}.closed-chrome .traffic-lights{width:78px}.drag-gap{width:16px}.header-drag{min-width:32px;flex:1}.scope-actions{display:flex;align-items:center;gap:4px}.workspace-toggle{flex:0 0 24px}.app-window[data-panel=open] .workspace-toggle{display:none}.workspace-l1{width:0;display:flex;align-items:center;gap:4px;overflow:hidden;border-left:0;background:var(--background-base);transition:width .15s cubic-bezier(.2,0,0,1)}.workspace-l1>span{flex:1}.app-window[data-panel=open] .workspace-l1{width:62%;border-left:1px solid var(--border)}.workspace-tabs{height:100%;min-width:0;display:flex;align-items:center;gap:2px;padding:0 4px}.workspace-tab{height:28px;min-width:0;max-width:180px;display:flex;align-items:center;gap:7px;padding:0 9px;border:0;border-radius:6px;background:transparent;color:var(--text-weak)}.workspace-tab.active{background:var(--surface-base-hover);color:var(--text-base)}.workspace-tab svg{width:14px;flex:0 0 14px}.workspace-tab span{overflow:hidden;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.workspace-tab i{font-style:normal;color:var(--text-weak)}
+  .compact-tabs{height:100%;min-width:0;display:none;align-items:center;gap:2px;padding:0 4px;overflow:hidden}.app-window[data-sidebar=closed] .compact-tabs{display:flex}.compact-tab{position:relative;width:clamp(118px,16vw,220px);min-width:118px;max-width:220px;height:28px;flex:0 1 220px;display:flex;align-items:stretch;padding:0 28px 0 6px;border:1px solid transparent;border-radius:6px;color:var(--text-weak)}.compact-tab:hover{background:rgba(255,255,255,.02);color:var(--text-base)}.compact-tab[data-selected=true]{background:var(--surface-base-hover);color:var(--text-base)}.compact-tab button{border:0;background:transparent;color:inherit;padding:0}.tab-prefix{position:relative;width:20px;flex:0 0 20px;display:flex;align-items:center;cursor:pointer}.tab-project-mark,.tab-harness-mark{width:16px;height:16px;display:grid;place-items:center;color:var(--text-base)}.tab-project-mark{border:1px solid var(--text-weaker);border-radius:4px;font:600 9px var(--font-mono)}.tab-harness-mark svg{width:14px;height:14px;fill:currentColor}.tab-prefix i{position:absolute;right:1px;bottom:4px;width:5px;height:5px;border:1px solid #181818;border-radius:50%;background:var(--brand)}.tab-title{min-width:0;flex:1;display:block;margin-left:4px;overflow:hidden;text-align:left;text-overflow:ellipsis;white-space:nowrap;font-size:13px;line-height:1;cursor:pointer}.tab-close{position:absolute;right:4px;top:50%;width:18px;height:18px;display:grid;place-items:center;border-radius:4px!important;opacity:0;transform:translateY(-50%)}.tab-close svg{width:13px}.compact-tab:hover .tab-close,.compact-tab[data-selected=true] .tab-close{opacity:.65}.tab-close:hover{background:var(--surface-base-hover);opacity:1!important}
+
+  .app-body{position:relative;height:calc(100% - 36px);display:flex;min-height:0}.project-rail{width:260px;flex:0 0 260px;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);background:#151515;color:var(--text-base);overflow:hidden;transition:width .12s cubic-bezier(.2,0,0,1),flex-basis .12s cubic-bezier(.2,0,0,1),opacity .08s}.app-window[data-sidebar=closed] .project-rail{width:0;flex-basis:0;border-right:0;opacity:0}.rail-global{display:grid;gap:2px;padding:8px}.rail-global button,.project-row,.session-row,.load-row{border:0;background:transparent;color:var(--text-base);cursor:pointer}.rail-global button{height:30px;display:flex;align-items:center;gap:10px;padding:0 8px;border-radius:6px;text-align:left}.rail-global button:hover,.project-row:hover,.session-row:hover{background:var(--surface-base-hover)}.rail-global svg,.project-row svg{width:16px;flex:0 0 16px;color:var(--text-weak)}.rail-divider{height:1px;background:var(--border)}.rail-scroll{min-height:0;flex:1;padding:10px 6px;overflow:hidden}.rail-label{display:block;padding:0 8px 6px;color:var(--text-weak);font-size:12px}.project-row{width:100%;height:30px;display:flex;align-items:center;gap:8px;padding:0 8px;border-radius:6px;text-align:left}.project-row b{min-width:0;overflow:hidden;color:var(--text-strong);font-size:13px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.session-list{display:grid}.session-row{width:100%;height:30px;display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 8px 0 28px;border-radius:6px;text-align:left}.session-row>span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.session-row small{color:var(--text-weaker);font-size:11px}.session-row.active{background:var(--surface-raised);color:var(--text-strong)}.load-row{height:28px;padding-left:35px;color:var(--text-weaker);text-align:left}.second-project{margin-top:5px}.workspace-account-wrap{position:relative;padding:8px}.workspace-account{width:100%;height:36px;display:flex;align-items:center;gap:8px;padding:0 8px;border:1px solid transparent;border-radius:6px;background:var(--surface-raised);color:var(--text-strong);text-align:left;cursor:pointer}.workspace-account>span:nth-child(2){min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:500}.account-device{width:28px;height:28px;flex:0 0 28px;display:grid;place-items:center;border-radius:50%;background:rgba(255,255,255,.045);color:var(--text-base)}.account-device svg{width:15px}.account-chevron{width:14px!important;opacity:0}.workspace-account:hover .account-chevron,.workspace-account[aria-expanded=true] .account-chevron{opacity:1}.workspace-account-menu{position:absolute;left:8px;right:8px;bottom:50px;z-index:30;display:grid;padding:5px;border:1px solid var(--border);border-radius:8px;background:var(--surface-overlay);box-shadow:0 18px 45px rgba(0,0,0,.55);opacity:0;pointer-events:none;transform:translateY(4px);transition:.1s}.app-window[data-account=open] .workspace-account-menu{opacity:1;pointer-events:auto;transform:none}.account-identity{height:28px;display:flex;align-items:center;gap:8px;padding:0 8px}.account-identity>span{width:20px;height:20px;display:grid;place-items:center;border-radius:50%;background:rgba(255,255,255,.045)}.account-identity svg{width:13px}.account-identity b{font-size:13px;font-weight:500}.workspace-account-menu>i{height:1px;margin:4px -1px;background:var(--border)}.workspace-account-menu>button{height:30px;display:flex;align-items:center;gap:9px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.workspace-account-menu>button:hover{background:var(--surface-base-hover)}.workspace-account-menu>button svg{width:15px;color:var(--text-weak)}
+
+  .stage-columns{position:relative;min-width:0;flex:1;display:flex}.workbench{min-width:0;flex:1;display:flex;flex-direction:column;background:var(--background-base);overflow:hidden}.session-surface{position:relative;min-height:0;flex:1}.chat-surface{display:flex}.terminal-surface{display:none;background:#0b0b0b}.app-window[data-surface=terminal] .chat-surface{display:none}.app-window[data-surface=terminal] .terminal-surface{display:block}.session-content{position:relative;min-width:0;flex:1;background:var(--background-stronger);overflow:hidden}.timeline-scroll{position:absolute;inset:0;overflow:auto;scrollbar-color:rgba(255,255,255,.16) transparent;scrollbar-width:thin}.timeline-column{width:min(100%,768px);min-height:100%;margin:auto;padding:16px 20px 142px;transition:padding-right .14s}.app-window[data-environment=expanded] .timeline-column{padding-right:260px}.app-window[data-environment=collapsed] .timeline-column{padding-right:52px}.session-name-row{height:46px;display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.session-name-row h2{min-width:0;margin:0;overflow:hidden;color:var(--text-strong);font-size:14px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.session-name-row button{width:24px;height:24px;flex:0 0 24px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak)}.session-name-row button:hover{background:var(--surface-base-hover)}.message{width:100%;color:var(--text-base);font-size:13px;line-height:1.55}.user-message{display:flex;justify-content:flex-end;margin-bottom:24px}.user-message>div{width:fit-content;max-width:min(82%,64ch);padding:8px 12px;border-radius:16px;background:rgba(255,255,255,.05);white-space:pre-line}.assistant-message{margin-top:24px}.assistant-message p{margin:0}.turn-fold{width:100%;height:32px;display:flex;align-items:center;gap:6px;margin-top:12px;padding:0;border:0;background:transparent;color:var(--text-weak);text-align:left;cursor:pointer}.turn-fold svg{width:14px}.turn-fold b{font-size:13px;font-weight:500}.turn-fold i{height:1px;flex:1;background:var(--border)}.turn-fold[aria-expanded=true] svg{transform:rotate(90deg)}.tool-summary{width:fit-content;min-height:28px;display:flex;align-items:center;gap:7px;margin:8px 0 0 -6px;padding:0 7px;border:0;border-radius:5px;background:transparent;color:var(--text-weak);cursor:pointer}.tool-summary:hover,.tool-summary[aria-expanded=true]{background:var(--surface-base-hover)}.tool-summary svg{width:15px;color:var(--text-weaker)}.tool-summary b{font-size:13px;font-weight:400}.tool-summary span{font-size:11px}.tool-summary[aria-expanded=true] span{transform:rotate(180deg)}.tool-summary.running i{width:6px;height:6px;border-radius:50%;background:#72d58a;box-shadow:0 0 0 3px rgba(114,213,138,.08)}
+  .environment-card{position:absolute;top:12px;right:12px;z-index:8;color:var(--text-base)}.environment-expanded{width:240px;padding:10px;border:1px solid rgba(255,255,255,.04);border-radius:10px;background:rgba(32,32,32,.96);box-shadow:0 8px 26px rgba(0,0,0,.35),0 0 0 .5px rgba(255,255,255,.08);backdrop-filter:blur(16px)}.environment-expanded header{height:26px;display:flex;align-items:center;gap:8px;padding:0 6px;margin-bottom:6px}.environment-expanded header b{flex:1;color:var(--text-strong);font-size:13px;font-weight:500}.environment-expanded header button,.environment-collapsed button{width:22px;height:22px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:var(--text-weak)}.environment-expanded header button:hover,.environment-collapsed button:hover{background:var(--surface-base-hover);color:var(--text-base)}.environment-expanded header svg{width:14px}.env-facts{display:grid;gap:2px;padding:0 6px 8px}.env-facts div{min-width:0;height:24px;display:flex;align-items:center;gap:9px}.env-facts svg{width:15px;flex:0 0 15px;color:var(--text-weaker)}.env-facts span{min-width:0;overflow:hidden;font-size:12px;text-overflow:ellipsis;white-space:nowrap}.environment-expanded section{padding-top:7px;border-top:1px solid var(--border)}.environment-expanded section+section{margin-top:7px}.environment-expanded section>small{display:block;padding:0 6px 4px;color:var(--text-weaker);font-size:11px}.environment-expanded section>button{width:100%;height:28px;display:flex;align-items:center;gap:9px;padding:0 6px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.environment-expanded section>button:hover,.environment-expanded section>button.active{background:var(--surface-base-hover)}.environment-expanded section>button svg{width:15px;flex:0 0 15px;color:var(--text-weak)}.environment-expanded section>button span{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}.environment-expanded section>button em{color:var(--text-weaker);font-size:10px;font-style:normal}.environment-expanded section>button em b{color:#72d58a;font-weight:400}.environment-expanded section>button>i{width:6px;height:6px;border-radius:50%;background:#72d58a}.environment-collapsed{width:28px;display:none;flex-direction:column;align-items:center;gap:2px;padding:4px;border:1px solid rgba(255,255,255,.04);border-radius:9px;background:rgba(32,32,32,.96);box-shadow:0 8px 26px rgba(0,0,0,.35),0 0 0 .5px rgba(255,255,255,.08)}.environment-collapsed button{width:20px;height:20px}.environment-collapsed svg{width:14px}.environment-collapsed>i{width:20px;height:1px;margin:3px 0;background:var(--border)}.app-window[data-environment=collapsed] .environment-expanded{display:none}.app-window[data-environment=collapsed] .environment-collapsed{display:flex}.app-window[data-panel=open] .environment-card{display:none}.app-window[data-panel=open] .timeline-column{padding-right:20px}
+  .scroll-latest{position:absolute;left:50%;bottom:116px;z-index:9;width:28px;height:28px;display:grid;place-items:center;padding:0;border:1px solid var(--border);border-radius:50%;background:var(--surface-overlay);color:var(--text-base);transform:translateX(-50%)}.scroll-latest svg{width:14px}.composer-zone{position:absolute;left:0;right:0;bottom:0;z-index:10;padding:24px max(16px,calc((100% - 768px)/2)) 12px;background:linear-gradient(transparent,var(--background-stronger) 42%);transition:padding-right .14s}.app-window[data-environment=expanded] .composer-zone{padding-right:max(260px,calc((100% - 768px)/2 + 260px))}.app-window[data-environment=collapsed] .composer-zone{padding-right:max(52px,calc((100% - 768px)/2 + 52px))}.app-window[data-panel=open] .composer-zone{padding-right:max(16px,calc((100% - 768px)/2))}.composer{min-height:96px;display:flex;flex-direction:column;border:0;border-radius:20px;background:rgba(32,32,32,.9);box-shadow:0 8px 30px rgba(0,0,0,.28),0 0 0 .5px rgba(255,255,255,.14);backdrop-filter:blur(16px)}.composer-input{width:100%;min-height:52px;flex:1;resize:none;padding:16px 16px 8px;border:0;outline:0;background:transparent;color:var(--text-base);font-size:13px;line-height:20px;caret-color:var(--text-strong)}.composer-input::placeholder{color:var(--text-weak)}.composer-context-chip{width:fit-content;display:flex;align-items:center;gap:5px;margin:0 12px 4px;padding:3px 6px;border-radius:5px;background:var(--surface-base-hover);color:var(--text-base);font-size:11px}.composer-context-chip[hidden]{display:none}.composer-context-chip b{font-weight:500}.composer-context-chip button{border:0;background:transparent;color:var(--text-weak)}.composer-controls{height:44px;display:flex;align-items:center;justify-content:space-between;gap:4px;padding:0 8px}.composer-left,.composer-right{display:flex;align-items:center;gap:4px}.composer-controls button{height:28px;border:0;border-radius:6px;background:transparent;color:var(--text-base)}.composer-controls button:hover,.composer-controls button[aria-expanded=true]{background:var(--surface-base-hover)}.round-control{width:28px;display:grid;place-items:center;padding:0}.round-control svg{width:15px}.permission-control,.harness-control{display:flex;align-items:center;gap:6px;padding:0 10px}.permission-control>svg:first-child{width:15px}.permission-control>svg:last-child,.harness-control>svg{width:12px}.permission-control b,.harness-control b{font-size:12px;font-weight:500}.harness-control{max-width:280px}.harness-control>i{width:1px;height:13px;background:var(--border)}.harness-control>span:not(.codex-mark){max-width:110px;overflow:hidden;color:var(--text-base);font-size:12px;text-overflow:ellipsis;white-space:nowrap}.harness-control small{color:var(--text-weak);font-size:11px}.codex-mark,.claude-mark,.opencode-mark{width:18px;height:18px;display:grid;place-items:center;border:1px solid var(--text-weaker);border-radius:5px;color:var(--text-base);font:600 9px var(--font-mono)}.claude-mark{border:0;color:var(--brand);font-size:15px}.opencode-mark{border-radius:50%;font-size:7px}.send{width:28px;display:grid;place-items:center;padding:0!important;border-radius:50%!important;background:var(--text-base)!important;color:#171717!important}.send svg{width:15px}.composer-popover{position:absolute;bottom:118px;z-index:20;width:248px;display:grid;gap:2px;padding:5px;border:1px solid var(--border);border-radius:9px;background:var(--surface-overlay);box-shadow:0 18px 48px rgba(0,0,0,.58)}.composer-popover[hidden]{display:none}.composer-popover>small{padding:5px 8px 3px;color:var(--text-weaker);font-size:11px}.composer-popover>button{height:31px;display:grid;grid-template-columns:20px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 8px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.composer-popover>button:hover,.composer-popover>button.selected{background:var(--surface-base-hover)}.composer-popover>button svg{width:15px;color:var(--text-weak)}.composer-popover>button b{overflow:hidden;font-size:12px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.composer-popover>button em{color:var(--text-weak);font-size:11px;font-style:normal}.composer-popover>i{height:1px;margin:4px -1px;background:var(--border)}.add-popover{left:max(16px,calc((100% - 768px)/2));width:220px}.permission-popover{left:max(52px,calc((100% - 696px)/2))}.harness-popover{right:max(48px,calc((100% - 680px)/2));width:304px}.harness-popover .model-row{grid-template-columns:20px minmax(0,1fr) auto}.effort-row{display:flex;gap:3px;padding:3px 7px 6px}.effort-row button{height:27px;flex:1;border:0;border-radius:5px;background:var(--surface-base);color:var(--text-weak);font-size:11px}.effort-row button.active{background:var(--surface-base-hover);color:var(--text-strong)}
+  .composer-left,.composer-right{position:relative}.harness-logo{width:16px;height:16px;flex:0 0 16px;display:grid;place-items:center;color:var(--text-strong)}.harness-logo svg{width:16px!important;height:16px!important;fill:currentColor!important;stroke:none!important}.composer-popover{bottom:34px;border-radius:10px;background:#222;box-shadow:0 18px 48px rgba(0,0,0,.58),0 0 0 .5px rgba(255,255,255,.08)}.add-popover{left:0;width:min(360px,calc(100cqw - 28px));padding:8px}.add-popover>small{padding:3px 8px 7px;font-size:12px}.add-popover>button{height:36px;grid-template-columns:minmax(0,1fr) auto;padding:0 8px}.add-popover>button b{font-size:14px;font-weight:400}.add-popover>button em{font-size:12px}.permission-popover{left:34px;width:min(360px,calc(100cqw - 28px));padding:10px}.permission-popover>small{padding:0 4px 7px;font-size:12px}.permission-popover>button{height:auto;min-height:52px;grid-template-columns:22px minmax(0,1fr) 18px;align-items:start;padding:7px 6px}.permission-popover>button svg{width:18px;height:18px;margin-top:1px}.permission-popover>button span{min-width:0;display:grid;gap:2px}.permission-popover>button span b{font-size:14px;font-weight:400}.permission-popover>button span i{color:var(--text-weak);font-size:12px;font-style:normal;line-height:1.3}.permission-popover>button.selected span b,.permission-popover>button.selected em{color:#63b9ee}.permission-popover>button em{padding-top:2px;font-size:13px}.harness-popover{right:36px;bottom:34px;width:min(304px,calc(100cqw - 28px));display:block;padding:8px;overflow:hidden}.harness-popover .picker-section{width:100%;height:36px;display:grid;grid-template-columns:18px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 8px;border:0;border-radius:6px;background:transparent;color:var(--text-base);text-align:left}.harness-popover .picker-section:hover,.harness-popover .picker-section.active{background:var(--surface-base-hover)}.harness-popover .picker-section svg{width:15px}.harness-popover .picker-section b{font-size:14px;font-weight:500}.harness-popover .picker-section span{max-width:140px;overflow:hidden;color:var(--text-weak);font-size:13px;text-overflow:ellipsis;white-space:nowrap}.picker-options{display:grid;padding:3px 0}.picker-options[hidden]{display:none}.picker-options>small{padding:6px 12px 3px;color:var(--text-weaker);font-size:10px;letter-spacing:.08em;text-transform:uppercase}.picker-options>button{width:100%;height:32px;display:grid;grid-template-columns:22px minmax(0,1fr) 18px;align-items:center;gap:7px;padding:0 10px;border:0;border-radius:5px;background:transparent;color:var(--text-base);text-align:left}.picker-options>button:hover,.picker-options>button.selected{background:var(--surface-base-hover)}.picker-options>button b{font-size:13px;font-weight:400}.picker-options>button em{font-size:12px;font-style:normal;text-align:center}.model-options{max-height:264px;overflow:auto;scrollbar-color:rgba(255,255,255,.14) transparent;scrollbar-width:thin}.model-options>label{height:34px;display:flex;align-items:center;gap:8px;margin:2px 0 8px;padding:0 10px;border-radius:5px;background:var(--surface-base-hover)}.model-options>label svg{width:17px;color:var(--text-base)}.model-options>label input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text-base);font-size:13px}.model-provider{display:flex;align-items:center;justify-content:space-between;padding:2px 10px 6px;color:var(--text-weak);font-size:11px}.model-provider b{padding:3px 6px;border:1px solid var(--border);border-radius:3px;color:var(--text-base);font-weight:400}.model-options>button{height:auto;min-height:50px;grid-template-columns:minmax(0,1fr) 18px;padding:7px 10px}.model-options>button span{display:grid;gap:3px}.model-options>button span b{font-size:13px}.model-options>button span i{color:var(--text-weak);font-size:11px;font-style:normal;line-height:1.35}.effort-options>button{grid-template-columns:minmax(0,1fr) 18px}.effort-options>button b{font-size:13px}.effort-options>button.selected em{color:var(--text-strong)}
+
+  .workspace-panel{position:relative;width:0;flex:0 0 0;min-width:0;display:flex;flex-direction:column;border-left:0;background:#121212;overflow:hidden;transition:width .15s cubic-bezier(.2,0,0,1),flex-basis .15s cubic-bezier(.2,0,0,1)}.app-window[data-panel=open] .workspace-panel{width:62%;flex-basis:62%;border-left:1px solid var(--border)}.workspace-l2{height:36px;flex:0 0 36px;display:flex;align-items:center;border-bottom:1px solid var(--border)}.review-toolbar{width:100%;height:100%;display:flex;align-items:center;gap:9px;padding:0 8px}.review-toolbar>button{height:27px;padding:0 5px;border:0;border-radius:5px;background:transparent;color:var(--text-base);font-size:12px}.review-toolbar>button:hover{background:var(--surface-base-hover)}.review-toolbar>b{color:#72d58a;font-size:12px;font-weight:500}.review-toolbar>i{color:#ef7773;font-size:12px;font-style:normal}.review-toolbar>span{flex:1}.panel-view{min-width:300px;min-height:0;flex:1;overflow:auto;color:var(--text-base)}.panel-view[hidden]{display:none}.review-view{display:grid;grid-template-columns:minmax(310px,2.05fr) minmax(175px,1fr);overflow:hidden}.change-list,.repo-tree{min-width:0;overflow:auto;scrollbar-color:rgba(255,255,255,.16) transparent;scrollbar-width:thin}.repo-tree{border-left:1px solid var(--border)}.file-change{height:34px;display:grid;grid-template-columns:26px minmax(0,1fr) auto;align-items:center;gap:7px;padding:0 10px;border-bottom:1px solid var(--border-weak)}.file-change:hover{background:var(--surface-base-hover)}.file-change span{color:#5ba8da;font:10px var(--font-mono)}.file-change b{min-width:0;overflow:hidden;font-size:12px;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.file-change small{color:var(--text-weaker);font:10px var(--font-mono);white-space:nowrap}.file-change.removed small{color:#f05757}.file-search{height:30px;display:flex;align-items:center;gap:7px;margin:8px;padding:0 8px;border:1px solid var(--border);border-radius:6px}.file-search svg{width:14px;color:var(--text-weak)}.file-search input{min-width:0;flex:1;border:0;outline:0;background:transparent;color:var(--text-base);font-size:12px}.repo-row{height:30px;display:grid;grid-template-columns:12px minmax(0,1fr) 7px;align-items:center;gap:5px;padding:0 9px;color:var(--text-weak)}.repo-row:hover{background:var(--surface-base-hover)}.repo-row span{font-size:15px}.repo-row b{overflow:hidden;font-size:12px;font-weight:400;text-overflow:ellipsis;white-space:nowrap}.repo-row i{width:6px;height:6px;border-radius:50%}.repo-row.changed i{background:var(--brand)}.repo-row.active{color:#55df7b}.repo-row.active i{background:#55df7b}.show-more{height:34px;margin-left:32px;border:0;background:transparent;color:var(--text-weak);font-size:11px}.tree-row{height:29px;display:grid;grid-template-columns:14px 16px minmax(0,1fr);align-items:center;gap:5px;padding:0 10px}.tree-row:hover{background:var(--surface-base-hover)}.tree-row svg{width:15px;color:var(--text-weak)}.tree-row b{font-size:12px;font-weight:400}.tree-row small{font:9px var(--font-mono);color:#5ba8da}.tree-row.indent{padding-left:24px}.tree-row.indent-2{padding-left:42px}.process-head{height:42px;display:flex;align-items:center;gap:7px;padding:0 12px;border-bottom:1px solid var(--border);font-size:12px}.process-head span{padding:1px 5px;border-radius:8px;background:var(--surface-base-hover);font-size:10px}.process-row{height:52px;display:grid;grid-template-columns:8px minmax(0,1fr) 24px;align-items:center;gap:8px;padding:0 12px;border-bottom:1px solid var(--border-weak)}.process-row>i{width:7px;height:7px;border-radius:50%;background:#72d58a}.process-row div{display:grid;gap:2px}.process-row b{font-size:12px;font-weight:500}.process-row small{color:var(--text-weaker);font-size:10px}.process-row button{border:0;background:transparent;color:var(--text-weak)}
+  .terminal-tabs{height:36px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-bottom:1px solid var(--border);font-size:12px}.terminal-tabs button{border:0;background:transparent;color:var(--text-weak)}.terminal-content{padding:14px;color:var(--text-base);font:12px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.terminal-content p{margin:0}.term-path{color:#5de1d4}.term-branch{color:var(--blue)}.term-green{color:#72d58a}.term-muted{color:var(--text-weak)}.term-cursor{display:inline-block;width:7px;height:13px;background:var(--text-base);vertical-align:-2px;animation:blink 1s steps(1) infinite}@keyframes blink{50%{opacity:0}}
+  .mobile-panel-close{display:none!important}
+  @media(prefers-reduced-motion:no-preference){.hero-copy{animation:copyIn .55s cubic-bezier(.2,.7,.2,1) both}.app-window{animation:appIn .75s .1s cubic-bezier(.2,.75,.2,1) both}@keyframes copyIn{from{opacity:0;transform:translateY(10px)}}@keyframes appIn{from{opacity:0;transform:translateY(18px) scale(.99)}}}
+  .review-toolbar .commit-scope{display:flex;align-items:center;gap:6px;white-space:nowrap}.review-toolbar .commit-scope svg{width:13px;height:13px}.review-toolbar>button:not(.commit-scope){width:26px;display:grid;place-items:center;padding:0}.review-toolbar>button>svg{width:16px;height:16px}.repo-row{width:100%;grid-template-columns:12px 16px minmax(0,1fr) 7px;border:0;background:transparent;text-align:left}.repo-row .repo-chevron{width:12px;height:12px;transition:transform .12s}.repo-row[aria-expanded=true] .repo-chevron{transform:rotate(90deg)}.repo-row .repo-folder{width:15px;height:15px}.repo-children{display:grid;padding:2px 0 5px 42px;color:var(--text-weaker);font-size:11px}.repo-children[hidden]{display:none}.repo-children span{height:24px;display:flex;align-items:center}.workspace-tab[data-panel-button].active{background:var(--surface-base-hover);color:var(--text-base)}
+  @container(max-width:1050px){.rail-titlebar,.project-rail{width:230px;flex-basis:230px}.timeline-column{padding-left:16px}.app-window[data-environment=expanded] .timeline-column{padding-right:248px}.app-window[data-panel=open] .timeline-column{padding-right:16px}.environment-expanded{width:228px}.app-window[data-panel=open] .workspace-panel{width:52%;flex-basis:52%}.app-window[data-panel=open] .workspace-l1{width:52%}.review-view{grid-template-columns:minmax(240px,1.6fr) minmax(150px,1fr)}.harness-control>b,.harness-control>i{display:none}}
+  @media(max-width:58rem){.hero-copy{grid-template-columns:1fr;gap:1.5rem;align-items:start}.hero-detail{max-width:39rem}.app-window{min-height:39rem;aspect-ratio:auto}}
+  @media(max-width:47.99rem){.hero{padding-inline:.7rem}.hero.canvas-only{padding-inline:0}.hero-copy{padding-inline:.55rem}h1{font-size:clamp(2.6rem,13vw,3.7rem)}.app-window,.hero.canvas-only .app-window{height:36rem;min-height:0;aspect-ratio:auto;border-radius:9px}.rail-titlebar{position:absolute;z-index:12;width:230px}.project-rail{position:absolute;inset:0 auto 0 0;z-index:12;width:min(230px,82vw);box-shadow:16px 0 34px rgba(0,0,0,.45)}.app-window[data-sidebar=closed] .project-rail{width:0}.app-window[data-sidebar=open] .workbench-l1{padding-left:34px}.environment-card{display:none}.timeline-column,.app-window[data-environment=expanded] .timeline-column,.app-window[data-environment=collapsed] .timeline-column{padding:12px 12px 132px}.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{padding:22px 8px 8px}.permission-control b,.harness-control b,.harness-control i,.harness-control>span:not([data-hero-harness-mark]),.harness-control small{display:none}.workspace-panel{display:none;position:absolute;inset:0;width:100%;z-index:20;flex-basis:100%}.app-window[data-panel=open] .workspace-panel{display:flex;width:100%;flex-basis:100%}.workspace-l1{display:none}}
+  @media(max-width:47.99rem){.app-window button{scroll-margin-top:72px}.mobile-panel-close{display:grid!important}.review-view{grid-template-columns:1fr}.repo-tree{display:none}.add-popover,.permission-popover{left:-4px;width:calc(100cqw - 28px)}.harness-popover{right:0;width:min(304px,calc(100cqw - 28px))}.permission-popover>button{min-height:48px}.permission-popover>button span i{font-size:11px}.model-options{max-height:220px}}
+  .replica-icon-sprite{position:absolute;width:0;height:0;overflow:hidden}
+  .source-fill-icon{fill:currentColor!important;stroke:none!important}
+  .panel-width-toggle{position:relative}
+  .panel-width-toggle .panel-restore-icon{display:none}
+  .app-window[data-panel-width=full] .panel-width-toggle .panel-expand-icon{display:none}
+  .app-window[data-panel-width=full] .panel-width-toggle .panel-restore-icon{display:block}
+  .app-window[data-panel=open][data-panel-width=full] .workspace-panel{width:100%;flex-basis:100%}
+  .app-window[data-panel=open][data-panel-width=full] .workspace-l1{width:100%}
+  .app-window[data-panel=open][data-panel-width=full] .workbench-l1{width:0;flex:0 0 0;padding:0}
+  .composer-zone{--composer-left:max(16px,calc((100% - 768px)/2));--composer-right:var(--composer-left);padding-left:var(--composer-left);padding-right:var(--composer-right)}
+  .app-window[data-environment=expanded] .composer-zone{--composer-right:max(260px,calc((100% - 768px)/2 + 260px))}
+  .app-window[data-environment=collapsed] .composer-zone{--composer-right:max(52px,calc((100% - 768px)/2 + 52px))}
+  .app-window[data-panel=open] .composer-zone{--composer-right:var(--composer-left)}
+  .composer-zone .scroll-latest{left:calc(50% + (var(--composer-left) - var(--composer-right))/2);top:0;bottom:auto;transform:translate(-50%,-50%)}
+  .session-content{container-name:session-pane;container-type:inline-size}
+  .timeline-column.empty-session>.message,.timeline-column.empty-session>.turn-fold,.timeline-column.empty-session>.tool-summary{display:none}
+  @container session-pane (max-width:560px){
+    .permission-control b,.harness-control>span:not(.harness-logo),.harness-control small,.harness-control>svg{display:none}
+    .permission-control,.harness-control{width:28px;justify-content:center;gap:0;padding:0}
+  }
+  @media(max-width:47.99rem){.composer-zone,.app-window[data-environment=expanded] .composer-zone,.app-window[data-environment=collapsed] .composer-zone{--composer-left:8px;--composer-right:8px;padding-left:var(--composer-left);padding-right:var(--composer-right)}.workspace-l1{display:flex}.app-window[data-panel=open] .workbench-l1{display:none}.app-window[data-panel=open] .workspace-l1{width:100%;border-left:0}.app-window[data-panel=open][data-panel-width=full] .workspace-l1{width:100%}}
+</style>

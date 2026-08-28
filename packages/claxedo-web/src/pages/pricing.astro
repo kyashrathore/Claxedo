@@ -3,7 +3,6 @@ import Layout from "../layouts/Layout.astro"
 import Nav from "../components/Nav.astro"
 import Footer from "../components/Footer.astro"
 import DownloadMenu from "../components/DownloadMenu.astro"
-import { marketingActions } from "../content/routes"
 ---
 
 <Layout title="Pricing — Claxedo" description="Claxedo Cloud is free during beta. Bring your own models, compute, and sandboxes.">
@@ -25,7 +24,7 @@ import { marketingActions } from "../content/routes"
               <ul>
                 <li>Claxedo Desktop with account-free local mode</li>
                 <li>Connected Claxedo product during beta</li>
-                <li>Open-source framework and self-host docs</li>
+                <li>MIT-licensed client, control plane, and workspace runtime</li>
                 <li>macOS, Windows, and Linux downloads</li>
               </ul>
               <div class="actions">
@@ -42,7 +41,6 @@ import { marketingActions } from "../content/routes"
                 <div><dt>Operations</dt><dd>If you self-host, you operate that deployment and its security boundary.</dd></div>
               </dl>
               <p>Paid-offer terms and future subscription prices will be published when billing is active.</p>
-              <a class="text-link" href={marketingActions.framework.href} data-analytics-event={marketingActions.framework.event} data-analytics-placement="pricing">Inspect the open framework <span aria-hidden="true">→</span></a>
             </aside>
           </div>
         </div>

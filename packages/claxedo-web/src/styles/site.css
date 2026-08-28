@@ -130,7 +130,7 @@ h1, h2, h3 { color: var(--ink); }
 .menu-toggle { display: none; min-width: 2.6rem; min-height: 2.6rem; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-raised); font: 500 .78rem var(--font-sans); }
 
 .footer { border-top: 1px solid var(--line); padding: 3.5rem var(--gutter) 2rem; }
-.footer-grid { display: grid; grid-template-columns: 2fr repeat(3, 1fr); gap: 2rem; max-width: 72rem; margin-inline: auto; }
+.footer-grid { display: grid; grid-template-columns: 2fr repeat(2, 1fr); gap: 2rem; max-width: 72rem; margin-inline: auto; }
 .footer-brand { max-width: 22rem; }
 .footer-brand h2 { margin-bottom: .7rem; font: 500 1.35rem/1.2 var(--font-sans); letter-spacing: -.02em; }
 .footer-brand p, .footer-col a, .footer-bottom { color: var(--ink-faint); }

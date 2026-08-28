@@ -93,21 +93,6 @@ export const claims = [
     verifiedAt: "2026-07-21",
   },
   {
-    id: "framework-runtime",
-    publicWording: "Workspace runtime, relay, and client contracts keep sessions, terminals, files, processes, and events behind explicit placement boundaries.",
-    owner: "Claxedo Framework",
-    evidence: [
-      "packages/workspace-runtime/src/public-api.test.ts",
-      "packages/workspace-runtime/src/routes/manifest.ts",
-      "packages/workspace-runtime/src/routes/pty.test.ts",
-      "packages/workspace-runtime/src/routes/file.test.ts",
-      "packages/workspace-runtime/src/routes/process.test.ts",
-      "packages/workspace-runtime/src/routes/session.test.ts",
-    ],
-    status: "verified",
-    verifiedAt: "2026-07-21",
-  },
-  {
     id: "workgraph-local",
     publicWording: "WorkGraph organizes durable Streams, Tasks, Attempts, decisions, and evidence.",
     owner: "WorkGraph",
@@ -125,7 +110,7 @@ export const claims = [
   },
   {
     id: "public-source",
-    publicWording: "Claxedo's clients, server, relay, protocol, WorkGraph, and framework are developed in the public repository.",
+    publicWording: "Claxedo's clients, server, relay, protocol, WorkGraph, and workspace runtime are developed in the public repository.",
     owner: "Claxedo maintainers",
     evidence: [
       "packages/claxedo-app/package.json",

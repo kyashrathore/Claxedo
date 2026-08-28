@@ -95,7 +95,7 @@ export const claxedoFeatures: Record<FeatureKey, FeatureState> = {
 
 // Claxedo's constant column for the detailed per-page capability table.
 export const claxedoCapabilities: Record<CapabilityKey, string> = {
-  what: "Open-source workspace + framework you self-host",
+  what: "Open-source workspace + control plane you self-host",
   team: "Multi-user — accounts + org scoping (Clerk+Convex profile today)",
   harnesses: "Claude Code, Codex, Gemini CLI, OpenCode, + any CLI via ACP",
   interfaces: "Chat UI + first-class terminal",
@@ -140,7 +140,7 @@ export const competitors: readonly Competitor[] = [
     priority: 1,
     tagline: "Open-source agent orchestration across your own machines, desktop, web, CLI, and native mobile apps.",
     verdict:
-      "Paseo is a genuine self-hosted peer with broad agent support, split workspaces, managed services, native mobile, and an optional team Hub. Claxedo differs most clearly on its permissive license, application framework, and WorkGraph's explicit task, attempt, and approval records.",
+      "Paseo is a genuine self-hosted peer with broad agent support, split workspaces, managed services, native mobile, and an optional team Hub. Claxedo differs most clearly on its permissive license, integrated organization scoping, and WorkGraph's explicit task, attempt, and approval records.",
     features: { team: "partial", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "yes", workLedger: "partial", agentExtensions: "partial", channels: "partial", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
     featureNotes: {
       team: "The optional self-hosted Hub adds organizations, accounts, credentials, and team access; the core daemon still has no forced Paseo login.",
@@ -172,10 +172,10 @@ export const competitors: readonly Competitor[] = [
       "Multi-user accounts and organization scoping are part of Claxedo's core platform rather than an optional Hub layer.",
       "Permissive open source rather than AGPL-3.0 network copyleft.",
       "WorkGraph records tasks, attempts, and approvals explicitly; Paseo persists workspaces, schedules, and workflow executions.",
-      "A reusable TypeScript application framework; Paseo publishes a client SDK around its product API.",
+      "A built-in organization-scoped control plane rather than an optional Hub layer.",
     ],
     chooseThem: "you want native mobile clients, a large published agent catalog, and a daemon-first way to operate your own machines, with an optional Hub for team workflows.",
-    chooseClaxedo: "you want permissive open source, integrated multi-user organization scoping, a reusable application framework, and explicit task-attempt-approval records.",
+    chooseClaxedo: "you want permissive open source, integrated multi-user organization scoping, portable agent setup, and explicit task-attempt-approval records.",
     sources: [
       { label: "Paseo", href: "https://paseo.sh" },
       { label: "Source (getpaseo/paseo)", href: "https://github.com/getpaseo/paseo" },
@@ -195,7 +195,7 @@ export const competitors: readonly Competitor[] = [
     priority: 2,
     tagline: "A local-first workspace for nine coding-agent runtimes, durable tasks, review, automation, and self-hosted remote access.",
     verdict:
-      "Synara is a capable MIT-licensed personal control plane: it now combines nine runtimes with durable tasks and goals, automations, managed worktrees, a shared browser, and authenticated self-hosted remote access. Claxedo differs on multi-user organization scoping, WorkGraph's explicit attempt and approval model, and its reusable application framework.",
+      "Synara is a capable MIT-licensed personal control plane: it now combines nine runtimes with durable tasks and goals, automations, managed worktrees, a shared browser, and authenticated self-hosted remote access. Claxedo differs on multi-user organization scoping, WorkGraph's explicit attempt and approval model, and portable agent setup across sandboxes.",
     features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "yes", workLedger: "yes", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
     capabilities: {
       what: "Local-first personal desktop workspace and self-hostable web control plane",
@@ -220,10 +220,10 @@ export const competitors: readonly Competitor[] = [
       "Multi-user accounts and organization scoping; Synara remains a personal workspace without a documented team identity model.",
       "A managed relay path in addition to self-hosting; Synara documents direct self-hosted web access over LAN or Tailnet.",
       "WorkGraph makes task attempts and approvals first-class records beyond Synara's durable tasks, goals, and automation history.",
-      "A reusable self-hostable application framework rather than an application and server alone.",
+      "Portable skills, MCP servers, plugins, and instructions that sync into supported sandboxes.",
     ],
     chooseThem: "you want a free personal workspace with nine local runtimes, provider handoff, durable tasks, automations, and direct self-hosted remote access.",
-    chooseClaxedo: "you need organization-scoped multi-user workspaces, a managed relay option, explicit task-attempt-approval records, or a framework to build on.",
+    chooseClaxedo: "you need organization-scoped multi-user workspaces, a managed relay option, explicit task-attempt-approval records, or portable setup across sandboxes.",
     sources: [
       { label: "Synara", href: "https://www.trysynara.com" },
       { label: "Source (Emanuele-web04/synara)", href: "https://github.com/Emanuele-web04/synara" },
@@ -277,7 +277,7 @@ export const competitors: readonly Competitor[] = [
       "Native desktop clients on macOS, Windows, and Linux; Conductor's desktop client remains macOS-only.",
       "A self-hostable relay and control plane rather than Conductor's hosted Cloud and API.",
       "WorkGraph records tasks, attempts, and approvals beyond Conductor's workspace history, todos, checkpoints, and goals.",
-      "An open-source application framework and self-hosted multi-user platform; Conductor does not document public source or a self-hosted control plane.",
+      "An open-source, self-hosted multi-user control plane; Conductor does not document public source or a self-hosted control plane.",
     ],
     chooseThem: "you use a Mac or Conductor Cloud and want four integrated harnesses, live Multiplayer, managed scripts, and a GitHub-centered review flow.",
     chooseClaxedo: "you want generic ACP and Gemini support, cross-platform desktop clients, open source, a self-hosted control plane, or explicit task-attempt-approval records.",
@@ -361,7 +361,7 @@ export const competitors: readonly Competitor[] = [
     priority: 5,
     tagline: "A free, MIT agent-harness control plane with web, desktop, headless-server, and native mobile clients.",
     verdict:
-      "T3 Code is a free, MIT, self-hostable control plane for five coding harnesses, with remote access, source-control workflows, a built-in terminal and preview, and native mobile clients. Claxedo differs on organization-scoped teams, generic ACP and Gemini support, WorkGraph, and its reusable application framework.",
+      "T3 Code is a free, MIT, self-hostable control plane for five coding harnesses, with remote access, source-control workflows, a built-in terminal and preview, and native mobile clients. Claxedo differs on organization-scoped teams, generic ACP and Gemini support, WorkGraph, and portable agent setup across sandboxes.",
     features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "partial", remote: "yes", workLedger: "partial", agentExtensions: "no", channels: "no", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
     featureNotes: {
       managedProcesses: "Project scripts and server-owned terminal/provider processes are documented, but restart and log-management parity with a dedicated process manager is not.",
@@ -389,11 +389,11 @@ export const competitors: readonly Competitor[] = [
     claxedoDiffers: [
       "Organization-scoped multi-user workspaces; T3 Code documents device/session access rather than a shared team identity model.",
       "WorkGraph records tasks, attempts, and approvals beyond T3 Code's persisted threads, turns, approvals, and checkpoints.",
-      "A reusable self-hostable application framework rather than a product control plane alone.",
+      "Portable skills, MCP servers, plugins, and instructions that sync into supported sandboxes.",
       "Generic ACP and Gemini CLI support beyond T3 Code's five named harnesses.",
     ],
     chooseThem: "you want a free MIT control plane for five agent CLIs with self-hosting, remote access, one-button source-control workflows, and native mobile clients.",
-    chooseClaxedo: "you need organization-scoped teams, generic ACP or Gemini support, explicit task-attempt-approval records, or a reusable framework to build on.",
+    chooseClaxedo: "you need organization-scoped teams, generic ACP or Gemini support, explicit task-attempt-approval records, or portable setup across sandboxes.",
     sources: [
       { label: "T3 Code", href: "https://t3.codes" },
       { label: "Source (pingdotgg/t3code)", href: "https://github.com/pingdotgg/t3code" },

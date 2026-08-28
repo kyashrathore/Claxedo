@@ -3,9 +3,9 @@
 ![npm version](https://img.shields.io/npm/v/%40claxedo%2Fworkspace-runtime.svg)
 ![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)
 
-**[claxedo.com](https://claxedo.com) · [Framework docs](https://claxedo.com/framework) · [npm: @claxedo/*](https://www.npmjs.com/search?q=%40claxedo)**
+**[claxedo.com](https://claxedo.com) · [npm: @claxedo/*](https://www.npmjs.com/search?q=%40claxedo)**
 
-Claxedo is an open-source coding-agent workspace: a desktop app for running terminal coding agents (OpenCode, Claude, Codex, Cursor, Pi) against your own projects, and a composable TypeScript framework — normalized agent events, a runtime facade over multiple harnesses, a per-workspace host, relay/tunnel plumbing, sandbox management, MCP tooling, and reusable Agent Extensions — for building your own coding-agent products on the same primitives.
+Claxedo is an open-source coding-agent workspace for running OpenCode, Claude, Codex, Cursor, Pi, and other coding agents against your own projects. It combines first-class chat and terminal sessions, remote workspace access, sandbox management, WorkGraph, MCP tooling, and portable Agent Extensions.
 
 ## Quickstart
 
@@ -20,13 +20,13 @@ bun run dev:desktop     # desktop app (Electron shell)
 bun typecheck           # turbo typecheck across the workspace
 ```
 
-Or skip the monorepo and just take the framework — install the packages you need in any Node/Bun project:
+The runtime packages remain independently installable for Node and Bun projects:
 
 ```sh
 npm install @claxedo/workspace-runtime @claxedo/agent-sdk-runtime @claxedo/agent-event-runtime
 ```
 
-Each package is independently usable; most full products start with `@claxedo/workspace-runtime`. See the [install guide](https://claxedo.com/framework/guides/install) and [quickstart](https://claxedo.com/framework/guides/see-it-in-action) for the whole set.
+Most full products start with `@claxedo/workspace-runtime`; the package table below links directly to each published module.
 
 ## Packages
 

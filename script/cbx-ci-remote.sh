@@ -437,11 +437,6 @@ run_agent_runtime_stats() {
   (cd packages/agent-runtime-stats && bun run worker:check)
 }
 
-run_docs_links() {
-  install_root
-  (cd packages/claxedo-docs && bun run broken-links)
-}
-
 run_packages_dry_run() {
   install_root
   (
@@ -484,7 +479,6 @@ case "$LANE" in
   e2e-tier-real-web-target) run_e2e_tier_real_web_target "$@" ;;
   e2e-workgraph-journey) run_e2e_workgraph_journey ;;
   agent-runtime-stats) run_agent_runtime_stats ;;
-  docs-links) run_docs_links ;;
   packages-dry-run) run_packages_dry_run ;;
   relay-bench) run_relay_bench ;;
   storybook) run_storybook ;;

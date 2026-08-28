@@ -16,7 +16,7 @@ bun run dev:desktop    # desktop shell
 bun typecheck          # turbo typecheck across the workspace
 ```
 
-See [README.md](./README.md) for the package layout and [claxedo.com/framework](https://claxedo.com/framework) for architecture and deployment guides.
+See [README.md](./README.md) for the package layout and [public-docs](./public-docs/README.md) for operational references used by the repository.
 
 ## Submitting a pull request
 

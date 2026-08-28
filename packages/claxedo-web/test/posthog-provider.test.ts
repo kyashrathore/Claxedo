@@ -9,7 +9,6 @@ import { coarsenProperties, coarsenUrl, initOptions } from "../src/scripts/posth
  */
 describe("URL coarsening", () => {
   test("collapses detail pages to their section", () => {
-    expect(coarsenUrl("https://claxedo.com/framework/cookbook/01-hello-agent")).toBe("/framework")
     expect(coarsenUrl("https://claxedo.com/compare/matrix-os/")).toBe("/compare")
   })
 
@@ -36,15 +35,15 @@ describe("URL coarsening", () => {
 describe("sanitize_properties hook", () => {
   test("rewrites every URL-bearing PostHog property", () => {
     const sanitized = coarsenProperties({
-      $current_url: "https://claxedo.com/framework/packages/workgraph",
-      $initial_current_url: "https://claxedo.com/framework/api/relay?utm=x",
+      $current_url: "https://claxedo.com/download",
+      $initial_current_url: "https://claxedo.com/pricing?utm=x",
       $pathname: "/compare/matrix-os",
-      $initial_pathname: "/framework/guides/install",
+      $initial_pathname: "/download/releases",
     })
-    expect(sanitized.$current_url).toBe("/framework")
-    expect(sanitized.$initial_current_url).toBe("/framework")
+    expect(sanitized.$current_url).toBe("/download")
+    expect(sanitized.$initial_current_url).toBe("/pricing")
     expect(sanitized.$pathname).toBe("/compare")
-    expect(sanitized.$initial_pathname).toBe("/framework")
+    expect(sanitized.$initial_pathname).toBe("/other")
   })
 
   test("keeps an external referrer, which is the acquisition signal", () => {
@@ -57,8 +56,8 @@ describe("sanitize_properties hook", () => {
   })
 
   test("coarsens an internal referrer so on-site detail paths cannot ride in", () => {
-    const sanitized = coarsenProperties({ $referrer: "https://claxedo.com/framework/cookbook/01-hello-agent" })
-    expect(sanitized.$referrer).toBe("/framework")
+    const sanitized = coarsenProperties({ $referrer: "https://claxedo.com/compare/matrix-os" })
+    expect(sanitized.$referrer).toBe("/compare")
   })
 
   test("leaves unrelated properties untouched and does not mutate its input", () => {

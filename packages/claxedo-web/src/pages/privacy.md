@@ -34,7 +34,7 @@ Claxedo can integrate with [PostHog](https://posthog.com) for both product analy
 
 claxedo.com measures page views and download clicks so we can tell which pages are useful and which platforms people want builds for.
 
-**This site sets no cookies.** Analytics state is kept in your browser's session storage and is discarded when you close the tab, so there is no cross-site or cross-visit tracking and no consent banner to click through. Page addresses are reduced to their section (`/framework`, `/download`, `/compare`) before being sent — the specific page you read is never recorded. PostHog derives an approximate **country** from your IP address on its servers; we do not collect precise location, and the site never asks your browser for it.
+**This site sets no cookies.** Analytics state is kept in your browser's session storage and is discarded when you close the tab, so there is no cross-site or cross-visit tracking and no consent banner to click through. Page addresses are reduced to their section (`/download`, `/compare`) before being sent — the specific page you read is never recorded. PostHog derives an approximate **country** from your IP address on its servers; we do not collect precise location, and the site never asks your browser for it.
 
 ### The desktop app
 

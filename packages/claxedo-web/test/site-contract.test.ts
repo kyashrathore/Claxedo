@@ -14,8 +14,22 @@ describe("public site contract", () => {
     expect(site.product.name).toBe("Claxedo")
     expect(site.clients.desktop.name).toBe("Claxedo Desktop")
     expect(site.clients.web.name).toBe("Claxedo Web")
-    expect(site.framework.name).toBe("Claxedo Framework")
     expect(new URL(publicOrigin).origin).toBe(publicOrigin)
+  })
+
+  test("leads with the differentiated workspace story", () => {
+    expect(site.headline).toBe("Your coding agents, finally in one place.")
+    expect(site.hero.lead).toContain("Bring any sandbox")
+    expect(site.hero.lead).toContain("skills, MCP servers, plugins, and credentials")
+    expect(site.hero.proof).toEqual(["Performance-first", "Any sandbox provider", "Chat + terminal"])
+    expect(site.hero.costNote).toContain("usage and connected services are separate")
+    expect(site.focusSections.map((section) => section.id)).toEqual([
+      "performance",
+      "sandboxes",
+      "chat",
+      "terminal",
+      "control-plane",
+    ])
   })
 
   test("withholds claims without evidence", () => {

@@ -18,7 +18,7 @@ export default defineConfig({
     { name: "mobile-chromium", use: { ...devices["Pixel 7"] } },
   ],
   webServer: {
-    command: "bun run sync:framework && bunx astro build && bun run preview -- --host 127.0.0.1 --port 4321",
+    command: "bun run build && bun run preview -- --host 127.0.0.1 --port 4321",
     url: "http://127.0.0.1:4321",
     reuseExistingServer: false,
     timeout: 120_000,

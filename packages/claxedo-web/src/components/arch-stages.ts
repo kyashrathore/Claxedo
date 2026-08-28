@@ -5,7 +5,6 @@ export interface ArchStage {
   blurb: string
   note?: string
   packages: { name: string; repo?: boolean }[]
-  href: string
 }
 
 export const archEdges = [
@@ -15,7 +14,6 @@ export const archEdges = [
     pkg: "@claxedo/channels",
     blurb: "Start and drive sessions from where you already talk.",
     items: ["GitHub", "Slack", "Telegram", "Discord"],
-    href: "/framework/packages/channels",
   },
   {
     key: "connect",
@@ -23,7 +21,6 @@ export const archEdges = [
     pkg: "@claxedo/connections",
     blurb: "Link accounts once; features use them by capability.",
     items: ["GitHub", "Notion", "Google", "Atlassian"],
-    href: "/framework/packages/connections",
   },
 ]
 
@@ -55,7 +52,6 @@ export const archStages: ArchStage[] = [
     title: "Clients",
     blurb: "Desktop, browser, and CLI reach one control plane over the Claxedo protocol — never the runtime directly.",
     packages: [{ name: "claxedo-app", repo: true }],
-    href: "/framework/concepts/layer-stack",
   },
   {
     id: "control",
@@ -70,7 +66,6 @@ export const archStages: ArchStage[] = [
       { name: "@claxedo/connections" },
       { name: "@claxedo/channels" },
     ],
-    href: "/framework/packages/control-plane",
   },
   {
     id: "connection",
@@ -78,7 +73,6 @@ export const archStages: ArchStage[] = [
     title: "Connection",
     blurb: "A secure relay tunnels traffic across the trust boundary — code runs in the workspace, never in the Worker.",
     packages: [{ name: "@claxedo/workspace-relay" }, { name: "@claxedo/workspace-relay-protocol" }],
-    href: "/framework/packages/workspace-relay",
   },
   {
     id: "execution",
@@ -93,6 +87,5 @@ export const archStages: ArchStage[] = [
       { name: "@claxedo/sandbox-manager" },
       { name: "@claxedo/mcp" },
     ],
-    href: "/framework/packages/workspace-runtime",
   },
 ]

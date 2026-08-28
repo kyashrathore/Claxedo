@@ -1,5 +1,0 @@
----
-interface Props { name: string; type: string; required?: boolean }
-const { name, type, required = false } = Astro.props
----
-<div class="sl-api-field"><div><code>{name}</code><span>{type}</span>{required && <b>required</b>}</div><slot /></div>

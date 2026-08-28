@@ -1,0 +1,153 @@
+---
+interface Props {
+  story: "sessions" | "marketplace" | "terminal" | "workspace"
+  label: string
+}
+
+const { story, label } = Astro.props
+---
+
+<div class="product-surface" data-product-surface data-story={story} data-sidebar="open" aria-label={label} role="region">
+  <div class="surface-titlebar">
+    <div class="traffic" aria-hidden="true"><i></i><i></i><i></i></div>
+    <button type="button" data-surface-sidebar aria-label="Hide Sidebar" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="2.6" width="11.6" height="10.8" rx="1.5"></rect><path d="M5.6 2.6v10.8"></path></svg></button>
+    <div></div>
+    <button type="button" class="chrome-action" data-show-session aria-label="New Session">＋</button>
+    <button type="button" class="chrome-action" data-show-terminal aria-label="New Terminal"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="2.6" width="11.6" height="10.8" rx="2"></rect><path d="m5.2 6 2 2-2 2M8.8 10h2"></path></svg></button>
+    <button type="button" class="chrome-action" aria-label="More actions">⌄</button>
+    <button type="button" class="chrome-action" aria-label="Open workspace panel"><svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.2" y="2.6" width="11.6" height="10.8" rx="1.5"></rect><path d="M10.5 2.6v10.8"></path></svg></button>
+  </div>
+  <div class="surface-shell">
+    <aside class="surface-rail" aria-label={`${label} project rail`}>
+      <nav><button type="button" data-open-project><span>＋</span>New Project</button><button type="button" data-open-marketplace class:list={{ active: story === "marketplace" }}><span>♙</span>Marketplace</button></nav>
+      <div class="surface-rule"></div>
+      <div class="rail-projects">
+        <span class="rail-heading">Projects</span>
+        <button type="button" class="project"><span>▱</span><b>agent-app-benchmark</b><em>›</em></button>
+        <button type="button" class="project"><span>▱</span><b>Claxedo</b><em>⌄</em></button>
+        {story === "terminal" && <><button type="button" class="rail-session terminal-row"><span>▣</span><b>New Terminal</b></button><button type="button" class="rail-session terminal-row active"><span>▣</span><b>Terminal</b></button></>}
+        <button type="button" class:list={{ "rail-session": true, active: story === "sessions" }} data-demo-session="Release performance"><b>Release performance</b><small>now</small></button>
+        <button type="button" class="rail-session" data-demo-session="Sandbox setup"><b>Sandbox setup</b><small>8h</small></button>
+        <button type="button" class="rail-session" data-demo-session="Toolchain sync"><b>Toolchain sync</b><small>10h</small></button>
+        <button type="button" class="rail-session" data-demo-session="Terminal parity"><b>Terminal parity</b><small>11h</small></button>
+        <button type="button" class="rail-session" data-demo-session="Remote workspace"><b>Remote workspace</b><small>12h</small></button>
+        <button type="button" class="load-more">Load more</button>
+        <button type="button" class="project second"><span>▱</span><b>formlink</b><em>⌄</em></button>
+      </div>
+      <button type="button" class="local-workspace"><span>▱</span>Local workspace</button>
+    </aside>
+
+    <div class="surface-workbench">
+      <div class="surface-tabs" role="tablist" aria-label={`${label} open tabs`}><button type="button" role="tab" aria-selected="true"><span class="tab-dot"></span><b data-surface-tab>{story === "marketplace" ? "Marketplace" : story === "terminal" ? "Terminal" : story === "workspace" ? "New Project" : "Release performance"}</b><i>×</i></button></div>
+
+      {story === "sessions" && (
+        <div class="app-view session-view" data-app-view="session">
+          <header><b data-surface-title>Release performance</b><button type="button">•••</button></header>
+          <div class="session-timeline"><div class="session-user">Keep switching fast with twenty sessions open.</div><p>The active session stays mounted. I’ll verify the switch path without blocking input or replacing the current draft.</p><button type="button">▣ Ran 6 commands</button><p data-session-response>Session switching is verified. The selected thread is ready and the composer remained responsive.</p></div>
+          <div class="surface-composer"><span>Ask anything, / for commands, @ for context...</span><div><button type="button">＋</button><button type="button">◉ Workspace Write</button><i></i><button type="button">◉ GPT-5.6-Sol <small>Low</small>⌄</button><button type="button" class="send">↑</button></div></div>
+          <div class="env-tools"><button type="button">▧</button><button type="button">▱</button><button type="button">▣</button><button type="button">‹</button></div>
+        </div>
+      )}
+
+      {story === "marketplace" && (
+        <div class="app-view marketplace-view" data-app-view="marketplace">
+          <aside><b>Marketplace</b><button type="button" class="active" data-market-category="Featured">Featured</button><button type="button" data-market-category="All Extensions">All Extensions</button><button type="button" data-market-category="Installed">Installed <small>1</small></button><button type="button" data-market-category="On this machine">On this machine <small>110</small></button><i></i><button type="button" data-market-category="Skills">Skills</button><button type="button" data-market-category="MCP Servers">MCP Servers</button><button type="button" data-market-category="Infrastructure">Infrastructure</button><button type="button" data-market-category="Data & Analytics">Data & Analytics</button><button type="button" data-market-category="Productivity">Productivity</button><button type="button" data-market-category="Agent Orchestration">Agent Orchestration</button><span>⌕ Detect existing</span></aside>
+          <main><label><span>⌕</span><input type="search" placeholder="Search skills, plugins, MCPs…" data-market-search /></label><div class="market-title"><b data-market-title>Featured</b><span>Hand-picked to start with.</span></div><div class="extensions"><article data-extension="Claxedo MCP"><i>C</i><span><b>Claxedo <small>MCP</small></b><em>Machine · kyashrathore/Claxedo/tree/dev/packages/claxedo-mcp</em><p>Claxedo tools for process management, terminal logs, session messages, log summaries, and browser panes.</p></span><button type="button" data-install>Install</button></article><article data-extension="PDF Skill"><i>▧</i><span><b>PDF <small>SKILL</small></b><em>Machine · anthropics/skills/tree/main/skills/pdf</em><p>Read, write, and edit PDFs across local files and URLs.</p></span><button type="button" class="installed" data-install>✓ Installed</button></article><article data-extension="Filesystem MCP"><i>▱</i><span><b>Filesystem <small>MCP</small></b><em>Machine · modelcontextprotocol/servers/tree/main/src/filesystem</em><p>Read, write, and search files within a sandboxed root.</p></span><button type="button" data-install>Install</button></article></div></main>
+        </div>
+      )}
+
+      {story === "terminal" && (
+        <div class="app-view terminal-view" data-app-view="terminal" data-terminal-state="launcher">
+          <div class="terminal-loader" aria-hidden="true">C</div>
+          <div class="terminal-launcher"><header><span><i>C</i>Claxedo</span><span>▱ Local</span><span>⌁ main</span></header><b>▣ Start a terminal</b><div><button type="button" data-terminal-kind="Shell"><i>▣</i><span><b>Shell</b><small>login shell</small></span></button><button type="button" data-terminal-kind="Claude"><i>✹</i><span><b>Claude</b><small>claude --dangerously-s…</small></span></button><button type="button" data-terminal-kind="Codex"><i>◉</i><span><b>Codex</b><small>codex -c model_reasoni…</small></span></button></div></div>
+          <div class="terminal-running"><header><b data-terminal-title>Terminal</b><button type="button" data-terminal-close>×</button></header><pre><span class="cyan">~/claxedo</span> <span class="blue">dev*</span> <span data-terminal-command>zsh -l</span>
+<span class="green">✓</span> workspace attached
+<span class="green">✓</span> skills, MCPs, and credentials available
+
+<span class="cyan">~/claxedo</span> <span class="blue">dev*</span> █</pre></div>
+        </div>
+      )}
+
+      {story === "workspace" && (
+        <div class="app-view workspace-view" data-app-view="workspace">
+          <div class="workspace-underlay"><div class="terminal-loader">C</div><div class="terminal-launcher ghost"><header><span><i>C</i>Claxedo</span><span>▱ Local</span><span>⌁ main</span></header><b>▣ Start a terminal</b><div><button><i>▣</i><span><b>Shell</b><small>login shell</small></span></button><button><i>✹</i><span><b>Claude</b><small>claude --dangerously-s…</small></span></button><button><i>◉</i><span><b>Codex</b><small>codex -c model_reasoni…</small></span></button></div></div></div>
+          <div class="project-dialog"><header><b>New Project</b><button type="button" data-project-close>×</button></header><label><span>⌕</span><input type="search" placeholder="Search folders" data-project-search /></label><div class="folder-results"><button type="button" data-folder="claxedo"><span>▱</span><b>claxedo</b><small>~/Code/claxedo</small></button><button type="button" data-folder="opencode"><span>▱</span><b>opencode</b><small>~/Code/opencode</small></button><button type="button" data-folder="formlink"><span>▱</span><b>formlink</b><small>~/Code/formlink</small></button></div></div>
+        </div>
+      )}
+    </div>
+  </div>
+</div>
+
+<script>
+  for (const root of document.querySelectorAll<HTMLElement>("[data-product-surface]")) {
+    root.querySelector<HTMLButtonElement>("[data-surface-sidebar]")?.addEventListener("click", (event) => {
+      const open = root.dataset.sidebar === "open"
+      root.dataset.sidebar = open ? "closed" : "open"
+      const button = event.currentTarget as HTMLButtonElement
+      button.setAttribute("aria-pressed", String(!open))
+      button.setAttribute("aria-label", open ? "Show Sidebar" : "Hide Sidebar")
+    })
+
+    root.querySelectorAll<HTMLButtonElement>("[data-demo-session]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll("[data-demo-session]").forEach((item) => item.classList.toggle("active", item === button))
+      const title = button.dataset.demoSession ?? "Session"
+      root.querySelectorAll<HTMLElement>("[data-surface-title], [data-surface-tab]").forEach((item) => item.textContent = title)
+      const response = root.querySelector<HTMLElement>("[data-session-response]")
+      if (response) response.textContent = `${title} is ready. Its running state and composer draft were preserved.`
+    }))
+
+    root.querySelectorAll<HTMLButtonElement>("[data-market-category]").forEach((button) => button.addEventListener("click", () => {
+      root.querySelectorAll("[data-market-category]").forEach((item) => item.classList.toggle("active", item === button))
+      const title = root.querySelector<HTMLElement>("[data-market-title]")
+      if (title) title.textContent = button.dataset.marketCategory ?? "Featured"
+    }))
+    root.querySelector<HTMLInputElement>("[data-market-search]")?.addEventListener("input", (event) => {
+      const query = (event.currentTarget as HTMLInputElement).value.toLowerCase()
+      root.querySelectorAll<HTMLElement>("[data-extension]").forEach((item) => item.hidden = !item.dataset.extension?.toLowerCase().includes(query))
+    })
+    root.querySelectorAll<HTMLButtonElement>("[data-install]").forEach((button) => button.addEventListener("click", () => {
+      const installed = !button.classList.contains("installed")
+      button.classList.toggle("installed", installed)
+      button.textContent = installed ? "✓ Installed" : "Install"
+    }))
+
+    root.querySelectorAll<HTMLButtonElement>("[data-terminal-kind]").forEach((button) => button.addEventListener("click", () => {
+      const kind = button.dataset.terminalKind ?? "Shell"
+      const view = root.querySelector<HTMLElement>("[data-app-view=terminal]")
+      if (view) view.dataset.terminalState = "running"
+      const title = root.querySelector<HTMLElement>("[data-terminal-title]")
+      const command = root.querySelector<HTMLElement>("[data-terminal-command]")
+      if (title) title.textContent = kind
+      if (command) command.textContent = kind === "Claude" ? "claude --dangerously-skip-permissions" : kind === "Codex" ? "codex --sandbox danger-full-access" : "zsh -l"
+    }))
+    root.querySelector<HTMLButtonElement>("[data-terminal-close]")?.addEventListener("click", () => {
+      const view = root.querySelector<HTMLElement>("[data-app-view=terminal]")
+      if (view) view.dataset.terminalState = "launcher"
+    })
+
+    root.querySelector<HTMLInputElement>("[data-project-search]")?.addEventListener("input", (event) => {
+      const query = (event.currentTarget as HTMLInputElement).value.toLowerCase()
+      root.querySelectorAll<HTMLElement>("[data-folder]").forEach((item) => item.hidden = !item.dataset.folder?.includes(query))
+    })
+    root.querySelector<HTMLButtonElement>("[data-project-close]")?.addEventListener("click", () => root.querySelector<HTMLElement>(".project-dialog")?.classList.toggle("closed"))
+    root.querySelector<HTMLButtonElement>("[data-open-project]")?.addEventListener("click", () => root.querySelector<HTMLElement>(".project-dialog")?.classList.remove("closed"))
+  }
+</script>
+
+<style>
+  .product-surface { --bg:#101010;--bg-raised:#151515;--surface:rgba(255,255,255,.031);--raised:rgba(255,255,255,.059);--hover:rgba(255,255,255,.078);--text:rgba(255,255,255,.618);--weak:rgba(255,255,255,.422);--weaker:rgba(255,255,255,.284);--strong:rgba(255,255,255,.936);--blue:#9dbefe;--green:#12c905;--border:#282828; position:relative; width:100%; aspect-ratio:1.58; min-height:29rem; border:1px solid rgba(255,255,255,.195); border-radius:10px; background:#0b0b0b; color:var(--text); box-shadow:0 28px 70px -28px rgba(0,0,0,.8); overflow:hidden; font-family:var(--font-sans); container-type:inline-size; }
+  button,input { font:inherit; }
+  .surface-titlebar { height:2rem; display:flex; align-items:center; border-bottom:1px solid var(--border); background:#121212; }
+  .traffic { width:4.1rem; display:flex; gap:.4rem; padding-left:.55rem; }.traffic i { width:.62rem;height:.62rem;border-radius:50%;background:#ff5f57 }.traffic i:nth-child(2){background:#febc2e}.traffic i:nth-child(3){background:#28c840}
+  .surface-titlebar button { width:2rem;height:2rem;display:grid;place-items:center;padding:0;border:0;background:transparent;color:var(--weak) }.surface-titlebar button:hover{background:var(--surface);color:var(--text)}.surface-titlebar svg{width:.85rem;fill:none;stroke:currentColor;stroke-width:1.15}.surface-titlebar>div:nth-child(3){flex:1}
+  .surface-shell { height:calc(100% - 2rem);display:flex;min-height:0 }.surface-rail { width:13rem;flex:0 0 auto;display:flex;flex-direction:column;min-height:0;border-right:1px solid var(--border);background:#121212;transition:width .12s ease,opacity .1s ease;overflow:hidden }.product-surface[data-sidebar=closed] .surface-rail{width:0;opacity:0;border:0}
+  .surface-rail nav{display:grid;gap:.1rem;padding:.5rem .4rem}.surface-rail nav button{height:1.9rem;display:flex;align-items:center;gap:.55rem;padding:0 .55rem;border:0;border-radius:6px;background:transparent;color:var(--text);font-size:.65rem;text-align:left}.surface-rail nav button.active,.surface-rail nav button:hover{background:var(--raised)}.surface-rail nav span{width:.9rem;color:var(--weak);text-align:center}.surface-rule{height:1px;background:var(--border)}
+  .rail-projects{min-height:0;flex:1;padding:.6rem .3rem;overflow:hidden}.rail-heading{display:block;margin:0 .5rem .4rem;color:var(--weak);font-size:.56rem}.project,.rail-session,.load-more{width:100%;height:1.75rem;display:grid;align-items:center;padding:0 .5rem;border:0;border-radius:6px;background:transparent;color:var(--text);text-align:left}.project{grid-template-columns:auto 1fr auto;gap:.4rem}.project b{overflow:hidden;color:var(--strong);font-size:.63rem;font-weight:500;text-overflow:ellipsis;white-space:nowrap}.project span,.project em{color:var(--weak);font-style:normal}.project.second{margin-top:.4rem}.rail-session{grid-template-columns:1fr auto;padding-left:1.7rem;color:var(--weak);font-size:.58rem}.rail-session b{overflow:hidden;font-weight:400;text-overflow:ellipsis;white-space:nowrap}.rail-session small{color:var(--weaker);font:.49rem var(--font-mono)}.rail-session.active{background:var(--raised);color:var(--strong)}.rail-session.terminal-row{grid-template-columns:auto 1fr;gap:.4rem;padding-left:.5rem}.load-more{display:block;padding-left:1.7rem;color:var(--weaker);font-size:.55rem}.local-workspace{height:2.2rem;display:flex;align-items:center;gap:.5rem;margin:.4rem .5rem .5rem;padding:0 .6rem;border:0;border-radius:5px;background:var(--raised);color:var(--text);font-size:.59rem}
+  .surface-workbench{min-width:0;flex:1;position:relative;display:flex;flex-direction:column;border-radius:12px 0 0;background:var(--bg);overflow:hidden}.surface-tabs{display:none;height:2.15rem;border-bottom:1px solid var(--border)}.product-surface[data-sidebar=closed] .surface-tabs{display:flex}.surface-tabs button{min-width:10rem;display:flex;align-items:center;gap:.4rem;padding:0 .6rem;border:0;border-right:1px solid var(--border);background:var(--raised);color:var(--strong);font-size:.57rem}.surface-tabs b{overflow:hidden;font-weight:400;text-overflow:ellipsis;white-space:nowrap}.surface-tabs i{margin-left:auto;color:var(--weaker);font-style:normal}.tab-dot{width:.32rem;height:.32rem;border-radius:50%;background:#fab283}.app-view{position:relative;min-height:0;flex:1}
+  .session-view header{width:min(100% - 6rem,36rem);height:3.8rem;display:flex;align-items:center;justify-content:space-between;margin:auto}.session-view header b{color:var(--strong);font-size:.64rem;font-weight:500}.session-view header button{border:0;background:transparent;color:var(--weak)}.session-timeline{width:min(100% - 6rem,36rem);margin:auto;color:var(--text);font-size:.61rem;line-height:1.55}.session-user{width:75%;margin-left:auto;padding:.65rem .75rem;border-radius:12px;background:var(--raised)}.session-timeline p{margin:1.7rem 0}.session-timeline button{border:0;background:transparent;color:var(--weak);font-size:.57rem}.surface-composer{position:absolute;left:50%;bottom:.65rem;width:min(calc(100% - 5rem),36rem);min-height:4.8rem;display:flex;flex-direction:column;padding:.7rem .8rem .5rem;border:1px solid var(--border);border-radius:13px;background:#202020;transform:translateX(-50%)}.surface-composer>span{color:var(--weak);font-size:.59rem}.surface-composer>div{display:flex;align-items:center;gap:.3rem;margin-top:auto}.surface-composer>div i{flex:1}.surface-composer button{height:1.55rem;padding:0 .25rem;border:0;background:transparent;color:var(--text);font-size:.55rem}.surface-composer small{color:var(--weak)}.surface-composer .send{width:1.7rem;border-radius:50%;background:var(--text);color:#171717}.env-tools{position:absolute;top:1.3rem;right:.55rem;display:grid;padding:.22rem;border:1px solid var(--border);border-radius:9px;background:var(--raised)}.env-tools button{width:1.55rem;height:1.55rem;border:0;background:transparent;color:var(--weak);font-size:.55rem}
+  .marketplace-view{display:grid;grid-template-columns:12rem 1fr}.marketplace-view>aside{display:flex;flex-direction:column;padding:1.15rem .8rem;border-right:1px solid var(--border)}.marketplace-view>aside>b{margin-bottom:1rem;color:var(--strong);font-size:.65rem}.marketplace-view>aside button{height:1.7rem;display:flex;align-items:center;justify-content:space-between;padding:0 .2rem;border:0;background:transparent;color:var(--weak);font-size:.57rem;text-align:left}.marketplace-view>aside button.active{color:var(--strong)}.marketplace-view>aside button small{color:var(--weaker)}.marketplace-view>aside>i{height:.7rem}.marketplace-view>aside>span{margin-top:.4rem;color:var(--weak);font-size:.55rem}.marketplace-view main{min-width:0;padding:1rem 1.25rem}.marketplace-view main>label{height:2.45rem;display:flex;align-items:center;gap:.45rem;padding:0 .7rem;border:1px solid var(--border);border-radius:7px;background:var(--surface);color:var(--weak)}.marketplace-view input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:.58rem}.market-title{display:flex;justify-content:space-between;margin:1.3rem .3rem .75rem}.market-title b{color:var(--strong);font-size:.64rem}.market-title span{color:var(--weak);font-size:.52rem}.extensions{display:grid}.extensions article{min-width:0;display:grid;grid-template-columns:auto 1fr auto;align-items:start;gap:.65rem;padding:.65rem .3rem}.extensions article[hidden]{display:none}.extensions article>i{width:1.7rem;height:1.7rem;display:grid;place-items:center;border-radius:5px;background:var(--raised);color:var(--strong);font:normal .55rem var(--font-mono)}.extensions article>span{min-width:0;display:grid}.extensions article b{color:var(--strong);font-size:.59rem;font-weight:500}.extensions article b small{margin-left:.3rem;padding:.12rem .25rem;border-radius:3px;background:var(--raised);color:var(--weak);font:.43rem var(--font-mono)}.extensions article em{overflow:hidden;color:var(--weaker);font:normal .46rem var(--font-mono);text-overflow:ellipsis;white-space:nowrap}.extensions article p{margin:.25rem 0 0;color:var(--weak);font-size:.52rem;line-height:1.4}.extensions article>button{padding:.35rem .55rem;border:0;border-radius:5px;background:var(--raised);color:var(--text);font-size:.52rem}.extensions article>button.installed{color:var(--green)}
+  .terminal-view,.workspace-view{display:grid;place-items:center}.terminal-loader{position:absolute;top:22%;left:50%;color:var(--weaker);font:600 2.7rem var(--font-mono);transform:translateX(-50%)}.terminal-launcher{position:relative;z-index:2;width:min(70%,34rem);border:1px solid var(--border);border-radius:8px;background:#222;overflow:hidden}.terminal-launcher header{height:2rem;display:flex;align-items:center;gap:.8rem;padding:0 .65rem;border-bottom:1px solid var(--border);background:#171717;color:var(--text);font-size:.54rem}.terminal-launcher header span{display:flex;align-items:center;gap:.3rem}.terminal-launcher header i{width:1rem;height:1rem;display:grid;place-items:center;border-radius:3px;background:var(--raised);font-style:normal}.terminal-launcher>b{display:block;padding:.65rem .75rem;color:var(--text);font-size:.58rem;font-weight:400}.terminal-launcher>div{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem;padding:0 .65rem .65rem}.terminal-launcher>div button{min-width:0;height:3.4rem;display:flex;align-items:flex-start;gap:.55rem;padding:.65rem;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);text-align:left}.terminal-launcher>div button>i{font-style:normal}.terminal-launcher>div button>span{min-width:0;display:grid}.terminal-launcher>div b{font-size:.58rem;font-weight:500}.terminal-launcher>div small{overflow:hidden;color:var(--weak);font:.45rem var(--font-mono);text-overflow:ellipsis;white-space:nowrap}.terminal-running{display:none;position:absolute;inset:0;background:#0a0a0a}.terminal-view[data-terminal-state=running] .terminal-launcher,.terminal-view[data-terminal-state=running] .terminal-loader{display:none}.terminal-view[data-terminal-state=running] .terminal-running{display:block}.terminal-running header{height:2rem;display:flex;align-items:center;justify-content:space-between;padding:0 .65rem;border-bottom:1px solid var(--border)}.terminal-running header b{font-size:.58rem;font-weight:500}.terminal-running header button{border:0;background:transparent;color:var(--weak)}.terminal-running pre{margin:0;padding:.7rem;color:var(--text);font:.62rem/1.5 var(--font-mono);white-space:pre-wrap}.cyan{color:#5de1d4}.blue{color:var(--blue)}.green{color:var(--green)}
+  .workspace-underlay{position:absolute;inset:0;display:grid;place-items:center}.terminal-launcher.ghost{opacity:.55}.project-dialog{position:relative;z-index:3;width:min(66%,30rem);min-height:15rem;padding:.65rem;border:1px solid var(--border);border-radius:8px;background:#222;box-shadow:0 24px 60px rgba(0,0,0,.5);transition:opacity .15s ease,transform .15s ease,visibility 0s}.project-dialog.closed{visibility:hidden;opacity:0;pointer-events:none;transform:scale(.98);transition-delay:0s,0s,.15s}.project-dialog header{height:2rem;display:flex;align-items:center;justify-content:space-between;padding:0 .3rem}.project-dialog header b{color:var(--strong);font-size:.67rem;font-weight:500}.project-dialog header button{border:0;background:transparent;color:var(--weak)}.project-dialog>label{height:2rem;display:flex;align-items:center;gap:.4rem;padding:0 .6rem;border-radius:5px;background:var(--raised);color:var(--weak)}.project-dialog input{width:100%;border:0;outline:0;background:transparent;color:var(--text);font-size:.57rem}.folder-results{display:grid;margin-top:.5rem}.folder-results button{height:2.3rem;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.5rem;padding:0 .55rem;border:0;border-radius:5px;background:transparent;color:var(--text);text-align:left}.folder-results button[hidden]{display:none}.folder-results button:hover{background:var(--raised)}.folder-results b{font-size:.58rem;font-weight:500}.folder-results small{color:var(--weak);font:.47rem var(--font-mono)}
+  @container(max-width:760px){.surface-rail{width:10rem}.session-view header,.session-timeline{width:calc(100% - 3.5rem)}.surface-composer{width:calc(100% - 2rem)}.env-tools{display:none}.marketplace-view{grid-template-columns:8.5rem 1fr}.marketplace-view>aside button:nth-of-type(n+5){display:none}.terminal-launcher,.project-dialog{width:84%}}
+  @media(max-width:42rem){.product-surface{min-height:27rem;aspect-ratio:auto}.surface-rail{position:absolute;inset:2rem auto 0;z-index:7;width:min(12rem,76vw);box-shadow:12px 0 28px rgba(0,0,0,.45)}.marketplace-view{grid-template-columns:1fr}.marketplace-view>aside{display:none}.marketplace-view main{padding:.75rem}.extensions article p{display:none}.surface-composer button:nth-child(2){display:none}.terminal-launcher>div{grid-template-columns:1fr}.project-dialog{width:90%}}
+</style>
