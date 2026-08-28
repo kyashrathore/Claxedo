@@ -50,6 +50,7 @@ import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
+import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import { UserExtensionRoutes } from "../extensions/user-extension-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
@@ -305,11 +306,18 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   }))
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   const localWorkspaceRoutes = LocalWorkspaceRoutes(authRouteOptions(services))
+  const sandboxDriverSettingsRoutes = SandboxDriverSettingsRoutes({
+    credentials: services.credentials,
+    env,
+    ...authRouteOptions(services),
+  })
   app.route("/api/claxedo/workspace", localWorkspaceRoutes)
+  app.route("/api/claxedo/workspace", sandboxDriverSettingsRoutes)
   // The renderer's inventory contract uses the hosted-compatible list path in
   // every product. On desktop, the authoritative local workspace store answers
   // it; this avoids treating an intentionally absent hosted router as a 404.
   app.route("/api/workspace", localWorkspaceRoutes)
+  app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   // User-extension manifests and modules from `dataDir()/extensions`. The
   // route family disables itself on hosted/signed deployments; mounting it
