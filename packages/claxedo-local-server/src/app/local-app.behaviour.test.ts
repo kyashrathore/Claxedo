@@ -124,6 +124,29 @@ describe("local composition — credential routes", () => {
   })
 })
 
+describe("local composition — sandbox driver settings", () => {
+  test("serves the provider catalog at the renderer's hosted-compatible path", async () => {
+    const response = await app().request("http://localhost/api/workspace/drivers")
+    expect(response.status).toBe(200)
+
+    const body = await response.json() as {
+      default_driver?: string
+      drivers?: Array<{ id: string; label: string; fields: unknown[] }>
+    }
+
+    expect(body.default_driver).toBe("daytona")
+    expect(body.drivers?.map((driver) => driver.id)).toEqual([
+      "exe",
+      "daytona",
+      "modal",
+      "vercel",
+      "cloudflare",
+      "box",
+    ])
+    expect(body.drivers?.every((driver) => driver.label && driver.fields.length > 0)).toBe(true)
+  })
+})
+
 describe("local composition — health and telemetry", () => {
   test("health reports the fields the shell reads", async () => {
     const body = await (await app().request("http://localhost/api/claxedo/health")).json() as Record<string, unknown>

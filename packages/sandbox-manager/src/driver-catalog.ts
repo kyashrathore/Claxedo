@@ -2,14 +2,20 @@ import { validateSandboxPersistenceCapabilities, type SandboxDriverMetadata } fr
 import { workspaceRuntimeVersion } from "./runtime-version"
 import { defaultSandboxImage } from "./image-name"
 import {
+  defaultSandboxDriverID,
   dockerSandboxDriverEnabled as contractDockerSandboxDriverEnabled,
-  isSandboxDriverID,
+  listSandboxDrivers,
+  sandboxDriverAuthValues,
   sandboxDriverCredentialFields,
-  sandboxDriverIds,
+  sandboxDriverId,
+  sandboxDriverLabels,
   type SandboxDriverAuth,
   type SandboxDriverConfig,
+  type SandboxDriverEnv,
   type SandboxDriverID,
 } from "@claxedo/sandbox-contract"
+
+export { defaultSandboxDriverID, listSandboxDrivers, sandboxDriverId }
 
 export type SandboxDriverCatalogEntry = {
   id: SandboxDriverID
@@ -23,7 +29,7 @@ export { validateSandboxPersistenceCapabilities }
 export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogEntry> = {
   exe: {
     id: "exe",
-    label: "exe.dev",
+    label: sandboxDriverLabels.exe,
     credentialFields: sandboxDriverCredentialFields.exe,
     metadata: {
       driverRunsIn: ["worker", "node"],
@@ -44,7 +50,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
   daytona: {
     id: "daytona",
-    label: "Daytona",
+    label: sandboxDriverLabels.daytona,
     credentialFields: sandboxDriverCredentialFields.daytona,
     metadata: {
       driverRunsIn: ["worker", "node"],
@@ -67,7 +73,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
   modal: {
     id: "modal",
-    label: "Modal",
+    label: sandboxDriverLabels.modal,
     credentialFields: sandboxDriverCredentialFields.modal,
     metadata: {
       driverRunsIn: ["node"],
@@ -90,7 +96,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
   vercel: {
     id: "vercel",
-    label: "Vercel",
+    label: sandboxDriverLabels.vercel,
     credentialFields: sandboxDriverCredentialFields.vercel,
     metadata: {
       driverRunsIn: ["node"],
@@ -112,7 +118,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
   cloudflare: {
     id: "cloudflare",
-    label: "Cloudflare",
+    label: sandboxDriverLabels.cloudflare,
     credentialFields: sandboxDriverCredentialFields.cloudflare,
     metadata: {
       driverRunsIn: ["worker"],
@@ -138,7 +144,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
   box: {
     id: "box",
-    label: "Box",
+    label: sandboxDriverLabels.box,
     credentialFields: sandboxDriverCredentialFields.box,
     metadata: {
       driverRunsIn: ["node"],
@@ -158,7 +164,7 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
   docker: {
     id: "docker",
-    label: "Docker",
+    label: sandboxDriverLabels.docker,
     credentialFields: sandboxDriverCredentialFields.docker,
     metadata: {
       driverRunsIn: ["local"],
@@ -178,29 +184,16 @@ export const sandboxDriverCatalog: Record<SandboxDriverID, SandboxDriverCatalogE
   },
 }
 
-export function sandboxDriverId(input: string | undefined, cfg?: SandboxDriverConfig, env: SandboxDriverEnv = process.env) {
-  if (!isSandboxDriverID(input)) return
-  if (input === "docker" && !sandboxDriverAuth(cfg, input, env)) return
-  return input
-}
-
-export function defaultSandboxDriverID(cfg?: SandboxDriverConfig, env: SandboxDriverEnv = process.env): SandboxDriverID {
-  return sandboxDriverId(cfg?.default_driver, cfg, env)
-    ?? (dockerSandboxDefault(env) && sandboxDriverAuth(cfg, "docker", env) ? "docker" : "daytona")
-}
-
 export function sandboxDriverAuth<T extends SandboxDriverID>(
   cfg: SandboxDriverConfig | undefined,
   id: T,
   env: SandboxDriverEnv = process.env,
 ): SandboxDriverAuth[T] | undefined {
-  if (id === "daytona") return authDaytona(cfg) as SandboxDriverAuth[T]
-  if (id === "exe") return authExe(cfg, env) as SandboxDriverAuth[T]
-  if (id === "modal") return authModal(cfg, env) as SandboxDriverAuth[T]
-  if (id === "vercel") return authVercel(cfg, env) as SandboxDriverAuth[T]
-  if (id === "cloudflare") return authCloudflare(cfg, env) as SandboxDriverAuth[T]
-  if (id === "box") return authBox(cfg, env) as SandboxDriverAuth[T]
-  return authDocker(cfg, env) as SandboxDriverAuth[T]
+  const configured = sandboxDriverAuthValues(cfg, id, env)
+  if (id !== "docker" || !configured) return configured
+  const image = (configured as NonNullable<SandboxDriverAuth["docker"]>).image
+    ?? defaultSandboxImage(workspaceRuntimeVersion(), undefined, env)
+  return { image } as SandboxDriverAuth[T]
 }
 
 export function hasSandboxDriverAuth(
@@ -213,88 +206,4 @@ export function hasSandboxDriverAuth(
 
 export function dockerSandboxDriverEnabled(env: SandboxDriverEnv = process.env) {
   return contractDockerSandboxDriverEnabled(env)
-}
-
-export function listSandboxDrivers(
-  cfg?: SandboxDriverConfig,
-  env: SandboxDriverEnv = process.env,
-  managedDriverIds: ReadonlySet<string> = new Set(),
-) {
-  const def = defaultSandboxDriverID(cfg, env)
-  return {
-    default_driver: def,
-    drivers: sandboxDriverIds
-      .filter((id) => id !== "docker" || !!sandboxDriverAuth(cfg, "docker", env))
-      .map((id) => {
-        const configuredFromConfigOrEnv = !!sandboxDriverAuth(cfg, id, env)
-        const configured = id === "docker" ? configuredFromConfigOrEnv : configuredFromConfigOrEnv || managedDriverIds.has(id)
-        return {
-          id,
-          label: sandboxDriverCatalog[id].label,
-          fields: sandboxDriverCatalog[id].credentialFields,
-          configured,
-          source: configuredFromConfigOrEnv ? "config" as const : configured ? "managed" as const : "none" as const,
-          default: id === def,
-        }
-      }),
-  }
-}
-
-type SandboxDriverEnv = Record<string, string | undefined>
-
-function clean(input: string | undefined) {
-  const txt = input?.trim()
-  return txt ? txt : undefined
-}
-
-function enabled(input: string | undefined) {
-  return ["1", "true", "yes", "on"].includes(input?.trim().toLowerCase() ?? "")
-}
-
-function dockerSandboxDefault(env: SandboxDriverEnv) {
-  return enabled(env.CLAXEDO_DOCKER_SANDBOX_DEFAULT)
-}
-
-function authDaytona(cfg?: SandboxDriverConfig) {
-  const api_key = clean(cfg?.auth?.daytona?.api_key)
-  return api_key ? { api_key } : undefined
-}
-
-function authExe(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  const api_token = clean(cfg?.auth?.exe?.api_token) ?? clean(env.EXE_DEV_API_TOKEN)
-  return api_token ? { api_token } : undefined
-}
-
-function authModal(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  const token_id = clean(cfg?.auth?.modal?.token_id) ?? clean(env.MODAL_TOKEN_ID)
-  const token_secret = clean(cfg?.auth?.modal?.token_secret) ?? clean(env.MODAL_TOKEN_SECRET)
-  return token_id && token_secret ? { token_id, token_secret } : undefined
-}
-
-function authVercel(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  const access_token = clean(cfg?.auth?.vercel?.access_token) ?? clean(env.VERCEL_TOKEN)
-  const team_id = clean(cfg?.auth?.vercel?.team_id) ?? clean(env.VERCEL_TEAM_ID)
-  const project_id = clean(cfg?.auth?.vercel?.project_id) ?? clean(env.VERCEL_PROJECT_ID)
-  return access_token && team_id && project_id ? { access_token, team_id, project_id } : undefined
-}
-
-function authCloudflare(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  const api_token = clean(cfg?.auth?.cloudflare?.api_token) ?? clean(env.CLOUDFLARE_API_TOKEN)
-  const worker_url = clean(cfg?.auth?.cloudflare?.worker_url) ?? clean(env.CLOUDFLARE_SANDBOX_WORKER_URL)
-  return api_token && worker_url ? { api_token, worker_url } : undefined
-}
-
-function authBox(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  const api_key = clean(cfg?.auth?.box?.api_key) ?? clean(env.BOX_API_KEY)
-  return api_key ? { api_key } : undefined
-}
-
-function authDocker(cfg: SandboxDriverConfig | undefined, env: SandboxDriverEnv) {
-  if (!contractDockerSandboxDriverEnabled(env)) return
-  return {
-    image: clean(cfg?.auth?.docker?.image)
-      ?? clean(env.CLAXEDO_DOCKER_SANDBOX_IMAGE)
-      ?? clean(env.CLAXEDO_SANDBOX_IMAGE)
-      ?? defaultSandboxImage(workspaceRuntimeVersion(), undefined, env),
-  }
 }
