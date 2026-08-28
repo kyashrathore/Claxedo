@@ -1128,20 +1128,12 @@ test.describe("core settings + auth @core", () => {
       await openSelect(page, "settings-color-scheme")
       const darkOption = selectOption(page, "Dark")
       await expect(darkOption).toBeVisible()
-      // `{ force: true }`, not a plain `.hover()`: `onHighlight` (src/
-      // components/settings-general.tsx:283-287) writes to a Solid STORE
-      // (`previewColorScheme` → `setStore("previewScheme", ...)`,
-      // packages/ui/src/theme/context.tsx:339-349) on every mouse-move over
-      // the option, and each write's downstream re-render detaches/
-      // reattaches this option node — verified live (Playwright's hover
-      // stability wait saw "element was detached from the DOM, retrying" in
-      // a continuous loop, never settling even at a 15s per-action timeout).
-      // The behavior under test is the STORE effect (colorScheme flips to
-      // "dark"), asserted for real by the `expect.poll` right below — forcing
-      // the hover only skips Playwright's own actionability/stability
-      // engine, which this component's live re-render churn defeats by
-      // design, not the assertion of the actual outcome.
-      await darkOption.hover({ force: true })
+      // Previewing reapplies the global theme and can replace the option node
+      // while a physical-pointer hover is still running. Dispatch the exact
+      // pointer-enter event owned by Select instead of forcing Playwright's
+      // actionability engine through that intentional replacement; the
+      // resulting document scheme below remains the product-level oracle.
+      await darkOption.dispatchEvent("pointerenter", { pointerType: "mouse" })
       await expect.poll(() => page.evaluate(() => document.documentElement.dataset.colorScheme)).toBe("dark")
 
       // Move off without selecting — closing the popover cancels the preview.
