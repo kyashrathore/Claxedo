@@ -507,8 +507,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                   width: "4px",
                   cursor: "col-resize",
                   "z-index": "10",
-                  background:
-                    "linear-gradient(to right, transparent 0, transparent 1.5px, var(--border-weaker-base) 1.5px, var(--border-weaker-base) 2.5px, transparent 2.5px)",
                 }
               }
               return {
@@ -519,8 +517,6 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 height: "4px",
                 cursor: "row-resize",
                 "z-index": "10",
-                background:
-                  "linear-gradient(to bottom, transparent 0, transparent 1.5px, var(--border-weaker-base) 1.5px, var(--border-weaker-base) 2.5px, transparent 2.5px)",
               }
             }
             return (
@@ -533,10 +529,13 @@ export function Workbench(props: WorkbenchProps): JSX.Element {
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(rs().size * 100)}
+                class="group outline-none"
                 style={dividerStyle()}
                 onPointerDown={onPointerDown}
                 onKeyDown={onKeyDown}
-              />
+              >
+                <div aria-hidden="true" class={`pointer-events-none absolute bg-transparent transition-colors duration-100 group-hover:bg-border-base/80 group-focus-visible:bg-border-interactive-base/60 group-active:bg-border-weak-base/45 ${rs().dir === "h" ? "inset-y-0 left-1/2 w-px -translate-x-1/2" : "inset-x-0 top-1/2 h-px -translate-y-1/2"}`} />
+              </div>
             )
           }}
         </Show>
