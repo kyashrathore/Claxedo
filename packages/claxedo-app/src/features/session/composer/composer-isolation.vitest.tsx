@@ -11,7 +11,11 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
   surfaceId?: string
 }>)
 const dialogShow = vi.hoisted(() => vi.fn())
-const loadSelectProviderDialog = vi.hoisted(() => vi.fn(async () => ({ DialogSelectProvider: () => null })))
+const openSettingsProviders = vi.hoisted(() => vi.fn())
+
+vi.mock("@/features/settings/open-settings-providers", () => ({
+  openSettingsProviders,
+}))
 
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (() => {
@@ -125,7 +129,6 @@ vi.mock("@/features/session/app-ports", () => ({
   workspacePlacement: () => undefined,
   listDocumentMentions: vi.fn(async () => []),
   documentMentionText: vi.fn(),
-  loadSelectProviderDialog,
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({
@@ -225,7 +228,7 @@ vi.mock("@/features/session/providers/session-params", () => ({
 afterEach(() => {
   frameSnapshots.length = 0
   dialogShow.mockClear()
-  loadSelectProviderDialog.mockClear()
+  openSettingsProviders.mockClear()
   cleanup()
 })
 

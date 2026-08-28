@@ -8,9 +8,14 @@
 // is how a broken mock stops being visible.
 import { cleanup, render, screen } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import type { ContentMeta } from "@/features/session/app-ports"
+import { setPersisted } from "@/platform/persistence/persist"
 import { SessionContent } from "./session-content"
+import {
+  resetSessionEnvironmentCardStateForTests,
+  sessionEnvironmentCardCollapsePersist,
+} from "./session-environment-card-state"
 
 const envcardCalls = vi.hoisted(() => ({ active: vi.fn() }))
 
@@ -47,6 +52,12 @@ vi.mock("./session-environment-card", () => ({
 afterEach(() => {
   cleanup()
   envcardCalls.active.mockClear()
+})
+
+beforeEach(() => {
+  localStorage.clear()
+  resetSessionEnvironmentCardStateForTests()
+  setPersisted(sessionEnvironmentCardCollapsePersist, { collapsedBySessionId: {}, recency: [] })
 })
 
 const meta = (sessionId: string | undefined): ContentMeta => ({
@@ -111,5 +122,22 @@ describe("SessionContent — environment card mounting", () => {
 
     setVisible(true)
     expect(await screen.findByTestId("envcard-mounted")).toBeTruthy()
+  })
+
+  test("reserves a collapsed gutter on a real session before the lazy card mounts", () => {
+    renderContent("ses_real")
+    expect(screen.getByTestId("session-content")).toHaveAttribute("data-session-envcard", "collapsed")
+    expect(screen.queryByTestId("envcard-mounted")).toBeNull()
+  })
+
+  test("reserves an expanded gutter before the lazy card mounts when the user left it open", () => {
+    resetSessionEnvironmentCardStateForTests()
+    setPersisted(sessionEnvironmentCardCollapsePersist, {
+      collapsedBySessionId: { ses_real: false },
+      recency: ["ses_real"],
+    })
+    renderContent("ses_real")
+    expect(screen.getByTestId("session-content")).toHaveAttribute("data-session-envcard", "expanded")
+    expect(screen.queryByTestId("envcard-mounted")).toBeNull()
   })
 })

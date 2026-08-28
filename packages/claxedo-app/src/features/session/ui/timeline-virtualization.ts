@@ -16,7 +16,7 @@ export function estimateLongMarkdownHeight(text: string) {
   for (const line of lines) {
     if (!/^\s*(?:[-*+]\s+|\|)/.test(line)) continue
     structuralRows += 1
-    if (structuralRows >= 20) return Math.min(6_000, lines.length * 50)
+    if (structuralRows >= 20) return Math.min(6_000, lines.length * 24)
   }
 }
 

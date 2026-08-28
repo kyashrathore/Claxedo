@@ -1,5 +1,5 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, on } from "solid-js"
+import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, createSignal, on, untrack } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/features/session/providers/session-selection"
@@ -23,7 +23,6 @@ import { createHistoryFill } from "@/features/session/ui/history-fill"
 import { groupNavigateDirectory, groupNavigateUrlSync } from "@/features/session/ui/group-navigate-route"
 import { setSessionHandoff, setTerminalHandoff } from "@/features/session/ui/prompt-preview-handoff"
 import { terminalTabLabel } from "@/features/session/ui/terminal-label"
-import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 import { scheduleSessionCommandsAfterFirstPaint, useSessionCommands } from "@/features/session/ui/use-session-commands"
 import { MessageTimeline, PromptInput, SessionComposerRegion } from "@/features/session/ui/session-screen-lazy"
 import { createSessionComposerState } from "@/features/session/ui/composer/session-composer-state"
@@ -89,6 +88,13 @@ import { createActivePaneProjection } from "@/features/session/store/active-pane
 import { createSessionScreenCacheProjection } from "@/features/session/ui/session-screen-cache-projection"
 import { createParentSessionNavigation } from "@/features/session/ui/session-parent-navigation"
 import { createNewSessionBranchSource } from "@/features/session/ui/components/session-new-branch-source"
+import { useMarked } from "@opencode-ai/ui/context/marked"
+import {
+  firstFoldMarkdownBodies,
+  firstFoldMarkdownPreloadIdentity,
+  preloadSessionMarkdownBodies,
+  sessionMarkdownTimelineGate,
+} from "@/features/session/ui/content/session-markdown-preload"
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -102,6 +108,7 @@ export default function SessionPage() {
   const config = useConfigOptional()
   const dialog = useDialog()
   const language = useLanguage()
+  const marked = useMarked()
   const navigate = useNavigate()
   const location = useLocation()
   const paneActive = () => sessionParams.active?.() ?? true
@@ -492,6 +499,51 @@ export default function SessionPage() {
       messagesLoaded: messageState()?.value !== undefined,
     }),
   )
+  const [markdownReady, setMarkdownReady] = createSignal(false)
+  let markdownGateSessionKey: string | undefined
+  const firstFoldIdentity = createMemo(() =>
+    firstFoldMarkdownPreloadIdentity(conversation()?.messages ?? []),
+  )
+  createEffect(() => {
+    const ready = messagesReady()
+    const key = sessionKey()
+    const gate = sessionMarkdownTimelineGate({
+      messagesReady: ready,
+      sessionKey: key,
+      firstFoldIdentity: firstFoldIdentity(),
+    })
+    if (key !== markdownGateSessionKey) {
+      markdownGateSessionKey = key
+      setMarkdownReady(false)
+    }
+    if (gate === "blocked") {
+      setMarkdownReady(false)
+      return
+    }
+    // Live turns must mount immediately. Token deltas do not change the
+    // first-fold identity, so this effect does not retrigger mid-stream.
+    if (gate === "live") {
+      setMarkdownReady(true)
+      return
+    }
+    const snapshot = untrack(() => conversation())
+    const bodies = firstFoldMarkdownBodies({
+      messages: snapshot?.messages ?? [],
+      parts: snapshot?.parts ?? {},
+    })
+    let cancelled = false
+    void preloadSessionMarkdownBodies(bodies, marked).then(
+      () => {
+        if (!cancelled) setMarkdownReady(true)
+      },
+      () => {
+        if (!cancelled) setMarkdownReady(true)
+      },
+    )
+    onCleanup(() => {
+      cancelled = true
+    })
+  })
   const firstFoldReady = createMemo(() =>
     sessionFirstFoldReady({
       sessionId: sessionID(),
@@ -1298,8 +1350,17 @@ export default function SessionPage() {
                 >
                   <Show
                     keyed
-                    when={timelineMountSessionKey({ messagesReady: messagesReady(), sessionKey: sessionKey() })}
-                    fallback={<SessionTimelineSkeleton centered={centered()} />}
+                    when={timelineMountSessionKey({
+                      messagesReady: messagesReady() && markdownReady(),
+                      sessionKey: sessionKey(),
+                    })}
+                    fallback={
+                      <div
+                        class="size-full bg-background-base"
+                        data-session-timeline-loading
+                        data-testid="session-messages-loading"
+                      />
+                    }
                   >
                     {(_id) => (
                       <MessageTimeline

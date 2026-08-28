@@ -19,6 +19,7 @@ import { Icon } from "@opencode-ai/ui/icon"
 import { IconButtonV2 } from "@opencode-ai/ui/v2/icon-button-v2"
 import { TooltipV2 } from "@opencode-ai/ui/v2/tooltip-v2"
 import { bundledLanguages } from "shiki"
+import { marked as markedSync } from "marked"
 import { canReusePendingBlock, project, type Block, type Projection } from "./markdown-stream"
 import {
   disposeStreamingCode,
@@ -31,9 +32,11 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import {
   getCachedMarkdown,
+  getCachedMermaidSvg,
   sanitizeMarkdown,
   sanitizeSvg,
   touchCachedMarkdown,
+  touchCachedMermaidSvg,
   type MarkdownCacheEntry,
 } from "./markdown-cache"
 import { getCachedCodeHighlight, highlightCodeThroughCache } from "./markdown-code-cache"
@@ -44,10 +47,7 @@ import {
   stageMarkdownCollections as stageCollections,
 } from "./markdown-progressive"
 import { parseMarkdownMeasured } from "./markdown-parse-timing"
-import {
-  completedMarkdownRichDelayMs,
-  scheduleCompletedMarkdownRichUpgrade,
-} from "./markdown-rich-stage"
+import { rememberCompletedMarkdownPaint } from "./markdown-rich-stage"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -82,6 +82,41 @@ function escape(text: string) {
 
 function fallback(markdown: string) {
   return escape(markdown).replace(/\r\n?/g, "\n").replace(/\n/g, "<br>")
+}
+
+/** First-frame HTML for live tokens and cold remounts. Escaped source is not markdown. */
+function syncRichHtml(src: string) {
+  try {
+    const parsed = markedSync.parse(src, { async: false })
+    if (typeof parsed !== "string") return fallback(src)
+    return sanitizeMarkdown(parsed)
+  } catch {
+    return fallback(src)
+  }
+}
+
+function syncBlock(owner: string, cacheKey: string | undefined, index: number, block: Block): RenderedBlock {
+  const key = markdownBlockKey(owner, cacheKey, index, block.mode)
+  if (block.mode === "code") {
+    return {
+      key,
+      mode: "code",
+      raw: block.raw,
+      hash: String(block.raw.length),
+      language: block.language ?? "text",
+      complete: !!block.complete,
+      stable: [],
+      generation: 0,
+      unstable: [[block.src, ""] as MarkdownToken],
+    }
+  }
+  return {
+    key,
+    mode: block.mode,
+    raw: block.raw,
+    hash: String(block.raw.length),
+    html: syncRichHtml(block.src),
+  }
 }
 
 function codeLanguageName(language: string | undefined) {
@@ -316,6 +351,21 @@ function ensureMermaidControls(wrapper: HTMLElement, source: string) {
   )
 }
 
+function commitMermaidDiagram(wrapper: HTMLElement, source: string, svg: string) {
+  let diagram = wrapper.querySelector('[data-slot="mermaid-diagram"]')
+  if (!diagram) {
+    diagram = document.createElement("div")
+    diagram.setAttribute("data-slot", "mermaid-diagram")
+    wrapper.appendChild(diagram)
+  }
+  replaceSanitizedMarkup(diagram, svg)
+  wrapper.setAttribute("data-mermaid-source", source)
+  wrapper.setAttribute("data-mermaid-state", "rendered")
+  wrapper.querySelector('[data-slot="mermaid-render-button"]')?.remove()
+  wrapper.setAttribute("data-markdown-rich", "mermaid")
+  ensureMermaidControls(wrapper, source)
+}
+
 function renderMermaidBlocks(root: HTMLElement) {
   if (!mermaidRenderer) return
   const wrappers = Array.from(root.querySelectorAll('[data-component="markdown-code"]'))
@@ -355,6 +405,11 @@ function renderMermaidBlocks(root: HTMLElement) {
       if (wrapper.getAttribute("data-mermaid-state") === "rendered") ensureMermaidControls(wrapper, source)
       continue
     }
+    const cached = getCachedMermaidSvg(source)
+    if (cached) {
+      commitMermaidDiagram(wrapper, source, cached)
+      continue
+    }
     wrapper.setAttribute("data-mermaid-source", source)
     traceMermaid("render", source)
     const renderStarted = rendererClock()
@@ -371,18 +426,9 @@ function renderMermaidBlocks(root: HTMLElement) {
         const safe = sanitizeSvg(svg)
         traceMermaid("sanitize", source, sanitizeStarted)
         if (!safe) throw new Error("mermaid: SVG failed sanitization")
+        touchCachedMermaidSvg(source, safe)
         const commitStarted = rendererClock()
-        let diagram = wrapper.querySelector('[data-slot="mermaid-diagram"]')
-        if (!diagram) {
-          diagram = document.createElement("div")
-          diagram.setAttribute("data-slot", "mermaid-diagram")
-          wrapper.appendChild(diagram)
-        }
-        replaceSanitizedMarkup(diagram, safe)
-        wrapper.setAttribute("data-mermaid-state", "rendered")
-        wrapper.querySelector('[data-slot="mermaid-render-button"]')?.remove()
-        wrapper.setAttribute("data-markdown-rich", "mermaid")
-        ensureMermaidControls(wrapper, source)
+        commitMermaidDiagram(wrapper, source, safe)
         traceMermaid("commit", source, commitStarted)
       })
       .catch(() => {
@@ -621,45 +667,54 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
   }
 }
 
-function initialResult(text: string, key: string | undefined, projection: Projection, owner: string): RenderResult {
+function cachedRenderResult(
+  text: string,
+  key: string | undefined,
+  projection: Projection,
+  owner: string,
+): RenderResult | undefined {
   if (!text) return { text, blocks: [] }
   const base = key ?? checksum(text)
-  if (base) {
-    const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
-      if (block.mode === "code") {
-        if (!block.complete) return []
-        const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name)
-        if (!cached) return []
-        return [
-          {
-            key: markdownBlockKey(owner, key, index, block.mode),
-            mode: block.mode,
-            raw: block.raw,
-            hash: String(block.raw.length),
-            complete: true,
-            ...cached,
-          },
-        ]
-      }
-      const cacheKey = `${base}:${index}:${block.mode}`
-      const cached = getCachedMarkdown(cacheKey)
-      if (cached?.raw !== block.raw) return []
-      return [{ key: `${owner}:${cacheKey}`, mode: block.mode, ...cached }]
-    })
-    if (blocks.length === projection.blocks.length) return { text, blocks }
-  }
+  if (!base) return
+  const blocks = projection.blocks.flatMap((block, index): RenderedBlock[] => {
+    if (block.mode === "code") {
+      if (!block.complete) return []
+      const cached = getCachedCodeHighlight(block.src, codeLanguageName(block.language), OpenCodeTheme.name)
+      if (!cached) return []
+      return [
+        {
+          key: markdownBlockKey(owner, key, index, block.mode),
+          mode: block.mode,
+          raw: block.raw,
+          hash: String(block.raw.length),
+          complete: true,
+          ...cached,
+        },
+      ]
+    }
+    const cacheKey = `${base}:${index}:${block.mode}`
+    const cached = getCachedMarkdown(cacheKey)
+    if (cached?.raw !== block.raw) return []
+    return [{ key: `${owner}:${cacheKey}`, mode: block.mode, ...cached }]
+  })
+  if (blocks.length === projection.blocks.length) return { text, blocks }
+}
+
+function syncRenderResult(text: string, projection: Projection, owner: string, cacheKey: string | undefined): RenderResult {
   return {
     text,
-    blocks: [
-      {
-        key: "initial",
-        mode: "full",
-        raw: text,
-        hash: checksum(text) ?? "",
-        html: fallback(text),
-      },
-    ],
+    blocks: projection.blocks.map((block, index) => syncBlock(owner, cacheKey, index, block)),
   }
+}
+
+function initialResult(
+  text: string,
+  key: string | undefined,
+  projection: Projection,
+  owner: string,
+): RenderResult | undefined {
+  if (!text) return { text, blocks: [] }
+  return cachedRenderResult(text, key, projection, owner) ?? syncRenderResult(text, projection, owner, key)
 }
 
 export function Markdown(
@@ -679,19 +734,10 @@ export function Markdown(
   const [root, setRoot] = createSignal<HTMLDivElement>()
   const owner = createUniqueId()
   const activeCodeKeys = new Set<string>()
-  // Streaming projection already exists before the completed mount boundary and
-  // must remain incremental. Only a newly mounted, already-complete body stages
-  // its rich representation; SSR also keeps the existing immediate fallback.
-  const stageCompleted = !isServer && !(local.streaming ?? false) && (local.richAfterMs ?? completedMarkdownRichDelayMs) > 0
-  const [richReady, setRichReady] = createSignal(!stageCompleted)
-  const cancelRichUpgrade = stageCompleted
-    ? scheduleCompletedMarkdownRichUpgrade(
-        () => setRichReady(true),
-        local.richAfterMs ?? completedMarkdownRichDelayMs,
-      )
-    : undefined
+  // Completed and streaming bodies both commit real markdown on the first
+  // frame (cache or sync parse). The async native parser upgrades highlight
+  // and math without a plain-text first paint.
   const projection = createMemo<Projection | undefined>((previous) => {
-    if (!richReady()) return previous
     const started = rendererClock()
     const result = project(previous, local.text, local.streaming ?? false)
     traceRenderer(`markdown.project.chars-${local.text.length}.blocks-${result.blocks.length}`, started)
@@ -699,11 +745,11 @@ export function Markdown(
   }, undefined)
   const [html] = createResource(
     () => {
-      if (!richReady()) return
       return {
         text: local.text,
         key: local.cacheKey,
         projection: projection()!,
+        streaming: local.streaming,
       }
     },
     async (src) => {
@@ -772,24 +818,13 @@ export function Markdown(
         }),
       )
         .then((blocks) => ({ text: src.text, blocks }) satisfies RenderResult)
-        .catch(
-          () =>
-            ({
-              text: src.text,
-              blocks: [
-                {
-                  key: base ?? "fallback",
-                  mode: "full" as const,
-                  raw: src.text,
-                  hash: checksum(src.text) ?? "",
-                  html: fallback(src.text),
-                },
-              ],
-            }) satisfies RenderResult,
-        )
+        .catch(() => {
+          if (!src.streaming) return { text: src.text, blocks: [] } satisfies RenderResult
+          return syncRenderResult(src.text, src.projection, owner, src.key)
+        })
     },
     {
-      initialValue: richReady() ? initialResult(local.text, local.cacheKey, projection()!, owner) : undefined,
+      initialValue: initialResult(local.text, local.cacheKey, projection()!, owner),
     },
   )
 
@@ -810,35 +845,25 @@ export function Markdown(
       delete container.dataset.markdownStage
       return
     }
-    if (!richReady()) {
-      disposeMarkdownControls(container)
-      Array.from(container.children).forEach(disposeProgressiveMarkdown)
-      activeCodeKeys.forEach(disposeCode)
-      activeCodeKeys.clear()
-      // `textContent` is the escaping boundary. It avoids even DOMParser on the
-      // first fold while keeping the complete canonical response selectable and
-      // available to assistive technology.
-      if (container.textContent !== local.text || container.childNodes.length !== 1) container.textContent = local.text
-      container.dataset.markdownStage = "plain"
-      return
-    }
 
-    // `html()` suspends while the asynchronous parser is pending. This rich
-    // upgrade runs after the complete plain-text body has already painted, so
-    // suspending here bubbles to the pane boundary and disconnects the entire
-    // session surface (header, timeline, and composer) for a non-critical
-    // enhancement. `latest` is reactive without throwing the pending promise;
-    // keep the canonical plain body in place until rich HTML is ready.
+    // `html()` suspends while the asynchronous parser is pending. Suspending
+    // here bubbles to the pane boundary and disconnects the entire session
+    // surface. `latest` is reactive without throwing the pending promise.
     const result = html.latest
-    // A native parser may be asynchronous. Keep the complete plain surface in
-    // place until rich HTML is actually ready rather than blanking the response.
+    // First paint is cache or sync-parsed HTML. Do not commit escaped source
+    // (`initial`) for a completed body — that is the plain→markdown flash.
     if (!result) return
     const projected = projection()!
-    const content = pendingBlocks(result, projected, local.cacheKey, owner)
+    const content = pendingBlocks(result, projected, local.cacheKey, owner, local.streaming)
+    if (!local.streaming && content.length === 1 && content[0]?.key === "initial") return
     const wasPlain = container.dataset.markdownStage === "plain"
     delete container.dataset.markdownStage
     if (wasPlain) container.replaceChildren()
     if (content.length === 0) {
+      // End-of-stream and cold completed waits must not wipe tokens that
+      // already painted. Keep the last streamed DOM until the matching rich
+      // result arrives.
+      if (!local.streaming && container.childElementCount > 0) return
       disposeMarkdownControls(container)
       Array.from(container.children).forEach(disposeProgressiveMarkdown)
       container.replaceChildren()
@@ -873,10 +898,10 @@ export function Markdown(
         copied: i18n.t("ui.message.copied"),
       }))
     traceRenderer(`markdown.commit.chars-${local.text.length}.blocks-${content.length}`, commitStarted)
+    if (content.every((block) => block.key !== "initial")) rememberCompletedMarkdownPaint(local.cacheKey, local.text)
   })
 
   onCleanup(() => {
-    cancelRichUpgrade?.()
     if (copyCleanup) copyCleanup()
     activeCodeKeys.forEach(disposeCode)
   })
@@ -900,27 +925,20 @@ function pendingBlocks(
   projection: Projection | undefined,
   cacheKey: string | undefined,
   owner: string,
+  streaming: boolean | undefined,
 ) {
   if (!result) return []
   if (!projection || result.text === projection.text) return result.blocks
+  if (!streaming) return []
   const initial = result.blocks.length === 1 && result.blocks[0]?.key === "initial"
   return projection.blocks.map((block, index) => {
     const current = initial ? undefined : result.blocks[index]
-    if (current && canReusePendingBlock(current, block)) return current
-    const key = markdownBlockKey(owner, cacheKey, index, block.mode)
-    if (block.mode !== "code")
-      return { key, mode: block.mode, raw: block.raw, hash: String(block.raw.length), html: fallback(block.src) }
-    return {
-      key,
-      mode: block.mode,
-      raw: block.raw,
-      hash: String(block.raw.length),
-      language: block.language ?? "text",
-      complete: !!block.complete,
-      stable: [],
-      generation: 0,
-      unstable: [[block.src, ""] as MarkdownToken],
+    if (block.mode === "code") {
+      if (current?.mode === "code" && canReusePendingBlock(current, block)) return current
+      return syncBlock(owner, cacheKey, index, block)
     }
+    if (current && current.mode !== "code" && current.raw === block.raw && "html" in current) return current
+    return syncBlock(owner, cacheKey, index, block)
   })
 }
 

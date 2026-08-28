@@ -207,6 +207,55 @@ export function markdownCacheStats() {
   return { entries: cache.size, bytes: totalBytes }
 }
 
+/**
+ * Sanitized mermaid SVG keyed by diagram source. Remounted rows are fresh DOM,
+ * so without this a cached markdown body still re-renders mermaid asynchronously
+ * and pops the diagram in after first paint. Only post-`sanitizeSvg` markup
+ * is stored.
+ */
+export const mermaidSvgCacheLimits = {
+  entries: 256,
+  bytes: 2_000_000,
+}
+const mermaidCache = new Map<string, string>()
+let mermaidBytes = 0
+
+export function getCachedMermaidSvg(source: string) {
+  const value = mermaidCache.get(source)
+  if (value === undefined) return
+  mermaidCache.delete(source)
+  mermaidCache.set(source, value)
+  return value
+}
+
+export function touchCachedMermaidSvg(source: string, svg: string) {
+  if (!svg) return
+  const bytes = source.length + svg.length
+  if (bytes > mermaidSvgCacheLimits.bytes) return
+  const existing = mermaidCache.get(source)
+  if (existing) {
+    mermaidBytes -= source.length + existing.length
+    mermaidCache.delete(source)
+  }
+  mermaidCache.set(source, svg)
+  mermaidBytes += bytes
+  while (mermaidCache.size > mermaidSvgCacheLimits.entries || mermaidBytes > mermaidSvgCacheLimits.bytes) {
+    const oldest = mermaidCache.entries().next().value
+    if (!oldest) break
+    mermaidBytes -= oldest[0].length + oldest[1].length
+    mermaidCache.delete(oldest[0])
+  }
+}
+
+export function mermaidSvgCacheStats() {
+  return { entries: mermaidCache.size, bytes: mermaidBytes }
+}
+
+export function clearMermaidSvgCache() {
+  mermaidCache.clear()
+  mermaidBytes = 0
+}
+
 export async function preloadMarkdown(
   text: string,
   cacheKey: string,

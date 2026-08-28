@@ -2,7 +2,7 @@
 // <WorkbenchProvider>. Exposes `useClaxedoState()` which returns the unified
 // shape callers wire up to.
 
-import { batch, onCleanup, type Accessor, type JSX } from "solid-js"
+import { batch, createEffect, onCleanup, type Accessor, type JSX } from "solid-js"
 import { createStore, reconcile, type SetStoreFunction } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import {
@@ -24,7 +24,7 @@ import { markRendererPhase, measureRendererPhase } from "@/platform/performance/
 import { createTerminalSlice, type TerminalSliceApi } from "./terminal"
 import { createWorkspaceSlice, type WorkspaceSliceApi } from "./workspace"
 import { createRailSlice, type RailSliceApi } from "./rail"
-import { createWorkspacePanelSlice, type WorkspacePanelSliceApi } from "./workspace-panel"
+import { createWorkspacePanelSlice, syncFocusedSessionPanel, type WorkspacePanelSliceApi } from "./workspace-panel"
 import { createProcessPaneSlice, type ProcessPaneSliceApi } from "@/features/processes/state"
 import { createLayoutOrchestration, type LayoutOrchestrationApi } from "./orchestration"
 import { emptyClaxedoState, validate } from "./persistence"
@@ -280,6 +280,28 @@ function buildApi(props: InnerProps): ClaxedoStateApi {
     state,
     setState,
     defaultTarget: defaultPanelTarget,
+  })
+
+  const focusedSessionId = (): string | undefined => {
+    const contentId = wb.selectors.focusedContent()
+    const focused = contentId ? meta.get(contentId) : undefined
+    if (focused?.type !== "session") return
+    const id = focused.sessionId
+    return id && id !== "new" ? id : undefined
+  }
+  // Owns remember/restore for every focus change (rail click, URL, command,
+  // tab). Rail used to snapshot after `onSessionSelect` had already focused
+  // the destination, so every session inherited the last open panel.
+  createEffect((previous: { id: string | undefined } | undefined) => {
+    const next = focusedSessionId()
+    if (!previous) return { id: next }
+    syncFocusedSessionPanel({
+      previousSessionId: previous.id,
+      nextSessionId: next,
+      remember: (sessionId) => workspacePanel.rememberSession(sessionId),
+      restore: (sessionId) => workspacePanel.restoreSession(sessionId, defaultPanelTarget()),
+    })
+    return { id: next }
   })
 
   const layout = createLayoutOrchestration({ wb, meta, terminal })

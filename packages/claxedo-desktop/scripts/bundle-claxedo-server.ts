@@ -73,6 +73,11 @@ export async function bundleClaxedoServer(source: string, destination: string) {
     fs.cpSync(migrationsSource, path.join(parent, "claxedo-migration"), { recursive: true })
   }
 
+  // @cursor/sdk ships as a webpack bundle with numeric lazy chunks (986.js, …).
+  // Bun inlines the entry into chunks/index-*.js but does not emit those siblings,
+  // so cursor-sdk session create fails at runtime until they sit beside the entry.
+  copyCursorSdkLazyChunks(path.join(pending, "chunks"))
+
   fs.rmSync(destination, { recursive: true, force: true })
   fs.renameSync(pending, destination)
   fs.rmSync(`${destination}.js`, { force: true })
@@ -139,4 +144,34 @@ export async function bundleClaxedoEngineWorker(source: string, destination: str
   })
   if (!result.success) throw new AggregateError(result.logs, "Failed to bundle claxedo engine worker")
   return path.join(destination, "index.js")
+}
+
+function copyCursorSdkLazyChunks(chunksDir: string) {
+  const desktopDir = path.resolve(import.meta.dirname, "..")
+  const searchRoots = [
+    desktopDir,
+    path.resolve(desktopDir, "../agent-sdk-runtime"),
+    path.resolve(desktopDir, "../claxedo-local-server"),
+  ]
+
+  let cursorSdkEsmDir: string | undefined
+  for (const root of searchRoots) {
+    try {
+      const pkgJson = path.join(root, "package.json")
+      if (!fs.existsSync(pkgJson)) continue
+      cursorSdkEsmDir = path.join(
+        path.dirname(createRequire(pkgJson).resolve("@cursor/sdk/package.json")),
+        "dist/esm",
+      )
+      break
+    } catch {
+      continue
+    }
+  }
+  if (!cursorSdkEsmDir || !fs.existsSync(cursorSdkEsmDir)) return
+
+  for (const entry of fs.readdirSync(cursorSdkEsmDir, { withFileTypes: true })) {
+    if (!entry.isFile() || !/^\d+\.js$/.test(entry.name)) continue
+    fs.copyFileSync(path.join(cursorSdkEsmDir, entry.name), path.join(chunksDir, entry.name))
+  }
 }

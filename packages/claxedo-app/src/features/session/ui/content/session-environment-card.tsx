@@ -1,5 +1,4 @@
-import { createEffect, createMemo, createRoot, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, type JSX } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { Popover } from "@opencode-ai/ui/popover"
@@ -17,11 +16,24 @@ import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runt
 import { isProjectWorktreeDirectory, projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
-import { Persist, persisted } from "@/platform/persistence/persist"
 import { ContextCard, ContextCardRow, ContextCardSection } from "@/ui/context-card/context-card"
 import { SemanticIcon, type SemanticIconConcept } from "@/ui/semantic-icon"
 import { workspaceFileStatusQueryOptions } from "@/platform/files/workspace-file-status-query"
+import {
+  sessionEnvironmentCardState,
+  type SessionEnvironmentCardOccupancy,
+} from "./session-environment-card-state"
 import "./session-environment-card.css"
+
+export type {
+  SessionEnvironmentCardOccupancy,
+  SessionEnvironmentCardState,
+} from "./session-environment-card-state"
+export {
+  createSessionEnvironmentCardState,
+  reservedSessionEnvironmentOccupancy,
+  sessionEnvironmentCardState,
+} from "./session-environment-card-state"
 
 /** The panel tabs the navigation section opens directly. */
 export type EnvironmentPanelTab = "changes" | "files" | "processes"
@@ -483,55 +495,6 @@ function ProcessesRow(props: {
   )
 }
 
-export type SessionEnvironmentCardState = {
-  collapsed: () => boolean
-  /** False until the persisted preference has been read back — see below. */
-  ready: () => boolean
-  setCollapsed: (collapsed: boolean) => void
-  toggle: () => void
-}
-
-/**
- * How much of the shell's right gutter a painted card occupies. `undefined`
- * while no card is painted. The shell reserves the matching `padding-right` on
- * the timeline viewport and composer dock from this.
- */
-export type SessionEnvironmentCardOccupancy = "expanded" | "collapsed"
-
-/** Route-restorable collapse preference, shared by the mount and its tests. */
-export function createSessionEnvironmentCardState(): SessionEnvironmentCardState {
-  // Default COLLAPSED: a fresh session surface must not resize the transcript
-  // for a card the user never asked to open. The persisted value wins once it
-  // resolves, so users who previously expanded keep their choice.
-  const [ui, setUi, , ready] = persisted(
-    Persist.global("session.environment-card-collapsed.v1"),
-    createStore<{ collapsed: boolean }>({ collapsed: true }),
-  )
-  return {
-    collapsed: () => ui.collapsed,
-    ready,
-    setCollapsed: (collapsed: boolean) => setUi("collapsed", collapsed),
-    toggle: () => setUi("collapsed", !ui.collapsed),
-  }
-}
-
-/**
- * ONE collapse store for the whole app, created outside any component owner.
- *
- * Desktop persistence is ASYNC (the store lives behind an Electron IPC store,
- * so `persisted()` hands back a Promise init). A per-mount store therefore
- * always renders the `collapsed: false` DEFAULT first and only flips to the
- * saved value once the read resolves — which the user sees as the card popping
- * open and folding itself shut again on every fresh mount (app restart, and any
- * time the session surface re-mounts). Hoisting the store means that read
- * happens ONCE per app run; `ready` covers that first read.
- */
-let sharedCardState: SessionEnvironmentCardState | undefined
-export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
-  if (!sharedCardState) sharedCardState = createRoot(() => createSessionEnvironmentCardState())
-  return sharedCardState
-}
-
 /**
  * Wires the presentational card to the live session: git change totals, branch,
  * and the isolation kind, all read from the scoped session SDK and the signed
@@ -551,6 +514,7 @@ export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
  */
 export function SessionEnvironmentCardMount(props: {
   active: () => boolean
+  sessionId: () => string | undefined
   onOccupancy?: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
 }) {
   const sdk = useSDK()
@@ -576,13 +540,13 @@ export function SessionEnvironmentCardMount(props: {
     onCleanup(() => clearTimeout(timer))
   })
   // Never paint the card before its persisted collapse state is known: showing
-  // the default (expanded) and correcting it a tick later is the visible
-  // expand-then-collapse flash. `ready` is already true on the sync (web) path.
+  // the default (collapsed) and correcting it a tick later is the visible
+  // gutter jump. `ready` is already true on the sync (web) path.
   const painted = () => visible() && collapse.ready()
   // The shell cannot see any of the above (panel state, persisted collapse, the
   // card's own lazy chunk), so publish the one fact its layout needs.
   createEffect(() => {
-    props.onOccupancy?.(painted() ? (collapse.collapsed() ? "collapsed" : "expanded") : undefined)
+    props.onOccupancy?.(painted() ? (collapse.collapsed(props.sessionId()) ? "collapsed" : "expanded") : undefined)
   })
   onCleanup(() => props.onOccupancy?.(undefined))
 
@@ -765,8 +729,8 @@ export function SessionEnvironmentCardMount(props: {
     <Show when={painted()}>
       <SessionEnvironmentCard
         source={source}
-        collapsed={collapse.collapsed()}
-        onToggleCollapse={collapse.toggle}
+        collapsed={collapse.collapsed(props.sessionId())}
+        onToggleCollapse={() => collapse.toggle(props.sessionId())}
         onOpenTab={openTab}
         onOpenRepo={openRepo}
         onOpenProcessTerminal={openProcessTerminal}

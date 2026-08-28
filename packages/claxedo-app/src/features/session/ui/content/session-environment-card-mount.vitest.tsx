@@ -110,9 +110,9 @@ vi.mock("@/platform/runtime/agent/signed-workspace", () => ({
 
 vi.mock("@/platform/persistence/persist", () => ({
   Persist: { global: (key: string) => key },
-  persisted: (_key: string, store: { collapsed: boolean }) => [
-    store,
-    (_path: string, value: boolean) => { store.collapsed = value },
+  persisted: (_key: string, store: [object, (path: string, value: unknown) => void]) => [
+    store[0],
+    store[1],
     undefined,
     () => true,
   ],
@@ -138,7 +138,7 @@ describe("SessionEnvironmentCardMount query ownership", () => {
     const [panelOpen, setPanelOpen] = createSignal(false)
     harness.panelState = () => ({ open: panelOpen() })
 
-    render(() => <SessionEnvironmentCardMount active={active} />)
+    render(() => <SessionEnvironmentCardMount active={active} sessionId={() => "ses_mount"} />)
 
     const targetOptions = () => harness.options.map((options) => options()).filter((options) => targetKey(options.queryKey))
     const processesOptions = () => targetOptions().find((options) => targetKey(options.queryKey) === "processes")
