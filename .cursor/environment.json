@@ -4,13 +4,13 @@
   "terminals": [
     {
       "name": "claxedo-server",
-      "description": "Self-hosted Claxedo control plane (embedded OpenCode engine + SQLite) on http://127.0.0.1:2593 -- the backend the web app talks to.",
-      "command": "export PATH=\"$HOME/.bun/bin:$PATH\"; cd packages/claxedo-server && bun run dev"
+      "description": "Self-hosted Claxedo control plane (embedded OpenCode engine + SQLite) on http://127.0.0.1:2593 -- the backend the web app talks to. Needs the .nvmrc-pinned Node for the embedded engine's node:sqlite driver. If OPENCODE_ZEN_API is set, it is wired to the in-process engine as the 'opencode' (OpenCode Zen) provider (the engine-auth bridge does not cover this provider, so OPENCODE_AUTH_CONTENT is the supported path).",
+      "command": "export PATH=\"$HOME/.local/node/bin:$HOME/.bun/bin:$PATH\"; [ -n \"$OPENCODE_ZEN_API\" ] && export OPENCODE_AUTH_CONTENT=\"{\\\"opencode\\\":{\\\"type\\\":\\\"api\\\",\\\"key\\\":\\\"$OPENCODE_ZEN_API\\\"}}\"; cd packages/claxedo-server && bun run dev"
     },
     {
       "name": "claxedo-app",
       "description": "Claxedo web app (Solid + Vite dev server) on http://localhost:4444, proxying API routes to the control plane on 2593.",
-      "command": "export PATH=\"$HOME/.bun/bin:$PATH\"; cd packages/claxedo-app && bun run dev"
+      "command": "export PATH=\"$HOME/.local/node/bin:$HOME/.bun/bin:$PATH\"; cd packages/claxedo-app && bun run dev"
     }
   ],
   "ports": [

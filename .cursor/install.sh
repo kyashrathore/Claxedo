@@ -15,6 +15,32 @@ fi
 export BUN_INSTALL="$HOME/.bun"
 export PATH="$BUN_INSTALL/bin:$PATH"
 
+# Node, pinned to .nvmrc. This is load-bearing, not cosmetic: claxedo-server runs
+# under Node (`node --import tsx`) and boots the embedded OpenCode engine in
+# process. That engine's node:sqlite driver (packages/core/src/database/
+# sqlite.node.ts) calls StatementSync.setReturnArrays(), which only exists in
+# Node >= 22.16. On an older Node the FIRST per-directory instance boot
+# (Project.fromDirectory) throws "setReturnArrays is not a function", so
+# /config/providers, /provider, and every session 500 while /global/health
+# still passes. The base image's Node is too old, so install the pinned one.
+NODE_VERSION="$(tr -d '[:space:]' < .nvmrc)"
+NODE_DIR="$HOME/.local/node"
+if [ "$("$NODE_DIR/bin/node" --version 2>/dev/null || true)" != "v${NODE_VERSION}" ]; then
+  case "$(uname -m)" in
+    x86_64) NODE_ARCH="x64" ;;
+    aarch64 | arm64) NODE_ARCH="arm64" ;;
+    *) NODE_ARCH="x64" ;;
+  esac
+  node_tmp="$(mktemp -d)"
+  curl -fsSL -o "$node_tmp/node.tar.xz" \
+    "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-${NODE_ARCH}.tar.xz"
+  rm -rf "$NODE_DIR"
+  mkdir -p "$NODE_DIR"
+  tar -xJf "$node_tmp/node.tar.xz" -C "$NODE_DIR" --strip-components=1
+  rm -rf "$node_tmp"
+fi
+export PATH="$NODE_DIR/bin:$PATH"
+
 # Workspace dependencies, frozen to bun.lock (postinstall applies the vendored
 # dependency patches and fixes node-pty).
 bun install --frozen-lockfile
