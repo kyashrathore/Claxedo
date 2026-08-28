@@ -15,6 +15,7 @@ export type TerminalSessionPreview = {
   tabId?: string
   workspaceId?: string
   provider?: string
+  providerSessionId?: string | null
   sessionId?: string | null
   transcriptPath?: string | null
   refName?: string
@@ -125,6 +126,7 @@ const parse = (value: unknown): TerminalSessionPreview | null => {
     tabId: optional(session.tabId),
     workspaceId: workspace(session.workspaceId),
     provider: optional(session.provider),
+    providerSessionId: nullable(session.providerSessionId),
     sessionId: nullable(session.sessionId),
     transcriptPath: nullable(session.transcriptPath),
     refName: optional(session.refName),

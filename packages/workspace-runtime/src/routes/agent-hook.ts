@@ -5,7 +5,7 @@
  * running in terminals and publishes events to the runtime event bus.
  */
 
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import z from "zod/v3"
 import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
@@ -257,7 +257,9 @@ const upsertTerminalSession = (input: {
   tabId?: string
   workspaceId?: string
   provider?: string
+  providerSessionId?: string
   sessionId?: string
+  clearSessionId?: boolean
   transcriptPath?: string
   refName?: string
   prompt?: string
@@ -268,15 +270,23 @@ const upsertTerminalSession = (input: {
   pruneTerminalSessions()
   const terminalId = clean(input.terminalId)
   if (!terminalId) return
-  const previous = terminalSessions.get(terminalId)
+  const found = terminalSessions.get(terminalId)
+  const verifiedOwner = clean(input.accessOwnerActorId)
+  // A managed terminal never inherits metadata written before its verified
+  // owner binding. This prevents an untrusted local/legacy hook row with a
+  // guessed terminal id from seeding provider, transcript, prompt, or Session
+  // scope into the managed record.
+  const previous = verifiedOwner && found?.accessOwnerActorId !== verifiedOwner ? undefined : found
+  const providerSessionId = clean(input.providerSessionId)
   const sessionId = clean(input.sessionId)
   const transcriptPath = clean(input.transcriptPath)
   const refName = clean(input.refName)
   const prompt = clean(input.prompt)
   const lastAssistantMessage = clean(input.lastAssistantMessage)
   const provider = normalizeProvider(input.provider) || normalizeProvider(previous?.provider)
-  const previousSessionId = clean(previous?.sessionId)
-  const sessionChanged = !!sessionId && sessionId !== previousSessionId
+  const trackedSessionId = providerSessionId || sessionId
+  const previousSessionId = clean(previous?.providerSessionId) || clean(previous?.sessionId)
+  const sessionChanged = !!trackedSessionId && trackedSessionId !== previousSessionId
   const sessionRefName =
     refName ||
     (!sessionChanged && clean(previous?.refName) && !(weakRefName(clean(previous?.refName)) && lastAssistantMessage)
@@ -286,14 +296,15 @@ const upsertTerminalSession = (input: {
       prompt: prompt || (sessionChanged ? "" : clean(previous?.prompt)),
       assistant: lastAssistantMessage || (sessionChanged ? "" : clean(previous?.lastAssistantMessage)),
       provider,
-      sessionId: sessionId || previousSessionId,
+      sessionId: trackedSessionId || previousSessionId,
     })
   const next: TerminalSessionRecord = {
     terminalId,
     tabId: clean(input.tabId) || clean(previous?.tabId) || undefined,
     workspaceId: clean(input.workspaceId) || clean(previous?.workspaceId) || undefined,
     provider: provider || undefined,
-    sessionId: sessionId ? sessionId : previous?.sessionId,
+    providerSessionId: providerSessionId ? providerSessionId : previous?.providerSessionId,
+    sessionId: input.clearSessionId ? undefined : sessionId ? sessionId : previous?.sessionId,
     transcriptPath: transcriptPath ? transcriptPath : previous?.transcriptPath,
     refName: sessionRefName,
     prompt: prompt ? prompt : sessionChanged ? undefined : clean(previous?.prompt) || undefined,
@@ -305,6 +316,7 @@ const upsertTerminalSession = (input: {
     eventType: input.eventType || previous?.eventType,
     ownerActorId: input.ownerActorId || previous?.ownerActorId,
     updatedAt: Date.now(),
+    accessOwnerActorId: input.accessOwnerActorId || previous?.accessOwnerActorId,
   }
   rememberTerminalSession(next)
   return next
@@ -320,6 +332,7 @@ const clearTerminalSession = (terminalId: string) => {
     tabId: clean(previous?.tabId) || undefined,
     workspaceId: clean(previous?.workspaceId) || undefined,
     provider: normalizeProvider(previous?.provider) || undefined,
+    providerSessionId: previous?.providerSessionId,
     sessionId: null,
     transcriptPath: null,
     refName: clean(previous?.refName) || undefined,
@@ -328,6 +341,7 @@ const clearTerminalSession = (terminalId: string) => {
     eventType: "Idle",
     ownerActorId: previous?.ownerActorId,
     updatedAt: Date.now(),
+    accessOwnerActorId: previous?.accessOwnerActorId,
   }
   rememberTerminalSession(next)
 
@@ -354,6 +368,11 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
     const { ownerActorId: _ownerActorId, ...session } = mapped
     return { source: "memory" as const, terminalId, session }
   }
+}
+
+const publicTerminalSession = (session: TerminalSessionRecord): TerminalSessionPayload => {
+  const { accessOwnerActorId: _accessOwnerActorId, ...visible } = session
+  return visible
 }
 
 // Subscribe to PTY exit/delete events to clear terminal sessions
@@ -417,9 +436,11 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
         ? upsertTerminalSession({
             terminalId: resolvedTerminalId,
             tabId: payload.tabId,
-            workspaceId: payload.workspaceId,
+            workspaceId,
             provider: payload.provider,
-            sessionId: payload.sessionId,
+            providerSessionId,
+            sessionId,
+            clearSessionId: !!access.context.authority,
             transcriptPath: payload.transcriptPath,
             refName: payload.refName,
             prompt: payload.prompt,
@@ -432,9 +453,10 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
       const normalized = {
         ...payload,
         terminalId: resolvedTerminalId || clean(payload.terminalId) || undefined,
-        workspaceId: clean(payload.workspaceId) || undefined,
+        workspaceId,
         provider: normalizeProvider(payload.provider) || undefined,
-        sessionId: clean(payload.sessionId) || undefined,
+        providerSessionId,
+        sessionId,
         transcriptPath: clean(payload.transcriptPath) || undefined,
         refName: stored?.refName || clean(payload.refName) || undefined,
         prompt: stored?.prompt || clean(payload.prompt) || undefined,
@@ -445,7 +467,15 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
       log.info("agent lifecycle (POST)", lifecycleLogMetadata(normalized))
       workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...normalized })
 
-      return c.json({ success: true })
+      return c.json({
+        success: true,
+        tabId: normalized.tabId,
+        terminalId: normalized.terminalId,
+        provider: normalized.provider,
+        sessionId: normalized.sessionId,
+        refName: normalized.refName,
+        eventType,
+      })
     })
     .get("/terminal-session", async (c) => {
       const tabId = c.req.query("tabId")
@@ -453,12 +483,18 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
       if (!clean(tabId) && !clean(terminalId)) {
         return c.json({ success: false, error: "tabId or terminalId is required" }, 400)
       }
+      const resolvedTerminalId = resolveTerminalId({ tabId, terminalId }) || clean(terminalId)
+      const access = await authorizeTerminal(c, options, {
+        operation: "agent_lifecycle_read",
+        terminalId: resolvedTerminalId,
+      })
+      if ("response" in access) return access.response
       const result = readTerminalSession({ tabId, terminalId })
       if (!result) {
         return c.json({
           success: true,
           source: "none",
-          terminalId: resolveTerminalId({ tabId, terminalId }) || clean(terminalId) || undefined,
+          terminalId: resolvedTerminalId || undefined,
           session: null,
         })
       }
@@ -479,7 +515,7 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
         success: true,
         source: result.source,
         terminalId: result.terminalId,
-        session: result.session,
+        session: publicTerminalSession(result.session),
       })
     })
     .post("/setup", async (c) => {
@@ -530,12 +566,23 @@ export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPo
       if (!Number.isFinite(port) || port <= 0) {
         return c.json({ success: false, error: "Invalid port" }, 400)
       }
+      const access = await authorizeTerminal(c, options, {
+        operation: "agent_lifecycle_read",
+        terminalId,
+      })
+      if ("response" in access) return access.response
+      const agentHookToken = access.context.actor?.actorId === Pty.accessOwner(terminalId)
+        ? Pty.agentHookToken(terminalId)
+        : undefined
       const env = getTerminalEnvVars({
         tabId,
         terminalId,
-        workspaceId: workspaceId || "",
+        workspaceId: access.context.authority?.workspaceId ?? workspaceId ?? "",
         port,
         shell,
+        ...(access.context.authority && agentHookToken
+          ? { agentHookToken }
+          : {}),
       })
       return c.json(env)
     })

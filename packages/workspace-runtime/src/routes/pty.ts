@@ -150,6 +150,13 @@ export function PtyRoutes(
         })
       }
       const port = requestPort(c.req.url)
+      const accessContext = sessionAccessContext(c)
+      const agentHookAccess = accessContext.actor && accessContext.authority
+        ? {
+            token: crypto.randomUUID().replaceAll("-", ""),
+            context: { actor: accessContext.actor, authority: accessContext.authority },
+          }
+        : undefined
       const info = await Pty.create(
         {
           ...input,
@@ -158,6 +165,7 @@ export function PtyRoutes(
             ...(input.env ?? {}),
             ...(port ? { CLAXEDO_PORT: port } : {}),
             ...(workspaceId ? { CLAXEDO_WORKSPACE_ID: workspaceId } : {}),
+            ...(agentHookAccess ? { CLAXEDO_AGENT_HOOK_TOKEN: agentHookAccess.token } : {}),
           },
         },
         processObserver
@@ -171,6 +179,7 @@ export function PtyRoutes(
               ...(input.sessionId ? { sessionId: input.sessionId } : {}),
             }
           : undefined,
+        agentHookAccess,
       )
       const actorId = sessionAccessContext(c).actor?.actorId
       if (actorId && !Pty.bindAccessOwner(info.id, actorId)) {

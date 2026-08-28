@@ -22,6 +22,12 @@ describe("generateNotifyScript", () => {
     expect(script).toContain('"SessionStart"')
     expect(script).toContain('"SessionEnd"')
   })
+
+  it("posts lifecycle mutations with the terminal-scoped capability", () => {
+    const script = generateNotifyScript(7860)
+    expect(script).toContain('curl -sG -X POST "$HOOK_URL"')
+    expect(script).toContain('Authorization: Bearer $CLAXEDO_AGENT_HOOK_TOKEN')
+  })
 })
 
 // ── Hook bridge generators ──────────────────────────────────────────────────

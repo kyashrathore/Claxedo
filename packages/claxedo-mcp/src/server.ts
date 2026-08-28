@@ -95,6 +95,7 @@ type TerminalSessionState = {
   tabId?: string
   workspaceId?: string
   provider?: string
+  providerSessionId?: string | null
   sessionId?: string | null
   transcriptPath?: string | null
   refName?: string
@@ -409,7 +410,8 @@ registerTool(
       terminalID = clean(tracked.terminalId) || terminalID
       provider = provider || clean(tracked.session.provider).toLowerCase()
       transcriptPath = clean(tracked.session.transcriptPath)
-      if (tracked.session.sessionId !== null) sessionID = clean(tracked.session.sessionId)
+      if (tracked.session.providerSessionId !== null) sessionID = clean(tracked.session.providerSessionId)
+      if (!sessionID && tracked.session.sessionId !== null) sessionID = clean(tracked.session.sessionId)
     }
 
     if (sessionID) {

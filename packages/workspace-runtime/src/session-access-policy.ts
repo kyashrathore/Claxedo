@@ -61,6 +61,8 @@ export type SessionAccessPolicyInput = {
   authority?: SessionWorkspaceAuthority
   /** Signed request proof forwarded only to the narrow authority callback. */
   credential?: string
+  /** Cancels only the in-flight authority request; never serialized. */
+  signal?: AbortSignal
   operation: SessionAccessOperation
   sessionId?: string
   sessionTitle?: string
@@ -74,6 +76,19 @@ export type SessionAccessDecision =
 
 export type SessionAccessStreamDecision =
   | { allowed: true; lease?: string; expiresAt: number }
+  | Exclude<SessionAccessDecision, { allowed: true }>
+export type SessionTurnLeaseDecision =
+  | {
+      allowed: true
+      turnId: string
+      leaseId: string
+      fencingToken: number
+      acquiredAt: number
+      expiresAt: number
+    }
+  | Exclude<SessionAccessDecision, { allowed: true }>
+export type SessionTurnReleaseDecision =
+  | { released: boolean }
   | Exclude<SessionAccessDecision, { allowed: true }>
 
 export type SessionAccessPolicy = {
@@ -91,6 +106,25 @@ export type SessionAccessPolicy = {
     input: SessionAccessPolicyInput & { sessionId: string },
     lease?: string,
   ): Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
+  acquireTurn?(
+    input: SessionAccessPolicyInput & { sessionId: string; turnId: string },
+  ): Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+  renewTurn?(
+    input: SessionAccessPolicyInput & {
+      sessionId: string
+      turnId: string
+      leaseId: string
+      fencingToken: number
+    },
+  ): Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+  releaseTurn?(
+    input: SessionAccessPolicyInput & {
+      sessionId: string
+      turnId: string
+      leaseId: string
+      fencingToken: number
+    },
+  ): Promise<SessionTurnReleaseDecision> | SessionTurnReleaseDecision
 }
 
 export type SessionAuthorityInput = SessionAccessPolicyInput & {

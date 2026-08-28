@@ -23,8 +23,9 @@ export async function authorizeHostCapability(
   c: Context<{ Variables: RelayHostAuthContext }>,
   options: HostCapabilityAccessOptions,
   operation: SessionAccessOperation,
+  verifiedContext: ReturnType<typeof sessionAccessContext> = sessionAccessContext(c),
 ) {
-  const context = sessionAccessContext(c)
+  const context = verifiedContext
   if (!context.authority && !options.sessionAccessPolicy) return
   if (!options.sessionAccessPolicy) {
     return sessionAccessDenied({

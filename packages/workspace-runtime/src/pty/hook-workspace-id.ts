@@ -2,7 +2,7 @@
  * Which value goes in the terminal's `CLAXEDO_WORKSPACE_ID`.
  *
  * The agent hooks post this straight back to the runtime as
- * `GET /api/wr/hook/agent-lifecycle?workspaceId=…`, where it is resolved as a
+ * `POST /api/wr/hook/agent-lifecycle?workspaceId=…`, where it is resolved as a
  * workspace IDENTITY. A directory path in that slot does not resolve, and the
  * request 404s — silently, because `notify.sh` backgrounds its curl and
  * discards the response. The visible symptom is that a coding agent running in

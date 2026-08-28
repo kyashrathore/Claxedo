@@ -416,6 +416,11 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
   })
 }
 
+function trustedAgentHookCallback(input: { token: string; path: string; method: string }, workspaceId: string) {
+  if (input.method !== "POST" || input.path !== `${WorkspaceRuntimeRoutes.hook}/agent-lifecycle`) return false
+  return Pty.agentHookAccessForToken(input.token)?.context.authority.workspaceId === workspaceId
+}
+
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions = {}): WorkspaceRuntimeApp {
   const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
@@ -500,6 +505,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
           && (
             input.method === "GET" && input.path === WorkspaceRuntimeRoutes.health
           ))
+        || trustedAgentHookCallback(input, relayHostAuthOptions.workspaceId)
         || await relayHostAuthOptions.trustedDirectTokenForRequest?.(input)
         || false,
     }) as MiddlewareHandler
@@ -537,7 +543,12 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
-  if (worktrees) app.route(WorkspaceRuntimeRoutes.worktrees, WorktreeRoutes(worktrees))
+  if (worktrees) {
+    app.route(
+      WorkspaceRuntimeRoutes.worktrees,
+      WorktreeRoutes(worktrees, sessionAccessPolicy ? { sessionAccessPolicy } : {}),
+    )
+  }
   app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({
     checkpoint: host.checkpoint,
     worktrees,

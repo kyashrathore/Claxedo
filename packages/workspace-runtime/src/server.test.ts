@@ -565,6 +565,69 @@ describe("workspace runtime host route auth", () => {
     }
   })
 
+  test("terminal hook capabilities authorize only POST lifecycle in their recorded workspace", async () => {
+    const access = spyOn(Pty, "agentHookAccessForToken").mockImplementation((token) => token === "hook-ws-1"
+      ? {
+          terminalId: "pty_hook",
+          context: {
+            actor: { actorId: "actor_1", actorKind: "human" },
+            authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
+          },
+        }
+      : token === "hook-ws-other"
+        ? {
+            terminalId: "pty_hook",
+            context: {
+              actor: { actorId: "actor_other", actorKind: "human" },
+              authority: { managed: true, workspaceId: "ws_other", orgId: "org_other", role: "editor" },
+            },
+          }
+        : undefined)
+    const owner = spyOn(Pty, "accessOwner").mockReturnValue("actor_1")
+    const terminal = spyOn(Pty, "get").mockReturnValue({
+      id: "pty_hook",
+      title: "hook",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/tmp",
+      status: "running",
+      pid: 1,
+    })
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
+      relayHostAuth,
+    })
+    try {
+      const lifecycle = await runtime.app.request(
+        "http://localhost/api/wr/hook/agent-lifecycle?tabId=tab_hook&terminalId=pty_hook&eventType=Busy",
+        { method: "POST", headers: { authorization: "Bearer hook-ws-1" } },
+      )
+      expect(lifecycle.status).toBe(200)
+
+      const wrongWorkspace = await runtime.app.request(
+        "http://localhost/api/wr/hook/agent-lifecycle?tabId=tab_hook&terminalId=pty_hook&eventType=Busy",
+        { method: "POST", headers: { authorization: "Bearer hook-ws-other" } },
+      )
+      expect(wrongWorkspace.status).toBe(401)
+
+      const wrongMethod = await runtime.app.request(
+        "http://localhost/api/wr/hook/agent-lifecycle?tabId=tab_hook&terminalId=pty_hook&eventType=Busy",
+        { headers: { authorization: "Bearer hook-ws-1" } },
+      )
+      expect(wrongMethod.status).toBe(401)
+
+      const wrongRoute = await runtime.app.request("http://localhost/api/wr/health", {
+        headers: { authorization: "Bearer hook-ws-1" },
+      })
+      expect(wrongRoute.status).toBe(401)
+    } finally {
+      access.mockRestore()
+      owner.mockRestore()
+      terminal.mockRestore()
+      await runtime.host.dispose()
+    }
+  })
+
   test("management config push is not preempted by relay auth", async () => {
     await pinTempWorkspaceDirectory()
     const runtime = createWorkspaceRuntimeApp({
