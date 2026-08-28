@@ -19,6 +19,7 @@ export type UsageRequest = {
   timeZone: string
   view?: "quota" | "claxedo" | "total"
   group?: "provider" | "harness" | "model" | "location" | "session" | "workspace" | "app"
+  metric?: "tokens" | "cost"
   filters?: UsageFilters
   after?: string
   modelAfter?: string
@@ -34,6 +35,7 @@ export async function fetchUnifiedUsage(input: UsageRequest): Promise<UnifiedUsa
   target.searchParams.set("timezone", input.timeZone)
   if (input.view) target.searchParams.set("view", input.view)
   if (input.group) target.searchParams.set("group", input.group)
+  if (input.metric) target.searchParams.set("metric", input.metric)
   for (const [dimension, value] of Object.entries(input.filters ?? {})) {
     if (value) target.searchParams.set(`filter_${dimension}`, value)
   }

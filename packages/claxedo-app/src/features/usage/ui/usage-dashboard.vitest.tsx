@@ -132,6 +132,26 @@ describe("UsageDashboard", () => {
     expect(refreshed?.refreshNonce).not.toBe(0)
   })
 
+  test("requests the selected sort metric from the first breakdown page", async () => {
+    const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(() => (
+      <QueryClientProvider client={client}>
+        <UsageDashboard />
+      </QueryClientProvider>
+    ))
+    await screen.findByRole("heading", { name: "By provider" })
+    expect(mocks.fetchUnifiedUsage.mock.calls.at(-1)?.[0]).toMatchObject({ metric: "tokens", after: undefined })
+
+    fireEvent.click(screen.getByRole("button", { name: "Next breakdown page" }))
+    await waitFor(() =>
+      expect(mocks.fetchUnifiedUsage.mock.calls.some(([request]) => request.after === "provider-next")).toBe(true),
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Cost" }))
+    await waitFor(() =>
+      expect(mocks.fetchUnifiedUsage.mock.calls.at(-1)?.[0]).toMatchObject({ metric: "cost", after: undefined }),
+    )
+  })
+
   test("does not relabel Total data while a delayed Claxedo request is pending", async () => {
     const original = mocks.fetchUnifiedUsage.getMockImplementation()
     if (!original) throw new Error("missing usage fixture")

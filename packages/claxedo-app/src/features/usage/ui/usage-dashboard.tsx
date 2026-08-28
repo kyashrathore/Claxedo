@@ -60,6 +60,7 @@ export function UsageDashboard() {
     timeZone,
     view: selected(),
     group: primaryGroup(),
+    metric: metric(),
     after: cursor(),
     modelAfter: modelCursor(),
     limit: 25,
@@ -97,6 +98,10 @@ export function UsageDashboard() {
     setRefreshNonce(0)
     resetPage()
   }
+  const changeMetric = (next: "tokens" | "cost") => {
+    setMetric(next)
+    resetPage()
+  }
   const selectView = (view: UsageView) => {
     setSelected(view)
     setAttribution("provider")
@@ -121,10 +126,10 @@ export function UsageDashboard() {
             </For>
           </div>
           <div class="workspace-page-segmented usage-segmented" aria-label="Metric">
-            <button type="button" aria-pressed={metric() === "tokens"} onClick={() => setMetric("tokens")}>
+            <button type="button" aria-pressed={metric() === "tokens"} onClick={() => changeMetric("tokens")}>
               Tokens
             </button>
-            <button type="button" aria-pressed={metric() === "cost"} onClick={() => setMetric("cost")}>
+            <button type="button" aria-pressed={metric() === "cost"} onClick={() => changeMetric("cost")}>
               Cost
             </button>
           </div>

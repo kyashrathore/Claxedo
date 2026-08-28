@@ -55,6 +55,9 @@ describe("usage routes", () => {
     expect(
       (await app.request("/?since=1&until=2&group=org", { headers: { authorization: "Bearer valid" } })).status,
     ).toBe(400)
+    expect(
+      (await app.request("/?since=1&until=2&metric=turns", { headers: { authorization: "Bearer valid" } })).status,
+    ).toBe(400)
   })
 
   test("returns hosted quota capability without running usage projection or pricing", async () => {
@@ -157,8 +160,8 @@ describe("usage routes", () => {
     ).json()) as any
     expect(body.breakdown).toMatchObject({
       dimension: "harness",
-      rows: [expect.objectContaining({ value: "a", input: 5, estimatedUsd: expect.any(Number), status: "partial" })],
-      next: "a",
+      rows: [expect.objectContaining({ value: "b", input: 7, estimatedUsd: expect.any(Number), status: "partial" })],
+      next: "b",
     })
     expect(body.modelBreakdown).toMatchObject({
       dimension: "model",
@@ -182,7 +185,7 @@ describe("usage routes", () => {
     })
   })
 
-  test("paginates more than ten models inside the primary dashboard response", async () => {
+  test("paginates models in descending token order inside the primary dashboard response", async () => {
     const models = Array.from({ length: 12 }, (_, index) => ({
       value: `openai/model-${String(index).padStart(2, "0")}`,
       turn_count: 1,
@@ -204,39 +207,60 @@ describe("usage routes", () => {
     const headers = { authorization: "Bearer valid" }
     const first = (await (await app.request("/?since=1&until=2&group=provider&limit=10", { headers })).json()) as any
     expect(first.modelBreakdown.rows).toHaveLength(10)
-    expect(first.modelBreakdown.next).toBe("openai/model-09")
+    expect(first.modelBreakdown.rows.map((row: any) => row.value)).toEqual(
+      Array.from({ length: 10 }, (_, index) => `openai/model-${String(11 - index).padStart(2, "0")}`),
+    )
+    expect(first.modelBreakdown.next).toBe("openai/model-02")
     const second = (await (
-      await app.request("/?since=1&until=2&group=provider&limit=10&model_after=openai%2Fmodel-09", { headers })
+      await app.request("/?since=1&until=2&group=provider&limit=10&model_after=openai%2Fmodel-02", { headers })
     ).json()) as any
-    expect(second.modelBreakdown.rows.map((row: any) => row.value)).toEqual(["openai/model-10", "openai/model-11"])
+    expect(second.modelBreakdown.rows.map((row: any) => row.value)).toEqual(["openai/model-01", "openai/model-00"])
     expect(second.modelBreakdown.next).toBeUndefined()
   })
 
-  test("applies the app filter and preserves locale ordering across breakdown pages", async () => {
+  test("sorts breakdown pages by the selected usage metric", async () => {
     const app = UsageRoutes({
       authConfig,
       verifier,
       ledger: {
         recordLlmTurn: async () => ({ activated: false }),
         usageDashboard: async () => ({
-          totals: { turn_count: 2, input_tokens: 12, input_known_count: 2 },
+          totals: { turn_count: 2, input_tokens: 2_000_000, output_tokens: 1_000_000 },
           daily: [],
-          models: [{ value: "anthropic/claude-sonnet-5", input_tokens: 12 }],
-          breakdown: [
-            { value: "a", turn_count: 1, input_tokens: 5 },
-            { value: "B", turn_count: 1, input_tokens: 7 },
+          models: [
+            { value: "codex/gpt-5", input_tokens: 2_000_000 },
+            { value: "claude/claude-sonnet-4-5", output_tokens: 1_000_000 },
           ],
-          breakdownModels: [],
+          breakdown: [
+            { value: "cheap", turn_count: 1, input_tokens: 2_000_000 },
+            { value: "expensive", turn_count: 1, output_tokens: 1_000_000 },
+          ],
+          breakdownModels: [
+            { group: "cheap", value: "codex/gpt-5", input_tokens: 2_000_000 },
+            { group: "expensive", value: "claude/claude-sonnet-4-5", output_tokens: 1_000_000 },
+          ],
         }),
       },
     })
     const headers = { authorization: "Bearer valid" }
-    const first = (await (await app.request("/?since=1&until=2&group=harness&limit=1", { headers })).json()) as any
-    expect(first.breakdown).toMatchObject({ rows: [{ value: "a" }], next: "a" })
-    const second = (await (
-      await app.request("/?since=1&until=2&group=harness&limit=1&after=a", { headers })
+    const tokensFirst = (await (
+      await app.request("/?since=1&until=2&group=harness&metric=tokens&limit=1", { headers })
     ).json()) as any
-    expect(second.breakdown).toMatchObject({ rows: [{ value: "B" }] })
+    expect(tokensFirst.breakdown).toMatchObject({ rows: [{ value: "cheap" }], next: "cheap" })
+    const tokensSecond = (await (
+      await app.request("/?since=1&until=2&group=harness&metric=tokens&limit=1&after=cheap", { headers })
+    ).json()) as any
+    expect(tokensSecond.breakdown).toMatchObject({ rows: [{ value: "expensive" }] })
+
+    const costFirst = (await (
+      await app.request("/?since=1&until=2&group=harness&metric=cost&limit=1", { headers })
+    ).json()) as any
+    expect(costFirst.breakdown).toMatchObject({ rows: [{ value: "expensive" }], next: "expensive" })
+    expect(costFirst.breakdown.rows[0].estimatedUsd).toBeGreaterThan(tokensFirst.breakdown.rows[0].estimatedUsd)
+    const costSecond = (await (
+      await app.request("/?since=1&until=2&group=harness&metric=cost&limit=1&after=expensive", { headers })
+    ).json()) as any
+    expect(costSecond.breakdown).toMatchObject({ rows: [{ value: "cheap" }] })
 
     const excluded = (await (
       await app.request("/?since=1&until=2&group=app&filter_app=claude", { headers })
@@ -297,6 +321,55 @@ describe("local unified usage route", () => {
     tokens: { input: 10, output: 2, reasoning: null, cache: { read: 0, write: null } },
     quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
   } as const
+
+  test("sorts Total local providers by tokens or cost from the authoritative history", async () => {
+    const rows = [
+      {
+        app: "codex",
+        provider: "codex",
+        model: "gpt-5",
+        bucketStart: 10,
+        nativeSessionId: "cheap",
+        turnCount: 1,
+        tokens: { input: 2_000_000, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+      {
+        app: "claude",
+        provider: "claude",
+        model: "claude-sonnet-4-5",
+        bucketStart: 10,
+        nativeSessionId: "expensive",
+        turnCount: 1,
+        tokens: { input: 0, output: 1_000_000, reasoning: 0, cacheRead: 0, cacheWrite: 0 },
+      },
+    ]
+    const app = LocalUsageRoutes({
+      local: { current: async () => [], pendingOutbox: async () => [] } as never,
+      identity: async () => undefined,
+      outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
+      history: async () => ({
+        rows,
+        totalRows: rows,
+        coverage: [],
+        classifiedClaxedo: 0,
+        unclassified: 0,
+      }),
+    })
+
+    const tokens = (await (
+      await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider&metric=tokens")
+    ).json()) as any
+    expect(tokens.breakdown.rows.map((row: any) => row.value)).toEqual(["codex", "claude"])
+
+    const cost = (await (
+      await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider&metric=cost")
+    ).json()) as any
+    expect(cost.breakdown.rows.map((row: any) => row.value)).toEqual(["claude", "codex"])
+    expect(cost.breakdown.rows[0].estimatedUsd).toBeGreaterThan(cost.breakdown.rows[1].estimatedUsd)
+    expect(
+      (await app.request("/?since=0&until=20&timezone=UTC&view=total&metric=turns")).status,
+    ).toBe(400)
+  })
 
   test("keeps cross-machine Claxedo usage separate from authoritative Total local history", async () => {
     const local = { current: async () => [fact], pendingOutbox: async () => [fact] } as never

@@ -536,36 +536,58 @@ async function canonicalBreakdownPage(input: {
   dimension: UsageFilterDimension
   rows: CanonicalBreakdownTotals[]
   modelRows?: Array<Record<string, unknown>>
+  metric: "tokens" | "cost"
   after?: string
   limit?: number
 }) {
   const limit = input.limit ?? 25
-  const candidates = input.rows
-    .filter((row) => !input.after || row.value.localeCompare(input.after) > 0)
-    .toSorted((a, b) => a.value.localeCompare(b.value))
-    .slice(0, limit + 1)
-  const hasMore = candidates.length > limit
-  const rows = await Promise.all(
-    candidates.slice(0, limit).map(async (row) => {
-      const modelRows = (input.modelRows ?? []).filter((item) => String(item.group ?? "") === row.value)
-      const priced = await priceCentralBreakdown({
-        rows: modelRows.length > 0 ? modelRows : input.dimension === "model" ? [{ ...row, value: row.value }] : [],
-      })
-      const measuredTokens = row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
-      if (priced.pricedTokens + priced.unpricedTokens < measuredTokens)
-        priced.unpricedTokens += measuredTokens - priced.pricedTokens - priced.unpricedTokens
-      const href = publicUsageHref(input.dimension, row.value)
-      return {
-        ...row,
-        label: breakdownLabel(row.value, input.dimension),
-        estimatedUsd: priced.estimatedUsd,
-        pricedTokens: priced.pricedTokens,
-        unpricedTokens: priced.unpricedTokens,
-        status: breakdownStatus(row, priced),
-        ...(href ? { href } : {}),
-      }
-    }),
+  const modelRowsByGroup = new Map<string, Array<Record<string, unknown>>>()
+  for (const modelRow of input.modelRows ?? []) {
+    const group = String(modelRow.group ?? "")
+    const rows = modelRowsByGroup.get(group) ?? []
+    rows.push(modelRow)
+    modelRowsByGroup.set(group, rows)
+  }
+  const priceRow = async (row: CanonicalBreakdownTotals) => {
+    const modelRows = modelRowsByGroup.get(row.value) ?? []
+    const priced = await priceCentralBreakdown({
+      rows: modelRows.length > 0 ? modelRows : input.dimension === "model" ? [{ ...row, value: row.value }] : [],
+    })
+    const measuredTokens = row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
+    if (priced.pricedTokens + priced.unpricedTokens < measuredTokens)
+      priced.unpricedTokens += measuredTokens - priced.pricedTokens - priced.unpricedTokens
+    const href = publicUsageHref(input.dimension, row.value)
+    return {
+      ...row,
+      label: breakdownLabel(row.value, input.dimension),
+      estimatedUsd: priced.estimatedUsd,
+      pricedTokens: priced.pricedTokens,
+      unpricedTokens: priced.unpricedTokens,
+      status: breakdownStatus(row, priced),
+      ...(href ? { href } : {}),
+    }
+  }
+  const tokens = (row: CanonicalBreakdownTotals) =>
+    row.input + row.output + row.reasoning + row.cacheRead + row.cacheWrite
+  const page = <Row extends { value: string }>(ordered: Row[]) => {
+    const offset = input.after ? Math.max(0, ordered.findIndex((row) => row.value === input.after) + 1) : 0
+    const candidates = ordered.slice(offset, offset + limit + 1)
+    return { candidates, hasMore: candidates.length > limit }
+  }
+  if (input.metric === "tokens") {
+    const { candidates, hasMore } = page(
+      input.rows.toSorted((a, b) => tokens(b) - tokens(a) || a.value.localeCompare(b.value)),
+    )
+    const rows = await Promise.all(candidates.slice(0, limit).map(priceRow))
+    return { dimension: input.dimension, rows, ...(hasMore ? { next: rows.at(-1)?.value } : {}) }
+  }
+
+  const { candidates, hasMore } = page(
+    (await Promise.all(input.rows.map(priceRow))).toSorted(
+      (a, b) => b.estimatedUsd - a.estimatedUsd || a.value.localeCompare(b.value),
+    ),
   )
+  const rows = candidates.slice(0, limit)
   return { dimension: input.dimension, rows, ...(hasMore ? { next: rows.at(-1)?.value } : {}) }
 }
 
@@ -731,6 +753,8 @@ export function UsageRoutes(input: {
       if (group && !dimensions.has(group as never)) {
         return c.json({ error: "invalid_usage_group", message: "group is invalid" }, 400)
       }
+      const metric = c.req.query("metric") || "tokens"
+      if (metric !== "tokens" && metric !== "cost") return c.json({ error: "invalid_usage_metric" }, 400)
       const requestedLimit = c.req.query("limit") === undefined ? undefined : Number(c.req.query("limit"))
       if (
         requestedLimit !== undefined &&
@@ -879,12 +903,14 @@ export function UsageRoutes(input: {
         dimension: group as UsageFilterDimension,
         rows,
         modelRows,
+        metric,
         ...(c.req.query("after") ? { after: c.req.query("after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
       const modelBreakdown = await canonicalBreakdownPage({
         dimension: "model",
         rows: mergeBreakdownRows(includeClaxedo ? summarySource.models : []),
+        metric,
         ...(c.req.query("model_after") ? { after: c.req.query("model_after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
@@ -970,6 +996,8 @@ export function LocalUsageRoutes(input: {
     if (!validTimeZone(timeZone)) return c.json({ error: "invalid_timezone" }, 400)
     const group = c.req.query("group")
     if (group && !dimensions.has(group as never)) return c.json({ error: "invalid_usage_group" }, 400)
+    const metric = c.req.query("metric") || "tokens"
+    if (metric !== "tokens" && metric !== "cost") return c.json({ error: "invalid_usage_metric" }, 400)
     const requestedLimit = c.req.query("limit") === undefined ? undefined : Number(c.req.query("limit"))
     if (
       requestedLimit !== undefined &&
@@ -1267,6 +1295,7 @@ export function LocalUsageRoutes(input: {
         dimension: group as UsageFilterDimension,
         rows,
         modelRows: view === "total" ? localHistoryModelRows : [...centralModelRows, ...localModelRows],
+        metric,
         ...(c.req.query("after") ? { after: c.req.query("after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
@@ -1294,6 +1323,7 @@ export function LocalUsageRoutes(input: {
                 includeClaxedo ? aggregateCentralSource?.models : [],
                 includeClaxedo ? groupUsageFacts(localFacts, "model") : [],
               ),
+        metric,
         ...(c.req.query("model_after") ? { after: c.req.query("model_after") } : {}),
         ...(requestedLimit === undefined ? {} : { limit: requestedLimit }),
       })
