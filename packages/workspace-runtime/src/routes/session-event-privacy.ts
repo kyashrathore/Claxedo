@@ -1,5 +1,6 @@
 import type { Context } from "hono"
 import type { SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { eventSessionId, type CompatEnvelope } from "../compat-events"
 import type { WorkspaceRuntimeEvent } from "../bus"
 import {
@@ -21,12 +22,10 @@ export type SessionEventScope =
 
 type LeaseWatchOptions = {
   now?: () => number
+  jitter?: () => number
   setTimer?: (callback: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   clearTimer?: (timer: ReturnType<typeof setTimeout>) => void
 }
-
-/** Must not exceed the authority service's signed stream-lease TTL. */
-const SESSION_EVENT_LEASE_MAX_LOCAL_MS = 15_000
 
 /**
  * Managed-private event streams are session resources, not workspace-wide
@@ -67,6 +66,7 @@ export async function authorizeSessionEventScope(
     sessionId,
     method: c.req.method,
     path: c.req.path,
+    signal: c.req.raw.signal,
   } satisfies SessionAccessPolicyInput & { sessionId: string }
   const decision = await policy.authorizeStream(input)
   if (!decision.allowed) return sessionAccessDenied(decision)
@@ -83,14 +83,14 @@ export async function authorizeSessionEventScope(
   // The connection-establishment RHT is intentionally not retained by the
   // long-lived stream. Renewals use the short lease and the authority service
   // rechecks its durable parent RAT plus current session membership.
-  const { credential: _credential, ...renewalInput } = input
+  const { credential: _credential, signal: _requestSignal, ...renewalInput } = input
   return {
     managed: true,
     sessionId,
     lease: decision.lease,
     // Never let control-plane/runtime clock skew extend a lease beyond the
     // frozen local security bound. An earlier signed expiry still wins.
-    expiresAt: Math.min(decision.expiresAt, now + SESSION_EVENT_LEASE_MAX_LOCAL_MS),
+    expiresAt: Math.min(decision.expiresAt, now + SESSION_STREAM_LEASE_TTL_MS),
     renewalInput,
   }
 }
@@ -111,17 +111,19 @@ export function watchSessionEventLease(
 
   const authorizeStream = policy?.authorizeStream
   if (!authorizeStream) {
-    void onRevoked()
+    void Promise.resolve().then(onRevoked).catch(() => {})
     return () => {}
   }
 
   const now = options.now ?? Date.now
+  const jitter = options.jitter ?? Math.random
   const setTimer = options.setTimer ?? ((callback, delayMs) => setTimeout(callback, delayMs))
   const clearTimer = options.clearTimer ?? clearTimeout
   let lease = scope.lease
   let expiresAt = scope.expiresAt
   let renewalTimer: ReturnType<typeof setTimeout> | undefined
   let expiryTimer: ReturnType<typeof setTimeout> | undefined
+  let renewalAbort: AbortController | undefined
   let stopped = false
 
   const stop = () => {
@@ -129,14 +131,16 @@ export function watchSessionEventLease(
     stopped = true
     if (renewalTimer !== undefined) clearTimer(renewalTimer)
     if (expiryTimer !== undefined) clearTimer(expiryTimer)
+    renewalAbort?.abort()
     renewalTimer = undefined
     expiryTimer = undefined
+    renewalAbort = undefined
   }
 
   const revoke = () => {
     if (stopped) return
     stop()
-    void Promise.resolve(onRevoked()).catch(() => {})
+    void Promise.resolve().then(onRevoked).catch(() => {})
   }
 
   const schedule = () => {
@@ -150,12 +154,22 @@ export function watchSessionEventLease(
     // request deadline), so a network timeout can never extend stale access.
     expiryTimer = setTimer(revoke, remainingMs)
     const renewalLeadMs = Math.min(5_000, Math.max(1, remainingMs / 3))
-    renewalTimer = setTimer(() => void renew(), Math.max(1, remainingMs - renewalLeadMs))
+    // Renew only earlier than the fixed safety deadline, with bounded jitter.
+    // Cohorts that establish together therefore do not stampede the authority
+    // or synchronize their fail-closed reconnects.
+    const jitterWindowMs = Math.min(2_000, remainingMs / 6)
+    const jitterMs = Math.max(0, Math.min(1, jitter())) * jitterWindowMs
+    renewalTimer = setTimer(() => void renew(), Math.max(1, remainingMs - renewalLeadMs - jitterMs))
   }
 
   const renew = async () => {
     if (stopped) return
-    const decision = await Promise.resolve(authorizeStream(scope.renewalInput, lease)).catch(() => undefined)
+    const controller = new AbortController()
+    renewalAbort = controller
+    const decision = await Promise.resolve()
+      .then(() => authorizeStream({ ...scope.renewalInput, signal: controller.signal }, lease))
+      .catch(() => undefined)
+    if (renewalAbort === controller) renewalAbort = undefined
     const renewedAt = now()
     if (
       stopped
@@ -173,7 +187,7 @@ export function watchSessionEventLease(
     renewalTimer = undefined
     expiryTimer = undefined
     lease = decision.lease
-    expiresAt = Math.min(decision.expiresAt, renewedAt + SESSION_EVENT_LEASE_MAX_LOCAL_MS)
+    expiresAt = Math.min(decision.expiresAt, renewedAt + SESSION_STREAM_LEASE_TTL_MS)
     schedule()
   }
 

@@ -63,6 +63,36 @@ async function readUntil(response: Response, expected: string) {
 }
 
 describe("workspace module wiring", () => {
+  test("managed /global/event closes after renewal denial", async () => {
+    const eventHub = createRuntimeEventHub()
+    const accessPolicy = managedPolicy()
+    let authorizations = 0
+    accessPolicy.authorizeStream = () => {
+      authorizations += 1
+      return authorizations === 1
+        ? { allowed: true, lease: "lease_initial", expiresAt: Date.now() + 40 }
+        : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+    }
+    const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: accessPolicy })
+    const app = new Hono()
+    verifiedRelay(app)
+    host.mount(app, { exposure: loopbackExposure })
+
+    const response = await app.request("http://localhost/global/event?sessionID=session-a")
+    const reader = response.body!.getReader()
+    const connected = await reader.read()
+    const ended = await Promise.race([
+      reader.read().then((result) => result.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    host.dispose()
+
+    expect(connected.done).toBe(false)
+    expect(new TextDecoder().decode(connected.value)).toContain("server.connected")
+    expect(ended).toBe(true)
+    expect(authorizations).toBe(2)
+  })
+
   test("managed /global/event and /event reject unscoped access and isolate replay by session", async () => {
     const eventHub = createRuntimeEventHub()
     const host = createWorkspaceHost({ eventHub, sessionAccessPolicy: managedPolicy() })

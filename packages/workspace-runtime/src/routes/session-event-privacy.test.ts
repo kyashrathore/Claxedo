@@ -7,6 +7,8 @@ import {
   watchSessionEventLease,
 } from "./session-event-privacy"
 
+const flushAsync = () => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 function policy(overrides: Partial<SessionAccessPolicy> = {}): SessionAccessPolicy {
   return {
     sessionAuthority: "managed-private",
@@ -102,6 +104,7 @@ describe("managed session event stream leases", () => {
     }
     const stop = watchSessionEventLease(scope, accessPolicy, () => { revoked += 1 }, {
       now: () => now,
+      jitter: () => 0,
       setTimer: (callback, delayMs) => {
         scheduled.push({ callback, delayMs })
         return scheduled.length as unknown as ReturnType<typeof setTimeout>
@@ -111,16 +114,14 @@ describe("managed session event stream leases", () => {
 
     now = 1_750
     scheduled.sort((left, right) => left.delayMs - right.delayMs).shift()?.callback()
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsync()
     expect(renewals).toEqual([{ lease: "lease_1", credential: undefined }])
     expect(revoked).toBe(0)
 
     now = 2_500
     scheduled = scheduled.slice(-2)
     scheduled.sort((left, right) => left.delayMs - right.delayMs).shift()?.callback()
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushAsync()
     expect(renewals).toEqual([
       { lease: "lease_1", credential: undefined },
       { lease: "lease_2", credential: undefined },
@@ -147,6 +148,7 @@ describe("managed session event stream leases", () => {
     }
     watchSessionEventLease(scope, accessPolicy, () => { revoked += 1 }, {
       now: () => now,
+      jitter: () => 0,
       setTimer: (callback, delayMs) => {
         scheduled.push({ callback, delayMs })
         return scheduled.length as unknown as ReturnType<typeof setTimeout>
@@ -161,6 +163,77 @@ describe("managed session event stream leases", () => {
 
     now = 2_000
     scheduled.find((item) => item.delayMs === 1_000)?.callback()
+    await flushAsync()
     expect(revoked).toBe(1)
+  })
+
+  test("fails closed immediately when a synchronous renewal policy throws", async () => {
+    let now = 1_000
+    const scheduled: Array<{ callback: () => void; delayMs: number }> = []
+    let revoked = 0
+    const accessPolicy = policy({
+      authorizeStream: () => { throw new Error("synchronous oracle failure") },
+    })
+    const scope: SessionEventScope = {
+      managed: true,
+      sessionId: "ses_1",
+      lease: "lease_1",
+      expiresAt: 2_000,
+      renewalInput: { operation: "session_event_stream", sessionId: "ses_1" },
+    }
+    watchSessionEventLease(scope, accessPolicy, () => { revoked += 1 }, {
+      now: () => now,
+      jitter: () => 0,
+      setTimer: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs })
+        return scheduled.length as unknown as ReturnType<typeof setTimeout>
+      },
+      clearTimer: () => {},
+    })
+
+    now = 1_700
+    scheduled.sort((left, right) => left.delayMs - right.delayMs)[0]?.callback()
+    await flushAsync()
+    expect(revoked).toBe(1)
+  })
+
+  test("disconnect teardown aborts an in-flight renewal request", async () => {
+    let now = 1_000
+    const scheduled: Array<{ callback: () => void; delayMs: number }> = []
+    let renewalStarted = false
+    let renewalAborted = false
+    const accessPolicy = policy({
+      authorizeStream: (input) => new Promise((_resolve, reject) => {
+        renewalStarted = true
+        input.signal?.addEventListener("abort", () => {
+          renewalAborted = true
+          reject(input.signal?.reason)
+        }, { once: true })
+      }),
+    })
+    const scope: SessionEventScope = {
+      managed: true,
+      sessionId: "ses_1",
+      lease: "lease_1",
+      expiresAt: 2_000,
+      renewalInput: { operation: "session_event_stream", sessionId: "ses_1" },
+    }
+    const stop = watchSessionEventLease(scope, accessPolicy, () => {}, {
+      now: () => now,
+      jitter: () => 0,
+      setTimer: (callback, delayMs) => {
+        scheduled.push({ callback, delayMs })
+        return scheduled.length as unknown as ReturnType<typeof setTimeout>
+      },
+      clearTimer: () => {},
+    })
+
+    now = 1_700
+    scheduled.sort((left, right) => left.delayMs - right.delayMs)[0]?.callback()
+    await flushAsync()
+    expect(renewalStarted).toBe(true)
+    stop()
+    await flushAsync()
+    expect(renewalAborted).toBe(true)
   })
 })
