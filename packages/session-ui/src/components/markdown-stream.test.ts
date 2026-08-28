@@ -217,4 +217,55 @@ describe("markdown stream", () => {
       complete: true,
     })
   })
+
+  // Regression: frozenPrefix (all-but-last blocks) reuse painted an incomplete
+  // "Run the … see the [" line as a full block while stream(rest) re-lexed the
+  // completed sentence — duplicate prose until live:false. Char-by-char growth
+  // of this corpus must keep a single "Run the" block at every prefix.
+  test("does not duplicate the Run the config command line while its link streams", () => {
+    const corpus = [
+      "Remember to back up your configuration before editing it.",
+      "",
+      "Run the `config` command or see the [manual](https://example.com) online.",
+      "",
+      "```sh",
+      "mytool config --edit",
+      "```",
+      "",
+      "| Key | Value |",
+      "| --- | --- |",
+      "| theme | dark |",
+      "| autosave | true |",
+      "",
+    ].join("\n")
+
+    let projection = project(undefined, "", true)
+    for (let index = 1; index <= corpus.length; index++) {
+      projection = project(projection, corpus.slice(0, index), true)
+      const runBlocks = projection.blocks.filter(
+        (block) => /Run the/.test(block.raw) || /Run the/.test(block.src),
+      )
+      expect(runBlocks.length).toBeLessThanOrEqual(1)
+    }
+
+    const finished = project(projection, corpus, false)
+    expect(finished.blocks.filter((block) => /Run the/.test(block.raw)).length).toBe(1)
+  })
+
+  test("reprojects an incomplete link line instead of freezing it beside later fences", () => {
+    const incomplete = "Run the `config` command or see the ["
+    const previous = project(undefined, incomplete, true)
+    expect(previous.blocks).toHaveLength(1)
+    expect(previous.blocks[0]?.mode).toBe("live")
+
+    const next = project(
+      previous,
+      `${incomplete}manual](https://example.com) online.\n\n\`\`\`sh\nmytool config --edit\n\`\`\`\n`,
+      true,
+    )
+    const runBlocks = next.blocks.filter((block) => /Run the/.test(block.raw) || /Run the/.test(block.src))
+    expect(runBlocks.length).toBe(1)
+    expect(runBlocks[0]?.raw).toContain("[manual](https://example.com)")
+    expect(runBlocks[0]?.raw.includes("see the [\n")).toBe(false)
+  })
 })

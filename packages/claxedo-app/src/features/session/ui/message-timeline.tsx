@@ -76,6 +76,7 @@ import {
 } from "./message-timeline.data"
 import { TimelineRow, type TimelineRowMap } from "./timeline-row-model"
 import { TimelineDiffSummaryRow, TimelineThinkingRow, TurnFoldRow } from "./message-timeline-turn-rows"
+import { nextThinkingVisibilityHold } from "./thinking-visibility-hold"
 import { TimelineFileContextMenu } from "./timeline-file-context-menu"
 import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
@@ -538,8 +539,44 @@ export function MessageTimeline(props: MessageTimelineProps) {
     ),
   )
 
+  // Status can blip off "busy" for a frame mid-stream; dropping Thinking then
+  // collapses the virtualizer. Hold the last Thinking row for a short hide delay.
+  let thinkingHeldUntilMs: number | undefined
+  let thinkingHoldTimer: ReturnType<typeof setTimeout> | undefined
+  const [thinkingHoldRevision, setThinkingHoldRevision] = createSignal(0)
+  onCleanup(() => {
+    if (thinkingHoldTimer) clearTimeout(thinkingHoldTimer)
+  })
+
   const timelineRows = createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
+    thinkingHoldRevision()
     const rows = messageRowMemos().flatMap((memo) => memo())
+    const wantThinking = rows.some((row) => row._tag === "Thinking")
+    const hold = nextThinkingVisibilityHold({
+      want: wantThinking,
+      heldUntilMs: thinkingHeldUntilMs,
+      nowMs: performance.now(),
+    })
+    thinkingHeldUntilMs = hold.heldUntilMs
+    if (thinkingHoldTimer) {
+      clearTimeout(thinkingHoldTimer)
+      thinkingHoldTimer = undefined
+    }
+    if (hold.heldUntilMs !== undefined) {
+      const remaining = Math.max(0, hold.heldUntilMs - performance.now())
+      thinkingHoldTimer = setTimeout(() => setThinkingHoldRevision((value) => value + 1), remaining)
+    }
+
+    if (hold.visible && !wantThinking) {
+      const previousThinking = previous?.find((row) => row._tag === "Thinking") as
+        | TimelineRow.Thinking
+        | undefined
+      if (previousThinking) {
+        const withoutTrailingThinking = rows.filter((row) => row._tag !== "Thinking")
+        return TimelineRow.reuse(previous, [...withoutTrailingThinking, previousThinking])
+      }
+    }
+
     return TimelineRow.reuse(previous, rows)
   })
 
