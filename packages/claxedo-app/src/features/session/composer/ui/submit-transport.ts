@@ -248,15 +248,17 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 
   const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
+    const queryKey = sessionConfigRawQueryKey({
+      sessionID: configInput.sessionID,
+      directory: configInput.directory,
+      workspaceId: input.workspaceId(),
+      sessionRef: input.sessionRef?.(),
+      serverUrl: input.serverUrl(),
+    })
+    const cached = queryClient.getQueryData(queryKey)
+    if (cached !== undefined) return cached
     return await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey({
-        sessionID: configInput.sessionID,
-        directory: configInput.directory,
-        workspaceId: input.workspaceId(),
-        sessionRef: input.sessionRef?.(),
-        serverUrl: input.serverUrl(),
-      }),
-      staleTime: 0,
+      queryKey,
       queryFn: async () => {
         const res = await sessionRequest(configInput.directory, sessionConfigPath(configInput), {
           headers: { Accept: "application/json" },

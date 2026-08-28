@@ -54,7 +54,11 @@ import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
-import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
+import {
+  parseExistingSessionConfig,
+  preferAuthoritativeExistingSessionConfig,
+  sameExistingSessionConfig,
+} from "./submit-session-config"
 import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
 import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
@@ -331,12 +335,19 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
     const existingSessionConfig = await (async () => {
       if (isNewSession) return undefined
+      // A fully persisted harness config owns follow-up model/variant. Incomplete
+      // session-list metadata (model without variant) still reads live `/config`
+      // so a later GET can beat stale inventory.
+      if (infoSessionConfig?.model && infoSessionConfig.variant) return infoSessionConfig
       try {
-        return parseExistingSessionConfig(await readSessionConfig({
-          sessionID: explicitSessionID!,
-          directory: sessionDirectory,
-          harnessType: selectedHarnessType(scope),
-        }))
+        return preferAuthoritativeExistingSessionConfig(
+          parseExistingSessionConfig(await readSessionConfig({
+            sessionID: explicitSessionID!,
+            directory: sessionDirectory,
+            harnessType: selectedHarnessType(scope),
+          })),
+          infoSessionConfig,
+        )
       } catch (err) {
         showToast({
           title: language.t("prompt.toast.promptSendFailed.title"),
