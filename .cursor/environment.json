@@ -1,0 +1,20 @@
+{
+  "name": "Claxedo",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "claxedo-server",
+      "description": "Self-hosted Claxedo control plane (embedded OpenCode engine + SQLite) on http://127.0.0.1:2593 -- the backend the web app talks to.",
+      "command": "export PATH=\"$HOME/.bun/bin:$PATH\"; cd packages/claxedo-server && bun run dev"
+    },
+    {
+      "name": "claxedo-app",
+      "description": "Claxedo web app (Solid + Vite dev server) on http://localhost:4444, proxying API routes to the control plane on 2593.",
+      "command": "export PATH=\"$HOME/.bun/bin:$PATH\"; cd packages/claxedo-app && bun run dev"
+    }
+  ],
+  "ports": [
+    { "name": "claxedo-app", "port": 4444 },
+    { "name": "claxedo-server", "port": 2593 }
+  ]
+}
