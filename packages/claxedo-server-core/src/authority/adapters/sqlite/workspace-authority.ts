@@ -524,11 +524,7 @@ export function createSqliteWorkspaceAuthority(
       SELECT revoked_at FROM session_participants WHERE session_id = ? AND actor_token_identifier = ?
     `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
     if (participant && !participant.revoked_at) return role
-    if (!workspace.org_id) return
-    const membership = db.prepare(`
-      SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?
-    `).get(workspace.org_id, who.token_identifier) as { role: string } | undefined
-    if (membership?.role === "admin" || membership?.role === "owner") return role
+    if (orgAdminForUser(db, who, workspace.org_id)) return role
   }
 
   // Mirror of convex/projects.ts `authResult`: role (optionally action-gated)
@@ -1638,12 +1634,11 @@ export function createSqliteWorkspaceAuthority(
         upsertVisibilityRows(db, { who, workspace, sessions: args.sessions })
         const incoming = new Set(args.sessions.map((session) => session.sessionId))
         const now = Date.now()
-        const rows = db.prepare(`SELECT * FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL`)
-          .all(args.workspaceId) as SessionRow[]
-        for (const row of rows.filter((item) =>
-          item.created_by_token_identifier === who.token_identifier
-          && !incoming.has(item.session_id))) {
-          if (!sessionRole(db, workspace, row, who, "write")) denied()
+        const rows = db.prepare(`
+          SELECT * FROM session_history
+          WHERE workspace_id = ? AND created_by_token_identifier = ? AND deleted_at IS NULL
+        `).all(args.workspaceId, who.token_identifier) as SessionRow[]
+        for (const row of rows.filter((item) => !incoming.has(item.session_id))) {
           db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ?`)
             .run(now, now, row.session_id)
           deleteMessageRows(db, row.session_id, args.workspaceId)

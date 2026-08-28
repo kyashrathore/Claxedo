@@ -292,19 +292,19 @@ async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
 }
 
 async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
-  const memberships = await db
-    .query("org_memberships")
-    .withIndex("by_user", (q) => q.eq("user_id", userId))
-    .collect()
-  const grants = (await Promise.all(memberships.map(async (membership) => {
-    return await db
+  const [memberships, grants] = await Promise.all([
+    db
+      .query("org_memberships")
+      .withIndex("by_user", (q) => q.eq("user_id", userId))
+      .collect(),
+    db
       .query("workspace_share_grants")
-      .withIndex("by_workspace_org", (q: any) =>
-        q.eq("workspace_id", workspaceId).eq("granted_to_org_id", membership.org_id))
-      .collect()
-  }))).flat()
+      .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceId))
+      .collect(),
+  ])
+  const memberOrgIds = new Set(memberships.map((membership) => membership.org_id))
   return maxRole(grants
-    .filter((grant) => !grant.revoked_at)
+    .filter((grant) => !grant.revoked_at && grant.granted_to_org_id && memberOrgIds.has(grant.granted_to_org_id))
     .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 

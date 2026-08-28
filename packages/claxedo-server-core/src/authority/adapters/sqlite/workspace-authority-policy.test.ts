@@ -73,7 +73,7 @@ describe("SQLite workspace session authority", () => {
     })).rejects.toMatchObject({ status: 403 })
   })
 
-  test("durable organization owners retain admin and listing authority without a membership row", async () => {
+  test("durable organization ownership is a fallback while a membership row remains authoritative", async () => {
     const { authority, db } = setup()
     const owner = signed("owner")
     const creator = signed("creator")
@@ -115,10 +115,24 @@ describe("SQLite workspace session authority", () => {
     await expect(authority.listSessions(owner, { workspaceId: "ws_1" })).resolves.toMatchObject([
       { session_id: "ses_1" },
     ])
+    await expect(authority.authorizeSessionRead(owner, {
+      workspaceId: "ws_1",
+      sessionId: "ses_1",
+    })).resolves.toBeUndefined()
+    database.prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', ?, ?)
+    `).run(workspace.org_id, "owner", Date.now(), Date.now())
+
+    await expect(authority.listSessions(owner, { workspaceId: "ws_1" })).resolves.toEqual([])
+    await expect(authority.authorizeSessionRead(owner, {
+      workspaceId: "ws_1",
+      sessionId: "ses_1",
+    })).rejects.toMatchObject({ status: 403 })
     await expect(authority.addSessionParticipant(owner, {
       workspaceId: "ws_1",
       sessionId: "ses_1",
       participantTokenIdentifier: "participant",
-    })).resolves.toMatchObject({ participant_id: expect.any(String) })
+    })).rejects.toMatchObject({ status: 403 })
   })
 })

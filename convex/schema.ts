@@ -406,6 +406,7 @@ export default defineSchema({
   })
     .index("by_session_id", ["session_id"])
     .index("by_created_by_user", ["created_by_user_id"])
+    .index("by_workspace_creator_updated", ["workspace_id", "created_by_user_id", "updated_at"])
     .index("by_workspace_updated", ["workspace_id", "updated_at"]),
 
   session_messages: defineTable({
@@ -431,7 +432,8 @@ export default defineSchema({
     revoked_at: v.optional(v.number()),
   })
     .index("by_session_user", ["session_id", "user_id"])
-    .index("by_user", ["user_id"]),
+    .index("by_user", ["user_id"])
+    .index("by_workspace_user", ["workspace_id", "user_id"]),
 
   runtime_access_tokens: defineTable({
     jti: v.string(),

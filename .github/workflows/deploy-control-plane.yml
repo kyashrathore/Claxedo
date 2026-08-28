@@ -197,17 +197,23 @@ jobs:
       - name: Normalize legacy runtime lease fields (staging)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields"}'
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields","reset":true}'
+          bun scripts/wait-for-convex-migrations.ts migrations:normalizeRuntimeLeaseLegacyFields
 
       - name: Backfill tenant identity contracts (staging)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"]}'
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"],"reset":true}'
+          bun scripts/wait-for-convex-migrations.ts migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
 
       - name: Verify tenant identity contracts (staging)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"]}'
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"],"reset":true}'
+          bun scripts/wait-for-convex-migrations.ts migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
 
       - name: Legacy Session tenant migration smoke (staging)
         env:
@@ -475,17 +481,23 @@ jobs:
       - name: Normalize legacy runtime lease fields (production)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields"}'
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields","reset":true}'
+          bun scripts/wait-for-convex-migrations.ts --prod migrations:normalizeRuntimeLeaseLegacyFields
 
       - name: Backfill tenant identity contracts (production)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"]}' --prod
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"],"reset":true}' --prod
+          bun scripts/wait-for-convex-migrations.ts --prod migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
 
       - name: Verify tenant identity contracts (production)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
-        run: bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"]}' --prod
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"],"reset":true}' --prod
+          bun scripts/wait-for-convex-migrations.ts --prod migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
 
       - name: Legacy Session tenant migration smoke (production)
         env:

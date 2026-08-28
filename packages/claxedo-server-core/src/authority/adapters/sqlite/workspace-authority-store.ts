@@ -682,6 +682,10 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
           db.exec("ALTER TABLE session_messages ADD COLUMN author_actor_id TEXT")
         }
         db.exec("CREATE INDEX IF NOT EXISTS session_history_by_creator ON session_history (created_by_token_identifier)")
+        db.exec(`
+          CREATE INDEX IF NOT EXISTS session_history_by_workspace_creator
+          ON session_history (workspace_id, created_by_token_identifier, updated_at DESC)
+        `)
       } catch (error) {
         db.close()
         throw error
@@ -948,10 +952,10 @@ export function orgAdminForUser(db: SqliteAuthorityDb, user: AuthorityUser, orgI
     deleted_at: number | null
   } | undefined
   if (!org || org.deleted_at) return false
-  if (org.owner_token_identifier === user.token_identifier) return true
   const membership = db.prepare(`SELECT role FROM org_memberships WHERE org_id = ? AND token_identifier = ?`)
     .get(orgId, user.token_identifier) as { role: string } | undefined
-  return membership?.role === "admin" || membership?.role === "owner"
+  if (membership) return membership.role === "admin" || membership.role === "owner"
+  return org.owner_token_identifier === user.token_identifier
 }
 
 function shareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {

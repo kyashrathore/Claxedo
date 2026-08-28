@@ -139,7 +139,7 @@ async function upsertVisibilityRows(
       .withIndex("by_session_id", (q: any) => q.eq("session_id", session.session_id))
       .unique()
     if (existing && existing.workspace_id !== input.workspace._id) throw new Error("Session not found")
-    if (existing && !await sessionRoleForUser(ctx, {
+    if (existing && existing.created_by_user_id !== input.user._id && !await sessionRoleForUser(ctx, {
       user: input.user,
       workspace: input.workspace,
       session: existing,
@@ -272,19 +272,10 @@ async function ensureSessionHistoryRow(
     user: Record<string, unknown> & { _id: unknown }
     workspace: Record<string, unknown>
     session_id: string
+    existing?: Record<string, any> | null
   },
 ) {
-  const existing = await ctx.db
-    .query("session_history")
-    .withIndex("by_session_id", (q: any) => q.eq("session_id", input.session_id))
-    .unique()
-  if (existing && existing.workspace_id !== input.workspace._id) throw new Error("Session not found")
-  if (existing && !await sessionRoleForUser(ctx, {
-    user: input.user,
-    workspace: input.workspace,
-    session: existing,
-    action: "write",
-  })) throw new Error("Session not found")
+  const existing = input.existing
   if (existing) {
     if (existing.deleted_at || (!existing.org_id && input.workspace.org_id)) {
       await ctx.db.patch(existing._id, {
@@ -448,6 +439,7 @@ async function syncMessageRows(
     user: input.user,
     workspace: input.workspace,
     session_id: input.session_id,
+    existing: existingSession,
   })
   const existingRows = (
     await ctx.db
@@ -763,34 +755,36 @@ export const list = authedQuery({
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !(await authorizeWorkspaceForUser(ctx, workspace, user, "read"))) return []
     const canAdminSessions = await orgAdminForUser(ctx.db, user._id, workspace.org_id)
-    return await Promise.all(
-      (
-        await ctx.db
-          .query("session_history")
-          .withIndex("by_workspace_updated", (q) => q.eq("workspace_id", workspace._id))
-          .collect()
-      )
-        .filter((session) => !session.deleted_at)
-        .sort((a, b) => b.updated_at - a.updated_at)
-        .map(async (session) => {
-          if (session.created_by_user_id !== user._id && !canAdminSessions) {
-            const participant = await ctx.db
-              .query("session_participants")
-              .withIndex("by_session_user", (q: any) => q.eq("session_id", session.session_id).eq("user_id", user._id))
-              .unique()
-            if (!participant || participant.revoked_at) return undefined
-          }
-          const projectId = publicProjectId(session.project_id)
-          return {
-            session_id: session.session_id,
-            ...(projectId ? { project_id: projectId } : {}),
-            title: session.title,
-            directory_hint: session.directory_hint,
-            created_at: session.created_at,
-            updated_at: session.updated_at,
-          }
-        }),
-    ).then((sessions) => sessions.filter((session) => session !== undefined))
+    const participantSessions = canAdminSessions
+      ? new Set<string>()
+      : new Set((await ctx.db
+        .query("session_participants")
+        .withIndex("by_workspace_user", (q: any) => q.eq("workspace_id", workspace._id).eq("user_id", user._id))
+        .collect())
+        .filter((participant) => !participant.revoked_at)
+        .map((participant) => participant.session_id))
+    const sessions = await ctx.db
+      .query("session_history")
+      .withIndex("by_workspace_updated", (q) => q.eq("workspace_id", workspace._id))
+      .order("desc")
+      .collect()
+    return sessions
+      .filter((session) => !session.deleted_at && (
+        session.created_by_user_id === user._id
+        || canAdminSessions
+        || participantSessions.has(session.session_id)
+      ))
+      .map((session) => {
+        const projectId = publicProjectId(session.project_id)
+        return {
+          session_id: session.session_id,
+          ...(projectId ? { project_id: projectId } : {}),
+          title: session.title,
+          directory_hint: session.directory_hint,
+          created_at: session.created_at,
+          updated_at: session.updated_at,
+        }
+      })
   },
 })
 
@@ -1072,15 +1066,12 @@ export const replaceVisibility = authedMutation({
     const now = Date.now()
     const rows = await ctx.db
       .query("session_history")
-      .withIndex("by_workspace_updated", (q: any) => q.eq("workspace_id", access.workspace._id))
+      .withIndex("by_workspace_creator_updated", (q: any) =>
+        q.eq("workspace_id", access.workspace._id).eq("created_by_user_id", access.user._id))
       .collect()
     for (const row of rows.filter((row: any) =>
-      row.created_by_user_id === access.user._id
-      && !incoming.has(row.session_id)
+      !incoming.has(row.session_id)
       && !row.deleted_at)) {
-      if (!await sessionRoleForUser(ctx, { user: access.user, workspace: access.workspace, session: row, action: "write" })) {
-        throw new Error("Session not found")
-      }
       await ctx.db.patch(row._id, {
         deleted_at: now,
         updated_at: now,
@@ -1107,15 +1098,12 @@ export const replaceVisibilityForService = serviceMutation({
     const now = Date.now()
     const rows = await ctx.db
       .query("session_history")
-      .withIndex("by_workspace_updated", (q: any) => q.eq("workspace_id", access.workspace._id))
+      .withIndex("by_workspace_creator_updated", (q: any) =>
+        q.eq("workspace_id", access.workspace._id).eq("created_by_user_id", access.user._id))
       .collect()
     for (const row of rows.filter((row: any) =>
-      row.created_by_user_id === access.user._id
-      && !incoming.has(row.session_id)
+      !incoming.has(row.session_id)
       && !row.deleted_at)) {
-      if (!await sessionRoleForUser(ctx, { user: access.user, workspace: access.workspace, session: row, action: "write" })) {
-        throw new Error("Session not found")
-      }
       await ctx.db.patch(row._id, {
         deleted_at: now,
         updated_at: now,
