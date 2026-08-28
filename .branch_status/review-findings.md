@@ -6,6 +6,12 @@ Reviewed implementation commit: `593dd1f94f047c9269a56b2afea75cce2cb6419e`
 
 Implementation tree: `6c42070016448f272ce8008fd9b8db98e80c9d21`
 
+Final authority-audit closure: `2adbe6ca4c22cf24252581e498e037782c9fcec5`
+
+Post-review runtime-to-UI follow-up: `430fa0bc1dfd7cfb0db39f742e786c2c880a7ca9`
+
+Deterministic browser-test follow-up: `9bf5849c418597ba10f222e3ce990dd39c508445`
+
 Base: `dev` at `834307041e8b01eef532833b8deb3703f03dc647`
 
 Review coverage: correctness, project standards, testing, maintainability, agent-native behavior, security, performance, API compatibility, data migrations, reliability, adversarial analysis, and deployment verification.
@@ -61,6 +67,25 @@ The primary closure is `fc2c5fc51a` (`fix(multiplayer): close tenant authority r
 | #19 support concurrent old SQLite writers | Rejected | Supported rollout is a stopped-service hard cut |
 | #20 fetch bridge lacks authority URL | Rejected after hardening | Every runtime fetch now requires an explicit principal and authoritative org/role |
 
+## Post-review acceptance findings
+
+The complete provider/browser lane exposed four projection defects after the
+authority review was already closed. They are recorded separately so a future
+agent does not mistake them for reopened permission findings or “test-only”
+work.
+
+| ID | Status | Authoritative fix | Evidence |
+|----|--------|-------------------|----------|
+| A1 central placement continuity | Closed | The central runtime stamps canonical workspace/host/session-ref identity; inventory, direct routes, cache keys, and hydration preserve it. | central runtime, route intent, inventory, cache, controller, and pane-query tests |
+| A2 saved-model restoration | Closed | Existing-session composer readiness waits for the authoritative model restore rather than advertising an actionable empty picker. | toolbar-state unit tests and Pi real-harness journey |
+| A3 assistant/task snapshot continuity | Closed | Canonical snapshot/live merge preserves intermediate task parts, richer errors, producer order, and terminal tool state without synthesizing replies. | conversation and timeline grouping tests |
+| A4 terminal child lifecycle | Closed | Terminal `subagent-updated` frames are retained for replay; directory hydration re-runs after registry reset; task cards use child lifecycle instead of parent tool error. | workspace event, directory scope, session UI, ACP, and Codex ACP real-harness tests |
+| A5 deterministic browser actions | Closed | Tests drive the actual pointer-enter/selection contracts, refresh only the WorkGraph harness lacking SSE, and use unique accessible selectors. | core browser matrix plus focused two-mode WorkGraph rerun |
+
+The implementation is `430fa0bc1d`. `9bf5849c41` contains only the separate
+deterministic browser-test follow-up. Neither commit changes the settled
+tenant/session authorization rules.
+
 ## Verification summary
 
 - `@claxedo/server`: 3,068 passed, 14 skipped.
@@ -72,5 +97,13 @@ The primary closure is `fc2c5fc51a` (`fix(multiplayer): close tenant authority r
 - Affected-package typechecks and agent runtime build passed.
 - Root lint passed with 17,185 warnings and zero errors.
 - Signed two-user product, runtime-transport, and relay acceptance paths passed.
+- Post-review focused units passed: app Bun 177, app Vitest 25, central runtime
+  30, ACP 42, workspace events 6, and session UI 14.
+- The complete real-harness lane passed: 14 passed, 1 recording-only skip.
+- The core auth matrix's only failure was an ambiguous WorkGraph locator; the
+  corrected exact journey passed in both auth modes.
 
-The remaining real-harness E2E failures are tracked in `verification-and-rollout.md`; they are not open findings in this review matrix.
+Two existing composer unit contracts still fail in the otherwise 5,695-pass app
+unit command. They are not review findings and do not invalidate the authority
+closure, but they remain a merge gate. Exact failures and commands are tracked
+in `verification-and-rollout.md` and `continuation.md`.

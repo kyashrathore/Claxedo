@@ -50,7 +50,7 @@ Failure behavior:
 
 ## Flow B: Create or fork a session
 
-Target transaction:
+Implemented transaction:
 
 1. The requester passes workspace and actor authorization.
 2. The runtime creates or forks the adapter session with a known id.
@@ -64,7 +64,9 @@ Compensation:
 - If both registration and cleanup fail, preserve both causes and emit reconciliation evidence.
 - A fork follows the same registration and projection protocol as ordinary creation.
 
-Current gaps: #13 and #14.
+Closure evidence: findings #13 and #14 are closed by the create/fork
+registration, compensation, cleanup-cause, and same-id retry tests named in
+`review-findings.md`.
 
 ## Flow C: Submit a prompt
 
@@ -76,7 +78,9 @@ Current gaps: #13 and #14.
 6. The loser rolls back only its optimistic prompt and preserves the winner's busy state.
 7. Completion or failure releases the lease in the authoritative store.
 
-The lease must survive runtime reconstruction. The process-local fallback violates this invariant (#23).
+The lease survives runtime reconstruction because `AgentRuntime` requires
+`AgentRuntimeStore.acquireTurnLease()` and `releaseTurnLease()`, and the
+workspace runtime store persists the active lease. Finding #23 is closed.
 
 ## Flow D: Author and project messages
 
@@ -86,7 +90,9 @@ The lease must survive runtime reconstruction. The process-local fallback violat
 4. The API projects only display-safe public id, name, and image.
 5. The app renders the correct avatar and identity.
 
-Historical messages without producer identity remain unattributed. The synchronizing reader is never used as a substitute. Current gap: #28.
+Historical messages without producer identity remain unattributed. The
+synchronizing reader is never used as a substitute. Finding #28 is closed by
+producer-backed author persistence and projection tests in both authorities.
 
 ## Flow E: Authorize private-session operations
 
@@ -107,11 +113,13 @@ The same decision applies to:
 
 Files and working trees remain workspace-authorized rather than session-private.
 
-Current gaps: #3, #12, #13, #14, #24.
+Closure evidence: findings #3, #12, #13, #14, and #24 are closed by current
+workspace-authority checks, route/policy inventory tests, create/fork
+compensation tests, and Convex/SQLite parity tests.
 
 ## Flow F: Deliver live and replayed events
 
-Target design:
+Implemented design:
 
 1. Connection establishment validates the short-lived relay host proof.
 2. The runtime creates a connection principal with stable actor and tenant identity.
@@ -122,7 +130,35 @@ Target design:
 7. Renewal denial terminates the stream; ordinary proof expiry does not.
 8. Sessionless global events use canonical org/subject visibility and deny unknown signed event types.
 
-Current gaps: #5, #8, #9, #10, #11, #15, #21.
+Closure evidence: findings #5, #8, #9, #10, #11, #15, and #21 are closed by
+the signed two-user, bounded-queue, replay-deadline, status-preservation,
+renewable-grant, and long-lived PTY/SSE tests.
+
+## Flow G: Route and render an authorized central session
+
+This flow is not a second authority model. It is the client projection that
+preserves the identity already decided by the control plane and runtime.
+
+1. The control-plane runtime stamps `session.updated` with canonical
+   `workspaceID`, central host metadata, and `central:<session-id>` identity.
+2. Inventory normalization preserves that placement instead of replacing it
+   with the tool-sandbox directory.
+3. Direct-route resolution recognizes the explicit central session and opens
+   it through `openCentralSession`.
+4. Session hydration keys include the resolved transport authority, so a warm
+   local cache cannot satisfy a later central/signed read.
+5. Canonical message snapshots and live events merge without dropping
+   intermediate task parts or inventing assistant messages.
+6. Terminal subagent lifecycle frames are retained for authorized replay and
+   task cards render canonical child lifecycle even if the parent tool call
+   reports an error.
+7. Existing-session composer readiness waits for the authoritative saved model
+   to restore before allowing submit.
+
+This flow explains the post-review browser work. Authorization can correctly
+admit and deliver an event while the app still misroutes, drops, or renders it
+incorrectly; the client must preserve canonical identity all the way to the
+visible session.
 
 ## Data model
 
@@ -202,3 +238,34 @@ Current gaps: #5, #8, #9, #10, #11, #15, #21.
 ## Target dependency direction
 
 The control-plane authority owns identity and policy data. The runtime consumes signed authority and asks the session authority for current decisions. The app and compatibility layers consume runtime results. Neither the app nor a compatibility adapter may synthesize tenant or actor identity to repair a missing producer contract.
+
+## Implementation source map
+
+| Boundary | Canonical implementation |
+|----------|--------------------------|
+| Authority capability | `packages/claxedo-server-core/src/platform/auth/authority.ts` |
+| Request principal binding | `packages/claxedo-local-server/src/workspace/sandbox-fetch-options.ts` |
+| Workspace role precedence | `convex/model.ts` (`workspaceRoleForUser`, `orgAdminForUser`) |
+| Workspace open | `convex/workspaces.ts` (`open`) |
+| Session storage authority | `convex/sessions.ts` (`authorizeSession`, `registerRuntime`, participant and message operations) |
+| RAT record/revalidation | `convex/runtimeAccessTokens.ts` |
+| RAT/RHT claims and relay validation | `packages/workspace-relay/src/auth.ts`, `packages/workspace-relay/src/server.ts` |
+| Runtime session policy | `packages/workspace-runtime/src/session-access-policy.ts` |
+| Live/replay authorization | `packages/workspace-runtime/src/event-delivery.ts`, `packages/workspace-runtime/src/routes/events.ts` |
+| Durable turn admission | `packages/agent-sdk-runtime/src/runtime.ts`, `packages/workspace-runtime/src/store.ts` |
+| OpenCode projection | `packages/agent-event-runtime/src/projections/opencode-compat` |
+| Central session projection | `packages/claxedo-server/src/session/runtime.ts` |
+| App route authority | `packages/claxedo-app/src/app/workbench/state/route-intent.ts`, `route-bridge.tsx` |
+| App session/resource authority | `packages/claxedo-app/src/features/session/store/session-resource-authority.ts`, `session-controller.ts` |
+| Message projection and rendering | `packages/claxedo-app/src/features/session/conversation/opencode-conversation.ts`, `ui/message-author.tsx`, `packages/session-ui/src/components/message-part.tsx` |
+
+## Status interpretation
+
+- The architecture and security review is closed: all 18 validated findings in
+  `review-findings.md` have implemented responses and focused evidence.
+- Post-review work fixes real-provider/browser projection defects discovered by
+  exercising complete user journeys. Those defects did not reopen the
+  tenant-authority decisions.
+- Merge and deployment readiness are separate. Read
+  `verification-and-rollout.md` for the latest executed matrix and environment
+  gates, then `continuation.md` for the exact next-agent orientation.

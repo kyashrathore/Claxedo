@@ -32,7 +32,8 @@ Actor: team owner or organization administrator
 
 Expected result: Team resources are explicit and tenant-scoped. An existing personal workspace is never silently moved into the team.
 
-Current risk: SQLite and Convex can derive different repository keys (#6).
+Closure evidence: Convex and SQLite share the dependency-light canonical
+repository-key implementation and parity corpus; finding #6 is closed.
 
 ## Journey 3: Creator shares one private session
 
@@ -47,7 +48,9 @@ Actors: session creator and collaborator
 
 Expected result: Workspace membership alone does not expose private transcripts. Explicit participation enables HTTP, live, and replay access.
 
-Current blockers: sessionless global event leakage (#5), event authorization behavior (#8-#11, #15), and attribution edge cases (#28).
+Closure evidence: signed global visibility, bounded live/replay authorization,
+accurate authority status mapping, renewable grants, and producer-backed
+attribution close findings #5, #8-#11, #15, and #28.
 
 ## Journey 4: Two users submit at the same time
 
@@ -63,7 +66,8 @@ Actors: creator and collaborator
 
 Expected result: Exactly one turn runs. Permission mode and optimistic UI state from the losing request do not affect the winner.
 
-Current blocker: the default lease is process-local after runtime reconstruction (#23).
+Closure evidence: the durable runtime store is the sole turn-admission owner
+across runtime reconstruction; finding #23 is closed.
 
 ## Journey 5: Creator forks a shared session
 
@@ -79,7 +83,8 @@ Actor: authorized creator or participant with fork authority
 
 Failure state: If child registration fails, the runtime deletes the child and returns the denial.
 
-Current blocker: the branch returns the child without registration (#13).
+Closure evidence: ordinary and fork creation share the authority registration,
+projection, compensation, and same-id retry protocol; finding #13 is closed.
 
 ## Journey 6: Administrator revokes a collaborator
 
@@ -95,7 +100,9 @@ Actors: organization administrator and collaborator
 
 Expected result: Revocation is effective across primary and secondary routes, live delivery, replay, reconnect, and PTY output.
 
-Current blockers: stale creator participant administration (#3), process-log bypass (#12), and missing renewable long-lived authorization (#21).
+Closure evidence: participant administration requires current workspace
+authority, process-log aliases resolve through session policy, and active
+streams renew revocable grants; findings #3, #12, and #21 are closed.
 
 ## Journey 7: User reconnects after network loss
 
@@ -110,7 +117,9 @@ Actor: authorized participant
 
 Expected result: Events for other sessions do not create visible gaps. Authority latency cannot hold the request for many minutes or grow an unbounded queue.
 
-Current blockers: #8, #9, #10, #11, and #15.
+Closure evidence: one scoped decision, bounded queues/concurrency, ordered
+replay, a fixed readiness deadline, renewable grants, and accurate 401/403/503
+semantics close findings #8-#11 and #15.
 
 ## Journey 8: User keeps a terminal open
 
@@ -125,7 +134,8 @@ Actor: authorized session participant
 
 Expected result: Normal proof expiry does not terminate valid work. Revocation still propagates.
 
-Current blocker: the branch reuses the expired proof every second and closes valid PTYs (#21).
+Closure evidence: the establishment proof is no longer reused as the long-lived
+authority; renewable parent-linked session grants close finding #21.
 
 ## Journey 9: A legacy deployment upgrades
 
@@ -141,7 +151,10 @@ Actor: release operator
 
 Expected result: Legacy sessions do not disappear when private-session enforcement turns on.
 
-Current blockers: project/workspace mismatch can pass migration (#16), and deployment does not run the tenant migration gate (#18).
+Closure evidence: session/workspace project equality is enforced in live writes
+and migrations, and staging/production workflows run the ordered migration
+ledger gate before runtime enforcement; findings #16 and #18 are closed in
+code. The credentialed staging rehearsal remains a deployment action.
 
 ## Journey 10: Authority service is unavailable
 
@@ -156,7 +169,28 @@ Actor: any managed user
 
 Expected result: Security remains fail-closed without converting an outage into a false permission decision.
 
-Current blockers: #9, #10, and #11.
+Closure evidence: bounded queue/deadline behavior and preserved 401/403/503
+semantics close findings #9-#11.
+
+## Journey 11: Existing central session restores and renders canonical state
+
+Actor: authorized user reopening a central session
+
+1. The direct route identifies a session from canonical inventory.
+2. Explicit `central:<session-id>` identity prevents the route from being
+   reclassified as a workspace-runtime session.
+3. The pane hydrates session metadata, messages, capabilities, and saved model
+   through the central resource authority.
+4. The composer remains inert while the authoritative model restore is pending.
+5. Canonical snapshots preserve intermediate assistant task parts and update
+   them to their terminal lifecycle.
+6. Authorized terminal subagent events remain available during replay, and the
+   task card renders the child lifecycle rather than the parent tool error.
+
+Expected result: authorization, transport placement, hydration, and rendering
+agree on one session identity. A user does not see an empty model picker,
+missing assistant reply, or permanently `Working` task after canonical state
+has already completed.
 
 ## Cross-journey UX requirements
 

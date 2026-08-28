@@ -72,6 +72,26 @@ Authority unavailability fails closed but remains a retryable 503. Permission de
 
 Convex schema changes use ledger-backed ordered migrations. Required fields become contractual only after verification succeeds. SQLite uses the documented transactional stopped-service hard cut.
 
+### D15: Preserve canonical session placement through the client
+
+Central, workspace-runtime, and local session placement comes from the
+authoritative session/inventory producer. Direct-route resolution, cache keys,
+hydration, and lifecycle updates preserve that placement; a tool-sandbox
+directory or nearby workspace hint cannot reclassify the session.
+
+Why: a correctly authorized central session can still hydrate through the wrong
+transport if the app infers placement from execution metadata.
+
+### D16: Child lifecycle owns task-card status
+
+Subagent/task cards render the canonical child lifecycle. A parent task tool
+error does not replace a child that has reached a terminal lifecycle, and
+terminal subagent updates are retained for authorized replay.
+
+Why: provider adapters can report parent tool failure after the delegated child
+has completed. The child lifecycle is the authoritative answer for multiplayer
+observers and reconnecting clients.
+
 ## Resolved design gates
 
 ### O1: Human and agent actor representation

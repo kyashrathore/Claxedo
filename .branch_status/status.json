@@ -1,19 +1,22 @@
 {
-  "schema_version": 1,
+  "schema_version": 2,
   "updated_at": "2026-08-28",
-  "status": "review_findings_closed_e2e_follow_up_required",
-  "verdict": "All validated review findings are closed; merge awaits two real-harness lifecycle resolutions",
+  "status": "review_findings_closed_real_harness_passed_unit_follow_up_required",
+  "verdict": "All validated review and post-review real-harness findings are closed; merge awaits two existing composer unit contracts",
   "branch": "codex/single-tenant-multiplayer-ready",
-  "implementation_commit": "593dd1f94f047c9269a56b2afea75cce2cb6419e",
-  "implementation_tree": "6c42070016448f272ce8008fd9b8db98e80c9d21",
+  "authority_closure_commit": "2adbe6ca4c22cf24252581e498e037782c9fcec5",
+  "implementation_commit": "430fa0bc1dfd7cfb0db39f742e786c2c880a7ca9",
+  "implementation_tree": "4dedcb9a90058320e947f0fcbc0ec78397c2f401",
+  "test_follow_up_commit": "9bf5849c418597ba10f222e3ce990dd39c508445",
+  "test_follow_up_tree": "d95a905f5d6193ca9c8505b1199c9b2f23156dee",
   "base": {
     "branch": "dev",
     "commit": "834307041e8b01eef532833b8deb3703f03dc647"
   },
   "change_size": {
-    "files": 265,
-    "insertions": 17875,
-    "deletions": 1302
+    "files": 300,
+    "insertions": 19038,
+    "deletions": 1469
   },
   "review": {
     "validated_p1": 15,
@@ -38,6 +41,15 @@
     "workspace_runtime": "893 unit, 37 relay, 59 real PTY/storage passed",
     "app_bun_e2e": "26 passed",
     "app_journey_e2e": "6 passed",
+    "app_follow_up_bun_units": "177 passed",
+    "app_follow_up_vitest": "25 passed",
+    "central_runtime_follow_up": "30 passed",
+    "acp_follow_up": "42 passed",
+    "workspace_event_follow_up": "6 passed",
+    "session_ui_follow_up": "14 passed",
+    "app_full_units": "5695 passed, 2 failed",
+    "real_harness_browser": "14 passed, 1 recording-only skipped",
+    "core_browser_auth_matrix": "all product assertions passed; one strict locator failure fixed and the exact journey passed in both auth modes",
     "workgraph_browser_e2e": "20 passed in each auth mode",
     "mobile_browser_e2e": "5 passed in each auth mode",
     "affected_package_typechecks": "passed",
@@ -45,9 +57,9 @@
     "root_typecheck": "environment-blocked by parent-checkout dist symlinks loading duplicate Hono/Zod declarations"
   },
   "remaining_merge_gates": [
-    "Resolve Pi model-picker hydration when canonical session and control-plane model values are already present",
-    "Resolve Codex ACP external child lifecycle remaining Working instead of reaching Completed",
-    "Rerun the complete real-harness browser lane"
+    "Preserve the persisted harness model and variant on an existing-session follow-up",
+    "Deduplicate unchanged existing-session config so a second submit does not PATCH again",
+    "Rerun packages/claxedo-app bun run test with zero failures"
   ],
   "remaining_deploy_gates": [
     "Run the credentialed staging migration rehearsal and legacy-session smoke",
@@ -62,6 +74,7 @@
     "decisions.md",
     "change-inventory.md",
     "review-findings.md",
-    "verification-and-rollout.md"
+    "verification-and-rollout.md",
+    "continuation.md"
   ]
 }

@@ -2,26 +2,31 @@
 
 ## Scope
 
-Compared with `dev` at `834307041e`, implementation commit `593dd1f94f` changes 265 files with 17,875 insertions and 1,302 deletions.
+Compared with `dev` at `834307041e`, implementation/test head `9bf5849c41`
+changes 300 files with 19,038 insertions and 1,469 deletions. The post-review
+runtime-to-UI implementation is `430fa0bc1d`; `9bf5849c41` is its deterministic
+browser-test follow-up.
 
 ## Files by major area
 
 | Area | Changed files | Primary responsibility |
 |------|--------------:|------------------------|
 | `packages/claxedo-server` | 87 | Control-plane authority, hosted runtimes, deployment composition, routes, tests |
-| `packages/workspace-runtime` | 58 | Session routes/policy, event delivery, PTY/process access, runtime store |
+| `packages/workspace-runtime` | 60 | Session routes/policy, event delivery, PTY/process access, runtime store, terminal subagent replay |
 | `convex` | 24 | Tenant schema, migrations, sessions, participants, token revocation |
 | `packages/claxedo-server-core` | 20 | Shared auth, Convex/SQLite authority adapters, event visibility |
-| `packages/claxedo-app` | 20 | Prompt collision UX, author rendering, live event preparation, browser acceptance |
-| `packages/agent-sdk-runtime` | 15 | Turn admission lease and runtime attribution contracts |
+| `packages/claxedo-app` | 48 | Prompt collision UX, author rendering, central route/hydration authority, snapshot continuity, browser acceptance |
+| `packages/agent-sdk-runtime` | 16 | Turn admission lease, runtime attribution, and ACP lifecycle contracts |
 | `packages/claxedo-local-server` | 10 | OpenCode compatibility, canonical runtime principals, and local runtime dispatch |
 | `.branch_status` | 9 | Review dossier and verification record |
 | `packages/workspace-relay` | 6 | Runtime token and relay host proof claims |
 | `packages/sandbox-manager` | 4 | Hosted driver configuration |
 | `packages/agent-event-runtime` | 4 | OpenCode-compatible event projection |
+| `packages/session-ui` | 2 | Canonical task/subagent lifecycle rendering |
 | `packages/schema` | 2 | Public/shared schema changes |
 | `docs` | 2 | Access model and tenant rollout documentation |
-| Repository workflow/root | 3 | Deployment gate and dependency/script wiring |
+| Repository workflow/root | 4 | Deployment gate and dependency/script wiring |
+| `packages/sdk` | 1 | Public display-safe message-author extension type |
 | `packages/workspace-relay-protocol` | 1 | Relay protocol identity contract |
 
 ## Logical change sets
@@ -87,6 +92,21 @@ Key review findings: #12 and #21.
 
 Key review finding: #18.
 
+### 8. Runtime-to-UI authority continuity
+
+- Stamps canonical central session placement at the control-plane producer.
+- Preserves central/workspace/local identity through inventory, direct routing,
+  cache provenance, hydration, and pane query authority.
+- Waits for authoritative saved-model restoration before allowing an existing
+  session submit.
+- Preserves intermediate assistant task parts across snapshot/live merge.
+- Retains terminal subagent lifecycle for authorized replay and renders child
+  lifecycle independently of a parent task-tool error.
+- Tightens the real-harness checks to prove canonical backend completion before
+  visible completion.
+
+Post-review acceptance findings: A1-A5 in `review-findings.md`.
+
 ## Existing source documents changed by this branch
 
 - `docs/tech-docs/access-model.md`: authoritative product and policy boundary.
@@ -97,7 +117,7 @@ Key review finding: #18.
 The exact path list remains reproducible from Git:
 
 ```bash
-git diff --name-status 834307041e8b01eef532833b8deb3703f03dc647..593dd1f94f047c9269a56b2afea75cce2cb6419e
+git diff --name-status 834307041e8b01eef532833b8deb3703f03dc647..9bf5849c418597ba10f222e3ce990dd39c508445
 ```
 
-The implementation tree is `6c42070016448f272ce8008fd9b8db98e80c9d21`.
+The implementation/test tree is `d95a905f5d6193ca9c8505b1199c9b2f23156dee`.

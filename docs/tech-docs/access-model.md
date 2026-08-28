@@ -101,6 +101,32 @@ they preserve unsigned single-user behavior and do not become a managed
 multiplayer boundary. Relay- and private-network-exposed runtimes require the
 authority-backed policy and fail closed when the oracle is unavailable.
 
+## Client authority continuity
+
+Authorization is complete only when the client preserves the identity and
+placement returned by the managed boundary:
+
+- a central session carries an explicit `central:<session-id>` reference plus
+  its authoritative workspace id;
+- workspace-runtime sessions keep their signed workspace backing, while local
+  sessions keep their filesystem transport directory;
+- direct-route resolution opens an explicit central session through the central
+  transport instead of reclassifying it from a tool-sandbox directory;
+- session resource and hydration keys include transport authority so cached
+  local data cannot satisfy a later central or signed workspace read;
+- lifecycle inventory updates patch known canonical rows and do not invent a
+  tenant or placement for an unknown session;
+- message snapshot/live merges preserve producer order, known authors, and
+  intermediate task parts;
+- terminal subagent lifecycle remains available to authorized replay, and task
+  cards read child lifecycle rather than treating a parent tool error as the
+  child result.
+
+The app may optimistically represent a user action, but canonical server data
+owns the final session placement, message membership, author, model, and
+lifecycle. An empty canonical result is authoritative; the client must not fall
+back to stale data from another transport.
+
 ## Installation order
 
 Convex installs the target model through expand–migrate–contract releases so a

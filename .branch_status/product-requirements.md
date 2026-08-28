@@ -160,4 +160,20 @@ Adding a second user without replacing those assumptions creates four failure cl
 
 ## Current readiness
 
-The requirements describe the target. The branch is not ready because the validated findings in `review-findings.md` show current violations of FR1 through FR9. FR10 is mostly preserved except for authority outage status mapping.
+The target requirements are implemented for the reviewed architecture. All 18
+validated findings covering FR1 through FR9 are closed; FR10 retains OpenCode
+compatibility, including distinct 401, 403, and retryable 503 behavior.
+
+The post-review browser lane found two end-to-end projection defects after
+authority had already admitted and delivered the canonical data:
+
+- existing central Pi sessions restored the correct model in session/config
+  data but exposed an actionable empty-model toolbar before restoration;
+- Codex ACP child work reached canonical completion but terminal subagent
+  lifecycle was not retained/projected consistently to the task card.
+
+The follow-up implementation fixes the authoritative producer and projection
+paths rather than weakening the E2E assertions. Current executed evidence,
+remaining environment gates, and any still-running verification are recorded
+in `verification-and-rollout.md`; a fresh agent should start with
+`continuation.md`.
