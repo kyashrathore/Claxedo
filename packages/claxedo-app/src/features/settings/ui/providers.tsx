@@ -2,20 +2,47 @@ import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
+import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { popularProviders } from "@/platform/query/provider-list"
-import { DialogAIConnect, DialogConnectProvider, DialogCustomProvider, DialogSelectProvider, useGlobalSDK, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
-import { createEffect, createMemo, type Component, For, Show } from "solid-js"
+import { DialogCustomProvider, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
+import { createEffect, createMemo, createSignal, type Component, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Config } from "@opencode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
-import { useLanguage } from "@/platform/i18n/provider"
+import { filterConnectedByDisabledProviders, popularProviders } from "@/platform/query/provider-list"
 import { SettingsList } from "@/features/settings/ui/list"
+import { useLanguage } from "@/platform/i18n/provider"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
+import { localHarnessChecks } from "@/features/onboarding/ai-connect-state"
+import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect } from "@/features/settings/provider-detect"
+import {
+  canDisconnectProvider,
+  disconnectOpenCodeProvider,
+  patchGlobalDisabledProviders,
+  providerSourceTagKey,
+  removeProviderAuthEntry,
+} from "@/features/settings/provider-settings-logic"
+import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
+import type { LocalHarnessStatus } from "@/features/onboarding/ai-connect-state"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
+
+const AGENT_CONNECT: Record<(typeof localHarnessChecks)[number]["id"], string> = {
+  claude: "claude-acp",
+  codex: "codex-acp",
+  cursor: "cursor-acp",
+}
+
+const AGENT_ICON: Record<(typeof localHarnessChecks)[number]["id"], string> = {
+  claude: "claude-acp",
+  codex: "codex-acp",
+  cursor: "cursor-acp",
+}
+
+const PI_PROVIDER_IDS = ["anthropic", "openai", "openai-codex"] as const
 
 const PROVIDER_NOTES = [
   { match: (id: string) => id === "opencode", key: "dialog.provider.opencode.note" },
@@ -31,29 +58,15 @@ const PROVIDER_NOTES = [
 export const SettingsProviders: Component = () => {
   const dialog = useDialog()
   const language = useLanguage()
-  const globalSDK = useGlobalSDK()
   const queryOptions = useQueryOptions()
   const configQuery = useQuery(() => queryOptions.globalConfig())
-  const providers = useProviders()
-  const providerList = createMemo(() => providers.state())
+  // Must pass "opencode" explicitly — unqualified `/provider` resolves to the
+  // workspace default harness (agents), not the OpenCode catalog.
+  const openCodeProviders = useProviders("opencode")
+  const piProviders = useProviders("pi")
+  const providerList = createMemo(() => openCodeProviders.state())
   const providerItems = createMemo(() => Array.from(providerList().all.values()))
   const config = createMemo(() => configQuery.data ?? {})
-
-  const connected = createMemo(() =>
-    providerItems()
-      .filter((p) => providerList().connected.includes(p.id))
-      .filter((p) => p.id !== "opencode" || Object.values(p.models).find((m) => m.cost?.input)),
-  )
-
-  const popular = createMemo(() => {
-    const connectedIDs = new Set(connected().map((p) => p.id))
-    const items = providerItems()
-      .filter((p) => popularProviders.includes(p.id))
-      .filter((p) => !connectedIDs.has(p.id))
-      .slice()
-    items.sort((a, b) => popularProviders.indexOf(a.id) - popularProviders.indexOf(b.id))
-    return items
-  })
 
   const source = (item: ProviderItem): ProviderSource | undefined => {
     if (!("source" in item)) return
@@ -62,206 +75,289 @@ export const SettingsProviders: Component = () => {
     return
   }
 
+  const [search, setSearch] = createSignal("")
+  const [detecting, setDetecting] = createSignal(false)
+  const [storedProviders, setStoredProviders] = createSignal<Set<string>>(new Set())
+  const [agentStatuses, setAgentStatuses] = createSignal<LocalHarnessStatus[]>([])
+
+  const refreshProviderQueries = async () => {
+    await Promise.all([openCodeProviders.refresh(), piProviders.refresh()])
+  }
+
+  const refreshDetect = async () => {
+    setDetecting(true)
+    try {
+      const result = await runProviderDetect()
+      setStoredProviders(result.stored)
+      setAgentStatuses(result.agents)
+      await refreshProviderQueries()
+    } catch (err: unknown) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: err instanceof Error ? err.message : String(err),
+      })
+    } finally {
+      setDetecting(false)
+    }
+  }
+
+  createEffect(() => {
+    void listStoredCredentialProviders()
+      .then((stored) => {
+        setStoredProviders(stored)
+        setAgentStatuses(localHarnessChecks.map((check) => ({
+          id: check.id,
+          label: check.label,
+          signIn: check.signIn,
+          state: stored.has(AGENT_CONNECT[check.id]) ? "working" as const : "missing" as const,
+        })))
+      })
+      .catch(() => undefined)
+  })
+
   createEffect(() => {
     const ids = providerList().connected.filter((id) => {
       const provider = providerList().all.get(id)
       return provider && source(provider) === undefined
     })
     if (ids.length === 0) return
-    void Promise.all(ids.map((id) => providers.load(id))).catch((err: unknown) => {
-      showToast({
-        title: language.t("common.requestFailed"),
-        description: err instanceof Error ? err.message : String(err),
-      })
-    })
+    // Hydrate connected rows in the background; some env-only providers are listed
+    // as connected but have no runtime catalog entry — that must not interrupt Detect.
+    void Promise.allSettled(ids.map((id) => openCodeProviders.load(id)))
   })
 
-  const type = (item: ProviderItem) => {
-    const current = source(item)
-    if (current === "env") return language.t("settings.providers.tag.environment")
-    if (current === "api") return language.t("provider.connect.method.apiKey")
-    if (current === "config") {
-      if (isConfigCustom(item.id)) return language.t("settings.providers.tag.custom")
-      return language.t("settings.providers.tag.config")
-    }
-    if (current === "custom") return language.t("settings.providers.tag.custom")
-    return language.t("settings.providers.tag.other")
-  }
+  const openCodeRows = createMemo(() => {
+    const query = search().trim().toLowerCase()
+    const connected = new Set(providerList().connected)
+    return providerItems()
+      .filter((item) => {
+        if (query) {
+          return item.id.toLowerCase().includes(query) || item.name.toLowerCase().includes(query)
+        }
+        return popularProviders.includes(item.id) || connected.has(item.id)
+      })
+      .sort((a, b) => a.name.localeCompare(b.name))
+  })
 
-  const canDisconnect = (item: ProviderItem) => source(item) !== "env"
+  const piRows = createMemo(() =>
+    PI_PROVIDER_IDS.flatMap((id) => {
+      const provider = piProviders.all().get(id)
+      return provider ? [provider] : []
+    }),
+  )
+
+  const type = (item: ProviderItem) =>
+    language.t(providerSourceTagKey({
+      source: source(item),
+      config: config(),
+      providerId: item.id,
+    }))
+
+  const canDisconnect = (item: ProviderItem) => canDisconnectProvider(source(item))
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
-  const isConfigCustom = (providerID: string) => {
-    const provider = config().provider?.[providerID]
-    if (!provider) return false
-    if (provider.npm !== "@ai-sdk/openai-compatible") return false
-    if (!provider.models || Object.keys(provider.models).length === 0) return false
-    return true
+  const refreshProviders = async () => {
+    await refreshProviderQueries()
+    await refreshDetect()
   }
 
-  const disableProvider = async (providerID: string, name: string) => {
-    const before = config().disabled_providers ?? []
-    const next = before.includes(providerID) ? before : [...before, providerID]
-    queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
-      ...config(),
-      disabled_providers: next,
-    })
-
-    await globalSDK.client.global.config
-      .update({ config: { disabled_providers: next } })
-      .then(() => {
-        void queryClient.invalidateQueries({ queryKey: queryOptions.globalConfig().queryKey })
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
-          description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
-        })
-      })
-      .catch((err: unknown) => {
-        queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
-          ...config(),
-          disabled_providers: before,
-        })
-        showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : String(err) })
-      })
+  const markOpenCodeDisconnected = (providerID: string) => {
+    const patch = (cached: NormalizedProviderListResponse | undefined) => {
+      if (!cached) return cached
+      return {
+        ...cached,
+        connected: cached.connected.filter((item) => item !== providerID),
+      }
+    }
+    queryClient.setQueryData<NormalizedProviderListResponse | undefined>(openCodeProviders.queryKey(), patch)
   }
 
   const disconnect = async (providerID: string, name: string) => {
-    if (isConfigCustom(providerID)) {
-      await claxedoCredentialRequest({ providerId: providerID }, {
-        method: "DELETE",
-      })
-        .then(async () => {
-          await disableProvider(providerID, name)
-          void queryClient.invalidateQueries({ queryKey: queryOptions.providers(null).queryKey })
+    const item = providerList().all.get(providerID)
+    await disconnectOpenCodeProvider({
+      providerId: providerID,
+      name,
+      source: item && "source" in item ? source(item) : undefined,
+      config: config(),
+      serverUrl: getClaxedoServerUrl(),
+      deleteCredential: async (id) => {
+        await claxedoCredentialRequest({ providerId: id }, { method: "DELETE" })
+      },
+      patchDisabledProviders: async (next) => {
+        const before = config().disabled_providers ?? []
+        queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
+          ...config(),
+          disabled_providers: next,
         })
-        .catch((err: unknown) => {
-          showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : String(err) })
+        try {
+          await patchGlobalDisabledProviders({
+            serverUrl: getClaxedoServerUrl(),
+            disabledProviders: next,
+            request: authFetch,
+          })
+          void queryClient.invalidateQueries({ queryKey: queryOptions.globalConfig().queryKey })
+        } catch (err) {
+          queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
+            ...config(),
+            disabled_providers: before,
+          })
+          throw err
+        }
+      },
+      removeAuth: async (id) => {
+        await removeProviderAuthEntry({
+          serverUrl: getClaxedoServerUrl(),
+          providerId: id,
+          request: authFetch,
         })
-      return
-    }
-    await claxedoCredentialRequest({ providerId: providerID }, {
-      method: "DELETE",
-    })
-      .then(() => {
-        queryClient.setQueryData<NormalizedProviderListResponse | undefined>(
-          queryOptions.providers(null).queryKey,
-          (cached) => {
-            const providers = cached ?? providerList()
-            return {
-              ...providers,
-              connected: providers.connected.filter((item) => item !== providerID),
-            }
-          },
-        )
+      },
+      markDisconnected: markOpenCodeDisconnected,
+      refresh: refreshProviderQueries,
+      onSuccess: (providerName) => {
         showToast({
           variant: "success",
           icon: "circle-check",
-          title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
-          description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
+          title: language.t("provider.disconnect.toast.disconnected.title", { provider: providerName }),
+          description: language.t("provider.disconnect.toast.disconnected.description", { provider: providerName }),
         })
-      })
-      .catch((err: unknown) => {
-        showToast({ title: language.t("common.requestFailed"), description: err instanceof Error ? err.message : String(err) })
-      })
+      },
+      onError: (message) => {
+        showToast({ title: language.t("common.requestFailed"), description: message })
+      },
+    })
   }
+
+  const openCodeConnected = createMemo(() => {
+    const list = filterConnectedByDisabledProviders(providerList(), config().disabled_providers)
+    return new Set(list.connected)
+  })
+  const piConnected = createMemo(() => new Set(piProviders.connected().map((item) => item.id)))
 
   return (
     <div class="flex flex-col h-full overflow-y-auto no-scrollbar px-4 pb-10 sm:px-10 sm:pb-10">
       <div class="flex flex-col gap-1 pt-6 pb-8 max-w-[720px]">
         <h2 class="text-18-medium text-text-strong">{language.t("settings.providers.title")}</h2>
+        <p class="text-12-regular text-text-weak">{language.t("settings.providers.description")}</p>
       </div>
 
       <div class="flex flex-col gap-8 max-w-[720px]">
-        <div class="flex items-center justify-between gap-4 rounded-md border border-border-weak-base p-4">
-          <div class="flex flex-col gap-1">
-            <h3 class="text-14-medium text-text-strong">Connect your AI</h3>
-            <p class="text-12-regular text-text-weak">Detect subscriptions on this machine or enter an API key.</p>
+        <div class="flex flex-col gap-3" data-component="agents-providers-section">
+          <div class="flex items-center justify-between gap-4">
+            <h3 class="text-14-medium text-text-strong">{language.t("settings.providers.section.agents")}</h3>
+            <Button size="small" variant="ghost" disabled={detecting()} onClick={() => void refreshDetect()}>
+              {detecting() ? language.t("settings.providers.detect.running") : language.t("settings.providers.detect.action")}
+            </Button>
           </div>
-          <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogAIConnect />)}>
-            Detect or connect
-          </Button>
-        </div>
-
-        <div class="flex flex-col gap-1" data-component="connected-providers-section">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.providers.section.connected")}</h3>
           <SettingsList>
-            <Show
-              when={connected().length > 0}
-              fallback={<div class="py-4 text-14-regular text-text-weak">{language.t("settings.providers.connected.empty")}</div>}
-            >
-              <For each={connected()}>
-                {(item) => (
-                  <div class="group flex flex-wrap items-center justify-between gap-4 min-h-16 py-3 border-b border-border-weak-base last:border-none">
-                    <div class="flex items-center gap-3 min-w-0">
-                      <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
-                      <span class="text-14-medium text-text-strong truncate">{item.name}</span>
-                      <Tag>{type(item)}</Tag>
-                    </div>
-                    <Show
-                      when={canDisconnect(item)}
-                      fallback={
-                        <span class="text-14-regular text-text-base opacity-0 group-hover:opacity-100 transition-opacity duration-200 pr-3 cursor-default">
-                          {language.t("settings.providers.connected.environmentDescription")}
-                        </span>
-                      }
-                    >
-                      <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
-                        {language.t("common.disconnect")}
-                      </Button>
-                    </Show>
-                  </div>
-                )}
-              </For>
-            </Show>
+            <For each={[...localHarnessChecks]}>
+              {(check) => {
+                const status = () => agentSetupStatus(check, storedProviders(), agentStatuses())
+                return (
+                  <ProviderSetupRow
+                    id={AGENT_ICON[check.id]}
+                    name={check.label}
+                    status={status().status}
+                    detail={status().detail}
+                    providerId={AGENT_CONNECT[check.id]}
+                    note={language.t("settings.providers.agents.sharedCredential")}
+                    onConnected={() => refreshProviders()}
+                  />
+                )
+              }}
+            </For>
           </SettingsList>
         </div>
 
-        <div class="flex flex-col gap-1">
-          <h3 class="text-14-medium text-text-strong pb-2">{language.t("settings.providers.section.popular")}</h3>
+        <div class="flex flex-col gap-3" data-component="pi-providers-section">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-14-medium text-text-strong">{language.t("settings.providers.section.pi")}</h3>
+            <p class="text-12-regular text-text-weak">{language.t("settings.providers.pi.description")}</p>
+          </div>
           <SettingsList>
-            <For each={popular()}>
+            <For each={piRows()}>
               {(item) => (
-                <div class="flex flex-wrap items-center justify-between gap-4 min-h-16 py-3 border-b border-border-weak-base last:border-none">
-                  <div class="flex flex-col min-w-0">
-                    <div class="flex items-center gap-x-3">
-                      <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
-                      <span class="text-14-medium text-text-strong">{item.name}</span>
-                    </div>
-                    <Show when={note(item.id)}>
-                      {(key) => <span class="text-12-regular text-text-weak pl-8">{language.t(key())}</span>}
-                    </Show>
-                  </div>
-                  <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogConnectProvider provider={item.id} />)}>
-                    {language.t("common.connect")}
-                  </Button>
-                </div>
+                <ProviderSetupRow
+                  id={item.id}
+                  name={item.name}
+                  status={piConnected().has(item.id) ? "connected" : "missing"}
+                  providerId={item.id}
+                  harness="pi"
+                  onConnected={() => refreshProviders()}
+                />
               )}
             </For>
+          </SettingsList>
+        </div>
 
-            <div class="flex items-center justify-between gap-4 min-h-16 border-b border-border-weak-base last:border-none flex-wrap py-3" data-component="custom-provider-section">
-              <div class="flex flex-col min-w-0">
-                <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
-                  <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
+        <div class="flex flex-col gap-3" data-component="opencode-providers-section">
+          <h3 class="text-14-medium text-text-strong">{language.t("settings.providers.section.opencode")}</h3>
+          <TextField
+            label={language.t("settings.providers.search.label")}
+            placeholder={language.t("settings.providers.search.placeholder")}
+            value={search()}
+            onChange={setSearch}
+          />
+          <SettingsList>
+            <For each={openCodeRows()}>
+              {(item) => {
+                const connected = () => openCodeConnected().has(item.id)
+                return (
+                  <Show
+                    when={connected()}
+                    fallback={(
+                      <ProviderSetupRow
+                        id={item.id}
+                        name={item.name}
+                        status="missing"
+                        providerId={item.id}
+                        note={note(item.id) ? language.t(note(item.id)!) : undefined}
+                        onConnected={() => refreshProviders()}
+                      />
+                    )}
+                  >
+                    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none">
+                      <div class="flex min-w-0 items-center gap-3">
+                        <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
+                        <div class="flex min-w-0 flex-col gap-0.5">
+                          <span class="text-14-medium text-text-strong">{item.name}</span>
+                          <Show when={note(item.id)}>
+                            {(key) => <span class="text-12-regular text-text-weak">{language.t(key())}</span>}
+                          </Show>
+                        </div>
+                      </div>
+                      <div class="flex shrink-0 items-center gap-2">
+                        <Tag>{type(item)}</Tag>
+                        <Show when={canDisconnect(item)}>
+                          <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
+                            {language.t("common.disconnect")}
+                          </Button>
+                        </Show>
+                      </div>
+                    </div>
+                  </Show>
+                )
+              }}
+            </For>
+
+            <div
+              class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none"
+              data-component="custom-provider-section"
+            >
+              <div class="flex min-w-0 items-center gap-3">
+                <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
+                <div class="flex min-w-0 flex-col gap-0.5">
                   <span class="text-14-medium text-text-strong">{language.t("provider.custom.title")}</span>
-                  <Tag>{language.t("settings.providers.tag.custom")}</Tag>
+                  <span class="text-12-regular text-text-weak">{language.t("settings.providers.custom.description")}</span>
                 </div>
-                <span class="text-12-regular text-text-weak pl-8">{language.t("settings.providers.custom.description")}</span>
               </div>
-              <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogCustomProvider back="close" />)}>
-                {language.t("common.connect")}
-              </Button>
+              <div class="flex shrink-0 items-center gap-2">
+                <Tag>{language.t("settings.providers.tag.custom")}</Tag>
+                <Button size="large" variant="secondary" icon="plus-small" onClick={() => dialog.show(() => <DialogCustomProvider back="close" />)}>
+                  {language.t("common.connect")}
+                </Button>
+              </div>
             </div>
           </SettingsList>
-
-          <Button
-            variant="ghost"
-            class="px-0 py-0 mt-5 text-14-medium text-text-interactive-base text-left justify-start hover:bg-transparent active:bg-transparent"
-            onClick={() => dialog.show(() => <DialogSelectProvider />)}
-          >
-            {language.t("dialog.provider.viewAll")}
-          </Button>
         </div>
       </div>
     </div>

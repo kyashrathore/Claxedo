@@ -9,7 +9,7 @@ import { useLocal } from "@/features/session/providers/session-selection"
 import { popularProviders, useProviders } from "@/app/providers/use-providers"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DialogSelectProvider } from "@/app/dialogs/select-provider"
+import { openSettingsProviders } from "@/features/settings/open-settings-providers"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
@@ -22,7 +22,7 @@ export const DialogManageModels: Component = () => {
   })
 
   const handleConnectProvider = () => {
-    dialog.show(() => <DialogSelectProvider />)
+    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
   }
   const providerRank = (id: string) => popularProviders.indexOf(id)
   const providerList = (providerID: string) => local.model.list().filter((x) => x.provider.id === providerID)

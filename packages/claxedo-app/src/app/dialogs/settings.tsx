@@ -19,7 +19,7 @@ import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 
-export const DialogSettings: Component = () => {
+export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const language = useLanguage()
   const dialog = useDialog()
   const server = useServer()
@@ -27,7 +27,7 @@ export const DialogSettings: Component = () => {
   const remoteAccess = useRemoteAccessController({ serverUrl: server.url })
   const config = useConfigOptional()
   const productUi = createMemo(() => resolveProductUiFlags(config))
-  const [active, setActive] = createSignal("general")
+  const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 
   return (

@@ -367,19 +367,23 @@ describe("frontend API contract", () => {
     })
   })
 
-  test("reports Cursor SDK unavailable without explicit SDK auth", async () => {
+  test("serves the stale Cursor SDK catalog when the SDK API key is missing", async () => {
     await agentConfigMod.saveUserConfig({ mcp: {}, auth: {} })
 
     const res = await createContractApp().request(
       "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
     )
 
-    expect(res.status).toBe(502)
+    expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({
-      error: {
-        code: "harness_config_options_unavailable",
-        message: "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
-      },
+      source: "catalog",
+      stale: true,
+      options: [
+        {
+          id: "model",
+          currentValue: "auto",
+        },
+      ],
     })
   })
 

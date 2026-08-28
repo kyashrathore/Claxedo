@@ -374,6 +374,17 @@ describe("agent config", () => {
     expect(snap.auth["codex-acp"]).toBe("sk-openai-managed")
   })
 
+  test("snapshot aliases cursor-acp auth into cursor-sdk for runtime consumers", async () => {
+    await mod.saveUserConfig({
+      mcp: {},
+      runner: { type: "cursor-acp" },
+      auth: { "cursor-acp": "key_test" },
+    })
+    const snap = await mod.getRuntimeConfigSnapshot()
+    expect(snap.auth["cursor-acp"]).toBe("key_test")
+    expect(snap.auth["cursor-sdk"]).toBe("key_test")
+  })
+
   test("snapshot does not alias plain OpenCode oauth auth into codex-acp", async () => {
     await mod.saveUserConfig({
       mcp: {},

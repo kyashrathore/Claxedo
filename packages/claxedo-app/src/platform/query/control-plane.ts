@@ -97,19 +97,16 @@ export function projectListQuery(input: {
 }
 
 /**
- * The harness a provider cache entry BELONGS TO, which is not always the
- * harness the REQUEST must name.
+ * The harness a provider cache entry BELONGS TO.
  *
- * `/provider` resolves an absent `?harness=` to the configured default harness
- * (`resolveHarnessId` -> `defaultHarness`, which falls back to `opencode`), so
- * an unqualified request and an `opencode`-qualified one return the SAME
- * catalog. `useProviders()` asks unqualified; the directory bootstrap asks with
- * an explicit `?harness=opencode` because the route cannot otherwise identify
- * the OpenCode harness. Keying on the wire qualifier made those two different
- * cache entries.
+ * Every harness — including OpenCode — owns its own key. An unqualified
+ * `/provider` request resolves to the *configured default* harness, which is
+ * often the agent/workspace default rather than OpenCode, so collapsing
+ * `"opencode"` into the unqualified key mixed agent catalogs into the OpenCode
+ * settings list (empty popular providers).
  */
 export function providerCacheHarness(harnessType: string | undefined) {
-  return !harnessType || harnessType === "opencode" ? undefined : harnessType
+  return harnessType || undefined
 }
 
 export function providerListQuery(input: {

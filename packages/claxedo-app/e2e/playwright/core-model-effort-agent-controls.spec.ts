@@ -638,7 +638,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     },
   )
 
-  test("missing model blocks submit with a toast and preserves the composer text — behavior 9", async ({ page }) => {
+  test("missing model blocks submit and opens the model picker on Enter — behavior 9", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
     await installNoModelFixture(page, mock)
     await seedOneProject(page, DIR)
@@ -649,13 +649,10 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await input.fill(promptText)
     await expect(input).toContainText(promptText, { timeout: 10_000 })
 
-    // The submit button is disabled while blocked (INVARIANTS.md #4); Enter still routes
-    // through handleSubmit's own defensive guard, which is the behavior under test.
     await input.press("Enter")
 
-    await expect(page.locator('[data-slot="toast-title"]', { hasText: "Select an agent and model" })).toBeVisible({
-      timeout: 10_000,
-    })
+    await expect(page.locator('[data-slot="toast-title"]', { hasText: "Select an agent and model" })).toHaveCount(0)
+    await expect(page.locator('[data-slot="dialog-container"]').last()).toBeVisible({ timeout: 10_000 })
     await expect(input).toContainText(promptText)
     expect(mock.requests.promptCount).toBe(0)
     expect(mock.requests.createSessionCount).toBe(0)

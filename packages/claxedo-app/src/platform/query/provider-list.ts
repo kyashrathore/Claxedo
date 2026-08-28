@@ -43,6 +43,30 @@ export function normalizeProviderList(input: ProviderListResponse): NormalizedPr
   }
 }
 
+/** Drop providers the user disabled in global config from the connected set. */
+export function filterConnectedByDisabledProviders(
+  input: NormalizedProviderListResponse,
+  disabledProviders: readonly string[] | undefined,
+): NormalizedProviderListResponse {
+  if (!disabledProviders?.length) return input
+  const disabled = new Set(disabledProviders)
+  const connected = input.connected.filter((id) => !disabled.has(id))
+  if (connected.length === input.connected.length) return input
+  return { ...input, connected }
+}
+
+export function providerNeedsDetailHydration(
+  cached: NormalizedProviderListResponse | undefined,
+  providerId: string,
+): boolean {
+  const provider = cached?.all.get(providerId)
+  if (!provider) return true
+  const modelCount = Object.keys(provider.models).length
+  const connected = cached?.connected.includes(providerId) ?? false
+  if (connected) return modelCount <= 1
+  return modelCount === 0
+}
+
 export function mergeProviderIndexWithDetails(
   previous: NormalizedProviderListResponse | undefined,
   index: NormalizedProviderListResponse,

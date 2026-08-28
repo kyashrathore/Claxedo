@@ -31,9 +31,6 @@ import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
 import type * as Marketplace from "@/features/extensions/marketplace/api"
 import type * as ManageModels from "@/app/dialogs/manage-models"
-import type * as SelectProvider from "@/app/dialogs/select-provider"
-import type * as ConnectProvider from "@/app/dialogs/connect-provider"
-import type * as ConnectAI from "@/app/dialogs/connect-ai"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
 import type * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 export { WORKBENCH_DRAG_MIME } from "@/lib/workbench-drag"
@@ -79,9 +76,6 @@ export type SessionAppPorts = {
   sessionRefForActionWorkspace: typeof LayoutActions.sessionRefForActionWorkspace
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   loadManageModelsDialog: () => Promise<typeof ManageModels>
-  loadSelectProviderDialog: () => Promise<typeof SelectProvider>
-  loadConnectProviderDialog: () => Promise<typeof ConnectProvider>
-  loadAIConnectDialog: () => Promise<typeof ConnectAI>
   filterMcpCatalogEntries: typeof Marketplace.filterMcpCatalogEntries
   installDisabledReasonForEntry: typeof Marketplace.installDisabledReasonForEntry
   installMcpDialogEntry: typeof Marketplace.installMcpDialogEntry
@@ -168,9 +162,6 @@ export const message = bind("message")
 export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
 export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
 export const loadManageModelsDialog = bind("loadManageModelsDialog")
-export const loadSelectProviderDialog = bind("loadSelectProviderDialog")
-export const loadConnectProviderDialog = bind("loadConnectProviderDialog")
-export const loadAIConnectDialog = bind("loadAIConnectDialog")
 export const filterMcpCatalogEntries = bind("filterMcpCatalogEntries")
 export const installDisabledReasonForEntry = bind("installDisabledReasonForEntry")
 export const installMcpDialogEntry = bind("installMcpDialogEntry")

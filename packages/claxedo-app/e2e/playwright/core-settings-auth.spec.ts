@@ -727,7 +727,7 @@ type ProviderFixture = {
 
 async function mockProviderCatalog(page: Page, input: { connected: ProviderFixture[]; popular: ProviderFixture[] }) {
   const all = [...input.connected, ...input.popular]
-  const provider = {
+  const fullCatalog = {
     all: all.map((p) => ({
       id: p.id,
       name: p.name,
@@ -735,9 +735,10 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
       env: [],
       models: p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } },
     })),
-    default: {},
+    default: Object.fromEntries(input.connected.map((p) => [p.id, "m-1"])),
     connected: input.connected.map((p) => p.id),
   }
+  const indexCatalog = providerCatalogIndex(fullCatalog)
   // Bootstrap owns the initial provider index. Install this route after the shared
   // runtime so the settings page starts from the same canonical catalog that a real
   // control plane supplies. The /provider route below supplies detail metadata after
@@ -747,27 +748,37 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
     version: "1.0.0-test",
     path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
     project: [{ id: "proj_mock_runtime", worktree: DIR, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
-    provider: providerCatalogIndex(provider),
+    provider: indexCatalog,
     provider_auth: {},
     config: {},
   }))
-  // NOT `"**/provider"` (bare, no trailing wildcard): the real request is
-  // `/provider?harness=<id>` (see `src/context/global-sync/bootstrap.ts` /
-  // `useProviders`'s `queryOptions.providers()`) and Playwright glob route
-  // patterns without a trailing wildcard only match a URL that ends EXACTLY
-  // at that literal — a query string breaks the match, so a bare `**/provider`
-  // silently never fires for this app's actual traffic (confirmed empirically
-  // with a throwaway route-order reproduction: `**/xyz` never matched
-  // `/xyz?q=1`, and the request fell through to the real network/dev-server
-  // fallback). `**/provider*` matches both the bare and `?query` forms while
-  // still requiring a literal `/provider` segment (`*` cannot cross `/`, so
-  // this never collides with `/provider/auth`).
   await page.route("**/provider*", (route) => {
     if (new URL(route.request().url()).pathname !== "/provider") return route.continue()
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
       return route.continue()
     }
-    return json(route, provider)
+    const url = new URL(route.request().url())
+    const providerId = url.searchParams.get("provider")
+    if (providerId) {
+      const provider = fullCatalog.all.find((item) => item.id === providerId)
+      return json(route, provider
+        ? { all: [provider], connected: fullCatalog.connected, default: fullCatalog.default }
+        : { all: [], connected: fullCatalog.connected, default: fullCatalog.default })
+    }
+    return json(route, indexCatalog)
+  })
+}
+
+async function mockAuthAndGlobalConfigRoutes(page: Page, hits: { authDelete: string[]; configPatch: unknown[] }) {
+  await page.route("**/auth/**", (route) => {
+    if (route.request().method() !== "DELETE") return route.continue()
+    hits.authDelete.push(new URL(route.request().url()).pathname)
+    return json(route, true)
+  })
+  await page.route("**/global/config", (route) => {
+    if (route.request().method() !== "PATCH") return route.continue()
+    hits.configPatch.push(route.request().postDataJSON())
+    return json(route, { disabled_providers: route.request().postDataJSON()?.config?.disabled_providers ?? [] })
   })
 }
 
@@ -1404,28 +1415,21 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      await expect(page.getByText("Anthropic")).toBeVisible()
-      // Popular-provider rows are flat direct children of the same SettingsList
-      // wrapper (a sibling of the "custom provider" row) — scope to that
-      // wrapper's direct children so `hasText` picks exactly the Anthropic row
-      // (not an ancestor that also contains the unrelated "Connect" button on
-      // the custom-provider row, or a text-only descendant that lacks it).
-      const popularList = page.getByRole("heading", { name: "Popular providers" }).locator("xpath=following-sibling::div[1]")
-      const row = popularList.locator("> div").filter({ hasText: "Anthropic" })
+      const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
+      await expect(openCodeSection.getByText("Anthropic")).toBeVisible()
+      const row = openCodeSection.locator("div.border-b").filter({ hasText: "Anthropic" })
       await row.getByRole("button", { name: "Connect" }).click()
 
-      const dialog = page.locator('[data-slot="dialog-container"]').last()
-      await expect(dialog.getByText("Connect Anthropic")).toBeVisible()
-      await dialog.getByLabel(/Anthropic API key/i).fill("sk-test-anthropic-key")
-      await dialog.getByRole("button", { name: "Continue" }).click()
+      await expect(row.getByLabel(/Anthropic API key/i)).toBeVisible()
+      await row.getByLabel(/Anthropic API key/i).fill("sk-test-anthropic-key")
+      await row.getByRole("button", { name: "Continue" }).click()
 
       await expect.poll(() => credHits.put.length, { timeout: 10_000 }).toBe(1)
       expect(credHits.put[0]).toMatchObject({ provider_id: "anthropic", kind: "api_key", secret: "sk-test-anthropic-key" })
       await expect(page.getByText("Anthropic connected")).toBeVisible()
-      await expect(dialog).toBeHidden()
     })
 
-    test("an env-sourced connected provider has no Disconnect button; any other source's Disconnect DELETEs credentials — behavior 14", async ({ page }) => {
+    test("an env-sourced connected provider has no Disconnect button; API-key Disconnect DELETEs credentials and engine auth — behavior 14", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
@@ -1437,41 +1441,65 @@ test.describe("core settings + auth @core", () => {
       })
       const credHits = { put: [] as unknown[], delete: [] as string[] }
       await mockCredentialRoutes(page, credHits)
+      const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
+      await mockAuthAndGlobalConfigRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
 
-      // Connected-provider rows are flat direct children of the SettingsList
-      // wrapper inside the connected-providers section — scope there so
-      // `hasText` lands on the row (which contains the Disconnect button),
-      // not a text-only descendant.
-      const connectedRows = page.locator('[data-component="connected-providers-section"] > div > div')
-      const envRow = connectedRows.filter({ hasText: "Anthropic" })
-      // POSITIVE PRECONDITION for the zero-count claim below: a locator that
-      // matched NOTHING (renamed section testid, row markup reshuffled, the
-      // fixture never rendering) satisfies `toHaveCount(0)` on its descendant
-      // button identically to a correctly-rendered env row. Pin that the row
-      // resolved to exactly one element first, and that it is the env-sourced
-      // one (its source Tag reads "Environment",
-      // `settings.providers.tag.environment`).
+      const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
+      const envRow = openCodeSection.locator("div.flex-wrap").filter({ hasText: "Anthropic" })
       await expect(envRow).toHaveCount(1)
       await expect(envRow.getByText("Environment", { exact: true })).toBeVisible()
       await expect(envRow.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
-      // The other half of behavior 14 that was never asserted: the env row
-      // shows the environment-locked description INSTEAD of the button
-      // (`settings.providers.connected.environmentDescription`,
-      // src/features/settings/ui/providers.tsx:194). It renders with
-      // `opacity-0` until the row is hovered, so assert its presence in the
-      // row rather than its visibility.
-      await expect(envRow.getByText("Connected from your environment variables")).toHaveCount(1)
 
-      const apiRow = connectedRows.filter({ hasText: "OpenAI" })
+      const apiRow = openCodeSection.locator("div.flex-wrap").filter({ hasText: "OpenAI" })
       await expect(apiRow).toHaveCount(1)
+      await expect(apiRow.getByText("API key", { exact: true })).toBeVisible()
       await apiRow.getByRole("button", { name: "Disconnect" }).click()
 
       await expect.poll(() => credHits.delete.length, { timeout: 10_000 }).toBe(1)
       expect(credHits.delete[0]).toContain("/openai")
+      await expect.poll(() => authHits.authDelete.length, { timeout: 10_000 }).toBe(1)
+      expect(authHits.authDelete[0]).toMatch(/\/auth\/openai$/)
       await expect(page.getByText("OpenAI disconnected")).toBeVisible()
+    })
+
+    test("config custom provider Disconnect PATCHes disabled_providers instead of auth DELETE — Cline regression", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+      await seedProject(page, DIR)
+      await mockProviderCatalog(page, {
+        connected: [{ id: "clinepass-2", name: "Cline pass 2", source: "config" }],
+        popular: [],
+      })
+      const credHits = { put: [] as unknown[], delete: [] as string[] }
+      await mockCredentialRoutes(page, credHits)
+      const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
+      await mockAuthAndGlobalConfigRoutes(page, authHits)
+      await page.route("**/global/config", (route) => {
+        if (route.request().method() !== "GET") return route.continue()
+        return json(route, {
+          provider: {
+            "clinepass-2": {
+              name: "Cline pass 2",
+              npm: "@ai-sdk/openai-compatible",
+              models: { "cline-pass/kimi-k3": { name: "Kimi K3" } },
+            },
+          },
+          disabled_providers: [],
+        })
+      })
+      await openWorkbench(page, DIR)
+      await openSettings(page)
+      await selectTab(page, "providers")
+
+      const row = page.locator('[data-component="opencode-providers-section"]').locator("div.flex-wrap").filter({ hasText: "Cline pass 2" })
+      await row.getByRole("button", { name: "Disconnect" }).click()
+
+      await expect.poll(() => authHits.configPatch.length, { timeout: 10_000 }).toBe(1)
+      expect(authHits.configPatch[0]).toMatchObject({ config: { disabled_providers: ["clinepass-2"] } })
+      expect(authHits.authDelete.length).toBe(0)
+      await expect(page.getByText("Cline pass 2 disconnected")).toBeVisible()
     })
 
     test("custom provider: submitting with an empty Provider ID shows an inline error and sends nothing — behavior 15", async ({ page }) => {
@@ -1502,6 +1530,30 @@ test.describe("core settings + auth @core", () => {
       await expect(dialog.getByText("Provider ID is required")).toBeVisible()
       expect(credHits.put.length).toBe(0)
       expect(configPatchCount).toBe(0)
+    })
+  })
+
+  test.describe("Models: catalog hydration", () => {
+    test("Settings Models lists every model after connected-provider detail hydration", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+      await seedProject(page, DIR)
+      await mockProviderCatalog(page, {
+        connected: [{
+          id: "opencode",
+          name: "OpenCode Zen",
+          models: {
+            "big-pickle": { id: "big-pickle", name: "Big Pickle" },
+            "model-two": { id: "model-two", name: "Second Model" },
+          },
+        }],
+        popular: [],
+      })
+      await openWorkbench(page, DIR)
+      await openSettings(page)
+      await selectTab(page, "models")
+
+      await expect(page.getByText("Big Pickle")).toBeVisible({ timeout: 10_000 })
+      await expect(page.getByText("Second Model")).toBeVisible({ timeout: 10_000 })
     })
   })
 

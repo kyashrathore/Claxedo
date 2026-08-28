@@ -16,7 +16,6 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/app/providers/use-providers"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { type FormState, headerRow, modelRow, validateCustomProvider } from "./custom-provider-logic"
-import { DialogSelectProvider } from "@/app/dialogs/select-provider"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 
@@ -43,11 +42,7 @@ export function DialogCustomProvider(props: Props) {
   })
 
   const goBack = () => {
-    if (props.back === "close") {
-      dialog.close()
-      return
-    }
-    dialog.show(() => <DialogSelectProvider />)
+    dialog.close()
   }
 
   const addModel = () => {

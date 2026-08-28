@@ -88,6 +88,20 @@ describe("provider list body cache (unit)", () => {
     expect(body).toBe(framework)
   })
 
+  test("disabled_providers excludes connected providers from the connected array", () => {
+    const inputs = makeInputs()
+    const connectedInfo = structuredClone(inputs.catalog[ProviderV2.ID.make("openai")]!)
+    connectedInfo.source = "api"
+    const withConnected = {
+      ...inputs,
+      connected: { [ProviderV2.ID.make("openai")]: connectedInfo },
+      config: { disabled_providers: ["openai"] },
+    }
+    const result = buildListResult(withConnected, fullList)
+    expect(result.connected).toEqual([])
+    expect(result.all.find((item) => item.id === "openai")).toBeUndefined()
+  })
+
   test("misses when any input identity changes, and re-derives the same bytes for equal content", async () => {
     const base = makeInputs()
     const body = await providerListBody(base, fullList)
