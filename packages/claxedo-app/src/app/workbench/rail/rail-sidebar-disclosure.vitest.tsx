@@ -461,7 +461,10 @@ describe("RailSidebar disclosure controls", () => {
       "data-session-statuses",
       "local-session:working",
     ))
-    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({ directory: "/repo/main" })
+    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({
+      directory: "/repo/main",
+      workspaceId: "local-association",
+    })
   })
 
   test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {

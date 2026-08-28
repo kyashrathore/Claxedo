@@ -24,7 +24,6 @@ import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
 import {
   ContextToolGroup,
-  Message,
   MessageNav,
   MessageDivider,
   Part as MessagePart,
@@ -107,7 +106,7 @@ import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
-import { MessageAuthorLane } from "./message-author"
+import { TimelineUserMessage } from "./timeline-user-message"
 import {
   timelineAnchorClickTarget,
   timelineExternalSourceClickTarget,
@@ -1462,17 +1461,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
           <TimelineRowFrame row={userMessageRow}>
             <Show when={message()}>
               {(message) => (
-                <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-                  <div data-slot="session-turn-message-content" aria-live="off">
-                    <MessageAuthorLane message={message()}>
-                      <Message
-                        message={message()}
-                        parts={getMsgParts(userMessageRow().userMessageID)}
-                        actions={props.actions}
-                      />
-                    </MessageAuthorLane>
-                  </div>
-                </div>
+                <TimelineUserMessage
+                  message={message()}
+                  parts={getMsgParts(userMessageRow().userMessageID)}
+                  actions={props.actions}
+                />
               )}
             </Show>
           </TimelineRowFrame>

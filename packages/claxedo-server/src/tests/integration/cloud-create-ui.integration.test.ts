@@ -433,6 +433,8 @@ describe("cloud create UI integration", () => {
 
     const res = await fetch(`http://127.0.0.1:${serverPort}/api/claxedo/bootstrap`)
     expect(res.status).toBe(502)
-    await expect(res.json()).resolves.toMatchObject({ error: expect.stringContaining("fetch failed") })
+    await expect(res.json()).resolves.toMatchObject({
+      error: { code: "bootstrap_provider_unavailable" },
+    })
   })
 })

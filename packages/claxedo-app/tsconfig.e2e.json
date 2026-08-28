@@ -43,7 +43,8 @@
       // Aliasing to src makes the contract bindings independent of a build artifact.
       "@claxedo/workspace-runtime/routes": ["../workspace-runtime/src/routes.ts"],
       "@claxedo/workspace-runtime/config": ["../workspace-runtime/src/config.ts"],
-      "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"]
+      "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"],
+      "@claxedo/sandbox-contract": ["../sandbox-contract/src/index.ts"]
     }
   },
   // No source exclusions: every authored file under e2e/ is typechecked.

@@ -136,6 +136,7 @@ describe("first-turn recovery", () => {
 
   test("recognizes current and persisted turn-admission conflicts without matching unrelated errors", () => {
     expect(isTurnAdmissionConflict({ data: { code: "turn_already_active" } })).toBe(true)
+    expect(isTurnAdmissionConflict({ data: { code: "session_turn_in_progress" } })).toBe(true)
     expect(isTurnAdmissionConflict({ data: { message: "Session is already processing a message" } })).toBe(true)
     expect(isTurnAdmissionConflict({ data: { message: "Session is unavailable" } })).toBe(false)
   })

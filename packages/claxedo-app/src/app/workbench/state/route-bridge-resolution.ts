@@ -4,7 +4,7 @@
 
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
-import { retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
+import { centralSessionRef, retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
 
@@ -86,6 +86,21 @@ export function routeLifecycleSessionRef(input: {
     sessionId: input.sessionId,
     directory: input.directory,
     ...(workspace ? { workspace } : {}),
+  })
+}
+
+export function routeCentralSessionRef(sessionId: string, source: unknown) {
+  const row = source && typeof source === "object" && !Array.isArray(source)
+    ? source as Record<string, unknown>
+    : undefined
+  const workspaceId = typeof row?.workspaceId === "string"
+    ? row.workspaceId
+    : typeof row?.workspaceID === "string" ? row.workspaceID : undefined
+  const harness = routeSessionHarness(source)
+  return centralSessionRef({
+    sessionId,
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(harness ? { harness } : {}),
   })
 }
 

@@ -102,6 +102,7 @@ export function sessionRecoveryClass(error: unknown): SessionErrorClass {
 export function isTurnAdmissionConflict(error: unknown) {
   const data = record(record(error)?.data)
   return data?.code === "turn_already_active" ||
+    data?.code === "session_turn_in_progress" ||
     data?.message === "Session is already processing a message"
 }
 

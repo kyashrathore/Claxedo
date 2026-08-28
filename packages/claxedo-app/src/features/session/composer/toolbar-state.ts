@@ -67,7 +67,6 @@ export function createPromptToolbarState(input: {
   const readiness = createMemo(() =>
     promptModelState({
       harnessMode: input.harnessMode(),
-      harnessMode: input.harnessMode(),
       providerLoading: input.providerLoading(),
       restoreLoading: input.modelRestorePending(),
       model: currentModel(),
