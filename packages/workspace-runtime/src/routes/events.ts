@@ -93,12 +93,7 @@ export function runtimeEventsHandler(
           },
         }),
       })
-      await new Promise<void>((resolve) => {
-        stream.onAbort(() => {
-          cleanup()
-          resolve()
-        })
-      })
+      await waitForSessionEventStream(stream, scope, sessionAccessPolicy, cleanup)
     })
   }
 }

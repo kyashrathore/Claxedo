@@ -20,6 +20,9 @@ const managedPolicy = (): SessionAccessPolicy => ({
   authorize: (input) => input.sessionId === "session-a"
     ? { allowed: true }
     : { allowed: false, status: 403, code: "session_private", message: "private" },
+  authorizeStream: (input) => input.sessionId === "session-a"
+    ? { allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 }
+    : { allowed: false, status: 403, code: "session_private", message: "private" },
   authorizePrefix: () => ({ allowed: true }),
   filterSessions: (input) => input.sessionIds,
   registerSession: () => ({ allowed: true }),

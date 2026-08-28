@@ -146,6 +146,7 @@ function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAcc
   return {
     sessionAuthority: "managed-private",
     authorize: async () => ({ allowed: true }),
+    authorizeStream: async () => ({ allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 }),
     authorizePrefix: async () => ({ allowed: true }),
     filterSessions: async (input) => input.sessionIds,
     registerSession: async () => ({ allowed: true }),

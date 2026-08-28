@@ -2269,11 +2269,24 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
 
         let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null
+        let cleanup = () => {}
+        let stopLeaseWatch = () => {}
+        let closed = false
+        const close = () => {
+          if (closed) return
+          closed = true
+          stopLeaseWatch()
+          cleanup()
+          try {
+            ctrl?.close()
+          } catch {}
+        }
         const body = new ReadableStream<Uint8Array>({
           start(next) {
             ctrl = next
             next.enqueue(encodeSseData({ payload: { id: "server.connected", type: "server.connected", properties: {} } }))
           },
+          cancel: close,
         })
 
         const opened = globalEvents.open(principal)
@@ -2296,12 +2309,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           replayLive: false,
         })
 
-        c.req.raw.signal.addEventListener("abort", () => {
-          cleanup()
-          try {
-            ctrl?.close()
-          } catch {}
-        })
+        stopLeaseWatch = watchSessionEventLease(scope, hostOptions.sessionAccessPolicy, close)
+        c.req.raw.signal.addEventListener("abort", close, { once: true })
 
         return new Response(body, { headers: sseHeaders() })
       })

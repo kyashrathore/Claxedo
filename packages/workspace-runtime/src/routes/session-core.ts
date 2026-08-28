@@ -1515,12 +1515,7 @@ export function createSessionRoutes(opts: Opts) {
           replay: opened.replay,
           replayLive: false,
         })
-        await new Promise<void>((resolve) => {
-          stream.onAbort(() => {
-            cleanup()
-            resolve()
-          })
-        })
+        await waitForSessionEventStream(stream, scope, opts.sessionAccessPolicy, cleanup)
       })
     })
 

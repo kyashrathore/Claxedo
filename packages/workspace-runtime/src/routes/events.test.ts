@@ -38,6 +38,10 @@ function mount(input: { authorize?: (parentSessionId: string) => boolean }) {
 const managedPolicy = (authorize: SessionAccessPolicy["authorize"]): SessionAccessPolicy => ({
   sessionAuthority: "managed-private",
   authorize,
+  authorizeStream: async (input) => {
+    const decision = await authorize(input)
+    return decision.allowed ? { allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 } : decision
+  },
   authorizePrefix: authorize,
   filterSessions: (input) => input.sessionIds,
   registerSession: () => ({ allowed: true }),
