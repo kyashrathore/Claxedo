@@ -11,6 +11,7 @@
     "./message-part-text": "./src/components/message-part-text.ts",
     "./format-duration": "./src/components/format-duration.ts",
     "./markdown-stream": "./src/components/markdown-stream.ts",
+    "./markdown-rich-stage": "./src/components/markdown-rich-stage.ts",
     "./markdown-cache": "./src/components/markdown-cache.tsx",
     "./line-comment-styles": "./src/components/line-comment-styles.ts",
     "./pierre": "./src/pierre/index.ts",

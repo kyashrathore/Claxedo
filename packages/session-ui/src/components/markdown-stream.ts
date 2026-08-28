@@ -119,6 +119,11 @@ export function canReusePendingBlock(current: Pick<Block, "mode" | "raw"> | unde
 }
 
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
+  // TODO: streaming `Run the `config` then `# User Guide` / `#userconfig` still
+  // wraps the heading in healed inline code; a later `[1]:` reference definition
+  // also collapses the live projection and drops already-frozen headings.
+  // Tried and reverted: reuse frozenPrefix (all-but-last blocks) plus close the
+  // unclosed tick before `# `. That caused a duplicate prose line until complete().
   if (!live || !previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
   const tail = previous.blocks.at(-1)
   const suffix = text.slice(previous.text.length)

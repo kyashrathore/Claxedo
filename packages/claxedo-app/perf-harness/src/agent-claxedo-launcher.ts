@@ -336,9 +336,11 @@ export async function launchPackagedClaxedo(input: {
       crashCount++;
     });
     try {
-      await connectedPage.waitForFunction(
-        (sessionIds) => {
-          return sessionIds.some((sessionId) => {
+      const sessionIds = input.readinessTargets.map((target) => target.sessionId);
+      const deadline = performance.now() + timeoutMs;
+      while (performance.now() < deadline) {
+        const visible = await connectedPage.evaluate((ids) => {
+          return ids.some((sessionId) => {
             const row = document.querySelector<HTMLElement>(
               `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(sessionId)}"]`,
             );
@@ -350,10 +352,39 @@ export async function launchPackagedClaxedo(input: {
               getComputedStyle(row).visibility !== "hidden"
             );
           });
-        },
-        input.readinessTargets.map((target) => target.sessionId),
-        { timeout: timeoutMs },
-      );
+        }, sessionIds);
+        if (visible) break;
+        // Inactive project groups start closed and do not fetch session-list
+        // until opened. Drive that through the same header click a user would.
+        await connectedPage
+          .locator(
+            '[data-testid="project-group"]:not(:has([data-testid="rail-sidebar-session-row"])) [data-testid="project-header"]',
+          )
+          .nth(0)
+          .click({ timeout: 400 })
+          .catch(() => undefined);
+        await connectedPage
+          .getByTestId("rail-sidebar-session-load-more")
+          .nth(0)
+          .click({ timeout: 400 })
+          .catch(() => undefined);
+        await Bun.sleep(200);
+      }
+      const visible = await connectedPage.evaluate((ids) => {
+        return ids.some((sessionId) => {
+          const row = document.querySelector<HTMLElement>(
+            `[data-testid="rail-sidebar-session-row"][data-session-id="${CSS.escape(sessionId)}"]`,
+          );
+          if (!row) return false;
+          const bounds = row.getBoundingClientRect();
+          return (
+            bounds.width > 0 &&
+            bounds.height > 0 &&
+            getComputedStyle(row).visibility !== "hidden"
+          );
+        });
+      }, sessionIds);
+      if (!visible) throw new Error("benchmark session rows never became visible");
     } catch (error) {
       const snapshot = await connectedPage.evaluate(() => ({
         url: location.href,

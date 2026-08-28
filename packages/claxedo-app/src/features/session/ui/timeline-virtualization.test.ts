@@ -17,7 +17,7 @@ describe("timeline Markdown height estimate", () => {
       ...Array.from({ length: 40 }, (_, index) => `| row-${index} | ready |`),
     ].join("\n")
 
-    expect(estimateLongMarkdownHeight(text)).toBe(text.split("\n").length * 50)
+    expect(estimateLongMarkdownHeight(text)).toBe(text.split("\n").length * 24)
   })
 
   test("caps adversarial transcripts", () => {

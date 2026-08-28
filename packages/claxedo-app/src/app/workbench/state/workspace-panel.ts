@@ -136,6 +136,26 @@ function usableSessionId(sessionId: string | undefined): sessionId is string {
   return !!sessionId && sessionId !== "new"
 }
 
+/**
+ * Remember the session that is LEAVING, then restore the one that is arriving.
+ *
+ * Callers must pass the previous focused session id from the last effect run,
+ * not a live query after navigation. Reading "current session" after
+ * `openSession` / `onSessionSelect` has already focused the destination stamps
+ * the previous panel onto the new session, so every session inherits the last
+ * Files/Changes/Processes surface.
+ */
+export function syncFocusedSessionPanel(input: {
+  previousSessionId: string | undefined
+  nextSessionId: string | undefined
+  remember: (sessionId: string) => void
+  restore: (sessionId: string) => void
+}) {
+  if (input.previousSessionId === input.nextSessionId) return
+  if (usableSessionId(input.previousSessionId)) input.remember(input.previousSessionId)
+  if (usableSessionId(input.nextSessionId)) input.restore(input.nextSessionId)
+}
+
 function snapshotPanel(state: WorkspacePanelState): WorkspacePanelState {
   return {
     ...state,
@@ -231,25 +251,21 @@ export function createWorkspacePanelSlice(input: {
     restoreSession(sessionId, target) {
       if (!usableSessionId(sessionId)) return false
       const snapshot = sessionPanelSnapshots.get(sessionId)
-      if (!snapshot) return false
+      const resolved = resolvedTarget(target ?? {})
+      if (!snapshot) {
+        // First visit: closed panel. Do not inherit the previous session's open
+        // Files/Changes/Processes surface onto a session that never opened it.
+        if (state.workspacePanel.open) replacePanel(closeWorkspacePanel(state.workspacePanel))
+        return false
+      }
       // Mark as recently used so an active session isn't evicted first.
       touchSnapshot(sessionId, snapshot)
-      const resolved = resolvedTarget(target ?? {})
-      const workspaceDir = resolved.workspaceDir ?? snapshot.workspaceDir
-      const targetPaneId = resolved.targetPaneId ?? snapshot.targetPaneId
-      // Restore only session-owned state. Visibility and the selected surface
-      // are workbench presentation; replacing the whole snapshot here allowed
-      // a delayed activation restore to overwrite a Files choice with the
-      // destination session's old Changes choice.
-      batch(() => {
-        if (state.workspacePanel.workspaceDir !== workspaceDir) setState("workspacePanel", "workspaceDir", workspaceDir)
-        if (state.workspacePanel.targetPaneId !== targetPaneId) setState("workspacePanel", "targetPaneId", targetPaneId)
-        if (!sameFocus(state.workspacePanel.focus, snapshot.focus)) {
-          setState("workspacePanel", "focus", snapshot.focus ? { ...snapshot.focus } : undefined)
-        }
-        if (!sameActivitySubject(state.workspacePanel.activitySubject, snapshot.activitySubject)) {
-          setState("workspacePanel", "activitySubject", snapshot.activitySubject ? { ...snapshot.activitySubject } : undefined)
-        }
+      replacePanel({
+        ...snapshot,
+        ...(snapshot.focus ? { focus: { ...snapshot.focus } } : {}),
+        ...(snapshot.activitySubject ? { activitySubject: { ...snapshot.activitySubject } } : {}),
+        workspaceDir: resolved.workspaceDir ?? snapshot.workspaceDir,
+        targetPaneId: resolved.targetPaneId ?? snapshot.targetPaneId,
       })
       return true
     },

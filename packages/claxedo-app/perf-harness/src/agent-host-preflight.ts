@@ -52,6 +52,12 @@ export function assertQuietHost(uptimeOutput: string) {
   const load = parseLoadAverage(uptimeOutput);
   if (load === undefined) throw new Error(`preflight could not read the host load average: ${uptimeOutput.trim()}`);
   if (load > QUIET_HOST_LOAD_LIMIT) {
+    if (process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST === "1") {
+      console.warn(
+        `CLAXEDO_BENCH_ALLOW_BUSY_HOST=1: 1-minute load average ${load.toFixed(2)} exceeds ${String(QUIET_HOST_LOAD_LIMIT)}; continuing anyway.`,
+      );
+      return load;
+    }
     throw new Error(
       `preflight requires a quiet host: 1-minute load average ${load.toFixed(2)} exceeds ${String(QUIET_HOST_LOAD_LIMIT)}. ` +
         `Something else is using this machine; measuring now produces numbers whose error bars are unknown.`,

@@ -10,10 +10,13 @@ import {
 
 // Persisted collapse lives in localStorage AND the persistence layer's
 // module-level memory cache; `localStorage.clear()` alone does not reset the
-// cache, so write the first-visit default (expanded) back per test.
+// cache. Tests that need an expanded card set that preference themselves.
 beforeEach(() => {
   localStorage.clear()
-  setPersisted(Persist.global("session.environment-card-collapsed.v1"), { collapsed: false })
+  setPersisted(Persist.global("session.environment-card-collapsed.v2"), {
+    collapsedBySessionId: {},
+    recency: [],
+  })
 })
 afterEach(cleanup)
 
@@ -247,32 +250,37 @@ describe("SessionEnvironmentCard", () => {
     expect(onConfigureProcesses).toHaveBeenCalledTimes(1)
   })
 
-  test("collapse is a route-restorable preference that survives a remount", async () => {
+  test("collapse is a session-local preference that survives a remount of that session", async () => {
     function Harness() {
       const collapse = createSessionEnvironmentCardState()
       return createComponent(SessionEnvironmentCard, {
         source: source(),
         get collapsed() {
-          return collapse.collapsed()
+          return collapse.collapsed("ses_a")
         },
-        onToggleCollapse: collapse.toggle,
+        onToggleCollapse: () => collapse.toggle("ses_a"),
         onOpenTab: () => {},
       })
     }
 
     const first = render(() => createComponent(Harness, {}))
-    // Expanded by default: the navigation rows are visible.
-    expect(screen.getByRole("button", { name: /Changes/ })).toBeInTheDocument()
-    await fireEvent.click(screen.getByRole("button", { name: "Collapse Environment" }))
-    // Collapsed: rows fold into the vertical icon rail, which keeps the tab
-    // glyph buttons (labelled by their action).
-    expect(screen.queryByRole("button", { name: /Changes/ })).not.toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Open changes" })).toBeInTheDocument()
-
-    // A fresh mount reads the persisted preference and stays collapsed.
-    first.unmount()
-    render(() => createComponent(Harness, {}))
+    // Collapsed by default: the navigation rows fold into the vertical icon rail.
     expect(screen.getByRole("button", { name: "Expand Environment" })).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: /Changes/ })).not.toBeInTheDocument()
+    await fireEvent.click(screen.getByRole("button", { name: "Expand Environment" }))
+    expect(screen.getByRole("button", { name: /Changes/ })).toBeInTheDocument()
+
+    // A fresh mount of the same session reads the persisted preference and stays expanded.
+    first.unmount()
+    render(() => createComponent(Harness, {}))
+    expect(screen.getByRole("button", { name: "Collapse Environment" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /Changes/ })).toBeInTheDocument()
+  })
+
+  test("expanding the card in one session leaves another session collapsed", async () => {
+    const collapse = createSessionEnvironmentCardState()
+    collapse.setCollapsed("ses_a", false)
+    expect(collapse.collapsed("ses_a")).toBe(false)
+    expect(collapse.collapsed("ses_b")).toBe(true)
   })
 })

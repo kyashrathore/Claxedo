@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { emptyClaxedoState } from "./persistence"
 import { reviewWorkspaceWorkingSetKey } from "../review/review-workspace-working-set"
-import { createWorkspacePanelSlice, MAX_SESSION_PANEL_SNAPSHOTS } from "./workspace-panel"
+import { createWorkspacePanelSlice, MAX_SESSION_PANEL_SNAPSHOTS, syncFocusedSessionPanel } from "./workspace-panel"
 import type { ClaxedoState } from "./types"
 
 function makeSlice() {
@@ -16,7 +16,7 @@ function makeSlice() {
 }
 
 describe("workspace panel slice", () => {
-  test("keeps workbench presentation while restoring a session target", () => {
+  test("restores open, mode, and navigator with the session that owned them", () => {
     const { state, workspacePanel } = makeSlice()
 
     workspacePanel.open("review", {
@@ -39,9 +39,9 @@ describe("workspace panel slice", () => {
       targetPaneId: "pane-current",
     })).toBe(true)
     expect(state.workspacePanel).toMatchObject({
-      open: false,
-      mode: "processes",
-      navigator: "processes",
+      open: true,
+      mode: "review",
+      navigator: "changes",
       workspaceDir: "/repo",
       targetPaneId: "pane-current",
     })
@@ -57,6 +57,23 @@ describe("workspace panel slice", () => {
       workspaceDir: "/repo",
       targetPaneId: "pane-current",
     })
+  })
+
+  test("a session with no snapshot does not inherit the previous session's open panel", () => {
+    const { state, workspacePanel } = makeSlice()
+
+    workspacePanel.open("review", {
+      workspaceDir: "/repo",
+      targetPaneId: "pane-a",
+      navigator: "files",
+    })
+    workspacePanel.rememberSession("ses_a")
+
+    expect(workspacePanel.restoreSession("ses_new", {
+      workspaceDir: "/repo",
+      targetPaneId: "pane-current",
+    })).toBe(false)
+    expect(state.workspacePanel.open).toBe(false)
   })
 
   test("evicts the least-recently-used snapshot once the retained set exceeds its bound", () => {
@@ -107,6 +124,47 @@ describe("workspace panel slice", () => {
     expect(
       workspacePanel.restoreSession("ses_new_0", { workspaceDir: "/x", targetPaneId: "p" }),
     ).toBe(false)
+  })
+})
+
+describe("syncFocusedSessionPanel", () => {
+  test("remembers the session that is leaving, then restores the one arriving", () => {
+    const remembered: string[] = []
+    const restored: string[] = []
+    syncFocusedSessionPanel({
+      previousSessionId: "ses_a",
+      nextSessionId: "ses_b",
+      remember: (id) => remembered.push(id),
+      restore: (id) => restored.push(id),
+    })
+    expect(remembered).toEqual(["ses_a"])
+    expect(restored).toEqual(["ses_b"])
+  })
+
+  test("does not stamp the destination with the live panel after focus already moved", () => {
+    const remembered: string[] = []
+    syncFocusedSessionPanel({
+      previousSessionId: "ses_b",
+      nextSessionId: "ses_b",
+      remember: (id) => remembered.push(id),
+      restore: () => {
+        throw new Error("same-session restore would clone the previous panel onto the destination")
+      },
+    })
+    expect(remembered).toEqual([])
+  })
+
+  test("closes inheritance by restoring a first visit even when the previous panel is open", () => {
+    const remembered: string[] = []
+    const restored: string[] = []
+    syncFocusedSessionPanel({
+      previousSessionId: "ses_a",
+      nextSessionId: "ses_new",
+      remember: (id) => remembered.push(id),
+      restore: (id) => restored.push(id),
+    })
+    expect(remembered).toEqual(["ses_a"])
+    expect(restored).toEqual(["ses_new"])
   })
 })
 

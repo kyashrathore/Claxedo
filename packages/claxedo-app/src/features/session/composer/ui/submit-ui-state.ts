@@ -2,6 +2,7 @@ import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } 
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "../prompt-input-props"
 import type { SubmitMode } from "../../submit/index"
+import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
 
 export type PromptBootState = {
   harness: string
@@ -54,6 +55,9 @@ export function createPromptInputSubmitRetry(input: {
    * clickable so it can explain itself; the handler still refuses to submit.
    */
   readonly submitBlocked?: Accessor<boolean>
+  /** Standing block, used to route Enter to the model picker for `no-model`. */
+  readonly submitBlock?: Accessor<SubmitBlock | null>
+  readonly onChooseModel?: VoidFunction
   readonly prompt: {
     current(): Prompt
     set(prompt: Prompt, cursor?: number): void
@@ -81,7 +85,10 @@ export function createPromptInputSubmitRetry(input: {
   )
 
   const handleSubmit = async (event: Event) => {
-    if (input.roleSubmitBlocked() || input.submitBlocked?.()) return event.preventDefault()
+    if (input.roleSubmitBlocked() || input.submitBlocked?.()) {
+      if (input.submitBlock?.()?.reason === "no-model") input.onChooseModel?.()
+      return event.preventDefault()
+    }
     const currentPrompt = input.prompt.current()
     const text = currentPrompt
       .map((part) => ("content" in part ? part.content : ""))

@@ -208,6 +208,8 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   // The shared core beneath it. Without this, editing a core module leaves the
   // bundle looking current and the desktop runs stale code with nothing said.
   path.resolve(PACKAGE_DIR, "../claxedo-server-core/src"),
+  // Compat routes (/auth, /provider, dispose) live here — same stale risk.
+  path.resolve(PACKAGE_DIR, "../claxedo-local-server/src"),
   path.resolve(PACKAGE_DIR, "../agent-event-runtime/src"),
   path.resolve(PACKAGE_DIR, "../agent-sdk-runtime/src"),
   path.resolve(PACKAGE_DIR, "../sdk-next/src"),

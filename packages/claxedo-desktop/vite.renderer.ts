@@ -19,6 +19,7 @@ export function createElectronRenderer(mode: string): UserConfig {
   const env = loadEnv(mode, claxedoAppDir, "VITE_")
   const terminal = env.VITE_TERMINAL_BACKEND || "xterm"
   const hostedActivationEnabled = env.VITE_AUTH_ENABLED?.trim() === "true"
+  const localServerUrl = env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
 
   return {
     define: {
@@ -41,6 +42,15 @@ export function createElectronRenderer(mode: string): UserConfig {
       // renderer in the middle of hydration.
       include: ["@opencode-ai/session-ui > @shikijs/stream"],
     },
+    server:
+      mode === "development"
+        ? {
+            proxy: {
+              "/api/claxedo/credentials": { target: localServerUrl, changeOrigin: true },
+              "/api/claxedo/integrations": { target: localServerUrl, changeOrigin: true },
+            },
+          }
+        : undefined,
     build: {
       // PostHog Error Tracking symbolication (release-claxedo.yml). Without
       // maps a desktop stack frame arrives as `main-Ci34eFPC.js:1:284915`,

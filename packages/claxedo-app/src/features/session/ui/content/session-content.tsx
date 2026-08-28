@@ -9,8 +9,11 @@ import { getSessionPrefetchPromise } from "@/platform/sync/session-prefetch"
 import { SessionLoadingRoot, SessionLoadingSurface } from "./session-loading-surface"
 import { createSessionMountSettle } from "./session-mount-settle"
 import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
-// Type-only, so the card's lazy chunk stays lazy.
-import type { SessionEnvironmentCardOccupancy } from "./session-environment-card"
+import {
+  reservedSessionEnvironmentOccupancy,
+  sessionEnvironmentCardState,
+  type SessionEnvironmentCardOccupancy,
+} from "./session-environment-card-state"
 // The `.session-envcard-shell` / `.session-envcard-primary` layout rules must
 // arrive with THIS component: the shell markup below renders unconditionally,
 // while the card component that also imports this stylesheet is a lazy chunk
@@ -65,22 +68,30 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
    * `:has` invalidation set. See that stylesheet for the measurement.
    */
   const [envcardGutter, setEnvcardGutter] = createSignal<SessionEnvironmentCardOccupancy>()
+  createEffect(() => {
+    sessionId()
+    setEnvcardGutter(undefined)
+  })
   /**
-   * Reservation before the card can report. The lazy chunk plus its persisted-
-   * collapse read land after first paint; every painted frame without
-   * `data-session-envcard` while the card is going to appear flips the
-   * transcript's padding-right afterwards — a full relayout and a restarted
-   * paint-stability wait, per switch. Both facts that gate APPEARANCE (a real
-   * session, workspace panel closed) are synchronous here, so reserve the
-   * card's DEFAULT occupancy (collapsed rail — see createSessionEnvironment-
-   * CardState) optimistically; the mount stays the authority and refines or
-   * corrects this the moment it reports.
+   * Reservation before the card can report. The lazy chunk lands after first
+   * paint; every painted frame without `data-session-envcard` while the card is
+   * going to appear flips the transcript's padding-right afterwards — a full
+   * relayout and a restarted paint-stability wait, per switch. Collapse state
+   * lives in an eager module (not the lazy card chunk), so an expanded
+   * preference can reserve the matching gutter on frame 1. The mount stays the
+   * authority and refines or corrects this the moment it reports.
    */
-  const optimisticEnvcardOccupancy = createMemo<SessionEnvironmentCardOccupancy | undefined>(() =>
-    !draftSession() && !state.workspacePanel.state().open ? "collapsed" : undefined)
+  const collapse = sessionEnvironmentCardState()
+  const sessionVisible = props.ctx.isVisible
+  const optimisticEnvcardOccupancy = createMemo(() =>
+    reservedSessionEnvironmentOccupancy({
+      visible: sessionVisible() && !draftSession() && !state.workspacePanel.state().open,
+      ready: collapse.ready(),
+      collapsed: collapse.collapsed(sessionId()),
+    }),
+  )
   const requiresSessionRef = createMemo(() => !draftSession())
   const missingSessionRef = createMemo(() => requiresSessionRef() && !effectiveSessionRef() && !directory())
-  const sessionVisible = props.ctx.isVisible
   const [activated, setActivated] = createSignal(false)
   createEffect(() => {
     if (activated() || !sessionVisible()) return
@@ -285,6 +296,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
                   <Show when={!draftSession()}>
                     <DeferredEnvironmentCard
                       active={activeForHydration}
+                      sessionId={sessionId}
                       onOccupancy={setEnvcardGutter}
                     />
                   </Show>
@@ -300,6 +312,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
 
 function DeferredEnvironmentCard(props: {
   active: () => boolean
+  sessionId: () => string | undefined
   onOccupancy: (occupancy: SessionEnvironmentCardOccupancy | undefined) => void
 }) {
   const [ready, setReady] = createSignal(false)
@@ -315,7 +328,11 @@ function DeferredEnvironmentCard(props: {
   return (
     <Show when={ready()}>
       <Suspense fallback={null}>
-        <SessionEnvironmentCardMount active={props.active} onOccupancy={props.onOccupancy} />
+        <SessionEnvironmentCardMount
+          active={props.active}
+          sessionId={props.sessionId}
+          onOccupancy={props.onOccupancy}
+        />
       </Suspense>
     </Show>
   )

@@ -23,6 +23,17 @@ describe("quiet-host preflight", () => {
     expect(() => assertQuietHost(MAC_BUSY)).toThrow(/11\.73/u);
   });
 
+  test("CLAXEDO_BENCH_ALLOW_BUSY_HOST continues after recording the load", () => {
+    const previous = process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST;
+    process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST = "1";
+    try {
+      expect(assertQuietHost(MAC_BUSY)).toBeCloseTo(11.73, 5);
+    } finally {
+      if (previous === undefined) delete process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST;
+      else process.env.CLAXEDO_BENCH_ALLOW_BUSY_HOST = previous;
+    }
+  });
+
   test("refuses output it cannot read instead of assuming the host is quiet", () => {
     expect(() => assertQuietHost("no load information here")).toThrow(/could not read/u);
   });

@@ -1221,15 +1221,6 @@ export function RailSidebar(props: RailSidebarProps) {
     )
     return meta?.id
   }
-  const paneIdForContent = (contentId: string | undefined) =>
-    contentId ? claxedoState.wb.state.panes.find((pane) => pane.contentId === contentId)?.id : undefined
-  const currentWorkspacePanelSessionId = () => focusedSessionContent()?.sessionId ?? props.activeSessionId
-  const restoreWorkspacePanelSession = (session: Row, contentId: string | undefined, directory: string) => {
-    claxedoState.workspacePanel.restoreSession(session.id, {
-      workspaceDir: directory,
-      targetPaneId: paneIdForContent(contentId) ?? claxedoState.wb.state.focusedPaneId ?? undefined,
-    })
-  }
   const afterVisibleActivation = (task: () => void) => setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   const activateSession = (session: Row) => {
     const measure = measureRendererPhase
@@ -1250,20 +1241,16 @@ export function RailSidebar(props: RailSidebarProps) {
       }))
       // Keep selection in the trusted action; a timer adds a task boundary
       // where unrelated work can delay the first useful frame.
-      const previousWorkspacePanelSessionId = currentWorkspacePanelSessionId()
       measure("sessionActivate.showContent", () => showSessionContent(existingId))
       measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
       afterVisibleActivation(() => {
         if (serial !== sessionActivationSerial) return
-        claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
         scheduleSidebarStatusPrime(directory)
-        restoreWorkspacePanelSession(session, existingId, directory)
         const meta = claxedoState.meta.get(existingId)
         if (meta) props.onTabSelect?.(meta)
       })
       return
     }
-    const previousWorkspacePanelSessionId = measure("sessionActivate.currentWorkspacePanel", currentWorkspacePanelSessionId)
     const backing = workspaceSessionBacking(session, directory)
     markFastSessionSwitch(session.id, Date.now(), { networkQuiet: false })
     const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages.start(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session), ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}) }))
@@ -1277,9 +1264,7 @@ export function RailSidebar(props: RailSidebarProps) {
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
     measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
-      claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
       scheduleSidebarStatusPrime(directory)
-      restoreWorkspacePanelSession(session, contentId, directory)
       const meta = claxedoState.meta.get(contentId)
       if (meta) props.onTabSelect?.(meta)
     }))
