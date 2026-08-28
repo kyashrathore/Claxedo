@@ -5,9 +5,7 @@ export const routes = {
   app: "https://app.claxedo.com",
   pricing: "/pricing",
   download: "/download",
-  framework: "/framework",
   agentRuntimeStudy: "/how-often-do-coding-agents-need-a-full-machine",
-  deploy: "/framework/deploy/cloudflare-full-stack",
   compare: "/compare",
   privacy: "/privacy",
   terms: "/terms",
@@ -27,11 +25,6 @@ export const marketingActions = {
     label: "Download app",
     href: `${routes.download}#releases`,
     event: "download_app",
-  },
-  framework: {
-    label: "Explore the open-source framework",
-    href: routes.framework,
-    event: "explore_framework",
   },
 } as const
 

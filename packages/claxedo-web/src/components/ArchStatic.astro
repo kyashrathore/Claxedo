@@ -26,19 +26,18 @@ import { archStages, archEdges } from "./arch-stages"
               <code class:list={["ac-pkg", p.repo && "repo"]}>{p.name}</code>
             ))}
           </div>
-          <a class="ac-link" href={s.href}>Reference <span aria-hidden="true">→</span></a>
         </article>
       ))}
     </div>
 
     <div class="arch-edges">
       {archEdges.map((e) => (
-        <a class="arch-edge" href={e.href}>
+        <article class="arch-edge">
           <span class="ae-label">{e.label}</span>
           <span class="ae-items">{e.items.join(" · ")}</span>
           <span class="ae-blurb">{e.blurb}</span>
           <code class="ae-pkg">{e.pkg}</code>
-        </a>
+        </article>
       ))}
     </div>
   </div>
@@ -60,10 +59,6 @@ import { archStages, archEdges } from "./arch-stages"
   .ac-pkgs { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: auto; padding-top: .3rem; }
   .ac-pkg { padding: .2rem .45rem; border-radius: .35rem; background: var(--accent-soft); color: var(--accent-text); font: .62rem var(--font-mono); }
   .ac-pkg.repo { background: var(--surface-hover); color: var(--ink-faint); }
-  .ac-link { margin-top: .5rem; color: var(--ink); font: 500 .72rem var(--font-mono); text-decoration: none; }
-  .ac-link span { display: inline-block; transition: transform .18s ease; }
-  .ac-link:hover span { transform: translateX(3px); }
-
   .arch-edges { display: grid; grid-template-columns: 1fr 1fr; gap: .7rem; margin-top: .7rem; }
   .arch-edge { display: grid; grid-template-columns: auto 1fr; grid-template-areas: "label items" "label blurb" "label pkg"; align-items: baseline; gap: .15rem .9rem; padding: .9rem 1.15rem; border: 1px solid var(--line); border-radius: var(--radius-lg); background: var(--surface); text-decoration: none; transition: border-color .18s ease; }
   .arch-edge:hover { border-color: var(--line-strong); }

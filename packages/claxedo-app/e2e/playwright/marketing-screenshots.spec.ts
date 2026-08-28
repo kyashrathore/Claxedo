@@ -143,7 +143,7 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     await expectDefaultTheme(page)
     await expect(page.getByRole("article", { name: "Stream Ship Claxedo Cloud" })).toBeVisible()
     await expect(page.getByRole("article", { name: "Stream Prepare desktop release" })).toBeVisible()
-    await expect(page.getByRole("article", { name: "Stream Publish framework docs" })).toBeVisible()
+    await expect(page.getByRole("article", { name: "Stream Polish launch story" })).toBeVisible()
     // What actually ruins this capture is a row SLICED by the tile's clip edge (the
     // previous one shipped "checksums" cut through the middle). Assert that directly:
     // every task row must be wholly inside the clipping container or wholly outside
@@ -452,9 +452,9 @@ async function installWorkGraphApi(page: Page) {
     stream("stream_desktop", "Prepare desktop release", "Package, sign, and verify the next desktop build.", "active"),
     task("task_package", "stream_desktop", "Package macOS and Linux builds", "active"),
     task("task_smoke", "stream_desktop", "Run installer smoke tests", "pending", ["task_package"]),
-    stream("stream_framework", "Publish framework docs", "Turn the framework into a clear self-hosting path.", "active"),
-    task("task_guides", "stream_framework", "Review the deployment guides", "completed"),
-    task("task_examples", "stream_framework", "Verify framework examples", "active"),
+    stream("stream_launch", "Polish launch story", "Make the product's differentiated story clear at a glance.", "active"),
+    task("task_guides", "stream_launch", "Review the product narrative", "completed"),
+    task("task_examples", "stream_launch", "Verify the interactive hero", "active"),
     stream("stream_protocol", "Harden ACP support", "Test more agents against the shared chat surface."),
     task("task_acp", "stream_protocol", "Run ACP compatibility checks", "pending"),
   ]

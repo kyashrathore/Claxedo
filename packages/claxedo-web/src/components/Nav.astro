@@ -1,10 +1,9 @@
 ---
 import DownloadMenu from "./DownloadMenu.astro"
-import { routes } from "../content/routes"
 import { commercialNavigation } from "../content/site"
 
 interface Props {
-  active?: "home" | "pricing" | "download" | "compare" | "framework"
+  active?: "home" | "pricing" | "download" | "compare"
 }
 
 const { active } = Astro.props

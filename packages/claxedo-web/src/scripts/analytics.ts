@@ -6,7 +6,7 @@
  * exactly that — kept here long after their buttons were removed — so the rule
  * now is that a name lands here in the same change as the element that fires it.
  */
-export const conversionEventNames = ["download_app", "explore_framework"] as const
+export const conversionEventNames = ["download_app"] as const
 export type ConversionEventName = (typeof conversionEventNames)[number]
 
 export const conversionRoutes = [
@@ -14,7 +14,6 @@ export const conversionRoutes = [
   "/app",
   "/compare",
   "/download",
-  "/framework",
   "/how-often-do-coding-agents-need-a-full-machine",
   "/pricing",
   "/404",
@@ -22,7 +21,6 @@ export const conversionRoutes = [
 
 export const conversionRoute = (pathname: string) => {
   const route = pathname.replace(/\/$/, "") || "/"
-  if (route.startsWith("/framework/")) return "/framework"
   if (route.startsWith("/compare/")) return "/compare"
   return conversionRoutes.find((candidate) => candidate === route)
 }

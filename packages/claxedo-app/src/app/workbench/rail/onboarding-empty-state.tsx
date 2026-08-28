@@ -262,7 +262,7 @@ export function OnboardingEmptyState(props: {
       setSearchParams({ onboarding: "ai" })
       return
     }
-    platform.openLink("https://claxedo.com/framework")
+    platform.openLink("https://github.com/kyashrathore/Claxedo/blob/dev/public-docs/self-host-fly.md")
   }
 
   return (
