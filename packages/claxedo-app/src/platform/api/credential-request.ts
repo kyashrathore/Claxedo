@@ -1,5 +1,26 @@
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 
+function loopbackHost(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1"
+}
+
+/** Same-origin in desktop dev so Vite can proxy credential routes (no CORS). */
+export function credentialRequestOrigin(input?: ClaxedoCredentialRequestInput): string {
+  const configured = normalizeUrl(input?.serverUrl) ?? getClaxedoServerUrl()
+  if (typeof window === "undefined" || !import.meta.env.DEV) return configured
+  try {
+    const page = new URL(window.location.href)
+    if (page.protocol !== "http:" && page.protocol !== "https:") return configured
+    const server = new URL(configured)
+    if (loopbackHost(page.hostname) && loopbackHost(server.hostname) && page.origin !== server.origin) {
+      return page.origin
+    }
+  } catch {
+    return configured
+  }
+  return configured
+}
+
 export type ClaxedoCredentialRequestInput = {
   serverUrl?: string
   providerId?: string
@@ -13,10 +34,7 @@ export async function claxedoCredentialRequest(input?: ClaxedoCredentialRequestI
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
 
   const res = await globalThis.fetch(
-    new URL(
-      credentialRoute(input),
-      normalizeUrl(input?.serverUrl) ?? getClaxedoServerUrl(),
-    ),
+    new URL(credentialRoute(input), credentialRequestOrigin(input)),
     { ...init, headers },
   )
   if (res.ok) return res

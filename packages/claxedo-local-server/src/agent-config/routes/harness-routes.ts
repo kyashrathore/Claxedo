@@ -6,7 +6,6 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import {
   defaultHarness,
-  getRuntimeConfigSnapshot,
   loadUserConfig,
   saveUserConfig,
 } from "@claxedo/server-core/agent-config/index"
@@ -327,21 +326,10 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
     return c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 404)
   }
   const nativeSdkId = harness.access === "native" && isNativeSdkHarnessId(harness.id) ? harness.id : undefined
-  if (nativeSdkId === "cursor") {
-    const snapshot = await getRuntimeConfigSnapshot(harness).catch(() => undefined)
-    if (!snapshot?.auth["cursor-sdk"]) {
-      return c.json(
-        errorBody(
-          "harness_config_options_unavailable",
-          "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
-        ),
-        502,
-      )
-    }
-  }
   // Native SDK harnesses live-list from the runtime like everyone else; the
-  // static catalog only backstops a runtime that can't answer at all.
-  const catalogFallback = () => nativeSdkId
+  // static catalog only backstops a runtime that can't answer at all. Cursor
+  // without credentials must surface that as an error — not a fake model list.
+  const catalogFallback = () => nativeSdkId && nativeSdkId !== "cursor"
     ? c.json({
         options: [sdkModelConfigOption(nativeSdkId, getSessionConfig(ws.id, sessionId ?? "")?.model?.modelID) as HarnessConfigOption],
         source: "catalog",

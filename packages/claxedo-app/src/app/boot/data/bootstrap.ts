@@ -189,20 +189,17 @@ function setDirectoryProjectQuery(baseUrl: string | undefined, directory: Bootst
 /**
  * The harness a provider/auth cache entry belongs to.
  *
- * `opencode` is the DEFAULT harness and `useProviders()` asks for its catalog
- * with no harness at all, so the two must land on the same key — otherwise an
- * opencode bootstrap would warm a cache nothing reads. Every other harness
- * serves a different catalog and gets its own key.
+ * OpenCode keeps its own key (see `providerCacheHarness`): an unqualified
+ * `/provider` request is no longer guaranteed to be the OpenCode catalog.
  */
 const providerQueryHarness = providerCacheHarness
 
 /**
  * Publishes a bootstrapped catalog under the key its harness owns.
  *
- * `GlobalBootstrapState.provider` is the app-wide catalog (the settings page and
- * every harness-less picker read it), so only the default harness's catalog is
- * allowed to become it. A harness-specific catalog is cached for that harness
- * and nothing else.
+ * OpenCode is the product catalog the settings page and harness-less pickers
+ * read — publish it both under its own key and as the global bootstrap state.
+ * Every other harness is cached for that harness only.
  */
 function setBootstrapProviderQueries(input: {
   baseUrl?: string
@@ -212,7 +209,7 @@ function setBootstrapProviderQueries(input: {
 }) {
   const harness = providerQueryHarness(input.harnessType)
   setProviderQueryData(queryKeys.controlPlane.providers(input.baseUrl, undefined, harness), input.providers)
-  if (!harness) input.setGlobalState({ provider: input.providers })
+  if (!harness || harness === "opencode") input.setGlobalState({ provider: input.providers })
 }
 
 /** `setBootstrapProviderQueries`, for the provider auth-method map. */
@@ -224,7 +221,7 @@ function setBootstrapProviderAuthQuery(input: {
 }) {
   const harness = providerQueryHarness(input.harnessType)
   queryClient.setQueryData(queryKeys.controlPlane.providerAuth(input.baseUrl, harness), input.auth)
-  if (!harness) input.setGlobalState({ provider_auth: input.auth })
+  if (!harness || harness === "opencode") input.setGlobalState({ provider_auth: input.auth })
 }
 
 
@@ -332,7 +329,9 @@ export async function bootstrapGlobal(input: {
         // Qualifying the query is what keys the CACHE ENTRY by harness;
         // `fetchQuery` writes under whatever key the options compute, so
         // without this a pi bootstrap landed on the unqualified catalog key.
-        harnessType: providerQueryHarness(input.harnessType),
+        // Pass the real harness id (not the collapsed cache identity) so the
+        // queryFn can put `?harness=opencode` on the wire.
+        harnessType: input.harnessType,
         request: input.fetch,
       })).then((providers) => {
         setBootstrapProviderQueries({

@@ -267,18 +267,17 @@ describe("control-plane query helpers", () => {
 })
 
 describe("provider cache identity", () => {
-  // `/provider` resolves an ABSENT `?harness=` to the configured default
-  // harness (`resolveHarnessId` -> `defaultHarness`, falling back to
-  // `opencode`), so an unqualified request and an `opencode`-qualified one are
-  // the same catalog. Keying on the wire qualifier made them two cache entries
-  // and the cold boot fetched that one catalog twice — 1,079.5 ms (first, also
-  // paying the engine's first-use compile) and 568.6 ms (warm) — with the
-  // second warming an entry no reader looks at.
+  // Unqualified `/provider` resolves to the configured default harness, which
+  // is not always OpenCode (workspace/agent defaults return agent catalogs).
+  // OpenCode therefore keeps its own cache key so settings and pickers never
+  // read agent rows as the OpenCode popular list.
   const client = {} as Parameters<typeof providerListQuery>[0]["client"]
 
-  test("an opencode-qualified query shares the unqualified key, because they are the same catalog", () => {
+  test("an opencode-qualified query keeps its own key, distinct from unqualified", () => {
     expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
-      .toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey)
+      .not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo" }).queryKey)
+    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
+      .toEqual(["controlPlane", "http://x", "providers", "/repo", "opencode"])
   })
 
   test("every OTHER harness keeps its own key, because it serves a different catalog", () => {
@@ -292,7 +291,7 @@ describe("provider cache identity", () => {
 
   test("providerCacheHarness is the single place that decides key identity", () => {
     expect(providerCacheHarness(undefined)).toBeUndefined()
-    expect(providerCacheHarness("opencode")).toBeUndefined()
+    expect(providerCacheHarness("opencode")).toBe("opencode")
     expect(providerCacheHarness("pi")).toBe("pi")
   })
 })

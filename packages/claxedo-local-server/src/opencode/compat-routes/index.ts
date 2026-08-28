@@ -13,11 +13,17 @@ import { streamGlobalEvents } from "./events"
 import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./file-browser"
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./provider-config"
 import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./proxy"
+import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/server-core/credentials/pi-credentials"
 
 function version(options: OpenCodeCompatRouteOptions) {
   return options.env?.npm_package_version || "1.0.0"
+}
+
+/** Drop cached engine InstanceState so the next /provider re-reads auth. */
+async function disposeOpenCodeInstances() {
+  await opencodeRequest(new Request(new URL("/global/dispose", OPENCODE_INTERNAL_BASE), { method: "POST" }))
 }
 
 function dirProject(id: string, directory: string, created: number, updated: number, sandboxes: string[] = []) {
@@ -237,7 +243,14 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       }
       const user = await loadUserConfig()
       const runner = defaultHarness(user)
-      if (harnessId === "opencode" && runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
+      if (harnessId === "opencode" && runner.id === "opencode" && !id.endsWith("-acp")) {
+        // Auth lives in the engine file; the provider catalog is cached in
+        // InstanceState until dispose. Remove then dispose so the next
+        // `/provider` read does not keep the disconnected provider connected.
+        const removed = await proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
+        await disposeOpenCodeInstances().catch(() => undefined)
+        return removed
+      }
       // Delete from credential registry
       await deleteCredentialsByProvider(id).catch(() => {})
       // Also clean up legacy config if present
@@ -247,9 +260,15 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
         await saveUserConfig(user)
       }
       await fanOutConfig().catch(() => {})
-      return c.json({})
+      return c.json(true)
     })
-    .post("/global/dispose", (c) => c.json(true))
+    // Must reach the embedded engine — a boolean stub left provider auth
+    // cached after Disconnect, so the UI stayed "connected" across refresh.
+    .post("/global/dispose", async (c) => {
+      const user = await loadUserConfig()
+      if (defaultHarness(user).id === "opencode") return proxyUpstream(c, "/global/dispose", options)
+      return c.json(true)
+    })
     .get("/config", async (c) => {
       const user = await loadUserConfig()
       if (defaultHarness(user).id === "opencode") return c.json(await globalConfigBody(queryHarnessId(c), options))
@@ -284,7 +303,13 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     })
     .patch("/global/config", async (c) => {
       const user = await loadUserConfig()
-      if (defaultHarness(user).id === "opencode") return proxyUpstream(c, "/global/config", options)
+      if (defaultHarness(user).id === "opencode") {
+        const res = await proxyUpstream(c, "/global/config", options)
+        // Config changes (e.g. disabled_providers) stay cached in InstanceState
+        // until dispose — same as DELETE /auth.
+        await disposeOpenCodeInstances().catch(() => undefined)
+        return res
+      }
       const body = await c.req.json().catch(() => null) as { config?: Record<string, unknown> } | null
       if (body?.config) {
         await saveUserConfig({

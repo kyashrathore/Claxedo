@@ -52,8 +52,17 @@ async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string
  */
 async function syncEngineAuth(org?: string) {
   try {
-    const bridge = await import("@claxedo/server-core/opencode/engine-auth-bridge")
-    bridge.scheduleEngineAuthSync(org)
+    const [{ syncCredentialsToEngine, scheduleEngineAuthSync }, { opencodeEngineLoaded }] = await Promise.all([
+      import("@claxedo/server-core/opencode/engine-auth-bridge"),
+      import("@claxedo/server-core/opencode/engine"),
+    ])
+    // Await when the engine is already up so Disconnect → refetch cannot race
+    // a fire-and-forget sync and still see the provider as connected.
+    if (opencodeEngineLoaded()) {
+      await syncCredentialsToEngine(org)
+      return
+    }
+    scheduleEngineAuthSync(org)
   } catch {
     // Never fail the credential write the user asked for because the engine
     // could not be reached — the credential is stored, and the next mutation

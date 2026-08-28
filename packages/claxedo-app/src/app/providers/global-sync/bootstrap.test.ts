@@ -123,8 +123,8 @@ const directoryPath = (baseUrl: string, directory: string) =>
   queryClient.getQueryData<Path>(queryKeys.directory.path(baseUrl, directory))
 
 // The directory bootstrap always fetches with a `?harness=`, so its catalog is
-// cached under that harness. `opencode` is the default and shares the
-// unqualified key, which is the one `useProviders()` (no harness) reads.
+// cached under that harness. OpenCode keeps its own key (not the unqualified
+// one) because unqualified `/provider` follows the workspace default harness.
 const directoryProviders = (baseUrl: string, harnessType?: string, scope?: string) =>
   queryClient.getQueryData<NormalizedProviderListResponse>(
     queryKeys.controlPlane.providers(baseUrl, scope, harnessType),
@@ -211,9 +211,8 @@ describe("bootstrapGlobal", () => {
     expect(globalState.provider_auth).toEqual({})
   })
 
-  // The default harness IS the global catalog: `useProviders()` asks for it with
-  // no harness, so an opencode bootstrap must land on the unqualified key or it
-  // would warm a cache entry nothing reads.
+  // OpenCode owns its own cache key; an opencode bootstrap must land there
+  // (and still publish global state) so settings/pickers read the right catalog.
   test("an opencode bootstrap still publishes the global catalog", async () => {
     const globalState: Partial<GlobalBootstrapState> = {
       ready: false,
@@ -255,10 +254,10 @@ describe("bootstrapGlobal", () => {
     expect(globalState.provider?.connected).toEqual(["anthropic"])
     expect(
       queryClient.getQueryData<NormalizedProviderListResponse>(
-        queryKeys.controlPlane.providers("http://localhost:4097"),
+        queryKeys.controlPlane.providers("http://localhost:4097", undefined, "opencode"),
       )?.connected,
     ).toEqual(["anthropic"])
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4097"))).toEqual({
+    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4097", "opencode"))).toEqual({
       anthropic: { type: "api", authenticated: true },
     })
   })
@@ -526,7 +525,7 @@ describe("override bootstrapDirectory", () => {
 
     expect(mcp).toBe(0)
     expect(lsp).toBe(0)
-    expect(Array.from(directoryProviders("default")?.all.values() ?? []).map((item) => item.id)).toEqual(["anthropic"])
+    expect(Array.from(directoryProviders("default", "opencode", "/tmp/ws")?.all.values() ?? []).map((item) => item.id)).toEqual(["anthropic"])
   })
 
   /**
@@ -838,8 +837,7 @@ describe("override bootstrapDirectory", () => {
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/provider?harness=opencode")
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/agent?harness=opencode")
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/command")
-    expect(directoryProviders("https://app.claxedo.test")?.default.opencode).toBe("big-pickle")
-    expect(agentNames("https://app.claxedo.test", "workspace:ws_cloud", "opencode", "cloud:ws_cloud")).toEqual(["plan"])
+    expect(directoryProviders("https://app.claxedo.test", "opencode", "workspace:ws_cloud")?.default.opencode).toBe("big-pickle")
     expect(
       queryClient.getQueryData<Command[]>(queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud"))
         ?.map((item) => item.name),
@@ -1098,7 +1096,7 @@ describe("override bootstrapDirectory", () => {
     await warmup()
 
     expect(urls).toContain("http://relay.test/workspaces/ws_default/provider?harness=opencode")
-    expect(directoryProviders("https://app.claxedo.test")?.default.opencode).toBe("big-pickle")
+    expect(directoryProviders("https://app.claxedo.test", "opencode", "workspace:ws_default")?.default.opencode).toBe("big-pickle")
     expect(agentNames("https://app.claxedo.test", "workspace:ws_default", "opencode", "cloud:ws_default")).toEqual(["build"])
   })
 
@@ -1171,6 +1169,6 @@ describe("override bootstrapDirectory", () => {
 
     expect(urls).toContain("https://app.claxedo.test/api/workspace/resolve?workspaceId=ws_raw")
     expect(urls).toContain("http://relay.test/workspaces/ws_raw/provider?harness=opencode")
-    expect(directoryProviders("https://app.claxedo.test")?.default.opencode).toBe("big-pickle")
+    expect(directoryProviders("https://app.claxedo.test", "opencode", "workspace:ws_raw")?.default.opencode).toBe("big-pickle")
   })
 })

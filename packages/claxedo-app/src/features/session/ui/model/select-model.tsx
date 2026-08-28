@@ -1,4 +1,4 @@
-// Claxedo keeps the upstream model picker UI while routing provider actions through Claxedo-owned provider dialogs.
+// Claxedo keeps the upstream model picker UI while routing provider setup through Settings → Providers.
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { type Component, type ComponentProps, createMemo, type JSX, onMount, Show, type ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -12,7 +12,8 @@ import { List } from "@opencode-ai/ui/list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ModelTooltip } from "@/features/session/ui/model/model-tooltip"
 import { useLanguage } from "@/platform/i18n/provider"
-import { loadManageModelsDialog, loadSelectProviderDialog } from "@/features/session/app-ports"
+import { loadManageModelsDialog } from "@/features/session/app-ports"
+import { openSettingsProviders } from "@/features/settings/open-settings-providers"
 import { capture as phCapture, identityProps, type Surface } from "@/platform/telemetry/analytics"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
@@ -193,7 +194,6 @@ export function ModelSelectorPopover(props: {
   onClose?: (cause: "escape" | "select") => void
   actions?: boolean
   tooltips?: boolean
-  connectHarness?: string
   /** Extra class for the popover surface. The composer passes its shared
    * dropdown class so this picker matches the other menus on the dock instead
    * of opening at its own width and row rhythm. */
@@ -225,9 +225,7 @@ export function ModelSelectorPopover(props: {
 
   const handleConnectProvider = () => {
     close("provider")
-    void loadSelectProviderDialog().then((x) => {
-      dialog.show(() => <x.DialogSelectProvider harness={props.connectHarness} />)
-    })
+    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
   }
   const language = useLanguage()
 
@@ -314,9 +312,7 @@ export const DialogSelectModel: Component<{ provider?: string; model: PickerStat
   const language = useLanguage()
 
   const provider = () => {
-    void loadSelectProviderDialog().then((x) => {
-      dialog.show(() => <x.DialogSelectProvider />)
-    })
+    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
   }
 
   const manage = () => {

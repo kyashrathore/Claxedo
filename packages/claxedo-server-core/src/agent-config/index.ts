@@ -704,6 +704,7 @@ export async function getRuntimeConfigSnapshot(
   if (!auth["claude-sdk"] && auth["claude-acp"]) auth["claude-sdk"] = auth["claude-acp"]
   const codexAppServerAuth = auth["codex-acp"] ?? auth.openai
   if (!auth["codex-app-server"] && codexAppServerAuth) auth["codex-app-server"] = codexAppServerAuth
+  if (!auth["cursor-sdk"] && auth["cursor-acp"]) auth["cursor-sdk"] = auth["cursor-acp"]
   const workspaceInstalls = options.workspaceDir && options.workspaceId
     ? options.workspaceInstalls ?? await runtimeWorkspaceAgentExtensions(options.workspaceId, {
         required: options.requireWorkspaceAgentExtensions ?? false,

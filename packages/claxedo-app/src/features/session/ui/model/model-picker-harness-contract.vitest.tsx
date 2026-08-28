@@ -1,28 +1,17 @@
 /**
- * The model picker's Connect-provider hand-off, per harness.
+ * The model picker's Connect action routes to Settings → Providers.
  *
- * `ModelSelectorPopover` carries a `connectHarness` prop that it forwards to
- * `DialogSelectProvider`. That prop IS the inheritance seam: whatever it holds
- * decides which catalog the user sees when they press `+` inside a session's
- * model picker. Nothing pinned it, and the composer's harness selector is the
- * only caller that sets it.
- *
- * The catalog CONTENT contract lives in
- * `src/app/dialogs/harness-provider-contract.vitest.tsx`; this file pins the
- * routing that decides which of those catalogs is asked for.
+ * Provider setup no longer opens harness-scoped connect dialogs from the
+ * composer. Every Connect click should land on the unified Providers page.
  */
 import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
-const selectProviderProps: Array<{ harness?: string }> = []
-const shown: Array<() => unknown> = []
+const openSettingsProviders = vi.fn()
 
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
   useDialog: () => ({
-    show: (content: () => unknown) => {
-      shown.push(content)
-      content()
-    },
+    show: () => undefined,
     close: () => undefined,
   }),
 }))
@@ -36,16 +25,12 @@ vi.mock("@/platform/telemetry/analytics", () => ({
   identityProps: () => ({}),
 }))
 
+vi.mock("@/features/settings/open-settings-providers", () => ({
+  openSettingsProviders,
+}))
+
 vi.mock("@/features/session/app-ports", () => ({
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
-  loadSelectProviderDialog: async () => ({
-    // Records what the picker handed down instead of rendering the real dialog:
-    // the real one is covered by the catalog-content contract next door.
-    DialogSelectProvider: (props: { harness?: string }) => {
-      selectProviderProps.push({ harness: props.harness })
-      return null
-    },
-  }),
 }))
 
 const { ModelSelectorPopover } = await import("./select-model")
@@ -59,7 +44,6 @@ const pickerState = () => ({
   set: () => undefined,
 })
 
-/** Opens the popover and clicks its Connect-provider action. */
 async function openConnect(container: HTMLElement) {
   fireEvent.click(container.querySelector<HTMLElement>("[data-slot=model-trigger]")!)
   const connect = await waitFor(() => {
@@ -68,31 +52,17 @@ async function openConnect(container: HTMLElement) {
     return node!
   })
   fireEvent.click(connect)
-  await waitFor(() => expect(selectProviderProps.length).toBe(1))
+  await waitFor(() => expect(openSettingsProviders).toHaveBeenCalledTimes(1))
 }
 
 beforeEach(() => {
-  selectProviderProps.length = 0
-  shown.length = 0
+  openSettingsProviders.mockClear()
 })
 
 afterEach(() => cleanup())
 
-describe("the model picker's Connect action inherits the session's harness", () => {
-  test("a pi session's picker opens the pi catalog", async () => {
-    const { container } = render(() => (
-      <ModelSelectorPopover model={pickerState()} actions connectHarness="pi">
-        <span data-slot="model-trigger">model</span>
-      </ModelSelectorPopover>
-    ))
-
-    await openConnect(container)
-    expect(selectProviderProps[0]!.harness).toBe("pi")
-  })
-
-  // An opencode session has no harness binding to inherit: its picker must open
-  // the FULL models.dev catalog, which is what an absent `harness` requests.
-  test("a picker with no connectHarness opens the full catalog", async () => {
+describe("the model picker's Connect action opens Settings → Providers", () => {
+  test("pi sessions redirect to providers settings", async () => {
     const { container } = render(() => (
       <ModelSelectorPopover model={pickerState()} actions>
         <span data-slot="model-trigger">model</span>
@@ -100,20 +70,15 @@ describe("the model picker's Connect action inherits the session's harness", () 
     ))
 
     await openConnect(container)
-    expect(selectProviderProps[0]!.harness).toBeUndefined()
   })
 
-  // Regression pin for the bug this matrix was built to catch: a session whose
-  // harness is NOT pi must never be handed pi's three-provider catalog.
-  test("a claude-sdk session's picker does not open the pi catalog", async () => {
+  test("opencode sessions redirect to providers settings", async () => {
     const { container } = render(() => (
-      <ModelSelectorPopover model={pickerState()} actions connectHarness="claude-sdk">
+      <ModelSelectorPopover model={pickerState()} actions>
         <span data-slot="model-trigger">model</span>
       </ModelSelectorPopover>
     ))
 
     await openConnect(container)
-    expect(selectProviderProps[0]!.harness).toBe("claude-sdk")
-    expect(selectProviderProps[0]!.harness).not.toBe("pi")
   })
 })

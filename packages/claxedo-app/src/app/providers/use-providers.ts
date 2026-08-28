@@ -83,7 +83,13 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
     if (workspaceId) return `workspace:${workspaceId}`
     return sdk?.directory || ""
   })
-  const harness = createMemo(() => typeof harnessType === "function" ? harnessType() : harnessType)
+  // Unqualified `/provider` follows the workspace default harness (often agents),
+  // not OpenCode. Callers that omit a harness historically expect the OpenCode
+  // catalog — default to it so settings popular rows and model pickers stay filled.
+  const harness = createMemo(() => {
+    const value = typeof harnessType === "function" ? harnessType() : harnessType
+    return value || "opencode"
+  })
   // The provider/model catalog routes through the relay for a workspace-backed
   // scope (`workspace:<id>` ref above) — gate it on the WorkspaceConnection
   // authority so the model picker cannot fire-and-fail against an offline
@@ -135,6 +141,8 @@ export function useProviders(harnessType?: string | (() => string | undefined)) 
     error: () => providerQuery.error instanceof Error ? providerQuery.error.message : undefined,
     refresh: () => providerQuery.refetch(),
     load,
+    /** Same key `useWorkspaceQuery` / `load` use — patch/invalidate this after connect/disconnect. */
+    queryKey: () => providerOptions().queryKey,
     all,
     default: () => state().default,
     popular: () => [...all().values()].filter((p) => popularProviderSet.has(p.id)),

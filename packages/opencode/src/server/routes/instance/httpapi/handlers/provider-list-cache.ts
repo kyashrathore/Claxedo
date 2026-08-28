@@ -99,15 +99,16 @@ export function buildListResult(inputs: ProviderListInputs, query: ProviderListQ
   const disabled = new Set(config.disabled_providers ?? [])
   const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
   const allowed = (key: string) => (enabled ? enabled.has(key) : true) && !disabled.has(key)
-  const connectedIDs = Object.keys(connected)
+  const activeConnected = Object.fromEntries(Object.entries(connected).filter(([key]) => allowed(key)))
+  const connectedIDs = Object.keys(activeConnected)
   if (query.indexOnly) {
     const filtered = Object.fromEntries(Object.entries(all).filter(([key]) => allowed(key)))
-    const defaults = Provider.defaultModelIDs(connected)
+    const defaults = Provider.defaultModelIDs(activeConnected)
     const providers = new Map(Object.entries(filtered).map(([id, item]) => [id, { id, name: item.name }] as const))
-    Object.entries(connected).forEach(([id, item]) => providers.set(id, { id, name: item.name }))
+    Object.entries(activeConnected).forEach(([id, item]) => providers.set(id, { id, name: item.name }))
     return {
       all: [...providers.values()].map((item) => {
-        const connectedProvider = connected[ProviderV2.ID.make(item.id)]
+        const connectedProvider = activeConnected[ProviderV2.ID.make(item.id)]
         const defaultModel = defaults[item.id]
         return {
           id: ProviderV2.ID.make(item.id),
@@ -129,11 +130,11 @@ export function buildListResult(inputs: ProviderListInputs, query: ProviderListQ
     const filtered = Object.fromEntries(Object.entries(all).filter(([key]) => allowed(key)))
     const id = ProviderV2.ID.make(query.selectedProvider)
     const selected =
-      connected[id] ??
+      activeConnected[id] ??
       (filtered[query.selectedProvider] ? Provider.fromModelsDevProvider(filtered[query.selectedProvider]) : undefined)
     return {
       all: selected ? [Provider.toPublicInfo(selected)] : [],
-      default: Provider.defaultModelIDs({ ...connected, ...(selected ? { [id]: selected } : {}) }),
+      default: Provider.defaultModelIDs({ ...activeConnected, ...(selected ? { [id]: selected } : {}) }),
       connected: connectedIDs,
     }
   }
@@ -144,10 +145,10 @@ export function buildListResult(inputs: ProviderListInputs, query: ProviderListQ
   // `toPublicInfo` clone because they hold live, mutable provider state.
   const providers: Record<string, Provider.Info> = Object.assign(
     Object.fromEntries(Object.entries(catalog).filter(([key]) => allowed(key))),
-    connected,
+    activeConnected,
   )
   return {
-    all: Object.entries(providers).map(([key, item]) => (key in connected ? Provider.toPublicInfo(item) : item)),
+    all: Object.entries(providers).map(([key, item]) => (key in activeConnected ? Provider.toPublicInfo(item) : item)),
     default: Provider.defaultModelIDs(providers),
     connected: connectedIDs,
   }
