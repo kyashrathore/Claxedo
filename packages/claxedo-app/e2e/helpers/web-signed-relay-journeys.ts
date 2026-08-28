@@ -23,7 +23,13 @@ import {
   SELECTORS as RAIL_SELECTORS,
 } from "./rail-oracle"
 import { expectRowGeometry } from "./geometry-oracle"
-import { closeSidebar, expectSurfaceStatus, focusSwitcherTab, type SurfaceStatus } from "./surface-parity"
+import {
+  activeSwitcherContentId,
+  closeSidebar,
+  expectSurfaceStatus,
+  focusSwitcherTab,
+  type SurfaceStatus,
+} from "./surface-parity"
 import { expectAssistantReplyVisible } from "./turn-oracle"
 import type { ScriptedModelServer } from "./scripted-model-server"
 import {
@@ -333,6 +339,7 @@ export async function journeyB9(ctx: JourneyCtx) {
   // has already seen its result and correctly returns to idle.
   await openNewDraftInProject(page)
   await closeSidebar(page)
+  const draftContentId = await activeSwitcherContentId(page)
   await pollSurfaceStatus({ page, sessionId, expected: "idle" })
 
   scripted.resetCounts()
@@ -346,7 +353,7 @@ export async function journeyB9(ctx: JourneyCtx) {
       () => Object.values(scripted.counts()).reduce((total, count) => total + count, 0),
       { message: "scripted provider never received B9's delayed second turn", timeout: 10_000 },
     ).toBeGreaterThan(0)
-    await focusSwitcherTab(page, "New Session")
+    await focusSwitcherTab(page, { contentId: draftContentId, title: "New Session" })
     await expect(page.locator('[data-component="session-new-composer"]:visible')).toBeVisible({ timeout: 10_000 })
 
     await pollSurfaceStatus({ page, sessionId, expected: "working" })

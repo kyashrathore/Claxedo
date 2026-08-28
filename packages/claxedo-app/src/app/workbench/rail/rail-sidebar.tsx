@@ -92,7 +92,7 @@ import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareU
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { centralSessionRef, sessionRefForWorkspaceSession, type SessionHost, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import {
@@ -242,6 +242,7 @@ type View = {
 
 type Row = SessionItem & {
   project: ProjectItem
+  host?: SessionHost
   archived?: boolean
   status: string[]
   active?: boolean
@@ -284,12 +285,14 @@ function sessionNavigationRefForRow(session: Row) {
 }
 
 function workspaceSessionBacking(
-  session: Pick<Row, "workspaceId" | "environment" | "project">,
+  session: Pick<Row, "sessionRef" | "workspaceId" | "environment" | "host" | "project">,
   directory: string,
 ): WorkspaceSessionBacking | undefined {
   return railWorkspaceSessionBacking({
     directory,
     project: session.project,
+    ...(session.host ? { host: session.host } : {}),
+    ...(session.sessionRef ? { sessionRef: session.sessionRef } : {}),
     ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
     ...(session.environment?.kind ? { environmentKind: session.environment.kind } : {}),
   })
@@ -560,6 +563,7 @@ export function RailSidebar(props: RailSidebarProps) {
         const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
         return {
           id: item.id,
+          host: "workspace",
           get title() { return title() },
           time: item.time.updated ?? item.time.created,
           directory: item.directory,
@@ -590,6 +594,7 @@ export function RailSidebar(props: RailSidebarProps) {
           ))
         return {
           id: item.id,
+          host: "central",
           get title() { return title() },
           time: item.time.updated ?? item.time.created,
           directory: item.directory,
@@ -622,6 +627,7 @@ export function RailSidebar(props: RailSidebarProps) {
     const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
     return {
       id: item.id,
+      host: "workspace",
       get title() { return title() },
       time: item.time.updated ?? item.time.created,
       directory: directory ?? item.directory,
@@ -658,6 +664,7 @@ export function RailSidebar(props: RailSidebarProps) {
     }))
     return {
       id: item.sessionId,
+      host: item.sessionRef.startsWith("central:") ? "central" : "workspace",
       sessionRef: item.sessionRef,
       get title() { return title() },
       time: item.updatedAt ?? item.createdAt,
@@ -825,16 +832,16 @@ export function RailSidebar(props: RailSidebarProps) {
       },
     ] as const))
   })
-  const primeSidebarStatusTargets = (directory: string) => {
-    dropSidebarSessionStatusBatches(sessionStatusTargetGroups().filter((group) => group.directory === directory))
+  const primeSidebarStatusTarget = (sessionID: string) => {
+    invalidateSidebarSessionStatusGroupsForSession(sessionStatusTargetGroups(), sessionID)
     refreshSidebarStatusTargets()
   }
   let sidebarStatusPrimeTimer: ReturnType<typeof setTimeout> | undefined
-  const scheduleSidebarStatusPrime = (directory: string) => {
+  const scheduleSidebarStatusPrime = (sessionID: string) => {
     if (sidebarStatusPrimeTimer) clearTimeout(sidebarStatusPrimeTimer)
     sidebarStatusPrimeTimer = setTimeout(() => {
       sidebarStatusPrimeTimer = undefined
-      primeSidebarStatusTargets(directory)
+      primeSidebarStatusTarget(sessionID)
     }, 650)
   }
   onCleanup(() => {
@@ -983,12 +990,7 @@ export function RailSidebar(props: RailSidebarProps) {
     const targetKeys = new Set(targets.map((target) => target.key))
     setSessionStatuses((current) => pruneRailSessionActivityMap(current, targets))
     setSessionRequests((current) => pruneRailSessionActivityMap(current, targets))
-    const focusedContent = focusedSessionContent()
-    const focusedKeys = new Set(targets.flatMap((target) => {
-      if (focusedContent?.sessionId !== target.sessionID) return []
-      if (focusedContent.directory && focusedContent.directory !== target.directory) return []
-      return [target.key]
-    }))
+    const focusedKey = focusedSessionStatusTarget()?.key
 
     setSidebarSessionUnseenDone((current) => {
       const next: Record<string, true | undefined> = {}
@@ -1004,7 +1006,7 @@ export function RailSidebar(props: RailSidebarProps) {
         const value = nextUnseenDone({
           active: activity.get(target.key) ?? false,
           previousActive: previousSidebarSessionActivity.get(target.key),
-          focused: focusedKeys.has(target.key),
+          focused: target.key === focusedKey,
           current: !!next[target.key],
         })
         if (value) next[target.key] = true
@@ -1257,7 +1259,7 @@ export function RailSidebar(props: RailSidebarProps) {
       afterVisibleActivation(() => {
         if (serial !== sessionActivationSerial) return
         claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
-        scheduleSidebarStatusPrime(directory)
+        scheduleSidebarStatusPrime(session.id)
         restoreWorkspacePanelSession(session, existingId, directory)
         const meta = claxedoState.meta.get(existingId)
         if (meta) props.onTabSelect?.(meta)
@@ -1279,7 +1281,7 @@ export function RailSidebar(props: RailSidebarProps) {
     measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
       claxedoState.workspacePanel.rememberSession(previousWorkspacePanelSessionId)
-      scheduleSidebarStatusPrime(directory)
+      scheduleSidebarStatusPrime(session.id)
       restoreWorkspacePanelSession(session, contentId, directory)
       const meta = claxedoState.meta.get(contentId)
       if (meta) props.onTabSelect?.(meta)

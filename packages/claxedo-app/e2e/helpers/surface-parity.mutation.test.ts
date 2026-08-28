@@ -32,6 +32,7 @@ import {
   expectSurfaceParity,
   expectSurfaceStatus,
   closeSidebar,
+  activeSwitcherContentId,
   focusSwitcherTab,
   type SurfaceStatus,
 } from "./surface-parity"
@@ -62,9 +63,8 @@ const TITLE = "Refactor surface parity oracle"
  * Builds the interactive fixture surface-parity.ts's SELECTORS require
  * (surface-parity.ts:65-74): a rail row with `data-sidebar-status` (absent == "idle", per
  * `readRailRow`'s own comment, lines 86-94), a `sidebar-toggle` button, a compact-switcher
- * tab correlated to the row ONLY by matching title text (the file header's documented
- * limitation — `switcherTabForTitle`, lines 108-131 — since no session id is ever stamped
- * onto a switcher tab in the real DOM either), and a "Show Sidebar" button matched by
+ * tab correlated to the row by matching title text (the rail exposes a runtime session id,
+ * while the switcher exposes a workbench content id), and a "Show Sidebar" button matched by
  * `getByRole("button", { name: "Show Sidebar" })` (surface-parity.ts:169) — plain visible
  * text is sufficient for that accessible-name computation, no `aria-label` needed.
  *
@@ -190,6 +190,40 @@ describe("focusSwitcherTab", () => {
 
     await focusSwitcherTab(page, TITLE)
     expect(await page.locator('[data-slot="workbench-tab"]').getAttribute("data-selected")).toBe("true")
+  })
+
+  test("uses stable content identity when multiple tabs share a title", async () => {
+    await page.setContent(`<body>
+      <div data-testid="compact-switcher">
+        <div data-testid="compact-switcher-tab" data-content-id="old-draft">
+          <div data-slot="workbench-tab">
+            <button type="button" data-testid="switcher-title-button"><span data-testid="switcher-title">New Session</span></button>
+          </div>
+        </div>
+        <div data-testid="compact-switcher-tab" data-content-id="current-draft">
+          <div data-slot="workbench-tab" data-selected="true">
+            <button type="button" data-testid="switcher-title-button"><span data-testid="switcher-title">New Session</span></button>
+          </div>
+        </div>
+      </div>
+      <script>
+        document.querySelectorAll('[data-testid="compact-switcher-tab"]').forEach(function (tab) {
+          tab.addEventListener('click', function () {
+            document.querySelectorAll('[data-slot="workbench-tab"]').forEach(function (node) {
+              node.removeAttribute('data-selected')
+            })
+            tab.querySelector('[data-slot="workbench-tab"]').setAttribute('data-selected', 'true')
+          })
+        })
+      </script>
+    </body>`)
+
+    const contentId = await activeSwitcherContentId(page)
+    expect(contentId).toBe("current-draft")
+    await focusSwitcherTab(page, { contentId, title: "New Session" })
+    expect(
+      await page.locator('[data-content-id="current-draft"] [data-slot="workbench-tab"]').getAttribute("data-selected"),
+    ).toBe("true")
   })
 })
 

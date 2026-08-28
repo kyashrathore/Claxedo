@@ -54,9 +54,9 @@ export type SurfaceStatus = "idle" | "working" | "permission" | "done"
 
 export type ParityEvidence = {
   sessionId: string
-  /** Title read off the rail row at the moment of the check — the only
-   * signal this module can correlate a compact-switcher tab against (see
-   * `switcherTabForTitle`). */
+  /** Title read off the rail row at the moment of the check. The rail does
+   * not expose the matching workbench content id, so status parity correlates
+   * the two surfaces by their shared projected title. */
   title: string
   sidebarStatus: SurfaceStatus
   switcherStatus: SurfaceStatus
@@ -109,21 +109,18 @@ async function readRailRow(page: Page, sessionId: string): Promise<{ status: Sur
 }
 
 /**
- * Locates the compact-switcher tab for `title`. `compact-switcher-tab`
- * carries no session/content id anywhere in its DOM — verified by grepping
- * every `data-*` attribute in compact-switcher.tsx: `SwitcherItem.contentId`
- * (a workbench content id, not the session id — switcher-items.ts:109) is
- * never stamped onto the tab. Title text
- * (`[data-testid="switcher-title"]`, `item().title`) is the one signal the
- * tab shares with the rail row (`[data-slot="session-navigation-title"]`,
- * `row.title`) — both are rendered from the same session's title, so
+ * Locates the compact-switcher tab for the title read from a rail row. The
+ * switcher now exposes its workbench content id, but the rail row exposes the
+ * runtime session id instead, so title text remains the shared signal for
+ * cross-surface status checks. Both titles come from the same session title
+ * projection, so
  * matching on it is the same correlation `core-session-actions.spec.ts`'s
  * "switcher tab title sync" test relies on (it only skips the filter because
  * that spec keeps exactly one tab open). Exact match via an anchored RegExp,
  * not Playwright's substring `hasText`, so "Session" cannot match "New
- * Session". `.first()` if two sessions share a title — the same tolerated gap
- * as defect #14's `.first()` workaround; this oracle cannot resolve a title
- * collision it has no other identifying signal to break.
+ * Session". `.first()` remains a tolerated gap for status checks when two
+ * runtime sessions have the same projected title; direct switcher navigation
+ * uses `data-content-id` below and does not share that ambiguity.
  */
 function switcherTabForTitle(page: Page, title: string): Locator {
   const exact = new RegExp(`^${escapeRegExp(title)}$`)
@@ -133,9 +130,29 @@ function switcherTabForTitle(page: Page, title: string): Locator {
     .first()
 }
 
+function switcherTabForContentId(page: Page, contentId: string): Locator {
+  return page.locator(`${SELECTORS.switcherTab}[data-content-id=${JSON.stringify(contentId)}]`)
+}
+
+export async function activeSwitcherContentId(page: Page): Promise<string> {
+  const activeTab = page.locator(SELECTORS.switcherTab).filter({
+    has: page.locator('[data-slot="workbench-tab"][data-selected="true"]'),
+  })
+  await expect(activeTab, "compact switcher has no active tab").toHaveCount(1)
+  const contentId = await activeTab.getAttribute("data-content-id")
+  expect(contentId, "active compact-switcher tab has no stable content identity").toBeTruthy()
+  return contentId!
+}
+
 /** Focus one already-mounted compact-switcher tab without remounting the strip. */
-export async function focusSwitcherTab(page: Page, title: string): Promise<void> {
-  const tab = switcherTabForTitle(page, title)
+export async function focusSwitcherTab(
+  page: Page,
+  target: string | { contentId: string; title: string },
+): Promise<void> {
+  const title = typeof target === "string" ? target : target.title
+  const tab = typeof target === "string"
+    ? switcherTabForTitle(page, title)
+    : switcherTabForContentId(page, target.contentId)
   await expect(tab, `no compact-switcher-tab titled "${title}"`).toBeVisible({ timeout: 10_000 })
   await tab.locator('[data-testid="switcher-title-button"]').click()
   // Compact-switcher selection commits after a short debounce. Returning on

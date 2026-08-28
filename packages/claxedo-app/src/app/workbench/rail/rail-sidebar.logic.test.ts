@@ -135,6 +135,67 @@ describe("railWorkspaceSessionBacking", () => {
       }),
     })).toBeUndefined()
   })
+
+  test("uses optimistic relay placement before signed inventory hydration", () => {
+    const pending = project({
+      worktree: "/repo/main",
+      workspaces: {
+        pending: {
+          id: "ws_pending",
+          workspaceId: "ws_pending",
+          directory: "/runtime/repo",
+          kind: "local",
+        },
+      },
+    })
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "ws_pending",
+      host: "workspace",
+      sessionRef: "workspace:ws_pending:session:ses_pending",
+      environmentKind: "local",
+      project: pending,
+    })).toEqual({ workspaceId: "ws_pending", kind: "user-hosted" })
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      host: "workspace",
+      sessionRef: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e:session:ses_uuid",
+      project: pending,
+    })).toEqual({
+      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      kind: "user-hosted",
+    })
+  })
+
+  test("keeps canonical central and local session refs off the relay", () => {
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "ws_authz_only",
+      host: "central",
+      project: project({ worktree: "/repo/main" }),
+    })).toBeUndefined()
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/repo/main",
+      workspaceId: "local-workspace-id",
+      host: "workspace",
+      sessionRef: "local:/repo/main:session:ses_local",
+      project: project({
+        worktree: "/repo/main",
+        workspaces: {
+          local: {
+            id: "local-workspace-id",
+            workspaceId: "local-workspace-id",
+            directory: "/repo/main",
+            kind: "local",
+          },
+        },
+      }),
+    })).toBeUndefined()
+  })
 })
 
 describe("sessionProjectSort", () => {
