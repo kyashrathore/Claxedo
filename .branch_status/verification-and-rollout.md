@@ -2,7 +2,10 @@
 
 ## Current verification result — 2026-08-28
 
-All 18 validated review findings are closed. The implementation is rebased on `dev` at `834307041e8b01eef532833b8deb3703f03dc647`; `origin/dev` is an ancestor of `593dd1f94f047c9269a56b2afea75cce2cb6419e`.
+All 18 validated review findings are closed. The implementation is based on
+`dev` at `834307041e8b01eef532833b8deb3703f03dc647`. The authority review
+closes through `2adbe6ca4c`; post-review runtime-to-UI fixes are
+`430fa0bc1d`; deterministic browser-test follow-up is `9bf5849c41`.
 
 Passed:
 
@@ -19,12 +22,38 @@ Passed:
 - Root lint passed with 17,185 warnings and zero errors.
 - `git diff --check` passed.
 
-Remaining real-harness failures:
+Post-review follow-up verification:
 
-- Pi: the authoritative session metadata and control-plane config both contain `anthropic/claude-sonnet-4-6`, and the provider catalog contains the model, but the UI hydrates `data-model=""` and displays “Choose a model to continue.”
-- Codex ACP: the scripted provider is reached and the UI enters `Working`, but the external child lifecycle does not reach `Completed` within 90 seconds.
+- Focused changed app units: 177 Bun tests passed.
+- Focused changed app component tests: 25 Vitest tests passed.
+- Central runtime: 30 tests passed.
+- ACP adapter: 42 tests passed.
+- Workspace event route: 6 tests passed.
+- Session UI task-card behavior: 14 tests passed.
+- App, server, agent SDK runtime, workspace runtime, and session UI typechecks
+  passed. The app command also passed 264 architecture tests, 20 timeline
+  performance tests, and 38 performance component tests.
+- Former Pi and Codex ACP blockers passed together in the real-provider browser
+  composition.
+- The complete real-harness lane passed: 14 passed, 1 recording-only test
+  skipped.
+- The complete two-mode core browser matrix completed with one strict locator
+  ambiguity in WorkGraph. After changing the helper to the unique accessible
+  toolbar name, the exact journey passed in both `test-user` and
+  `local-unsigned` modes.
+- `git diff --check` passed after all implementation and documentation edits.
 
-Claude ACP now passes after removing the duplicate pre-turn permission-mode write. These two failures must be resolved (or explicitly waived by the product owner) and the complete real-harness lane rerun before merge.
+Current non-environment test failures:
+
+- `packages/claxedo-app: bun run test`: 5,695 passed, 2 failed.
+- `submit.harness-dispatch.test.ts` — “existing harness follow-up preserves its
+  persisted harness variant”: expected `claude-acp/opus` with variant `high`,
+  received the generic `provider/model` selection.
+- `submit.session-config.test.ts` — “second submit with unchanged config does
+  NOT re-PATCH”: expected one config PATCH, observed two.
+
+Those files were not changed by `430fa0bc1d` or `9bf5849c41`. They remain real
+suite failures and are the only known local merge gate.
 
 Environment-limited lanes:
 
@@ -42,8 +71,10 @@ The branch may merge only when:
 3. The deployment migration gate (#18) is implemented. **Passed in code; staging rehearsal remains a deploy gate.**
 4. The targeted unit/integration matrix passes on the rebased branch. **Passed.**
 5. The local two-user production-like smoke passes. **Passed.**
-6. The Pi and Codex ACP real-harness lifecycle failures are resolved or explicitly waived. **Open.**
-7. The complete real-harness lane is rerun. **Open.**
+6. The Pi and Codex ACP real-harness lifecycle failures are resolved. **Passed.**
+7. The complete real-harness lane is rerun. **Passed: 14 passed, 1 recording-only skip.**
+8. The complete app unit command passes, or the two composer failures receive
+   an explicit owner waiver. **Open: 5,695 passed, 2 failed.**
 
 ## Focused verification matrix
 
