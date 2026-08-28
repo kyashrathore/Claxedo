@@ -15,7 +15,9 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 const repoRoot = path.resolve(appRoot, "../..")
 const config = readFileSync(path.join(appRoot, "playwright.config.ts"), "utf8")
 const workflow = readFileSync(path.join(repoRoot, ".github/workflows/test.yml"), "utf8")
+const workgraphStressWorkflow = readFileSync(path.join(repoRoot, ".github/workflows/workgraph-stress.yml"), "utf8")
 const setupBun = readFileSync(path.join(repoRoot, ".github/actions/setup-bun/action.yml"), "utf8")
+const crabboxGroups = readFileSync(path.join(repoRoot, "script/cbx-ci.ts"), "utf8")
 const crabboxCi = readFileSync(path.join(repoRoot, "script/cbx-ci-remote.sh"), "utf8")
 const crabboxShard = readFileSync(path.join(repoRoot, "script/cbx-e2e-shard.sh"), "utf8")
 const authMode = readFileSync(path.join(appRoot, "e2e/auth-mode.ts"), "utf8")
@@ -25,7 +27,8 @@ const matrixRunner = readFileSync(path.join(appRoot, "scripts/run-e2e-auth-matri
 const packageJson = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
   scripts: Record<string, string>
 }
-const coreE2EJob = workflow.slice(workflow.indexOf("\n  e2e:\n"), workflow.indexOf("\n  e2e-workgraph:\n"))
+const coreE2EJob = workflow.slice(workflow.indexOf("\n  e2e:\n"), workflow.indexOf("\n  e2e-onboarding:\n"))
+const reusableE2EBuildJob = workflow.slice(workflow.indexOf("\n  e2e-build:\n"), workflow.indexOf("\n  e2e:\n"))
 
 describe("e2e auth mode matrix", () => {
   test("Playwright owns both explicit modes and a real no-user Vite composition", () => {
@@ -53,7 +56,7 @@ describe("e2e auth mode matrix", () => {
     expect(workflow).toContain("auth-mode: [test-user, local-unsigned]")
     expect(workflow).toContain("CLAXEDO_E2E_AUTH_MODE: ${{ matrix.auth-mode }}")
     expect(workflow).toContain("playwright-linux-${{ matrix.auth-mode }}-shard${{ matrix.shard }}")
-    expect(workflow).toContain("playwright-workgraph-real-${{ matrix.auth-mode }}")
+    expect(workflow).toContain("playwright-onboarding-${{ matrix.auth-mode }}")
   })
 
   test("CI builds each auth composition once and six shards preview its exact artifact", () => {
@@ -61,10 +64,12 @@ describe("e2e auth mode matrix", () => {
     expect(workflow).toContain("e2e-build:")
     expect(workflow).toContain("name: claxedo-app-e2e-test-user-${{ github.sha }}-${{ github.run_attempt }}")
     expect(workflow).toContain("name: claxedo-app-e2e-local-unsigned-${{ github.sha }}-${{ github.run_attempt }}")
-    expect(workflow).toContain("needs: e2e-build")
+    expect(workflow).toContain("needs: [changes, e2e-build]")
     expect(workflow).toContain("shard: [1, 2, 3, 4, 5, 6]")
     expect(workflow).toContain("--shard=${{ matrix.shard }}/6")
     expect(workflow).toContain("CLAXEDO_E2E_SERVE_MODE: preview")
+    expect(reusableE2EBuildJob.match(/VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true"/g)).toHaveLength(2)
+    expect(reusableE2EBuildJob.match(/VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true"/g)).toHaveLength(2)
     expect(workflow).not.toContain("CLAXEDO_E2E_PREBUILT")
     expect(crabboxCi).not.toContain("CLAXEDO_E2E_PREBUILT")
     expect(crabboxShard).not.toContain("CLAXEDO_E2E_PREBUILT")
@@ -73,6 +78,16 @@ describe("e2e auth mode matrix", () => {
     expect(crabboxShard).toContain("CLAXEDO_E2E_SERVE_MODE=build-preview")
     expect(coreE2EJob).toContain("Download reusable workspace dist")
     expect(coreE2EJob).not.toContain("bun turbo build")
+    expect(workflow).not.toContain("e2e-workgraph:")
+    expect(workflow).not.toContain("e2e-workgraph-journey:")
+    expect(workflow).not.toContain("run: bun run test:e2e:workgraph")
+    expect(workflow).not.toContain("run: bun run test:e2e:journey")
+    expect(packageJson.scripts["test:e2e"]).toContain("test:e2e:core:base test:e2e:onboarding")
+    expect(packageJson.scripts["test:e2e:core"]).not.toContain("test:e2e:workgraph")
+    expect(packageJson.scripts["test:e2e:mobile:mode"]).toContain('--grep-invert "@workgraph-real"')
+    expect(crabboxGroups).not.toContain("pr-e2e-workgraph")
+    expect(workgraphStressWorkflow).toContain("workflow_dispatch:")
+    expect(workgraphStressWorkflow).not.toContain("\n  schedule:")
 
     expect(buildApp).toContain('VITE_CLAXEDO_E2E: "1"')
     expect(buildApp).toContain("claxedo-e2e-build.json")

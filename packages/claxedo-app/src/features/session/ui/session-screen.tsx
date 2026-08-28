@@ -328,7 +328,6 @@ export default function SessionPage() {
     logs: [] as CloudLog[],
     variant: "cloud" as "cloud" | "user-hosted",
   })
-
   // BUG-9: A 403 from the connection mint means "you don't have access to this
   // workspace" — a terminal state, not a transient connecting one. The gate's
   // error path (user-hosted health probe / cloud resolve) carries the 403 in its
@@ -336,7 +335,6 @@ export default function SessionPage() {
   // of the "waiting for host" pipeline, and stop treating the gate as a retryable
   // connecting state.
   const gateForbidden = createMemo(() => gate.open && isForbiddenConnectionError(gate.err))
-
   const resetGate = () => {
     setGate({
       open: false,
@@ -348,7 +346,6 @@ export default function SessionPage() {
       variant: "cloud",
     })
   }
-
   // The new-session SUBMIT flow (composer `onCloudStartup`) sets `gate.sync`
   // when a freshly-provisioned cloud runtime is ready and we are waiting for the
   // session-cache to land before swapping to the conversation. Close the gate

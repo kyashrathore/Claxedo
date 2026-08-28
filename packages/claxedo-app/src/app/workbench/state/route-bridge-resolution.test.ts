@@ -9,6 +9,7 @@ import {
   routeSessionMetaIsArchived,
   routeSessionMetaIsCentral,
   routeSessionDirectory,
+  routeLifecycleSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
 } from "./route-bridge-resolution"
@@ -100,6 +101,62 @@ describe("routeSessionWorkspaceBacking", () => {
       directory: "/tmp/signed-workspace",
       workspaceId: "/tmp/signed-workspace",
     })).toBeUndefined()
+  })
+})
+
+describe("routeLifecycleSessionRef", () => {
+  test("preserves signed relay authority when the created session reports a new runtime directory", () => {
+    expect(routeLifecycleSessionRef({
+      projects: [{
+        worktree: "/repo",
+        workspaces: {
+          ws_signed: {
+            workspaceId: "ws_signed",
+            directory: "/tmp/original-workspace",
+            kind: "cloud",
+          },
+        },
+      }],
+      sessionId: "ses_created",
+      directory: "/runtime/new-session-worktree",
+      workspaceId: "ws_signed",
+    })).toEqual({
+      sessionId: "ses_created",
+      host: "workspace",
+      workspaceId: "ws_signed",
+      toolSandbox: {
+        kind: "workspace",
+        workspaceId: "ws_signed",
+        hosting: "cloud",
+      },
+    })
+  })
+
+  test("retargets an existing draft authority to the created session id", () => {
+    expect(routeLifecycleSessionRef({
+      projects: [],
+      sessionId: "ses_created",
+      directory: "/runtime/new-session-worktree",
+      draftSessionRef: {
+        sessionId: "new",
+        host: "workspace",
+        workspaceId: "ws_signed",
+        toolSandbox: {
+          kind: "workspace",
+          workspaceId: "ws_signed",
+          hosting: "user-hosted",
+        },
+      },
+    })).toEqual({
+      sessionId: "ses_created",
+      host: "workspace",
+      workspaceId: "ws_signed",
+      toolSandbox: {
+        kind: "workspace",
+        workspaceId: "ws_signed",
+        hosting: "user-hosted",
+      },
+    })
   })
 })
 

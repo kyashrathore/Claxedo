@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test"
 import {
   railProjectCaptionFromName,
   railProjectLabel,
+  projectActionDirectory,
+  railWorkspaceSessionBacking,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
@@ -72,6 +74,127 @@ describe("shouldAutoOpenWorkspaceSection", () => {
 
   test("stays closed once manually toggled", () => {
     expect(shouldAutoOpenWorkspaceSection({ rows: 2, autoOpened: false, manuallyToggled: true })).toBe(false)
+  })
+})
+
+describe("projectActionDirectory", () => {
+  const workspaceIdForDirectory = (directory: string) =>
+    directory === "/runtime/repo" ? "ws_signed" : undefined
+
+  test("returns the canonical directory when the active route exposes its workspace id", () => {
+    expect(projectActionDirectory({
+      directories: ["/runtime/repo"],
+      activeDirectory: "ws_signed",
+      projectWorktree: "/repo/main",
+      workspaceIdForDirectory,
+    })).toBe("/runtime/repo")
+  })
+
+  test("preserves an active directory and otherwise falls back to the first project directory", () => {
+    expect(projectActionDirectory({
+      directories: ["/runtime/repo", "/runtime/other"],
+      activeDirectory: "/runtime/other",
+      projectWorktree: "/repo/main",
+      workspaceIdForDirectory,
+    })).toBe("/runtime/other")
+    expect(projectActionDirectory({
+      directories: ["/runtime/repo"],
+      activeDirectory: "ws_unknown",
+      projectWorktree: "/repo/main",
+      workspaceIdForDirectory,
+    })).toBe("/runtime/repo")
+  })
+})
+
+describe("railWorkspaceSessionBacking", () => {
+  test("uses the signed project workspace when a fresh inventory row omits environment kind", () => {
+    expect(railWorkspaceSessionBacking({
+      directory: "ws_signed",
+      project: project({
+        worktree: "/repo/main",
+        workspaces: {
+          ws_signed: {
+            id: "workspace-record",
+            workspaceId: "ws_signed",
+            directory: "/runtime/repo",
+            kind: "cloud",
+          },
+        },
+      }),
+    })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
+  })
+
+  test("does not infer signed authority from a local workspace", () => {
+    expect(railWorkspaceSessionBacking({
+      directory: "/repo/main",
+      project: project({
+        worktree: "/repo/main",
+        workspaces: {
+          local: { id: "local", directory: "/repo/main", kind: "local" },
+        },
+      }),
+    })).toBeUndefined()
+  })
+
+  test("uses optimistic relay placement before signed inventory hydration", () => {
+    const pending = project({
+      worktree: "/repo/main",
+      workspaces: {
+        pending: {
+          id: "ws_pending",
+          workspaceId: "ws_pending",
+          directory: "/runtime/repo",
+          kind: "local",
+        },
+      },
+    })
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "ws_pending",
+      host: "workspace",
+      sessionRef: "workspace:ws_pending:session:ses_pending",
+      environmentKind: "local",
+      project: pending,
+    })).toEqual({ workspaceId: "ws_pending", kind: "user-hosted" })
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      host: "workspace",
+      sessionRef: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e:session:ses_uuid",
+      project: pending,
+    })).toEqual({
+      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      kind: "user-hosted",
+    })
+  })
+
+  test("keeps canonical central and local session refs off the relay", () => {
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "ws_authz_only",
+      host: "central",
+      project: project({ worktree: "/repo/main" }),
+    })).toBeUndefined()
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/repo/main",
+      workspaceId: "local-workspace-id",
+      host: "workspace",
+      sessionRef: "local:/repo/main:session:ses_local",
+      project: project({
+        worktree: "/repo/main",
+        workspaces: {
+          local: {
+            id: "local-workspace-id",
+            workspaceId: "local-workspace-id",
+            directory: "/repo/main",
+            kind: "local",
+          },
+        },
+      }),
+    })).toBeUndefined()
   })
 })
 

@@ -105,82 +105,87 @@ async function submitControlReady(page: Page) {
 async function geometricTruth(page: Page, locator: Locator) {
   await expect
     .poll(
-      () => locator.scrollIntoViewIfNeeded().then(() => true).catch(() => false),
+      () =>
+        locator
+          .scrollIntoViewIfNeeded()
+          .then(() => true)
+          .catch(() => false),
       {
         timeout: 20_000,
         message: "assistant reply kept detaching while the virtualized timeline tried to scroll it into view",
       },
     )
     .toBe(true)
-  // Converged, not sampled once: between domTruth resolving this locator and the
-  // measurement here, a live timeline can re-render the row (part updates,
-  // supersession collapsing a provisional, virtualizer regrouping) — and a
-  // boundingBox taken in that instant is null for an element that is fully
-  // visible a frame later. Seen exactly once, on a loaded CI runner, as
-  // "no bounding box (detached or display:none)" for a reply the screenshot
-  // showed on screen. The poll's exit is the box existing; an element that
-  // NEVER gets a box still fails with the same message, so the oracle's claim
-  // is unchanged — only its tolerance for mid-measurement re-renders.
-  const box = await (async () => {
+  // Measure and hit-test the same resolved element in one browser task. A live
+  // timeline can replace a provisional row between Playwright actions; checking
+  // a bounding box first and then evaluating the locator can therefore validate
+  // one row's box but hit-test its zero-sized replacement at (0,0).
+  const geometry = await (async () => {
     const deadline = Date.now() + 10_000
     for (;;) {
-      const candidate = await locator.boundingBox().catch(() => null)
-      if (candidate) return candidate
+      const candidate = await locator
+        .evaluate((element, selector) => {
+          const rect = element.getBoundingClientRect()
+          const x = rect.x + rect.width / 2
+          const y = rect.y + rect.height / 2
+          const el = document.elementFromPoint(x, y)
+          const inside = el?.closest(selector as string)
+          const path = el
+            ? [el, el.parentElement, el.parentElement?.parentElement]
+                .filter((item): item is Element => !!item)
+                .map(
+                  (item) =>
+                    `${item.tagName.toLowerCase()}${item.id ? `#${item.id}` : ""}${[...item.classList]
+                      .slice(0, 3)
+                      .map((name) => `.${name}`)
+                      .join("")}`,
+                )
+                .join(" > ")
+            : ""
+          const timeline = document.querySelector<HTMLElement>('[data-slot="session-timeline-scroll"]')
+          return {
+            box: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+            found: !!inside,
+            tag: el?.tagName ?? null,
+            path,
+            x,
+            y,
+            timeline: timeline
+              ? {
+                  scrollTop: timeline.scrollTop,
+                  scrollHeight: timeline.scrollHeight,
+                  clientHeight: timeline.clientHeight,
+                }
+              : null,
+          }
+        }, SELECTORS.assistantContent)
+        .catch(() => null)
+      if (candidate && candidate.box.width > 0 && candidate.box.height > 0) return candidate
       if (Date.now() > deadline) return null
       await page.waitForTimeout(250)
       await locator.scrollIntoViewIfNeeded().catch(() => {})
     }
   })()
-  expect(box, "assistant reply element has no bounding box (detached or display:none)").not.toBeNull()
-  if (!box) return
+  expect(geometry, "assistant reply element has no bounding box (detached or display:none)").not.toBeNull()
+  if (!geometry) return
+  const box = geometry.box
   expect(box.width, "assistant reply element has zero width").toBeGreaterThan(0)
   expect(box.height, "assistant reply element has zero height").toBeGreaterThan(0)
 
   const viewport = page.viewportSize()
   if (viewport) {
     expect(
-      box.x >= -1 && box.y >= -1 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1,
+      box.x >= -1 &&
+        box.y >= -1 &&
+        box.x + box.width <= viewport.width + 1 &&
+        box.y + box.height <= viewport.height + 1,
       `assistant reply bounding box ${JSON.stringify(box)} lies outside the viewport ${JSON.stringify(viewport)}`,
     ).toBe(true)
   }
 
-  // Resolve the locator and hit-test its current box in one browser task. A
-  // provisional assistant row can be replaced by its canonical row between a
-  // Playwright boundingBox() call and a later page.evaluate(); sampling those
-  // in separate tasks falsely reports the replacement as an overlay.
-  const hit = await locator.evaluate(
-    (element, selector) => {
-      const rect = element.getBoundingClientRect()
-      const x = rect.x + rect.width / 2
-      const y = rect.y + rect.height / 2
-      const el = document.elementFromPoint(x, y)
-      if (!el) return { found: false, tag: null as string | null, path: "", timeline: null, x, y }
-      const inside = el.closest(selector as string)
-      const path = [el, el.parentElement, el.parentElement?.parentElement]
-        .filter((item): item is Element => !!item)
-        .map((item) => `${item.tagName.toLowerCase()}${item.id ? `#${item.id}` : ""}${[...item.classList].slice(0, 3).map((name) => `.${name}`).join("")}`)
-        .join(" > ")
-      const timeline = document.querySelector<HTMLElement>('[data-slot="session-timeline-scroll"]')
-      return {
-        found: !!inside,
-        tag: el.tagName,
-        path,
-        x,
-        y,
-        timeline: timeline
-          ? {
-              scrollTop: timeline.scrollTop,
-              scrollHeight: timeline.scrollHeight,
-              clientHeight: timeline.clientHeight,
-            }
-          : null,
-      }
-    },
-    SELECTORS.assistantContent,
-  )
   expect(
-    hit.found,
-    `hit-test at the assistant reply's center (${hit.x},${hit.y}) resolved to ${hit.path || `<${hit.tag}>`} outside the assistant-content slot (timeline ${JSON.stringify(hit.timeline)}) — an overlay or mis-positioned element is covering the reply`,
+    geometry.found,
+    `hit-test at the assistant reply's center (${geometry.x},${geometry.y}) resolved to ${geometry.path || `<${geometry.tag}>`} outside the assistant-content slot (timeline ${JSON.stringify(geometry.timeline)}) — an overlay or mis-positioned element is covering the reply`,
   ).toBe(true)
 }
 

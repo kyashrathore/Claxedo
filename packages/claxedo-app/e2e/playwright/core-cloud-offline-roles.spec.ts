@@ -687,10 +687,9 @@ async function expectWorkspaceRole(page: Page, workspaceId: string, role: RelayR
 
 async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes" | "Processes") {
   const openPanel = page.getByRole("button", { name: "Open workspace panel", exact: true }).first()
-  if (await openPanel.isVisible({ timeout: 1_000 }).catch(() => false)) {
-    await openPanel.click({ timeout: 5_000 }).catch(() => {})
-  }
   const control = page.locator(`button[aria-label="Open ${navigator}"], button[aria-label="Close ${navigator}"]`).last()
+  await expect(openPanel.or(control).first()).toBeVisible({ timeout: 10_000 })
+  if (await openPanel.isVisible()) await openPanel.click()
   await expect(control).toBeVisible({ timeout: 10_000 })
   if ((await control.getAttribute("aria-pressed")) !== "true") await control.click()
   await expect(control).toHaveAttribute("aria-pressed", "true")

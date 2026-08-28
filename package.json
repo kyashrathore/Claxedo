@@ -11,6 +11,8 @@
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
+    "test:architecture-ratchets": "bun ./script/product-boundary/verify.ts --all --source-only",
+    "prepush": "bun run typecheck && bun run test:architecture-ratchets",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
     "postinstall": "bun script/apply-dependency-patches.ts && bun packages/core/script/fix-node-pty.ts",
     "prepare": "husky",

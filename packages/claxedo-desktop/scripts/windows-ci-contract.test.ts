@@ -4,6 +4,10 @@ import { describe, expect, test } from "bun:test"
 
 const root = path.resolve(import.meta.dirname, "../../..")
 const workflow = readFileSync(path.join(root, ".github/workflows/test.yml"), "utf8")
+const changePolicy = readFileSync(path.join(root, "script/ci-changes.mjs"), "utf8")
+const releaseWorkflow = readFileSync(path.join(root, ".github/workflows/release-claxedo.yml"), "utf8")
+const releaseGatesWorkflow = readFileSync(path.join(root, ".github/workflows/release-gates.yml"), "utf8")
+const crabboxRunner = readFileSync(path.join(root, "script/cbx-ci.ts"), "utf8")
 const prepare = readFileSync(path.join(root, "script/cbx-prepare-windows.ps1"), "utf8")
 const acceptance = readFileSync(path.join(root, "script/cbx-test-windows.ps1"), "utf8")
 const desktopManifest = JSON.parse(readFileSync(path.join(root, "packages/claxedo-desktop/package.json"), "utf8")) as {
@@ -20,19 +24,28 @@ const manifest = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"
 }
 
 describe("Windows CI contract", () => {
-  test("runs the unit matrix on Windows as a blocking check", () => {
-    expect(workflow).toContain("- name: windows\n            host: windows-latest")
+  test("runs the Windows unit matrix only for affected native surfaces", () => {
+    expect(workflow).toContain("settings: ${{ fromJSON(needs.changes.outputs.unit_matrix) }}")
+    expect(workflow).toContain("if: needs.changes.outputs.unit == 'true'")
+    expect(changePolicy).toContain('{ name: "windows", host: "windows-latest" }')
+    expect(changePolicy).toContain("const WINDOWS_PREFIXES = [")
     expect(workflow).not.toContain("continue-on-error: ${{ matrix.settings.host == 'windows-latest' }}")
     expect(acceptance).toContain("bun run test")
     expect(desktopManifest.scripts.test).toBe(
       "bun run test:broad && bun run test:bundle-single && bun run test:server-boot && bun run test:compile-cache",
     )
-    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/bundle-single-instance.test.ts'")
+    expect(desktopManifest.scripts["test:broad"]).toContain(
+      "--path-ignore-patterns='**/bundle-single-instance.test.ts'",
+    )
     expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/claxedo-server-boot.test.ts'")
-    expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/opencode-compile-cache-boot.test.ts'")
+    expect(desktopManifest.scripts["test:broad"]).toContain(
+      "--path-ignore-patterns='**/opencode-compile-cache-boot.test.ts'",
+    )
     expect(desktopManifest.scripts["test:bundle-single"]).toContain("bun test ./scripts/bundle-single-instance.test.ts")
     expect(desktopManifest.scripts["test:server-boot"]).toContain("bun test ./scripts/claxedo-server-boot.test.ts")
-    expect(desktopManifest.scripts["test:compile-cache"]).toContain("bun test ./scripts/opencode-compile-cache-boot.test.ts")
+    expect(desktopManifest.scripts["test:compile-cache"]).toContain(
+      "bun test ./scripts/opencode-compile-cache-boot.test.ts",
+    )
     expect(acceptance.indexOf("\nbun run build\n")).toBeLessThan(acceptance.indexOf("\nbun run test\n"))
   })
 
@@ -60,17 +73,15 @@ describe("Windows CI contract", () => {
     expect(prepare).toContain('throw "Windows process-tree native dependency was not installed"')
   })
 
-  test("builds the local-server distribution before packaged desktop fixtures", () => {
-    const desktopLaneStart = workflow.indexOf("  e2e-desktop:")
-    const nextLaneStart = workflow.indexOf("\n  e2e-workgraph-journey:", desktopLaneStart)
-    const desktopLane = workflow.slice(desktopLaneStart, nextLaneStart)
-    const localServerBuild = desktopLane.indexOf("bun run --cwd packages/claxedo-local-server build")
-    const desktopE2e = desktopLane.indexOf("run: bun run test:e2e:desktop")
-
-    expect(desktopLaneStart).toBeGreaterThan(-1)
-    expect(nextLaneStart).toBeGreaterThan(desktopLaneStart)
-    expect(localServerBuild).toBeGreaterThan(-1)
-    expect(desktopE2e).toBeGreaterThan(localServerBuild)
+  test("keeps desktop compilation behind explicit release entrypoints", () => {
+    expect(workflow).not.toContain("packages/claxedo-desktop")
+    expect(workflow).not.toContain("test:e2e:desktop")
+    expect(releaseWorkflow).toContain("- name: Build desktop")
+    expect(releaseGatesWorkflow).toContain("- name: Build desktop")
+    expect(crabboxRunner).toContain('if (arg === "--release")')
+    expect(crabboxRunner).toContain('"pr-e2e-desktop-macos"')
+    expect(crabboxRunner).toContain("is release-only; rerun with --release")
+    expect(crabboxRunner).toContain("if (options.release) jobs =")
   })
 
   test("declares the MCP SDK modules bundled by the Windows build", () => {

@@ -302,6 +302,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
             {(item) => (
               <div
                 data-testid="compact-switcher-tab"
+                data-content-id={id}
                 // The 28px tab IS the tap target — it is 118-220px wide, which
                 // clears a thumb horizontally. Without this opt-out the mobile /
                 // coarse-pointer floor in app-shell.css sizes every button

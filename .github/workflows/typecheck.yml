@@ -11,11 +11,35 @@ permissions:
   contents: read
 
 jobs:
+  changes:
+    name: select affected typecheck surfaces
+    runs-on: ubuntu-latest
+    outputs:
+      full: ${{ steps.changed.outputs.full }}
+      typecheck: ${{ steps.changed.outputs.typecheck }}
+    steps:
+      - name: Checkout repository history
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
+
+      - name: Select affected gates
+        id: changed
+        uses: ./.github/actions/detect-ci-changes
+        with:
+          base: ${{ github.event.pull_request.base.sha || github.event.before }}
+          head: ${{ github.event.pull_request.head.sha || github.sha }}
+          force-full: ${{ github.event_name == 'workflow_dispatch' }}
+
   typecheck:
+    needs: changes
+    if: needs.changes.outputs.typecheck == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+        with:
+          fetch-depth: 0
 
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
@@ -59,4 +83,12 @@ jobs:
           --filter=@claxedo/workspace-runtime
 
       - name: Run typecheck
-        run: bun typecheck
+        run: |
+          if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
+            bun typecheck
+          else
+            bun turbo typecheck --affected
+          fi
+        env:
+          TURBO_SCM_BASE: ${{ github.event.pull_request.base.sha || github.event.before }}
+          TURBO_SCM_HEAD: ${{ github.event.pull_request.head.sha || github.sha }}

@@ -1,8 +1,9 @@
 name: workgraph-stress
 
 on:
-  schedule:
-    - cron: "17 3 * * *"
+  # Temporarily manual-only while WorkGraph is not an active product focus.
+  # Keep the workflow available for explicit validation without paying the
+  # scheduled 30-minute CI cost every day.
   workflow_dispatch:
 
 permissions:

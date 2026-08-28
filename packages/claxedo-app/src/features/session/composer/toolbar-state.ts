@@ -68,6 +68,7 @@ export function createPromptToolbarState(input: {
     promptModelState({
       harnessMode: input.harnessMode(),
       providerLoading: input.providerLoading(),
+      restoreLoading: input.modelRestorePending(),
       model: currentModel(),
       agent: currentAgent(),
       agentOverride: input.agentOverride(),

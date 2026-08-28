@@ -157,6 +157,19 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(empty.unavailable).not.toMatch(/loading/i)
   })
 
+  test("an unsupported report is complete and exposes Claxedo's fallback modes", () => {
+    const unsupported = report({
+      unsupported: "opencode has no permission modes of its own",
+    })
+    const options = permissionModeOptions({ harness: "opencode", report: unsupported })
+
+    expect(options.claxedo.map((option) => option.id)).toEqual([
+      CLAXEDO_ALLOW_SAFE_ID,
+      CLAXEDO_ASK_ALWAYS_ID,
+    ])
+    expect(options.harness.unavailable).toBe("opencode has no permission modes of its own")
+  })
+
   // A 200 carrying something that is not a mode report has to degrade to a
   // fourth empty state, not throw. This runs inside the composer's render, so a
   // throw here does not break one control — it takes the whole shell into the
@@ -406,6 +419,13 @@ describe("resolving a stored selection", () => {
       report: report(),
     })
     expect(alone?.origin).toBe("claxedo")
+
+    const unsupported = findPermissionModeOption({
+      selection: { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID },
+      harness: "opencode",
+      report: report({ unsupported: "opencode has no permission modes of its own" }),
+    })
+    expect(unsupported?.origin).toBe("claxedo")
   })
 
   // A mode the harness stopped advertising must read as unresolved, not wear

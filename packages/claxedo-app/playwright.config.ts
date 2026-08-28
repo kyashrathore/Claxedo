@@ -32,8 +32,9 @@ const authMode = resolveE2EAuthMode()
 //               committed assets.
 //   all       — no tag filter; includes the lanes CI cannot run. Local/nightly only.
 // `@workgraph-real` is not a lane of its own: it is a sub-selector inside `core`,
-// carved out of the sharded lane by `test:e2e:core:base`'s `--grep-invert` and run by
-// the separate `e2e (workgraph-real)` CI job. Same for the `@documents-*-canary` tags.
+// carved out of the sharded lane by `test:e2e:core:base`'s `--grep-invert`. Its
+// dedicated CI jobs are temporarily paused, while the explicit local/manual commands
+// remain available. The `@documents-*-canary` tags are also sub-selectors.
 // `@surface-desktop` / `@surface-web` are sub-selectors of the same kind, added for
 // `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`'s lane x scenario
 // matrix: every spec that drives the packaged Electron app carries `@surface-desktop`,
@@ -72,8 +73,8 @@ const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
 const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 const liveBackendPort = Number(process.env.CLAXEDO_E2E_LIVE_BACKEND_PORT ?? 3001)
 // Tier R (`real-*.spec.ts`, @tier-real): real claxedo-server + real harness
-// binaries against a scripted model endpoint. Same carve-out mechanics as
-// @workgraph-real: its own CI job, its own backend port baked into the app
+// binaries against a scripted model endpoint. It uses the same carve-out mechanics
+// as @workgraph-real, but retains its own CI job and backend port baked into the app
 // build — a shard cannot host it because a shard's build points at :3001.
 const tierReal = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const tierRealBackendPort = Number(process.env.CLAXEDO_TIER_REAL_BACKEND_PORT ?? 4317)

@@ -56,12 +56,11 @@ export function activeRailSessionStatusTarget(input: {
 }) {
   return input.targets.find((target) =>
     target.sessionID === input.sessionID &&
-    target.directory === input.directory &&
     (input.host === "central"
-      ? target.key.startsWith("central:")
+      ? target.key.startsWith("central:") && target.directory === input.directory
       : input.workspaceId
         ? target.workspaceId === input.workspaceId
-        : true))
+        : target.directory === input.directory))
 }
 
 export function railSessionStatusTarget(input: {

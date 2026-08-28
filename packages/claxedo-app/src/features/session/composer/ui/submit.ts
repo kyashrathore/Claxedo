@@ -43,7 +43,7 @@ import {
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../submit/index"
-import { type ProjectCatalogItem } from "../workspace-resolver"
+import { knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { composerHarnessId, isComposerHarnessMode } from "../mode"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
@@ -351,6 +351,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const harnessMode = existingSessionConfig ? existingSessionConfig.harnessType !== "opencode" : selectedHarnessMode(scope)
     const sessionHarnessType = existingSessionConfig?.harnessType ?? (harnessMode ? selectedHarnessType(scope) : "opencode")
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
+    const signedWorkspaceId = signedControlPlane ? input.workspaceId?.() : undefined
+    const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
     if (!harnessMode && !signedControlPlane && usesLoopbackWorkspaceBridge(sessionDirectory)) {
       client = sessionClient(sessionDirectory, sessionHarnessType)
     }
@@ -505,7 +507,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       surfaceId: surfaceId(),
       claxedoState,
       projects: projectCatalog(),
-      runtimeWorkspaceRef: workspaceRuntimeRef(sessionDirectory),
+      runtimeWorkspaceRef: workspaceRuntimeRef(sessionDirectory) ?? (
+        signedWorkspaceId && signedWorkspaceKind && signedWorkspaceKind !== "local"
+          ? { workspaceId: signedWorkspaceId, kind: signedWorkspaceKind }
+          : undefined
+      ),
       harness: persistedHarnessRef,
       agent,
       model: { providerID: model.providerID, modelID: model.modelID },
@@ -733,7 +739,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       record: recordPromptSubmissionContext,
       optimisticTimeline,
       runtimePromptClient,
-      statusClient: client,
+      statusClient: signedControlPlane ? sessionClient(sessionDirectory, sessionHarnessType) : client,
       demo: isDemoMode(),
       globalSDK,
       refreshDirectory: refreshPromptDirectory,

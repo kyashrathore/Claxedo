@@ -4,7 +4,7 @@ import path from "path"
 import { deleteWorkspaceByDirectory, getProjectWorkspace, listWorkspaces, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { workspaceInput } from "./context"
-import { contains, defaultBranch, gitRun, locate, shell, trees } from "./git"
+import { containsCanonical, defaultBranch, gitRun, locate, shell, trees } from "./git"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { nextWorktreeInfo, publishWorktreeFailed, publishWorktreeReady } from "./worktree"
 import { provisionRegisteredWorktree, WorktreeProvisionError } from "../../workspace/worktree"
@@ -26,9 +26,12 @@ type WorktreeInfo = NonNullable<Awaited<ReturnType<typeof nextWorktreeInfo>>>
  * `locate()` constrains it: `locate()` returning undefined only skips the
  * `git worktree remove` step and falls through to the unconditional `fs.rm`.
  */
-function withinProjectScope(project_id: string, repositoryDirectory: string, target: string) {
-  return contains(path.join(dataDir(), "worktree", project_id), target)
-    || contains(repositoryDirectory, target)
+async function withinProjectScope(project_id: string, repositoryDirectory: string, target: string) {
+  const [managed, repository] = await Promise.all([
+    containsCanonical(path.join(dataDir(), "worktree", project_id), target),
+    containsCanonical(repositoryDirectory, target),
+  ])
+  return managed || repository
 }
 
 function outsideWorkspaceBody() {
@@ -102,7 +105,7 @@ export async function deleteWorktree(c: Context) {
   if (path.resolve(target) === path.resolve(root.directory)) {
     return c.json(errorBody("opencode_primary_workspace_remove_forbidden", "Cannot remove the primary workspace"), 400)
   }
-  if (!withinProjectScope(ws.project_id ?? ws.id, root.directory, target)) {
+  if (!(await withinProjectScope(ws.project_id ?? ws.id, root.directory, target))) {
     return c.json(outsideWorkspaceBody(), 400)
   }
   const list = await gitRun(root.directory, ["worktree", "list", "--porcelain"])
@@ -147,7 +150,7 @@ export async function resetWorktree(c: Context) {
   if (path.resolve(target) === path.resolve(root.directory)) {
     return c.json(errorBody("opencode_primary_workspace_reset_forbidden", "Cannot reset the primary workspace"), 400)
   }
-  if (!withinProjectScope(ws.project_id ?? ws.id, root.directory, target)) {
+  if (!(await withinProjectScope(ws.project_id ?? ws.id, root.directory, target))) {
     return c.json(outsideWorkspaceBody(), 400)
   }
   const branch = await defaultBranch(root.directory)

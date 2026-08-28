@@ -76,6 +76,23 @@ describe("rail session status targets", () => {
     }))?.toBe(targets[1])
   })
 
+  test("matches a focused workspace across logical and physical directory aliases", () => {
+    const target = {
+      key: "workspace:ws_1:session:ses_1",
+      directory: "/runtime/repo",
+      sessionID: "ses_1",
+      workspaceId: "ws_1",
+    }
+
+    expect(activeRailSessionStatusTarget({
+      targets: [target],
+      sessionID: "ses_1",
+      directory: "ws_1",
+      host: "workspace",
+      workspaceId: "ws_1",
+    })).toBe(target)
+  })
+
   test("retains explicit workspace identity for workspace-hosted rows", () => {
     expect(railSessionStatusTarget({
       key: "workspace:ws_signed:session:ses_1",

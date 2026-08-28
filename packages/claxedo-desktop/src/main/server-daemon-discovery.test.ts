@@ -41,7 +41,10 @@ describe("Claxedo daemon discovery", () => {
     writeClaxedoDaemonDiscovery(path, record)
 
     expect(readClaxedoDaemonDiscovery(path)).toEqual(record)
-    expect(statSync(path).mode & 0o777).toBe(0o600)
+    // Windows does not expose its ACL through POSIX mode bits; Bun reports
+    // 0o666 even after chmodSync(0o600). Keep the owner-only mode oracle on
+    // platforms whose filesystem API can represent the contract.
+    if (process.platform !== "win32") expect(statSync(path).mode & 0o777).toBe(0o600)
     expect(JSON.parse(readFileSync(path, "utf8"))).toEqual(record)
   })
 

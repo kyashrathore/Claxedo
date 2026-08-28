@@ -145,7 +145,10 @@ describe("BootstrapRoutes", () => {
 
       expect(res.status).toBe(502)
       const body = await res.json()
-      expect(body.error).toContain("OpenCode provider catalog fetch failed: 503")
+      expect(body.error).toEqual({
+        code: "bootstrap_provider_unavailable",
+        message: "OpenCode provider catalog fetch failed: 503",
+      })
       expect(body.provider).toBeUndefined()
     } finally {
       globalThis.fetch = previousFetch

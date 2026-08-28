@@ -949,8 +949,12 @@ describe("createAgentRuntime", () => {
       harness: { id: "pi", access: "native" },
     })
 
+    const abortedEvents = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "first" })
     await expect(runtime.turns.abort(session.id)).resolves.toEqual({ ok: true, status: "cancelled" })
+    await expect(abortedEvents).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ payload: { type: "finish", sessionId: session.id } }),
+    ]))
 
     const replacementEvents = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
     await expect(runtime.turns.start({

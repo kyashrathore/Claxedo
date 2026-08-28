@@ -230,6 +230,7 @@ export function cycleModelVariant(input: VariantInput) {
 export type PromptModelStateInput = {
   harnessMode: boolean
   providerLoading: boolean
+  restoreLoading?: boolean
   model?: { id?: string; name?: string; provider?: { id: string } } | null
   agent?: { name?: string } | null
   agentOverride?: string
@@ -254,7 +255,7 @@ export function promptModelState(input: PromptModelStateInput) {
     }
   }
 
-  if (input.providerLoading) {
+  if (input.providerLoading || input.restoreLoading) {
     return {
       blocked: true,
       disabled: true,

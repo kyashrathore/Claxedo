@@ -709,23 +709,31 @@ test.describe("core user-hosted workspace @core", () => {
 
     const view = page.locator('[data-component="cloud-startup-view"]')
     await expect(view).toBeVisible({ timeout: 20_000 })
-    await expect(view).toContainText("Connecting to workspace", { timeout: 10_000 })
+    // Capture the transient connecting state once. The health response may
+    // legitimately move the app to the composer at any point after this view
+    // appears; separate locator assertions accidentally require the old view
+    // to remain mounted for the whole assertion sequence.
+    const connecting = await view.evaluate((element) => ({
+      text: element.textContent ?? "",
+      composerVisible: !!document.querySelector('[role="textbox"][aria-label*="Ask anything"]'),
+    }))
+    expect(connecting.text).toContain("Connecting to workspace")
     // The detail line under the heading is generic post-8d1227e44 (no more
     // step-specific `cloudSummary()` sentence for a plain mid-pipeline step),
     // so the distinct-3-step-pipeline proof is the row labels themselves.
-    await expect(view).toContainText("Establishing relay tunnel", { timeout: 10_000 })
-    await expect(view).toContainText("Checking runtime health")
+    expect(connecting.text).toContain("Establishing relay tunnel")
+    expect(connecting.text).toContain("Checking runtime health")
 
     // Never the cloud pipeline's vocabulary.
-    await expect(view).not.toContainText("Acquiring sandbox")
-    await expect(view).not.toContainText("Cloning repository")
-    await expect(view).not.toContainText("Starting runtime")
-    await expect(view).not.toContainText("Waiting for health check")
+    expect(connecting.text).not.toContain("Acquiring sandbox")
+    expect(connecting.text).not.toContain("Cloning repository")
+    expect(connecting.text).not.toContain("Starting runtime")
+    expect(connecting.text).not.toContain("Waiting for health check")
     // Heading distinct from cloud's "Preparing workspace".
-    await expect(page.getByText("Preparing workspace", { exact: true })).toHaveCount(0)
+    expect(connecting.text).not.toContain("Preparing workspace")
 
     // Composer is not offered while connecting.
-    await expect(page.getByRole("textbox", { name: /Ask anything/i })).toHaveCount(0)
+    expect(connecting.composerVisible).toBe(false)
 
     await expect(view).toHaveCount(0, { timeout: 20_000 })
   })

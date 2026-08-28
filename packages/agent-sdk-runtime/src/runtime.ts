@@ -659,6 +659,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             sessionId,
             outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
           })
+          // The runtime owns cancellation completion. Some adapters terminate
+          // their stream after acknowledging abort, while a stuck adapter may
+          // never yield again. Publish the canonical terminal frame before
+          // releasing admission so route-level subscribers always settle and
+          // any later adapter frames remain fenced as the old generation.
+          publish({ sessionId, directory, payload: { type: "finish", sessionId } })
           activeTurnAdmissions.delete(sessionId)
         }
         return result

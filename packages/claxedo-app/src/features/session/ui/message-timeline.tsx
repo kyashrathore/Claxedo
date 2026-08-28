@@ -139,7 +139,8 @@ type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<Timel
 const timelineFallbackItemSize = 60
 const timelineInitialEstimatedItemSize = 180
 const timelineColdFirstFoldOverscanLimit = 2
-const timelineCache = new Map<string, { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined> }>()
+type TimelineCache = { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined>; groupOpen: Record<string, boolean | undefined> }
+const timelineCache = new Map<string, TimelineCache>()
 
 const taskDescription = (part: PartType, sessionID: string) => {
   if (part.type !== "tool" || part.tool !== "task") return
@@ -591,6 +592,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   onCleanup(() => prependAnchorFrames.stop())
   const [toolOpen, setToolOpen] = createStore<Record<string, boolean | undefined>>(cached?.toolOpen ?? {})
+  const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const initialRowCount = timelineRows().length
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
   const [renderRangeLimit, setRenderRangeLimit] = createSignal(
@@ -907,7 +909,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
 
   onCleanup(() => {
     timelineCache.delete(ownerSessionKey)
-    timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen } })
+    timelineCache.set(ownerSessionKey, { measurements: virtualizer.takeSnapshot(), toolOpen: { ...toolOpen }, groupOpen: { ...groupOpen } })
     turnFold.persist()
     while (timelineCache.size > 64) timelineCache.delete(timelineCache.keys().next().value!) // remounting without a snapshot re-estimates heights and visibly shifts; 16 thrashed
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
@@ -993,6 +995,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
 
   const handleListPointerDown = (event: PointerEvent & { currentTarget: HTMLDivElement }) => {
+    // A pointer press on a control is an action, not a scroll gesture. Expanding
+    // the cold virtual range here used to replace the pressed row between
+    // pointerdown and click, so the browser never delivered the click to
+    // timeline controls such as WorkGroup and recovery-card buttons.
+    const target = event.target instanceof Element ? event.target : undefined
+    if (target?.closest("button, a, input, textarea, select, [role='button'], [role='menuitem']")) return
     prepareInteractionScroll()
     props.onMarkScrollGesture(event.target)
   }
@@ -1256,6 +1264,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
       return (
         <ContextToolGroup
           parts={parts()}
+          open={groupOpen[row().group.key] ?? false}
+          onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
             workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
@@ -1292,6 +1302,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
       return (
         <WorkGroup
           parts={members().map((member) => member.part)}
+          open={groupOpen[row().group.key] ?? false}
+          onOpenChange={(open) => setGroupOpen(row().group.key, open)}
           busy={
             workingTurn(row().userMessageID) && lastAssistantGroupKey().get(row().userMessageID) === row().group.key
           }
@@ -1633,7 +1645,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
               left: "0",
               width: "100%",
               height: `${current().item.size}px`,
-              overflow: "clip",
+              overflow: current().item.index === timelineRows().length - 1 ? "visible" : "clip",
               "overflow-clip-margin": current().row._tag === "TurnGap" ? undefined : "0.5px",
             }}
           >

@@ -1,10 +1,10 @@
-import { cleanup, render, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { QueryClientProvider, skipToken, useQuery } from "@tanstack/solid-query"
-import { createSignal } from "solid-js"
+import { createEffect, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
-import { localSelectionHandoffQueryKey } from "@/features/session/store/local-selection-handoff"
+import { getLocalSelectionHandoff, localSelectionHandoffQueryKey } from "@/features/session/store/local-selection-handoff"
 import {
   sessionConfigRawQueryKey,
   sessionConfigSelectionQueryKey,
@@ -74,7 +74,10 @@ vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
     all: () => new Map([["opencode", {
       id: "opencode",
-      models: { "model-restored": { id: "model-restored" } },
+      models: {
+        "model-restored": { id: "model-restored" },
+        "model-next": { id: "model-next" },
+      },
     }]]),
     connected: () => [{ id: "opencode" }],
     default: () => ({ opencode: "model-restored" }),
@@ -192,5 +195,54 @@ describe("session selection hydration scheduling", () => {
     expect(queryClient.getQueryCache().find({
       queryKey: sessionConfigRawQueryKey(scope),
     })?.options.queryFn).toBeTypeOf("function")
+  })
+
+  test("hands an atomically created same-directory session selection to a remounted owner", async () => {
+    const Promoter = () => {
+      const local = useLocal()
+      createEffect(() => local.session.promote("/repo", "ses_created", {
+        agent: "build",
+        model: { providerID: "opencode", modelID: "model-restored" },
+        variant: null,
+      }))
+      return <div />
+    }
+
+    const draft = render(() => (
+      <QueryClientProvider client={queryClient}>
+        <LocalProvider sessionId={() => undefined}>
+          <Promoter />
+        </LocalProvider>
+      </QueryClientProvider>
+    ))
+
+    await waitFor(() => expect(getLocalSelectionHandoff("ses_created")?.model?.modelID).toBe("model-restored"))
+    draft.unmount()
+    harness.deferConfig = true
+
+    const Probe = () => {
+      const local = useLocal()
+      return (
+        <div data-testid="selection" data-model={local.model.selected()?.modelID ?? ""}>
+          <button
+            type="button"
+            onClick={() => local.model.set({ providerID: "opencode", modelID: "model-next" })}
+          >
+            Pick next model
+          </button>
+        </div>
+      )
+    }
+    const remounted = render(() => (
+      <QueryClientProvider client={queryClient}>
+        <LocalProvider sessionId={() => "ses_created"}>
+          <Probe />
+        </LocalProvider>
+      </QueryClientProvider>
+    ))
+
+    await waitFor(() => expect(remounted.getByTestId("selection")).toHaveAttribute("data-model", "model-restored"))
+    fireEvent.click(remounted.getByRole("button", { name: "Pick next model" }))
+    await waitFor(() => expect(remounted.getByTestId("selection")).toHaveAttribute("data-model", "model-next"))
   })
 })

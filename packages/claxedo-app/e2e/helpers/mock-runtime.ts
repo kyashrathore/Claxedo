@@ -1335,6 +1335,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           info: messages.find((row) => row.info.id === input.assistantID)!.info,
         },
       })
+      setSessionStatus(SESSION_ID)
       emit({ type: "session.error", properties: { sessionID: SESSION_ID } })
       return
     }

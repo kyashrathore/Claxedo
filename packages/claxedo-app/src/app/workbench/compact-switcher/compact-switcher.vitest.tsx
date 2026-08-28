@@ -53,6 +53,8 @@ describe("CompactSwitcher", () => {
 
     expect(screen.getByRole("button", { name: "Build fix" })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Dev server" })).toBeInTheDocument()
+    expect(screen.getAllByTestId("compact-switcher-tab").map((tab) => tab.getAttribute("data-content-id")))
+      .toEqual(["content-session", "content-terminal"])
   })
 
   test("marks the active item", () => {

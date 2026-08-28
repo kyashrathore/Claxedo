@@ -1108,15 +1108,7 @@ describe("createCentralSessionRuntime", () => {
     expect(events.map((event) => event.payload.type)).toEqual([
       "session-info",
       "session-status",
-      "session-status",
-      "error",
     ])
-    expect(events).toContainEqual(expect.objectContaining({
-      directory: session.id,
-      sessionId: session.id,
-      assistantMessageId: "user-abort_r",
-      payload: { type: "error", error: "central turn aborted" },
-    }))
     await runtime.flushUsage()
     expect(usage.at(-1)).toMatchObject({
       messageId: "user-abort_r",

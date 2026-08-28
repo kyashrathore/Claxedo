@@ -192,6 +192,19 @@ describe("model-strategy", () => {
     })
   })
 
+  test("blocks provider-mode submit while an existing session model is restoring", () => {
+    expect(promptModelState({
+      harnessMode: false,
+      providerLoading: false,
+      restoreLoading: true,
+      agent: { name: "build" },
+    })).toEqual({
+      blocked: true,
+      disabled: true,
+      label: "Loading models",
+    })
+  })
+
   test("blocks provider-mode submit when no model can be resolved", () => {
     expect(promptModelState({
       harnessMode: false,

@@ -1881,6 +1881,7 @@ describe("workspace runtime route audit", () => {
     const orchestration = await Bun.file(path.join(root, "app/workbench/state/orchestration.ts")).text()
     const persistence = await Bun.file(path.join(root, "app/workbench/state/persistence.ts")).text()
     const routeBridge = await Bun.file(path.join(root, "app/workbench/state/route-bridge.tsx")).text()
+    const routeBridgeResolution = await Bun.file(path.join(root, "app/workbench/state/route-bridge-resolution.ts")).text()
     const rail = await Bun.file(path.join(root, appShellLayout)).text()
     const sidebar = await Bun.file(path.join(root, railSidebar)).text()
     const actionsShared = await Bun.file(path.join(root, claxedoActionShared)).text()
@@ -1923,9 +1924,10 @@ describe("workspace runtime route audit", () => {
     expect(persistence).toMatch(/missingRequiredSessionRef/)
     expect(persistence).not.toMatch(/backfillSessionRef/)
     expect(persistence).not.toMatch(/sessionRefForPane/)
-    expect(routeBridge).toMatch(
-      /draft\?\.content\?\.sessionRef \?\?\s*sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: event\.sessionID,[\s\S]*directory: event\.directory/,
-    )
+    expect(routeBridge).toMatch(/routeLifecycleSessionRef\(\{[\s\S]*sessionId: event\.sessionID,[\s\S]*directory: event\.directory/)
+    expect(routeBridge).toMatch(/draftSessionRef: draft\.content\.sessionRef/)
+    expect(routeBridgeResolution).toMatch(/retargetSessionRef\(\{[\s\S]*sessionId: input\.sessionId,[\s\S]*source: input\.draftSessionRef/)
+    expect(routeBridgeResolution).toMatch(/sessionRefForWorkspaceSession\(\{[\s\S]*sessionId: input\.sessionId,[\s\S]*directory: input\.directory/)
     expect(routeBridge).toMatch(/sessionRefForWorkspaceSession/)
     expect(rail).not.toMatch(/sessionRefForPane/)
     expect(rail).not.toMatch(/signedWorkspaceFromProjects/)
@@ -2088,7 +2090,8 @@ describe("workspace runtime route audit", () => {
 
     const offenders: string[] = []
     const glob = new Bun.Glob("**/*.{ts,tsx}")
-    for (const file of glob.scanSync({ cwd: root, onlyFiles: true })) {
+    for (const discovered of glob.scanSync({ cwd: root, onlyFiles: true })) {
+      const file = canonicalRelativePath(discovered)
       if (file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.endsWith(".vitest.tsx")) continue
       const text = await Bun.file(path.join(root, file)).text()
       for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute|WorkGraphRoute)|canonicalWorkspaceRoute|newTaskRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {

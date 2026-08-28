@@ -4,8 +4,11 @@
 
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
+import { retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
+
+type RouteSessionDirectory = NonNullable<Parameters<typeof signedWorkspaceFromProjects>[1]>
 
 export function settledWorkspaceSessionRedirect(input: {
   hash: string
@@ -59,6 +62,31 @@ export function routeSessionWorkspaceBacking(input: {
     workspaceId: workspace.workspaceId,
     kind: workspace.kind,
   }
+}
+
+export function routeLifecycleSessionRef(input: {
+  projects: Parameters<typeof signedWorkspaceFromProjects>[0]
+  sessionId: string
+  directory: RouteSessionDirectory
+  workspaceId?: string
+  draftSessionRef?: SessionRef
+}) {
+  const retargeted = retargetSessionRef({
+    sessionId: input.sessionId,
+    source: input.draftSessionRef,
+  })
+  if (retargeted) return retargeted
+
+  const workspace = routeSessionWorkspaceBacking({
+    projects: input.projects,
+    directory: input.directory,
+    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+  })
+  return sessionRefForWorkspaceSession({
+    sessionId: input.sessionId,
+    directory: input.directory,
+    ...(workspace ? { workspace } : {}),
+  })
 }
 
 export function routeBridgeServerUrl(serverUrl: string | undefined) {

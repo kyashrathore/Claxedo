@@ -145,7 +145,9 @@ falling through to "run everything".
 
 `@workgraph-real` and the `@documents-*-canary` tags are sub-selectors *within* a
 lane, not lanes: `test:e2e:core:base` carves `@workgraph-real` out of the sharded
-lane with `--grep-invert`, and the separate `e2e (workgraph-real)` CI job runs it.
+lane with `--grep-invert`. WorkGraph's dedicated browser and headless-journey CI
+jobs are temporarily paused; `test:e2e:workgraph` and `test:e2e:journey` remain
+available for explicit local or Crabbox runs.
 `src/architecture/e2e-suite-tags.guard.test.ts` fails if any spec carries no lane
 tag, or carries an unregistered one (a `@cores` typo).
 

@@ -10,39 +10,32 @@ const coreShards = Array.from({ length: 12 }, (_, index) => `pr-e2e-core-${Strin
 const awsCoreShards = coreShards.map((job) => `${job}-aws`)
 const groups = {
   "pr-linux": [
-    "pr-diagnostics-linux-aws",
-    "pr-release-gates-linux-x64-aws",
     "pr-unit-linux-aws",
     "pr-typecheck-linux-aws",
     ...awsCoreShards,
-    "pr-e2e-workgraph-linux-aws",
     "pr-e2e-tier-real-linux-aws",
-    "pr-e2e-workgraph-journey-linux-aws",
     "pr-agent-runtime-stats-linux-aws",
     "pr-packages-dry-run-linux-aws",
     "pr-relay-bench-linux-aws",
     "pr-storybook-linux-aws",
   ],
   "pr-linux-hetzner": [
-    "pr-diagnostics-linux",
     "pr-unit-linux",
     "pr-typecheck-linux",
     ...coreShards,
-    "pr-e2e-workgraph-linux",
     "pr-e2e-tier-real-linux",
-    "pr-e2e-workgraph-journey-linux",
     "pr-agent-runtime-stats-linux",
     "pr-packages-dry-run-linux",
     "pr-relay-bench-linux",
     "pr-storybook-linux",
   ],
-  "pr-native": [
-    "pr-unit-windows",
-    "pr-e2e-desktop-macos",
-    "pr-agent-runtime-stats-windows",
-    "pr-agent-runtime-stats-macos",
-  ],
+  "pr-native": ["pr-unit-windows", "pr-agent-runtime-stats-windows", "pr-agent-runtime-stats-macos"],
 } as const
+
+// Full desktop compilation and release diagnostics are intentionally excluded
+// from ordinary PR groups. They remain explicit, opt-in release validation.
+const releaseJobs = ["pr-diagnostics-linux-aws", "pr-release-gates-linux-x64-aws", "pr-e2e-desktop-macos"] as const
+const releaseJobSet = new Set<string>(releaseJobs)
 
 const focusedJobs = [
   "focus-agent-sdk-runtime-windows",
@@ -54,7 +47,7 @@ const focusedJobs = [
   "focus-e2e-tier-real-cursor-linux-aws",
   "focus-e2e-tier-real-web-linux-aws",
 ] as const
-const allJobs = new Set([...Object.values(groups).flat(), ...focusedJobs])
+const allJobs = new Set([...Object.values(groups).flat(), ...releaseJobs, ...focusedJobs])
 
 type RunResult = {
   job: string
@@ -71,11 +64,12 @@ type RunState = {
 function usage(): never {
   console.error(`usage:
   script/cbx-ci.ts list
-  script/cbx-ci.ts dry-run [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
-  script/cbx-ci.ts run [--concurrency N] [--id LEASE] [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
-  script/cbx-ci.ts retry [--concurrency N] [--id LEASE]
+  script/cbx-ci.ts dry-run [--release] [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
+  script/cbx-ci.ts run [--release] [--concurrency N] [--id LEASE] [pr-linux|pr-linux-hetzner|pr-native|pr|job ...]
+  script/cbx-ci.ts retry [--release] [--concurrency N] [--id LEASE]
 
-Defaults: group=pr-linux, concurrency=12. Passing --id reuses one lease and
+Defaults: group=pr-linux, concurrency=12. --release adds the diagnostics,
+release-gate, and packaged-desktop jobs. Passing --id reuses one lease and
 forces concurrency=1 so jobs cannot corrupt each other's workspace.`)
   process.exit(2)
 }
@@ -97,13 +91,22 @@ function expandNames(names: string[]): string[] {
   return [...new Set(expanded)]
 }
 
+function requireReleaseMode(jobs: string[], release: boolean) {
+  if (release) return
+  const releaseOnly = jobs.find((job) => releaseJobSet.has(job))
+  if (releaseOnly) throw new Error(`${releaseOnly} is release-only; rerun with --release`)
+}
+
 function parseOptions(args: string[]) {
   let concurrency = 12
   let lease: string | undefined
+  let release = false
   const names: string[] = []
   for (let index = 0; index < args.length; index += 1) {
     const arg = args[index]
-    if (arg === "--concurrency") {
+    if (arg === "--release") {
+      release = true
+    } else if (arg === "--concurrency") {
       const value = args[++index]
       if (!value || !/^\d+$/.test(value) || Number(value) < 1) {
         throw new Error("--concurrency requires a positive integer")
@@ -119,7 +122,7 @@ function parseOptions(args: string[]) {
     }
   }
   if (lease) concurrency = 1
-  return { concurrency, lease, names }
+  return { concurrency, lease, release, names }
 }
 
 async function runProcess(args: string[]): Promise<number> {
@@ -207,12 +210,15 @@ async function main() {
   if (command === "retry") {
     if (options.names.length > 0) throw new Error("retry does not accept job names")
     jobs = await loadFailedJobs()
+    requireReleaseMode(jobs, options.release)
     if (jobs.length === 0) {
       console.log("The previous Crabbox CI run has no failed jobs.")
       return
     }
   } else if (command === "run" || command === "dry-run") {
     jobs = expandNames(options.names)
+    requireReleaseMode(jobs, options.release)
+    if (options.release) jobs = [...new Set([...jobs, ...releaseJobs])]
   } else {
     usage()
   }

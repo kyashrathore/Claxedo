@@ -53,6 +53,7 @@ import {
   routeSessionMetaIsArchived,
   routeSessionMetaIsCentral,
   routeSessionDirectory,
+  routeLifecycleSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
 } from "./route-bridge-resolution"
@@ -124,12 +125,13 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       if (wasRolledBackDraft(event.draftId)) return
       const info = event.info && typeof event.info === "object" ? (event.info as { title?: unknown }) : undefined
       const draft = state.meta.find((meta) => meta.type === "draft-session" && meta.draftId === event.draftId)
-      const sessionRef =
-        draft?.content?.sessionRef ??
-        sessionRefForWorkspaceSession({
-          sessionId: event.sessionID,
-          directory: event.directory,
-        })
+      const sessionRef = routeLifecycleSessionRef({
+        projects: projectsQuery.data ?? [],
+        sessionId: event.sessionID,
+        directory: event.directory,
+        ...(event.workspaceId ? { workspaceId: event.workspaceId } : {}),
+        ...(draft?.content?.sessionRef ? { draftSessionRef: draft.content.sessionRef } : {}),
+      })
       state.layout.completeDraftSession({
         draftId: event.draftId,
         directory: event.directory,
@@ -367,6 +369,21 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     }),
     currentSessionId: sessionId,
     resolveSession: async (id) => {
+      const active = activeSurface()
+      if (
+        (active?.type === "session" || active?.type === "context") &&
+        active.sessionId === id &&
+        !!active.directory &&
+        active.content?.type === "session" &&
+        active.content.sessionRef &&
+        hasBacking(active.content.sessionRef)
+      ) {
+        return {
+          directory: active.directory,
+          title: active.content.title,
+          sessionRef: active.content.sessionRef,
+        }
+      }
       const routed = routeDirectory()
       if (routed && routed !== "/workspace") {
         const workspace = workspaceBackingForRouteDirectory(routed)
@@ -709,7 +726,6 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         })
         const directories = routeResolutionDirectories()
         const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
-        const metaLookupInFlight = cachedTarget ? false : resolveRouteSessionFromMeta(sessionId, directories)
         const matchesActiveWorkspaceSurface =
           !!routeDirectory() &&
           surface?.type === "session" &&
@@ -728,6 +744,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
                 surface.content.sessionRef?.host === "workspace"
               : !cachedTarget && sessionInventory().loaded && directories.length === 0))
         if (matchesActiveSurface) return
+        const metaLookupInFlight = cachedTarget ? false : resolveRouteSessionFromMeta(sessionId, directories)
         if (metaLookupInFlight) return
         if (target) {
           void directorySessionCacheActions.ensure({ directory: target.directory })

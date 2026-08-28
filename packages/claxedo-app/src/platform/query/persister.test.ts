@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import {
+  flushQueryPersistence,
   installQueryPersister,
   MAX_QUERY_PERSISTENCE_BYTES,
   queryPersistencePolicies,
@@ -183,6 +184,20 @@ describe("query persister", () => {
 
     expect(target.getItem(queryPersisterKey)).toContain("newer")
     expect(target.getItem(queryPersisterKey)).not.toContain("older")
+  })
+
+  test("flushes reconciled navigation state before the persistence throttle expires", async () => {
+    const target = storage()
+    await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 60_000 })?.restore
+    const key = ["shell", "base", "sessionList", { scope: "project" }] as const
+
+    queryClient.setQueryData(key, { items: [{ sessionId: "ses_archived" }] })
+    await flushQueryPersistence()
+    expect(target.getItem(queryPersisterKey)).toContain("ses_archived")
+
+    queryClient.setQueryData(key, { items: [] })
+    await flushQueryPersistence()
+    expect(target.getItem(queryPersisterKey)).not.toContain("ses_archived")
   })
 
   test("round-trips Map-valued query data (provider catalog) through storage", async () => {

@@ -158,6 +158,12 @@ describe("Harness + demo dispatch and abort", () => {
 
   test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.demoMode = false
+    state.localSessionConfig = {
+      harness: { id: "claude", access: "acp" },
+      agent: "build",
+      model: { providerID: "claude-acp", modelID: "opus" },
+      variant: "high",
+    }
 
     const submit = createSubmit({
       info: () => ({
@@ -183,7 +189,7 @@ describe("Harness + demo dispatch and abort", () => {
       model: { providerID: "claude-acp", modelID: "opus" },
       variant: "high",
     })
-    expect(unsignedCalls.filter((call) => call.url.includes("/config"))).toHaveLength(0)
+    expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toHaveLength(0)
   })
 
 

@@ -16,7 +16,9 @@ describe("product boundary authoritative checks", () => {
       "@claxedo/server",
     ])
 
-    const commands = Object.values(AUTHORITATIVE_CHECKS).flat().map((check) => check.command.join(" "))
+    const commands = Object.values(AUTHORITATIVE_CHECKS)
+      .flat()
+      .map((check) => check.command.join(" "))
     expect(commands.some((command) => command.includes("local-entry-closure.guard.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("local-closure.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("connector-closure.test.ts"))).toBe(true)
@@ -64,10 +66,7 @@ describe("product boundary authoritative checks", () => {
     })
 
     expect(ok).toBe(false)
-    expect(seen.map((check) => check.label)).toEqual([
-      "local renderer source closure",
-      "local renderer build",
-    ])
+    expect(seen.map((check) => check.label)).toEqual(["local renderer source closure", "local renderer build"])
   })
 
   test("the emitted check always uses the known-positive marker build", () => {
@@ -79,17 +78,22 @@ describe("product boundary authoritative checks", () => {
     expect(() => runAuthoritativeChecks("@claxedo/missing", () => 0)).toThrow("has no authoritative checks")
   })
 
-  test("the main CI workflow invokes every product's public closure command", () => {
+  test("ordinary CI invokes affected non-desktop closures and releases retain desktop closure", () => {
     const workflow = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/test.yml"), "utf8")
+    const releaseWorkflow = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/release-claxedo.yml"), "utf8")
+    const releaseGatesWorkflow = fs.readFileSync(path.join(REPO_ROOT, ".github/workflows/release-gates.yml"), "utf8")
 
-    expect(workflow).toContain("working-directory: packages/claxedo-app\n        run: bun run verify:closure")
     for (const packageDirectory of [
+      "claxedo-app",
       "claxedo-local-server",
       "claxedo-host-connector",
       "claxedo-server",
-      "claxedo-desktop",
     ]) {
       expect(workflow).toContain(`bun run --cwd packages/${packageDirectory} verify:closure`)
     }
+    expect(workflow).not.toContain("bun run --cwd packages/claxedo-desktop verify:closure")
+    expect(workflow).not.toContain("working-directory: packages/claxedo-desktop")
+    expect(releaseWorkflow).toContain("- name: Build desktop")
+    expect(releaseGatesWorkflow).toContain("- name: Build desktop")
   })
 })

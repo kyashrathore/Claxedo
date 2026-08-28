@@ -12,6 +12,8 @@ import type { useDirectorySessionCacheActions } from "../../../features/session/
 import type { useGlobalBootstrapActions } from "../../integrations/sync/global-bootstrap"
 import type { useProjectInventoryActions } from "../../integrations/sync/project-inventory"
 import { sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type LayoutApi = ReturnType<typeof useLayout>
 export type GlobalSDKApi = ReturnType<typeof useGlobalSDK>
@@ -43,6 +45,7 @@ export type ActionProps = {
   activeWorkspaceRouteId: Accessor<string | undefined>
   activeProjectId: Accessor<string | undefined>
   workspaceRouteId: (dir: string) => string | undefined
+  workspaceKindForRoute: (routeId: string) => "cloud" | "user-hosted" | "local" | undefined
   canUseDocuments?: Accessor<boolean>
   flowLog: (...args: unknown[]) => void
 }
@@ -112,18 +115,20 @@ export function sessionRefForActionWorkspace(input: {
   projects: Accessor<ProjectItem[]>
   workspaceDir: string
   sessionId: string
+  workspaceRouteId?: string
+  workspaceKind?: "cloud" | "user-hosted" | "local"
 }) {
-  const project = findProjectForWorkspace(input.projects, input.workspaceDir)
-  const workspace = project?.workspaces?.[input.workspaceDir]
+  const catalogWorkspace = signedWorkspaceFromProjects(input.projects(), input.workspaceDir)
+  const connectedKind = workspaceKind(input.workspaceKind)
+  const workspace = catalogWorkspace ?? (
+    input.workspaceRouteId && connectedKind && connectedKind !== "local"
+      ? { workspaceId: input.workspaceRouteId, kind: connectedKind }
+      : undefined
+  )
   return sessionRefForWorkspaceSession({
     sessionId: input.sessionId,
     directory: input.workspaceDir,
-    workspace: workspace?.kind === "cloud"
-      ? {
-          workspaceId: workspace.workspaceId ?? workspace.id,
-          kind: "cloud",
-        }
-      : undefined,
+    ...(workspace ? { workspace } : {}),
   })
 }
 
