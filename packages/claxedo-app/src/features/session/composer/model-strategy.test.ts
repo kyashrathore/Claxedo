@@ -117,35 +117,18 @@ describe("model-strategy", () => {
     }, { id: "big-pickle", provider: { id: "opencode" } })).toBeUndefined()
   })
 
-  test("runtime submit model selection parses connected provider responses", () => {
+  test("runtime submit model selection never substitutes catalog defaults when selected is absent", () => {
     expect(selectRuntimeModel({
       all: [
         { id: "openai", models: { "gpt-5.3-chat-latest": { name: "GPT 5.3 Chat" } } },
         { id: "google", models: { "gemini-3-pro-image-preview": { name: "Gemini 3 Pro Image" } } },
-        { id: "opencode", models: { "deepseek-v4-flash-free": { name: "DeepSeek V4 Flash" } } },
       ],
-      connected: ["google", "opencode", "openai"],
-      default: { google: "gemini-3-pro-image-preview", opencode: "deepseek-v4-flash-free", openai: "gpt-5.3-chat-latest" },
-    }, undefined)).toMatchObject({
-      id: "gpt-5.3-chat-latest",
-      name: "GPT 5.3 Chat",
-      provider: { id: "openai" },
-    })
+      connected: ["google", "openai"],
+      default: { google: "gemini-3-pro-image-preview", openai: "gpt-5.3-chat-latest" },
+    }, undefined)).toBeUndefined()
   })
 
-  test("runtime submit model selection uses model map keys when ids are omitted", () => {
-    expect(selectRuntimeModel({
-      all: [{ id: "opencode", models: { "kimi-k2.5-free": { name: "Kimi K2.5 Free" } } }],
-      connected: ["opencode"],
-      default: { opencode: "kimi-k2.5-free" },
-    }, undefined)).toMatchObject({
-      id: "kimi-k2.5-free",
-      name: "Kimi K2.5 Free",
-      provider: { id: "opencode" },
-    })
-  })
-
-  test("runtime submit model selection ignores malformed provider payloads", () => {
+  test("runtime submit model selection ignores malformed provider payloads when selected is absent", () => {
     expect(selectRuntimeModel({
       all: [
         { id: 123, models: { broken: { name: "Broken" } } },
@@ -156,7 +139,7 @@ describe("model-strategy", () => {
     }, undefined)).toBeUndefined()
   })
 
-  test("picks the first valid saved selection model for draft fallback", () => {
+  test("picks the first valid saved selection model from restore candidates", () => {
     expect(firstValidSelectionModel({
       selections: [
         undefined,
@@ -253,33 +236,33 @@ describe("model-strategy", () => {
     })
   })
 
-  test("prompt model fallback only applies to an uninitialized or invalid provider-mode scope", () => {
+  test("prompt model resolution never enables catalog fallback", () => {
     expect(promptModelFallbackState({
       harnessMode: false,
       hasCurrentModel: false,
       hasSelection: false,
       providerLoading: false,
-    })).toEqual({ type: "uninitialized", fallback: true })
+    })).toEqual({ type: "uninitialized" })
     expect(shouldUsePromptFallbackModel({
       harnessMode: false,
       hasCurrentModel: false,
       hasSelection: false,
       providerLoading: false,
-    })).toBe(true)
+    })).toBe(false)
 
     expect(promptModelFallbackState({
       harnessMode: false,
       hasCurrentModel: false,
       hasSelection: true,
       providerLoading: false,
-    })).toEqual({ type: "invalid-selected", fallback: true })
+    })).toEqual({ type: "invalid-selected" })
 
     expect(promptModelFallbackState({
       harnessMode: false,
       hasCurrentModel: false,
       hasSelection: false,
       providerLoading: true,
-    })).toEqual({ type: "hydrating", fallback: false })
+    })).toEqual({ type: "hydrating" })
 
     expect(promptModelFallbackState({
       harnessMode: false,
@@ -287,7 +270,7 @@ describe("model-strategy", () => {
       hasSelection: false,
       providerLoading: false,
       restoreLoading: true,
-    })).toEqual({ type: "hydrating", fallback: false })
+    })).toEqual({ type: "hydrating" })
 
     expect(promptModelFallbackState({
       harnessMode: false,
@@ -296,21 +279,21 @@ describe("model-strategy", () => {
       hasSelection: false,
       providerLoading: false,
       restoreLoading: false,
-    })).toEqual({ type: "needs-selection", fallback: false })
+    })).toEqual({ type: "needs-selection" })
 
     expect(promptModelFallbackState({
       harnessMode: true,
       hasCurrentModel: false,
       hasSelection: false,
       providerLoading: false,
-    })).toEqual({ type: "harness-owned", fallback: false })
+    })).toEqual({ type: "harness-owned" })
 
     expect(promptModelFallbackState({
       harnessMode: false,
       hasCurrentModel: true,
       hasSelection: false,
       providerLoading: false,
-    })).toEqual({ type: "resolved", fallback: false })
+    })).toEqual({ type: "resolved" })
   })
 
   test("selected model wins while provider data catches up", () => {
@@ -319,13 +302,31 @@ describe("model-strategy", () => {
       hasCurrentModel: false,
       hasSelection: true,
       providerLoading: true,
-    })).toEqual({ type: "selected", fallback: false })
+    })).toEqual({ type: "selected" })
 
     expect(shouldUsePromptFallbackModel({
       harnessMode: false,
       hasCurrentModel: false,
       hasSelection: true,
       providerLoading: true,
+    })).toBe(false)
+  })
+
+  test("saved non-default selection waits for provider detail without falling back", () => {
+    expect(promptModelFallbackState({
+      harnessMode: false,
+      hasCurrentModel: false,
+      hasSelection: true,
+      providerLoading: false,
+      selectionCatalogPending: true,
+    })).toEqual({ type: "selected" })
+
+    expect(shouldUsePromptFallbackModel({
+      harnessMode: false,
+      hasCurrentModel: false,
+      hasSelection: true,
+      providerLoading: false,
+      selectionCatalogPending: true,
     })).toBe(false)
   })
 

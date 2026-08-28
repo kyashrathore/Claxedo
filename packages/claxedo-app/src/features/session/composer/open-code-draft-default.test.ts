@@ -59,6 +59,27 @@ describe("OpenCode workspace draft defaults", () => {
     }]])
   })
 
+  test("remembers an explicit OpenCode pick even outside the new-session variant", () => {
+    const owner = controller()
+    const writes: unknown[] = []
+    writeOpenCodeDraftModel({
+      controller: owner.value,
+      scope: "draft:1",
+      directory: "/repo",
+      sessionId: "new",
+      newSession: false,
+      model: { providerID: "opencode", modelID: "hy3-free" },
+      write: (...args) => writes.push(args),
+      labels: { provider: "OpenCode", model: "HY3 Free" },
+    })
+
+    expect(writes).toEqual([[{ providerID: "opencode", modelID: "hy3-free" }, undefined]])
+    expect(owner.calls).toEqual([["remember", "draft:1", { providerID: "opencode", modelID: "hy3-free" }, {
+      directory: "/repo",
+      sessionId: "new",
+    }, { provider: "OpenCode", model: "HY3 Free" }]])
+  })
+
   test("does not write the saved model after draft ownership changes", () => {
     const model = { providerID: "openai", modelID: "gpt-5.5" }
     const owner = controller({ model })

@@ -81,7 +81,6 @@ describe("Workspace-runtime transport + model resolution", () => {
       setPopover: () => undefined,
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
-      fallbackModel: () => ({ id: "big-pickle", provider: { id: "opencode" } }),
     })
 
     await submit.handleSubmit(submitEvent())
@@ -134,7 +133,6 @@ describe("Workspace-runtime transport + model resolution", () => {
       setPopover: () => undefined,
       onSubmit: () => undefined,
       navigateOnCreate: () => false,
-      fallbackModel: () => ({ id: "nano-banana-pro", provider: { id: "google" } }),
     })
 
     await submit.handleSubmit(submitEvent())

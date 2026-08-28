@@ -1,5 +1,5 @@
-import { describe, expect, test } from "bun:test"
-import { resolveModelVisibility } from "./models"
+import { describe, expect, test, mock } from "bun:test"
+import { hydrateConnectedProviderDetails, resolveModelVisibility } from "./models"
 
 const defaults = {
   anthropic: "sonnet",
@@ -32,5 +32,19 @@ describe("model visibility", () => {
       defaults,
       user: "hide",
     })).toBe(false)
+  })
+})
+
+describe("hydrateConnectedProviderDetails", () => {
+  test("loads every connected provider and tolerates per-provider failures", async () => {
+    const load = mock(async (providerId: string) => {
+      if (providerId === "broken") throw new Error("offline")
+    })
+    const connected = () => [{ id: "anthropic" }, { id: "openai" }, { id: "broken" }]
+
+    const results = await hydrateConnectedProviderDetails({ connected, load })
+
+    expect(load).toHaveBeenCalledTimes(3)
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "rejected"])
   })
 })

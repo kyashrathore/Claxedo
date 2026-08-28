@@ -44,7 +44,7 @@ export function writeOpenCodeDraftModel(input: DraftInput & {
   write(model?: ModelKey, options?: { recent?: boolean }): void
 }) {
   input.write(input.model, input.options)
-  if (!input.model || !input.newSession) return
+  if (!input.model) return
   if (input.controller?.read(input.scope).harness !== "opencode") return
   input.controller.rememberDraftModel(input.scope, input.model, {
     directory: input.directory,

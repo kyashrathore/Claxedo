@@ -139,8 +139,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       variant: local.model.variant.current(),
     }
   }
-  const pickerModel = createMemo<PickerState>(() =>
-    createModelSelectionPicker({
+  const pickerModel = createMemo<PickerState>(() => ({
+    ...createModelSelectionPicker({
       list: local.model.list,
       current: local.model.current,
       visible: local.model.visible,
@@ -154,8 +154,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         labels: openCodeDraftLabels(model, local.model.list()),
         write: local.model.set,
       }),
-    })
-  )
+    }),
+    hydrate: () => { void local.model.hydrate() },
+  }))
   createEffect(() => restoreOpenCodeDraftDefault({
     controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
     newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(), write: local.model.set, writeVariant: local.model.variant.set,
@@ -410,14 +411,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     currentAgent: local.agent.current,
     fallbackAgent: signedWorkspaceRuntimeFallback.agent,
     agentOverride: () => props.agent,
-    providerConnected: providers.connected,
-    providerDefaults: providers.default,
     providerLoading: providers.loading,
     currentModel: local.model.current,
     currentModelSource: local.model.currentSource,
     hasSelectedModel: () => !!local.model.selected(),
     modelRestorePending: local.model.restorePending,
-    fallbackModel: signedWorkspaceRuntimeFallback.model,
+    selectionCatalogPending: local.model.selectionCatalogPending,
     harnessMode: () => toolbarHarnessMode(scope()),
     isOpenCodeHarness: () => currentHarnessType(scope()) === "opencode",
     existingSession: () => !!resolvedSessionId() && resolvedSessionId() !== "new",
@@ -640,7 +639,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     signedControlPlane,
     workspaceId: props.workspaceId,
     workspaceKind: props.workspaceKind,
-    fallbackModel: () => toolbarState.shouldUseFallbackModel() ? toolbarState.fallbackModel() : undefined,
+    selectedModelForSubmit: toolbarState.currentModel,
     harnessController,
   })
 
@@ -650,11 +649,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     roleSubmitBlocked,
     // Clickability must never become submittability. Viewer-role hard-blocks
     // unconditionally (via roleSubmitBlocked); every other block reason also
-    // guards the handler — except while a turn is running, so Stop stays live.
-    // See submitHardBlocked for the opencode-mode no-model exception that lets
-    // the handler's own toast guard fire.
-    submitBlocked: () =>
-      submitHardBlocked({ stoppable: stoppable(), block: submitBlock(), harnessMode: toolbarHarnessMode(scope()) }),
+    // guards the handler. Enter routes missing-model to the picker (see
+    // createPromptInputSubmitRetry) instead of the submit toast guard.
+    submitBlocked: () => submitHardBlocked({ stoppable: stoppable(), block: submitBlock() }),
+    submitBlock,
+    onChooseModel: openModelPicker,
     prompt,
     imageCount: () => imageAttachments().length,
     commentCount,

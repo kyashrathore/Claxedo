@@ -5,6 +5,7 @@ import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useProviders } from "@/features/session/app-ports"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
+import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 
 type Visibility = "show" | "hide"
 type User = ModelKey & { visibility: Visibility; favorite?: boolean }
@@ -62,10 +63,12 @@ const modelsContextInput = {
 
     const available = createMemo(() =>
       providers.connected().flatMap((p) =>
-        Object.values(p.models).map((m) => ({
-          ...m,
-          provider: p,
-        })),
+        Object.values(p.models)
+          .filter((m) => !isSignedWorkspaceDefaultModel({ id: m.id, provider: { id: p.id } }))
+          .map((m) => ({
+            ...m,
+            provider: p,
+          })),
       ),
     )
 

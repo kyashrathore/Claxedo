@@ -22,7 +22,6 @@ import {
   sessionConfigRawQueryKey,
   sessionConfigPatchFromLocalSelection,
   sessionConfigSelectionQueryKey,
-  shouldExposeDefaultLocalModelFallback,
 } from "@/features/session/store/session-config-selection"
 import { createSessionSyncRetry } from "./session-config-sync-retry"
 import { decodeSessionConfig } from "@/features/session/harness/profile"
@@ -36,16 +35,15 @@ import { createDeferredDirectoryResourceGate } from "../data/query/deferred-dire
 import { parkedPaneQueryOptions } from "../store/pane-query-observer"
 import {
   cycleModelVariant,
-  firstValidSelectionModel,
-  firstConnectedModel,
   getConfiguredAgentVariant,
   resolveModelVariant,
   selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
+import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 
 type State = LocalSelectionState
-type ModelSource = "selected" | "agent" | "fallback"
+type ModelSource = "selected" | "agent"
 
 type Saved = {
   session: Record<string, State | undefined>
@@ -271,6 +269,42 @@ const localContextInput = {
       return !!provider?.models[model.modelID] && connected().has(model.providerID)
     }
 
+    const isUsableSelection = (model: ModelKey | undefined) =>
+      !!model && !isSignedWorkspaceDefaultModel({ id: model.modelID, provider: { id: model.providerID } })
+
+    const selectionCatalogPending = (model: ModelKey | undefined) => {
+      if (!isUsableSelection(model)) return false
+      if (validModel(model) || models.find(model!)) return false
+      return selectionProviderDetailNeeded({
+        model,
+        connected: connected(),
+        provider: providers.all().get(model!.providerID),
+      }) !== undefined
+    }
+
+    const resolveExplicitSelection = (selectedState: State | undefined): ModelKey | undefined => {
+      const raw = selectedState?.model
+      if (!isUsableSelection(raw)) return undefined
+      if (validModel(raw!)) return raw
+      if (models.find(raw!)) return raw
+      if (selectionCatalogPending(raw)) return raw
+      return undefined
+    }
+
+    const materializeModel = (model: ModelKey) => {
+      const hit = models.find(model)
+      if (hit) return hit
+      const provider = providers.all().get(model.providerID)
+      const indexed = provider?.models[model.modelID]
+      if (!indexed || !connected().has(model.providerID)) return
+      return {
+        ...indexed,
+        name: indexed.name.replace("(latest)", "").trim(),
+        latest: indexed.name.includes("(latest)"),
+        provider,
+      }
+    }
+
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {
       for (const item of items) {
         const model = item()
@@ -410,33 +444,6 @@ const localContextInput = {
       clearLocalSelectionHandoff(session)
     })
 
-    const configuredModel = () => {
-      const configured = settledQueryData(directoryConfigQuery)?.model
-      if (!configured) return
-      const [providerID, modelID] = configured.split("/")
-      const model = { providerID, modelID }
-      if (validModel(model)) return model
-    }
-
-    const recentModel = () => {
-      for (const item of models.recent.list()) {
-        if (validModel(item)) return item
-      }
-    }
-
-    const savedModel = () =>
-      firstValidSelectionModel({
-        selections: Object.values(saved.session).reverse(),
-        valid: validModel,
-      })
-
-    const defaultModel = () => firstConnectedModel({
-      connected: providers.connected(),
-      defaults: providers.default(),
-    })
-
-    const fallback = createMemo<ModelKey | undefined>(() => savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel())
-
     // Heal an index-shaped catalog under a saved selection. Boot fetches the
     // provider INDEX (one default model per connected provider), so a restored
     // NON-default selection fails `validModel` — and without this the composer
@@ -506,27 +513,17 @@ const localContextInput = {
 
     const currentModelKey = (): { source: ModelSource; model: ModelKey } | undefined => {
       const selectedState = scope()
-      const selected = firstModel(() => selectedState?.model)
+      const selected = resolveExplicitSelection(selectedState)
       if (selected) return { source: "selected", model: selected }
 
       const agentModel = selectedState?.agent ? firstModel(() => agent.current()?.model) : undefined
       if (agentModel) return { source: "agent", model: agentModel }
-
-      if (!shouldExposeDefaultLocalModelFallback({
-        existingSession: !!id(),
-        hasSelection: !!selectedState?.model,
-        hasValidSelection: !!selected,
-        restoreLoading: restorePending(),
-      })) return
-
-      const fallbackModel = firstModel(fallback)
-      if (fallbackModel) return { source: "fallback", model: fallbackModel }
     }
 
     const current = () => {
       const item = currentModelKey()
       if (!item) return
-      return models.find(item.model)
+      return materializeModel(item.model)
     }
 
     const configured = () => {
@@ -575,6 +572,9 @@ const localContextInput = {
       selected() {
         return scope()?.model
       },
+      selectionCatalogPending() {
+        return selectionCatalogPending(scope()?.model)
+      },
       current,
       recent,
       list: models.list,
@@ -596,6 +596,9 @@ const localContextInput = {
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
+        if (item && isSignedWorkspaceDefaultModel({ id: item.modelID, provider: { id: item.providerID } })) {
+          item = undefined
+        }
         startTransition(() =>
           batch(() => {
             setStore("last", {

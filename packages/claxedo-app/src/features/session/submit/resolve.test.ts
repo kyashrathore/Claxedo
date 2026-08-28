@@ -173,7 +173,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: false,
       selectedModel: sonnet,
-      allowModelFallback: true,
       currentAgent: { name: "build" },
       modelForSubmit: async (m) => m,
     })
@@ -183,23 +182,24 @@ describe("resolveSubmittedConfig", () => {
     })
   })
 
-  test("falls back to fallbackModel when selected is undefined", async () => {
-    const result = await resolveSubmittedConfig({
-      harnessMode: false,
-      fallbackModel: opus,
-      allowModelFallback: true,
-      currentAgent: { name: "ask" },
-      modelForSubmit: async (m) => m,
-    })
-    expect(result?.model.modelID).toBe("opus")
-  })
-
-  test("does not invent a fallback model for existing session restores", async () => {
+  test("returns undefined when selectedModel is absent", async () => {
     let calls = 0
     const result = await resolveSubmittedConfig({
       harnessMode: false,
-      fallbackModel: opus,
-      allowModelFallback: false,
+      currentAgent: { name: "ask" },
+      modelForSubmit: async (m) => {
+        calls++
+        return m
+      },
+    })
+    expect(calls).toBe(0)
+    expect(result).toBeUndefined()
+  })
+
+  test("never substitutes a fallback model for existing session restores", async () => {
+    let calls = 0
+    const result = await resolveSubmittedConfig({
+      harnessMode: false,
       currentAgent: { name: "ask" },
       modelForSubmit: async (m) => {
         calls++
@@ -215,7 +215,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: true,
       harnessModelKey: { providerID: "claude-acp", modelID: "sonnet" },
-      allowModelFallback: false,
       currentAgent: { name: "build" },
       modelForSubmit: async (m) => {
         calls++
@@ -230,7 +229,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: true,
       harnessModelKey: { providerID: "codex-app-server", modelID: "gpt-5.6-sol", variant: "ultra" },
-      allowModelFallback: false,
       modelForSubmit: async (model) => model,
     })
     expect(result?.variant).toBe("ultra")
@@ -241,8 +239,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: true,
       selectedModel: opus,
-      fallbackModel: opus,
-      allowModelFallback: false,
       currentAgent: { name: "build" },
       modelForSubmit: async (m) => {
         calls++
@@ -256,7 +252,6 @@ describe("resolveSubmittedConfig", () => {
   test("returns undefined when no model can be resolved", async () => {
     const result = await resolveSubmittedConfig({
       harnessMode: false,
-      allowModelFallback: true,
       currentAgent: { name: "build" },
       modelForSubmit: async () => undefined,
     })
@@ -267,7 +262,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: false,
       selectedModel: sonnet,
-      allowModelFallback: true,
       modelForSubmit: async (m) => m,
     })
     expect(result).toEqual({
@@ -280,7 +274,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: false,
       selectedModel: sonnet,
-      allowModelFallback: true,
       currentAgent: { name: "default" },
       defaultAgent: { name: "general" },
       modelForSubmit: async (m) => m,
@@ -292,7 +285,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: true,
       harnessModelKey: { providerID: "claude-acp", modelID: "sonnet" },
-      allowModelFallback: false,
       modelForSubmit: async (m) => m,
     })
     expect(result?.agent).toBe("build") // default
@@ -302,7 +294,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: false,
       selectedModel: sonnet,
-      allowModelFallback: true,
       currentAgent: { name: "build" },
       agentOverride: "ask",
       modelForSubmit: async (m) => m,
@@ -314,7 +305,6 @@ describe("resolveSubmittedConfig", () => {
     const result = await resolveSubmittedConfig({
       harnessMode: false,
       selectedModel: sonnet,
-      allowModelFallback: true,
       currentAgent: { name: "build" },
       variant: "thinking",
       modelForSubmit: async (m) => m,
