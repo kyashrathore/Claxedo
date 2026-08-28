@@ -255,6 +255,17 @@ test.describe("unified usage dashboard @core @surface-web", () => {
     await expect(tooltip).toContainText("Codex")
     await expect(tooltip).toContainText("Claude")
     await expect(tooltip).toContainText("Total")
+    const tooltipIcons = tooltip.locator(".usage-brand > svg")
+    await expect(tooltipIcons).toHaveCount(2)
+    expect(
+      await tooltipIcons.evaluateAll((icons) =>
+        icons.every((icon) => {
+          const bounds = icon.getBoundingClientRect()
+          return bounds.width <= 20 && bounds.height <= 20
+        }),
+      ),
+      "usage tooltip brand icons should retain their compact control size",
+    ).toBe(true)
     await expect
       .poll(() => new Set(requests.map((request) => request.searchParams.get("group"))).has("provider"))
       .toBe(true)

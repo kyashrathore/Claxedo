@@ -220,7 +220,7 @@
 .usage-chart-plot:focus-visible {
   box-shadow: inset 0 0 0 1px var(--border-focus);
 }
-.usage-chart-plot svg {
+.usage-chart-plot > svg {
   display: block;
   width: 100%;
   height: 100%;
