@@ -3,8 +3,6 @@ import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-p
 import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { opencodeHeaders } from "@claxedo/server-core/opencode/auth"
-import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
-import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
@@ -188,8 +186,8 @@ export async function proxy(c: Context, hit: Hit, options?: {
   // Requesting identity encoding avoids the mismatch entirely.
   headers.set("accept-encoding", "identity")
   // SECURITY — actor-bearing signed traffic must resolve its caller before
-  // this branch. The synthetic `subject:"control-plane"`, `role:"owner"`
-  // fallback is reserved for explicit unsigned-local composition.
+  // this branch. Only explicit unsigned-local composition uses the separate
+  // control-plane service principal.
   // `localWorkspaceRelayProxy` serves browser-originated traffic on a
   // loopback server URL (`workspace-runtime-request.ts:223`). The thing
   // standing between a local process and that unsigned owner-role token is
@@ -205,21 +203,34 @@ export async function proxy(c: Context, hit: Hit, options?: {
       await options.resolveRelayActor?.(c.req.raw, hit.workspaceId),
       options.requireRelayActor === true,
     )
+    const principal = actor
+      ? {
+          subject: actor.subject,
+          principalKind: "user" as const,
+          actorId: actor.actorId,
+          actorKind: actor.actorKind,
+          ...(actor.actorPublicId && actor.actorName
+            ? {
+                actorPublicId: actor.actorPublicId,
+                actorName: actor.actorName,
+                ...(actor.actorAvatarUrl ? { actorAvatarUrl: actor.actorAvatarUrl } : {}),
+              }
+            : {}),
+          orgId: actor.orgId,
+          role: actor.role,
+        }
+      : {
+          subject: "control-plane",
+          principalKind: "service" as const,
+          actorId: "control-plane",
+          actorKind: "agent" as const,
+          orgId: hit.relay.orgId,
+          role: "owner" as const,
+        }
     const token = await options.relayProvider.mintRuntimeAccessToken({
       workspaceId: hit.workspaceId,
       hostId: hit.relay.hostId,
-      subject: actor?.subject ?? "control-plane",
-      actorId: actor?.actorId ?? "control-plane",
-      actorKind: actor?.actorKind ?? "agent",
-      ...(actor?.actorPublicId && actor.actorName
-        ? {
-            actorPublicId: actor.actorPublicId,
-            actorName: actor.actorName,
-            ...(actor.actorAvatarUrl ? { actorAvatarUrl: actor.actorAvatarUrl } : {}),
-          }
-        : {}),
-      orgId: actor?.orgId ?? hit.relay.orgId,
-      role: actor?.role ?? "owner",
+      ...principal,
       ttlMs: 10 * 60_000,
     })
     headers.set("authorization", `Bearer ${token.token}`)

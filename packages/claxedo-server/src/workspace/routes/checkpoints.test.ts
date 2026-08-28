@@ -35,7 +35,11 @@ describe("workspace checkpoint routes", () => {
         issuer: "https://identity.example.test",
       },
     }))
-    const authorizeWorkspaceOpen = vi.fn(async () => ({ allowed: true, role: "editor" }))
+    const openWorkspace = vi.fn(async () => ({
+      allowed: true,
+      role: "editor",
+      workspace: { workspace_id: "ws_1", org_id: "org_team" },
+    }))
     const services = {
       auth: {
         config: {
@@ -46,7 +50,7 @@ describe("workspace checkpoint routes", () => {
         },
         verifier,
       },
-      authority: { authorizeWorkspaceOpen, listSessions: vi.fn(async () => []) },
+      authority: { openWorkspace, listSessions: vi.fn(async () => []) },
       sandbox: { sandboxManager: { list: vi.fn(async () => []) } },
       relay: {},
       telemetry: { capture: vi.fn() },
@@ -59,10 +63,89 @@ describe("workspace checkpoint routes", () => {
 
     expect(response.status).toBe(200)
     expect(verifier).toHaveBeenCalledWith("signed-token", services.auth.config)
-    expect(authorizeWorkspaceOpen).toHaveBeenCalledWith(expect.objectContaining({
+    expect(openWorkspace).toHaveBeenCalledWith(expect.objectContaining({
       mode: "signed",
       user: expect.objectContaining({ subject: "alice" }),
     }), { workspaceId: "ws_1" })
+  })
+
+  test("mints checkpoint runtime authority from the workspace org and live role", async () => {
+    const originalFetch = globalThis.fetch
+    const mintRuntimeAccessToken = vi.fn(async () => ({ token: "rat_1", jti: "jti_1", expiresAt: Date.now() + 60_000 }))
+    globalThis.fetch = vi.fn(async () => Response.json({ worktrees: [] })) as unknown as typeof globalThis.fetch
+    try {
+      const services = {
+        auth: {
+          config: {
+            enabled: true,
+            issuer: "https://identity.example.test",
+            jwksUrl: "https://identity.example.test/.well-known/jwks.json",
+            audience: "claxedo-server",
+          },
+          verifier: vi.fn(async () => ({
+            mode: "signed" as const,
+            user: {
+              subject: "alice",
+              tokenIdentifier: "issuer|alice",
+              issuer: "https://identity.example.test",
+              orgId: "org_personal",
+            },
+          })),
+        },
+        authority: {
+          openWorkspace: vi.fn(async () => ({
+            allowed: true,
+            role: "viewer",
+            workspace: { workspace_id: "ws_team", org_id: "org_team" },
+          })),
+          usersMe: vi.fn(async () => ({
+            actor_id: "issuer|alice",
+            actor_kind: "human",
+            actor_public_id: "usr_alice",
+            actor_name: "Alice",
+          })),
+          listSessions: vi.fn(async () => []),
+        },
+        sandbox: {
+          sandboxManager: {
+            list: vi.fn(async () => [{ workspaceId: "ws_team", status: "ready" }]),
+            target: vi.fn(async () => ({
+              workspaceId: "ws_team",
+              hostId: "host_team",
+              homeRegion: "us-east",
+              status: "ready",
+            })),
+          },
+        },
+        relay: {
+          provider: {
+            mintRuntimeAccessToken,
+            getRelayEndpoint: vi.fn(async () => "http://relay.test"),
+          },
+        },
+        telemetry: { capture: vi.fn() },
+      } as unknown as ControlPlaneServices
+
+      const response = await new Hono()
+        .route("/api/workspace", WorkspaceCheckpointRoutes(services))
+        .request("http://localhost/api/workspace/ws_team/checkpoints", {
+          headers: { authorization: "Bearer signed-token" },
+        })
+
+      expect(response.status).toBe(200)
+      expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({
+        workspaceId: "ws_team",
+        hostId: "host_team",
+        orgId: "org_team",
+        role: "viewer",
+        principalKind: "user",
+        actorId: "issuer|alice",
+        actorKind: "human",
+      }))
+      expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.not.objectContaining({ orgId: "org_personal" }))
+    } finally {
+      globalThis.fetch = originalFetch
+    }
   })
 
   test("requires editor authority for checkpoint and lifecycle mutations", () => {

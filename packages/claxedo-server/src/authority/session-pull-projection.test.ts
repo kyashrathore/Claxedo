@@ -84,8 +84,10 @@ function presentAuthority() {
       actor_name: "User One",
     })),
     openWorkspace: vi.fn(async () => ({
+      role: "owner",
       workspace: { org_id: "org_1", access: "cloud", backing: "cloud-vm" },
     })),
+    authorizeSessionWrite: vi.fn(async () => {}),
     upsertSessionVisibility: vi.fn(async () => ({})),
     syncSessionMessages: vi.fn(async (_auth: unknown, _input: { messages: unknown[] }) => ({})),
     resolveOrgId: vi.fn(async () => "org_1"),

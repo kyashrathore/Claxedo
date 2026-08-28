@@ -4,16 +4,39 @@ import {
   authedMutation,
   authedQuery,
   authorizeWorkspace,
+  authorizeWorkspaceForUser,
   orgMembership,
   readUser,
   roleAllows,
+  serviceUserByIdentity,
   serviceMutation,
+  serviceQuery,
+  upsertServiceUser,
   upsertUser,
   workspaceByPublicId,
-  workspaceRole,
+  workspaceRoleForUser,
 } from "./model"
 
 const workspaceId = { workspace_id: v.string() }
+const serviceUser = v.object({
+  token_identifier: v.string(),
+  subject: v.optional(v.string()),
+  issuer: v.optional(v.string()),
+  email: v.optional(v.string()),
+  name: v.optional(v.string()),
+  image_url: v.optional(v.string()),
+})
+const localSharingArgs = {
+  workspace_id: v.string(),
+  org_id: v.optional(v.id("orgs")),
+  display_name: v.string(),
+  project_id: v.optional(v.string()),
+  repo_url: v.optional(v.string()),
+  repo_name: v.optional(v.string()),
+  git_branch: v.optional(v.string()),
+  remote_directory: v.optional(v.string()),
+  home_region: v.optional(v.string()),
+}
 
 export const authorizeCreate = authedQuery({
   args: { org_id: v.optional(v.id("orgs")) },
@@ -245,77 +268,81 @@ export const open = authedQuery({
   },
 })
 
+async function listWorkspacesForUser(ctx: any, user: { _id: unknown }) {
+  const owned = await ctx.db
+    .query("workspaces")
+    .withIndex("by_owner", (q: any) => q.eq("owner_user_id", user._id))
+    .collect()
+  const memberships = await ctx.db
+    .query("workspace_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", user._id))
+    .collect()
+  const shares = await ctx.db
+    .query("workspace_share_grants")
+    .withIndex("by_user", (q: any) => q.eq("granted_to_user_id", user._id))
+    .collect()
+  const orgMemberships = await ctx.db
+    .query("org_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", user._id))
+    .collect()
+
+  const docs = new Map(owned.map((item: any) => [item._id, item]))
+  for (const item of memberships) {
+    const workspace = await ctx.db.get(item.workspace_id)
+    if (workspace) docs.set(workspace._id, workspace)
+  }
+  for (const item of shares.filter((share: any) => !share.revoked_at)) {
+    const workspace = await ctx.db.get(item.workspace_id)
+    if (workspace) docs.set(workspace._id, workspace)
+  }
+  for (const item of orgMemberships) {
+    const orgWorkspaces = await ctx.db
+      .query("workspaces")
+      .withIndex("by_org", (q: any) => q.eq("org_id", item.org_id))
+      .collect()
+    for (const workspace of orgWorkspaces) docs.set(workspace._id, workspace)
+    const orgShares = await ctx.db
+      .query("workspace_share_grants")
+      .withIndex("by_org", (q: any) => q.eq("granted_to_org_id", item.org_id))
+      .collect()
+    for (const share of orgShares.filter((candidate: any) => !candidate.revoked_at)) {
+      const workspace = await ctx.db.get(share.workspace_id)
+      if (workspace) docs.set(workspace._id, workspace)
+    }
+  }
+
+  return (
+    await Promise.all(
+      [...docs.values()]
+        .filter((workspace: any) => !workspace.deleted_at)
+        .map(async (workspace: any) => ({
+          workspace_id: workspace.workspace_id,
+          org_id: workspace.org_id,
+          project_id: workspace.project_id,
+          display_name: workspace.display_name,
+          backing: workspace.backing,
+          access: workspace.access,
+          home_region: workspace.home_region,
+          repo_url: workspace.repo_url,
+          repo_name: workspace.repo_name,
+          git_branch: workspace.git_branch,
+          remote_directory: workspace.remote_directory,
+          role: await workspaceRoleForUser(ctx, workspace, user),
+        })),
+    )
+  ).filter((item) => item.role && roleAllows(item.role, "read"))
+}
+
 export const list = authedQuery({
   args: {},
-  handler: async (ctx) => {
-    const user = await readUser(ctx)
-    const owned = await ctx.db
-      .query("workspaces")
-      .withIndex("by_owner", (q) => q.eq("owner_user_id", user._id))
-      .collect()
-    const memberships = await ctx.db
-      .query("workspace_memberships")
-      .withIndex("by_user", (q) => q.eq("user_id", user._id))
-      .collect()
-    const shares = await ctx.db
-      .query("workspace_share_grants")
-      .withIndex("by_user", (q) => q.eq("granted_to_user_id", user._id))
-      .collect()
-    const orgMemberships = await ctx.db
-      .query("org_memberships")
-      .withIndex("by_user", (q) => q.eq("user_id", user._id))
-      .collect()
+  handler: async (ctx) => listWorkspacesForUser(ctx, await readUser(ctx)),
+})
 
-    const docs = new Map(owned.map((item) => [item._id, item]))
-    for (const item of memberships) {
-      const workspace = await ctx.db.get(item.workspace_id)
-      if (workspace) docs.set(workspace._id, workspace)
-    }
-    for (const item of shares.filter((share) => !share.revoked_at)) {
-      const workspace = await ctx.db.get(item.workspace_id)
-      if (workspace) docs.set(workspace._id, workspace)
-    }
-    for (const item of orgMemberships) {
-      const orgWorkspaces = await ctx.db
-        .query("workspaces")
-        .withIndex("by_org", (q) => q.eq("org_id", item.org_id))
-        .collect()
-      for (const workspace of orgWorkspaces) {
-        docs.set(workspace._id, workspace)
-      }
-      const orgShares = await ctx.db
-        .query("workspace_share_grants")
-        .withIndex("by_org", (q) => q.eq("granted_to_org_id", item.org_id))
-        .collect()
-      for (const share of orgShares.filter((share) => !share.revoked_at)) {
-        const workspace = await ctx.db.get(share.workspace_id)
-        if (workspace) docs.set(workspace._id, workspace)
-      }
-    }
-
-    return (
-      await Promise.all(
-        [...docs.values()]
-          .filter((workspace) => !workspace.deleted_at)
-          .map(async (workspace) => ({
-            workspace_id: workspace.workspace_id,
-            // The project a workspace belongs to, plus the repo identity the
-            // row already stores. Without these the app can only group by
-            // workspace id and label a hosted cloud project by its directory
-            // basename ("workspace"), because `display_name` is the WORKSPACE
-            // name ("main"), not the project's. `open` above already returns
-            // all three; this is the list-shaped half of the same read.
-            project_id: workspace.project_id,
-            display_name: workspace.display_name,
-            backing: workspace.backing,
-            access: workspace.access,
-            repo_url: workspace.repo_url,
-            repo_name: workspace.repo_name,
-            remote_directory: workspace.remote_directory,
-            role: await workspaceRole(ctx, workspace),
-          })),
-      )
-    ).filter((item) => item.role && roleAllows(item.role, "read"))
+export const listForService = serviceQuery({
+  args: { user: serviceUser },
+  handler: async (ctx, args) => {
+    const user = await serviceUserByIdentity(ctx.db, args.user)
+    return user ? listWorkspacesForUser(ctx, user) : []
   },
 })
 
@@ -474,22 +501,20 @@ export const ensureWorkGraph = serviceMutation({
   },
 })
 
-export const registerLocalForSharing = authedMutation({
-  args: {
-    workspace_id: v.string(),
-    org_id: v.optional(v.id("orgs")),
-    display_name: v.string(),
-    project_id: v.optional(v.string()),
-    repo_url: v.optional(v.string()),
-    repo_name: v.optional(v.string()),
-    git_branch: v.optional(v.string()),
-    remote_directory: v.optional(v.string()),
-    home_region: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const user = await upsertUser(ctx)
+async function registerLocalForSharingAs(ctx: any, args: any, user: { _id: unknown; name?: string; email?: string }) {
     const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (existing && !(await authorizeWorkspace(ctx, existing, "admin"))) throw new Error("Workspace not found")
+    if (existing && !(await authorizeWorkspaceForUser(ctx, existing, user, "admin"))) {
+      throw new Error("Workspace not found")
+    }
+    // This conflict is intrinsic to the workspace row and should remain
+    // deterministic even if an older row is still awaiting tenant backfill.
+    // No project or org lookup is needed to prove that a cloud workspace
+    // cannot be converted into a user-hosted local workspace.
+    if (existing && (existing.backing === "cloud-vm" || existing.access === "cloud")) {
+      throw new Error(
+        "workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace",
+      )
+    }
     const org = existing
       ? (existing.org_id ? await ctx.db.get(existing.org_id) : undefined)
       : await creationOrg(ctx, user, args.org_id)
@@ -507,13 +532,6 @@ export const registerLocalForSharing = authedMutation({
     const requestedHomeRegion = validatedHomeRegion(args.home_region)
     const now = Date.now()
     if (existing) {
-      // Never silently flip a cloud workspace's backing: registering it as a
-      // user-hosted local workspace is a conflict, not an update.
-      if (existing.backing === "cloud-vm" || existing.access === "cloud") {
-        throw new Error(
-          "workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace",
-        )
-      }
       const home_region = existing.home_region ?? requestedHomeRegion
       await ctx.db.patch(existing._id, {
         backing: "local-worktree",
@@ -557,7 +575,16 @@ export const registerLocalForSharing = authedMutation({
       updated_at: now,
     })
     return { workspace_doc_id: id, workspace_id: args.workspace_id, home_region }
-  },
+}
+
+export const registerLocalForSharing = authedMutation({
+  args: localSharingArgs,
+  handler: async (ctx, args) => registerLocalForSharingAs(ctx, args, await upsertUser(ctx)),
+})
+
+export const registerLocalForSharingForService = serviceMutation({
+  args: { user: serviceUser, ...localSharingArgs },
+  handler: async (ctx, args) => registerLocalForSharingAs(ctx, args, await upsertServiceUser(ctx, args.user)),
 })
 
 export const remove = authedMutation({

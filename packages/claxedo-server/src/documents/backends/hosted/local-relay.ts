@@ -46,6 +46,7 @@ export function createHostedLocalDocumentRelay(
         workspaceId: input.localWorkspaceId,
         hostId: link.host_id,
         subject: input.auth.user.subject,
+        principalKind: "user",
         ...await resolveRuntimeActor(authority, input.auth),
         orgId: input.orgId,
         role: write ? "editor" : "viewer",

@@ -4,6 +4,12 @@ import { revokeWorkspaceUserTokens } from "./runtimeAccessTokens"
 
 const roleValue = v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin"))
 
+function requireTargetSelector(args: { token_identifier?: string; clerk_subject?: string }) {
+  if ([args.token_identifier, args.clerk_subject].filter(Boolean).length !== 1) {
+    throw new Error("Project membership target must be exactly one user")
+  }
+}
+
 async function targetUser(ctx: any, args: {
   token_identifier?: string
   clerk_subject?: string
@@ -28,10 +34,10 @@ async function existingMembership(ctx: any, projectId: unknown, userId: unknown)
 export async function revokeProjectUserRuntimeTokens(ctx: any, project: any, userId: unknown) {
   const workspaces = await ctx.db
     .query("workspaces")
-    .withIndex("by_org", (q: any) => q.eq("org_id", project.org_id))
+    .withIndex("by_project", (q: any) => q.eq("project_id", project.project_id))
     .collect()
   const revoked = await Promise.all(workspaces
-    .filter((workspace: any) => workspace.project_id === project.project_id && !workspace.deleted_at)
+    .filter((workspace: any) => workspace.org_id === project.org_id && !workspace.deleted_at)
     .map((workspace: any) => revokeWorkspaceUserTokens(ctx, workspace._id, userId, Date.now())))
   return revoked.reduce((total, item) => total + item.revoked, 0)
 }
@@ -61,6 +67,7 @@ export const add = authedMutation({
     role: roleValue,
   },
   handler: async (ctx, args) => {
+    requireTargetSelector(args)
     const project = await editableProject(ctx, args.project_id)
     const user = await targetUser(ctx, args)
     if (!user) throw new Error("User not found")
@@ -95,6 +102,7 @@ export const setRole = authedMutation({
     role: roleValue,
   },
   handler: async (ctx, args) => {
+    requireTargetSelector(args)
     const project = await editableProject(ctx, args.project_id)
     const user = await targetUser(ctx, args)
     if (!user) throw new Error("User not found")
@@ -115,6 +123,7 @@ export const setRole = authedMutation({
 export const remove = authedMutation({
   args: targetArgs,
   handler: async (ctx, args) => {
+    requireTargetSelector(args)
     const project = await editableProject(ctx, args.project_id)
     const actor = await upsertUser(ctx)
     const user = await targetUser(ctx, args)

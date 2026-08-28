@@ -27,6 +27,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
           serviceArgs(auth),
         ) as Array<{
           workspace_id?: string
+          org_id?: string
+          project_id?: string
           role?: string
           backing?: "local-worktree" | "cloud-vm"
           access?: "local" | "cloud" | "user-hosted"
@@ -40,6 +42,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
           role: workspace.role,
           workspace: {
             workspace_id: args.workspaceId,
+            org_id: workspace.org_id,
+            project_id: workspace.project_id,
             backing: workspace.backing,
             access: workspace.access,
             display_name: workspace.display_name,

@@ -121,6 +121,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint",
     "/api/control/workspaces/:workspaceId/sessions/:sessionId/register",
     "/api/control/workspaces/:workspaceId/sessions/:sessionId/repair",
+    "/api/runtime-authority/session-authorize",
     "/api/wr/events",
   ],
   workgraph: [

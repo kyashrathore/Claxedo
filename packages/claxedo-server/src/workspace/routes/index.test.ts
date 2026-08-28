@@ -1884,6 +1884,9 @@ describe("workspace routes signed control plane authority", () => {
         jti: "jti_1",
         workspaceId: "ws_1",
         hostId: "ws_1",
+        actorId: "actor_1",
+        actorKind: "human",
+        role: "owner",
         expiresAt: 123_000,
       },
     )
@@ -1985,6 +1988,9 @@ describe("workspace routes signed control plane authority", () => {
         jti: "jti_manager",
         workspaceId: "ws_1",
         hostId: "host_manager",
+        actorId: "actor_1",
+        actorKind: "human",
+        role: "owner",
         expiresAt: 123_000,
       },
     )
@@ -2337,6 +2343,9 @@ describe("workspace routes signed control plane authority", () => {
         jti: "jti_user_hosted",
         workspaceId: "ws_shared",
         hostId: "host_1",
+        actorId: "actor_1",
+        actorKind: "human",
+        role: "editor",
         expiresAt: 789_000,
       },
     )
@@ -2616,6 +2625,9 @@ describe("workspace routes signed control plane authority", () => {
         jti: "jti_2",
         workspaceId: "ws_1",
         hostId: "ws_1",
+        actorId: "actor_1",
+        actorKind: "human",
+        role: "owner",
         expiresAt: 456_000,
       },
     )
@@ -3280,6 +3292,24 @@ describe("workspace routes signed control plane authority", () => {
         grantedToClerkSubject: "user_2",
       },
     )
+  })
+
+  test("signed workspace share mutations reject oversized bodies before parsing", async () => {
+    const svc = services()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const response = await app.request("http://localhost/ws_1/shares", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+        "Content-Length": String(17 * 1024),
+      },
+      body: JSON.stringify({ role: "viewer", grantedToClerkSubject: "x".repeat(17 * 1024) }),
+    })
+
+    expect(response.status).toBe(413)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(svc.authority?.grantWorkspaceShare).not.toHaveBeenCalled()
   })
 
   test("signed workspace share grant and revoke accept provider-neutral org targets", async () => {

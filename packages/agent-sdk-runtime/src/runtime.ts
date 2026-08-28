@@ -116,8 +116,14 @@ export type AgentRuntimeSessionCreateInput = {
   title?: string
 }
 
+type AgentRuntimeTurnActor =
+  | { actorId: string; actorKind: "human" | "agent" }
+  | { actorId?: never; actorKind?: never }
+
 export type AgentRuntimeTurnStartInput = {
   sessionId: string
+  /** Runs after this turn wins the per-session lease and before harness work starts. */
+  onAdmitted?: () => void
   text?: string
   parts?: unknown[]
   messageId?: string
@@ -129,10 +135,8 @@ export type AgentRuntimeTurnStartInput = {
   system?: string
   permissionMode?: string
   variant?: string
-  actorId?: string
-  actorKind?: "human" | "agent"
   author?: PromptInput["author"]
-}
+} & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {
   sessionId: string
@@ -611,16 +615,17 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     turns: {
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
+        if ((turn.actorId === undefined) !== (turn.actorKind === undefined)) {
+          throw new Error("Turn actor id and kind must be provided together")
+        }
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
         const leaseId = acquireTurnLease(turn.sessionId)
         try {
+          turn.onAdmitted?.()
           const config = store.getSessionConfig(turn.sessionId)
           const directory = session.directory ?? undefined
           const adapter = await adapterForSession(turn.sessionId, directory)
-          if (turn.permissionMode && adapter.setPermissionMode) {
-            await adapter.setPermissionMode(turn.sessionId, turn.permissionMode, directory)
-          }
           const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
           const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
           const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined

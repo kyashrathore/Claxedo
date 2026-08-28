@@ -955,6 +955,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     await expect(res.json()).resolves.toEqual(messages[0])
     expect(turnStarts).toEqual([{
       sessionId: "session_1",
+      onAdmitted: expect.any(Function),
       parts: [{ type: "text", text: "hello" }],
       agent: "build",
       model: { providerID: "test", modelID: "fixture" },
@@ -1241,19 +1242,22 @@ describe("createSessionRoutes directory-less sessions", () => {
     const events: CompatEnvelope[] = []
     const runtime = {
       turns: {
-        start: async () => ({
-          sessionId: "session_1",
-          userMessageId: "user_1",
-          assistantMessageId: "assistant_1",
-          directory: undefined,
-          prompt: {
-            parts: [{ type: "text", text: "continue" }],
+        start: async (input: { onAdmitted?: () => void }) => {
+          input.onAdmitted?.()
+          return {
+            sessionId: "session_1",
             userMessageId: "user_1",
             assistantMessageId: "assistant_1",
-            agent: "build",
-            model: { providerID: "test", modelID: "fixture" },
-          },
-        }),
+            directory: undefined,
+            prompt: {
+              parts: [{ type: "text", text: "continue" }],
+              userMessageId: "user_1",
+              assistantMessageId: "assistant_1",
+              agent: "build",
+              model: { providerID: "test", modelID: "fixture" },
+            },
+          }
+        },
       },
       events: {
         subscribe: () => (async function* () {

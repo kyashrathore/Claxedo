@@ -26,17 +26,25 @@ type ProjectRole = "viewer" | "editor" | "admin" | "owner"
  */
 async function seedLinkedProject(t: ReturnType<typeof convexTest>, opts: { projectRole?: ProjectRole; linked?: boolean }) {
   return await t.run(async (ctx) => {
-    const userId = await ctx.db.insert("users", stamped({ token_identifier: "tok_1" }) as never)
+    const userId = await ctx.db.insert(
+      "users",
+      stamped({
+        token_identifier: "tok_1",
+        public_id: "usr_channel_1",
+        name: "Octo Cat",
+        kind: "human",
+      }) as never,
+    )
     const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "tok_owner" }) as never)
     const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme" }) as never)
-    const projectDocId = await ctx.db.insert(
+    await ctx.db.insert(
       "projects",
       stamped({ project_id: "project_1", org_id: orgId, owner_user_id: ownerId }) as never,
     )
     if (opts.projectRole) {
       await ctx.db.insert(
         "project_memberships",
-        stamped({ project_id: projectDocId, user_id: userId, role: opts.projectRole }) as never,
+        stamped({ project_id: "project_1", user_id: userId, role: opts.projectRole }) as never,
       )
     }
     await ctx.db.insert(
@@ -86,7 +94,15 @@ describe("Convex channel identity policy", () => {
         project_id: "project_1",
         action: "write",
       } as never),
-    ).resolves.toEqual({ ok: true, role: "editor", org_id: orgId })
+    ).resolves.toEqual({
+      ok: true,
+      role: "editor",
+      org_id: orgId,
+      actor_id: expect.any(String),
+      actor_kind: "human",
+      actor_public_id: "usr_channel_1",
+      actor_name: "Octo Cat",
+    })
   })
 
   test("denies unlinked channel users", async () => {
@@ -120,7 +136,14 @@ describe("Convex channel identity policy", () => {
         workspace_id: "ws_1",
         action: "write",
       } as never),
-    ).resolves.toEqual({ allowed: true, role: "editor" })
+    ).resolves.toEqual({
+      allowed: true,
+      role: "editor",
+      actor_id: expect.any(String),
+      actor_kind: "human",
+      actor_public_id: "usr_channel_1",
+      actor_name: "Octo Cat",
+    })
   })
 
   test("requires the control plane service token", async () => {

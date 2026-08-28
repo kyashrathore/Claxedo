@@ -3,7 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
-import { exportSPKI, generateKeyPair, jwtVerify } from "jose"
+import { exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintRelayHostToken } from "../../../workspace-relay/src/auth"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 import { createAgentRuntime } from "../../../agent-sdk-runtime/src/runtime"
@@ -141,6 +141,15 @@ async function connect(app: Hono, token: string, lastEventId?: string): Promise<
   })
   expect(response.status).toBe(200)
   const reader = response.body!.getReader()
+  // Start pulling before returning the connection. Hono installs the stream
+  // subscriber from the first read; publishing immediately after `connect()`
+  // otherwise races that installation and can drop the first real event.
+  let pendingRead = reader.read()
+  const readNext = async () => {
+    const next = await pendingRead
+    if (!next.done) pendingRead = reader.read()
+    return next
+  }
   const decoder = new TextDecoder()
   let buffer = ""
   const frames: Array<{ id?: string; data: Record<string, unknown> }> = []
@@ -167,7 +176,7 @@ async function connect(app: Hono, token: string, lastEventId?: string): Promise<
         drain()
         if (predicate(frames)) return [...frames]
         const next = await Promise.race([
-          reader.read(),
+          readNext(),
           new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out waiting for SSE frame")), 1_000)),
         ])
         if (next.done) break
@@ -181,7 +190,7 @@ async function connect(app: Hono, token: string, lastEventId?: string): Promise<
       const deadline = Date.now() + milliseconds
       while (Date.now() < deadline) {
         const next = await Promise.race([
-          reader.read(),
+          readNext(),
           new Promise<undefined>((resolve) => setTimeout(() => resolve(undefined), Math.min(50, deadline - Date.now()))),
         ])
         if (!next) break
@@ -334,14 +343,32 @@ describe("two-user signed runtime transport acceptance", () => {
     }
 
     const key = await generateKeyPair("EdDSA", { extractable: true })
+    const [privateKeyPem, publicKeyPem] = await Promise.all([
+      exportPKCS8(key.privateKey),
+      exportSPKI(key.publicKey),
+    ])
     const oracle = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services, {
-      env: { CLAXEDO_RELAY_HOST_VERIFY_PEM: await exportSPKI(key.publicKey) },
+      env: {
+        CLAXEDO_RELAY_HOST_VERIFY_PEM: publicKeyPem,
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privateKeyPem,
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: publicKeyPem,
+      },
     }))
     const profile = async (auth: SignedAuth) => await authority.usersMe(auth) as Identity
-    const rht = async (auth: SignedAuth, role: "editor" | "owner" = "editor") => {
+    const rht = async (auth: SignedAuth, jti: string, role: "editor" | "owner" = "editor") => {
       const identity = await profile(auth)
+      await authority.recordRuntimeAccessToken(auth, {
+        jti,
+        workspaceId: "ws_runtime_private",
+        hostId: "host_runtime_private",
+        actorId: identity.actor_id,
+        actorKind: identity.actor_kind,
+        role,
+        expiresAt: Date.now() + 60_000,
+      })
       return await mintRelayHostToken({
         subject: identity.subject,
+        jti,
         actorId: identity.actor_id,
         actorKind: identity.actor_kind,
         actorPublicId: identity.actor_public_id,
@@ -356,9 +383,9 @@ describe("two-user signed runtime transport acceptance", () => {
       }, key.privateKey, "EdDSA")
     }
     const [aliceRht, bobRht, caseyRht] = await Promise.all([
-      rht(aliceAuth, "owner"),
-      rht(bobAuth),
-      rht(caseyAuth),
+      rht(aliceAuth, "jti_runtime_alice", "owner"),
+      rht(bobAuth, "jti_runtime_bob"),
+      rht(caseyAuth, "jti_runtime_casey"),
     ])
 
     const busListeners = new Set<(event: unknown) => unknown>()
@@ -540,12 +567,6 @@ describe("two-user signed runtime transport acceptance", () => {
     const replay = await bobReconnect.until((frames) => frames.some((frame) => frame.data.info && (frame.data.info as { title?: string }).title === "during-reconnect-gap"))
     expect(replay.some((frame) => frame.data.sessionID === "ses_runtime_private")).toBe(true)
 
-    await authority.recordRuntimeAccessToken(bobAuth, {
-      jti: "jti_runtime_bob",
-      workspaceId: "ws_runtime_private",
-      hostId: "host_runtime_private",
-      expiresAt: Date.now() + 60_000,
-    })
     const removed = await signedRequest(alice.token, "/api/control/sessions/ses_runtime_private/participants", {
       method: "DELETE",
       body: JSON.stringify({

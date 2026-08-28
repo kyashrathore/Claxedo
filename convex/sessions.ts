@@ -181,9 +181,15 @@ async function upsertVisibilityRows(
 }
 
 async function sessionProjectId(ctx: any, workspace: Record<string, unknown>, projectId: string | undefined) {
-  const publicProjectId = projectId ?? (typeof workspace.project_id === "string" ? workspace.project_id : undefined)
+  const workspaceProjectId = typeof workspace.project_id === "string" ? workspace.project_id : undefined
+  if (projectId && workspaceProjectId && projectId !== workspaceProjectId) {
+    throw new Error("Session project must match workspace project")
+  }
+  const publicProjectId = workspaceProjectId ?? projectId
   if (!publicProjectId) return undefined
-  return (await projectByPublicId(ctx.db, publicProjectId, workspace.org_id))?.project_id
+  const project = await projectByPublicId(ctx.db, publicProjectId, workspace.org_id)
+  if (!project) throw new Error("Workspace project not found")
+  return project.project_id
 }
 
 function publicProjectId(projectId: unknown) {
@@ -206,6 +212,15 @@ function messageRole(input: unknown) {
   return txt(row?.role) ?? txt(info?.role)
 }
 
+function producerAuthorId(input: unknown, user: { _id: unknown; public_id?: unknown }) {
+  const row = rec(input)
+  const info = rec(row?.info)
+  const claxedo = rec(info?.claxedo)
+  const author = rec(claxedo?.author)
+  const publicId = txt(author?.id)
+  return publicId && publicId === user.public_id ? user._id : undefined
+}
+
 function jsonValue(input: unknown) {
   try {
     return JSON.parse(JSON.stringify(input))
@@ -225,21 +240,28 @@ function jsonText(input: unknown) {
 function messageWithPublicAuthor(input: unknown, user?: Record<string, unknown> | null) {
   const row = rec(input)
   const info = rec(row?.info)
+  if (!row || !info || info.role !== "user") return input
   const publicId = txt(user?.public_id)
   const name = txt(user?.name) ?? txt(user?.email) ?? (user?.kind === "agent" ? "Agent" : "User")
-  if (!row || !info || info.role !== "user" || !publicId) return input
-  return {
-    ...row,
-    info: {
-      ...info,
-      claxedo: {
+  const claxedo = rec(info.claxedo) ?? {}
+  const { author: _untrustedAuthor, ...safeClaxedo } = claxedo
+  const { claxedo: _untrustedClaxedo, ...safeInfo } = info
+  const canonicalClaxedo = publicId
+    ? {
+        ...safeClaxedo,
         author: {
           id: publicId,
           name,
           kind: user?.kind === "agent" ? "agent" : "human",
           ...(txt(user?.image_url) ? { avatarUrl: txt(user?.image_url) } : {}),
         },
-      },
+      }
+    : safeClaxedo
+  return {
+    ...row,
+    info: {
+      ...safeInfo,
+      ...(Object.keys(canonicalClaxedo).length > 0 ? { claxedo: canonicalClaxedo } : {}),
     },
   }
 }
@@ -454,17 +476,18 @@ async function syncMessageRows(
       const id = messageId(message, input.session_id, ordinal)
       const role = messageRole(message)
       const data = jsonValue(message)
+      const producerAuthor = role === "user" ? producerAuthorId(message, input.user) : undefined
       incomingIds.add(id)
       const existing = existingRows.find((row: any) => row.message_id === id && !usedRows.has(row._id))
       if (existing) {
         usedRows.add(existing._id)
-        const missingAuthor = role === "user" && !existing.author_actor_id
+        const missingAuthor = !existing.author_actor_id && producerAuthor !== undefined
         if (existing.ordinal !== ordinal || existing.role !== role || jsonText(existing.data) !== jsonText(data) || missingAuthor) {
           await ctx.db.patch(existing._id, {
             role,
             ordinal,
             data,
-            ...(missingAuthor ? { author_actor_id: input.user._id } : {}),
+            ...(missingAuthor ? { author_actor_id: producerAuthor } : {}),
             updated_at: now,
           })
         }
@@ -474,7 +497,7 @@ async function syncMessageRows(
         session_id: input.session_id,
         workspace_id: input.workspace._id,
         message_id: id,
-        ...(role === "user" ? { author_actor_id: input.user._id } : {}),
+        ...(producerAuthor === undefined ? {} : { author_actor_id: producerAuthor }),
         role,
         ordinal,
         data,

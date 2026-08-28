@@ -17,6 +17,21 @@ const claims = {
 }
 
 describe("runtime session authority oracle", () => {
+  test("rejects oversized bodies before authentication or JSON parsing", async () => {
+    const app = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes())
+    const response = await app.request("/api/runtime-authority/session-authorize", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "content-length": String(17 * 1024),
+      },
+      body: JSON.stringify({ sessionId: "x".repeat(17 * 1024), action: "read" }),
+    })
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ error: { code: "request_body_too_large" } })
+  })
+
   test("accepts a current RHT and rejects the same proof after its expiry", async () => {
     const key = await generateKeyPair("EdDSA", { extractable: true })
     const calls: unknown[] = []

@@ -261,7 +261,7 @@ export function createIdentityAwareEventSource<T>(input: {
   const replayStartupDeadlineMs = input.replayStartupDeadlineMs ?? 10_000
   const scopes = new Map<string, Scope<T>>()
   const tombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
-  const retained = createSseReplayBuffer<T>({ ...(input.isTerminal ? { isTerminal: input.isTerminal } : {}) })
+  const retained = createSseReplayBuffer<T>(input.isTerminal ? { isTerminal: input.isTerminal } : {})
 
   const decision = (principal: EventDeliveryPrincipal, event: T) => input.policy({
       principal,
@@ -361,7 +361,7 @@ export function createIdentityAwareEventSource<T>(input: {
       return
     }
     if (scope.queued >= maxQueuedPerScope) {
-      for (const connection of [...scope.connections]) disconnect(scope, connection)
+      for (const connection of scope.connections) disconnect(scope, connection)
       return
     }
     scope.queued += 1
@@ -405,7 +405,7 @@ export function createIdentityAwareEventSource<T>(input: {
     if (retainedEvents.length > 0) {
       created.pending = true
       created.tail = (async () => {
-        const results = new Array<EventDeliveryDecision>(retainedEvents.length).fill("omit")
+        const results = Array.from({ length: retainedEvents.length }, (): EventDeliveryDecision => "omit")
         let cursor = 0
         const deadlineAt = Date.now() + replayStartupDeadlineMs
         const decideBeforeDeadline = async (event: T) => {
@@ -462,6 +462,16 @@ export function createIdentityAwareEventSource<T>(input: {
         replay: scope.replay,
         ready: scope.tail,
         subscribe(listener, terminate = () => undefined) {
+          // Replay is already filtered into this principal-scoped buffer. Mark
+          // its session ids as delivered for the new connection as well, so a
+          // later live denial is treated as revocation and tears the stream
+          // down. Without this, reconnecting participants could retain a live
+          // stream after their access was removed because only live delivery
+          // populated `authorizedSessions`.
+          for (const retainedEvent of scope.replay.replayAfter(undefined)) {
+            const sessionId = input.sessionId(retainedEvent.payload)
+            if (sessionId) authorizedSessions.add(sessionId)
+          }
           const connection: Connection<T> = { principal, push: listener, terminate, authorizedSessions }
           scope.connections.add(connection)
           if (input.policy.renew) {

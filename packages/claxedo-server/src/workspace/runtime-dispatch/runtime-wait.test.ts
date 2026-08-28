@@ -81,7 +81,7 @@ vi.mock("@claxedo/server-core/opencode/auth", () => ({
   opencodeHeaders: mocks.opencodeHeaders,
 }))
 
-const { createWorkspaceRuntimeProxy, workspaceRuntimeProxy } = await import("@claxedo/local-server/workspace/runtime-dispatch/middleware")
+const { createWorkspaceRuntimeProxy } = await import("@claxedo/local-server/workspace/runtime-dispatch/middleware")
 const { embeddedConfigModeForPath } = await import("@claxedo/local-server/workspace/runtime-dispatch/internals")
 const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 
@@ -315,6 +315,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "control-plane",
+      principalKind: "service",
       actorId: "control-plane",
       actorKind: "agent",
       orgId: "org_1",

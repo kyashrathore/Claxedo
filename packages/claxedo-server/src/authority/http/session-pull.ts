@@ -5,6 +5,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
 import { ControlPlaneProtocolError, num, rec, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./runtime-transport"
+import type { RelayRole } from "@claxedo/workspace-relay"
 
 export async function resolveSessionGateway(
   services: ControlPlaneServices,
@@ -69,11 +70,15 @@ export async function pullControlSession(
   input: { workspaceId: string; sessionId: string },
 ) {
   const scope = await workspaceForPull(services, auth, input.workspaceId)
+  if (auth?.mode === "signed" && !workspaceRoleAllowsWrite(scope.authorityRole)) {
+    throw new ControlPlaneProtocolError(403, "workspace_authorization_denied", "Workspace write authority is required")
+  }
   const { ws } = scope
   const session = await verifiedRuntimeJson<unknown>(services, options, {
     workspaceId: ws.id,
     ws,
     ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+    ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}`),
   })
@@ -92,6 +97,12 @@ export async function pullControlSessionMessages(
 ) {
   const scope = await workspaceForPull(services, auth, input.workspaceId)
   const { ws } = scope
+  if (auth?.mode === "signed") {
+    await requireAuthority(services).authorizeSessionWrite(auth, {
+      sessionId: input.sessionId,
+      workspaceId: input.workspaceId,
+    })
+  }
   const currentOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
   if (input.expectedEventOrdinal !== undefined && input.expectedEventOrdinal < currentOrdinal) {
     return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }
@@ -100,6 +111,7 @@ export async function pullControlSessionMessages(
     workspaceId: ws.id,
     ws,
     ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+    ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
     auth,
     path: runtimePath(`/session/${encodeURIComponent(input.sessionId)}/message`, { snapshot: "1" }),
   })
@@ -111,6 +123,7 @@ export async function pullControlSessionMessages(
       workspaceId: ws.id,
       ws,
       ...(scope.authorityWorkspace ? { authorityWorkspace: scope.authorityWorkspace } : {}),
+      ...(scope.authorityRole ? { authorityRole: scope.authorityRole } : {}),
       auth,
       path: "/session/status",
     }).then(
@@ -215,24 +228,46 @@ async function workspaceForPull(
   const hit = await resolveWorkspace({ workspaceId })
   if (hit) {
     const authoritativeOrgId = txt(opened?.workspace?.org_id)
-    const ws = authoritativeOrgId && !hit.org_id ? { ...hit, org_id: authoritativeOrgId } : hit
-    return { ws, authorityWorkspace: opened?.workspace }
+    const authoritativeProjectId = txt(opened?.workspace?.project_id)
+    if (authoritativeOrgId && hit.org_id && hit.org_id !== authoritativeOrgId) {
+      throw new ControlPlaneProtocolError(409, "workspace_tenant_conflict", "Workspace organization does not match authority")
+    }
+    if (authoritativeProjectId && hit.project_id && hit.project_id !== authoritativeProjectId) {
+      throw new ControlPlaneProtocolError(409, "workspace_project_conflict", "Workspace project does not match authority")
+    }
+    const ws = {
+      ...hit,
+      ...(authoritativeOrgId ? { org_id: authoritativeOrgId } : {}),
+      ...(authoritativeProjectId ? { project_id: authoritativeProjectId } : {}),
+    }
+    return { ws, authorityWorkspace: opened?.workspace, authorityRole: workspaceRole(opened?.role) }
   }
   if (auth?.mode !== "signed") {
     throw new ControlPlaneProtocolError(404, "workspace_not_found", `workspace ${workspaceId} not found`)
   }
   const authority = requireAuthority(services)
-  const orgId = typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(auth)) : undefined
+  const orgId = txt(opened?.workspace?.org_id)
+    ?? (typeof authority.resolveOrgId === "function" ? txt(await authority.resolveOrgId(auth)) : undefined)
+  const projectId = txt(opened?.workspace?.project_id)
   const stamp = Date.now()
   const ws = {
     id: workspaceId,
     ...(orgId ? { org_id: orgId } : {}),
+    ...(projectId ? { project_id: projectId } : {}),
     directory: `workspace:${workspaceId}`,
     kind: "cloud",
     created_at: stamp,
     updated_at: stamp,
   } satisfies Workspace
-  return { ws, authorityWorkspace: opened?.workspace }
+  return { ws, authorityWorkspace: opened?.workspace, authorityRole: workspaceRole(opened?.role) }
+}
+
+function workspaceRole(input: unknown): RelayRole | undefined {
+  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
+}
+
+function workspaceRoleAllowsWrite(input: unknown) {
+  return input === "editor" || input === "admin" || input === "owner"
 }
 
 function sessionStamp(input: Record<string, unknown>) {

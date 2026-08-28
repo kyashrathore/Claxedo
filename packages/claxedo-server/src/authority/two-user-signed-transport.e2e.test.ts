@@ -213,6 +213,9 @@ describe("two-user signed app transport", () => {
       jti: "jti_signed_bob",
       workspaceId: "ws_signed_private",
       hostId: "host_signed",
+      actorId: bobProfile.actor_id,
+      actorKind: "human",
+      role: "editor",
       expiresAt: Date.now() + 60_000,
     })
     const removed = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/participants", {

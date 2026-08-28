@@ -190,6 +190,42 @@ describe("convex authority", () => {
     })
   })
 
+  test("opens CLI workspaces through service projection without dropping canonical tenant metadata", async () => {
+    const query = vi.fn(async () => [{
+      workspace_id: "ws_cli",
+      org_id: "org_team",
+      project_id: "prj_cli",
+      role: "editor",
+      backing: "local-worktree",
+      access: "user-hosted",
+    }])
+    const authority = createConvexAuthority({
+      serviceToken: "svc_secret",
+      executor: { query, mutation: vi.fn() },
+    })
+    const cliAuth: SignedControlPlaneAuth = { ...auth, tokenKind: "cli" }
+
+    await expect(authority.openWorkspace(cliAuth, { workspaceId: "ws_cli" })).resolves.toEqual({
+      allowed: true,
+      role: "editor",
+      workspace: {
+        workspace_id: "ws_cli",
+        org_id: "org_team",
+        project_id: "prj_cli",
+        backing: "local-worktree",
+        access: "user-hosted",
+      },
+    })
+    expect(query).toHaveBeenCalledWith(expect.anything(), {
+      service_token: "svc_secret",
+      user: {
+        token_identifier: auth.user.tokenIdentifier,
+        subject: auth.user.subject,
+        issuer: auth.user.issuer,
+      },
+    })
+  })
+
   test("resolves the signed org through Convex", async () => {
     const mutation = vi.fn(async () => ({ org_id: "org_doc_1" }))
     const authority = createConvexAuthority({
@@ -550,13 +586,19 @@ describe("convex authority", () => {
       jti: "jti_1",
       workspaceId: "ws_1",
       hostId: "host_1",
+      actorId: "actor_1",
+      actorKind: "human",
+      role: "editor",
       expiresAt: 123,
     })
     await authority.recordRuntimeAccessTokenForService({
       jti: "jti_service",
       workspaceId: "wg_1",
       hostId: "host_2",
-      subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
+      principalKind: "user",
+      role: "editor",
       expiresAt: 456,
     })
     await expect(
@@ -585,6 +627,9 @@ describe("convex authority", () => {
       jti: "jti_1",
       workspace_id: "ws_1",
       host_id: "host_1",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      role: "editor",
       expires_at: 123,
     })
     expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
@@ -592,7 +637,10 @@ describe("convex authority", () => {
       jti: "jti_service",
       workspace_id: "wg_1",
       host_id: "host_2",
-      subject: "user_1",
+      actor_id: "actor_1",
+      actor_kind: "human",
+      principal_kind: "user",
+      role: "editor",
       expires_at: 456,
     })
     expect(query).toHaveBeenCalledWith(expect.anything(), {

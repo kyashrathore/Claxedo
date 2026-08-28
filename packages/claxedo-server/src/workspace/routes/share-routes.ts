@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import { z } from "zod"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -7,6 +8,7 @@ import {
   controlPlaneAuthErrorBody,
 } from "@claxedo/server-core/platform/auth/auth"
 import { apiError, signedOrError, type WorkspaceRouteOptions } from "../route-support"
+const workspaceShareBodyLimitBytes = 16 * 1024
 const shareBody = z.object({
   role: z.union([z.literal("viewer"), z.literal("editor"), z.literal("admin")]),
   grantedToTokenIdentifier: z.string().optional(),
@@ -29,8 +31,17 @@ export function workspaceShareRoutes(
   services?: ControlPlaneServices,
   options: WorkspaceRouteOptions = {},
 ) {
+  const limitedBody = bodyLimit({
+    maxSize: workspaceShareBodyLimitBytes,
+    onError: (c) => c.json({
+      error: apiError(
+        "request_body_too_large",
+        `Request body exceeds the ${workspaceShareBodyLimitBytes}-byte limit`,
+      ),
+    }, 413),
+  })
   return new Hono()
-    .post("/:id/shares", async (c) => {
+    .post("/:id/shares", limitedBody, async (c) => {
       const authResult = await signedOrError(c.req.raw, {
         ...options,
         requireSigned: true,
@@ -56,7 +67,7 @@ export function workspaceShareRoutes(
         throw err
       }
     })
-    .delete("/:id/shares", async (c) => {
+    .delete("/:id/shares", limitedBody, async (c) => {
       const authResult = await signedOrError(c.req.raw, {
         ...options,
         requireSigned: true,

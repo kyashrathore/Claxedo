@@ -156,6 +156,48 @@ describe("sqlite workspace authority", () => {
     database.close()
   })
 
+  test("session mirror rejects a collaborator's forged producer author", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_author_spoof", displayName: "Author spoof" })
+    const ownerIdentity = await authority.usersMe(owner) as { actor_public_id: string }
+    await authority.usersMe(other)
+    await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_author_spoof",
+      role: "editor",
+      grantedToClerkSubject: other.user.subject,
+    })
+
+    await authority.syncSessionMessages(other, {
+      workspaceId: "ws_author_spoof",
+      sessionId: "ses_author_spoof",
+      messages: [{
+        info: {
+          id: "msg_forged",
+          role: "user",
+          claxedo: { author: { id: ownerIdentity.actor_public_id } },
+        },
+        parts: [],
+      }],
+    })
+
+    expect(database().prepare(`
+      SELECT author_actor_id FROM session_messages WHERE message_id = ?
+    `).get("msg_forged")).toEqual({ author_actor_id: null })
+    await expect(authority.readSessionMessages(other, {
+      workspaceId: "ws_author_spoof",
+      sessionId: "ses_author_spoof",
+    })).resolves.toMatchObject({
+      allowed: true,
+      messages: [{ info: { id: "msg_forged", role: "user" } }],
+    })
+    const read = await authority.readSessionMessages(other, {
+      workspaceId: "ws_author_spoof",
+      sessionId: "ses_author_spoof",
+    }) as { messages: unknown[] }
+    expect(JSON.stringify(read.messages)).not.toContain("claxedo")
+    database.close()
+  })
+
   test("private sessions require creator enrollment or an active participant", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_private", displayName: "Private" })
@@ -297,6 +339,192 @@ describe("sqlite workspace authority", () => {
     })
     expect(revoked).toMatchObject({ revoked: true })
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
+  })
+
+  test("subject-targeted shares fail closed when local identity rows are ambiguous", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_ambiguous_subject", displayName: "Ambiguous" })
+    await authority.usersMe(other)
+    const now = Date.now()
+    database().prepare(`
+      INSERT INTO users (
+        token_identifier, public_id, subject, issuer, kind, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, 'human', ?, ?)
+    `).run(
+      "https://second-idp.example.test|user_other",
+      "usr_ambiguous_subject",
+      other.user.subject,
+      "https://second-idp.example.test",
+      now,
+      now,
+    )
+    database().prepare(`
+      INSERT INTO workspace_share_grants (
+        grant_id, workspace_id, target_key, granted_to_subject, role,
+        created_by_token_identifier, created_at
+      ) VALUES ('legacy-ambiguous-share', ?, ?, ?, 'editor', ?, ?)
+    `).run(
+      "ws_ambiguous_subject",
+      `subject:${other.user.subject}`,
+      other.user.subject,
+      owner.user.tokenIdentifier,
+      now,
+    )
+
+    await expect(authority.openWorkspace(other, { workspaceId: "ws_ambiguous_subject" }))
+      .rejects.toMatchObject({ status: 403 })
+
+    await expect(authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_ambiguous_subject",
+      role: "editor",
+      grantedToClerkSubject: other.user.subject,
+    })).rejects.toThrow("Workspace authority denied workspace access")
+    expect(database().prepare(`
+      SELECT COUNT(*) AS count FROM workspace_share_grants WHERE workspace_id = ?
+    `).get("ws_ambiguous_subject")).toEqual({ count: 1 })
+    authority.close()
+    database.close()
+  })
+
+  test("canonicalizes subject and token selectors to one revocable user grant", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_canonical_share", displayName: "Canonical share" })
+    await authority.usersMe(other)
+
+    const subjectGrant = await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_canonical_share",
+      role: "editor",
+      grantedToClerkSubject: other.user.subject,
+    })
+    const tokenGrant = await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_canonical_share",
+      role: "editor",
+      grantedToTokenIdentifier: other.user.tokenIdentifier,
+    })
+    expect(tokenGrant).toBe(subjectGrant)
+    expect(database().prepare(`
+      SELECT target_key, COUNT(*) AS count FROM workspace_share_grants
+      WHERE workspace_id = ? AND revoked_at IS NULL GROUP BY target_key
+    `).all("ws_canonical_share")).toEqual([{
+      target_key: `token:${other.user.tokenIdentifier}`,
+      count: 1,
+    }])
+
+    await authority.recordRuntimeAccessToken(other, {
+      jti: "jti_canonical_share",
+      workspaceId: "ws_canonical_share",
+      hostId: "host_canonical_share",
+      actorId: other.user.tokenIdentifier,
+      actorKind: "human",
+      role: "editor",
+      expiresAt: Date.now() + 60_000,
+    })
+    await expect(authority.revokeWorkspaceShare(owner, {
+      workspaceId: "ws_canonical_share",
+      grantedToClerkSubject: other.user.subject,
+    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    await expect(authority.openWorkspace(other, { workspaceId: "ws_canonical_share" }))
+      .rejects.toMatchObject({ status: 403 })
+    await expect(authority.runtimeAccessTokenActive({
+      jti: "jti_canonical_share",
+      workspaceId: "ws_canonical_share",
+      hostId: "host_canonical_share",
+    })).resolves.toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    authority.close()
+    database.close()
+  })
+
+  test("revokes a legacy subject grant after that subject becomes a canonical user", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_late_subject", displayName: "Late subject" })
+    const now = Date.now()
+    database().prepare(`
+      INSERT INTO workspace_share_grants (
+        grant_id, workspace_id, target_key, granted_to_subject, role,
+        created_by_token_identifier, created_at
+      ) VALUES ('legacy-late-subject', ?, ?, ?, 'editor', ?, ?)
+    `).run(
+      "ws_late_subject",
+      `subject:${other.user.subject}`,
+      other.user.subject,
+      owner.user.tokenIdentifier,
+      now,
+    )
+
+    await authority.usersMe(other)
+    await expect(authority.openWorkspace(other, { workspaceId: "ws_late_subject" }))
+      .resolves.toMatchObject({ role: "editor" })
+    await authority.recordRuntimeAccessToken(other, {
+      jti: "jti_late_subject",
+      workspaceId: "ws_late_subject",
+      hostId: "host_late_subject",
+      actorId: other.user.tokenIdentifier,
+      actorKind: "human",
+      role: "editor",
+      expiresAt: Date.now() + 60_000,
+    })
+
+    await expect(authority.revokeWorkspaceShare(owner, {
+      workspaceId: "ws_late_subject",
+      grantedToClerkSubject: other.user.subject,
+    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    await expect(authority.openWorkspace(other, { workspaceId: "ws_late_subject" }))
+      .rejects.toMatchObject({ status: 403 })
+    authority.close()
+    database.close()
+  })
+
+  test("resolves organization share selectors to the canonical local organization", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_org_share", displayName: "Org share" })
+    await authority.usersMe(other)
+    const now = Date.now()
+    database().prepare(`
+      INSERT INTO orgs (
+        org_id, name, kind, owner_token_identifier, clerk_org_id, created_at, updated_at
+      ) VALUES ('org_team', 'Team', 'team', ?, 'org_provider_team', ?, ?)
+    `).run(owner.user.tokenIdentifier, now, now)
+    database().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES ('org_team', ?, 'member', ?, ?)
+    `).run(other.user.tokenIdentifier, now, now)
+
+    await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_org_share",
+      role: "editor",
+      grantedToClerkOrgId: "org_provider_team",
+    })
+    expect(database().prepare(`
+      SELECT target_key, granted_to_org_id FROM workspace_share_grants
+      WHERE workspace_id = ? AND revoked_at IS NULL
+    `).get("ws_org_share")).toEqual({ target_key: "org:org_team", granted_to_org_id: "org_team" })
+    await expect(authority.openWorkspace(other, { workspaceId: "ws_org_share" }))
+      .resolves.toMatchObject({ role: "editor" })
+
+    await expect(authority.revokeWorkspaceShare(owner, {
+      workspaceId: "ws_org_share",
+      grantedToClerkOrgId: "org_provider_team",
+    })).resolves.toMatchObject({ revoked: true })
+    await expect(authority.openWorkspace(other, { workspaceId: "ws_org_share" }))
+      .rejects.toMatchObject({ status: 403 })
+    authority.close()
+    database.close()
+  })
+
+  test("rejects user and organization share grants without an authoritative target", async () => {
+    const authority = memoryAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_unknown_share", displayName: "Unknown share" })
+
+    await expect(authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_unknown_share",
+      role: "viewer",
+      grantedToTokenIdentifier: "unknown-token",
+    })).rejects.toThrow("Share target not found")
+    await expect(authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_unknown_share",
+      role: "viewer",
+      grantedToClerkOrgId: "unknown-org",
+    })).rejects.toThrow("Share target not found")
   })
 
   test("usersMe/resolveOrgId mint a stable personal org", async () => {
@@ -483,20 +711,81 @@ describe("sqlite workspace authority", () => {
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_rt", displayName: "RT" })
     const expiresAt = Date.now() + 60_000
 
+    await expect(authority.recordRuntimeAccessToken(owner, {
+      jti: "jti_wrong_actor",
+      workspaceId: "ws_rt",
+      hostId: "host_a",
+      actorId: other.user.tokenIdentifier,
+      actorKind: "human",
+      role: "owner",
+      expiresAt,
+    })).rejects.toThrow("Workspace authority denied workspace access")
+
     await authority.recordRuntimeAccessToken(owner, {
       jti: "jti_1",
       workspaceId: "ws_rt",
       hostId: "host_a",
+      actorId: owner.user.tokenIdentifier,
+      actorKind: "human",
+      role: "owner",
       expiresAt,
     })
     await expect(authority.recordRuntimeAccessToken(owner, {
       jti: "jti_1",
       workspaceId: "ws_rt",
       hostId: "host_a",
+      actorId: owner.user.tokenIdentifier,
+      actorKind: "human",
+      role: "owner",
       expiresAt,
     })).rejects.toThrow("Runtime Access Token already recorded")
 
+    await expect(authority.recordRuntimeAccessTokenForService({
+      jti: "jti_service_wrong_kind",
+      workspaceId: "ws_rt",
+      hostId: "host_a",
+      actorId: owner.user.tokenIdentifier,
+      actorKind: "agent",
+      principalKind: "user",
+      role: "owner",
+      expiresAt,
+    })).rejects.toThrow("Workspace authority denied workspace access")
+    await authority.recordRuntimeAccessTokenForService({
+      jti: "jti_service",
+      workspaceId: "ws_rt",
+      hostId: "host_a",
+      actorId: owner.user.tokenIdentifier,
+      actorKind: "human",
+      principalKind: "user",
+      role: "owner",
+      expiresAt,
+    })
+    await authority.recordRuntimeAccessTokenForService({
+      jti: "jti_control_plane",
+      workspaceId: "ws_rt",
+      hostId: "host_a",
+      actorId: "control-plane",
+      actorKind: "agent",
+      principalKind: "service",
+      role: "owner",
+      expiresAt,
+    })
+    await expect(authority.recordRuntimeAccessTokenForService({
+      jti: "jti_service_editor",
+      workspaceId: "ws_rt",
+      hostId: "host_a",
+      actorId: "control-plane",
+      actorKind: "agent",
+      principalKind: "service",
+      role: "editor",
+      expiresAt,
+    })).rejects.toThrow("Workspace authority denied workspace access")
+
     expect(await authority.runtimeAccessTokenActive({ jti: "jti_1", workspaceId: "ws_rt", hostId: "host_a" }))
+      .toEqual({ active: true })
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_service", workspaceId: "ws_rt", hostId: "host_a" }))
+      .toEqual({ active: true })
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_control_plane", workspaceId: "ws_rt", hostId: "host_a" }))
       .toEqual({ active: true })
     expect(await authority.runtimeAccessTokenActive({ jti: "jti_1", workspaceId: "ws_rt", hostId: "host_b" }))
       .toMatchObject({ active: false, code: "runtime_access_token_mismatch" })
@@ -506,6 +795,48 @@ describe("sqlite workspace authority", () => {
     await authority.revokeRuntimeAccessToken(owner, { jti: "jti_1", workspaceId: "ws_rt" })
     expect(await authority.runtimeAccessTokenActive({ jti: "jti_1", workspaceId: "ws_rt", hostId: "host_a" }))
       .toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    await authority.deleteWorkspace(owner, { workspaceId: "ws_rt" })
+    expect(await authority.runtimeAccessTokenActive({ jti: "jti_control_plane", workspaceId: "ws_rt", hostId: "host_a" }))
+      .toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+  })
+
+  test("live token checks reject a stale elevated role even if revocation stamping is missed", async () => {
+    const { authority, database } = fileAuthority()
+    await authority.createCloudWorkspace(owner, { workspaceId: "ws_role_downgrade", displayName: "Role downgrade" })
+    await authority.usersMe(other)
+    await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_role_downgrade",
+      role: "editor",
+      grantedToClerkSubject: other.user.subject,
+    })
+    await authority.recordRuntimeAccessToken(other, {
+      jti: "jti_stale_editor",
+      workspaceId: "ws_role_downgrade",
+      hostId: "host_role_downgrade",
+      actorId: other.user.tokenIdentifier,
+      actorKind: "human",
+      role: "editor",
+      expiresAt: Date.now() + 60_000,
+    })
+
+    await authority.grantWorkspaceShare(owner, {
+      workspaceId: "ws_role_downgrade",
+      role: "viewer",
+      grantedToClerkSubject: other.user.subject,
+    })
+    database().prepare("UPDATE runtime_access_tokens SET revoked_at = NULL WHERE jti = ?").run("jti_stale_editor")
+
+    await expect(authority.runtimeAccessTokenActive({
+      jti: "jti_stale_editor",
+      workspaceId: "ws_role_downgrade",
+      hostId: "host_role_downgrade",
+    })).resolves.toMatchObject({
+      active: false,
+      code: "runtime_access_token_revoked",
+      reason: "Runtime Access Token authorization has changed",
+    })
+    authority.close()
+    database.close()
   })
 
   test("agent extensions: admin-gated writes, runtime list without auth, source conflict", async () => {

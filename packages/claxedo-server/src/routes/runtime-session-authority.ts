@@ -1,4 +1,5 @@
 import { Hono } from "hono"
+import { bodyLimit } from "hono/body-limit"
 import {
   createRemoteJWKSet,
   importJWK,
@@ -14,6 +15,7 @@ import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 
 type RelayProofKey = JWTVerifyGetKey
+const sessionAuthorityBodyLimitBytes = 16 * 1024
 
 type StreamLeaseClaims = {
   actorId: string
@@ -47,7 +49,16 @@ export function RuntimeSessionAuthorityRoutes(
   services?: ControlPlaneServices,
   options: RuntimeSessionAuthorityOptions = {},
 ) {
-  return new Hono().post("/session-authorize", async (c) => {
+  const limitedBody = bodyLimit({
+    maxSize: sessionAuthorityBodyLimitBytes,
+    onError: (c) => c.json({
+      error: {
+        code: "request_body_too_large",
+        message: `Request body exceeds the ${sessionAuthorityBodyLimitBytes}-byte limit`,
+      },
+    }, 413),
+  })
+  return new Hono().post("/session-authorize", limitedBody, async (c) => {
     const body = await c.req.json().catch(() => undefined) as {
       sessionId?: unknown
       action?: unknown

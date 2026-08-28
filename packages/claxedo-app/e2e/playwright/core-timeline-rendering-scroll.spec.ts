@@ -1113,6 +1113,11 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       }))
       if (position.max > 0 && position.top >= position.max * 0.35) break
       await page.mouse.wheel(0, 100)
+      // A wheel command can return before Blink applies the matching scroll
+      // frame. Settle it before either the next threshold check or the
+      // baseline sample below, otherwise the final 100px gesture is mistaken
+      // for a virtualization-induced offset rewrite.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     }
 
     const middle = await scroller.evaluate((el) => ({

@@ -49,6 +49,13 @@ async function seedOwner(t: ReturnType<typeof convexTest>) {
       created_at: 1,
       updated_at: 1,
     })
+    await ctx.db.insert("org_memberships", {
+      org_id: orgId,
+      user_id: userId,
+      role: "owner",
+      created_at: 1,
+      updated_at: 1,
+    })
     return { userId, orgId }
   })
 }
@@ -81,7 +88,7 @@ describe("ensureWorkGraph repo-key project reuse", () => {
       })
       expect(next.project_id).toBe(first.project_id)
     }
-    expect(first.project_id).toBe("prj_ws_https")
+    expect(first.project_id).toMatch(/^prj_/)
   })
 
   test("different repos get different projects", async () => {
@@ -103,5 +110,78 @@ describe("ensureWorkGraph repo-key project reuse", () => {
       repo_url: "https://github.com/octocat/repo-two",
     })
     expect(second.project_id).not.toBe(first.project_id)
+  })
+})
+
+describe("CLI service workspace authority", () => {
+  const serviceUser = {
+    token_identifier: "issuer|clerk-solo",
+    subject: "clerk-solo",
+    issuer: "issuer",
+  }
+
+  test("registers and lists through the canonical service entrypoints with tenant metadata", async () => {
+    const t = convexTest(schema, modules)
+    const { orgId } = await seedOwner(t)
+
+    await t.mutation(api.workspaces.registerLocalForSharingForService, {
+      ...SVC,
+      user: serviceUser,
+      workspace_id: "ws_cli",
+      org_id: orgId,
+      project_id: "prj_cli",
+      display_name: "CLI workspace",
+      repo_url: "https://github.com/acme/cli.git",
+    })
+
+    await expect(t.query(api.workspaces.listForService, {
+      ...SVC,
+      user: serviceUser,
+    })).resolves.toEqual([
+      expect.objectContaining({
+        workspace_id: "ws_cli",
+        org_id: orgId,
+        project_id: "prj_cli",
+        role: "owner",
+        backing: "local-worktree",
+        access: "user-hosted",
+      }),
+    ])
+  })
+
+  test("does not let a service-projected CLI user re-register another user's workspace", async () => {
+    const t = convexTest(schema, modules)
+    await seedOwner(t)
+    await t.run(async (ctx) => {
+      const other = await ctx.db.insert("users", {
+        token_identifier: "issuer|other",
+        created_at: 1,
+        updated_at: 1,
+      })
+      const otherOrg = await ctx.db.insert("orgs", {
+        name: "Other org",
+        kind: "personal",
+        owner_user_id: other,
+        created_at: 1,
+        updated_at: 1,
+      })
+      await ctx.db.insert("workspaces", {
+        workspace_id: "ws_other",
+        org_id: otherOrg,
+        owner_user_id: other,
+        backing: "local-worktree",
+        access: "user-hosted",
+        display_name: "Other",
+        created_at: 1,
+        updated_at: 1,
+      })
+    })
+
+    await expect(t.mutation(api.workspaces.registerLocalForSharingForService, {
+      ...SVC,
+      user: serviceUser,
+      workspace_id: "ws_other",
+      display_name: "Hijacked",
+    })).rejects.toThrow("Workspace not found")
   })
 })

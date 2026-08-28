@@ -390,7 +390,7 @@ async function installUserHostedRuntimeMock(
     // static bundle reads as the same resource type as an API request. They
     // are not a workspace-runtime lane at all; let Vite serve its owned asset
     // namespace and keep the bare-hit oracle scoped to runtime/control APIs.
-    if (url.pathname.startsWith("/assets/")) return route.continue()
+    if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/@fs/")) return route.continue()
 
     // ---- Bootstrap / project inventory (bare origin) ----
     // Bootstrap discovery is legitimately bare-origin at ANY readiness state

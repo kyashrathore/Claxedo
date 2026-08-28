@@ -19,6 +19,7 @@ import { PI_LAUNCH_PROVIDERS } from "@claxedo/server-core/credentials/pi-credent
 import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
+import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
 
 function version(options: OpenCodeCompatRouteOptions) {
   return options.env?.npm_package_version || "1.0.0"
@@ -427,13 +428,7 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
               "x-opencode-directory": ws.remote_directory || ws.directory,
             },
             signal: AbortSignal.timeout(2_000),
-          }, {
-            ...(options.services?.sandbox.sandboxManager
-              ? { sandboxManager: options.services.sandbox.sandboxManager }
-              : {}),
-            ...(options.services?.relay.provider ? { relayProvider: options.services.relay.provider } : {}),
-            ...(options.services?.defaultHomeRegion ? { defaultHomeRegion: options.services.defaultHomeRegion } : {}),
-          })
+          }, await sandboxFetchOptionsForRequest(c.req.raw, ws.id, options))
           if (res.ok) return c.json(await res.json())
         } catch { /* fallback below */ }
       }

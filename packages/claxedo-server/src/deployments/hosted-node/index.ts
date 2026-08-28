@@ -87,6 +87,11 @@ function hostedSessionEnvFactory(services: ControlPlaneServices, turnCredentials
     ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
     ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
     ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
+    subject: "control-plane",
+    principalKind: "service",
+    actorId: "control-plane",
+    actorKind: "agent",
+    role: "owner",
   }
   return createClaxedoSessionEnvFactory({
     fetchOptions,

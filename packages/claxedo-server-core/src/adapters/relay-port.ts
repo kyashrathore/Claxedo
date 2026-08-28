@@ -31,9 +31,11 @@ type RelayTokenBaseInput = {
 
 export type HostTunnelTokenInput = RelayTokenBaseInput
 
-export type RelayTokenInput = RelayTokenBaseInput & {
+export type RelayTokenInput = Omit<RelayTokenBaseInput, "role"> & {
+  principalKind: "user" | "service"
   actorId: string
   actorKind: "human" | "agent"
+  role: RelayRole
   actorPublicId?: string
   actorName?: string
   actorAvatarUrl?: string

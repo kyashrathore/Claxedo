@@ -11,7 +11,7 @@ import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
-import type { AgentMessage, AgentRuntimeStreamEvent, SessionConfig } from "./index"
+import type { AgentMessage, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
@@ -41,7 +41,6 @@ function testHarness(options: {
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
   commitsStreamEvents?: boolean
-  permissionModeCalls?: string[]
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
     ...(options.commitsStreamEvents ? { commitsStreamEvents: true as const } : {}),
@@ -87,14 +86,6 @@ function testHarness(options: {
     async getMessages() {
       return []
     },
-    ...(options.permissionModeCalls
-      ? {
-          async setPermissionMode(_sessionId: string, modeId: string) {
-            options.permissionModeCalls?.push(modeId)
-            return { currentModeId: modeId, modes: [], appliesFrom: "next-turn" as const }
-          },
-        }
-      : {}),
     dispose() {},
     ...(options.abort ? { abort: options.abort } : {}),
   }
@@ -697,6 +688,45 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
+  test("rejects incomplete actor attribution before persisting a turn", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({ store, harnesses: [testHarness()] })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.turns.start({
+      sessionId: session.id,
+      text: "hello",
+      actorId: "actor_1",
+    } as never)).rejects.toThrow("Turn actor id and kind must be provided together")
+    expect(rows.getMessages(session.id)).toEqual([])
+    runtime.dispose()
+  })
+
+  test("leaves permission-mode application to the admitted harness turn", async () => {
+    const store = createMemoryRuntimeStore()
+    const modes: Array<string | undefined> = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (_id, input) {
+          modes.push(input.permissionMode)
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await runtime.turns.start({
+      sessionId: session.id,
+      text: "hello",
+      permissionMode: "plan",
+    })
+    await tick()
+
+    expect(modes).toEqual(["plan"])
+    runtime.dispose()
+  })
+
   test("publishes the authoritative busy status before a slow native harness yields", async () => {
     let release!: () => void
     const harnessReady = new Promise<void>((resolve) => {
@@ -746,14 +776,15 @@ describe("createAgentRuntime", () => {
     const blocked = new Promise<void>((resolve) => {
       finish = resolve
     })
-    const permissionModeCalls: string[] = []
+    const permissionModes: Array<string | undefined> = []
+    const admitted: string[] = []
     const store = createMemoryRuntimeStore()
     const rows = storeRows(store)
     const runtime = createAgentRuntime({
       store,
       harnesses: [testHarness({
-        permissionModeCalls,
-        sendMessage: async function* (id) {
+        sendMessage: async function* (id, input) {
+          permissionModes.push(input.permissionMode)
           await blocked
           yield { type: "finish", sessionId: id }
         },
@@ -769,15 +800,18 @@ describe("createAgentRuntime", () => {
       messageId: "winner",
       text: "first",
       permissionMode: "winner-mode",
+      onAdmitted: () => admitted.push("winner"),
     })
     await expect(runtime.turns.start({
       sessionId: session.id,
       messageId: "loser",
       text: "second",
       permissionMode: "loser-mode",
+      onAdmitted: () => admitted.push("loser"),
     })).rejects.toBeInstanceOf(AgentRuntimeTurnConflictError)
 
-    expect(permissionModeCalls).toEqual(["winner-mode"])
+    expect(admitted).toEqual(["winner"])
+    expect(permissionModes).toEqual(["winner-mode"])
     expect((rows.getMessages(session.id) as Array<{ info: { id: string } }>).map((message) => message.info.id))
       .toEqual(["winner", "winner_r"])
 

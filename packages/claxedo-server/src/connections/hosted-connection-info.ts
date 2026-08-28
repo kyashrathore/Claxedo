@@ -173,6 +173,9 @@ export async function hostedConnectionInfo(
     jti: token.jti,
     workspaceId,
     hostId: ensured.hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role,
     expiresAt: token.tokenExpiresAt,
   })
   await authority.auditAllow(auth, {

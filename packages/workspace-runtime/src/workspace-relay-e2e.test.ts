@@ -3,7 +3,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { spawn, type ChildProcess } from "node:child_process"
-import { exportJWK, exportSPKI, generateKeyPair } from "jose"
+import { exportSPKI, generateKeyPair } from "jose"
 import {
   createWorkspaceRelayBun,
   mintRuntimeAccessToken,
@@ -124,7 +124,12 @@ function sessionAuthorityStub(input: {
   const server = Bun.serve({
     port: 0,
     fetch: async (request) => {
-      const body = await request.json().catch(() => ({})) as { sessionId?: string; action?: string }
+      const body = await request.json().catch(() => ({})) as {
+        sessionId?: string
+        action?: string
+        stream?: boolean
+        lease?: string
+      }
       // The proof is the Relay Host Token the runtime forwarded verbatim. A real
       // control plane verifies it to learn *who* is asking; so does this stub,
       // because a stub that trusted the body would let an unsigned request pass.
@@ -138,7 +143,13 @@ function sessionAuthorityStub(input: {
       requests.push({ sessionId: body.sessionId, action: body.action, actorId: claims?.actor_id })
       if (!claims || claims.actor_id !== input.actorId) return new Response(null, { status: 401 })
       if (body.sessionId !== input.sessionId) return new Response(null, { status: 403 })
-      return Response.json({ allowed: true })
+      return Response.json(body.stream
+        ? {
+            allowed: true,
+            lease: body.lease ?? `stream_${body.action ?? "read"}`,
+            expiresAt: Date.now() + 30_000,
+          }
+        : { allowed: true })
     },
   })
   return {

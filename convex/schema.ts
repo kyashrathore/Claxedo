@@ -230,6 +230,7 @@ export default defineSchema({
   })
     .index("by_owner", ["owner_user_id"])
     .index("by_org", ["org_id"])
+    .index("by_project", ["project_id"])
     .index("by_workspace_id", ["workspace_id"]),
 
   projects: defineTable({
@@ -298,7 +299,9 @@ export default defineSchema({
   })
     .index("by_workspace", ["workspace_id"])
     .index("by_user", ["granted_to_user_id"])
-    .index("by_org", ["granted_to_org_id"]),
+    .index("by_org", ["granted_to_org_id"])
+    .index("by_workspace_user", ["workspace_id", "granted_to_user_id"])
+    .index("by_workspace_org", ["workspace_id", "granted_to_org_id"]),
 
   local_host_links: defineTable({
     workspace_id: v.id("workspaces"),
@@ -437,6 +440,13 @@ export default defineSchema({
     host_id: v.string(),
     minted_for_user_id: v.optional(v.id("users")),
     minted_for_subject: v.optional(v.string()),
+    principal_kind: v.optional(v.union(v.literal("user"), v.literal("service"))),
+    minted_for_actor_id: v.optional(v.string()),
+    minted_for_actor_kind: v.optional(v.union(v.literal("human"), v.literal("agent"))),
+    // EXPAND: tokens minted before live role validation do not carry the role
+    // that was signed into the RAT. `runtimeAccessTokens.active` fails those
+    // legacy rows closed; the maximum RAT lifetime bounds the rollout window.
+    workspace_role: v.optional(workspaceRole),
     expires_at: v.number(),
     revoked_at: v.optional(v.number()),
     created_at: v.number(),
