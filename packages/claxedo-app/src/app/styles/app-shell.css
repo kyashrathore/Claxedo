@@ -429,7 +429,7 @@ body:has([data-slot="dialog-content"].command-palette-dialog) .ui-dialog-overlay
   box-shadow: inset 0 0 0 1px var(--border-focus);
 }
 
-.workspace-data-chart-plot svg {
+.workspace-data-chart-plot > svg {
   display: block;
   width: 100%;
   height: 100%;
