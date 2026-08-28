@@ -183,6 +183,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     authority,
     runtimeSessionAuthority: authority,
     privateSessionAuthority: authority,
+    turnAuthority: authority,
     userHostedResolver: createD1UserHostedTargetResolver(input.controlPlaneDatabase, {
       ...(input.now ? { now: input.now } : {}),
       deploymentId,

@@ -35,6 +35,13 @@ function managedForkUnavailable() {
   ), { status: 503 })
 }
 
+function managedPromptUnavailable() {
+  return Response.json(errorBody(
+    "session_v2_managed_prompt_unavailable",
+    "Managed Session V2 prompts must use the fenced workspace session route",
+  ), { status: 503 })
+}
+
 function invalidUpstreamResponse() {
   return Response.json(errorBody(
     "session_v2_invalid_response",
@@ -115,6 +122,7 @@ export function sessionV2Proxy(options: SessionV2ProxyOptions) {
     const collection = path === "/api/session"
     const active = path === "/api/session/active"
     const fork = method === "POST" && /\/fork\/?$/.test(path)
+    const prompt = method === "POST" && /\/prompt\/?$/.test(path)
 
     if (managed && collection && method === "POST") return managedCreationUnavailable()
     if (managed && fork) return managedForkUnavailable()
@@ -146,6 +154,10 @@ export function sessionV2Proxy(options: SessionV2ProxyOptions) {
       path,
     })
     if (!decision.allowed) return sessionAccessDenied(decision)
+    // The byte proxy cannot fence the upstream producer after durable lease
+    // loss. Managed prompts therefore use session-core until V2 accepts the
+    // same turn-admission/abort contract end to end.
+    if (managed && prompt) return managedPromptUnavailable()
 
     const upstream = await options.forward(c)
     if (!managed || !upstream.ok || method === "HEAD") return upstream

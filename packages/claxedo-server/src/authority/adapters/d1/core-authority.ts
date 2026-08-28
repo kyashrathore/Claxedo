@@ -4,13 +4,19 @@ import {
   PRIVATE_SESSION_AUTHORITY_METHODS,
   type PrivateSessionAuthority,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import {
   D1WorkspaceAuthority,
   D1_WORKSPACE_AUTHORITY_METHODS,
   type D1AuthorityProductPolicy,
   type D1WorkspaceAuthorityCore,
 } from "./workspace-authority"
-import { D1SessionAuthority, D1_SESSION_AUTHORITY_METHODS, type D1SessionAuthorityPort } from "./session-authority"
+import {
+  D1SessionAuthority,
+  D1_SESSION_AUTHORITY_METHODS,
+  D1_SESSION_TURN_AUTHORITY_METHODS,
+  type D1SessionAuthorityPort,
+} from "./session-authority"
 import {
   D1HostAccessAuthority,
   D1_HOST_ACCESS_AUTHORITY_METHODS,
@@ -54,6 +60,7 @@ const HOST_LIFECYCLE_METHODS = [
 export type D1CoreAuthorityBoundary = WorkspaceAuthority &
   Pick<D1WorkspaceAuthority, (typeof WORKSPACE_LIFECYCLE_METHODS)[number]> &
   PrivateSessionAuthority &
+  SessionTurnAuthority &
   Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]>
 
 export type D1AuthorityMissingCapability = Exclude<keyof WorkspaceAuthority, keyof D1CoreAuthorityPort>
@@ -105,6 +112,7 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),
     ...bindMethods(workspace, WORKSPACE_LIFECYCLE_METHODS),
     ...bindMethods(sessions, PRIVATE_SESSION_AUTHORITY_METHODS),
+    ...bindMethods(sessions, D1_SESSION_TURN_AUTHORITY_METHODS),
     ...bindMethods(hosts, HOST_LIFECYCLE_METHODS),
   }
 }

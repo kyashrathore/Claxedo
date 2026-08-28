@@ -29,11 +29,21 @@ type StreamLeaseClaims = {
   action: "read" | "write"
 }
 
+type TurnLeaseClaims = StreamLeaseClaims & {
+  turnId: string
+  authorityLeaseId: string
+  fencingToken: number
+  acquiredAt: number
+  expiresAt: number
+}
+
 export type RuntimeSessionAuthorityOptions = {
   env?: Record<string, string | undefined>
   verifyRelayProof?: (token: string) => Promise<RelayHostTokenClaims>
   mintStreamLease?: (claims: StreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyStreamLease?: (lease: string) => Promise<StreamLeaseClaims>
+  mintTurnLease?: (claims: TurnLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
+  verifyTurnLease?: (lease: string) => Promise<TurnLeaseClaims>
 }
 
 type WorkspaceSessionAuthorityRequest = {
@@ -216,6 +226,17 @@ export function RuntimeSessionAuthorityRoutes(
       }
       return c.json({ allowed: true })
     } catch (error) {
+      if (error instanceof SessionTurnConflictError || error instanceof SessionTurnLeaseLostError) {
+        return context.json({
+          error: {
+            code: error.code,
+            message: error.message,
+            ...(error instanceof SessionTurnConflictError && error.activeUntil !== undefined
+              ? { activeUntil: error.activeUntil }
+              : {}),
+          },
+        }, 409)
+      }
       if (error instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(error), error.status as 401 | 403 | 503)
       }
@@ -228,12 +249,17 @@ const streamLeaseIssuer = "claxedo-control-plane"
 const streamLeaseAudience = "workspace-runtime-session-stream"
 const streamLeaseTtlSeconds = 15
 
+function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" {
+  return value === "turn_acquire" || value === "turn_renew" || value === "turn_release"
+}
+
 function streamLeaseMinter(env: Record<string, string | undefined>) {
   return async (claims: StreamLeaseClaims) => {
     const pem = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?.replaceAll("\\n", "\n").trim()
     if (!pem) throw new Error("stream lease signing key is unavailable")
     const now = Math.floor(Date.now() / 1_000)
-    const expiresAt = (now + streamLeaseTtlSeconds) * 1_000
+    const ttlSeconds = SESSION_STREAM_LEASE_TTL_MS / 1_000
+    const expiresAt = (now + ttlSeconds) * 1_000
     const lease = await new SignJWT({
       actor_id: claims.actorId,
       actor_kind: claims.actorKind,
@@ -248,7 +274,7 @@ function streamLeaseMinter(env: Record<string, string | undefined>) {
       .setIssuer(streamLeaseIssuer)
       .setAudience(streamLeaseAudience)
       .setIssuedAt(now)
-      .setExpirationTime(now + streamLeaseTtlSeconds)
+      .setExpirationTime(now + ttlSeconds)
       .setJti(crypto.randomUUID())
       .sign(await importPKCS8(pem, "EdDSA"))
     return { lease, expiresAt }

@@ -82,6 +82,8 @@ export type SessionPromptTurnInput = {
   }) => ActiveTurnScope | undefined
   publishUserMessage?: boolean
   streamErrorMessage?: (error: unknown) => string
+  /** Current durable lease generation, checked before every producer publish. */
+  turnAdmission?: { valid(): boolean }
 }
 
 export type RuntimePromptTurnInput = {
@@ -305,7 +307,9 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       const result = await nextWithAbort(iterator, activeTurn?.signal)
       if (result.done) break
       const item = result.value
+      if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of projection.events(item.payload)) {
+        if (input.turnAdmission && !input.turnAdmission.valid()) break
         input.publishStatus({ type: "process.status", directory: scope, configId: input.sessionId, status: "streaming" })
         input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
@@ -360,7 +364,9 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
   let assistantMessagePublished = false
   try {
     for await (const item of sendMessageWithAbort(input.adapter, input.sessionId, promptInput, input.directory, activeTurn?.signal)) {
+      if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of events.events(item)) {
+        if (input.turnAdmission && !input.turnAdmission.valid()) break
         input.publishStatus({ type: "process.status", directory: scope, configId: input.sessionId, status: "streaming" })
         input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
@@ -372,8 +378,10 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
       assistantId = events.assistantId()
     }
   } catch (err) {
-    error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
-    input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
+    if (!input.turnAdmission || input.turnAdmission.valid()) {
+      error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
+      input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
+    }
   } finally {
     activeTurn?.dispose?.()
   }

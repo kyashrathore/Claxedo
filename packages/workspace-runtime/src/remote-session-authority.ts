@@ -13,6 +13,10 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
   fetch?: (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
   timeoutMs?: number
 } = {}) {
+  type AuthorityAction =
+    | "read" | "write" | "register"
+    | "registration_ambiguous" | "compensation_begin" | "compensation_complete"
+    | "turn_acquire" | "turn_renew" | "turn_release"
   const request = async (
     input: SessionAuthorityInput,
     action: "read" | "write" | "register",
@@ -21,10 +25,13 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
     const url = options.url?.trim()
     if (!url || (!input.credential && !stream?.lease)) return denied(503, "session_authority_unavailable")
     try {
+      const timeoutSignal = AbortSignal.timeout(options.timeoutMs ?? 5_000)
       const response = await (options.fetch ?? globalThis.fetch)(url, {
         method: "POST",
         headers: {
-          ...(input.credential ? { authorization: input.credential } : {}),
+          ...(input.credential && action !== "turn_renew" && action !== "turn_release"
+            ? { authorization: input.credential }
+            : {}),
           "content-type": "application/json",
         },
         body: JSON.stringify({
@@ -32,8 +39,11 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
           action,
           ...(stream ? { stream: true, ...(stream.lease ? { lease: stream.lease } : {}) } : {}),
           ...(action === "register" && input.sessionTitle ? { title: input.sessionTitle } : {}),
+          ...(requestOptions?.turnId ? { turnId: requestOptions.turnId } : {}),
+          ...(requestOptions?.leaseId ? { leaseId: requestOptions.leaseId } : {}),
+          ...(requestOptions?.fencingToken !== undefined ? { fencingToken: requestOptions.fencingToken } : {}),
         }),
-        signal: AbortSignal.timeout(options.timeoutMs ?? 5_000),
+        signal: input.signal ? AbortSignal.any([input.signal, timeoutSignal]) : timeoutSignal,
       })
       if (response.ok) {
         if (!stream) return { allowed: true }
@@ -45,7 +55,7 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
         return decision
       }
       const body = await response.json().catch(() => undefined) as { error?: { code?: unknown; message?: unknown } } | undefined
-      const status = response.status === 401 ? 401 : response.status === 503 ? 503 : 403
+      const status = response.status === 401 ? 401 : response.status === 409 ? 409 : response.status === 503 ? 503 : 403
       return denied(
         status,
         typeof body?.error?.code === "string"

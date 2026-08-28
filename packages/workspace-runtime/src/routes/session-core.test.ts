@@ -118,14 +118,19 @@ function managedRoutes(input: {
   policy: SessionAccessPolicy
   adapter: AgentHarnessAdapter
   listSessions?: () => Promise<AgentSessionRow[]>
+  runtime?: AgentRuntime
+  publishGlobal?: (event: CompatEnvelope) => void
+  afterMessageCheckpoint?: () => void
 }) {
   const routes = createSessionRoutes({
     resolveAdapter: () => input.adapter,
     resolveDirectory: () => "/workspace",
     ...(input.listSessions ? { listSessions: input.listSessions } : {}),
+    ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
+    ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
     sessionAccessPolicy: input.policy,
     sessionBus: { publish() {}, subscribe: () => () => {} },
-    publishGlobal() {},
+    publishGlobal: input.publishGlobal ?? (() => {}),
   })
   const app = new Hono()
   app.use("*", async (context, next) => {
@@ -143,6 +148,14 @@ function managedRoutes(input: {
 }
 
 function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAccessPolicy {
+  const lease = (turnId: string, leaseId = "turn_lease_test") => ({
+    allowed: true as const,
+    turnId,
+    leaseId,
+    fencingToken: 1,
+    acquiredAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  })
   return {
     sessionAuthority: "managed-private",
     authorize: async () => ({ allowed: true }),
@@ -153,6 +166,9 @@ function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAcc
     markRegistrationAmbiguous: async () => ({ allowed: true }),
     beginRegistrationCompensation: async () => ({ allowed: true }),
     completeRegistrationCompensation: async () => ({ allowed: true }),
+    acquireTurn: async (input) => lease(input.turnId),
+    renewTurn: async (input) => lease(input.turnId, input.leaseId),
+    releaseTurn: async () => ({ released: true }),
     ...overrides,
   }
 }
@@ -330,6 +346,59 @@ describe("createSessionRoutes private-session lifecycle", () => {
       ],
     }).request("/session")
     expect((await response.json() as Array<{ id: string }>).map((row) => row.id)).toEqual(["ses_visible"])
+  })
+
+  test("requires a stable message id before a managed prompt mutates the runtime", async () => {
+    let sends = 0
+    const fixture = {
+      ...adapter(),
+      sendMessage: () => {
+        sends += 1
+        return (async function* () {})()
+      },
+    }
+    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request(
+      "/session/ses_private/message",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
+      },
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
+    expect(sends).toBe(0)
+  })
+
+  test("returns a durable admission conflict before a managed prompt mutates the runtime", async () => {
+    let sends = 0
+    const fixture = {
+      ...adapter(),
+      sendMessage: () => {
+        sends += 1
+        return (async function* () {})()
+      },
+    }
+    const response = await managedRoutes({
+      policy: managedPolicy({
+        acquireTurn: async () => ({
+          allowed: false,
+          status: 409,
+          code: "session_turn_in_progress",
+          message: "A durable turn is already active",
+        }),
+      }),
+      adapter: fixture,
+    }).request("/session/ses_private/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageID: "msg_2", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+    expect(sends).toBe(0)
   })
 })
 

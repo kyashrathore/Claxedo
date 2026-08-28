@@ -70,6 +70,23 @@ describe("Session V2 private proxy", () => {
     })])
   })
 
+  test("fails closed before forwarding a managed V2 prompt without a producer fence", async () => {
+    let forwarded = 0
+    const response = await app({
+      policy: policy(),
+      forward: () => {
+        forwarded += 1
+        return Response.json({ data: { admitted: true } })
+      },
+    }).request("/api/session/ses_private/prompt", { method: "POST" })
+
+    expect(response.status).toBe(503)
+    expect(await response.json()).toMatchObject({
+      error: { code: "session_v2_managed_prompt_unavailable" },
+    })
+    expect(forwarded).toBe(0)
+  })
+
   test("filters list and active collection responses through the session authority", async () => {
     const fixture = policy({
       filterSessions: async (input) => input.sessionIds.filter((id) => id === "ses_visible"),

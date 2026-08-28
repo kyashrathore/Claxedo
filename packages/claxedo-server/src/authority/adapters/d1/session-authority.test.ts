@@ -5,11 +5,17 @@ import { Miniflare } from "miniflare"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
 import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import { D1SessionAuthority } from "./session-authority"
 
-const MIGRATIONS = ["0001_service_installations.sql", "0002_workspace_authority.sql", "0003_private_sessions.sql"].map(
+const MIGRATIONS = [
+  "0001_service_installations.sql",
+  "0002_workspace_authority.sql",
+  "0003_private_sessions.sql",
+  "0010_session_turn_leases.sql",
+].map(
   (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
 )
 
@@ -38,7 +44,8 @@ async function setup() {
     }
   }
   let sequence = 0
-  const now = () => 1_800_000_000_000 + ++sequence
+  let currentTime = 1_800_000_000_000
+  const now = () => ++currentTime
   const workspace = new D1WorkspaceAuthority(database, {
     deploymentId: "deployment-a",
     product: { kind: "claxedo-hosted" },
@@ -50,7 +57,15 @@ async function setup() {
     now,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
   })
-  return { database, workspace, sessions }
+  return {
+    database,
+    workspace,
+    sessions,
+    now,
+    advancePast(expiresAt: number) {
+      currentTime = Math.max(currentTime, expiresAt)
+    },
+  }
 }
 
 function identity(subject: string): AuthIdentity {
@@ -186,6 +201,53 @@ describe("D1 private multiplayer session authority", () => {
       lifecycle: { reserved: true, reconciled: true, compensated: true },
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
+    })
+  })
+
+  test("satisfies durable exactly-one turn admission across reconstructed adapters", async () => {
+    const input = await setup()
+    const { alice, bob } = await sharedWorkspace(input)
+    await reserveAndRegister(input.sessions, alice, {
+      operationId: "op_turn_conformance",
+      sessionId: "ses_turn_conformance",
+    })
+    await input.sessions.grantSessionParticipant(alice, {
+      sessionId: "ses_turn_conformance",
+      workspaceId: "ws_main",
+      participantActorId: bob.principal!.actorId,
+    })
+    const reconstructed = new D1SessionAuthority(input.database, {
+      deploymentId: "deployment-a",
+      now: input.now,
+      turnLeaseTtlMs: 5_000,
+    })
+
+    await expect(exerciseSessionTurnAuthorityConformance({
+      authority: input.sessions,
+      reconstructed,
+      workspaceId: "ws_main",
+      sessionId: "ses_turn_conformance",
+      actor: {
+        principalKind: "user",
+        actorId: alice.principal!.actorId,
+        actorKind: "human",
+      },
+      competitor: {
+        principalKind: "user",
+        actorId: bob.principal!.actorId,
+        actorKind: "human",
+      },
+      advancePast: input.advancePast,
+    })).resolves.toEqual({
+      scenarios: [
+        "atomic-session-exclusion",
+        "idempotent-turn-retry",
+        "reconstruction-visibility",
+        "expiry-fencing-and-stale-release",
+      ],
+      exclusion: { concurrentDenied: true, reconstructionDenied: true },
+      retry: { idempotent: true },
+      recovery: { expiryTakeover: true, staleReleaseFenced: true },
     })
   })
 

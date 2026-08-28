@@ -38,6 +38,7 @@ import type { RelayTargetLookup } from "../deployments/shared-routes/internal-re
 import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
 import type { CliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { HostedWorkerCompositionError } from "./composition-error"
 
@@ -234,6 +235,8 @@ export type HostedControlPlane = {
   runtimeSessionAuthority?: RuntimeSessionAuthorityOptions["authority"]
   /** Full authenticated private-session lifecycle, selected explicitly by the adapter. */
   privateSessionAuthority?: PrivateSessionAuthority
+  /** Durable exactly-one prompt admission; never synthesized in process. */
+  turnAuthority?: SessionTurnAuthority
   env: HostedWorkerEnv
 }
 
@@ -250,6 +253,8 @@ export type HostedControlPlaneAdapterBindings = {
   runtimeSessionAuthority?: RuntimeSessionAuthorityOptions["authority"]
   /** Never synthesized from WorkspaceAuthority, even when the object happens to overlap. */
   privateSessionAuthority?: PrivateSessionAuthority
+  /** Required by adapters that certify managed multiplayer prompt admission. */
+  turnAuthority?: SessionTurnAuthority
 }
 
 /**
@@ -370,6 +375,7 @@ export function composeProviderNeutralHostedControlPlane(
     ...(bindings.deviceAuthProvider ? { deviceAuthProvider: bindings.deviceAuthProvider } : {}),
     ...(bindings.runtimeSessionAuthority ? { runtimeSessionAuthority: bindings.runtimeSessionAuthority } : {}),
     ...(bindings.privateSessionAuthority ? { privateSessionAuthority: bindings.privateSessionAuthority } : {}),
+    ...(bindings.turnAuthority ? { turnAuthority: bindings.turnAuthority } : {}),
     env,
   }
 }

@@ -10,6 +10,15 @@ import type {
   ReservePrivateSessionInput,
   TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
+import {
+  SessionTurnConflictError,
+  SessionTurnLeaseLostError,
+  type AcquireSessionTurnInput,
+  type OwnedSessionTurnInput,
+  type SessionTurnAuthority,
+  type SessionTurnLease,
+} from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
@@ -22,12 +31,19 @@ export const D1_SESSION_AUTHORITY_METHODS = [
   "deleteSessionVisibility",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
 
+export const D1_SESSION_TURN_AUTHORITY_METHODS = [
+  "acquireSessionTurn",
+  "renewSessionTurn",
+  "releaseSessionTurn",
+] as const satisfies readonly (keyof SessionTurnAuthority)[]
+
 export type D1SessionAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_SESSION_AUTHORITY_METHODS)[number]>
 
 export type D1SessionAuthorityOptions = {
   deploymentId: string
   now?: () => number
-  randomId?: (prefix: "assert" | "snapshot") => string
+  randomId?: (prefix: "assert" | "snapshot" | "turn") => string
+  turnLeaseTtlMs?: number
 }
 
 export type SessionRegistrationState = PrivateSessionRegistrationState
@@ -100,6 +116,20 @@ type MessageRow = {
   author_kind: "human" | "agent" | null
 }
 
+type TurnLeaseRow = {
+  session_id: string
+  workspace_id: string
+  org_id: string
+  project_id: string
+  turn_id: string
+  lease_id: string
+  fencing_token: number
+  actor_id: string
+  acquired_at: number
+  expires_at: number
+  released_at: number | null
+}
+
 type CanonicalMessage = {
   id: string
   role: string
@@ -131,9 +161,10 @@ export class D1SessionAuthorityError extends Error {
  * callers must reserve an immutable create/fork intent and the runtime must
  * register that exact reservation before visibility or message writes begin.
  */
-export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessionAuthority {
+export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessionAuthority, SessionTurnAuthority {
   private readonly now: () => number
   private readonly randomId: NonNullable<D1SessionAuthorityOptions["randomId"]>
+  private readonly turnLeaseTtlMs: number
 
   constructor(
     private readonly database: D1Database,
@@ -142,6 +173,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     requireText(options.deploymentId, "deploymentId")
     this.now = options.now ?? Date.now
     this.randomId = options.randomId ?? ((prefix) => `${prefix}_${crypto.randomUUID()}`)
+    this.turnLeaseTtlMs = boundedTurnLeaseTtl(options.turnLeaseTtlMs)
   }
 
   async reserveSession(auth: SignedControlPlaneAuth, input: ReserveSessionInput) {
@@ -284,6 +316,160 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       requireText(input.workspaceId, "workspaceId"),
       input.action,
     )
+  }
+
+  /**
+   * Atomically claims the single active turn row for this session. The INSERT
+   * source repeats current private-session authorization, so a revocation race
+   * cannot acquire after the preceding diagnostic read. Exact retries observe
+   * the same lease; only release/expiry permits replacement, which increments
+   * the fence in the same statement.
+   */
+  async acquireSessionTurn(input: AcquireSessionTurnInput): Promise<SessionTurnLease> {
+    const actor = await this.requireRuntimeActor(input)
+    const sessionId = requireText(input.sessionId, "sessionId")
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const turnId = requireText(input.turnId, "turnId", 512)
+    await this.requireSessionAccess(actor, sessionId, workspaceId, "write")
+    const now = this.now()
+    const expiresAt = now + this.turnLeaseTtlMs
+    const leaseId = this.randomId("turn")
+    await this.database
+      .prepare(
+        `
+      insert into session_turn_leases (
+        session_id, workspace_id, org_id, project_id, turn_id, lease_id,
+        fencing_token, actor_id, acquired_at, expires_at, released_at
+      )
+      select s.session_id, s.workspace_id, s.org_id, s.project_id, ?, ?,
+        1, ?, ?, ?, null
+      from sessions s
+      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
+        and ${actorSessionAccessSql("?", "s", 2)}
+      on conflict (session_id) do update set
+        turn_id = excluded.turn_id,
+        lease_id = excluded.lease_id,
+        fencing_token = session_turn_leases.fencing_token + 1,
+        actor_id = excluded.actor_id,
+        acquired_at = excluded.acquired_at,
+        expires_at = excluded.expires_at,
+        released_at = null
+      where session_turn_leases.released_at is not null
+        or session_turn_leases.expires_at <= ?
+    `,
+      )
+      .bind(
+        turnId,
+        leaseId,
+        actor.actorId,
+        now,
+        expiresAt,
+        sessionId,
+        workspaceId,
+        ...repeat(actor.actorId, 10),
+        now,
+      )
+      .run()
+    const row = await this.turnLease(sessionId)
+    if (
+      row
+      && row.workspace_id === workspaceId
+      && row.turn_id === turnId
+      && row.actor_id === actor.actorId
+      && row.released_at === null
+      && row.expires_at > now
+    ) return turnLeaseJson(row)
+
+    // Recheck after the conditional write so a current denial never leaks the
+    // competing turn's expiry. Only an authorized contender gets a 409.
+    await this.requireSessionAccess(actor, sessionId, workspaceId, "write")
+    throw new SessionTurnConflictError(sessionId, row?.expires_at)
+  }
+
+  async renewSessionTurn(input: OwnedSessionTurnInput): Promise<SessionTurnLease> {
+    const actor = await this.requireRuntimeActor(input)
+    const sessionId = requireText(input.sessionId, "sessionId")
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const turnId = requireText(input.turnId, "turnId", 512)
+    const leaseId = requireText(input.leaseId, "leaseId", 512)
+    const fencingToken = positiveFence(input.fencingToken)
+    await this.requireSessionAccess(actor, sessionId, workspaceId, "write")
+    const now = this.now()
+    const expiresAt = now + this.turnLeaseTtlMs
+    await this.database
+      .prepare(
+        `
+      update session_turn_leases set expires_at = ?
+      where session_id = ? and workspace_id = ? and turn_id = ? and lease_id = ?
+        and fencing_token = ? and actor_id = ? and released_at is null and expires_at > ?
+        and exists (
+          select 1 from sessions s
+          where s.session_id = session_turn_leases.session_id
+            and s.workspace_id = session_turn_leases.workspace_id
+            and s.deleted_at is null
+            and ${actorSessionAccessSql("?", "s", 2)}
+        )
+    `,
+      )
+      .bind(
+        expiresAt,
+        sessionId,
+        workspaceId,
+        turnId,
+        leaseId,
+        fencingToken,
+        actor.actorId,
+        now,
+        ...repeat(actor.actorId, 10),
+      )
+      .run()
+    const row = await this.turnLease(sessionId)
+    if (
+      row
+      && row.workspace_id === workspaceId
+      && row.turn_id === turnId
+      && row.lease_id === leaseId
+      && row.fencing_token === fencingToken
+      && row.actor_id === actor.actorId
+      && row.released_at === null
+      && row.expires_at > now
+    ) return turnLeaseJson(row)
+    throw new SessionTurnLeaseLostError(sessionId)
+  }
+
+  async releaseSessionTurn(input: OwnedSessionTurnInput) {
+    const actor = await this.requireRuntimeActor(input)
+    const sessionId = requireText(input.sessionId, "sessionId")
+    const workspaceId = requireText(input.workspaceId, "workspaceId")
+    const turnId = requireText(input.turnId, "turnId", 512)
+    const leaseId = requireText(input.leaseId, "leaseId", 512)
+    const fencingToken = positiveFence(input.fencingToken)
+    const now = this.now()
+    await this.database
+      .prepare(
+        `
+      update session_turn_leases set released_at = ?
+      where session_id = ? and workspace_id = ? and turn_id = ? and lease_id = ?
+        and fencing_token = ? and actor_id = ? and released_at is null
+    `,
+      )
+      .bind(now, sessionId, workspaceId, turnId, leaseId, fencingToken, actor.actorId)
+      .run()
+    const row = await this.turnLease(sessionId)
+    return {
+      released: Boolean(
+        row
+        && row.workspace_id === workspaceId
+        && row.turn_id === turnId
+        && row.lease_id === leaseId
+        && row.fencing_token === fencingToken
+        && row.actor_id === actor.actorId
+        && row.released_at !== null
+      ),
+      sessionId,
+      turnId,
+      fencingToken,
+    }
   }
 
   async grantSessionParticipant(
@@ -1086,6 +1272,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       .first<SessionRow>()
   }
 
+  private async turnLease(sessionId: string) {
+    return await this.database
+      .prepare(`select * from session_turn_leases where session_id = ?`)
+      .bind(sessionId)
+      .first<TurnLeaseRow>()
+  }
+
   private registrationAssertion(
     assertionId: string,
     intent: ReturnType<typeof normalizeReservation>,
@@ -1401,6 +1594,33 @@ function optionalOrdinal(value: number | undefined) {
     throw new D1SessionAuthorityError("invalid_input", "maxEventOrdinal must be a non-negative safe integer")
   }
   return value
+}
+
+function boundedTurnLeaseTtl(value: number | undefined) {
+  const ttl = value ?? SESSION_TURN_LEASE_TTL_MS
+  if (!Number.isSafeInteger(ttl) || ttl < 5_000 || ttl > 15 * 60_000) {
+    throw new TypeError("turnLeaseTtlMs must be an integer between 5000 and 900000")
+  }
+  return ttl
+}
+
+function positiveFence(value: number) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new D1SessionAuthorityError("invalid_input", "fencingToken must be a positive safe integer")
+  }
+  return value
+}
+
+function turnLeaseJson(row: TurnLeaseRow): SessionTurnLease {
+  return {
+    sessionId: row.session_id,
+    workspaceId: row.workspace_id,
+    turnId: row.turn_id,
+    leaseId: row.lease_id,
+    fencingToken: row.fencing_token,
+    acquiredAt: row.acquired_at,
+    expiresAt: row.expires_at,
+  }
 }
 
 function optionalTimestamp(value: number | undefined, name: string) {

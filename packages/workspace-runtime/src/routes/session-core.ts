@@ -1366,10 +1366,16 @@ export function createSessionRoutes(opts: Opts) {
                 publishUserMessage: false,
                 streamErrorMessage: streamTurnErrorMessage,
                 createActiveTurnScope: opts.createActiveTurnScope
-                  ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
+                  ? ({ adapter, directory, sessionId }) => turnScope(
+                      opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
+                      turnAdmission.lease,
+                    )
                   : undefined,
+                ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
               })
-          await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+          if (!turnAdmission.lease?.lost()) {
+            await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+          }
         } catch (error) {
           settleAdmission?.(error)
           if (isAgentRuntimeTurnConflictError(error)) return

@@ -260,7 +260,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   if (plane.runtimeSessionAuthority) {
     app.route(
       "/api/runtime-authority",
-      RuntimeSessionAuthorityRoutes({ authority: plane.runtimeSessionAuthority, env: plane.env }),
+      RuntimeSessionAuthorityRoutes({
+        authority: plane.runtimeSessionAuthority,
+        ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
+        env: plane.env,
+      }),
     )
   }
   app.route(
