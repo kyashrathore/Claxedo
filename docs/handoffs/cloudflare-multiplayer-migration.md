@@ -1,175 +1,232 @@
 ---
 artifact_contract: "ce-handoff/v1"
-created_at: "2026-08-28T06:01:00Z"
-title: "Cloudflare multiplayer migration implementation handoff"
-summary: "Rebased, pushed implementation state for provider-neutral Better Auth/D1 plus retained Clerk/Convex, one-org self-deploy multiplayer, optional services, and the remaining release blockers."
+created_at: "2026-08-28T06:43:58Z"
+title: "Cloudflare multiplayer migration implementation checkpoint"
+summary: "Rebased and verified checkpoint covering Better Auth/D1 peer adapters, retained Clerk/Convex, optional services, private multiplayer streams, D1 turn admission, and the remaining security and release blockers."
 keywords: ["cloudflare", "better-auth", "d1", "convex", "multiplayer", "private-sessions", "handoff"]
 cwd: "/private/tmp/claxedo-boundary-base/.worktrees/codex/cloudflare-multiplayer-migration"
-resume_focus: "Close the remaining multiplayer privacy, durable coordination, real-entry migration, and release gates without backward-compatibility fallbacks."
+resume_focus: "Review the checkpoint, then close authoritative turn fencing, terminal capability revocation, canonical PTY-to-session binding, retained Convex parity, author provenance, and real deployment gates without backward-compatibility fallbacks."
 repository: "Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "codex/cloudflare-multiplayer-migration"
-head: "d8dd5b0aea287299c47bc8619a9f1b8b5a629891"
+head: "0a94030c05"
 worktree_path: "/private/tmp/claxedo-boundary-base/.worktrees/codex/cloudflare-multiplayer-migration"
 ---
 
-# Cloudflare multiplayer migration handoff
+# Cloudflare multiplayer migration checkpoint
 
-## User intent and fixed decisions
+## Why this checkpoint exists
 
-The user asked for an end-to-end, code-grounded migration—not a plan-only exercise—and then requested this pause, report, and push for another agent to review and continue.
+The user asked to pause implementation, publish an honest done/pending report, and push the branch so another agent can review and continue. This document records the current code state and the adversarial review findings. It is not a release declaration.
 
-The following decisions came directly from the user and should be treated as requirements:
+## User requirements that remain authoritative
 
-- Better Auth and D1 become peer adapters; Clerk and Convex remain supported adapters. Do not remove them.
-- No backward-compatibility fallbacks or synthesized authority data.
+- Better Auth+D1 and Clerk+Convex are peer adapters. Do not remove Clerk or Convex.
+- Do not add backward-compatibility fallbacks, synthesized authority data, or request-time fallback between adapters.
 - Claxedo-hosted is multi-organization, multiplayer, and Polar-billed.
-- A user-deployed instance uses the same tenant-safe multiplayer implementation but permits exactly one organization owned by the deploying administrator and contains no Claxedo billing.
-- Self-deployers bring their own authentication/OAuth credentials for now.
-- WorkGraph and Documents are included in the migration but are independent, pluggable services. When disabled, core provisioning must create no resources for them.
-- `codex/single-tenant-multiplayer-ready` is review/reference input, not a branch to merge blindly.
-- `codex/cloudflare-multiplayer-migration` had to be rebased on current `dev` before continuing.
+- A user-deployed instance uses the same tenant-safe multiplayer implementation, but exactly one organization belongs to the deploying owner and Claxedo billing is absent.
+- Self-deployers bring their own authentication and OAuth credentials for now.
+- WorkGraph and Documents are part of the migration, but are independent pluggable services. Disabled services must provision zero resources.
+- `codex/single-tenant-multiplayer-ready` is review/reference input, not a branch to merge wholesale.
+- This branch must stay rebased on current `dev` before integration.
 
-## Base and branch state
+## Branch and base
 
-- A fresh fetch established that `origin/dev` is `834307041e8b01eef532833b8deb3703f03dc647`.
-- `git merge-base HEAD origin/dev` matched that exact commit; the requested `git rebase origin/dev` completed as an up-to-date no-op.
-- The large grounded migration checkpoint is `029176f36b`.
-- The runtime/privacy hardening implementation is `d8dd5b0aea`.
-- Before this report commit, the branch was 0 behind and 9 commits ahead of `origin/dev`.
+- Branch: `codex/cloudflare-multiplayer-migration`.
+- Final checkpoint base: `origin/dev` at `3865ea6ac9`.
+- The final rebase completed cleanly after porting the provider-neutral sandbox-auth import across an upstream route extraction.
+- The dependency lock was regenerated and `bun install --frozen-lockfile` passed.
+- The working tree was clean before this handoff update.
 
-Do not merge the old multiplayer branch wholesale. Re-audit any useful code against the current contracts and tests.
+Checkpoint commits, oldest to newest:
 
-## Authoritative design and scope
+1. `028986fddf` — grounded Cloudflare/Auth/D1/optional-service migration checkpoint.
+2. `cdbe14bd43` — runtime privacy bypass hardening.
+3. `3bba4c4be9` — earlier handoff snapshot.
+4. `f319c9b346` — renewable private event-stream authority.
+5. `95a08ee0d1` — managed client event-stream session scoping.
+6. `9a704531ba` — local stream lease cap against clock skew.
+7. `965cdbc034` — provider-neutral durable D1 turn authority.
+8. `0182e928fb` — agent-hook, PTY, and worktree security.
+9. `f0218899e8` — stream-renewal cancellation, jitter, shared TTL, and route checks.
+10. `0a94030c05` — rebased lockfile refresh.
 
-- `docs/plans/2026-08-27-147-refactor-cloudflare-d1-better-auth-cutover-plan.md` is the detailed migration and acceptance plan. Its release gates are intentionally stricter than the current implementation.
-- `packages/claxedo-server/src/deployments/hosted-shared/deployment-profile.ts` owns the static product/adapter/sandbox axes and the certified product posture.
-- `packages/claxedo-server/src/authority/provider-neutral-hosted-services.ts` and `packages/claxedo-server/src/authority/adapters/worker/better-auth-d1-compose.ts` are the provider-neutral composition boundaries.
-- `packages/claxedo-server-core/src/platform/auth/authentication.ts`, `private-session-authority.ts`, and `runtime-actor.ts` are the provider-neutral auth/session contracts.
-- `packages/workspace-runtime/src/session-access-policy.ts` and `remote-session-authority.ts` are the runtime authorization boundary.
-- `packages/workspace-runtime/src/session-route-inventory.guard.test.ts` is now the source-derived drift gate for sensitive runtime routes.
+## Authoritative design and ownership
 
-## Implemented and verified
+- `docs/plans/2026-08-27-147-refactor-cloudflare-d1-better-auth-cutover-plan.md` contains the full migration plan and release gates.
+- `packages/claxedo-server/src/deployments/hosted-shared/deployment-profile.ts` owns static product, adapter, billing, sandbox, and optional-service posture.
+- `packages/claxedo-server/src/authority/provider-neutral-hosted-services.ts` and `packages/claxedo-server/src/authority/adapters/worker/better-auth-d1-compose.ts` own hosted authority composition.
+- `packages/claxedo-server-core/src/platform/auth/` owns provider-neutral authentication, private-session, runtime-actor, and turn-authority contracts.
+- `packages/workspace-runtime/src/session-access-policy.ts` and `packages/workspace-runtime/src/remote-session-authority.ts` own the runtime authorization boundary.
+- `packages/workspace-runtime/src/routes/session-event-privacy.ts` owns managed SSE scope and renewal.
+- `packages/workspace-runtime/src/routes/session-turn-lease.ts` owns runtime-side renewable turn admission.
 
-### Auth and control-plane adapters
+## Completed in this branch
 
-- Better Auth request authentication, browser cookie flow, native OAuth clients, and D1 foundation are implemented under `packages/claxedo-server/src/platform/auth/`.
-- Browser builds select Better Auth or Clerk statically; unselected provider code is guarded out of the selected closure under `packages/claxedo-app/src/platform/auth/` and `vite.browser-auth.ts`.
-- D1 implementations cover core workspace/identity, private sessions, host access, runtime channels, extensions, audit, and relay target concerns under `packages/claxedo-server/src/authority/adapters/d1/`.
-- The retained Clerk/Convex composition remains present and now supplies the same private/runtime session contracts.
-- SQLite has the canonical private-session implementation and conformance tests; the obsolete duplicate inline session implementation was removed.
+### Provider and product composition
 
-### Product posture and optional services
+- Better Auth browser/native authentication and D1 authority implementations exist as selected adapters.
+- Clerk+Convex remains present as a retained peer composition; it was not removed.
+- Browser provider selection is static, and unselected provider code is excluded from the selected browser closure.
+- Hosted and user-deployed product postures are explicit: hosted remains multi-org+billing; user-deployed is one-org multiplayer without Claxedo billing.
 
-- User-deployed core is one-org multiplayer and statically excludes billing/Polar.
-- Claxedo-hosted retains multi-org and billing composition.
-- WorkGraph and Documents have separate packages, migrations, manifests, Workers, renderers, and deployment workflows:
-  - `packages/claxedo-workgraph-service/`
-  - `packages/claxedo-documents-service/`
-  - `.github/workflows/deploy-workgraph-service.yml`
-  - `.github/workflows/deploy-documents-service.yml`
-- Core’s empty optional-service selection has no WorkGraph/Documents binding, DO, R2, migration, cron, or implementation edge.
-- `packages/claxedo-server/src/platform/services/` now contains durable D1 installation state, a deployment-wide fenced lock, exact step receipts, Cloudflare resource ownership, and lifecycle coordination. Disabled services remain zero-resource; enabled services use independent provision/migrate/dark-deploy/bind/drain/revoke/retire stages.
-- The production lifecycle driver deliberately requires the canonical service owner to provide real drain/revoke and management RPCs; it does not invent “zero in-flight” results.
+### WorkGraph and Documents
 
-### One-time user-deployed owner
+- Both have separate service packages, manifests, migrations, Workers, workflows, renderers, and lifecycle contracts.
+- Core with no optional service selected has no WorkGraph/Documents binding, Durable Object, R2, migration, cron, or implementation edge.
+- Installation state, fenced deployment locks, step receipts, resource ownership, and lifecycle stages are durable and service-specific.
 
-- D1 migration `packages/claxedo-server/migrations/control-plane/0008_user_deployed_owner_bootstrap.sql` stores only claim/identity hashes and consumption state.
-- `packages/claxedo-server/scripts/deploy/provision-user-deployed-owner-claim.ts` generates or reads an exact 256-bit mode-0600 claim, pins the verified provider subject, provisions or CAS-rotates the remote D1 row, and verifies it.
-- D1 consumes claim + user + actor + deployment org + owner membership in one guarded transaction.
-- `POST /api/claxedo/auth/bootstrap-owner` is mounted only for the user-deployed product. Authentication verifies the principal; the selected authority consumes the claim.
-- `packages/claxedo-app/src/app/routes/bootstrap-owner.tsx` is the explicit browser-only operator surface. It displays the verified provider user ID and keeps claim/journey/operation secrets out of URLs and storage.
+### User-deployed owner bootstrap
 
-### Private-session create/fork lifecycle
+- A one-time D1 owner claim stores hashes and consumption state, not the raw claim.
+- Provisioning uses an exact 256-bit claim and verifies the provider subject.
+- Claim consumption atomically creates the user, deployment organization, and owner membership.
+- The browser owner-bootstrap surface is explicit and keeps secrets out of URLs and browser storage.
 
-- Managed create/fork uses preassigned session IDs, one operation ID, reserve-before-runtime, exact registration, ambiguity marking, and definitive-denial compensation.
-- OpenCode and ACP adapter contracts accept the preassigned fork child ID.
-- App create/fork calls use `packages/claxedo-app/src/platform/runtime/private-session-reservation.ts`.
-- Hosted core mounts reservation and runtime-authority routes and requires both ports at boot.
-- SDK generation includes create/fork IDs.
+### Private sessions and clients
 
-### Runtime multiplayer privacy hardening
+- Managed create/fork reserves a preassigned session ID before runtime mutation, registers the exact operation, marks ambiguity, and compensates definitive denial.
+- Managed app `/global/event` and `/api/wr/events` connections now carry the canonical live `sessionID`.
+- Reconnect preserves `sessionID` and `Last-Event-ID`; canonical `LiveSession` replaces stale caller query state.
+- When there is no active canonical session, stale session scope is removed and the client stays on the central lifecycle stream.
 
-The adversarial route audit found multiple release-blocking bypasses. Commit `d8dd5b0aea` closes these coherent slices:
+### Renewable managed streams
 
-- Removed the raw `/session/status` handler that shadowed the filtered canonical route.
-- Added `packages/workspace-runtime/src/routes/session-v2-proxy.ts`: every V2 session path authorizes or filters through the private policy; managed V2 create/fork is denied before mutation because that protocol cannot yet compensate safely.
-- Added `session-event-privacy.ts`: managed `/event`, `/global/event`, `/api/wr/events`, and `/api/wr/runtime-events` require verified session scope and filter replay/live frames.
-- PTYs bind the verified creator actor in canonical runtime state. Editors cannot list/read/update/delete/connect to another editor’s PTY; admins/owners retain workspace administration.
-- Raw `pty_id`/`terminal_id` process logs enforce that PTY owner; canonical managed process IDs/names remain workspace-owned.
-- Viewer relay tokens can no longer mutate shell/files, Git sources, or checkpoints.
-- Remote host-capability routes fail closed when the authorization policy is unavailable; local/no-relay behavior remains unchanged.
+- `/event`, `/global/event`, `/api/wr/events`, and `/api/wr/runtime-events` exchange the establishment RHT for a short renewable lease.
+- Renewal uses the lease rather than retaining the RHT, rechecks durable parent RAT and membership, and closes on denial, malformed response, outage, or hard expiry.
+- Local expiry is capped by the shared 15-second authority TTL to prevent clock skew from extending access.
+- Renewal has bounded early-only jitter, catches synchronous policy failures, and is aborted when the client disconnects.
 
-## Verification completed
+### Durable D1 turn admission
 
-Passing checks on the final implementation state before this report:
+- `SessionTurnAuthority` is provider-neutral and has a conformance suite.
+- D1 migration `0010_session_turn_leases.sql` and its adapter implement reconstruction, expiry takeover, monotonic fencing, renewal, release, and stale-owner rejection.
+- Better Auth+D1 hosted composition issues renewable signed turn capabilities independent of the original RHT.
+- Managed `/message` and `/prompt_async` acquire before route mutation and abort/fence runtime publication on loss.
+- Managed V2 prompt fails closed with `503` because its byte proxy cannot yet fence the authoritative producer.
 
-- `packages/claxedo-app`: full `bun run typecheck` passed, including 268 architecture tests, TypeScript build, E2E typecheck, and performance tests.
-- App owner bootstrap tests: 2/2 passed.
-- `packages/claxedo-server`: full `bun run typecheck` passed.
-- Hosted auth-profile/core tests: 15/15 passed.
-- `packages/workspace-runtime`: typecheck passed.
-- Combined new runtime privacy/capability suites: 81/81 passed.
-- Earlier focused suites passed for D1/Convex/SQLite private sessions, hosted composition, Better Auth/D1 release tooling, owner claim provisioning, optional-service lifecycle, WorkGraph, Documents, app session reservation, OpenCode fork IDs, and SDK generation.
-- `git diff --check` passed before commits.
+### Agent hooks, PTYs, and worktrees
 
-Known verification caveats:
+- Agent lifecycle mutation is POST-only; GET returns `405`.
+- Managed lifecycle writes require a running PTY and use runtime-recorded workspace and actor ownership.
+- Terminal-child callback tokens are opaque, PTY-scoped, workspace-bound, and accepted only for the lifecycle POST route.
+- Provider-native session IDs remain `providerSessionId`; unverified caller IDs never become canonical Claxedo session ownership.
+- Hook logs contain coarse shape metadata only, not prompts, assistant content, transcript paths, or provider-session IDs.
+- PTY metadata and operations enforce runtime-recorded ownership, with owner/admin oversight.
+- Worktree list/get/create uses verified context and the selected private-session policy; the store cannot return another workspace's record.
 
-- `packages/workspace-runtime/src/workspace/runtime.test.ts` currently has 89 passes and one fixture failure: the workspace-isolation test’s cast adapter omits `getSession`, while the canonical create route now reads a caller-supplied session ID before mutation. Treat this as an unfinished test/contract decision, not a release pass.
-- Running the SQLite authority suite directly under Bun 1.3.14 crashes in `better-sqlite3` N-API initialization. The same 20-test suite passed through Node Vitest. Keep the Node lane unless the Bun/native dependency is repaired.
-- No real Cloudflare account deployment, custom-domain browser flow, live provider callback, D1 restore rehearsal, or two-human production relay run was performed in this session.
+## Verification at this checkpoint
 
-## Release blockers and unfinished work
+Passing after the final rebase:
 
-These are not optional polish; they are why the implementation goal remains incomplete.
+- `bun install --frozen-lockfile` — passed with no lockfile change.
+- `bun turbo typecheck` — 40/40 package tasks passed; app architecture suite reported 270/270, timeline suite 21/21, and app Vitest suite 37/37.
+- D1 private-session + durable-turn and runtime authority tests — 12/12.
+- Provider-neutral turn contract tests — 2/2.
+- Agent runtime tests — 39/39.
+- Individually isolated managed stream suites:
+  - workspace event wiring — 11/11;
+  - runtime event authority — 9/9;
+  - workspace-runtime bus stream — 10/10;
+  - stream lease lifecycle — 6/6.
+- The hook/worktree slice had 146/146 focused/integration tests before the final rebase; its affected package typechecks also pass after rebase.
+- `git diff --check` passed before the final documentation update.
 
-### P0: client/runtime integration
+Testing caveat: a single combined Bun invocation of 13 workspace-runtime suites reported 156 passes and four managed-scope failures, while each of those four failing files passed alone. This appears to be cross-file test-process contamination, not an observed single-file behavior failure, but it should be isolated and fixed before relying on that combined lane.
 
-1. The managed app must append `sessionID` to its real `/global/event` and `/api/wr/events` connections. The server now correctly returns 400 to unscoped managed streams; the current client URLs have not caught up.
-2. PTY/process events are suppressed in managed streams until their event producers carry canonical session ownership. Do not infer ownership from a caller parameter.
-3. Managed Session V2 create/fork is intentionally denied. WorkGraph or any remaining V2 producer must switch to the canonical reservation lifecycle or the V2 protocol must gain reserve/register/compensating-delete semantics.
-4. Agent-hook lifecycle writes and terminal metadata reads still need actor/session authorization. GET must not remain state-mutating.
-5. Worktree list/get/create needs session policy. WorkGraph tool contribution binding must prove the caller owns the session it binds.
+Known environment caveat: direct Bun execution of the SQLite authority suite can crash in `better-sqlite3` N-API initialization; its Node Vitest lane passed previously.
 
-### P0: durable multiplayer semantics
+## Adversarial review: live blockers
 
-6. Turn admission is still process-local. Implement a durable reconstructed-session lease and prove exactly one concurrent prompt across isolates/restarts.
-7. Verified author provenance is computed but is not yet consumed by all prompt/message producers and sync events.
-8. Long-lived SSE/WebSocket grants do not reverify after establishment. Implement renewable authorization, close streams/PTY on revocation, and prove the >60-second/reconnect cases.
-9. Finish private participant lifecycle through real browser/CLI/desktop entrypoints, including add/remove, invisibility before grant, replay filtering, reconnect denial, and fork ownership.
+These findings are code-grounded and should be treated as release blockers, not polish.
 
-### P0: deployment and migration evidence
+### P1 — stale turn output can persist before the in-memory fence checks it
 
-10. The generated public guide in `public-docs/user-deployed-cloudflare.md` honestly stops at a locked Worker. A canary-capable browser artifact, real owner journey, provider-sync, multiplayer-validation harness, and open transition are not complete.
-11. Update the guide generator—not the generated Markdown by hand—when the owner bootstrap/canary flow is fully wired, then run `docs:user-cloudflare:write` and `docs:user-cloudflare:check`.
-12. Run a real Better Auth social sign-in using operator-owned GitHub-only and Google-only configurations; email-password must fail closed without a sender.
-13. Complete source export/conservation/transform/verify for real Clerk/Convex production cardinality, paired D1 recovery, provider callback drain/replay, and retained-adapter neutralization. No request-time fallback is allowed.
-14. Prove the retained Convex deployment’s core-only closure or produce the approved archive/deactivation evidence for old WorkGraph/wakes data/functions.
-15. Execute the optional-service drivers against a real Cloudflare account, including crash retry, fence loss, drain/revoke, guarded retirement, and zero resources in a fresh disabled core deploy.
+- `packages/agent-sdk-runtime/src/runtime.ts` checks admission only after a committing adapter yields.
+- Production SDK and ACP adapters append authoritative events before yielding them.
+- A lease-losing isolate can therefore append stale transcript output before the runtime refuses downstream publication.
 
-### Required final gates
+Required direction: carry the durable fencing generation into every authoritative `startTurn`, `appendEvent`, projector, and `finishTurn` write, and atomically reject stale generations in the store itself.
 
-16. Run the two-user, wrong-org, privacy, concurrency, outage/recovery, browser, CLI, desktop, Worker, relay, runtime, migration, billing/no-billing, and release workflow gates listed in the plan.
-17. Re-fetch/rebase `origin/dev` again before final integration if dev moves after this handoff.
+### P1 — synchronous prompt releases before final checkpoint/publication
 
-## Recommended review order
+- `packages/workspace-runtime/src/routes/session-core.ts` releases the durable lease in `finally` before the final message checkpoint and assistant publication.
+- A replacement turn can acquire and interleave while generation N is still committing final effects.
 
-1. Review `d8dd5b0aea` first because it changes security boundaries and intentionally turns previous permissive behavior into managed-mode denials.
-2. Review the provider-neutral contracts and composition, then each D1/Convex/SQLite implementation against their conformance tests.
-3. Review generated deployment closure and optional-service zero-resource assertions before reviewing workflow ergonomics.
-4. Fix the real managed event URLs and run one production-shaped two-user harness before expanding to the remaining durable coordination work.
-5. Keep the locked guide honest until every irreversible phase has executable evidence.
+Required direction: hold the lease through document flush, checkpoint, final publication, and durable outcome recording; recheck the fence before every producer effect.
+
+### P1 — terminal callback capability survives membership revocation
+
+- PTY creation snapshots actor, workspace, and role into a PTY-lifetime callback capability.
+- The lifecycle path restores that snapshot without current membership/RAT validation.
+- A removed or downgraded member retains hook-write authority until the terminal exits.
+
+Required direction: introduce a short-lived renewable terminal-capability authority operation bound to PTY ownership, current role, workspace, and parent RAT.
+
+### P1 — viewer can change host hook installation
+
+- `/setup` and `/setup/status` are relay-authenticated but not authorized as host administration operations.
+- A workspace viewer can currently rewrite host-level hook wrappers.
+
+Required direction: add a distinct current owner/admin host-administration authorization operation for setup and an explicit read policy for status.
+
+### P1 — managed streams drop terminal/process/agent lifecycle state
+
+- Managed `/api/wr/events` permits only events whose producer-owned session ID equals the selected private session.
+- PTY/process events have no canonical private-session ID, and managed hook events deliberately clear caller-provided session IDs.
+- The safe result is suppression, but multiplayer clients lose live terminal and agent state.
+
+Required direction: create and persist a runtime-owned PTY/process-to-canonical-session binding at authoritative creation, then stamp all derived events from that binding. Keep provider-native agent IDs separate.
+
+### P2 — incomplete stream teardown proof
+
+- Renewal-denial route tests exist for two paths, but all four routes are not covered at route level.
+- Existing tests prove readers close, not that the underlying subscriber is removed exactly once.
+
+Required direction: instrument subscription counts for all four managed SSE routes, deny renewal, assert reader completion and exactly one unsubscribe, then prove later private frames are not written.
+
+## Other required work
+
+### Adapter parity and provenance
+
+- Clerk+Convex has no `SessionTurnAuthority` adapter/conformance yet. Managed prompts fail closed with `503`; do not add an in-memory fallback.
+- Canonical producer-signed author provenance is incomplete. D1 synchronization still derives attribution from the authenticated synchronizer and message metadata.
+- SQLite needs turn authority only if it becomes a managed multiplayer deployment profile.
+
+### User-visible multiplayer lifecycle
+
+- Finish private participant add/remove through real browser, CLI, and desktop entrypoints.
+- Prove invisibility before grant, replay filtering, reconnect denial after revocation, fork ownership, wrong-org isolation, and two-human concurrency/recovery.
+- Managed Session V2 create/fork/prompt remains intentionally denied until it can use reservation and producer fencing.
+
+### Deployment, migration, and release evidence
+
+- The public self-deploy guide still stops honestly at a locked Worker; canary/open transition and real owner/provider-sync/multiplayer validation are incomplete.
+- Run real GitHub-only and Google-only Better Auth configurations with deployer-owned credentials; password email must fail closed without a sender.
+- Complete real Clerk/Convex export, conservation, transform, verify, callback drain/replay, paired D1 recovery, and retained-adapter neutralization evidence.
+- Execute optional-service lifecycle drivers in a real Cloudflare account, including crash retry, fence loss, drain/revoke, retirement, and zero-resource disabled deploys.
+- Run the plan's browser, CLI, desktop, Worker, relay, runtime, billing/no-billing, migration, outage/recovery, and release-workflow gates.
+
+## Recommended continuation order
+
+1. Independently review commits `f319c9b346` through `f0218899e8` and reproduce the five live P1 findings before changing behavior.
+2. Move turn fencing into authoritative transcript/store writes and keep synchronous leases through all final effects.
+3. Add renewable terminal capability authority plus owner/admin hook-install authorization.
+4. Add the canonical PTY/process-to-private-session binding and restore authorized multiplayer lifecycle events.
+5. Implement and conform the retained Convex turn adapter, then producer-signed author provenance.
+6. Fix the combined Bun test contamination and complete all four SSE teardown assertions.
+7. Only then run real Cloudflare, migration, two-user, and release gates and update the generated deployment guide through its generator.
 
 ## Wrong paths to avoid
 
 - Do not merge `codex/single-tenant-multiplayer-ready` wholesale.
-- Do not repair a missing canonical org/workspace/session/actor value with a default, fallback, synthesized event, or caller claim.
-- Do not make user-deployed “single tenant” by removing org IDs or tenant predicates.
-- Do not select adapters/products/services by discovering credentials at runtime.
-- Do not provision WorkGraph/Documents resources merely because their code exists.
-- Do not make the guide say “open” because a Worker deployed successfully; the persisted release gates and real two-user evidence decide that.
-- Do not weaken managed V2/session/event denials to regain compatibility. Move the caller to the canonical lifecycle.
+- Do not infer session ownership from request query parameters, provider hook payloads, terminal IDs, directories, or tabs.
+- Do not repair a missing org/workspace/session/actor/fence with fallback or synthesized data.
+- Do not switch auth/authority/product/service adapters by detecting credentials at request time.
+- Do not provision WorkGraph/Documents merely because their code is present.
+- Do not weaken managed V2/session/event denials to regain compatibility; move producers to the canonical lifecycle.
+- Do not call the deployment open until persisted gates and real two-user evidence say it is open.
 
 ## Continuity warning
 
-The branch is intentionally large: the checkpoint spans auth, authority, deployment tooling, product closure, optional services, clients, runtime, and generated docs. Review by contract boundary and commit, not as one undifferentiated diff. The pushed branch is the durable source; the worktree path in frontmatter is machine-local and may not exist for the next agent.
+The pushed branch is the durable source. The `worktree_path` is machine-local and may not exist for another agent. The branch is intentionally broad; review it by contract boundary and commit. Re-fetch `origin/dev` before new work because `dev` moved twice during this checkpoint alone.
