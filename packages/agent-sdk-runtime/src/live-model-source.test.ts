@@ -52,4 +52,16 @@ describe("createLiveModelSource", () => {
     expect(await source.models()).toEqual([{ id: "auto", name: "Auto" }])
     expect(calls).toBe(2)
   })
+
+  test("can refuse the static catalog fallback when live listing fails", async () => {
+    const source = createLiveModelSource({
+      harness: "cursor",
+      fallbackToCatalog: false,
+      fetchModels: async () => {
+        throw new Error("auth required")
+      },
+    })
+    expect(source.peek()).toEqual([])
+    await expect(source.models()).rejects.toThrow("auth required")
+  })
 })

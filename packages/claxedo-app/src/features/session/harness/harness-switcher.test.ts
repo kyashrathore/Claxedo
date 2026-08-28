@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessSwitcher, type HarnessSwitcherCache } from "./harness-switcher"
 import type { WorkspaceBoot } from "./harness-config-runtime"
 import { harnessConfigUrl, sessionResourceUrl } from "./harness-config-routes"
-import { effectiveHarnessModel, type HarnessType } from "./profile"
+import type { HarnessType } from "./profile"
 import type { HarnessStorePatch } from "./store-state"
 
 const scope = "draft:/repo:route"
@@ -98,7 +98,6 @@ describe("harness switcher", () => {
     expect(clearedTries).toEqual([scope])
     expect(saved).toEqual([
       { key: "harness", value: "claude-acp" },
-      { key: "model", value: effectiveHarnessModel("claude-acp") },
     ])
     expect(patches[0]).toMatchObject({
       harness: "claude-acp",

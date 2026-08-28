@@ -145,6 +145,7 @@ describe("harness options loader", () => {
     await expect(loader.load(scope, "claude-acp")).resolves.toBeUndefined()
     expect(patches.at(-1)).toEqual({
       dynamicModels: [],
+      selectedModel: "",
       optionsSource: "empty",
       optionsStale: true,
       optionsLoading: false,
@@ -365,6 +366,51 @@ describe("harness options loader", () => {
     expect(loading).toEqual([true, false])
   })
 
+  test("clears placeholder model ids when options loading fails", async () => {
+    harness = "cursor-sdk"
+    selectedModel = "default"
+    const loader = loaderFor({
+      fetch: async () => new Response(JSON.stringify({ error: "Cursor SDK requires an explicit cursor-sdk API key." }), { status: 502 }),
+      errorMessage: async () => "Cursor SDK requires an explicit cursor-sdk API key.",
+    })
+
+    await loader.load(scope, "cursor-sdk")
+
+    expect(patches.at(-1)).toMatchObject({
+      dynamicModels: [],
+      selectedModel: "",
+      configError: "Cursor SDK requires an explicit cursor-sdk API key.",
+      optionsLoading: false,
+    })
+  })
+
+  test("does not overwrite a settled harness runtime error with a later live options response", async () => {
+    selectedModel = ""
+    const loader = loaderFor({
+      fetch: async () => optionsResponse({
+        source: "harness",
+        stale: false,
+        options: [{
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "auto",
+          selectOptions: [{ id: "auto", name: "Auto" }],
+        }],
+      }),
+      readState: () => ({
+        readiness: "error",
+        configError: "Cursor SDK requires an explicit cursor-sdk API key.",
+      }),
+    })
+
+    await loader.load(scope, "cursor-sdk")
+
+    expect(patches).toEqual([])
+    expect(loading).toEqual([true, false])
+  })
+
 })
 
 function loaderFor(input: {
@@ -377,6 +423,7 @@ function loaderFor(input: {
     input: Omit<ResolveDraftDefaultInput, "saved">,
   ) => boolean
   completeRememberedHarness?: (scope: string, type: HarnessType, model?: ModelKey) => boolean
+  readState?: () => { readiness?: string; configError?: string } | undefined
 }) {
   return createHarnessOptionsLoader<{ name?: string }>({
     fetch: input.fetch,
@@ -389,6 +436,7 @@ function loaderFor(input: {
     resolveDraftDefault: input.resolveDraftDefault,
     completeRememberedHarness: input.completeRememberedHarness,
     setOptionsLoading: (_scope, value) => loading.push(value),
+    readState: input.readState,
     errorMessage: input.errorMessage ?? (async (_res, fallback) => fallback),
     scheduleRetry: input.delay,
     cache: fakeCache(),

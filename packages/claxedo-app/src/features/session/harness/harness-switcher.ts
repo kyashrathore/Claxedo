@@ -1,6 +1,5 @@
 import {
   decodeHarnessState,
-  effectiveHarnessModel,
   failedHarness,
   harnessHasConfigOptions,
   sessionHarnessIdentity,
@@ -79,7 +78,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     input.applyPatch(scope, harnessSwitchStartPatch({ type }))
     input.cache.clearOptionsTries(scope)
     input.saveHarness(scope, type)
-    input.saveModel(scope, effectiveHarnessModel(type))
 
     if (!params?.sessionId || params.sessionId === "new") {
       const accepted = await switchDraftHarness(scope, type, params, binary, useLocalHarnessConfig, active)

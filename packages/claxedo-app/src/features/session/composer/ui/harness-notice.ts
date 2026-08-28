@@ -24,6 +24,9 @@ export type HarnessNoticeInput = {
   savedModelUnavailable?: string
   /** A pi model is selected but has dropped out of the catalog. */
   piModelMissing: boolean
+  /** Credentials are missing and setup belongs in Settings → Providers. */
+  setupRequired?: boolean
+  openProviders?: () => void
 }
 
 export type HarnessNotice = {
@@ -34,6 +37,7 @@ export type HarnessNotice = {
   title?: string
   /** Whether the row should offer a re-probe action. */
   retry: boolean
+  action?: { label: string; ariaLabel?: string; run: () => void }
 }
 
 /**
@@ -54,6 +58,20 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       retry: true,
     }
   }
+  if (input.setupRequired && input.openProviders) {
+    return {
+      kind: "setup-required",
+      tone: "warning",
+      message: `${input.harnessLabel} is not set up`,
+      detail: "Add credentials in Settings → Providers.",
+      retry: false,
+      action: {
+        label: "Open Providers",
+        ariaLabel: "Open Settings Providers",
+        run: input.openProviders,
+      },
+    }
+  }
   const failure = input.providerError ?? input.configError
   if (input.optionsFailed || (failure && input.noModels)) {
     return {
@@ -69,8 +87,15 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       kind: "saved-model-unavailable",
       tone: "warning",
       message: `${input.savedModelUnavailable} is unavailable`,
-      detail: "Reconnect its provider, or choose another model.",
+      detail: "Reconnect its provider in Settings → Providers, or choose another model.",
       retry: false,
+      ...(input.openProviders ? {
+        action: {
+          label: "Open Providers",
+          ariaLabel: "Open Settings Providers",
+          run: input.openProviders,
+        },
+      } : {}),
     }
   }
   if (input.piModelMissing) {
@@ -78,8 +103,15 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       kind: "pi-model-missing",
       tone: "warning",
       message: "This Pi model is no longer available",
-      detail: "Choose another model.",
+      detail: "Choose another model, or reconnect its provider in Settings → Providers.",
       retry: false,
+      ...(input.openProviders ? {
+        action: {
+          label: "Open Providers",
+          ariaLabel: "Open Settings Providers",
+          run: input.openProviders,
+        },
+      } : {}),
     }
   }
   return undefined

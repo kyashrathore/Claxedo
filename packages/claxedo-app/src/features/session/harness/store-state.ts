@@ -189,7 +189,7 @@ export function harnessSwitchStartPatch(input: {
   return {
     harness: input.type,
     harnessMode: harnessMode(input.type),
-    selectedModel: effectiveHarnessModel(input.type),
+    selectedModel: "",
     selectedModelProvider: undefined,
     dynamicModels: null,
     thoughtLevels: null,

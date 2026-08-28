@@ -1,7 +1,8 @@
 import {
-  effectiveHarnessModel,
   extractModelsFromConfigOptions,
   extractThoughtLevelFromConfigOptions,
+  isNativeSdkHarness,
+  isStaticCatalogOptions,
   type HarnessModelOption,
   type HarnessType,
   type OptionsResponse,
@@ -32,6 +33,28 @@ export type HarnessOptionsDecision = {
   clearTries: boolean
 }
 
+function terminalEmptyOptionsDecision(input: {
+  base: HarnessOptionsStatePatch
+  payload: OptionsResponse
+  tries: number
+}): HarnessOptionsDecision {
+  const retry = shouldRetryModelOptions({ stale: input.payload.stale, tries: input.tries })
+  const patch = {
+    ...input.base,
+    dynamicModels: [],
+    ...(retry ? {} : { selectedModel: "" }),
+    configError: retry
+      ? "Loading model options..."
+      : modelOptionsUnavailableMessage({ stale: input.payload.stale }),
+    optionsLoading: retry ? input.base.optionsLoading : false,
+  } satisfies HarnessOptionsStatePatch
+  return {
+    patch,
+    retry,
+    clearTries: !input.payload.stale,
+  }
+}
+
 export function applyHarnessOptionsResponse(input: {
   type: HarnessType
   selectedModel?: string
@@ -56,24 +79,24 @@ export function applyHarnessOptionsResponse(input: {
   const clearTries = !input.payload.stale
 
   if (!result || result.models.length === 0) {
-    const fallback = input.payload.stale
-      ? undefined
-      : effectiveHarnessModel(input.type, input.selectedModel)
-    const retry = shouldRetryModelOptions({ stale: input.payload.stale, tries: input.tries })
-    const patch = {
-      ...base,
-      dynamicModels: [],
-      ...(fallback !== undefined ? { selectedModel: fallback } : {}),
-      configError: retry
-        ? "Loading model options..."
-        : modelOptionsUnavailableMessage({ stale: input.payload.stale }),
-      optionsLoading: retry ? base.optionsLoading : false,
-    } satisfies HarnessOptionsStatePatch
+    return terminalEmptyOptionsDecision({ base, payload: input.payload, tries: input.tries })
+  }
+
+  // Native SDK catalog backstops are not live options — fail immediately so
+  // Cursor/Claude/Codex SDK auth and connectivity errors surface in the model
+  // section instead of a static catalog row. Do not retry: the catalog will
+  // not become live on its own.
+  if (isStaticCatalogOptions(input.payload) && isNativeSdkHarness(input.type)) {
     return {
-      patch,
-      ...(fallback ? { saveModel: fallback } : {}),
-      retry,
-      clearTries,
+      patch: {
+        ...base,
+        dynamicModels: [],
+        selectedModel: "",
+        configError: modelOptionsUnavailableMessage({ stale: true }),
+        optionsLoading: false,
+      },
+      retry: false,
+      clearTries: false,
     }
   }
 
@@ -95,16 +118,18 @@ export function applyHarnessOptionsResponse(input: {
     ? current
     : (result.currentModel ?? result.models[0]?.id ?? "")
   if (!next) {
-    const fallback = effectiveHarnessModel(input.type, input.selectedModel)
+    const retry = shouldRetryModelOptions({ stale: input.payload.stale, tries: input.tries })
     return {
       patch: {
         ...base,
         dynamicModels: result.models,
-        selectedModel: fallback,
-        configError: input.payload.stale ? "Loading model options..." : "No model options available",
+        ...(retry ? {} : { selectedModel: "" }),
+        configError: retry
+          ? "Loading model options..."
+          : modelOptionsUnavailableMessage({ stale: input.payload.stale }),
+        optionsLoading: retry ? base.optionsLoading : false,
       },
-      ...(fallback ? { saveModel: fallback } : {}),
-      retry: false,
+      retry,
       clearTries,
     }
   }

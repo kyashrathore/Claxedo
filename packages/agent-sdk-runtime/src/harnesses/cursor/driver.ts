@@ -39,6 +39,8 @@ import {
 } from "../../process-observer"
 
 const CURSOR_PENDING_PREFIX = "cursor-sdk:"
+const CURSOR_SDK_AUTH_ERROR =
+  "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
 type CursorEntry = {
   directory: string
   agent: CursorSDKAgent
@@ -63,6 +65,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   private readonly modelSource = createLiveModelSource({
     harness: "cursor",
     fetchModels: () => this.fetchModels(),
+    fallbackToCatalog: false,
   })
 
   constructor(private readonly host: SdkRuntimeDriverHost) {}
@@ -207,11 +210,21 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   async configOptions(currentModel: string, _directory?: string): Promise<AgentConfigOptionRow[]> {
-    return [modelConfigOption(await this.modelSource.models(), currentModel)]
+    this.requireCursorSdkAuth()
+    const models = await this.modelSource.models()
+    if (models.length === 0) throw new Error(CURSOR_SDK_AUTH_ERROR)
+    return [modelConfigOption(models, currentModel)]
   }
 
   peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return [modelConfigOption(this.modelSource.peek(), currentModel)]
+    if (!this.auth.cursor) return []
+    const models = this.modelSource.peek()
+    if (models.length === 0) return []
+    return [modelConfigOption(models, currentModel)]
+  }
+
+  private requireCursorSdkAuth() {
+    if (!this.auth.cursor) throw new Error(CURSOR_SDK_AUTH_ERROR)
   }
 
   /**
@@ -220,6 +233,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
    * so it's pinned ahead of the listed models to keep the default selectable.
    */
   private async fetchModels(): Promise<SdkModelEntry[]> {
+    this.requireCursorSdkAuth()
     const observation = observeAgentProcess(this.host.processObserver, {
       ownerId: `cursor-probe:${randomUUID()}`,
       launchId: randomUUID(),

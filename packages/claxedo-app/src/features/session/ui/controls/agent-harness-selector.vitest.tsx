@@ -2,12 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import type { SessionRef } from "@/platform/identity/session-ref"
-
-type ConnectDialogProps = {
-  provider: string
-  harness: string
-  onConnected: () => void | Promise<void>
-}
+import { openSettingsProviders } from "@/features/settings/open-settings-providers"
 
 type PiProvider = {
   id: string
@@ -17,7 +12,6 @@ type PiProvider = {
 
 const dialogState = vi.hoisted(() => ({
   show: vi.fn(),
-  connectProps: undefined as ConnectDialogProps | undefined,
 }))
 
 // ---------------------------------------------------------------------------
@@ -54,7 +48,7 @@ let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "u
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
 let harnessMode = true
 let acpConnections: Array<{ key: `acp:${string}`; id: string; label: string; enabled: boolean }> = []
-let acpRefreshCalls = 0
+  let acpRefreshCalls = 0
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
@@ -68,12 +62,10 @@ vi.mock("@/features/session/app-ports", () => ({
     refresh: async () => { piRefreshCalls += 1 },
     default: () => piDefaults,
   }),
-  loadConnectProviderDialog: async () => ({
-    DialogConnectProvider: (props: ConnectDialogProps) => {
-      dialogState.connectProps = props
-      return null
-    },
-  }),
+}))
+
+vi.mock("@/features/settings/open-settings-providers", () => ({
+  openSettingsProviders: vi.fn(),
 }))
 
 vi.mock("@opencode-ai/ui/context/dialog", () => ({
@@ -263,8 +255,8 @@ beforeEach(() => {
   draftDefaultLabels = undefined
   acpConnections = []
   acpRefreshCalls = 0
-  dialogState.connectProps = undefined
   dialogState.show.mockClear()
+  vi.mocked(openSettingsProviders).mockClear()
 })
 
 // ---------------------------------------------------------------------------
@@ -526,9 +518,8 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
   test("surfaces runner config errors in the notice row, in words, with no hover needed", () => {
     configError = "Authentication required. Please run 'agent login' first."
-    optionsStale = true
-    models = [{ id: "default", name: "Default (recommended)" }]
-    selectedModel = "default"
+    models = []
+    selectedModel = ""
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
     const row = noticeRow(container)
@@ -543,11 +534,28 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(container.querySelector("[data-testid='tooltip-v2']")).toBeNull()
   })
 
+  test("surfaces fresh option-discovery failures without waiting for stale", () => {
+    configError = "No model options available"
+    optionsStale = false
+    models = []
+    selectedModel = ""
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+    const row = noticeRow(container)
+
+    expect(row).not.toBeNull()
+    expect(row!.getAttribute("data-notice")).toBe("models-failed")
+    expect(row!.textContent).toContain("Couldn't load Claude models")
+    expect(row!.textContent).toContain("No model options available")
+    expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("Select model")
+  })
+
   test("surfaces Cursor SDK auth requirements in the notice row", () => {
     harnessType = "cursor-sdk"
     configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
     optionsStale = true
     models = []
+    selectedModel = ""
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
     const row = noticeRow(container)
@@ -557,22 +565,48 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(row!.textContent).toContain(
       "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
     )
+    expect(container.textContent).not.toContain("Default (recommended)")
+    expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("Select model")
+  })
+
+  test("never shows the client default placeholder for Cursor while options are unresolved", () => {
+    harnessType = "cursor-acp"
+    optionsLoading = true
+    selectedModel = ""
+    models = []
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    expect(container.textContent).toContain("Loading models")
+    expect(container.textContent).not.toContain("Default (recommended)")
+  })
+
+  test("does not mark Cursor SDK models as configured when options failed to load", () => {
+    harnessType = "cursor-sdk"
+    configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
+    models = []
+    selectedModel = ""
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    expect(container.textContent).not.toContain("Configured")
+    expect(noticeRow(container)?.textContent).toContain("Couldn't load Cursor models")
   })
 
   test("a failed model list disables the control without restating the error on it", () => {
     configError = "ACP connection closed"
     optionsStale = true
-    models = [{ id: "default", name: "Default (recommended)" }]
-    selectedModel = "default"
+    models = []
+    selectedModel = ""
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
     const selector = container.querySelector("[data-testid='model-selector']")
     expect(selector).not.toBeNull()
     expect(selector!.getAttribute("data-disabled")).toBe("true")
-    // The control names the model it still holds; the row alone reports the fault.
+    // The control stays neutral; the row alone reports the fault.
     const trigger = container.querySelector("[data-testid='model-trigger-content']")
-    expect(trigger?.textContent).toContain("Default (recommended)")
+    expect(trigger?.textContent).toContain("Select model")
     expect(trigger?.textContent).not.toContain("Unavailable")
   })
 
@@ -780,7 +814,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     expect(row!.getAttribute("data-notice")).toBe("saved-model-unavailable")
     expect(row!.getAttribute("data-tone")).toBe("warning")
     expect(row!.textContent).toContain("GPT-5.4 Codex is unavailable")
-    expect(row!.textContent).toContain("Reconnect its provider, or choose another model.")
+    expect(row!.textContent).toContain("Reconnect its provider in Settings → Providers, or choose another model.")
   })
 
   test("switching to Pi reuses the current OpenCode model when the exact pair is connected", async () => {
@@ -857,7 +891,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     }])
   })
 
-  test("a disconnected Pi model is selected after its connection completes", async () => {
+  test("a disconnected Pi model opens Settings → Providers instead of a connect dialog", async () => {
     harnessType = "pi"
     piProviders.set("anthropic", {
       id: "anthropic",
@@ -867,14 +901,8 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     const { container } = render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
 
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-sonnet-4-5']") as HTMLButtonElement)
-    await waitFor(() => expect(dialogState.connectProps?.provider).toBe("anthropic"))
-    piConnected = ["anthropic"]
-    await dialogState.connectProps.onConnected()
-
-    expect(setModelCalls).toContainEqual({
-      scope: "test-scope",
-      model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    })
+    await waitFor(() => expect(openSettingsProviders).toHaveBeenCalled())
+    expect(setModelCalls).toEqual([])
   })
 
   test("connection completion does not select a model removed during authentication", async () => {
@@ -887,11 +915,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     const { container } = render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
 
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-sonnet-4-5']") as HTMLButtonElement)
-    await waitFor(() => expect(dialogState.connectProps?.provider).toBe("anthropic"))
-    piConnected = ["anthropic"]
-    piProviders.get("anthropic")!.models = {}
-    await dialogState.connectProps.onConnected()
-
+    await waitFor(() => expect(openSettingsProviders).toHaveBeenCalled())
     expect(setModelCalls).toEqual([])
   })
 

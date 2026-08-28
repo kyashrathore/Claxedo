@@ -259,7 +259,7 @@ describe("harness store state projectors", () => {
     })).toMatchObject({
       harness: "claude-acp",
       harnessMode: "harness",
-      selectedModel: "default",
+      selectedModel: "",
       optionsLoading: true,
     })
   })

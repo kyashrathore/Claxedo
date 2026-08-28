@@ -100,6 +100,10 @@ export function createHarnessConfigStore() {
     resolveDraftDefault: harnessStore.applyDraftDefault,
     completeRememberedHarness: harnessStore.completeRememberedHarness,
     setOptionsLoading: harnessStore.setOptionsLoading,
+    readState: (scope) => {
+      const state = harnessStore.state(scope)
+      return state ? { readiness: state.readiness, configError: state.configError } : undefined
+    },
     errorMessage,
     cache: createHarnessOptionsQueryCache(),
   })

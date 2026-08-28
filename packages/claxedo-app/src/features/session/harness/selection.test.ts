@@ -73,13 +73,43 @@ describe("harness selection", () => {
     })).toBeUndefined()
   })
 
-  test("allows the default harness model when no dynamic options have arrived", () => {
+  test("blocks submit until live model options arrive", () => {
     expect(harnessModelKeyForSubmit({
       ...base,
       harness: "claude-acp",
       selectedModel: "",
       dynamicModels: [],
-    })).toEqual({ providerID: "claude-acp", modelID: "default" })
+    })).toBeUndefined()
+  })
+
+  test("does not fabricate a default row after option discovery fails", () => {
+    expect(harnessModels({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "",
+      dynamicModels: [],
+      configError: "Authentication required. Please run 'agent login' first.",
+    })).toEqual([])
+    expect(harnessModels({
+      ...base,
+      harness: "cursor-sdk",
+      selectedModel: "default",
+      dynamicModels: [],
+      configError: "Cursor SDK requires an explicit cursor-sdk API key.",
+    })).toEqual([])
+    expect(harnessModelKeyForSubmit({
+      ...base,
+      harness: "claude-acp",
+      selectedModel: "",
+      dynamicModels: [],
+      configError: "Authentication required. Please run 'agent login' first.",
+    })).toBeUndefined()
+    expect(harnessModelKeyForSubmit({
+      ...base,
+      harness: "cursor-sdk",
+      selectedModel: "default",
+      dynamicModels: [{ id: "default", name: "Default (recommended)" }],
+    })).toEqual({ providerID: "cursor-sdk", modelID: "default" })
   })
 
   test("blocks submit while model options are loading or errored", () => {
