@@ -20,6 +20,23 @@ describe("AgentRuntimeClient", () => {
     }).__claxedoFastSessionSwitch
   })
 
+  it("keeps canonical session scope on both managed event URL shapes", () => {
+    const client = createAgentRuntimeClient({ serverUrl: "https://control.example/" })
+
+    expect(client.subscribeToEvents({ sessionID: "session-central" }).toString()).toBe(
+      "https://control.example/api/wr/events?sessionID=session-central",
+    )
+    expect(client.subscribeToEvents({ workspaceId: "ws_one", sessionID: "session-workspace" }).toString()).toBe(
+      "https://control.example/workspaces/ws_one/global/event?sessionID=session-workspace",
+    )
+  })
+
+  it("leaves unmanaged event URLs unchanged when no session scope is supplied", () => {
+    const client = createAgentRuntimeClient({ serverUrl: "http://127.0.0.1:3001/" })
+
+    expect(client.subscribeToEvents({}).toString()).toBe("http://127.0.0.1:3001/api/wr/events")
+  })
+
   it("constructs scoped local message requests through the session resource route", async () => {
     const seen: string[] = []
     const client = createAgentRuntimeClient({

@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { claxedoEventStreamTargets, eventStreamFetch, CLAXEDO_EVENTS_RELAY_PATH, normalizeClaxedoStreamEvent } from "./claxedo-events"
+import {
+  claxedoEventRouteSessionID,
+  claxedoEventStreamTargets,
+  eventStreamFetch,
+  eventStreamTargetKey,
+  CLAXEDO_EVENTS_RELAY_PATH,
+  normalizeClaxedoStreamEvent,
+} from "./claxedo-events"
 
 /**
  * A `typeof fetch` test double, without a cast.
@@ -18,6 +25,7 @@ describe("claxedoEventStreamTargets", () => {
     expect(claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
       directory: "/repo/local",
+      sessionID: "session-local",
       projects: [{
         workspaces: {
           "/repo/local": {
@@ -43,6 +51,7 @@ describe("claxedoEventStreamTargets", () => {
     const targets = claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
       directory: "/repo/cloud",
+      sessionID: "session-cloud",
       projects: [{
         workspaces: {
           "/repo/cloud": {
@@ -67,6 +76,7 @@ describe("claxedoEventStreamTargets", () => {
       workspaceId: "ws_cloud",
       workspaceKind: "cloud",
       directory: "/repo/cloud",
+      sessionID: "session-cloud",
     })
     // It must NOT be a central URL target.
     expect(targets[1]).not.toHaveProperty("url")
@@ -76,6 +86,7 @@ describe("claxedoEventStreamTargets", () => {
     const targets = claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
       directory: "ws_cloud",
+      sessionID: "session-cloud",
     })
     expect(targets[0]).toEqual({
       kind: "central",
@@ -92,6 +103,7 @@ describe("claxedoEventStreamTargets", () => {
     const targets = claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
       directory: "workspace:ws_cloud",
+      sessionID: "session-cloud",
     })
     expect(targets[1]).toMatchObject({
       kind: "workspace",
@@ -104,6 +116,7 @@ describe("claxedoEventStreamTargets", () => {
     const targets = claxedoEventStreamTargets({
       serverUrl: "http://127.0.0.1:3001",
       directory: "ws_cloud",
+      sessionID: "session-cloud",
     })
     expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") })
     expect(targets[1]).toMatchObject({
@@ -117,6 +130,7 @@ describe("claxedoEventStreamTargets", () => {
     const targets = claxedoEventStreamTargets({
       serverUrl: "http://127.0.0.1:3001",
       directory: "workspace:ws_cloud",
+      sessionID: "session-cloud",
     })
     expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") })
     expect(targets[1]).toMatchObject({
@@ -124,6 +138,33 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "http://127.0.0.1:3001",
       workspaceId: "ws_cloud",
     })
+  })
+
+  test("does not open an unscoped relay stream from a workspace-only route", () => {
+    expect(claxedoEventStreamTargets({
+      serverUrl: "https://control.example.test",
+      directory: "ws_cloud",
+    })).toEqual([
+      { kind: "central", url: new URL("https://control.example.test/api/wr/events") },
+    ])
+  })
+
+  test("reads the managed session only from canonical session routes", () => {
+    expect(claxedoEventRouteSessionID("/s/session%2Fone")).toBe("session/one")
+    expect(claxedoEventRouteSessionID("/w/ws_cloud/session/session-two")).toBe("session-two")
+    expect(claxedoEventRouteSessionID("/w/ws_cloud/session/new")).toBeUndefined()
+    expect(claxedoEventRouteSessionID("/w/ws_cloud")).toBeUndefined()
+  })
+
+  test("uses the session as part of a managed stream identity", () => {
+    const base = {
+      kind: "workspace" as const,
+      serverUrl: "https://control.example.test",
+      workspaceId: "ws_cloud",
+      workspaceKind: "cloud" as const,
+    }
+    expect(eventStreamTargetKey({ ...base, sessionID: "session-a" }))
+      .not.toBe(eventStreamTargetKey({ ...base, sessionID: "session-b" }))
   })
 })
 
@@ -153,14 +194,20 @@ describe("eventStreamFetch", () => {
     })
 
     const res = await eventStreamFetch(
-      { kind: "workspace", serverUrl: "https://control.example.test", workspaceId: "ws_events_relay" },
+      {
+        kind: "workspace",
+        serverUrl: "https://control.example.test",
+        workspaceId: "ws_events_relay",
+        workspaceKind: "cloud",
+        sessionID: "session-events",
+      },
       { headers: { Accept: "text/event-stream" } },
       { request, relayRequest: request },
     )
     expect(res.status).toBe(200)
     // The stream request hit the relay (NOT central) with the RAT bearer.
     expect(seen).toHaveLength(1)
-    expect(seen[0]!.url).toBe("https://relay.events.test/workspaces/ws_events_relay/api/wr/events")
+    expect(seen[0]!.url).toBe("https://relay.events.test/workspaces/ws_events_relay/api/wr/events?sessionID=session-events")
     expect(seen[0]!.url).not.toContain("control.example.test")
     expect(seen[0]!.auth).toBe("Bearer rat_events")
     expect(seen[0]!.accept).toBe("text/event-stream")
@@ -179,6 +226,49 @@ describe("eventStreamFetch", () => {
       { request },
     )
     expect(hit).toBe("https://control.example.test/api/claxedo/events")
+  })
+
+  test("keeps the canonical session query on managed replay reconnects", async () => {
+    const seen: Array<{ url: string; cursor: string | null }> = []
+    const request = fetchDouble(async (input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init)
+      if (request.url.includes("/api/workspace/ws_reconnect/connection")) {
+        return new Response(JSON.stringify({
+          access: "cloud",
+          backing: "cloud-vm",
+          role: "editor",
+          workspaceId: "ws_reconnect",
+          relayUrl: "https://relay.events.test",
+          runtimeAccessToken: "rat_reconnect",
+          tokenExpiresAt: Date.now() + 120_000,
+        }), { status: 200, headers: { "content-type": "application/json" } })
+      }
+      seen.push({ url: request.url, cursor: request.headers.get("Last-Event-ID") })
+      return new Response('data: {"type":"heartbeat"}\n\n', { status: 200 })
+    })
+    const target = {
+      kind: "workspace" as const,
+      serverUrl: "https://control.example.test",
+      workspaceId: "ws_reconnect",
+      workspaceKind: "cloud" as const,
+      sessionID: "session-reconnect",
+    }
+
+    await eventStreamFetch(target, { headers: { Accept: "text/event-stream" } }, { request, relayRequest: request })
+    await eventStreamFetch(target, {
+      headers: { Accept: "text/event-stream", "Last-Event-ID": "19" },
+    }, { request, relayRequest: request })
+
+    expect(seen).toEqual([
+      {
+        url: "https://relay.events.test/workspaces/ws_reconnect/api/wr/events?sessionID=session-reconnect",
+        cursor: null,
+      },
+      {
+        url: "https://relay.events.test/workspaces/ws_reconnect/api/wr/events?sessionID=session-reconnect",
+        cursor: "19",
+      },
+    ])
   })
 
   test("keeps loopback local workspace streams on the directory-scoped runtime", async () => {
@@ -207,6 +297,7 @@ describe("eventStreamFetch", () => {
         workspaceId: "ws_loopback",
         workspaceKind: "local",
         directory: "/repo/local",
+        sessionID: "session-local",
       },
       { headers: { Accept: "text/event-stream", Authorization: "Bearer browser-token" } },
       { request },

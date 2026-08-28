@@ -22,7 +22,7 @@ import {
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
-import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
+import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
@@ -252,6 +252,8 @@ export type ClaxedoEventStreamTarget =
       workspaceId: string
       workspaceKind?: "local" | "cloud" | "user-hosted"
       directory?: string
+      /** Canonical managed-private session admitted by the runtime policy. */
+      sessionID?: string
     }
 
 /**
@@ -290,6 +292,7 @@ export function claxedoEventStreamTargets(input: {
   serverUrl?: string
   directory?: string
   projects?: ProjectCache
+  sessionID?: string
 }): ClaxedoEventStreamTarget[] {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
   const central: ClaxedoEventStreamTarget = {
@@ -320,6 +323,13 @@ export function claxedoEventStreamTargets(input: {
       ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
   if (!workspace) return [central]
+  const sessionID = input.sessionID?.trim()
+  // Relay-backed runtimes expose managed-private event streams. A workspace
+  // route alone is not authority to observe every session in that workspace;
+  // wait until the canonical route carries a real session instead of opening
+  // an unscoped stream that the runtime must reject. Local runtimes preserve
+  // their existing broad workspace stream.
+  if (workspace.kind !== "local" && (!sessionID || sessionID === "new")) return [central]
   return [
     central,
     {
@@ -327,6 +337,7 @@ export function claxedoEventStreamTargets(input: {
       serverUrl,
       workspaceId: workspace.workspaceId,
       workspaceKind: workspace.kind,
+      ...(workspace.kind !== "local" && sessionID ? { sessionID } : {}),
       ...("directory" in workspace && workspace.directory
         ? { directory: workspace.directory }
         : input.directory
@@ -342,6 +353,15 @@ export function claxedoEventStreamTargets(input: {
 // `Response` whose body the provider reads incrementally (the relay seam does
 // NOT buffer GET responses).
 export const CLAXEDO_EVENTS_RELAY_PATH = "/api/wr/events"
+
+/** Returns only a real session identity owned by the canonical shell route. */
+export function claxedoEventRouteSessionID(pathname: string) {
+  const route = parseShellRoute(pathname)
+  if (!("sessionId" in route)) return
+  const sessionID = route.sessionId?.trim()
+  if (!sessionID || sessionID === "new") return
+  return sessionID
+}
 
 // Classify an event-stream connect failure into a human-actionable cause.
 // Distinguishes the relay edge (network/CORS) from the Runtime Access Token
@@ -410,9 +430,13 @@ export function eventStreamFetch(
   }
   const serverTransport = centralTransportForServer(target.serverUrl)
   const request = overrides?.request ?? authFetch
-  const runtimePath = target.workspaceKind === "local" && target.directory
-    ? `${CLAXEDO_EVENTS_RELAY_PATH}?directory=${encodeURIComponent(target.directory)}`
-    : CLAXEDO_EVENTS_RELAY_PATH
+  const runtimeUrl = new URL(CLAXEDO_EVENTS_RELAY_PATH, "http://workspace-runtime.local")
+  if (target.workspaceKind === "local" && target.directory) {
+    runtimeUrl.searchParams.set("directory", target.directory)
+  } else if (target.sessionID) {
+    runtimeUrl.searchParams.set("sessionID", target.sessionID)
+  }
+  const runtimePath = `${runtimeUrl.pathname}${runtimeUrl.search}`
   return createTransport({
     placement: {
       workspaceId: target.workspaceId,
@@ -437,9 +461,9 @@ function routeDirectory(pathname: string) {
   if (configured) return configured
 }
 
-function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
+export function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
   if (target.kind === "central") return `central:${target.url.href}`
-  return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}`
+  return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}:${target.sessionID ?? ""}`
 }
 
 export function ClaxedoEventsProvider(props: ParentProps<{
@@ -686,6 +710,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     const targets = claxedoEventStreamTargets({
       serverUrl: props.serverUrl(),
       directory: routeDirectory(props.pathname()),
+      sessionID: claxedoEventRouteSessionID(props.pathname()),
       projects: queryClient.getQueryData<ProjectCache>(queryKeys.controlPlane.projects(props.serverUrl())) ?? [],
     })
     const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))

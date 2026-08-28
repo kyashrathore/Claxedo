@@ -703,7 +703,12 @@ export function createAgentRuntimeClient(options: {
       })
     },
     subscribeToEvents(input: { serverUrl?: string; sessionID?: string; workspaceId?: string }) {
-      if (!input.workspaceId) return claxedoEventsUrl({ serverUrl: input.serverUrl ?? serverUrl() })
+      if (!input.workspaceId) {
+        return claxedoEventsUrl({
+          serverUrl: input.serverUrl ?? serverUrl(),
+          ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+        })
+      }
       const url = new URL(`/workspaces/${encodeURIComponent(input.workspaceId)}/global/event`, input.serverUrl ?? serverUrl())
       if (input.sessionID) url.searchParams.set("sessionID", input.sessionID)
       return url

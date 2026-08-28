@@ -1138,7 +1138,10 @@ describe("global sdk event fetch", () => {
     expect(calls.filter((url) => url.includes("/workspace/resolve"))).toEqual([
       "http://claxedo.test/api/workspace/resolve?directory=%2Frepo%2Fquery-owned-events",
     ])
-    expect(calls.filter((url) => url.includes("/workspaces/ws_event_query/global/event"))).toHaveLength(2)
+    expect(calls.filter((url) => url.includes("/workspaces/ws_event_query/global/event"))).toEqual([
+      "http://claxedo.test/workspaces/ws_event_query/global/event?sessionID=session-query",
+      "http://claxedo.test/workspaces/ws_event_query/global/event?sessionID=session-query",
+    ])
   })
 
   test("signed workspace-id session events use Workspace Relay even on loopback", async () => {
@@ -1234,12 +1237,17 @@ describe("global sdk event fetch", () => {
     expect(calls.some((url) => url.includes("/api/workspace/resolve"))).toBe(false)
   })
 
-  test("workspace runtime event rewrites preserve Last-Event-ID", async () => {
+  test("managed workspace runtime event reconnects preserve canonical session scope and Last-Event-ID", async () => {
     const calls: Array<{ url: string; lastEventId: string | null }> = []
 
     await createControlPlaneEventFetch({
-      signedControlPlane: () => false,
-      liveSession: () => ({ sessionID: "session-1", directory: "ws_1", workspaceId: "ws_1" }),
+      signedControlPlane: () => true,
+      liveSession: () => ({
+        sessionID: "session-1",
+        directory: "ws_1",
+        workspaceId: "ws_1",
+        workspaceKind: "cloud",
+      }),
       setLiveSession: () => {},
       fetch: recordingRequests(calls, (request) => {
         if (request.url.includes("/api/workspace/ws_1/connection")) {
@@ -1259,10 +1267,10 @@ describe("global sdk event fetch", () => {
       headers: { "Last-Event-ID": "9" },
     }))
 
-    expect(calls).toMatchObject([{
-      url: "http://localhost:3001/workspaces/ws_1/global/event",
+    expect(calls.at(-1)).toMatchObject({
+      url: "http://localhost:3001/workspaces/ws_1/global/event?sessionID=session-1",
       lastEventId: "9",
-    }])
+    })
   })
 
   test("signed session events rewrite sdk /event path to the workspace runtime", async () => {
@@ -1295,7 +1303,7 @@ describe("global sdk event fetch", () => {
     expect(calls.some(oldEventPath)).toBe(false)
   })
 
-  test("signed global events use the live workspace runtime even when sdk omits session query params", async () => {
+  test("signed global events append the canonical live session when sdk omits query params", async () => {
     const calls: string[] = []
 
     await createControlPlaneEventFetch({
@@ -1320,7 +1328,37 @@ describe("global sdk event fetch", () => {
 
     expect(calls).toEqual([
       "http://claxedo.test/api/workspace/ws_2/connection",
-      "http://claxedo.test/workspaces/ws_2/global/event",
+      "http://claxedo.test/workspaces/ws_2/global/event?sessionID=session-2",
     ])
+  })
+
+  test("workspace-route sentinels discard stale caller session scope and stay on the signed lifecycle stream", async () => {
+    const calls: string[] = []
+
+    await createControlPlaneEventFetch({
+      signedControlPlane: () => true,
+      liveSession: () => ({
+        sessionID: "route",
+        workspaceId: "ws_route_only",
+        workspaceKind: "cloud",
+      }),
+      setLiveSession: () => {},
+      fetch: recordingFetch(calls),
+    })("http://claxedo.test/global/event?sessionID=stale-session")
+
+    expect(calls).toEqual(["http://claxedo.test/api/wr/events"])
+  })
+
+  test("unmanaged local event streams remain unscoped when the sdk omits a session query", async () => {
+    const calls: string[] = []
+
+    await createControlPlaneEventFetch({
+      signedControlPlane: () => false,
+      liveSession: () => ({ sessionID: "session-local", directory: "/repo/local" }),
+      setLiveSession: () => {},
+      fetch: recordingFetch(calls),
+    })("http://localhost:3001/global/event")
+
+    expect(calls).toEqual(["http://localhost:3001/global/event"])
   })
 })

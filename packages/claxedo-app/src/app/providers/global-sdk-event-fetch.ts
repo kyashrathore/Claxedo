@@ -132,16 +132,41 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
       const workspaceId = resolvedWorkspace?.kind === "local"
         ? undefined
         : resolvedWorkspace?.workspaceId ?? (sessionWorkspaceKind === "local" ? undefined : session?.workspaceId)
+      const transport = workspaceEventTransport({
+        serverUrl: url.origin,
+        signedControlPlane: input.signedControlPlane(),
+        workspaceId,
+        workspaceKind: resolvedWorkspaceKind ?? sessionWorkspaceKind,
+      })
+      if (transport === "workspace-relay") {
+        const sessionID = session?.sessionID.trim()
+        if (sessionID && sessionID !== "route") {
+          // The session controller is the canonical producer of LiveSession.
+          // Stamp its current value on every attempt so initial connect,
+          // reconnect, and Last-Event-ID replay all traverse the same managed
+          // private-session authorization boundary. Never infer it from the
+          // workspace or directory.
+          url.searchParams.set("sessionID", sessionID)
+        } else {
+          // A caller URL is transport input, not session authority. In
+          // particular, a reconnect racing a route transition may still carry
+          // the previous session's query. Remove it unless LiveSession names a
+          // real current session; otherwise the stale caller scope could be
+          // relayed under fresh actor credentials.
+          url.searchParams.delete("sessionID")
+          // A workspace route/sentinel is not session authority. Keep the
+          // signed control-plane lifecycle stream alive until a real session
+          // becomes active instead of opening an unscoped managed stream.
+          if (input.signedControlPlane()) {
+            return input.fetch(new Request(new URL("/api/wr/events", request.url), request))
+          }
+        }
+      }
       return await createTransport({
         placement: {
           ...(workspaceId ? { workspaceId } : {}),
           hosting: "workspace",
-          transport: workspaceEventTransport({
-            serverUrl: url.origin,
-            signedControlPlane: input.signedControlPlane(),
-            workspaceId,
-            workspaceKind: resolvedWorkspaceKind ?? sessionWorkspaceKind,
-          }),
+          transport,
         },
         serverUrl: url.origin,
         directory: session?.directory,
