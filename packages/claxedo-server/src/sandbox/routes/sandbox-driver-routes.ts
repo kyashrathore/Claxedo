@@ -1,3 +1,4 @@
+import { Hono } from "hono"
 import {
   SandboxDriverSettingsRoutes,
   type SandboxDriverSettingsRouteOptions,
@@ -27,7 +28,7 @@ export function sandboxDriverRoutes(
       return Response.json(gate.error, { status: gate.status })
     },
   }
-  return SandboxDriverSettingsRoutes(routeOptions)
+  return new Hono().route("/", SandboxDriverSettingsRoutes(routeOptions))
 }
 
 export function sandboxDriverCredentials(

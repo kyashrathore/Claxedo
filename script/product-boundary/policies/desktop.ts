@@ -205,9 +205,10 @@ export const desktopRendererUnsigned: Policy = {
   // Session markdown first-fold preload, environment-card persistence, Thinking
   // visibility hold, provider-settings detect/disconnect logic, models-settings
   // logic, provider setup row, and the settings-providers dialog opener add the
-  // same eight named owners as app-local: 981 + 8 = 989 modules, no new package
-  // edge.
-  ceilings: { modules: 989, packages: 62 },
+  // same eight named owners as app-local (981 + 8 = 989). Tenant-aware
+  // multiplayer follows the same four local app owners as app-local:
+  // 989 + 4 = 993 modules, still no package edge.
+  ceilings: { modules: 993, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -256,7 +257,9 @@ export const desktopHostedContribution: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
   // The hosted task composer now reaches the existing canonical config owner.
-  ceilings: { modules: 301, packages: 40 },
+  // Tenant-aware multiplayer adds the agent-runtime request-error mapper to
+  // the already reachable hosted contribution graph: 301 + 1 = 302 modules.
+  ceilings: { modules: 302, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,

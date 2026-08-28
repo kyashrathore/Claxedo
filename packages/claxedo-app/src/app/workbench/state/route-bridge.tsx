@@ -28,7 +28,7 @@ import {
   workspaceRoute,
 } from "@/platform/identity/route"
 import { opaqueWorkspaceRouteId, workspaceRouteId } from "@/platform/identity/workspace-route"
-import { centralSessionRef, hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
 import { queryClient } from "@/platform/query/query-client"
@@ -60,6 +60,7 @@ import {
   routeSessionMetaIsCentral,
   routeSessionDirectory,
   routeLifecycleSessionRef,
+  routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
 } from "./route-bridge-resolution"
@@ -540,15 +541,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           return
         }
         if (routeSessionMetaIsCentral(session)) {
-          const workspaceId = typeof session?.workspaceID === "string"
-            ? session.workspaceID
-            : typeof session?.workspaceId === "string" ? session.workspaceId : undefined
-          const harness = routeSessionHarness(session)
-          const sessionRef = centralSessionRef({
-            sessionId,
-            ...(workspaceId ? { workspaceId } : {}),
-            ...(harness ? { harness } : {}),
-          })!
+          const sessionRef = routeCentralSessionRef(sessionId, session)!
           routeCentralSessionMeta.set(sessionId, sessionRef)
           if (isRouteIntentClosed({ sessionId })) return
           state.layout.openCentralSession(
@@ -725,29 +718,15 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           })
           return
         }
-        const target = sessionInventoryTarget(sessionId, {
-          global: sessionInventory().global,
-          byWorkspace: sessionInventory().byWorkspace,
-          byProject: sessionInventory().byProject,
-          loaded: sessionInventory().loaded,
-        })
-        const centralInventorySession = sessionInventoryCentralSession(sessionId, {
-          global: sessionInventory().global,
-          byWorkspace: sessionInventory().byWorkspace,
-          byProject: sessionInventory().byProject,
-          loaded: sessionInventory().loaded,
-        })
+        const inventory = sessionInventory()
+        const target = sessionInventoryTarget(sessionId, inventory)
+        const centralInventorySession = sessionInventoryCentralSession(sessionId, inventory)
         const directories = routeResolutionDirectories()
         if (centralInventorySession) {
-          const harness = routeSessionHarness(centralInventorySession)
           resolveRouteSessionFromMeta(sessionId, directories)
           state.layout.openCentralSession(sessionId, centralInventorySession.title || "Session", {
             authoritative: true,
-            sessionRef: centralSessionRef({
-              sessionId,
-              ...(centralInventorySession.workspaceId ? { workspaceId: centralInventorySession.workspaceId } : {}),
-              ...(harness ? { harness } : {}),
-            }),
+            sessionRef: routeCentralSessionRef(sessionId, centralInventorySession),
           })
           return
         }

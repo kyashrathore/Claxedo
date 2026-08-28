@@ -1165,6 +1165,8 @@ describe("createCentralSessionRuntime", () => {
     expect(events.map((event) => event.payload.type)).toEqual([
       "session-info",
       "session-status",
+      "session-status",
+      "error",
     ])
     await runtime.flushUsage()
     expect(usage.at(-1)).toMatchObject({
