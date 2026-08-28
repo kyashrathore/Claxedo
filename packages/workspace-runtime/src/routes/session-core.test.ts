@@ -1153,11 +1153,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     }]
     const integrationAdapter: AgentHarnessAdapter = {
       ...adapter({ messages }),
-      async setPermissionMode(_sessionId, modeId) {
-        modes.push(modeId)
-        return { currentModeId: modeId, modes: [], appliesFrom: "next-turn" }
-      },
       async *sendMessage(id, prompt) {
+        if (prompt.permissionMode) modes.push(prompt.permissionMode)
         markStarted?.()
         yield messageUpdated({
           id: prompt.userMessageId,
