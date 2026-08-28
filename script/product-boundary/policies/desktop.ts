@@ -49,8 +49,9 @@ export const desktopMainComposition: Policy = {
   },
   // Renderer trust/readiness and native-rich-content supervision add nine
   // reviewed main-process modules. Durable local-server startup then adds the
-  // daemon discovery and lease owners; keep the ceiling exact.
-  ceilings: { modules: 76, packages: 23 },
+  // daemon discovery and lease owners. The app-exit fix adds the canonical
+  // daemon-exit lifecycle owner; keep the ceiling exact.
+  ceilings: { modules: 77, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -200,7 +201,8 @@ export const desktopRendererUnsigned: Policy = {
   // navigation, runtime ownership, keyboard hint, branch-source, and terminal
   // status work adds eight named owners while removing four obsolete owners,
   // bringing the reviewed closure to 980 modules with no new package edge.
-  ceilings: { modules: 980, packages: 62 },
+  // Durable archive cleanup adds its canonical projection-cancellation owner.
+  ceilings: { modules: 981, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -248,7 +250,8 @@ export const desktopHostedContribution: Policy = {
     ],
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
-  ceilings: { modules: 300, packages: 40 },
+  // The hosted task composer now reaches the existing canonical config owner.
+  ceilings: { modules: 301, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,

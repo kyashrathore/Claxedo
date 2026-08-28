@@ -88,6 +88,7 @@ function report(result: Result): boolean {
 function main() {
   const argv = process.argv.slice(2)
   const all = argv.includes("--all")
+  const sourceOnly = argv.includes("--source-only")
   const productFlag = argv.indexOf("--product")
   const product = productFlag >= 0 ? argv[productFlag + 1] : undefined
 
@@ -109,6 +110,7 @@ function main() {
       ok = false
       continue
     }
+    if (sourceOnly) continue
     if (!runAuthoritativeChecks(selectedProduct)) {
       ok = false
       continue
@@ -134,7 +136,8 @@ function main() {
   }
   console.log(
     `\nproduct boundary holds — ${products.length} ${products.length === 1 ? "product" : "products"}, ` +
-      `${policyCount} ${policyCount === 1 ? "policy" : "policies"}, authoritative checks passed`,
+      `${policyCount} ${policyCount === 1 ? "policy" : "policies"}, ` +
+      (sourceOnly ? "source ratchets passed" : "authoritative checks passed"),
   )
 }
 

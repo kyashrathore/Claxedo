@@ -6,6 +6,12 @@ Before changing code, inspect the implementation, callers, contracts, tests, and
 
 Treat work as complete when the implemented behavior satisfies the goal through real entrypoints and acceptance checks. Keep tests meaningful: exercise the actual implementation, preserve useful coverage, and investigate failures rather than shaping the test around the result. Use canonical data and events from their authoritative producer. Keep one implementation per responsibility and finish migrations by removing obsolete routes, flags, helpers, and temporary paths. Fallback and backward compatibility require an explicit user request. Verify the positive flow and relevant negative flows, including failure, recovery, persistence, security, and isolation. Report the exact commands run and their outcomes. When an environment or dependency is unavailable, identify the unverified acceptance criterion directly. Keep plans and documentation aligned with live code. Finish every requirement that can be completed; for anything blocked, state the unmet requirement, evidence, blocker, owner, and concrete follow-up.
 
+## Architecture ratchets
+
+Run `bun run test:architecture-ratchets` before completing any change that adds, removes, or redirects a production import. The pre-push hook runs this command after typecheck so deterministic closure drift fails locally instead of in CI.
+
+When a ratchet fails, do not blindly raise a ceiling or baseline. First identify the newly reachable module and its dependency chain, then remove an accidental edge or reuse the canonical owner. If the dependency is intentional, run the affected product's full `verify:closure`, raise only the exact measured ceiling with no headroom, and update the adjacent comment to name the reviewed owner and why it belongs in that product. Never hide a dependency from the scanner with an opaque dynamic import.
+
 ## Explanations and summaries
 
 Start with the direct answer, then build the mental model from the real code flow.
