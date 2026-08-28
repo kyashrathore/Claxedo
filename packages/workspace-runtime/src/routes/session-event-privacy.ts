@@ -25,6 +25,9 @@ type LeaseWatchOptions = {
   clearTimer?: (timer: ReturnType<typeof setTimeout>) => void
 }
 
+/** Must not exceed the authority service's signed stream-lease TTL. */
+const SESSION_EVENT_LEASE_MAX_LOCAL_MS = 15_000
+
 /**
  * Managed-private event streams are session resources, not workspace-wide
  * broadcast channels. The session id is supplied by the caller and admitted
@@ -67,7 +70,8 @@ export async function authorizeSessionEventScope(
   } satisfies SessionAccessPolicyInput & { sessionId: string }
   const decision = await policy.authorizeStream(input)
   if (!decision.allowed) return sessionAccessDenied(decision)
-  if (!decision.lease.trim() || !Number.isFinite(decision.expiresAt) || decision.expiresAt <= Date.now()) {
+  const now = Date.now()
+  if (!decision.lease.trim() || !Number.isFinite(decision.expiresAt) || decision.expiresAt <= now) {
     return Response.json({
       error: {
         code: "session_stream_authority_invalid_response",
@@ -84,7 +88,9 @@ export async function authorizeSessionEventScope(
     managed: true,
     sessionId,
     lease: decision.lease,
-    expiresAt: decision.expiresAt,
+    // Never let control-plane/runtime clock skew extend a lease beyond the
+    // frozen local security bound. An earlier signed expiry still wins.
+    expiresAt: Math.min(decision.expiresAt, now + SESSION_EVENT_LEASE_MAX_LOCAL_MS),
     renewalInput,
   }
 }
@@ -150,13 +156,14 @@ export function watchSessionEventLease(
   const renew = async () => {
     if (stopped) return
     const decision = await Promise.resolve(authorizeStream(scope.renewalInput, lease)).catch(() => undefined)
+    const renewedAt = now()
     if (
       stopped
       || !decision
       || !decision.allowed
       || !decision.lease.trim()
       || !Number.isFinite(decision.expiresAt)
-      || decision.expiresAt <= now()
+      || decision.expiresAt <= renewedAt
     ) {
       if (!stopped) revoke()
       return
@@ -166,7 +173,7 @@ export function watchSessionEventLease(
     renewalTimer = undefined
     expiryTimer = undefined
     lease = decision.lease
-    expiresAt = decision.expiresAt
+    expiresAt = Math.min(decision.expiresAt, renewedAt + SESSION_EVENT_LEASE_MAX_LOCAL_MS)
     schedule()
   }
 

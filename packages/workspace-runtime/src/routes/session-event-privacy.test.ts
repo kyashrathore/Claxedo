@@ -73,7 +73,10 @@ describe("managed session event stream leases", () => {
       authority: { orgId: "org_1", workspaceId: "ws_1", role: "editor" },
     })
     expect(scope?.managed).toBe(true)
-    if (scope?.managed) expect(scope.renewalInput.credential).toBeUndefined()
+    if (scope?.managed) {
+      expect(scope.renewalInput.credential).toBeUndefined()
+      expect(scope.expiresAt).toBeLessThanOrEqual(Date.now() + 15_000)
+    }
   })
 
   test("renews before expiry and revokes immediately on the next denial", async () => {
