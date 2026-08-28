@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { providerErrorDetail, providerLabel, stripRelayPrefix } from "./provider-error-detail"
+import { providerErrorDetail, providerLabel, providerUsageLimitDetail, stripRelayPrefix } from "./provider-error-detail"
 
 const apiError = (data: Record<string, unknown>) => ({ name: "APIError", data })
 
@@ -75,6 +75,16 @@ describe("provider error detail", () => {
     const body = '{"error":"nope"}'
     const { detail } = providerErrorDetail(apiError({ message: body, statusCode: 400, responseBody: body }))
     expect(detail).toBe(body)
+  })
+
+  test("keeps a Codex usage-limit reset window in the continuation sentence", () => {
+    expect(providerUsageLimitDetail(
+      { name: "UnknownError", data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours." } },
+      { providerID: "codex-app-server" },
+    )).toEqual({
+      title: "Codex usage limit reached",
+      description: "You've reached your Codex rate limit. It will reset in about 5 hours. Choose another model to continue.",
+    })
   })
 })
 

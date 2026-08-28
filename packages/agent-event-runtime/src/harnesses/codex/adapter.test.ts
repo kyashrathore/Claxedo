@@ -607,6 +607,100 @@ describe("codexAppServerAdapter", () => {
     }])
   })
 
+  test("stamps the last Codex usage-limit sentence onto a later systemError", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "account/rateLimits/updated",
+      payload: {
+        rateLimits: {
+          limitId: "primary",
+          limitName: "Primary",
+          primary: { usedPercent: 100, windowDurationMins: 300, resetsAt: 1234 },
+          rateLimitReachedType: "rate_limit_reached",
+        },
+      },
+    })
+
+    expect(agent.snapshot().adapterState.lastLimitedRateLimitMessage)
+      .toBe("You've reached your Codex rate limit. It will reset in about 5 hours.")
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "thread/status/changed",
+      payload: { threadId: "thread-1", status: { type: "systemError" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+    ])
+  })
+
+  test("keeps a generic systemError when no usage limit has fired", () => {
+    expect(runtime().ingest({
+      source: "codex.app-server",
+      method: "thread/status/changed",
+      payload: { threadId: "thread-1", status: { type: "systemError" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "session error" },
+    ])
+  })
+
+  test("maps a Codex usageLimitExceeded turn error instead of the generic session error", () => {
+    expect(runtime().ingest({
+      source: "codex.app-server",
+      method: "error",
+      payload: {
+        threadId: "thread-1",
+        turnId: "turn-1",
+        willRetry: false,
+        error: {
+          message: "session error",
+          codexErrorInfo: "usageLimitExceeded",
+          additionalDetails: "It will reset in about 5 hours.",
+        },
+      },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours." },
+    ])
+  })
+
+  test("stamps the last Codex usage-limit sentence onto a failed turn after prune", () => {
+    const agent = runtime()
+
+    agent.ingest({
+      source: "codex.app-server",
+      method: "account/rateLimits/updated",
+      payload: {
+        rateLimits: {
+          limitId: "primary",
+          limitName: "Primary",
+          primary: { usedPercent: 100, windowDurationMins: 300 },
+          rateLimitReachedType: "workspace_owner_usage_limit_reached",
+        },
+      },
+    })
+    agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { turn: { id: "turn-1", status: "completed" } },
+    })
+
+    expect(agent.snapshot().adapterState.lastLimitedRateLimitMessage)
+      .toBe("You've reached your Codex usage limit. It will reset in about 5 hours.")
+
+    expect(agent.ingest({
+      source: "codex.app-server",
+      method: "turn/completed",
+      payload: { turn: { id: "turn-2", status: "failed" } },
+    }).events).toMatchObject([
+      { type: "session-status", status: "error" },
+      { type: "error", error: "You've reached your Codex usage limit. It will reset in about 5 hours." },
+    ])
+  })
+
   test("classifies collab calls by their real tool and preserves every receiver edge", () => {
     expect(codexCollabAgentCall({
       id: "call-1",

@@ -812,9 +812,11 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
   switch (chunk.type) {
     case "session-status":
-      if (chunk.status === "error") {
-        return [withDir(ctx.directory, sessionError("session error", ctx.sessionId))]
-      }
+      // `{ type: "error" }` is the terminal that carries the provider sentence.
+      // Every native adapter emits session-status error immediately before that
+      // event. Projecting a placeholder `session.error` here is itself terminal,
+      // so the real message never reaches the transcript.
+      if (chunk.status === "error") return []
       if (chunk.status === "recovering") {
         return [withDir(ctx.directory, sessionStatus(ctx.sessionId, recovering()))]
       }

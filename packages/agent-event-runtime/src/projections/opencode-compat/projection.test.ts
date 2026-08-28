@@ -715,4 +715,29 @@ describe("createOpencodeCompatProjection", () => {
     })
     expect(projection.snapshot().state.toolStatusByCallId["tool-1"]).toBe("error")
   })
+
+  test("keeps the provider error sentence instead of a placeholder session.error", () => {
+    const projection = makeProjection()
+    const status = projection.ingest({ type: "session-status", status: "error" })
+    const failed = projection.ingest({
+      type: "error",
+      error: "You've reached your Codex rate limit. It will reset in about 5 hours.",
+    })
+
+    expect(status).toEqual([])
+    expect(failed).toEqual([{
+      directory: "/repo",
+      payload: {
+        id: "session.error:session-1",
+        type: "session.error",
+        properties: {
+          sessionID: "session-1",
+          error: {
+            name: "UnknownError",
+            data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+          },
+        },
+      },
+    }])
+  })
 })

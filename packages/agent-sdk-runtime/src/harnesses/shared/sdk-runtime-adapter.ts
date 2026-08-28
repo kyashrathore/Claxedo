@@ -676,10 +676,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
             if (titleEvent) yield titleEvent
           }
           yield event
-          if (isTerminalCompatEvent(event)) {
-            promptDone = true
-            break
-          }
+          if (isTerminalCompatEvent(event)) promptDone = true
         }
         if (promptDone) break
       }

@@ -54,6 +54,11 @@ describe("first-turn recovery", () => {
       name: "UnknownError",
       data: { message: "Claude Code returned an error result: You've reached your Fable 5 limit. Switch to another model to continue." },
     })).toBe("usage_limit")
+    expect(sessionRecoveryClass({
+      name: "UnknownError",
+      data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+    })).toBe("usage_limit")
+    expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "rate_limit_reached" } })).toBe("usage_limit")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "harness_switch_not_supported" } })).toBe("harness")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "thread not found: abc" } })).toBe("session")
     expect(sessionRecoveryClass({ name: "UnknownError", data: { message: "Stream error" } })).toBe("unknown")
@@ -110,6 +115,19 @@ describe("first-turn recovery", () => {
     expect(sessionRecovery("usage_limit", error, { providerID: "claude-sdk" })).toMatchObject({
       title: "Claude usage limit reached",
       description: "You've reached your Fable 5 limit. Choose another model to continue.",
+      label: "Continue",
+    })
+  })
+
+  test("keeps the Codex usage-limit reset sentence", () => {
+    const error = {
+      name: "UnknownError",
+      data: { message: "You've reached your Codex rate limit. It will reset in about 5 hours." },
+    }
+    expect(sessionRecoveryClass(error)).toBe("usage_limit")
+    expect(sessionRecovery("usage_limit", error, { providerID: "codex-app-server" })).toMatchObject({
+      title: "Codex usage limit reached",
+      description: "You've reached your Codex rate limit. It will reset in about 5 hours. Choose another model to continue.",
       label: "Continue",
     })
   })
