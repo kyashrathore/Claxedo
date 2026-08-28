@@ -3,6 +3,7 @@ import { localWorkspaceRuntime } from "../local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider, RelayTokenInput } from "../../adapters/relay/index"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "../../platform/auth/runtime-actor"
 
 export type SandboxFetchOptions = {
   sandboxManager?: SandboxManagerPort

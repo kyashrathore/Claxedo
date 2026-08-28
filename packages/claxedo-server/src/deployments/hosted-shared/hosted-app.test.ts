@@ -20,6 +20,8 @@ import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-r
 import { LiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import type { DocumentsRouteBackend } from "../../documents/routes/index"
+import { createClerkNativeSessionAuthPort } from "@claxedo/server-core/platform/auth/cli-session-token"
+import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 
 /**
  * Positive coverage for the hosted app: health/mode/JWKS/device routes mount
@@ -360,12 +362,18 @@ describe("hosted app", () => {
     expect(await res.json()).toMatchObject({ error: { code: "device_login_unconfigured" } })
   })
 
-  test("browser CLI exchange issues a refreshable self-host token without configured device login", async () => {
+  test("refuses to pair a Better Auth request verifier with the retained Clerk native issuer", () => {
+    expect(() => HostedDeviceAuthRoutes({
+      authentication: testRequestAuthenticationAdapter(),
+      native: createClerkNativeSessionAuthPort(),
+    })).toThrow(/must belong to the selected request authentication adapter/)
+  })
+
+  test("public Clerk native routes issue, authenticate, refresh, and revoke one durable session", async () => {
     // CLI session tokens are revocable: mint and verify both consult a `jti`
-    // registry and fail closed without one. Nothing is installed here on
-    // purpose — `createHostedApp` installs the plane's registry, so this test
-    // exercises the production wiring instead of reaching around it, and it
-    // fails if that wiring is ever removed. The registry itself is the real
+    // registry and fail closed without one. The selected Clerk adapter receives
+    // that registry explicitly, so issuer and verifier share one durable owner
+    // without a process-global consumer fallback. The registry itself is the real
     // adapter stack over the real convex/cliSessionTokens.ts handlers (see
     // test-support/cli-session-registry.ts); only the Convex deployment is fake.
     const durable = durableCliSessionTokenRegistry().registry
@@ -378,6 +386,14 @@ describe("hosted app", () => {
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: keys.publicPem,
       CLAXEDO_CLI_ACCESS_TOKEN_TTL_SECONDS: "600",
     }
+    const native = createClerkNativeSessionAuthPort({ env: plane.env, registry: durable })
+    plane.services.auth.native = native
+    plane.services.auth.verifier = vi.fn(async (token: string, config) => native.acceptsAccessToken(token)
+      ? native.authenticate(token)
+      : ({
+          mode: "signed" as const,
+          user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer },
+        }))
     const app = createHostedApp(plane)
 
     const exchanged = await app.fetch(
@@ -396,6 +412,13 @@ describe("hosted app", () => {
     expect(first.refresh_token).toMatch(/^claxedo_cli_refresh:/)
     expect(first.expires_in).toBe(600)
     expect(plane.services.authority?.usersMe).toHaveBeenCalledTimes(1)
+
+    const issuedAuthenticated = await app.fetch(
+      new Request("http://cp.test/api/workspace?access=user-hosted", {
+        headers: { authorization: `Bearer ${first.access_token}` },
+      }),
+    )
+    expect(issuedAuthenticated.status, await issuedAuthenticated.clone().text()).toBe(200)
 
     const refreshed = await app.fetch(
       new Request("http://cp.test/api/auth/device/token", {
@@ -417,18 +440,34 @@ describe("hosted app", () => {
     // token minted above must still verify here.
     const fallbackPlane = fakePlane({ cliSessionTokenRegistry: durable })
     fallbackPlane.env = plane.env
-    fallbackPlane.services.auth.verifier = vi.fn(async () => {
-      throw new Error("not a clerk token")
-    })
+    fallbackPlane.services.auth.native = native
+    fallbackPlane.services.auth.verifier = vi.fn(async (token: string) => native.acceptsAccessToken(token)
+      ? native.authenticate(token)
+      : Promise.reject(new Error("not a clerk token")))
     const listed = await createHostedApp(fallbackPlane).fetch(
       new Request("http://cp.test/api/workspace?access=user-hosted", {
         headers: { authorization: `Bearer ${next.access_token}` },
       }),
     )
-    expect(listed.status).toBe(200)
+    expect(listed.status, await listed.clone().text()).toBe(200)
     expect(await listed.json()).toMatchObject({
       workspaces: [{ workspace_id: "ws-yash-staging-1" }],
     })
+
+    const revoked = await app.fetch(new Request("http://cp.test/api/auth/cli/revoke", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ token: next.access_token }),
+    }))
+    expect(revoked.status).toBe(200)
+    expect(await revoked.json()).toEqual({ revoked_at: expect.any(Number) })
+
+    const denied = await createHostedApp(fallbackPlane).fetch(
+      new Request("http://cp.test/api/workspace?access=user-hosted", {
+        headers: { authorization: `Bearer ${next.access_token}` },
+      }),
+    )
+    expect(denied.status).toBe(401)
   })
 
   test("device-login endpoints broker through the configured issuer", async () => {
@@ -1869,9 +1908,9 @@ describe("hosted live-sync delivery — internal org identity end-to-end", () =>
     expect([...namespace.instances.keys()]).toEqual(["org:org_internal_acme"])
 
     // The runtime access token carries exactly what hosted launches mint: the
-    // owner's Clerk subject and the WorkGraph tenant's INTERNAL org id.
+    // canonical actor identity and the WorkGraph tenant's internal org id.
     const token = await mintRuntimeAccessToken(
-      { subject: "member", orgId: "org_internal_acme", workspaceId: "ws_wg_stream_1", hostId: "host_1", role: "owner" },
+      { principalKind: "user", actorId: "member", actorKind: "human", orgId: "org_internal_acme", workspaceId: "ws_wg_stream_1", hostId: "host_1", role: "owner" },
       keyPair.privateKey,
       "EdDSA",
     )

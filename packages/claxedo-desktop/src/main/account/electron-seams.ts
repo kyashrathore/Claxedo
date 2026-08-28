@@ -8,12 +8,13 @@
  */
 
 import { createServer } from "node:http"
-import { readFileSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { basename, join } from "node:path"
 import type { CallbackDisposition, OAuthSeams, TokenSet } from "./oauth-flow"
 import type { CredentialFile } from "./credential-store"
 import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
-import type { RefreshOutcome } from "./account-service"
+import type { RefreshOutcome } from "./desktop-native-auth"
 
 /**
  * A loopback listener on an OS-assigned port.
@@ -65,21 +66,60 @@ export function loopbackListener(): OAuthSeams["listen"] {
 }
 
 /** The credential file, in Electron's per-app userData directory. */
+export function readCredentialFile(path: string, read: (path: string, encoding: "utf8") => string = readFileSync) {
+  try {
+    return read(path, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw error
+  }
+}
+
 export function credentialFile(userDataDir: string): CredentialFile {
   const path = join(userDataDir, ACCOUNT_CREDENTIAL_RECORD)
+  const syncDirectory = () => {
+    let descriptor: number | undefined
+    try {
+      descriptor = openSync(userDataDir, "r")
+      fsyncSync(descriptor)
+    } catch {
+      // Some platforms do not permit fsync on a directory. The credential
+      // bytes were still flushed before rename; directory durability is best
+      // effort where the OS exposes it.
+    } finally {
+      if (descriptor !== undefined) closeSync(descriptor)
+    }
+  }
   return {
-    read: () => {
+    read: () => readCredentialFile(path),
+    replace: (contents) => {
+      const temporary = join(userDataDir, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`)
+      let descriptor: number | undefined
       try {
-        return readFileSync(path, "utf8")
-      } catch {
-        // Absent is the normal state before first sign-in, not an error.
-        return undefined
+        descriptor = openSync(temporary, "wx", 0o600)
+        writeFileSync(descriptor, contents, "utf8")
+        fsyncSync(descriptor)
+        closeSync(descriptor)
+        descriptor = undefined
+        renameSync(temporary, path)
+        syncDirectory()
+      } finally {
+        if (descriptor !== undefined) closeSync(descriptor)
+        rmSync(temporary, { force: true })
       }
     },
-    // 0600: the OS store holds the secret, but the record also names the
-    // backend and expiry, and there is no reason for another user to read it.
-    write: (contents) => writeFileSync(path, contents, { mode: 0o600 }),
-    clear: () => rmSync(path, { force: true }),
+    quarantine: () => {
+      try {
+        renameSync(path, join(userDataDir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-${randomUUID()}`))
+        syncDirectory()
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      }
+    },
+    clear: () => {
+      rmSync(path, { force: true })
+      syncDirectory()
+    },
   }
 }
 
@@ -100,6 +140,7 @@ type TokenPayload = {
   id_token?: string
   refresh_token?: string
   expires_in?: number
+  token_type?: string
   error?: string
 }
 
@@ -209,20 +250,30 @@ function decodeTokenPayload(payload: TokenPayload, fallbackRefreshToken?: string
     ...(refreshToken ? { refreshToken } : {}),
     // Absolute, in seconds. Storing the relative `expires_in` would mean
     // every reader has to remember when it was issued.
-    expiresAt: Math.floor(Date.now() / 1000) + (payload.expires_in ?? 3600),
+    expiresAt: Math.floor(Date.now() / 1000) + payload.expires_in,
   }
 }
 
 /** The Authorization Code exchange. */
-export function tokenExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOKEN_REQUEST_TIMEOUT_MS): OAuthSeams["exchange"] {
+export function tokenExchange(
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = TOKEN_REQUEST_TIMEOUT_MS,
+): OAuthSeams["exchange"] {
   return async (input) => {
-    const response = await postToTokenEndpoint(fetchImpl, input.tokenUrl, {
-      grant_type: "authorization_code",
-      client_id: input.clientId,
-      code: input.code,
-      code_verifier: input.codeVerifier,
-      redirect_uri: input.redirectUri,
-    }, timeoutMs, input.signal)
+    const response = await postToTokenEndpoint(
+      fetchImpl,
+      input.tokenUrl,
+      {
+        grant_type: "authorization_code",
+        client_id: input.clientId,
+        code: input.code,
+        code_verifier: input.codeVerifier,
+        redirect_uri: input.redirectUri,
+        ...(input.resource ? { resource: input.resource } : {}),
+      },
+      timeoutMs,
+      input.signal,
+    )
     if (!response.ok) throw new Error(`token exchange failed: ${response.status}`)
     const tokens = decodeTokenPayload((await response.json()) as TokenPayload)
     // Throwing, unlike the refresh grant below: this one runs inside a sign-in
@@ -237,6 +288,7 @@ export type RefreshExchange = (input: {
   tokenUrl: string
   clientId: string
   refreshToken: string
+  resource?: string
 }) => Promise<RefreshOutcome>
 
 /**
@@ -251,15 +303,24 @@ export type RefreshExchange = (input: {
  * malformed request of OUR making also produces a 400, and signing the user out
  * over our own bug is the failure that cannot be walked back.
  */
-export function refreshExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOKEN_REQUEST_TIMEOUT_MS): RefreshExchange {
+export function refreshExchange(
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = TOKEN_REQUEST_TIMEOUT_MS,
+): RefreshExchange {
   return async (input) => {
     let response: Response
     try {
-      response = await postToTokenEndpoint(fetchImpl, input.tokenUrl, {
-        grant_type: "refresh_token",
-        client_id: input.clientId,
-        refresh_token: input.refreshToken,
-      }, timeoutMs)
+      response = await postToTokenEndpoint(
+        fetchImpl,
+        input.tokenUrl,
+        {
+          grant_type: "refresh_token",
+          client_id: input.clientId,
+          refresh_token: input.refreshToken,
+          ...(input.resource ? { resource: input.resource } : {}),
+        },
+        timeoutMs,
+      )
     } catch (error) {
       // Never reached an answer — an offline laptop, DNS, a dropped TLS
       // handshake. Says nothing about the credential.
@@ -272,7 +333,11 @@ export function refreshExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOK
     if (!response.ok) {
       const revoked = payload?.error === "invalid_grant" || response.status === 401
       return revoked
-        ? { ok: false, reason: "revoked", detail: `the authorization server rejected the refresh token (${response.status})` }
+        ? {
+            ok: false,
+            reason: "revoked",
+            detail: `the authorization server rejected the refresh token (${response.status})`,
+          }
         : { ok: false, reason: "unavailable", detail: `refresh failed: ${response.status}` }
     }
 

@@ -82,7 +82,7 @@ export { resolveStoredMessages, resolveStoredParts }
 export { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 export { acceptedPromptRefreshMatches } from "./accepted-prompt-refresh"
 export { firstFoldSessionPrefetch } from "./first-fold-prefetch"
-export { fetchTransportSession } from "./session-transport"
+export { createSessionInfoHydrationGetter, fetchTransportSession } from "./session-transport"
 export function sessionHistoryKey(input: { sessionID: string; directory: string }) {
   return `${input.directory}\0${input.sessionID}`
 }

@@ -105,7 +105,9 @@ const relayServer = Bun.serve({ port: 0, fetch: relay.fetch, websocket: relay.we
 const now = Date.now()
 const runtimeAccessToken = await mintRuntimeAccessToken(
   {
-    subject: "user_live_relay",
+    principalKind: "user",
+    actorId: "user_live_relay",
+    actorKind: "human",
     orgId: "org_live_relay",
     workspaceId: "local_ws",
     hostId: "host_live_relay",

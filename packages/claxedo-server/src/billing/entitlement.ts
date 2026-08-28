@@ -25,7 +25,7 @@
  */
 
 import { reportPaymentError } from "../platform/telemetry/errors/report"
-import { createBillingStore, type BillingStore, type EntitlementState, type EntitlementStateRef } from "./store"
+import type { BillingStore, EntitlementState, EntitlementStateRef } from "./store-contract"
 
 export type EntitlementCapability = "cloud-workspace" | "hosted-connections"
 
@@ -183,10 +183,21 @@ export function createEntitlementGate(input: {
   now?: () => number
 }) {
   const enforced = billingEnforced(input.env)
-  const store = input.store ?? (enforced ? createBillingStore(input.env) : undefined)
+  const store = input.store
   const graceDays = pastDueGraceDays(input.env)
   return async (ref: EntitlementStateRef, capability: EntitlementCapability): Promise<EntitlementDenial | undefined> => {
-    if (!enforced || !store) return undefined
+    if (!enforced) return undefined
+    if (!store) {
+      return {
+        status: 503,
+        body: {
+          error: {
+            code: "billing_state_unavailable",
+            message: "Billing state is unavailable; hosted capability refused (fail-closed)",
+          },
+        },
+      }
+    }
     try {
       await requireEntitlement(ref, capability, {
         reader: (r) => store.entitlementState(r),

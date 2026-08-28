@@ -7,6 +7,8 @@ type ConvexApi = {
   channelIdentities: {
     authorizeProject: ConvexQuery
     authorizeWorkspace: ConvexQuery
+    bind: ConvexMutation
+    revoke: ConvexMutation
   }
   users: { me: ConvexMutation; meForService: ConvexMutation }
   orgs: {

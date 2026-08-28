@@ -1,0 +1,12 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "bun", "@cloudflare/workers-types"],
+    "skipLibCheck": true
+  },
+  "include": [],
+  "files": [
+    "src/authority/adapters/d1/host-access-authority.ts",
+    "src/authority/adapters/d1/host-access-authority.test.ts"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "bun", "@cloudflare/workers-types"],
+    "skipLibCheck": true
+  },
+  "include": [],
+  "files": [
+    "src/authority/adapters/d1/agent-extension-authority.ts",
+    "src/authority/adapters/d1/audit-authority.ts",
+    "src/authority/adapters/d1/core-authority.ts",
+    "src/authority/adapters/d1/core-authority.test.ts",
+    "src/authority/adapters/d1/user-hosted-relay-target.ts",
+    "src/authority/adapters/d1/user-hosted-relay-target.test.ts",
+    "src/authority/adapters/worker/better-auth-d1-compose.ts",
+    "src/authority/adapters/worker/better-auth-d1-compose.test.ts",
+    "src/authority/provider-neutral-hosted-services.ts"
+  ]
+}

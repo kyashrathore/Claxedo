@@ -1,0 +1,30 @@
+{
+  "name": "@claxedo/documents-service",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Independent Cloudflare Worker boundary for the optional Claxedo Documents service",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "render:wrangler": "bun run src/deployment/render-config.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@claxedo/service-contract": "workspace:*"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "catalog:",
+    "miniflare": "4.20260722.0",
+    "@tsconfig/node-lts": "22.0.4",
+    "typescript": "catalog:",
+    "vitest": "2.1.9",
+    "wrangler": "4.114.0"
+  }
+}

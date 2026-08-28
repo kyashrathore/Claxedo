@@ -78,6 +78,11 @@ export type WorkspaceOpenResult = {
   workspace?: WorkspaceRecord
 }
 
+export type WorkspaceShareTarget =
+  | { kind: "actor"; actorId: string }
+  | { kind: "user"; userId: string }
+  | { kind: "org"; orgId: string }
+
 /**
  * Canonical recipient identity resolved by the authority before a session
  * share is revoked. Routes use this target for recipient doorbells, including

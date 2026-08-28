@@ -30,6 +30,7 @@ import {
   createAgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
 import {
+  acpCodexCollaborationStates,
   createAcpEventTranslator,
   translateStopReason,
 } from "@claxedo/agent-event-runtime/harnesses/acp"
@@ -1078,7 +1079,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           payload: update,
         })
         for (const runtimeEvent of result.events) {
-          router.project(runtimeEvent, {
+          project(runtimeEvent, {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
@@ -1087,6 +1088,22 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           assistantMsgId = router.assistantMessageId()
           created = router.created()
         }
+      }
+      const forward = (update: SessionUpdate) => {
+        const subagent = scheduleSubagentUpdate(update)
+        projectUpdate(update, subagent, router.project)
+      }
+      const observeLateSubagentUpdate = (update: SessionUpdate) => {
+        const toolCallId = "toolCallId" in update ? update.toolCallId : undefined
+        if (!toolCallId || !subagentByToolCall.has(toolCallId)) return
+        const subagent = scheduleSubagentUpdate(update)
+        if (!subagent || subagent.kind === "child") return
+        // A canonical terminal tool frame may follow the ACP prompt response.
+        // Persist it through the still-authoritative parent projector so the
+        // host does not later terminalize the already-completed tool as an
+        // interruption. The child router is intentionally not used here: its
+        // correlation buffers are turn-scoped and may already be disposed.
+        projectUpdate(update, subagent, (runtimeEvent, source) => parentProjector.project(runtimeEvent, source))
       }
       const install = () => {
         proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
@@ -1121,6 +1138,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       let retried = false
       const run = async (): Promise<void> => {
         install()
+        if (observesLifecycle) proc.observeSession(agentSessionId, observeLateSubagentUpdate)
         try {
           // The PROMPT turn runs for as long as the model thinks/streams — it
           // must use the prompt timeout (5 min default), NOT the 10s
@@ -1340,7 +1358,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async forkSession(id: string, _messageId: string, directory: string): Promise<{ id: string }> {
+  async forkSession(id: string, _messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
     log.info("forkSession: called", { id, directory })
     const row = this.getSession(id, directory) as Promise<{ agent_session_id?: string; title?: string | null } | null>
@@ -1359,7 +1377,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const newAgentSessionId = await proc.forkSession(agentSessionId, directory)
     log.info("forkSession: ACP fork succeeded", { newAgentSessionId })
 
-    const newId = randomUUID()
+    const newId = childSessionId ?? randomUUID()
     const processKey = this.sessionProcessMap().get(id)
       ?? this.store.getSessionOwnerKey?.(id)
       ?? (this.options ? this.keyForSession(id, directory) : null)

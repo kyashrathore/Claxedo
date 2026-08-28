@@ -61,19 +61,19 @@ describe("sandbox driver selection", () => {
     expect(sandboxDriver({ CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.test" })).toBeUndefined()
   })
 
-  test("default selection auto-picks native Worker-safe drivers from their own credentials", () => {
+  test("does not select a native driver from credentials", () => {
     expect(sandboxDriver({
       CLOUDFLARE_SANDBOX_WORKER_URL: "https://sbx.example.com",
       CLOUDFLARE_SANDBOX_API_TOKEN: "secret",
-    })?.id).toBe("cloudflare")
+    })).toBeUndefined()
     expect(sandboxDriver({
       DAYTONA_API_KEY: "dtn-key",
       CLAXEDO_DAYTONA_SNAPSHOT: "claxedo/runtime:latest",
-    })?.id).toBe("daytona")
-    expect(sandboxDriver({ EXE_DEV_API_TOKEN: "exe-token" })?.id).toBe("exe")
+    })).toBeUndefined()
+    expect(sandboxDriver({ EXE_DEV_API_TOKEN: "exe-token" })).toBeUndefined()
   })
 
-  test("explicit driver selection wins over native auto-detection", () => {
+  test("explicit driver selection is authoritative when other provider credentials are present", () => {
     expect(sandboxDriver({
       CLAXEDO_SANDBOX_DRIVER: "daytona",
       CLOUDFLARE_SANDBOX_WORKER_URL: "https://sbx.example.com",

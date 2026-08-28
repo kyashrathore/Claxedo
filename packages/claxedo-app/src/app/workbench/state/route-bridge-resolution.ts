@@ -86,6 +86,28 @@ export function routeSessionMetaIsCentral(input: unknown) {
     (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
 }
 
+type CachedRouteSessionRow = {
+  id: string
+  directory?: string
+  host?: unknown
+  sessionRef?: unknown
+  session_ref?: unknown
+  time?: { archived?: unknown }
+}
+
+export function routeCachedWorkspaceSessionCandidate<T extends CachedRouteSessionRow>(
+  sessionId: string,
+  caches: Array<{ directory: AgentRuntimeDirectory; sessions: T[] }>,
+) {
+  const matches = caches.flatMap(({ directory, sessions }) =>
+    sessions
+      .filter((session) => session.id === sessionId && !session.time?.archived)
+      .map((session) => ({ cacheDirectory: directory, session })),
+  )
+  if (matches.some(({ session }) => routeSessionMetaIsCentral(session))) return
+  return matches[0]
+}
+
 export function routeSessionMetaIsArchived(input: unknown) {
   if (!input || typeof input !== "object") return false
   const row = input as { archived?: unknown; time?: { archived?: unknown } }

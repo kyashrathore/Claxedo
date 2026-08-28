@@ -393,21 +393,21 @@ describe("convex authority", () => {
     await authority.grantWorkspaceShare(auth, {
       workspaceId: "ws_1",
       role: "editor",
-      grantedToClerkSubject: "user_2",
+      target: { kind: "actor", actorId: "user_2" },
     })
     await authority.revokeWorkspaceShare(auth, {
       workspaceId: "ws_1",
-      grantedToClerkSubject: "user_2",
+      target: { kind: "actor", actorId: "user_2" },
     })
 
     expect(mutation).toHaveBeenNthCalledWith(1, expect.anything(), {
       workspace_id: "ws_1",
       role: "editor",
-      granted_to_clerk_subject: "user_2",
+      target_actor_id: "user_2",
     })
     expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
       workspace_id: "ws_1",
-      granted_to_clerk_subject: "user_2",
+      target_actor_id: "user_2",
     })
   })
 

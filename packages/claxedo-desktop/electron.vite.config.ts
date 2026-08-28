@@ -29,18 +29,11 @@ const telemetryDefines = Object.fromEntries(
   ]),
 )
 
-// Public OAuth client metadata has the same packaged-runtime constraint as
-// telemetry: Electron main cannot recover CI's environment on an end user's
-// machine. These values identify endpoints and a public client; no client
-// secret is accepted or baked.
+// The selected deployment origin is the desktop's only baked auth trust
+// anchor. Adapter endpoints/client/scopes come from that deployment's short-
+// lived descriptor; no provider credential is accepted or baked.
 const accountDefines = Object.fromEntries(
-  ([
-    "CLAXEDO_ACCOUNT_AUTHORIZE_URL",
-    "CLAXEDO_ACCOUNT_TOKEN_URL",
-    "CLAXEDO_ACCOUNT_CLIENT_ID",
-    "CLAXEDO_ACCOUNT_SCOPE",
-    "CLAXEDO_SERVER_ORIGIN",
-  ] as const).map((name) => [
+  (["CLAXEDO_CORE_ORIGIN"] as const).map((name) => [
     `import.meta.env.${name}`,
     JSON.stringify(process.env[name]?.trim() || undefined),
   ]),
@@ -62,10 +55,10 @@ export default defineConfig(({ mode }) => {
         // gates and choked reading the PowerShell as JavaScript.
         CLAXEDO_WINDOWS_CIM_ENCODED: JSON.stringify(
           Buffer.from(
-            readFileSync(
-              path.join(desktopDir, "src/main/diagnostics/windows-cim-worker.ps1"),
-              "utf8",
-            ).replace(/\r?\n/g, "\r\n"),
+            readFileSync(path.join(desktopDir, "src/main/diagnostics/windows-cim-worker.ps1"), "utf8").replace(
+              /\r?\n/g,
+              "\r\n",
+            ),
             "utf16le",
           ).toString("base64"),
         ),
@@ -126,10 +119,7 @@ export default defineConfig(({ mode }) => {
               paths: [desktopDir],
             })
             const iife = readFileSync(pkgEntry, "utf8")
-            const outPath = path.join(
-              desktopDir,
-              "out/preload/browser-preload.cjs",
-            )
+            const outPath = path.join(desktopDir, "out/preload/browser-preload.cjs")
             if (!existsSync(outPath)) {
               console.warn("[vite] browser-preload output missing; skipping react-grab inline")
               return

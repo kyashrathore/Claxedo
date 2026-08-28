@@ -93,6 +93,8 @@ export type WorkspaceRuntimeServerOptions = {
   opencodeCompat?: boolean
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
+  sessionAccessPolicy?: SessionAccessPolicy
   target?: WorkspaceTarget
   storeRoot?: string
   /** Host-owned root for Agent Extension replay state. See {@link WorkspaceHostOptions.agentExtensionStateRoot}. */
@@ -423,6 +425,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     env: process.env,
   })
   if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
+  const sessionAccessPolicy = options.sessionAccessPolicy
+    ?? (options.relayHostAuth ? remoteWorkspaceSessionAccessPolicyFromEnv() : undefined)
   const host = createWorkspaceHost({
     ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
     ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
@@ -431,6 +435,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
+    ...(sessionAccessPolicy ? { sessionAccessPolicy } : {}),
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
     ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),

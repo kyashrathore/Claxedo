@@ -52,6 +52,12 @@ afterEach(() => {
   }
 })
 
+const runtimeActor = (actorId: string) => ({
+  principalKind: "user" as const,
+  actorId,
+  actorKind: "human" as const,
+})
+
 describe("runtimeAccessTokenSigner", () => {
   test("mints a token whose protected header carries a kid", async () => {
     const { privatePem, publicPem } = await ed25519PrivateKeyPem()

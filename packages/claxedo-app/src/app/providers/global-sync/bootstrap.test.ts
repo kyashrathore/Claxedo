@@ -6,6 +6,9 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionStatusQueryData } from "@/features/session/data/sync/queries"
+import { configureServiceContributions } from "@/app/composition/service-contributions"
+import type { ContentSurfaceContribution } from "@/app/integrations/content-surface-contract"
+import { SERVICE_PROTOCOL_VERSION } from "@claxedo/service-contract"
 
 type GlobalSdk = Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
 type DirectorySdk = Parameters<typeof bootstrapDirectory>[0]["sdk"]
@@ -141,6 +144,71 @@ function harnessProviderUrl(harness = "claude-acp", base = "http://localhost:409
 }
 
 describe("bootstrapGlobal", () => {
+  test("sends browser credentials and atomically follows the authenticated service catalog", async () => {
+    const registered: string[] = []
+    const loaded: string[] = []
+    configureServiceContributions({
+      local: [],
+      loaders: {
+        workgraph: async () => {
+          loaded.push("workgraph")
+          return {
+            contentSurfaces: [{
+              id: "workgraph",
+              tier: "claxedo-first-party",
+              surface: "workgraph",
+              slot: "workbench",
+              renderer: () => null,
+            } as ContentSurfaceContribution],
+          }
+        },
+      },
+      register: (surface) => registered.push(surface.id),
+      unregister: (surface) => registered.splice(registered.indexOf(surface.id), 1),
+    })
+
+    const authenticated = {
+      healthy: true,
+      authenticated: true,
+      services: [{
+        serviceId: "workgraph",
+        protocolVersion: SERVICE_PROTOCOL_VERSION,
+        schemaVersion: 1,
+        state: "enabled",
+      }],
+      project: [],
+      provider: providers(),
+      provider_auth: {},
+      config: {},
+    }
+    const requests: Request[] = []
+    let payload: unknown = authenticated
+    const fetch = async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push(input instanceof Request ? input : new Request(input, init))
+      return Response.json(payload)
+    }
+    const run = () => bootstrapGlobal({
+      baseUrl: "https://api.example.test",
+      globalSDK: globalSdk(),
+      fetch: fetch as typeof globalThis.fetch,
+      connectErrorTitle: "",
+      connectErrorDescription: "",
+      requestFailedTitle: "",
+      translate: (key: string) => key,
+      formatMoreCount: String,
+      setGlobalState: () => undefined,
+    })
+
+    await run()
+    expect(requests[0]?.credentials).toBe("include")
+    expect(loaded).toEqual(["workgraph"])
+    expect(registered).toEqual(["workgraph"])
+
+    payload = { ...authenticated, authenticated: false, services: [] }
+    await run()
+    expect(registered).toEqual([])
+  })
+
   test("hydrates global state from healthy bootstrap payload", async () => {
     const globalState: Partial<GlobalBootstrapState> = {
       ready: false,

@@ -219,14 +219,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
       .findAll((item) => item.id !== contentId && item.returnFocus?.parentSessionId === parentSessionId)
       .map((item) => claxedoState.wb.selectors.contentPane(item.id))
       .find((id): id is string => !!id && id !== paneId)
-    if (window.matchMedia(`(min-width: ${BP_MD}px)`).matches && paneId && !childPane && !dedicatedPane) {
-      claxedoState.layout.splitContent(paneId, "right", contentId)
-    } else if (dedicatedPane && !childPane) {
-      claxedoState.wb.panes.assign(dedicatedPane, contentId)
-      claxedoState.layout.showContent(contentId)
-    } else {
-      claxedoState.layout.showContent(contentId)
-    }
     if (origin) {
       document.querySelectorAll<HTMLElement>(`[data-subagent-origin-id="${CSS.escape(contentId)}"]`)
         .forEach((item) => delete item.dataset.subagentOriginId)
@@ -238,6 +230,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
           originId: contentId,
         },
       })
+    }
+    if (window.matchMedia(`(min-width: ${BP_MD}px)`).matches && paneId && !childPane && !dedicatedPane) {
+      claxedoState.layout.splitContent(paneId, "right", contentId)
+    } else if (dedicatedPane && !childPane) {
+      claxedoState.wb.panes.assign(dedicatedPane, contentId)
+      claxedoState.layout.showContent(contentId)
+    } else {
+      claxedoState.layout.showContent(contentId)
     }
     requestAnimationFrame(() => {
       document.querySelector<HTMLElement>(

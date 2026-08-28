@@ -28,16 +28,14 @@ const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
   .replace(/(^|[^:])\/\/.*$/gm, "$1")
 
 describe("setupAccount", () => {
-  test("supplies a refresh-token exchange", () => {
+  test("supplies refresh to the descriptor-selected native adapter", () => {
     expect(source).toContain("refreshExchange")
-    expect(source).toMatch(/refresh:\s*\(refreshToken\) =>/)
+    expect(source).toMatch(/createDesktopNativeAuth\(\{[\s\S]*refresh: refreshExchange\(\)/)
   })
 
-  test("binds the refresh exchange to the configured client and token endpoint", () => {
-    // A refresh posted to anything but the token endpoint the sign-in used, or
-    // under a different client id, is rejected — and rejection on this path is
-    // what signs the user out.
-    expect(source).toMatch(/refresh\(\{\s*tokenUrl: config\.tokenUrl,\s*clientId: config\.clientId,\s*refreshToken\s*\}\)/)
+  test("passes only the selected core origin, never baked provider details", () => {
+    expect(source).toContain("coreOrigin: config.coreOrigin")
+    expect(source).not.toMatch(/config\.(authorizeUrl|tokenUrl|clientId|scope)/)
   })
 
   test("restores only after Electron secure storage is ready and before renderer initialization", () => {

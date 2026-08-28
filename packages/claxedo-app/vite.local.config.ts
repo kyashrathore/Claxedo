@@ -12,13 +12,11 @@ import { productBoundaryBuildManifestPlugin } from "../../script/product-boundar
  * prefixes rather than exact ids so a subpath (`@clerk/clerk-js/headless`) is
  * matched by its package.
  */
-const FORBIDDEN_LOCAL_PACKAGES = ["@clerk/clerk-js", "convex"]
+const FORBIDDEN_LOCAL_PACKAGES = ["@clerk/clerk-js", "better-auth", "convex"]
 
 const namesForbiddenPackage = (ids: readonly unknown[]) =>
   ids.some(
-    (id) =>
-      typeof id === "string" &&
-      FORBIDDEN_LOCAL_PACKAGES.some((name) => id === name || id.startsWith(`${name}/`)),
+    (id) => typeof id === "string" && FORBIDDEN_LOCAL_PACKAGES.some((name) => id === name || id.startsWith(`${name}/`)),
   )
 
 /**
@@ -109,9 +107,7 @@ export default defineConfig((env) => {
           // config renamed the chunk, and go stale silently — the local build
           // would inherit the renamed entry and nothing here would say so.
           manualChunks: Object.fromEntries(
-            Object.entries(manualChunks ?? {}).filter(
-              ([, ids]) => !(Array.isArray(ids) && namesForbiddenPackage(ids)),
-            ),
+            Object.entries(manualChunks ?? {}).filter(([, ids]) => !(Array.isArray(ids) && namesForbiddenPackage(ids))),
           ),
         },
       },

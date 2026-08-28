@@ -2,31 +2,44 @@ import { v } from "convex/values"
 import {
   authedMutation,
   authorizeWorkspace,
-  orgByClerkOrgId,
+  orgMembership,
   upsertUser,
-  userByClerkSubject,
-  userByTokenIdentifier,
   workspaceByPublicId,
 } from "./model"
 
 const shareRole = v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin"))
 
 async function grantedUser(ctx: any, args: {
-  granted_to_token_identifier?: string
-  granted_to_clerk_subject?: string
+  target_actor_id?: unknown
+  target_user_id?: unknown
 }) {
-  if (args.granted_to_token_identifier) return await userByTokenIdentifier(ctx.db, args.granted_to_token_identifier)
-  if (args.granted_to_clerk_subject) return await userByClerkSubject(ctx.db, args.granted_to_clerk_subject)
-  return undefined
+  const id = args.target_actor_id ?? args.target_user_id
+  return id ? await ctx.db.get(id) : undefined
 }
 
-async function grantedOrg(ctx: any, clerkOrgId: string | undefined) {
-  if (!clerkOrgId) return undefined
-  // W5: was a whole-`orgs` scan plus a JS `.find()` on `clerk_org_id` — the
-  // exact lookup `orgByClerkOrgId` performs through `by_clerk_org_id`.
-  // `?? undefined` because that helper returns `null` for "no such org" and
-  // every caller here tests the result for undefined.
-  return await orgByClerkOrgId(ctx.db, clerkOrgId) ?? undefined
+async function grantedOrg(ctx: any, orgId: unknown) {
+  return orgId ? await ctx.db.get(orgId) : undefined
+}
+
+function requireOneTarget(args: Record<string, unknown>, allowGrantId = false) {
+  const count = [args.target_actor_id, args.target_user_id, args.target_org_id, allowGrantId ? args.grant_id : undefined]
+    .filter(Boolean).length
+  if (count !== 1) throw new Error("Workspace share requires exactly one canonical target")
+}
+
+async function requireTargetInWorkspaceOrganization(
+  ctx: any,
+  workspace: { org_id?: unknown },
+  user: { _id: unknown } | null | undefined,
+  org: { _id: unknown; deleted_at?: unknown } | null | undefined,
+) {
+  if (!workspace.org_id) throw new Error("Workspace has no canonical organization")
+  if (org && (org._id !== workspace.org_id || org.deleted_at)) {
+    throw new Error("Workspace share target belongs to another organization")
+  }
+  if (user && !await orgMembership(ctx.db, workspace.org_id, user._id)) {
+    throw new Error("Workspace share target belongs to another organization")
+  }
 }
 
 function targetSelectorCount(args: {

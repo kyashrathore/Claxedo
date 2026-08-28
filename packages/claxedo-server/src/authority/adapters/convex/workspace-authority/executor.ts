@@ -3,7 +3,7 @@ import { z } from "zod"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneTimeoutMs, withTimeout } from "../timeout"
 import { withConvexRetry, type ConvexRetryOptions } from "../retry"
-import type { ConvexExecutor, OrgId, ProjectRole, ProjectRoleResult } from "./types"
+import type { ConvexAuthorityInput, ConvexExecutor, OrgId, ProjectRole, ProjectRoleResult } from "./types"
 
 const allowResult = z.object({
   allowed: z.literal(true),
@@ -14,10 +14,12 @@ export function clean(input?: string) {
   return value ? value : undefined
 }
 
-export function requireExecutor(input?: {
-  url?: string
-  executor?: ConvexExecutor
-}, auth?: SignedControlPlaneAuth, options: { allowUnsigned?: boolean } = {}) {
+export function requireExecutor(
+  input?: Pick<ConvexAuthorityInput, "url" | "executor" | "executorForAuth">,
+  auth?: SignedControlPlaneAuth,
+  options: { allowUnsigned?: boolean } = {},
+) {
+  if (input?.executorForAuth) return input.executorForAuth(auth)
   if (input?.executor) return input.executor
   if (!auth && !options.allowUnsigned) {
     throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed Control Plane auth is required")

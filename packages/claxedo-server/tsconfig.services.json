@@ -1,0 +1,24 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "@cloudflare/workers-types"],
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/platform/services/**/*.ts",
+    "src/deployments/hosted-workerd/core-env.cf.ts",
+    "src/deployments/hosted-shared/hosted-core-app.ts",
+    "src/deployments/hosted-shared/hosted-core-app.test.ts",
+    "src/deployments/hosted-shared/deployment-profile.ts",
+    "src/deployments/hosted-shared/deployment-profile.test.ts",
+    "src/deployments/hosted-shared/user-deployed-product-app.ts",
+    "src/deployments/hosted-shared/claxedo-hosted-product-app.ts",
+    "src/deployments/hosted-shared/product-apps.test.ts",
+    "src/routes/hosted/shell.ts",
+    "src/routes/hosted/workspace.ts",
+    "src/routes/hosted/workspace-convex-usage.ts",
+    "scripts/deploy/render-hosted-core-config.ts",
+    "scripts/deploy/render-hosted-core-config.test.ts"
+  ],
+  "exclude": []
+}

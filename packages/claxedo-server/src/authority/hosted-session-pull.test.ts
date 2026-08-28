@@ -47,6 +47,11 @@ const signed = {
   },
 }
 
+const canonicalUsersMe = () => vi.fn(async () => ({
+  actor_id: "actor_user_1",
+  actor_kind: "human" as const,
+}))
+
 describe("hosted session pull", () => {
   afterEach(() => {
     globalThis.fetch = originalFetch
@@ -220,6 +225,7 @@ describe("hosted session pull", () => {
       getRelayEndpoint: vi.fn(),
     } as never
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {

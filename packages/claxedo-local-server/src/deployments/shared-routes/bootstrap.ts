@@ -18,13 +18,13 @@ import type { ControlPlaneServicesContract } from "@claxedo/server-core/authorit
 import {
   ControlPlaneAuthError,
   bearerToken,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 

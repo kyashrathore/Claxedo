@@ -1,6 +1,7 @@
 import { createEffect, type Component } from "solid-js"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { productContributions } from "./product-contributions"
+import { configuredServiceContributions } from "./service-contributions"
 
 /**
  * Keeps the product contributions in step with the account.
@@ -23,7 +24,12 @@ export const HostedContributionSync: Component = () => {
   const contributions = productContributions()
 
   createEffect(() => {
-    contributions.followAccount(account.state())
+    const state = account.state()
+    contributions.followAccount(state)
+    // A signed bootstrap is the only authority allowed to activate an optional
+    // service. Account sign-out is nevertheless authoritative for immediate
+    // removal, without waiting for another bootstrap request.
+    if (state.status !== "signed") configuredServiceContributions()?.signOut()
   })
 
   return null

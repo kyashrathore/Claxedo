@@ -12,6 +12,17 @@ const event = (sessionId: string, delta: string): Omit<RuntimeEventEnvelope, "co
   payload: { type: "text-delta", delta },
 })
 
+const subagentEvent = (
+  sessionId: string,
+  subagentKey: string,
+  status: "running" | "completed",
+  revision: number,
+): Omit<RuntimeEventEnvelope, "contractVersion"> => ({
+  directory: "/workspace",
+  sessionId,
+  payload: { type: "subagent-updated", subagentKey, status, revision },
+})
+
 function mount(input: { authorize?: (parentSessionId: string) => boolean }) {
   const app = new Hono()
   const hub = createRuntimeEventHub()
@@ -71,6 +82,30 @@ describe("runtime event parent authorization", () => {
 
     expect(text).toContain("allowed-replay")
     expect(text).not.toContain("denied-replay")
+  })
+
+  test("replays a terminal child update to a late subscriber without crossing parent scope", async () => {
+    const { app, hub } = mount({})
+    hub.publishRuntime(subagentEvent("child-parent-a", "child-a", "completed", 3))
+    hub.publishRuntime(subagentEvent("child-parent-b", "child-b", "completed", 7))
+    // Evict the terminal frame from the ordinary ring. Terminal retention is
+    // the recovery owner when the browser attaches after the parent stream has
+    // already gone idle.
+    for (let index = 0; index < 300; index += 1) {
+      hub.publishRuntime(event("child-parent-a", `noise-${index}`))
+    }
+
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/runtime-events?parentSessionId=parent-a", {
+      headers: { "Last-Event-ID": "0" },
+      signal: controller.signal,
+    })
+    const text = await readUntil(response, '"subagentKey":"child-a"')
+    controller.abort()
+
+    expect(text).toContain('"subagentKey":"child-a"')
+    expect(text).toContain('"status":"completed"')
+    expect(text).not.toContain('"subagentKey":"child-b"')
   })
 
   test("filters live child events to the authorized parent", async () => {

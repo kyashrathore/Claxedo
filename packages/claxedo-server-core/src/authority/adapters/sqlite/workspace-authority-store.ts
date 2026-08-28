@@ -21,6 +21,85 @@ export type SqliteWorkspaceAuthorityOptions = {
   path?: string
 }
 
+const CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA = `
+CREATE TABLE runtime_access_tokens (
+  jti TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  host_id TEXT NOT NULL,
+  principal_kind TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  actor_kind TEXT NOT NULL,
+  role TEXT NOT NULL,
+  minted_for_token_identifier TEXT,
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  created_at INTEGER NOT NULL
+);`
+
+const CANONICAL_CHANNEL_IDENTITIES_SCHEMA = `
+CREATE TABLE channel_identities (
+  binding_id TEXT PRIMARY KEY,
+  channel TEXT NOT NULL,
+  external_user_id TEXT NOT NULL,
+  token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS channel_identities_active_external
+  ON channel_identities (channel, external_user_id)
+  WHERE revoked_at IS NULL;`
+
+const CANONICAL_PRIVATE_SESSIONS_SCHEMA = `
+CREATE TABLE session_registration_operations (
+  operation_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL UNIQUE,
+  workspace_id TEXT NOT NULL,
+  creator_actor_id TEXT NOT NULL,
+  operation_kind TEXT NOT NULL,
+  parent_session_id TEXT,
+  requested_title TEXT,
+  state TEXT NOT NULL,
+  state_reason TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE session_history (
+  session_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  creator_actor_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL UNIQUE,
+  title TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
+  deleted_at INTEGER
+);
+CREATE INDEX session_history_by_workspace_updated
+  ON session_history (workspace_id, updated_at DESC);
+CREATE TABLE session_participants (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  participant_actor_id TEXT NOT NULL,
+  added_by_actor_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (session_id, participant_actor_id)
+);
+CREATE INDEX session_participants_by_actor
+  ON session_participants (participant_actor_id, revoked_at);
+CREATE TABLE session_messages (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  author_actor_id TEXT,
+  role TEXT,
+  ordinal INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, message_id)
+);`
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   token_identifier TEXT PRIMARY KEY,
@@ -314,14 +393,7 @@ CREATE TABLE IF NOT EXISTS audit_events (
   metadata TEXT,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS channel_identities (
-  channel TEXT NOT NULL,
-  external_user_id TEXT NOT NULL,
-  token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (channel, external_user_id)
-);
+${CANONICAL_CHANNEL_IDENTITIES_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")}
 `
 
 const SQLITE_TENANCY_SCHEMA_VERSION = 3

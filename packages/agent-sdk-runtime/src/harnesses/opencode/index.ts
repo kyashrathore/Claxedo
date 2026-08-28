@@ -670,12 +670,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }))
   }
 
-  async forkSession(id: string, messageId: string, directory: string): Promise<{ id: string }> {
+  async forkSession(id: string, messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}/fork`, {
       method: "POST",
       headers: this.headers(directory),
-      body: JSON.stringify({ messageId }),
+      body: JSON.stringify({ messageId, ...(childSessionId ? { id: childSessionId } : {}) }),
     }))
     if (!res.ok) throw new Error(`Fork failed: ${res.status}`)
     return res.json() as Promise<{ id: string }>

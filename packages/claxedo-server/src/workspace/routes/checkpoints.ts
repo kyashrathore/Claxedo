@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
@@ -10,7 +10,7 @@ import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-
 import type { RelayRole } from "@claxedo/workspace-relay"
 export function WorkspaceCheckpointRoutes(
   services?: ControlPlaneServices,
-  options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean } = {},
+  options: CheckpointRouteOptions = {},
 ) {
   return new Hono()
     .get("/:id/checkpoints", async (c) => {
@@ -179,7 +179,7 @@ function service(
   role: RelayRole,
   workspaceOrgId: string | undefined,
   services: ControlPlaneServices,
-  options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean },
+  options: CheckpointRouteOptions,
 ) {
   const sandboxManager = services.sandbox.sandboxManager
   if (!sandboxManager) throw new Error("sandbox_manager_unavailable")

@@ -5,6 +5,7 @@ import {
   routeBridgeSessionConfigHarness,
   routeBridgeSessionConfigUrl,
   routeBridgeSessionMessagesProbeUrl,
+  routeCachedWorkspaceSessionCandidate,
   routeKnownSessionDirectory,
   routeSessionMetaIsArchived,
   routeSessionMetaIsCentral,
@@ -64,6 +65,42 @@ describe("routeSessionMetaIsCentral", () => {
 
   test("does not reclassify workspace metadata", () => {
     expect(routeSessionMetaIsCentral({ host: "workspace", sessionRef: "workspace:ws_1:session:ses_1" })).toBe(false)
+  })
+})
+
+describe("routeCachedWorkspaceSessionCandidate", () => {
+  test("does not turn an explicitly central cached row into a workspace target", () => {
+    expect(routeCachedWorkspaceSessionCandidate("ses_1", [{
+      directory: "/repo",
+      sessions: [{
+        id: "ses_1",
+        host: "central",
+        sessionRef: "central:ses_1",
+      }],
+    }])).toBeUndefined()
+  })
+
+  test("central identity wins over a duplicate workspace-looking cache row", () => {
+    expect(routeCachedWorkspaceSessionCandidate("ses_1", [{
+      directory: "/repo-a",
+      sessions: [{ id: "ses_1", directory: "/repo-a" }],
+    }, {
+      directory: "/repo-b",
+      sessions: [{ id: "ses_1", host: "central", sessionRef: "central:ses_1" }],
+    }])).toBeUndefined()
+  })
+
+  test("returns the first active workspace row when no central identity exists", () => {
+    expect(routeCachedWorkspaceSessionCandidate("ses_1", [{
+      directory: "/repo",
+      sessions: [
+        { id: "archived", directory: "/repo", time: { archived: 1 } },
+        { id: "ses_1", directory: "/repo" },
+      ],
+    }])).toEqual({
+      cacheDirectory: "/repo",
+      session: { id: "ses_1", directory: "/repo" },
+    })
   })
 })
 

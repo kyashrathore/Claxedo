@@ -8,15 +8,14 @@
  * through the AccountPort bridge.
  */
 
-import { hostedContributionLoader } from "@/app/composition/hosted-contribution-loader"
 import { configureDesktopMachineRemoteAccess } from "./remote-access/electron-machine-remote-access-binding"
-
-const loadHostedContent = hostedContributionLoader()
 
 export async function loadDesktopHostedContributions() {
   // Binding belongs to activation, not base startup. The binder itself refuses
   // a missing/partial preload bridge; there is no HTTP fallback to the local
   // server, which does not own these routes.
   configureDesktopMachineRemoteAccess()
-  return loadHostedContent()
+  // Optional service renderers have independent catalog-driven loaders. Core
+  // account activation owns no WorkGraph or Documents surface.
+  return { contentSurfaces: [] }
 }

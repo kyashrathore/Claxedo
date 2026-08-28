@@ -7,6 +7,7 @@ import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
 import { previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 export async function cloudConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
@@ -54,6 +55,7 @@ export async function cloudConnectionInfo(
   }
   const hostId = target.hostId
   const role = relayRole(result.role)
+  const actor = await resolveRuntimeActor(authority, auth)
   const relayUrl = configuredRelayUrl(options)
   if (!relayUrl) {
     throw new ControlPlaneAuthError(

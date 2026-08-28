@@ -59,6 +59,8 @@ describe("Worker-compatible token signing", () => {
     })
     expect(payload.workspace_id).toBe("ws_1")
     expect(payload.host_id).toBe("host_1")
+    expect(payload.sub).toBeUndefined()
+    expect(payload.actor_id).toBe("user_1")
     // The kid in the header is SHA-256(public x) — what the JWKS endpoint derives.
     const jwk = await exportJWK(publicKey)
     expect(protectedHeader.kid).toBe(await sha256Hex16(String(jwk.x)))

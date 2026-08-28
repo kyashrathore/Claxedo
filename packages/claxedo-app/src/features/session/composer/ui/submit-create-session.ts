@@ -20,6 +20,10 @@ import {
   type ProjectCatalogItem,
   type RuntimeWorkspaceRef,
 } from "../workspace-resolver"
+import {
+  reservePrivateSession,
+  type PrivateSessionReservation,
+} from "@/platform/runtime/private-session-reservation"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 
@@ -27,6 +31,7 @@ export type SubmitSessionCreateClient = {
   readonly session: SubmitSessionGetClient["session"] & {
     create(
       input: {
+        readonly id?: string
         readonly directory: SubmitDirectory
         readonly agent: string
         readonly model: { readonly providerID: string; readonly id: string; readonly variant?: string }
@@ -43,6 +48,10 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly replaceSession: boolean
   readonly harnessMode: boolean
   readonly signedControlPlane: boolean
+  readonly workspaceId?: string
+  readonly serverUrl?: string
+  readonly request?: typeof fetch
+  readonly reserveManagedSession?: typeof reservePrivateSession
   readonly sessionDirectory: SubmitDirectory
   readonly client: SubmitSessionGetClient
   readonly sessionClient: () => SubmitSessionGetClient
@@ -143,26 +152,41 @@ export async function acquireSubmitSessionTarget(
 }
 
 async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionInput) {
+  const reservation = input.signedControlPlane
+    ? await (input.reserveManagedSession ?? reservePrivateSession)({
+        workspaceId: requiredWorkspaceId(input.workspaceId),
+        kind: "create",
+        ...(input.explicitSessionID && input.explicitSessionID !== "new"
+          ? { sessionId: input.explicitSessionID }
+          : {}),
+        ...(input.serverUrl ? { serverUrl: input.serverUrl } : {}),
+        ...(input.request ? { request: input.request } : {}),
+      })
+    : undefined
   if (input.harnessMode) {
     const session = await input.claimHarnessSession({
       scope: input.scope,
       directory: input.sessionDirectory,
-      sessionID: input.explicitSessionID,
+      sessionID: reservation?.sessionId ?? input.explicitSessionID,
       sessionConfig: input.sessionConfig,
     }).catch(() => undefined)
     if (session) input.boot(session.id)
     return session
   }
 
-  return await createOpencodeSession(input).catch((err) => {
+  return await createOpencodeSession(input, reservation).catch((err) => {
     input.onOpencodeCreateError(err)
     return undefined
   })
 }
 
-async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput) {
+async function createOpencodeSession(
+  input: SubmitSessionTargetAcquisitionInput,
+  reservation?: PrivateSessionReservation,
+) {
   const headers: Record<string, string> = {}
   if (input.draftId) headers["x-claxedo-draft-id"] = input.draftId
+  if (reservation) headers["x-claxedo-session-registration-operation"] = reservation.operationId
   const client = input.createSessionClient({
     directory: input.sessionDirectory,
     harnessType: input.sessionHarnessType,
@@ -171,6 +195,7 @@ async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput)
     perform: async () => {
       const res = await client.session.create(
         {
+          ...(reservation ? { id: reservation.sessionId } : {}),
           directory: input.sessionDirectory,
           agent: input.sessionConfig.agent,
           model: {
@@ -187,6 +212,12 @@ async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput)
     ...(input.draftId === undefined ? {} : { draftId: input.draftId }),
     ...(input.events === undefined ? {} : { events: input.events }),
   })
+}
+
+function requiredWorkspaceId(value: string | undefined) {
+  const workspaceId = value?.trim()
+  if (!workspaceId) throw new Error("Signed session creation requires an authoritative workspace id")
+  return workspaceId
 }
 
 export function finalizeSubmitSessionTarget(input: {

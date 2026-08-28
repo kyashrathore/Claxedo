@@ -45,7 +45,7 @@ import {
   timelineMountSessionKey,
   visibleSessionUserMessages,
 } from "@/features/session/ui/view-state"
-import { createSessionController } from "@/features/session/store/session-controller"
+import { createSessionController, createSessionInfoHydrationGetter } from "@/features/session/store/session-controller"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
@@ -313,16 +313,13 @@ export default function SessionPage() {
   // Workspace cloud-vs-user-hosted resolution + the per-pane connecting gate
   // (`needsCloudSandbox` / `userHostedWorkspaceId` + the pre-connect effects)
   // moved to the WorkspaceConnection authority (WorkspaceGate in
-  // SessionPaneScope). The shared authority makes split panes agree on kind by
-  // construction, retiring the per-pane re-derivation that used to misroute a
-  // user-hosted workspace into the cloud sandbox flow in the second pane.
+  // SessionPaneScope).
   // The "is this workspace connected?" concern is now owned by the single
   // WorkspaceConnection authority (WorkspaceGate, mounted in SessionPaneScope
   // OUTSIDE this component). This Session only mounts inside the gate's `ready`
   // branch, so it no longer reconstructs a pre-connect gate or runs its own
   // mint/health/provision pre-connect effects — those duplicated the authority
   // and caused the BUG-1 blank + double-connecting screens in split panes.
-  //
   // The `gate` store survives ONLY for the new-session SUBMIT flow: when the
   // composer provisions a brand-new cloud sandbox at submit time it reports
   // progress through `onCloudStartup` (see the composer render below). That is a
@@ -457,7 +454,7 @@ export default function SessionPage() {
     if (!sessionIDValue || !shouldScheduleDirectorySessionHydration({ directory, sessionID: sessionIDValue, hasSessionInfo: !!info(), sessionRef: activeSessionRef() })) return
     const cancel = scheduleDirectorySessionHydration({
       directory, sessionID: sessionIDValue,
-      getSession: (parameters) => sdk.client.session.get(parameters).then((result) => result.data),
+      getSession: createSessionInfoHydrationGetter({ client: sdk.client.session, claxedoServerUrl: globalSDK.url, signedControlPlane: signedControlPlane(), workspaceId: replayWorkspaceId(), workspaceKind: resolvedWorkspaceKind(), sessionRef: activeSessionRef() }),
     })
     onCleanup(cancel)
   })
@@ -1205,6 +1202,9 @@ export default function SessionPage() {
   const { draft, supports, restore, rolled, actions } = createSessionMessageActions({
     sessionID: () => sessionID(),
     directory: dir,
+    signedControlPlane,
+    workspaceId: signedWorkspaceId,
+    serverUrl: () => globalSDK.url,
     sdk,
     language,
     prompt,

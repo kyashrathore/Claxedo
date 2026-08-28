@@ -161,7 +161,6 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("other-control-plane")
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti(base.jti)
@@ -175,7 +174,6 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(relayHostTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti(base.jti)
@@ -237,7 +235,9 @@ describe("workspace relay auth", () => {
     const payload = {
       iss: runtimeAccessTokenIssuer,
       aud: runtimeAccessTokenAudience,
-      sub: base.subject,
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
       org_id: base.orgId,
       workspace_id: base.workspaceId,
       host_id: base.hostId,
@@ -264,6 +264,9 @@ describe("workspace relay auth", () => {
   test("rejects symmetric-algorithm Runtime Access Token confusion attempts", async () => {
     const key = await keys()
     const token = await new SignJWT({
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
       org_id: base.orgId,
       workspace_id: base.workspaceId,
       host_id: base.hostId,
@@ -272,7 +275,6 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "HS256" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti(base.jti)
@@ -290,6 +292,7 @@ describe("workspace relay auth", () => {
     const key = await keys()
     const hostToken = await mintRelayHostToken({
       ...base,
+      parentJti: base.jti,
       access: "cloud",
       backing: "cloud-vm",
     }, key.privateKey, "EdDSA")
@@ -302,6 +305,7 @@ describe("workspace relay auth", () => {
       iss: "workspace-relay",
       aud: "workspace-host-service",
       role: "editor",
+      parent_jti: base.jti,
       access: "cloud",
       backing: "cloud-vm",
     })
@@ -314,13 +318,41 @@ describe("workspace relay auth", () => {
     } satisfies Partial<WorkspaceRelayAuthError>)
   })
 
+  test("rejects Relay Host Tokens that do not identify their parent Runtime Access Token", async () => {
+    const key = await keys()
+    const token = await new SignJWT({
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
+      org_id: base.orgId,
+      workspace_id: base.workspaceId,
+      host_id: base.hostId,
+      role: base.role,
+      access: "cloud",
+      backing: "cloud-vm",
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer("workspace-relay")
+      .setAudience("workspace-host-service")
+      .setIssuedAt()
+      .setExpirationTime("1m")
+      .setJti("rht_without_parent")
+      .sign(key.privateKey)
+
+    await expect(verifyRelayHostToken(token, key.publicKey, {
+      workspaceId: base.workspaceId,
+      hostId: base.hostId,
+    })).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
+  })
+
   test("rejects inconsistent Relay Host Token access/backing pairs", async () => {
     const key = await keys()
     await expect(mintRelayHostToken({
       ...base,
+      parentJti: base.jti,
       access: "cloud",
       backing: "local-worktree",
-    } as unknown as typeof base & RelayClaimPair, key.privateKey, "EdDSA")).rejects.toMatchObject({
+    } as unknown as typeof base & RelayClaimPair & { parentJti: string }, key.privateKey, "EdDSA")).rejects.toMatchObject({
       code: "relay_token_claims_invalid",
     } satisfies Partial<WorkspaceRelayAuthError>)
 
@@ -329,13 +361,15 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
       access: "user-hosted",
       backing: "cloud-vm",
     })
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer("workspace-relay")
       .setAudience(relayHostTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti(base.jti)
@@ -357,6 +391,9 @@ describe("workspace relay auth", () => {
     const resolver = createLocalJWKSet({ keys: [jwkA, jwkB] })
 
     const token = await new SignJWT({
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
       org_id: base.orgId,
       workspace_id: base.workspaceId,
       host_id: base.hostId,
@@ -365,7 +402,6 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "EdDSA", kid: "key-b" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti(base.jti)
@@ -393,11 +429,13 @@ describe("workspace relay auth", () => {
       workspace_id: base.workspaceId,
       host_id: base.hostId,
       role: base.role,
+      principal_kind: base.principalKind,
+      actor_id: base.actorId,
+      actor_kind: base.actorKind,
     })
       .setProtectedHeader({ alg: "EdDSA", kid: "key-b" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti(base.jti)
@@ -415,6 +453,7 @@ describe("workspace relay auth", () => {
     const key = await keys()
     const token = await mintRelayHostToken({
       ...base,
+      parentJti: base.jti,
       access: "cloud",
       backing: "cloud-vm",
       kid: "rht-key-current",
@@ -428,6 +467,7 @@ describe("workspace relay auth", () => {
     const key = await keys()
     const token = await mintRelayHostToken({
       ...base,
+      parentJti: base.jti,
       access: "cloud",
       backing: "cloud-vm",
     }, key.privateKey, "EdDSA")

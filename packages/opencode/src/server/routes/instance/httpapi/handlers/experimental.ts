@@ -72,7 +72,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         orgs: groups.flatMap((group) =>
           group.orgs.map((org) => ({
             accountID: group.account.id,
-            accountEmail: group.account.email,
+            accountUserId: group.account.user_id,
             accountUrl: group.account.url,
             orgID: org.id,
             orgName: org.name,

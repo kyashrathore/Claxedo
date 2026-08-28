@@ -84,6 +84,8 @@ export class ACPProcess {
   readonly pendingPermissions = new Map<string, PendingPermission>()
   // agentSessionId → update listener
   readonly sessionListeners = new Map<string, (update: SessionUpdate) => void>()
+  // agentSessionId → lifecycle observer retained between prompts
+  readonly sessionObservers = new Map<string, (update: SessionUpdate) => void>()
   private states = new Map<string, ACPState>()
   // agentSessionId → permission pusher
   readonly permissionPushers = new Map<string, PermissionPusher>()
@@ -198,14 +200,20 @@ export class ACPProcess {
           }
         }
         const listener = this.sessionListeners.get(params.sessionId)
-        if (!listener) {
+        const observer = this.sessionObservers.get(params.sessionId)
+        if (!listener && !observer) {
           log.info("ACP sessionUpdate: no listener registered, dropping update", {
             sessionId: params.sessionId,
             kind,
           })
           return
         }
-        listener(params.update)
+        // The prompt listener owns every update while a turn is active. The
+        // observer is the continuation for lifecycle notifications that arrive
+        // only after the prompt response removed that listener; invoking both
+        // would project the same canonical frame twice.
+        if (listener) listener(params.update)
+        else observer?.(params.update)
       })
       .onRequest(methods.client.session.requestPermission, async ({ params }) => {
         const permId = randomUUID()
@@ -583,6 +591,14 @@ export class ACPProcess {
     }
   }
 
+  /** Observe lifecycle notifications which may arrive after a prompt response. */
+  observeSession(agentSessionId: string, observer: (update: SessionUpdate) => void) {
+    this.sessionObservers.set(agentSessionId, observer)
+    return () => {
+      if (this.sessionObservers.get(agentSessionId) === observer) this.sessionObservers.delete(agentSessionId)
+    }
+  }
+
   async cancel(agentSessionId: string): Promise<void> {
     log.info("ACP cancel", { agentSessionId })
     await this.agent.notify(methods.agent.session.cancel, { sessionId: agentSessionId })
@@ -618,6 +634,7 @@ export class ACPProcess {
   dispose() {
     if (this.disposed) return
     this.disposed = true
+    this.sessionObservers.clear()
     this.exitObservation({ reason: "disposed" })
     this.idle.cancel()
     log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind })

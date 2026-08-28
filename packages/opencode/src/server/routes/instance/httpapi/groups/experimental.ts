@@ -31,7 +31,7 @@ const CapabilitiesResponse = Schema.Struct({
 
 const ConsoleOrgOption = Schema.Struct({
   accountID: Schema.String,
-  accountEmail: Schema.String,
+  accountUserId: Schema.String,
   accountUrl: Schema.String,
   orgID: Schema.String,
   orgName: Schema.String,

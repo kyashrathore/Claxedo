@@ -1,5 +1,5 @@
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
@@ -130,4 +130,9 @@ async function runtimeFetch(
       headers,
     },
   )
+}
+
+function requiredRole(role: RelayRole | undefined): RelayRole {
+  if (role) return role
+  throw new ControlPlaneProtocolError(403, "workspace_authorization_denied", "Workspace role is required for runtime token minting")
 }

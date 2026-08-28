@@ -327,9 +327,10 @@ function portEntry(value: DocumentIndexEntry): DocumentEntry {
 
 function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAuth) {
   const provider = {
-    mintRuntimeAccessToken: async (input: { workspaceId: string; hostId: string; subject: string; orgId: string; role: "viewer" | "editor" | "owner" }) => ({
+    mintRuntimeAccessToken: async (input: { workspaceId: string; hostId: string; principalKind: "user" | "service"; actorId: string; actorKind: "human" | "agent"; orgId: string; role: "viewer" | "editor" | "owner" }) => ({
       token: await mintRuntimeAccessToken({
-        subject: input.subject, orgId: input.orgId, workspaceId: input.workspaceId, hostId: input.hostId, role: input.role,
+        principalKind: input.principalKind, actorId: input.actorId, actorKind: input.actorKind,
+        orgId: input.orgId, workspaceId: input.workspaceId, hostId: input.hostId, role: input.role,
       }, privateKey, "EdDSA"),
       expiresAt: Date.now() + 300_000,
     }),

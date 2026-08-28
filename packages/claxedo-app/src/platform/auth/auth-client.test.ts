@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import { clearPersistedAuthState } from "@/platform/auth/auth-client"
+import { clearPersistedAuthState } from "@/platform/auth/browser-auth-persistence"
 
 describe("clearPersistedAuthState", () => {
   beforeEach(() => localStorage.clear())

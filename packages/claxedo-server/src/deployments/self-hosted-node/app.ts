@@ -86,11 +86,10 @@ import {
 } from "../../authority/services"
 import {
   betterAuthAdapter,
-  clerkAuthAdapter,
   controlPlaneAuthContext,
   ControlPlaneAuthError,
-  signedCloudAuthRequested,
 } from "@claxedo/server-core/platform/auth/auth"
+import { clerkAuthAdapter, signedCloudAuthRequested } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import {
   assertHostedBootRequirements,
   deploymentMode,

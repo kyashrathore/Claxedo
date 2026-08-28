@@ -33,6 +33,7 @@ import {
   type WorkspaceRow,
   type WorkspaceRole,
 } from "./workspace-authority-store"
+import { createSqlitePrivateSessionAuthority } from "./private-session-authority"
 
 // Claxedo's LOCAL workspace-authority adapter: the full `WorkspaceAuthority`
 // port backed by a local SQLite database instead of Convex. This is the
@@ -47,31 +48,6 @@ import {
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
 const CHALLENGE_TTL_MS = 60_000
-const MESSAGE_PAGE_CURSOR_PREFIX = "sawmp1:"
-const MAX_MESSAGE_PAGE_LIMIT = 500
-
-function encodeMessagePageCursor(sessionId: string, ordinal: number) {
-  return `${MESSAGE_PAGE_CURSOR_PREFIX}${Buffer.from(JSON.stringify({ sessionId, ordinal })).toString("base64url")}`
-}
-
-function decodeMessagePageCursor(sessionId: string, input: string) {
-  try {
-    if (!input.startsWith(MESSAGE_PAGE_CURSOR_PREFIX)) throw new Error("unexpected cursor version")
-    const value = JSON.parse(Buffer.from(input.slice(MESSAGE_PAGE_CURSOR_PREFIX.length), "base64url").toString("utf8")) as {
-      sessionId?: unknown
-      ordinal?: unknown
-    }
-    if (
-      value.sessionId !== sessionId
-      || typeof value.ordinal !== "number"
-      || !Number.isSafeInteger(value.ordinal)
-      || value.ordinal < 0
-    ) throw new Error("invalid cursor payload")
-    return value.ordinal
-  } catch {
-    throw new AgentMessagePageError(400, "Invalid message page cursor")
-  }
-}
 
 /**
  * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
@@ -110,6 +86,31 @@ const ENROLLMENT_REQUEST_SWEEP_LIMIT = 500
 function ttl(input?: number) {
   if (!input || !Number.isFinite(input)) return DEFAULT_TTL_MS
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
+}
+
+function requiredText(value: unknown, name: string) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${name} is required`)
+  return value.trim()
+}
+
+function roleAction(value: "viewer" | "editor" | "admin" | "owner") {
+  return value === "viewer" ? "read" as const : value === "editor" ? "write" as const : value
+}
+
+function sqliteShareTarget(target: WorkspaceShareTarget): {
+  tokenIdentifier: string | null
+  orgId: string | null
+} {
+  if (target.kind === "actor") {
+    if (!target.actorId.trim()) throw new Error("Share actor id is required")
+    return { tokenIdentifier: target.actorId, orgId: null }
+  }
+  if (target.kind === "user") {
+    if (!target.userId.trim()) throw new Error("Share user id is required")
+    return { tokenIdentifier: target.userId, orgId: null }
+  }
+  if (!target.orgId.trim()) throw new Error("Share organization id is required")
+  return { tokenIdentifier: null, orgId: target.orgId }
 }
 
 function base64url(bytes: Uint8Array) {
@@ -434,16 +435,9 @@ type HostLinkRow = {
   revoked_at: number | null
 }
 
-type SessionVisibility = {
-  sessionId: string
-  title?: string
-  createdAt?: number
-  updatedAt?: number
-}
-
 export function createSqliteWorkspaceAuthority(
   options: SqliteWorkspaceAuthorityOptions = {},
-): WorkspaceAuthority & { close(): void } {
+): WorkspaceAuthority & PrivateSessionAuthority & { close(): void } {
   const database = openAuthorityDb(options)
 
   const user = (auth: SignedControlPlaneAuth): AuthorityUser => {
@@ -701,11 +695,7 @@ export function createSqliteWorkspaceAuthority(
     }
   }
 
-  const deleteMessageRows = (db: SqliteAuthorityDb, sessionId: string, workspaceId: string) => {
-    db.prepare(`DELETE FROM session_messages WHERE session_id = ? AND workspace_id = ?`).run(sessionId, workspaceId)
-  }
-
-  return {
+  const workspaceAuthority: Omit<WorkspaceAuthority, keyof PrivateSessionAuthority> & { close(): void } = {
     close() {
       database.close()
     },
@@ -2610,4 +2600,5 @@ export function createSqliteWorkspaceAuthority(
       )
     },
   }
+  return Object.assign(workspaceAuthority, privateSessions)
 }

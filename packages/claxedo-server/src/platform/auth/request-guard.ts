@@ -6,8 +6,8 @@
  * ## Why default-on rather than per-route
  *
  * The previous posture was opt-in, and the result is the finding this fixes: nine
- * routes threaded a limiter and roughly fifty did not — `/api/workgraph/*`, the
- * documents routes, and checkpoint/lifecycle (including destroy) had nothing at
+ * routes threaded a limiter and roughly fifty did not — feature routes and
+ * checkpoint/lifecycle (including destroy) had nothing at
  * all. Opt-in security is a per-route review item that fails silently the first
  * time someone forgets. Mounted here, once, at composition, "no hosted route
  * ships without a body cap" becomes a property of the shell — the same argument
@@ -48,10 +48,8 @@ import type { LayeredRateLimiter } from "./rate-limit"
 /**
  * Default maximum request body, 1 MiB.
  *
- * Chosen below documents' hand-rolled 2 MiB (`routes/documents.ts`
- * MAX_BODY_BYTES) on purpose: documents is the one surface with a demonstrated
- * need for large bodies, and it is exempted below so its own cap governs. Every
- * other hosted route takes JSON control payloads measured in kilobytes, so 1 MiB
+ * Optional services may contribute their own reviewed exemptions when mounted.
+ * Core hosted routes take JSON control payloads measured in kilobytes, so 1 MiB
  * is roughly three orders of magnitude of headroom over real traffic while still
  * bounding what one request can make the Worker buffer.
  */
@@ -88,13 +86,6 @@ export type RouteGuardExemption = {
  * and are merged by `hostedRouteGuardExemptions()`; see the module header.
  */
 export const CORE_ROUTE_GUARD_EXEMPTIONS: readonly RouteGuardExemption[] = [
-  {
-    prefix: "/documents",
-    bodyCap: true,
-    reason:
-      "Documents carry markdown bodies that legitimately exceed the 1 MiB default; the surface has enforced its own 2 MiB cap since D11 and that cap is the reviewed number.",
-    enforcedBy: "src/routes/documents.ts (MAX_BODY_BYTES, enforced on create and update)",
-  },
   {
     prefix: "/api/claxedo/events",
     bodyCap: true,
@@ -141,8 +132,8 @@ export function guardExemptionFor(
 }
 
 /**
- * Prefix match on path SEGMENTS, so `/documents` cannot exempt
- * `/documents-admin` while still covering `/documents/:id/versions`.
+ * Prefix match on path SEGMENTS, so a service path cannot exempt a similarly
+ * prefixed administrative path.
  */
 export function pathMatchesPrefix(path: string, prefix: string) {
   if (path === prefix) return true

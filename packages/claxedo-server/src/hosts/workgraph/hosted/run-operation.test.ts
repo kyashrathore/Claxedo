@@ -140,7 +140,9 @@ describe("hosted Run operation endpoint", () => {
   it("derives owner and organization from an exact-workspace runtime token", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace-1",
       hostId: "host-1",
@@ -167,7 +169,9 @@ describe("hosted Run operation endpoint", () => {
   it("rejects an agent operation without generation", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace-1",
       hostId: "host-1",
@@ -198,7 +202,9 @@ describe("hosted Run operation endpoint", () => {
   it("nudges the settlement dispatcher after a successful agent-tool operation", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace-1",
       hostId: "host-1",
@@ -241,7 +247,7 @@ describe("hosted Run operation endpoint", () => {
         },
       },
       retainTranscript: async (input) => {
-        calls.push(`retain:${input.workspaceId}/${input.sessionId}:${input.organizationId}:${input.ownerSubject}`)
+        calls.push(`retain:${input.workspaceId}/${input.sessionId}:${input.organizationId}:${input.ownerUserId}`)
       },
     })!
 
@@ -257,7 +263,9 @@ describe("hosted Run operation endpoint", () => {
   it("rejects completion as retryable when transcript retention fails, without settling the Run", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace-1",
       hostId: "host-1",
@@ -292,7 +300,9 @@ describe("hosted Run operation endpoint", () => {
   it("rejects a runtime token minted for another workspace", async () => {
     const keys = await generateKeyPair("Ed25519")
     const token = await mintRuntimeAccessToken({
-      subject: "alice",
+      principalKind: "user",
+      actorId: "alice",
+      actorKind: "human",
       orgId: "org-acme",
       workspaceId: "workspace-2",
       hostId: "host-1",

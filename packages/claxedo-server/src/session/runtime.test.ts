@@ -330,6 +330,26 @@ describe("createCentralSessionRuntime", () => {
           "subagent-tool-call:tool-foreground",
         ]),
       }))
+      svc.projectionStore.session_meta = vi.fn(async (sessionId) => sessionId === child.childSessionId ? {
+        sessionID: child.childSessionId,
+        parentID: source.id,
+        workspaceID: "ws_parent",
+        host: "central" as const,
+        title: "Child",
+        createdAt: 1,
+        updatedAt: 2,
+        tags: [],
+        attachments: [],
+      } : undefined)
+      const childSession = await runtime.routes.request(`http://127.0.0.1/session/${child.childSessionId}`)
+      expect(childSession.status).toBe(200)
+      await expect(childSession.json()).resolves.toMatchObject({
+        id: child.childSessionId,
+        parentID: source.id,
+        host: "central",
+        sessionRef: `central:${child.childSessionId}`,
+        workspaceID: "ws_parent",
+      })
       const config = await runtime.routes.request(`http://127.0.0.1/session/${child.childSessionId}/config`)
       await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
       const rootCapabilities = await runtime.routes.request(`http://127.0.0.1/session/${source.id}/capabilities`)
@@ -598,6 +618,15 @@ describe("createCentralSessionRuntime", () => {
       "session-status",
       "finish",
     ])
+    expect(events[0]).toMatchObject({
+      directory: session.id,
+      sessionId: session.id,
+      payload: {
+        type: "session-info",
+        sessionRef: `central:${session.id}`,
+        host: "central",
+      },
+    })
     expect(events).toContainEqual(expect.objectContaining({
       directory: session.id,
       sessionId: session.id,

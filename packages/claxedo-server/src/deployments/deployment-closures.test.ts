@@ -95,6 +95,10 @@ const ENTRIES = [
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */
 const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
+const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
+const BETTER_AUTH_D1_OPEN_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-open-worker.cf.ts"
+const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
+const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
   return sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, ...options })
@@ -110,13 +114,176 @@ function chainTo(entry: string, isForbidden: (relative: string) => boolean) {
 }
 
 describe("server deployment entry closures", () => {
+  it("keeps the provider-independent hosted core physically free of optional services", () => {
+    const result = closure(HOSTED_CORE_WORKER_ROOT, { runtimeOnly: true })
+    const files = result.modules.map((module) => module.relative)
+    expect(files).toContain(HOSTED_CORE_WORKER_ROOT)
+    expect(files).toContain("src/deployments/hosted-shared/hosted-core-app.ts")
+    expect(files).toContain("src/deployments/hosted-workerd/live-sync-room.cf.ts")
+    expect(result.unresolved).toEqual([])
+    expect(result.opaque).toEqual([])
+
+    const forbiddenFiles = files.filter((file) =>
+      [
+        "src/hosts/workgraph/",
+        "src/hosts/wakes/",
+        "src/documents/",
+        "src/billing/",
+        "settlement-dispatcher.cf.ts",
+        "wake-lane.cf.ts",
+      ].some((prefix) => file.includes(prefix)),
+    )
+    expect(forbiddenFiles).toEqual([])
+    expect(
+      result.packages.filter((name) =>
+        [
+          "@claxedo/workgraph",
+          "@claxedo/workgraph-service",
+          "@claxedo/documents-service",
+          "@claxedo/wakes",
+          "@polar-sh/sdk",
+        ].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps the Better Auth D1 locked entry resource-closed", () => {
+    const result = closure(BETTER_AUTH_D1_LOCKED_ENTRY, { runtimeOnly: true })
+    const files = result.modules.map((module) => module.relative)
+    expect(files).toContain(BETTER_AUTH_D1_LOCKED_ENTRY)
+    expect(files).toContain("src/platform/auth/better-auth-d1-foundation.ts")
+    expect(files).toContain("src/deployments/hosted-workerd/better-auth-d1-release-state.cf.ts")
+    expect(result.unresolved).toEqual([])
+    expect(result.opaque).toEqual([])
+    // The release operator, release identity, paired-recovery proof, and their
+    // dependency-neutral gate modules are now explicit fail-closed edges.
+    expect(result.modules.length).toBeLessThanOrEqual(13)
+    // +1 dependency-neutral package: the release identity now reads the
+    // canonical empty-service manifest ID from @claxedo/service-contract
+    // instead of owning a second string. No service implementation enters the
+    // locked graph; the forbidden-package assertions below enforce that half.
+    expect(result.packages.length).toBeLessThanOrEqual(7)
+    expect(result.packages).toContain("@claxedo/service-contract")
+
+    const forbiddenFiles = files.filter((file) =>
+      [
+        "authority/hosted-services",
+        "better-auth-d1-open-worker",
+        "core-worker.cf",
+        "deployments/hosted-shared/hosted-app",
+        "hosts/workgraph",
+        "documents/",
+        "billing/",
+        "sandbox",
+        "convex",
+        "clerk",
+      ].some((value) => file.toLowerCase().includes(value)),
+    )
+    expect(forbiddenFiles).toEqual([])
+    expect(
+      result.packages.filter((name) =>
+        [
+          "convex",
+          "@clerk/backend",
+          "@claxedo/workgraph",
+          "@claxedo/workgraph-service",
+          "@claxedo/documents-service",
+          "@claxedo/wakes",
+          "@claxedo/sandbox-manager",
+          "@polar-sh/sdk",
+        ].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps the open Better Auth D1 user-deployed root free of retained and optional providers", () => {
+    const result = closure(BETTER_AUTH_D1_OPEN_ENTRY, { runtimeOnly: true })
+    const files = result.modules.map((module) => module.relative)
+    expect(files).toContain(BETTER_AUTH_D1_OPEN_ENTRY)
+    expect(files).toContain("src/authority/provider-neutral-hosted-services.ts")
+    expect(files).toContain("src/authority/adapters/worker/better-auth-d1-compose.ts")
+    expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
+    expect(files).toContain("src/routes/runtime-session-authority.ts")
+    expect(result.unresolved).toEqual([])
+    expect(result.opaque).toEqual([])
+
+    expect(
+      files.filter((file) =>
+        [
+          "authority/adapters/convex/",
+          "authority/adapters/worker/hosted-compose",
+          "authority/adapters/worker/retained-sandbox-driver",
+          "sandbox/stores/convex",
+          "platform/auth/clerk-adapter",
+          "better-auth-d1-locked-worker",
+          "billing/",
+          "hosts/workgraph/",
+          "documents/",
+        ].some((value) => file.toLowerCase().includes(value)),
+      ),
+    ).toEqual([])
+    expect(
+      result.packages.filter((name) =>
+        [
+          "convex",
+          "@clerk/backend",
+          "@claxedo/workgraph",
+          "@claxedo/workgraph-service",
+          "@claxedo/documents-service",
+          "@claxedo/wakes",
+          "@polar-sh/sdk",
+        ].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps the phase-gated candidate separate from locked and optional provider implementations", () => {
+    const result = closure(BETTER_AUTH_D1_CANDIDATE_ENTRY, { runtimeOnly: true })
+    const files = result.modules.map((module) => module.relative)
+    expect(files).toContain(BETTER_AUTH_D1_CANDIDATE_ENTRY)
+    expect(files).toContain("src/deployments/hosted-workerd/better-auth-d1-operator.cf.ts")
+    expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
+    expect(result.unresolved).toEqual([])
+    expect(result.opaque).toEqual([])
+    expect(
+      files.filter((file) =>
+        [
+          "better-auth-d1-locked-worker",
+          "authority/adapters/convex/",
+          "authority/adapters/worker/hosted-compose",
+          "authority/adapters/worker/retained-sandbox-driver",
+          "platform/auth/clerk-adapter",
+          "billing/",
+          "hosts/workgraph/",
+          "documents/",
+        ].some((value) => file.toLowerCase().includes(value)),
+      ),
+    ).toEqual([])
+    expect(
+      result.packages.filter((name) =>
+        [
+          "convex",
+          "@clerk/backend",
+          "@claxedo/workgraph",
+          "@claxedo/workgraph-service",
+          "@claxedo/documents-service",
+          "@claxedo/wakes",
+          "@polar-sh/sdk",
+        ].includes(name),
+      ),
+    ).toEqual([])
+  })
+
   it("walks a real graph from every entry, so an empty offender list means something", () => {
     // Positive control. Every boundary assertion below is "the offenders list
     // is empty", which is also what a walk that resolved nothing reports.
     for (const { name, entry } of ENTRIES) {
       const result = closure(entry)
       expect(result.modules.length, `${name} reached no modules`).toBeGreaterThan(50)
-      expect(result.modules.map((module) => module.relative), `${name} is missing its own entry`).toContain(entry)
+      expect(
+        result.modules.map((module) => module.relative),
+        `${name} is missing its own entry`,
+      ).toContain(entry)
       // A single unresolved specifier makes every count and every clean
       // offender list a lower bound rather than an answer.
       expect(result.unresolved, `${name} has specifiers the walk could not resolve`).toEqual([])
@@ -135,9 +302,8 @@ describe("server deployment entry closures", () => {
     // the build the way it breaks a Worker bundle. The cloud plane pulling in
     // embedded auth, the SQLite authority and local execution would simply
     // work in CI and be wrong in production.
-    const chain = chainTo(
-      "src/deployments/hosted-node/index.ts",
-      (relative) => relative.startsWith("src/deployments/self-hosted-node/"),
+    const chain = chainTo("src/deployments/hosted-node/index.ts", (relative) =>
+      relative.startsWith("src/deployments/self-hosted-node/"),
     )
 
     expect(chain, `hosted-node reaches the self-hosted composition:\n  ${chain}`).toBeNull()

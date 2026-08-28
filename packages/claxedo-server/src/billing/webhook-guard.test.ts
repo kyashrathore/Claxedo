@@ -24,7 +24,7 @@ import {
   readCappedBody,
   type PolarClientLike,
 } from "./routes"
-import type { BillingStore } from "./store"
+import type { BillingStore } from "./store-contract"
 import { signStandardWebhook } from "./standard-webhooks"
 import { createFixedWindowConnectionRateLimiter } from "../platform/auth/rate-limit"
 

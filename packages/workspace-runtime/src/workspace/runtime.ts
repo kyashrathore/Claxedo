@@ -192,6 +192,8 @@ export type WorkspaceHostOptions = {
   opencodeCompat?: boolean
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  /** Private-session authority selected by the host composition. */
+  sessionAccessPolicy?: SessionAccessPolicy
   /** Host-owned credential/model resolver for concrete Pi model turns. */
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner

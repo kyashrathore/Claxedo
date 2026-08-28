@@ -3,6 +3,7 @@ import type { ContentSurfaceContribution } from "./content-surface-contract"
 
 let mod: typeof import("./first-party-content-surfaces")
 let hosted: typeof import("./hosted-content-surfaces")
+let documents: typeof import("./documents-content-surfaces")
 
 beforeAll(async () => {
   mock.module("../../features/session/ui/content/session-content", () => ({
@@ -32,6 +33,7 @@ beforeAll(async () => {
   // edge the local composition must not have, which is why the test has to
   // reach for it explicitly.
   hosted = await import("./hosted-content-surfaces")
+  documents = await import("./documents-content-surfaces")
 })
 
 describe("content surface contributions", () => {
@@ -130,7 +132,11 @@ describe("content surface contributions", () => {
       expect(mod.contentSurface(type, {}, registry), type).toBeUndefined()
     }
 
-    const withHosted = mod.createContentSurfaceRegistry([...mod.localContentSurfaces, ...hosted.hostedContentSurfaces])
+    const withHosted = mod.createContentSurfaceRegistry([
+      ...mod.localContentSurfaces,
+      ...hosted.workGraphContentSurfaces,
+      ...documents.documentsContentSurfaces,
+    ])
     expect(mod.contentSurface("workgraph", {}, withHosted)?.id).toBe("surface.content.workgraph")
     expect(mod.contentSurface("page", {}, withHosted)?.id).toBe("surface.content.page")
   })
@@ -140,7 +146,7 @@ describe("content surface contributions", () => {
     // `unregisterContentSurface` both act on the ONE shared registry the
     // workbench resolves against, which is what makes a sign-out observable
     // without a reload.
-    const workgraph = hosted.hostedContentSurfaces.find((surface) => surface.surface === "workgraph")!
+    const workgraph = hosted.workGraphContentSurfaces.find((surface) => surface.surface === "workgraph")!
 
     mod.registerContentSurface(workgraph)
     expect(mod.contentSurface("workgraph", {})?.id).toBe(workgraph.id)

@@ -1,0 +1,342 @@
+import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
+import type { D1Database } from "@cloudflare/workers-types"
+import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+
+import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
+import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
+import { createD1UserHostedTargetResolver } from "../d1/user-hosted-relay-target"
+import { HostedWorkerCompositionError } from "../../composition-error"
+import {
+  composeProviderNeutralHostedControlPlane,
+  type HostedControlPlane,
+  type HostedWorkerEnv,
+} from "../../provider-neutral-hosted-services"
+import { D1ServiceInstallationStore } from "../../../platform/services/adapters/d1-installation-store"
+import {
+  BETTER_AUTH_NATIVE_SCOPES,
+  BETTER_AUTH_SESSION_COOKIE,
+  betterAuthIssuer,
+  betterAuthNativeRevocation,
+  createBetterAuthD1Foundation,
+} from "../../../platform/auth/better-auth-d1-foundation"
+import {
+  resolveBetterAuthConfiguration,
+  type AuthEmailSender,
+  type BetterAuthConfiguration,
+} from "../../../platform/auth/better-auth-configuration"
+import {
+  BETTER_AUTH_CLI_CLIENT_ID,
+  BETTER_AUTH_DESKTOP_CLIENT_ID,
+  BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+  betterAuthNativeResource,
+} from "../../../platform/auth/better-auth-native-clients"
+import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../../platform/auth/better-auth-d1-authentication-evidence"
+import { createBetterAuthD1RequestAuthenticationAdapter } from "../../../platform/auth/better-auth-d1-request-authentication"
+import { STATIC_PRODUCT_DESCRIPTORS } from "../../../deployments/hosted-shared/deployment-profile"
+import type { HostedCoreAppOptions } from "../../../deployments/hosted-shared/hosted-core-app"
+
+type BetterAuthD1AuthorityEnv = {
+  CLAXEDO_ADAPTER_PROFILE: "better-auth-d1"
+  CLAXEDO_PRODUCT_POSTURE: "claxedo-hosted" | "user-deployed"
+  CLAXEDO_DEPLOYMENT_ID: string
+  CONTROL_PLANE_DB: D1Database
+}
+
+/** Compose the D1 implementation of the complete application authority port. */
+export function composeBetterAuthD1Authority(input: {
+  env: BetterAuthD1AuthorityEnv
+  product: D1AuthorityProductPolicy
+}): D1CoreAuthorityBoundary {
+  if (input.env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
+    throw new HostedWorkerCompositionError(
+      "adapter_profile_mismatch",
+      "Better Auth + D1 authority requires the better-auth-d1 adapter profile",
+    )
+  }
+  if (input.env.CLAXEDO_PRODUCT_POSTURE !== input.product.kind) {
+    throw new HostedWorkerCompositionError(
+      "product_posture_mismatch",
+      "D1 authority product policy must match the statically selected Worker product",
+    )
+  }
+  if (
+    input.product.kind === "user-deployed" &&
+    input.product.ownerIdentity &&
+    input.product.ownerIdentity.adapter !== "better-auth"
+  ) {
+    throw new HostedWorkerCompositionError(
+      "product_identity_adapter_mismatch",
+      "A Better Auth + D1 user-deployed owner identity must be owned by the Better Auth adapter",
+    )
+  }
+  return createD1CoreAuthority(requiredDatabase(input.env.CONTROL_PLANE_DB), {
+    deploymentId: required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID"),
+    product: input.product,
+  })
+}
+
+export type BetterAuthD1UserDeployedCompositionInput = {
+  env: HostedWorkerEnv
+  authDatabase: D1Database
+  controlPlaneDatabase: D1Database
+  environmentId: string
+  descriptorExpiresAt: number
+  product: Extract<D1AuthorityProductPolicy, { kind: "user-deployed" }>
+  emailSender?: AuthEmailSender
+  now?: () => number
+}
+
+export type BetterAuthD1UserDeployedComposition = {
+  plane: HostedControlPlane
+  options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
+  /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
+  authHandler(request: Request): Promise<Response>
+  serviceInstallations: D1ServiceInstallationStore
+  product: (typeof STATIC_PRODUCT_DESCRIPTORS)["user-deployed"]
+  billing: "absent"
+}
+
+/**
+ * Certified user-deployed Better Auth + D1 selection. No Clerk/Convex fallback
+ * exists. Full-hosted remains unavailable until D1 has a durable sandbox lease
+ * store; the supported control-plane-only path contains no sandbox provider.
+ */
+export function composeBetterAuthD1UserDeployedControlPlane(
+  input: BetterAuthD1UserDeployedCompositionInput,
+): BetterAuthD1UserDeployedComposition {
+  if (input.authDatabase === input.controlPlaneDatabase) {
+    throw new HostedWorkerCompositionError(
+      "database_binding_reuse",
+      "AUTH_DB and CONTROL_PLANE_DB must be distinct D1 bindings",
+    )
+  }
+  const deploymentId = required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID")
+  const environmentId = required(input.environmentId, "environmentId")
+  requireProfile(input.env)
+  const configured = resolveBetterAuthConfiguration({
+    env: input.env,
+    ...(input.emailSender ? { emailSender: input.emailSender } : {}),
+  })
+  const descriptor = betterAuthDescriptor(input, configured, deploymentId)
+  if (input.product.ownerIdentity && input.product.ownerIdentity.issuer !== descriptor.issuer) {
+    throw new HostedWorkerCompositionError(
+      "product_identity_issuer_mismatch",
+      "The pinned user-deployed owner identity issuer must match the selected Better Auth issuer",
+    )
+  }
+  const authority = composeBetterAuthD1Authority({
+    env: {
+      CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
+      CLAXEDO_PRODUCT_POSTURE: "user-deployed",
+      CLAXEDO_DEPLOYMENT_ID: deploymentId,
+      CONTROL_PLANE_DB: input.controlPlaneDatabase,
+    },
+    product: input.product,
+  })
+  const foundation = createBetterAuthD1Foundation({
+    database: requiredDatabase(input.authDatabase),
+    configuration: configured,
+    resource: betterAuthNativeResource(configured.public.apiOrigin),
+  })
+  const authentication = createBetterAuthD1RequestAuthenticationAdapter({
+    descriptor,
+    auth: foundation,
+    nativeIntrospectionClient: {
+      clientId: BETTER_AUTH_INTROSPECTION_CLIENT_ID,
+      clientSecret: introspectionSecret(input.env, configured),
+    },
+    resolveAuthenticationEvidence: createBetterAuthD1AuthenticationEvidenceResolver(input.authDatabase),
+    resolveIdentity: async (identity, request) => {
+      const existing = await authority.ensureApplicationIdentity(identity)
+      if (existing.state !== "unavailable" || input.product.ownerBootstrap !== "one-use-claim") return existing
+      const claim = request?.headers.get(USER_DEPLOYED_OWNER_CLAIM_HEADER)
+      if (!claim) return existing
+      return await authority.claimUserDeployedOwner(identity, claim)
+    },
+    ...(input.now ? { now: input.now } : {}),
+  })
+  const serviceInstallations = new D1ServiceInstallationStore(input.controlPlaneDatabase)
+  const serviceCatalog = async () => {
+    const installations = await serviceInstallations.list({ environmentId, deploymentId })
+    const enabled = installations.filter((row) => row.descriptor.state === "enabled")
+    if (enabled.length) {
+      throw new HostedWorkerCompositionError(
+        "hosted_capability_unavailable",
+        `Base user-deployed core has enabled service installation(s) without bindings: ${enabled
+          .map((row) => row.descriptor.serviceId)
+          .join(", ")}`,
+      )
+    }
+    return []
+  }
+  const legacyAuthBoundary: ControlPlaneAuthAdapter = {
+    config: {
+      enabled: true,
+      adapter: "better-auth",
+      issuer: descriptor.issuer,
+      jwksUrl: `request-adapter:${encodeURIComponent(descriptor.configurationVersion)}`,
+    },
+  }
+  const plane = composeProviderNeutralHostedControlPlane(input.env, {
+    auth: legacyAuthBoundary,
+    authority,
+    runtimeSessionAuthority: authority,
+    privateSessionAuthority: authority,
+    userHostedResolver: createD1UserHostedTargetResolver(input.controlPlaneDatabase, {
+      ...(input.now ? { now: input.now } : {}),
+      deploymentId,
+    }),
+  })
+
+  return {
+    plane,
+    options: {
+      authentication,
+      serviceCatalog,
+      cloudWorkspaceAdmission: async () => ({
+        status: 403,
+        body: {
+          error: {
+            code: "cloud_workspace_capability_unavailable",
+            message: "This user-deployed control-plane-only profile does not provide cloud workspace execution",
+          },
+        },
+      }),
+      product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
+      requestGuardExemptions: [],
+    },
+    async authHandler(request) {
+      if (new URL(request.url).pathname === "/.well-known/oauth-authorization-server") {
+        return oauthProviderAuthServerMetadata(foundation)(request)
+      }
+      return foundation.handler(request)
+    },
+    serviceInstallations,
+    product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
+    billing: "absent",
+  }
+}
+
+function betterAuthDescriptor(
+  input: BetterAuthD1UserDeployedCompositionInput,
+  configured: BetterAuthConfiguration,
+  deploymentId: string,
+) {
+  const now = input.now ?? Date.now
+  if (!Number.isFinite(input.descriptorExpiresAt) || input.descriptorExpiresAt <= now()) {
+    throw new HostedWorkerCompositionError(
+      "auth_descriptor_invalid",
+      "Better Auth descriptorExpiresAt must be a future finite timestamp",
+    )
+  }
+  const configurationVersion = required(input.env.CLAXEDO_AUTH_CONFIGURATION_ID, "CLAXEDO_AUTH_CONFIGURATION_ID")
+  const resource = betterAuthNativeResource(configured.public.apiOrigin)
+  return {
+    adapter: "better-auth",
+    deploymentId,
+    configurationVersion,
+    expiresAt: input.descriptorExpiresAt,
+    issuer: betterAuthIssuer(configured.public.apiOrigin),
+    methods: configured.public.methods,
+    browser: {
+      transport: "cookie",
+      credentialPolicy: "reject-cookie-and-authorization",
+      trustedOrigins: configured.public.trustedOrigins,
+      clientId: "claxedo-browser",
+      resource,
+      scopes: ["workspace:read", "workspace:write"],
+      cookie: {
+        name: BETTER_AUTH_SESSION_COOKIE,
+        path: "/",
+        secure: true,
+        httpOnly: true,
+        hostOnly: true,
+        sameSite: "lax",
+      },
+    },
+    native: {
+      cli: {
+        flow: "device-authorization",
+        clientId: BETTER_AUTH_CLI_CLIENT_ID,
+        resource,
+        scopes: BETTER_AUTH_NATIVE_SCOPES,
+        tokenEndpointOrigin: configured.public.apiOrigin,
+        controlPlaneOrigin: configured.public.apiOrigin,
+        revocation: betterAuthNativeRevocation(configured.public.apiOrigin),
+      },
+      desktop: {
+        flow: "authorization-code-pkce",
+        clientId: BETTER_AUTH_DESKTOP_CLIENT_ID,
+        resource,
+        scopes: BETTER_AUTH_NATIVE_SCOPES,
+        tokenEndpointOrigin: configured.public.apiOrigin,
+        controlPlaneOrigin: configured.public.apiOrigin,
+        revocation: betterAuthNativeRevocation(configured.public.apiOrigin),
+      },
+    },
+  } as const satisfies AuthAdapterDescriptor
+}
+
+function requireProfile(env: HostedWorkerEnv) {
+  if (env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
+    throw new HostedWorkerCompositionError(
+      "adapter_profile_mismatch",
+      "Better Auth + D1 composition requires CLAXEDO_ADAPTER_PROFILE=better-auth-d1",
+    )
+  }
+  if (env.CLAXEDO_PRODUCT_POSTURE !== "user-deployed") {
+    throw new HostedWorkerCompositionError(
+      "product_posture_mismatch",
+      "User-deployed Better Auth + D1 composition requires CLAXEDO_PRODUCT_POSTURE=user-deployed",
+    )
+  }
+  if (env.CLAXEDO_SANDBOX_POSTURE !== "control-plane-only") {
+    throw new HostedWorkerCompositionError(
+      "sandbox_posture_unsupported",
+      "Better Auth + D1 currently supports only control-plane-only because no D1 durable sandbox lease store is implemented",
+    )
+  }
+  if (env.CLAXEDO_SANDBOX_DRIVER?.trim()) {
+    throw new HostedWorkerCompositionError(
+      "sandbox_posture_unsupported",
+      "control-plane-only Better Auth + D1 must not configure CLAXEDO_SANDBOX_DRIVER",
+    )
+  }
+}
+
+function introspectionSecret(env: HostedWorkerEnv, configured: BetterAuthConfiguration) {
+  const secret = required(env.CLAXEDO_AUTH_INTROSPECTION_SECRET, "CLAXEDO_AUTH_INTROSPECTION_SECRET")
+  if (secret.length < 32) {
+    throw new HostedWorkerCompositionError(
+      "hosted_dependency_invalid",
+      "CLAXEDO_AUTH_INTROSPECTION_SECRET must contain at least 32 characters",
+    )
+  }
+  if (secret === configured.private.secret) {
+    throw new HostedWorkerCompositionError(
+      "hosted_token_reuse",
+      "CLAXEDO_AUTH_INTROSPECTION_SECRET must be distinct from BETTER_AUTH_SECRET",
+    )
+  }
+  if (secret === env.CLAXEDO_RELAY_RESOLVER_TOKEN?.trim()) {
+    throw new HostedWorkerCompositionError(
+      "hosted_token_reuse",
+      "CLAXEDO_AUTH_INTROSPECTION_SECRET must be distinct from CLAXEDO_RELAY_RESOLVER_TOKEN",
+    )
+  }
+  return secret
+}
+
+function requiredDatabase(value: D1Database) {
+  if (!value || typeof value.prepare !== "function" || typeof value.batch !== "function") {
+    throw new HostedWorkerCompositionError("hosted_dependency_missing", "D1 database binding is required")
+  }
+  return value
+}
+
+function required(value: string | undefined, name: string) {
+  const normalized = value?.trim()
+  if (!normalized) throw new HostedWorkerCompositionError("hosted_dependency_missing", `${name} is required`)
+  return normalized
+}

@@ -17,6 +17,7 @@ import {
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 export async function hostedConnectionInfo(
   services: ControlPlaneServices | undefined,
@@ -159,6 +160,7 @@ export async function hostedConnectionInfo(
   if (previousToken) return previousToken
 
   const role = relayRole(result.role)
+  const actor = await resolveRuntimeActor(authority, auth)
   const signer = configuredRuntimeAccessTokenSigner(options)
   const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
   const token = await signer({

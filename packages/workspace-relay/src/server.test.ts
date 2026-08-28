@@ -120,7 +120,9 @@ describe("workspace relay server", () => {
       expect(relay.auditEvents).toContainEqual({
         action: "relay.request.accepted",
         result: "allow",
-        subject: "user_1",
+        principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
         role: "editor",
         workspaceId: "ws_1",
         hostId: "host_1",
@@ -308,12 +310,16 @@ describe("workspace relay server", () => {
         async verify(token) {
           verifyCalls++
           return {
-            subject: "user_1",
+            principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
             scopes: ["workspace:write"],
             claims: {
               iss: "claxedo-control-plane",
               aud: "workspace-relay",
-              sub: "user_1",
+              principal_kind: "user",
+              actor_id: "user_1",
+              actor_kind: "human",
               org_id: "org_1",
               workspace_id: "ws_1",
               host_id: "host_1",
@@ -361,12 +367,16 @@ describe("workspace relay server", () => {
         async verify() {
           verifyCalls++
           return {
-            subject: "user_1",
+            principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
             scopes: ["workspace:write"],
             claims: {
               iss: "claxedo-control-plane",
               aud: "workspace-relay",
-              sub: "user_1",
+              principal_kind: "user",
+              actor_id: "user_1",
+              actor_kind: "human",
               org_id: "org_1",
               workspace_id: "ws_1",
               host_id: "host_1",
@@ -407,12 +417,16 @@ describe("workspace relay server", () => {
         async verify() {
           verifyCalls++
           return {
-            subject: "user_1",
+            principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
             scopes: ["workspace:write"],
             claims: {
               iss: "claxedo-control-plane",
               aud: "workspace-relay",
-              sub: "user_1",
+              principal_kind: "user",
+              actor_id: "user_1",
+              actor_kind: "human",
               org_id: "org_1",
               workspace_id: "ws_1",
               host_id: "host_1",
@@ -479,7 +493,9 @@ describe("workspace relay server", () => {
     })
 
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_2",
       hostId: "host_1",
@@ -537,7 +553,9 @@ describe("workspace relay server", () => {
       action: "relay.request.denied",
       result: "deny",
       reason: "relay_role_denied",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       role: "viewer",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -693,7 +711,9 @@ describe("workspace relay server", () => {
       action: "relay.request.denied",
       result: "deny",
       reason: "runtime_access_token_revoked",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       role: "editor",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -839,7 +859,9 @@ describe("workspace relay server", () => {
       action: "relay.request.denied",
       result: "deny",
       reason: "user_hosted_app_offline",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       role: "editor",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -941,7 +963,9 @@ describe("workspace relay server", () => {
       const mintedRequests: Request[] = []
 
       const ratToken = await mintRuntimeAccessToken({
-        subject: "user_1",
+        principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
         orgId: "org_1",
         workspaceId: "ws_1",
         hostId: "host_1",
@@ -1253,10 +1277,14 @@ describe("workspace relay server", () => {
           async verify(token) {
             calls.push(token)
             return {
-              subject: "u-from-verifier",
+              actorId: "u-from-verifier",
+        actorKind: "human",
+        principalKind: "user",
               scopes: ["workspace:write"],
               claims: {
-                sub: "u-from-verifier",
+                principal_kind: "user",
+                actor_id: "u-from-verifier",
+                actor_kind: "human",
                 org_id: "org_1",
                 workspace_id: "ws_1",
                 host_id: "host_1",
@@ -1308,12 +1336,16 @@ describe("workspace relay server", () => {
         tokenVerifier: {
           async verify() {
             return {
-              subject: "u-from-verifier",
+              actorId: "u-from-verifier",
+        actorKind: "human",
+        principalKind: "user",
               scopes: ["workspace:write"],
               claims: {
                 iss: "claxedo-control-plane",
                 aud: "workspace-relay",
-                sub: "u-from-verifier",
+                principal_kind: "user",
+                actor_id: "u-from-verifier",
+                actor_kind: "human",
                 org_id: "org_1",
                 workspace_id: "ws_other",
                 host_id: "host_1",
@@ -1347,7 +1379,9 @@ describe("workspace relay server", () => {
       const claims = {
         iss: "claxedo-control-plane",
         aud: "workspace-relay",
-        sub: "u-from-verifier",
+        principal_kind: "user",
+                actor_id: "u-from-verifier",
+                actor_kind: "human",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
@@ -1369,7 +1403,9 @@ describe("workspace relay server", () => {
         tokenVerifier: {
           async verify() {
             return {
-              subject: "u-from-verifier",
+              actorId: "u-from-verifier",
+        actorKind: "human",
+        principalKind: "user",
               scopes: ["workspace:write"],
               claims: {
                 ...claims,
@@ -1410,12 +1446,16 @@ describe("workspace relay server", () => {
         tokenVerifier: {
           async verify() {
             return {
-              subject: "u-from-verifier",
+              actorId: "u-from-verifier",
+        actorKind: "human",
+        principalKind: "user",
               scopes: ["workspace:write"],
               claims: {
                 iss: "claxedo-control-plane",
                 aud: "workspace-relay",
-                sub: "u-from-verifier",
+                principal_kind: "user",
+                actor_id: "u-from-verifier",
+                actor_kind: "human",
                 workspace_id: "ws_1",
                 host_id: "host_1",
                 role: "editor",
@@ -1508,7 +1548,9 @@ describe("workspace relay audit sampling (T16)", () => {
       relayHost,
       token: (role: "viewer" | "editor" | "admin" | "owner" = "editor", workspaceId = "ws_1") =>
         mintRuntimeAccessToken({
-          subject: "user_1",
+          principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
           orgId: "org_1",
           workspaceId,
           hostId: "host_1",
@@ -1762,7 +1804,9 @@ describe("workspace relay /metrics endpoint (T31)", () => {
       relayHost,
       token: (workspaceId = "ws_1") =>
         mintRuntimeAccessToken({
-          subject: "user_1",
+          principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
           orgId: "org_1",
           workspaceId,
           hostId: "host_1",

@@ -2,6 +2,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
+import Database from "better-sqlite3"
 import { describe, expect, test, vi } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
@@ -25,6 +26,32 @@ const other = signedAuth("user_other")
 
 function memoryAuthority() {
   return createSqliteWorkspaceAuthority({ path: ":memory:" })
+}
+
+async function registerPrivateSession(input: {
+  authority: ReturnType<typeof memoryAuthority>
+  auth: SignedControlPlaneAuth
+  workspaceId: string
+  sessionId: string
+  title?: string
+}) {
+  const operationId = `operation_${input.workspaceId}_${input.sessionId}`
+  await input.authority.reserveSession(input.auth, {
+    operationId,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+    kind: "create",
+    ...(input.title ? { title: input.title } : {}),
+  })
+  await input.authority.registerRuntimeSession({
+    principalKind: "user",
+    actorId: input.auth.user.tokenIdentifier,
+    actorKind: "human",
+    operationId,
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+    ...(input.title ? { title: input.title } : {}),
+  })
 }
 
 function fileAuthority() {
@@ -327,7 +354,7 @@ describe("sqlite workspace authority", () => {
     await authority.grantWorkspaceShare(owner, {
       workspaceId: "ws_1",
       role: "editor",
-      grantedToClerkSubject: "user_other",
+      target: { kind: "actor", actorId: other.user.tokenIdentifier },
     })
     const shared = await authority.openWorkspace(other, { workspaceId: "ws_1" })
     expect(shared.role).toBe("editor")
@@ -335,7 +362,7 @@ describe("sqlite workspace authority", () => {
 
     const revoked = await authority.revokeWorkspaceShare(owner, {
       workspaceId: "ws_1",
-      grantedToClerkSubject: "user_other",
+      target: { kind: "actor", actorId: other.user.tokenIdentifier },
     })
     expect(revoked).toMatchObject({ revoked: true })
     await expect(authority.openWorkspace(other, { workspaceId: "ws_1" })).rejects.toMatchObject({ status: 403 })
@@ -910,6 +937,7 @@ describe("sqlite workspace authority", () => {
   test("session visibility + message sync stay workspace-scoped", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_s", displayName: "S" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_s", sessionId: "ses_1", title: "First" })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_s",
       sessions: [{ sessionId: "ses_1", title: "First" }],
@@ -943,6 +971,8 @@ describe("sqlite workspace authority", () => {
   test("pages workspace-authority transcripts backward without changing the legacy full read", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_page", displayName: "Paged" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_page", sessionId: "ses_page" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_page", sessionId: "ses_other" })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_page",
       sessions: [{ sessionId: "ses_page" }, { sessionId: "ses_other" }],
@@ -991,6 +1021,7 @@ describe("sqlite workspace authority", () => {
   test("session message sync atomically rejects an older event ordinal", async () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_ordinal", displayName: "Ordinal" })
+    await registerPrivateSession({ authority, auth: owner, workspaceId: "ws_ordinal", sessionId: "ses_ordinal" })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_ordinal",
       sessions: [{ sessionId: "ses_ordinal" }],
@@ -1021,6 +1052,20 @@ describe("sqlite workspace authority", () => {
     const authority = memoryAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_batch_a", displayName: "A" })
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_batch_b", displayName: "B" })
+    await registerPrivateSession({
+      authority,
+      auth: owner,
+      workspaceId: "ws_batch_b",
+      sessionId: "ses_conflict",
+      title: "Conflict",
+    })
+    await registerPrivateSession({
+      authority,
+      auth: owner,
+      workspaceId: "ws_batch_a",
+      sessionId: "ses_should_rollback",
+      title: "Original",
+    })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_batch_b",
       sessions: [{ sessionId: "ses_conflict", title: "Conflict" }],
@@ -1032,13 +1077,21 @@ describe("sqlite workspace authority", () => {
         { sessionId: "ses_should_rollback", title: "Transient" },
         { sessionId: "ses_conflict", title: "Conflict" },
       ],
-    })).rejects.toThrow("Session not found")
-    expect(await authority.listSessions(owner, { workspaceId: "ws_batch_a" })).toEqual([])
+    })).rejects.toMatchObject({ status: 403 })
+    expect(await authority.resolveSession(owner, { sessionId: "ses_should_rollback" }))
+      .toMatchObject({ title: "Original" })
   })
 
   test("rolls back visibility tombstones when message deletion fails", async () => {
     const { authority, database } = fileAuthority()
     await authority.createCloudWorkspace(owner, { workspaceId: "ws_delete_rollback", displayName: "Delete" })
+    await registerPrivateSession({
+      authority,
+      auth: owner,
+      workspaceId: "ws_delete_rollback",
+      sessionId: "ses_delete_rollback",
+      title: "Keep",
+    })
     await authority.upsertSessionVisibility(owner, {
       workspaceId: "ws_delete_rollback",
       sessions: [{ sessionId: "ses_delete_rollback", title: "Keep" }],

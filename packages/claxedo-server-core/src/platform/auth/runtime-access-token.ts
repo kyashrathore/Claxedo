@@ -67,6 +67,12 @@ type RuntimeAccessTokenSignerBaseInput = {
   orgId: string
   workspaceId: string
   hostId: string
+  principalKind: "user" | "service"
+  actorId: string
+  actorKind: "human" | "agent"
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
   role: RelayRole
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
@@ -239,7 +245,6 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
       .setProtectedHeader({ alg, kid })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(input.subject)
       .setIssuedAt(issuedAt)
       .setExpirationTime(issuedAt + ttl)
       .setJti(jti)

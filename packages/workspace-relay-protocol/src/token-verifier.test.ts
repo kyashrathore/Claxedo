@@ -113,7 +113,7 @@ describe("HttpTokenVerifier", () => {
 
     await expect(verifier.verify("tok")).rejects.toMatchObject({
       code: "verifier_unreachable",
-      status: 401,
+      status: 503,
     })
   })
 
@@ -130,6 +130,7 @@ describe("HttpTokenVerifier", () => {
 
     await expect(verifier.verify("tok")).rejects.toMatchObject({
       code: "verifier_unreachable",
+      status: 503,
     })
   })
 
@@ -144,7 +145,7 @@ describe("HttpTokenVerifier", () => {
     })
   })
 
-  test("preserves 403 and normalizes 500 verifier rejections", async () => {
+  test("preserves 403 rejection and classifies a 500 as verifier unavailability", async () => {
     const forbidden = createHttpTokenVerifier({
       endpoint: "https://verify.example/v",
       fetch: asFetch(async () => new Response("forbidden", { status: 403 })),
@@ -159,8 +160,8 @@ describe("HttpTokenVerifier", () => {
       fetch: asFetch(async () => new Response("oops", { status: 500 })),
     })
     await expect(failed.verify("tok")).rejects.toMatchObject({
-      code: "verifier_rejected",
-      status: 401,
+      code: "verifier_unavailable",
+      status: 503,
     })
   })
 

@@ -560,7 +560,7 @@ const accountTokenIt = configIt({
       Effect.succeed(
         Option.some({
           id: AccountID.make("account-1"),
-          email: "user@example.com",
+          user_id: "user-1",
           url: "https://control.example.com",
           active_org_id: OrgID.make("org-1"),
         }),
@@ -570,7 +570,7 @@ const accountTokenIt = configIt({
         Option.some({
           account: {
             id: AccountID.make("account-1"),
-            email: "user@example.com",
+            user_id: "user-1",
             url: "https://control.example.com",
             active_org_id: OrgID.make("org-1"),
           },

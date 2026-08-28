@@ -64,7 +64,7 @@ export function workspaceShareRoutes(
         return c.json(await requireAuthority(services).grantWorkspaceShare(auth, {
           workspaceId: c.req.param("id"),
           role: body.role,
-          ...target,
+          target: body.target,
         }))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -89,7 +89,7 @@ export function workspaceShareRoutes(
       try {
         return c.json(await requireAuthority(services).revokeWorkspaceShare(auth, {
           workspaceId: c.req.param("id"),
-          ...target,
+          ...(body.grantId ? { grantId: body.grantId } : { target: body.target! }),
         }))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -98,7 +98,10 @@ export function workspaceShareRoutes(
     })
 }
 
-function shareTargetError(code: "workspace_share_target_required" | "workspace_share_target_ambiguous", message: string) {
+function shareTargetError(
+  code: "workspace_share_target_required" | "workspace_share_target_ambiguous" | "workspace_share_target_invalid",
+  message: string,
+) {
   return { error: apiError(code, message) }
 }
 

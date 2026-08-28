@@ -500,6 +500,10 @@ export default defineSchema({
     workspace_id: v.optional(v.id("workspaces")),
     workspace_public_id: v.optional(v.string()),
     host_id: v.string(),
+    principal_kind: v.union(v.literal("user"), v.literal("service")),
+    actor_id: v.string(),
+    actor_kind: v.union(v.literal("human"), v.literal("agent")),
+    role: workspaceRole,
     minted_for_user_id: v.optional(v.id("users")),
     minted_for_subject: v.optional(v.string()),
     principal_kind: v.optional(v.union(v.literal("user"), v.literal("service"))),
@@ -1895,6 +1899,46 @@ export default defineSchema({
    * no expiry is neither replayable nor collectable, which is the latent bug in
    * the in-memory version (a hung request wedged its key permanently).
    */
+  service_installations: defineTable({
+    environment_id: v.string(),
+    deployment_id: v.string(),
+    service_id: v.union(v.literal("workgraph"), v.literal("documents")),
+    protocol_version: v.literal("claxedo.service.v1"),
+    schema_version: v.number(),
+    lifecycle_state: v.union(v.literal("installed_disabled"), v.literal("enabled")),
+    binding_name: v.union(v.literal("WORKGRAPH_SERVICE"), v.literal("DOCUMENTS_SERVICE")),
+    entrypoint: v.string(),
+    binding_provenance: v.string(),
+    probe_status: v.optional(v.union(v.literal("ready"), v.literal("unhealthy"))),
+    probe_checked_at: v.optional(v.string()),
+    service_build_id: v.optional(v.string()),
+    revision: v.number(),
+    last_operation_id: v.string(),
+    updated_at: v.string(),
+  })
+    .index("by_deployment_service", ["environment_id", "deployment_id", "service_id"])
+    .index("by_deployment_state", ["environment_id", "deployment_id", "lifecycle_state", "service_id"]),
+
+  service_installation_audit: defineTable({
+    environment_id: v.string(),
+    deployment_id: v.string(),
+    operation_id: v.string(),
+    operation_intent: v.string(),
+    service_id: v.union(v.literal("workgraph"), v.literal("documents")),
+    action: v.union(
+      v.literal("register_disabled"),
+      v.literal("record_probe"),
+      v.literal("enable"),
+      v.literal("disable"),
+      v.literal("uninstall"),
+    ),
+    from_revision: v.optional(v.number()),
+    to_revision: v.optional(v.number()),
+    occurred_at: v.string(),
+  })
+    .index("by_deployment_operation", ["environment_id", "deployment_id", "operation_id"])
+    .index("by_deployment_time", ["environment_id", "deployment_id", "occurred_at", "operation_id"]),
+
   control_idempotency: defineTable({
     cache_key: v.string(),
     /** Payload binding: same key + different payload is a conflict, never a replay. */

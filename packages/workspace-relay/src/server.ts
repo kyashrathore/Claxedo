@@ -70,7 +70,9 @@ export type WorkspaceRelayAuditEvent = {
     | "host_tunnel.disconnected"
   result: "allow" | "deny"
   reason?: string
-  subject?: string
+  actorId?: string
+  actorKind?: "human" | "agent"
+  principalKind?: "user" | "service"
   role?: RelayRole
   workspaceId?: string
   hostId?: string
@@ -949,7 +951,9 @@ async function deny(options: WorkspaceRelayOptions, input: {
     action: "relay.request.denied",
     result: "deny",
     reason: input.code,
-    subject: input.claims?.sub,
+    actorId: input.claims?.actor_id,
+    actorKind: input.claims?.actor_kind,
+    principalKind: input.claims?.principal_kind,
     ...(input.claims ? { role: input.claims.role } : {}),
     workspaceId: input.claims?.workspace_id,
     hostId: input.claims?.host_id,
@@ -1058,7 +1062,9 @@ export async function authorizeWorkspaceRelayRequest(
     await span("audit", async () => await audit(options, {
       action: "relay.request.accepted",
       result: "allow",
-      subject: claims.sub,
+      actorId: claims.actor_id,
+      actorKind: claims.actor_kind,
+      principalKind: claims.principal_kind,
       role: claims.role,
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,

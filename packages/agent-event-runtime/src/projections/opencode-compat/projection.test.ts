@@ -11,6 +11,29 @@ function makeProjection() {
 }
 
 describe("createOpencodeCompatProjection", () => {
+  test("preserves authoritative central identity on session-info compatibility events", () => {
+    expect(makeProjection().ingest({
+      type: "session-info",
+      title: "Pi session",
+      updatedAt: "2026-06-16T00:00:00.000Z",
+      parentID: "parent-session-1",
+      sessionRef: "central:session-1",
+      host: "central",
+      workspaceID: "workspace-1",
+    })[0]?.payload).toMatchObject({
+      type: "session.updated",
+      properties: {
+        info: {
+          id: "session-1",
+          parentID: "parent-session-1",
+          sessionRef: "central:session-1",
+          host: "central",
+          workspaceID: "workspace-1",
+        },
+      },
+    })
+  })
+
   test("preserves exact usage categories and the active message identity", () => {
     const projection = makeProjection()
 

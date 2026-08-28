@@ -1,4 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceShareTarget } from "@claxedo/server-core/platform/auth/authority"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireAllowed, requireExecutor } from "./executor"

@@ -236,12 +236,26 @@ function lossyCompatDiagnostic(ctx: CompatContext, eventType: string, message: s
   }))
 }
 
-function buildSession(input: { id: string; directory: string; title: string; created: number; updated: number }) {
+function buildSession(input: {
+  id: string
+  directory: string
+  title: string
+  created: number
+  updated: number
+  parentID?: string
+  sessionRef?: string
+  host?: "central" | "workspace"
+  workspaceID?: string
+}) {
   return {
     id: input.id,
     slug: input.id,
     projectID: input.directory,
     directory: input.directory,
+    ...(input.parentID ? { parentID: input.parentID } : {}),
+    ...(input.sessionRef ? { sessionRef: input.sessionRef } : {}),
+    ...(input.host ? { host: input.host } : {}),
+    ...(input.workspaceID ? { workspaceID: input.workspaceID } : {}),
     title: input.title,
     version: "local",
     time: { created: input.created, updated: input.updated },
@@ -1288,6 +1302,9 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         created: time,
         updated: time,
         ...(chunk.parentID ? { parentID: chunk.parentID } : {}),
+        ...(chunk.sessionRef ? { sessionRef: chunk.sessionRef } : {}),
+        ...(chunk.host ? { host: chunk.host } : {}),
+        ...(chunk.workspaceID ? { workspaceID: chunk.workspaceID } : {}),
       })))]
     }
 

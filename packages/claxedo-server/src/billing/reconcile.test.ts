@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { cancelDeletedOrgSubscriptions, reconcileBillingState, runScheduledBillingReconciliation } from "./reconcile"
-import type { BillingStore } from "./store"
+import type { BillingStore } from "./store-contract"
 import { POLAR_SWEEP_TIMEOUT_MS, type PolarClientLike } from "./routes"
 
 /**

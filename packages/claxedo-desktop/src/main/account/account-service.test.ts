@@ -1,41 +1,71 @@
 import { describe, expect, test } from "bun:test"
-import { createAccountService, type AccountState, type RefreshOutcome } from "./account-service"
-import { createCredentialStore } from "./credential-store"
-import type { CredentialStore, TokenSet } from "./credential-store"
-import { REDIRECT_PATH } from "./oauth-flow"
-import type { OAuthSeams } from "./oauth-flow"
 
-/**
- * What main does with the credential once it has one.
- *
- * The claims worth holding are all about what does NOT come back out: no token
- * on any return path, no renderer-chosen url, no retry loop against a revoked
- * session. Each is a line someone could add in good faith while making a
- * feature work.
- */
+import {
+  DesktopAuthDescriptorError,
+  type BoundDesktopCredential,
+  type DesktopCredentialBinding,
+} from "./auth-descriptor"
+import { createAccountService } from "./account-service"
+import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
+import type { DesktopNativeAuth } from "./desktop-native-auth"
 
-const CONFIG = {
-  authorizeUrl: "https://accounts.example.com/oauth/authorize",
-  tokenUrl: "https://accounts.example.com/oauth/token",
-  clientId: "client_desktop",
-  scope: "openid",
-  timeoutMs: 1_000,
+const BINDING: DesktopCredentialBinding = {
+  kind: "desktop",
+  tokenKind: "access-token",
+  adapter: "better-auth",
+  deploymentId: "dep_1",
+  configurationVersion: "config_1",
+  issuer: "https://core.example/api/auth",
+  flow: "authorization-code-pkce",
+  tokenEndpointOrigin: "https://core.example",
+  controlPlaneOrigin: "https://core.example",
+  id: "desktop_1",
+  resource: "https://core.example/api/claxedo",
+  scopes: ["openid", "offline_access"],
 }
 
-const TOKENS: TokenSet = { accessToken: "at_1", refreshToken: "rt_1", expiresAt: 10_000 }
+const CREDENTIAL: BoundDesktopCredential = {
+  binding: BINDING,
+  tokens: { accessToken: "at_1", refreshToken: "rt_1", expiresAt: 10_000 },
+}
 
-function memoryStore(initial?: TokenSet) {
-  let held = initial
-  const store: CredentialStore & { held: () => TokenSet | undefined } = {
-    available: () => ({ usable: true }),
-    save: (tokens) => {
-      held = tokens
+function memoryStore(initial?: BoundDesktopCredential) {
+  let held: StoredDesktopCredential | undefined = initial
+    ? { ...initial, revision: "r1", persistenceState: "active" }
+    : undefined
+  let revision = 1
+  const rejected: string[] = []
+  const store: CredentialStore & { held(): StoredDesktopCredential | undefined; rejected: string[] } = {
+    available: () => ({ usable: true, backend: "keychain", detail: "protected" }),
+    save(next, expected) {
+      if (expected === null && held) throw new CredentialStoreConflict()
+      if (typeof expected === "string" && held?.revision !== expected) throw new CredentialStoreConflict()
+      held = { ...next, revision: `r${++revision}`, persistenceState: "active" }
+      return held
     },
     load: () => held,
+    beginRevocation(expected) {
+      if (held?.revision !== expected || held.persistenceState !== "active") throw new CredentialStoreConflict()
+      const nextRevision = `r${++revision}`
+      held = { ...held, revision: nextRevision, persistenceState: "revocation-pending" }
+      return nextRevision
+    },
+    completeRevocation(expected) {
+      if (held?.revision !== expected) return false
+      held = undefined
+      return true
+    },
+    reject(expected, reason) {
+      if (held?.revision === expected) {
+        held = undefined
+        rejected.push(reason)
+      }
+    },
     clear: () => {
       held = undefined
     },
     held: () => held,
+    rejected,
   }
   return store
 }
@@ -99,62 +129,174 @@ function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(ove
       callback?.(`${REDIRECT_PATH}?code=c&state=${new URL(authorizeUrl).searchParams.get("state")}`)
       return await result
     },
+    revoke: async () => {
+      revokes++
+      return { state: "confirmed" }
+    },
+    ...overrides,
   }
+  return { auth, validates: () => validates, refreshes: () => refreshes, revokes: () => revokes }
 }
 
-describe("run", () => {
-  test("builds the request from the table and attaches the credential", async () => {
-    const { api, requests, store } = service({ store: memoryStore(TOKENS) })
-    api.restore()
+function harness(
+  input: {
+    store?: ReturnType<typeof memoryStore>
+    auth?: ReturnType<typeof authHarness>
+    now?: number
+    fetch?: Parameters<typeof createAccountService>[0]["fetch"]
+  } = {},
+) {
+  const store = input.store ?? memoryStore()
+  const selectedAuth = input.auth ?? authHarness()
+  const requests: Array<{ url: string; init: Parameters<Parameters<typeof createAccountService>[0]["fetch"]>[1] }> = []
+  const service = createAccountService({
+    auth: selectedAuth.auth,
+    store,
+    now: () => input.now ?? 1_000,
+    fetch:
+      input.fetch ??
+      (async (url, init) => {
+        requests.push({ url, init })
+        return Response.json({ ok: true })
+      }),
+  })
+  return { service, store, auth: selectedAuth, requests }
+}
 
-    await api.run("workspace.checkpoints.list", { id: "ws_1" })
+describe("bound desktop account lifecycle", () => {
+  test("validates on restore and again before every API use, then uses only the bound core", async () => {
+    const h = harness({ store: memoryStore(CREDENTIAL) })
+    await h.service.restore()
 
-    expect(requests[0]).toMatchObject({
-      url: "https://control.test/api/workspace/ws_1/checkpoints",
-      method: "GET",
-      headers: { authorization: "Bearer at_1" },
-    })
-    expect(store.held()).toEqual(TOKENS)
+    expect(await h.service.run("account.get")).toEqual({ ok: true })
+    expect(h.auth.validates()).toBe(2)
+    expect(h.requests[0]?.url).toBe("https://core.example/api/claxedo/bootstrap")
+    expect(h.requests[0]?.init.headers.authorization).toBe("Bearer at_1")
+    expect(JSON.stringify(h.service.state())).not.toContain("at_1")
+    expect(JSON.stringify(h.service.state())).not.toContain("rt_1")
   })
 
-  test("returns decoded data, never the response or the token", async () => {
-    // Handing back a Response would hand back the headers, and one of them is
-    // the single thing this whole design withholds.
-    const { api } = service({ store: memoryStore(TOKENS) })
-    api.restore()
+  test("quarantines exact stored revision and refuses requests after binding drift", async () => {
+    const selectedAuth = authHarness({
+      validate: async () => {
+        throw new DesktopAuthDescriptorError("credential_binding_mismatch", "configuration changed")
+      },
+    })
+    const h = harness({ store: memoryStore(CREDENTIAL), auth: selectedAuth })
 
-    const result = await api.run("account.get")
+    await h.service.restore()
+    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    expect(h.store.held()).toBeUndefined()
+    expect(h.store.rejected).toEqual(["configuration changed"])
+    expect(h.requests).toEqual([])
+  })
+
+  test("does not adopt a credential while the fresh descriptor is expired or unavailable", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: authHarness({
+        validate: async () => {
+          throw new DesktopAuthDescriptorError("expired_descriptor", "expired")
+        },
+      }),
+    })
+
+    await h.service.restore()
+    expect(h.service.state()).toMatchObject({ status: "unavailable" })
+    expect(h.store.held()).toBeDefined()
+    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+  })
+
+  test("serializes refresh and compare-and-swap replaces the complete binding plus tokens", async () => {
+    const selectedAuth = authHarness()
+    const h = harness({
+      store: memoryStore({ ...CREDENTIAL, tokens: { ...CREDENTIAL.tokens, expiresAt: 1_001 } }),
+      auth: selectedAuth,
+      now: 1_000,
+    })
+    await h.service.restore()
+
+    await Promise.all([h.service.run("account.get"), h.service.run("account.mode")])
+    expect(selectedAuth.refreshes()).toBe(1)
+    expect(h.store.held()).toMatchObject({
+      binding: BINDING,
+      tokens: { accessToken: "at_2", refreshToken: "rt_2" },
+    })
+  })
+
+  test("makes a durable pending record unusable before remote logout and surfaces uncertainty tokenlessly", async () => {
+    let pendingDuringRevoke = false
+    const store = memoryStore(CREDENTIAL)
+    const h = harness({
+      store,
+      auth: authHarness({
+        revoke: async () => {
+          pendingDuringRevoke = store.held()?.persistenceState === "revocation-pending"
+          return { state: "uncertain", detail: "offline" }
+        },
+      }),
+    })
+    await h.service.restore()
+
+    await h.service.signOut()
+    expect(pendingDuringRevoke).toBe(true)
+    expect(h.service.state()).toEqual({ status: "unsigned", remoteRevocation: "uncertain", detail: "offline" })
+    expect(h.store.held()?.persistenceState).toBe("revocation-pending")
+    expect(JSON.stringify(h.service.state())).not.toContain("rt_1")
+  })
+
+  test("retries a crash-surviving revocation intent on restore and deletes it only after confirmation", async () => {
+    const store = memoryStore(CREDENTIAL)
+    const first = harness({
+      store,
+      auth: authHarness({ revoke: async () => ({ state: "uncertain", detail: "offline" }) }),
+    })
+    await first.service.restore()
+    await first.service.signOut()
+    expect(store.held()?.persistenceState).toBe("revocation-pending")
+
+    const restarted = harness({ store })
+    await restarted.service.restore()
+    expect(restarted.service.state()).toEqual({ status: "unsigned", remoteRevocation: "confirmed" })
+    expect(store.held()).toBeUndefined()
+  })
+
+  test("does not let sign-in silently replace an uncertain retryable revocation intent", async () => {
+    let revocations = 0
+    const store = memoryStore(CREDENTIAL)
+    const selectedAuth = authHarness({
+      revoke: async () => {
+        revocations++
+        return revocations < 3 ? { state: "uncertain", detail: "offline" } : { state: "confirmed" }
+      },
+    })
+    const h = harness({ store, auth: selectedAuth })
+    await h.service.restore()
+    await h.service.signOut()
+
+    expect(await h.service.signIn()).toMatchObject({ ok: false, detail: expect.stringContaining("retryable intent") })
+    expect(store.held()?.persistenceState).toBe("revocation-pending")
+    expect(h.service.state()).toEqual({ status: "unsigned", remoteRevocation: "uncertain", detail: "offline" })
+
+    expect(await h.service.signIn()).toEqual({ ok: true })
+    expect(store.held()).toMatchObject({ persistenceState: "active", binding: BINDING })
+    expect(revocations).toBe(3)
+  })
+
+  test("sign-in persists the descriptor-bound credential but returns no tokens", async () => {
+    const h = harness()
+    const result = await h.service.signIn()
 
     expect(result).toEqual({ ok: true })
-    expect(result).not.toBeInstanceOf(Response)
+    expect(h.store.held()).toMatchObject(CREDENTIAL)
     expect(JSON.stringify(result)).not.toContain("at_1")
+    expect(JSON.stringify(result)).not.toContain("rt_1")
   })
 
-  test("refuses an operation the table does not name", async () => {
-    const { api, requests } = service({ store: memoryStore(TOKENS) })
-    api.restore()
-
-    await expect(api.run("hostedFetch" as never, { url: "https://evil.test" })).rejects.toThrow(/no hosted operation/)
-    expect(requests).toEqual([])
-  })
-
-  test("refuses before making a request when not signed in", async () => {
-    const { api, requests } = service()
-
-    await expect(api.run("account.get")).rejects.toThrow(/not signed in/)
-    expect(requests).toEqual([])
-  })
-
-  test("signs out on a 401 rather than retrying", async () => {
-    // A retry loop against a revoked token is a signed-out desktop hammering
-    // the control plane while showing the user nothing.
-    let calls = 0
-    const { api, store } = service({
-      store: memoryStore(TOKENS),
-      fetch: async () => {
-        calls++
-        return new Response("", { status: 401 })
-      },
+  test("a concurrent sign-in waits for the durable logout boundary before replacing the credential", async () => {
+    let finish!: () => void
+    const remote = new Promise<void>((resolve) => {
+      finish = resolve
     })
     api.restore()
 
@@ -416,77 +558,27 @@ describe("restart", () => {
           decryptString: (encrypted) => encrypted.toString().replace(/^enc:/, ""),
           getSelectedStorageBackend: () => "unknown",
         },
-        file: {
-          read: () => contents,
-          write: (next) => {
-            contents = next
-          },
-          clear: () => {
-            contents = undefined
-          },
-        },
-        platform: "darwin",
-      }),
-    }
-  }
-
-  test("restores through a real store after the access token expired, and renews", async () => {
-    // The path a user actually walks: sign in, close the laptop overnight,
-    // reopen it. Every boot before this found nothing on disk, because `load`
-    // had deleted the record — refresh token included — the first time it read
-    // it past `expiresAt`.
-    const disk = diskStore()
-    disk.store.save(TOKENS)
-
-    const { api, requests } = service({
-      store: disk.store,
-      now: 50_000,
-      refresh: async (token) => ({
-        ok: true,
-        tokens: { accessToken: "at_2", refreshToken: token, expiresAt: 60_000 },
       }),
     })
+    await h.service.restore()
 
-    expect(api.restore()).toMatchObject({ status: "signed" })
-    await expect(api.run("account.get")).resolves.toEqual({ ok: true })
-    expect(requests[0]!.headers.authorization).toBe("Bearer at_2")
-    expect(disk.contents()).toBeDefined()
+    const logout = h.service.signOut()
+    const signIn = h.service.signIn()
+    finish()
+    await Promise.all([logout, signIn])
+
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+    expect(h.store.held()).toMatchObject(CREDENTIAL)
   })
 
-  test("stays signed out when the stored credential cannot be renewed", async () => {
-    const disk = diskStore()
-    disk.store.save({ accessToken: "at", expiresAt: 10_000 })
-
-    const { api } = service({ store: disk.store, now: 50_000, refresh: async () => ({ ok: true, tokens: TOKENS }) })
-
-    expect(api.restore()).toEqual({ status: "unsigned" })
-    expect(disk.contents()).toBeUndefined()
-  })
-})
-
-describe("restore", () => {
-  test("adopts a stored credential at boot", async () => {
-    const { api } = service({ store: memoryStore(TOKENS) })
-
-    expect(api.restore()).toMatchObject({ status: "signed" })
-  })
-
-  test("stays unsigned when the store has nothing", () => {
-    expect(service().api.restore()).toEqual({ status: "unsigned" })
-  })
-
-  test("reports unavailable secure storage without adopting or deleting a credential", () => {
-    const store = memoryStore(TOKENS)
-    let loads = 0
-    store.available = () => ({
-      usable: false,
-      reason: "no-secure-storage",
-      detail: "the OS credential store is locked",
+  test("a 401 ends the session without refresh-and-retry", async () => {
+    const selectedAuth = authHarness()
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: selectedAuth,
+      fetch: async () => new Response("", { status: 401 }),
     })
-    store.load = () => {
-      loads++
-      return undefined
-    }
+    await h.service.restore()
 
     expect(service({ store }).api.restore()).toEqual({
       status: "unavailable",

@@ -75,7 +75,9 @@ describe("control-plane relay provider", () => {
       principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       role: "editor",
       ttlMs: 60_000,
@@ -98,7 +100,9 @@ describe("control-plane relay provider", () => {
       principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       role: "editor",
       ttlMs: 60_000,
@@ -137,19 +141,19 @@ describe("control-plane relay provider", () => {
     }
 
     // In-bounds requests are honored exactly.
-    await provider.mintRuntimeAccessToken({ ...base, ttlMs: 20 * 60_000 })
+    await provider.mintRuntimeAccessToken({ ...runtimeBase, ttlMs: 20 * 60_000 })
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({ ttlSeconds: 20 * 60 }))
-    await provider.mintHostTunnelToken({ ...base, ttlMs: 5 * 60_000 })
+    await provider.mintHostTunnelToken({ ...hostBase, ttlMs: 5 * 60_000 })
     expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({ ttlSeconds: 5 * 60 }))
 
     // Out-of-bounds requests are clamped to the signer bounds.
-    await provider.mintRuntimeAccessToken({ ...base, ttlMs: 7 * 24 * 60 * 60_000 })
+    await provider.mintRuntimeAccessToken({ ...runtimeBase, ttlMs: 7 * 24 * 60 * 60_000 })
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({ ttlSeconds: 60 * 60 }))
-    await provider.mintHostTunnelToken({ ...base, ttlMs: 1 })
+    await provider.mintHostTunnelToken({ ...hostBase, ttlMs: 1 })
     expect(hostTunnelTokenSigner).toHaveBeenLastCalledWith(expect.objectContaining({ ttlSeconds: 60 }))
 
     // Invalid requests fall back to the signer's own default (no ttlSeconds).
-    await provider.mintRuntimeAccessToken({ ...base, ttlMs: Number.NaN })
+    await provider.mintRuntimeAccessToken({ ...runtimeBase, ttlMs: Number.NaN })
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith(expect.not.objectContaining({ ttlSeconds: expect.anything() }))
   })
 
@@ -182,7 +186,9 @@ describe("control-plane relay provider", () => {
       principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       role: "viewer",
       ttlMs: 60_000,
@@ -220,7 +226,9 @@ describe("control-plane relay provider", () => {
       principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       role: "viewer",
       ttlMs: 60_000,

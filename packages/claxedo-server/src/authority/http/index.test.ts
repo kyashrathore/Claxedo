@@ -13,6 +13,11 @@ const signedAuth = {
   user: { subject: "user_1", tokenIdentifier: "issuer|user_1", issuer: "issuer" },
 }
 
+const canonicalUsersMe = () => vi.fn(async () => ({
+  actor_id: "actor_user_1",
+  actor_kind: "human" as const,
+}))
+
 function stubFetch(fetch: unknown) {
   globalThis.fetch = fetch as typeof globalThis.fetch
 }
@@ -621,6 +626,7 @@ describe("control plane HTTP protocol", () => {
       return { allowed: true, role: "owner", workspace: { workspace_id: "ws_1" } }
     })
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace,
       upsertSessionVisibility: vi.fn(async () => undefined),
     } as never

@@ -5,7 +5,7 @@ import { SessionProjector } from "@opencode-ai/core/session/projector"
 import { Deferred, Effect, Exit, Layer } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
-import { MessageID, PartID, type SessionID } from "../../src/session/schema"
+import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { CrossSpawnSpawner } from "@opencode-ai/core/cross-spawn-spawner"
 import { provideInstance, tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
@@ -228,10 +228,12 @@ describe("Session", () => {
         session.remove(info.id).pipe(Effect.ignore),
       )
       const saved = yield* session.get(created.id)
-      const fork = yield* Effect.acquireRelease(session.fork({ sessionID: created.id }), (info) =>
+      const childID = SessionID.make("ses_preassigned_fork_child")
+      const fork = yield* Effect.acquireRelease(session.fork({ sessionID: created.id, id: childID }), (info) =>
         session.remove(info.id).pipe(Effect.ignore),
       )
 
+      expect(fork.id).toBe(childID)
       expect(saved.metadata).toEqual(meta)
       expect(fork.metadata).toEqual(meta)
       expect(fork.metadata).not.toBe(meta)

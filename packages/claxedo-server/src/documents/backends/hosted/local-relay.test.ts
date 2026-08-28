@@ -221,7 +221,9 @@ describe("hosted local document relay", () => {
       ).toBe(403)
       const wrongAudience = await mintRuntimeAccessToken(
         {
-          subject: "user_1",
+          principalKind: "user",
+          actorId: "user_1",
+          actorKind: "human",
           orgId: "org_1",
           workspaceId: "local_ws",
           hostId: "host_1",
@@ -275,7 +277,9 @@ describe("hosted local document relay", () => {
             mintRuntimeAccessToken: vi.fn(async () => ({
               token: await mintRuntimeAccessToken(
                 {
-                  subject: "user_1",
+                  principalKind: "user",
+                  actorId: "user_1",
+                  actorKind: "human",
                   orgId: "org_1",
                   workspaceId: "local_ws",
                   hostId: "host_1",

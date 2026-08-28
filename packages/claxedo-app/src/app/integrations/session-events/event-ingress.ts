@@ -211,7 +211,13 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
         type: sessionEventType,
         directory,
       })
-      if (input.sessionInventoryLoaded()) {
+      // Central runtime events share the OpenCode compatibility stream for
+      // transcript/title projection, but their `directory` is the runtime's
+      // internal session key rather than a workspace directory. Their signed
+      // control-plane inventory remains authoritative; inserting this frame
+      // into workspace inventory invents a workspace keyed by the session id
+      // and can replace the already-open central surface on a cold route.
+      if (input.sessionInventoryLoaded() && !isCentralLifecycleSession(raw)) {
         const info = { ...raw }
         if (!info.projectID && info.directory) {
           const project = input.projectFor(info.directory)
@@ -621,6 +627,11 @@ function globalSessionEventType(event: RoutableEvent): SessionEventType | undefi
   if (event.type === "session.updated") return "updated"
   if (event.type === "session.deleted") return "deleted"
   return
+}
+
+function isCentralLifecycleSession(input: LifecycleSession) {
+  return input.host === "central" ||
+    (typeof input.sessionRef === "string" && input.sessionRef.startsWith("central:"))
 }
 
 function rec(input: unknown) {

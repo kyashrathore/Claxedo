@@ -224,7 +224,7 @@ describe("the unsigned desktop renderer entry", () => {
     // descriptor omit `getAuthToken` and `authEnabled` resolve false; an
     // argument here would compose hosted contributions in a build with no
     // provider to sign into.
-    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions\s*\}\)/)
+    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions,\s*serviceContributionLoaders\s*\}\)/)
   })
 })
 
@@ -233,14 +233,25 @@ describe("the optional signed activation", () => {
     expect(HOSTED_ACTIVATION.edges.filter(isMatch)).toEqual([])
   })
 
-  test("binds machine remote access through Electron and loads the hosted content set", () => {
+  test("binds machine remote access through Electron without owning optional service renderers", () => {
     const activation = stripComments(read("src/renderer/hosted-contributions.ts"))
     expect(activation).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
-    expect(activation).toContain("hostedContributionLoader()")
+    expect(activation).toContain("contentSurfaces: []")
+    expect(activation).not.toContain("hosted-content-surfaces")
+    expect(activation).not.toContain("documents-content-surfaces")
     expect(activation).not.toContain("configureHttpMachineRemoteAccess")
     expect(activation).not.toContain("configureApiRuntime")
     expect(activation).not.toContain("configureAuthSession")
-    expect(hostedModules(HOSTED_ACTIVATION.modules).length).toBeGreaterThan(0)
+    expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([])
+  })
+
+  test("keeps WorkGraph and Documents in separate catalog-driven modules", () => {
+    const workgraph = stripComments(read("src/renderer/workgraph-contributions.ts"))
+    const documents = stripComments(read("src/renderer/documents-contributions.ts"))
+    expect(workgraph).toContain("hosted-content-surfaces")
+    expect(workgraph).not.toContain("documents-content-surfaces")
+    expect(documents).toContain("documents-content-surfaces")
+    expect(documents).not.toContain("hosted-content-surfaces")
   })
 })
 

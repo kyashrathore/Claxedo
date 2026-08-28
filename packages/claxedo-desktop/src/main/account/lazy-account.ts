@@ -1,9 +1,5 @@
 import type { AccountState } from "./account-service"
-import {
-  registerAccountIpc,
-  type AccountIpcService,
-  type AccountIpcTarget,
-} from "./account-ipc"
+import { registerAccountIpc, type AccountIpcService, type AccountIpcTarget } from "./account-ipc"
 import type { AccountConfigEnv } from "./account-config"
 import type { AccountAssemblyInput, createAccountAssembly } from "./index"
 import { hasAccountCredentialRecord } from "./marker"
@@ -45,12 +41,13 @@ export function setupLazyAccount(input: {
   const ensureLoaded = () => {
     loading ??= Promise.resolve(input.adapterReady)
       .then(load)
-      .then((module) => {
+      .then(async (module) => {
         assembly = module.createAccountAssembly({
           ...(input.env ? { env: input.env } : {}),
           ...(input.onError ? { onError: input.onError } : {}),
           ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
         })
+        await assembly.ready
         return assembly
       })
     return loading
@@ -68,9 +65,7 @@ export function setupLazyAccount(input: {
   }
 
   registerAccountIpc({ ipcMain: input.ipcMain, service })
-  const ready = hasAccountCredentialRecord(input.userDataDir)
-    ? ensureLoaded().then(() => undefined)
-    : Promise.resolve()
+  const ready = hasAccountCredentialRecord(input.userDataDir) ? ensureLoaded().then(() => undefined) : Promise.resolve()
 
   return {
     ready,

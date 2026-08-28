@@ -27,7 +27,6 @@ import { Hono, type Context } from "hono"
 import { z } from "zod"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthConfig,
   controlPlaneAuthErrorBody,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -158,7 +157,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         // Signed only. There is no unsigned path to machine enrollment: a
         // loopback caller with no account has no account to enroll a machine
         // against.
-        { ...options, authConfig: options.authConfig ?? controlPlaneAuthConfig(), requireSigned: true as const },
+        { ...options, requireSigned: true as const },
         services,
       )
       if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)

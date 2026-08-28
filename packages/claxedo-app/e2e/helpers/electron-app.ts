@@ -25,7 +25,13 @@
  * rather than trusting the env manipulation to have worked.
  */
 
-import { _electron as electron, expect, type BrowserContext, type ElectronApplication, type Page } from "@playwright/test"
+import {
+  _electron as electron,
+  expect,
+  type BrowserContext,
+  type ElectronApplication,
+  type Page,
+} from "@playwright/test"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
 import * as path from "node:path"
@@ -76,7 +82,10 @@ async function discoverPackagedBinary(): Promise<string[]> {
     if (!archDir.endsWith("-unpacked")) continue
     for (const entry of await fs.readdir(abs).catch(() => [] as string[])) {
       const candidate = path.join(abs, entry)
-      const isFile = await fs.stat(candidate).then((stat) => stat.isFile()).catch(() => false)
+      const isFile = await fs
+        .stat(candidate)
+        .then((stat) => stat.isFile())
+        .catch(() => false)
       if (isPackagedApplicationEntry(process.platform, entry, isFile)) {
         found.push(candidate)
       }
@@ -99,7 +108,13 @@ async function resolvePackagedBinary(): Promise<string> {
     ? [process.env.CLAXEDO_E2E_DESKTOP_BIN]
     : await discoverPackagedBinary()
   for (const candidate of candidates) {
-    if (await fs.stat(candidate).then(() => true).catch(() => false)) return candidate
+    if (
+      await fs
+        .stat(candidate)
+        .then(() => true)
+        .catch(() => false)
+    )
+      return candidate
   }
   throw new Error(
     "GATING: no packaged desktop binary found. Build one first (measured 2026-08-06: 42s, 403 MB):\n" +
@@ -108,7 +123,6 @@ async function resolvePackagedBinary(): Promise<string> {
       "Or set CLAXEDO_E2E_DESKTOP_BIN to the executable.",
   )
 }
-
 
 /**
  * Resolve the main local shell window (`index.local.html`), ignoring the boot splash.
@@ -129,7 +143,10 @@ async function waitForShellWindow(app: ElectronApplication, timeoutMs: number, a
   }
   throw new Error(
     "GATING: the packaged app never opened its local shell window (index.local.html). Windows seen: " +
-      (app.windows().map((w) => w.url()).join(", ") || "(none)") +
+      (app
+        .windows()
+        .map((w) => w.url())
+        .join(", ") || "(none)") +
       "\nMain-process output:\n" +
       (appLog.join("").trim() || "(none)"),
   )
@@ -164,72 +181,80 @@ export type PackagedApp = {
  * injected except the scripted model endpoint (`env`), which is the one thing
  * the plan permits to be fake.
  */
-export async function launchPackagedApp(input: {
-  /** Extra env for the app — the scripted model endpoint goes here. */
-  env?: Record<string, string>
-  /** Overrides the default 60s first-window wait; the embedded server boots first. */
-  timeoutMs?: number
-  /**
-   * ADDED for plan Phase 4 (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`,
-   * `desktop-signed-*` lanes) — additive and optional, so every Phase-2 call site above is
-   * byte-for-byte unaffected. Points the packaged app at an EXTERNAL server instead of its
-   * own embedded one: the two signed lanes run against a real `hosted-node` control plane +
-   * local JWKS issuer spawned OUTSIDE this process (`signed-browser-relay-fixture.mjs`), not
-   * the app's own boot-time server.
-   *
-   * `CLAXEDO_SERVER_URL` (the env var `setupServerConnection` in `main/index.ts` reads) is
-   * NOT the seam for this: that branch is gated `if (!IS_PACKAGED)` — a `--dir` build always
-   * has `IS_PACKAGED = !process.defaultApp === true`, so the env var is silently ignored on
-   * every packaged binary (verified by reading `main/index.ts:411-424` — the env var lives
-   * inside the `!IS_PACKAGED` block, and nothing below it re-reads `process.env` at all). The
-   * ONLY seam a packaged build honours is `getSavedServerUrl()` (`main/server.ts`), which
-   * reads `store.get("defaultServerUrl")` from an `electron-store` file the MAIN process opens
-   * during `initialize()`, before any renderer or IPC channel exists — so it must be written
-   * to disk before `electron.launch()`, not pushed in afterward via `window.api.storeSet` the
-   * way Phase 2's `openWorkspaceProject` seeds the project list.
-   *
-   * `electron-store`'s default `cwd` is `app.getPath('userData')`, which `--user-data-dir`
-   * (below) pins to this run's own `userDataDir` — so the file lands at
-   * `<userDataDir>/claxedo.settings.json`, matching the SAME path the plan's Phase 2 section
-   * names as the real, previously-observed persistence location
-   * (`~/Library/Application Support/@claxedo/desktop/claxedo.settings.json`) rooted at THIS
-   * run's scratch profile instead of a shared one.
-   *
-   * Not paired with a "make the health check unconditionally pass" affordance: if
-   * `serverUrl` isn't reachable yet, `setupServerConnection` -> `checkHealthOrAskRetry` opens
-   * a NATIVE `dialog.showMessageBox` prompt that Playwright's Electron driver cannot click,
-   * hanging the launch until `timeoutMs`. Callers MUST await their external server's own
-   * readiness signal (the fixture's stdout JSON line) before calling this.
-   */
-  serverUrl?: string
-  /**
-   * ADDED 2026-08-06 for boot-error-detection coverage
-   * (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`,
-   * `desktop-unsigned-embedded.spec.ts`'s boot-observer scenario). Additive
-   * and optional — every existing call site above is byte-for-byte unaffected
-   * when this is omitted.
-   *
-   * Invoked with the launched app's `BrowserContext` immediately after
-   * `electron.launch()` resolves, before EITHER window (splash or shell) is
-   * queried. This is the only point at which `context().addInitScript(...)`
-   * can still land before the shell's first navigation: this function's own
-   * `waitForShellWindow()` below blocks until `index.local.html` has already
-   * loaded, so a `Page`-level `addInitScript` call on the page it returns is
-   * provably too late — the app's real bootstrap fetches and any boot-time
-   * toast have already run by then. `boot-observer.ts`'s `installBootObserver`
-   * is the intended caller (it now accepts `Page | BrowserContext` for
-   * exactly this reason). Kept as an opt-in hook rather than baking a
-   * specific observer in here so this file does not have to know what a
-   * caller wants to observe.
-   */
-  beforeShellWindow?: (context: BrowserContext) => Promise<void>
-  /** Reuse a scratch profile across a restart. The caller remains its owner. */
-  userDataDir?: string
-  /** Keep the profile after close so a later launch can prove restoration. */
-  preserveUserDataDir?: boolean
-} = {}): Promise<PackagedApp> {
+export async function launchPackagedApp(
+  input: {
+    /** Extra env for the app — the scripted model endpoint goes here. */
+    env?: Record<string, string>
+    /** Overrides the default 60s first-window wait; the embedded server boots first. */
+    timeoutMs?: number
+    /**
+     * ADDED for plan Phase 4 (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`,
+     * `desktop-signed-*` lanes) — additive and optional, so every Phase-2 call site above is
+     * byte-for-byte unaffected. Points the packaged app at an EXTERNAL server instead of its
+     * own embedded one: the two signed lanes run against a real `hosted-node` control plane +
+     * local JWKS issuer spawned OUTSIDE this process (`signed-browser-relay-fixture.mjs`), not
+     * the app's own boot-time server.
+     *
+     * `CLAXEDO_SERVER_URL` (the env var `setupServerConnection` in `main/index.ts` reads) is
+     * NOT the seam for this: that branch is gated `if (!IS_PACKAGED)` — a `--dir` build always
+     * has `IS_PACKAGED = !process.defaultApp === true`, so the env var is silently ignored on
+     * every packaged binary (verified by reading `main/index.ts:411-424` — the env var lives
+     * inside the `!IS_PACKAGED` block, and nothing below it re-reads `process.env` at all). The
+     * ONLY seam a packaged build honours is `getSavedServerUrl()` (`main/server.ts`), which
+     * reads `store.get("defaultServerUrl")` from an `electron-store` file the MAIN process opens
+     * during `initialize()`, before any renderer or IPC channel exists — so it must be written
+     * to disk before `electron.launch()`, not pushed in afterward via `window.api.storeSet` the
+     * way Phase 2's `openWorkspaceProject` seeds the project list.
+     *
+     * `electron-store`'s default `cwd` is `app.getPath('userData')`, which `--user-data-dir`
+     * (below) pins to this run's own `userDataDir` — so the file lands at
+     * `<userDataDir>/claxedo.settings.json`, matching the SAME path the plan's Phase 2 section
+     * names as the real, previously-observed persistence location
+     * (`~/Library/Application Support/@claxedo/desktop/claxedo.settings.json`) rooted at THIS
+     * run's scratch profile instead of a shared one.
+     *
+     * Not paired with a "make the health check unconditionally pass" affordance: if
+     * `serverUrl` isn't reachable yet, `setupServerConnection` -> `checkHealthOrAskRetry` opens
+     * a NATIVE `dialog.showMessageBox` prompt that Playwright's Electron driver cannot click,
+     * hanging the launch until `timeoutMs`. Callers MUST await their external server's own
+     * readiness signal (the fixture's stdout JSON line) before calling this.
+     */
+    serverUrl?: string
+    /**
+     * ADDED 2026-08-06 for boot-error-detection coverage
+     * (`docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`,
+     * `desktop-unsigned-embedded.spec.ts`'s boot-observer scenario). Additive
+     * and optional — every existing call site above is byte-for-byte unaffected
+     * when this is omitted.
+     *
+     * Invoked with the launched app's `BrowserContext` immediately after
+     * `electron.launch()` resolves, before EITHER window (splash or shell) is
+     * queried. This is the only point at which `context().addInitScript(...)`
+     * can still land before the shell's first navigation: this function's own
+     * `waitForShellWindow()` below blocks until `index.local.html` has already
+     * loaded, so a `Page`-level `addInitScript` call on the page it returns is
+     * provably too late — the app's real bootstrap fetches and any boot-time
+     * toast have already run by then. `boot-observer.ts`'s `installBootObserver`
+     * is the intended caller (it now accepts `Page | BrowserContext` for
+     * exactly this reason). Kept as an opt-in hook rather than baking a
+     * specific observer in here so this file does not have to know what a
+     * caller wants to observe.
+     */
+    beforeShellWindow?: (context: BrowserContext) => Promise<void>
+    /** Reuse a scratch profile across a restart. The caller remains its owner. */
+    userDataDir?: string
+    /** Keep the profile after close so a later launch can prove restoration. */
+    preserveUserDataDir?: boolean
+    /**
+     * Test-only trust for the local HTTPS auth/core fixture. The production app
+     * has no certificate bypass: Node trusts this one CA file and Chromium pins
+     * this one SPKI only in the spawned e2e process.
+     */
+    testOnlyHttpsTrust?: { caPath: string; certificateSpki: string }
+  } = {},
+): Promise<PackagedApp> {
   const executablePath = await resolvePackagedBinary()
-  const userDataDir = input.userDataDir ?? await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-desktop-"))
+  const userDataDir = input.userDataDir ?? (await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-e2e-desktop-")))
   await fs.mkdir(userDataDir, { recursive: true })
   if (input.serverUrl) {
     // Written BEFORE `electron.launch()` below — see the parameter doc above for why this
@@ -299,11 +324,17 @@ export async function launchPackagedApp(input: {
   }
   env.CLAXEDO_DESKTOP_USER_DATA_DIR = userDataDir
   env.CLAXEDO_DATA_DIR = dataDir
+  if (input.testOnlyHttpsTrust) env.NODE_EXTRA_CA_CERTS = input.testOnlyHttpsTrust.caPath
   Object.assign(env, input.env ?? {})
 
   const app = await electron.launch({
     executablePath,
-    args: [`--user-data-dir=${userDataDir}`],
+    args: [
+      `--user-data-dir=${userDataDir}`,
+      ...(input.testOnlyHttpsTrust
+        ? [`--ignore-certificate-errors-spki-list=${input.testOnlyHttpsTrust.certificateSpki}`]
+        : []),
+    ],
     env,
     timeout: input.timeoutMs ?? 60_000,
   })
@@ -367,10 +398,7 @@ export async function launchPackagedApp(input: {
     ])
     if (!closed) {
       app.process().kill("SIGTERM")
-      await Promise.race([
-        graceful,
-        new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
-      ])
+      await Promise.race([graceful, new Promise<void>((resolve) => setTimeout(resolve, 5_000))])
       if (app.process().exitCode === null) app.process().kill("SIGKILL")
     }
     if (!input.preserveUserDataDir) {
@@ -400,9 +428,7 @@ export async function launchPackagedApp(input: {
 export async function expectServerReachable(packaged: PackagedApp, timeoutMs = 45_000) {
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const hit = packaged.serverResponses.find((url) =>
-      /\/api\/claxedo\/|\/api\/control\/|\/session/.test(url),
-    )
+    const hit = packaged.serverResponses.find((url) => /\/api\/claxedo\/|\/api\/control\/|\/session/.test(url))
     if (hit) return hit
     // A PLAIN timer, not `page.waitForTimeout`: if the app quits mid-poll the
     // page-bound wait throws "Target page, context or browser has been closed"
@@ -415,6 +441,7 @@ export async function expectServerReachable(packaged: PackagedApp, timeoutMs = 4
       "This is the signature of the API base resolving to the document origin (file://) — see " +
       "api.ts's sameOriginForRemoteLocalBackend protocol guard. Observed responses: " +
       (packaged.serverResponses.slice(0, 5).join(", ") || "(none)") +
-      "\n--- app log (tail) ---\n" + packaged.appLog.join("").split("\n").slice(-25).join("\n"),
+      "\n--- app log (tail) ---\n" +
+      packaged.appLog.join("").split("\n").slice(-25).join("\n"),
   )
 }

@@ -37,11 +37,55 @@ afterEach(() => {
  * that makes it safe.
  */
 describe("Convex workspace share revoke policy", () => {
+  test("grants only to canonical users in the workspace organization", async () => {
+    const t = convexTest(schema, modules)
+    const ids = await t.run(async (ctx) => {
+      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
+      const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token" }) as never)
+      const workspaceOrgId = await ctx.db.insert("orgs", stamped({ name: "Workspace org", owner_user_id: ownerId }) as never)
+      const otherOrgId = await ctx.db.insert("orgs", stamped({ name: "Other org" }) as never)
+      await ctx.db.insert("org_memberships", stamped({
+        org_id: otherOrgId,
+        user_id: targetId,
+        role: "member",
+      }) as never)
+      await ctx.db.insert("workspaces", stamped({
+        workspace_id: "ws_scoped",
+        org_id: workspaceOrgId,
+        owner_user_id: ownerId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Scoped",
+      }) as never)
+      return { targetId, workspaceOrgId }
+    })
+
+    const asOwner = t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
+    await expect(asOwner.mutation(api.workspaceShares.grant, {
+      workspace_id: "ws_scoped",
+      role: "editor",
+      target_user_id: ids.targetId,
+    })).rejects.toThrow("Workspace share target belongs to another organization")
+
+    await t.run(async (ctx) => {
+      await ctx.db.insert("org_memberships", stamped({
+        org_id: ids.workspaceOrgId,
+        user_id: ids.targetId,
+        role: "member",
+      }) as never)
+    })
+    await expect(asOwner.mutation(api.workspaceShares.grant, {
+      workspace_id: "ws_scoped",
+      role: "editor",
+      target_user_id: ids.targetId,
+    })).resolves.toBeDefined()
+  })
+
   test("revoking a user share revokes only that user's active Runtime Access Tokens", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
 
-    await t.run(async (ctx) => {
+    const targetId = await t.run(async (ctx) => {
       const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token" }) as never)
       const otherId = await ctx.db.insert("users", stamped({ token_identifier: "other_token" }) as never)
@@ -96,14 +140,14 @@ describe("Convex workspace share revoke policy", () => {
         expires_at: 999_999,
         created_at: 1,
       } as never)
-
+      return targetId
     })
 
     const asOwner = t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
     await expect(asOwner.mutation(api.workspaceShares.revoke, {
       workspace_id: "ws_1",
-      granted_to_token_identifier: "target_token",
-    } as never)).resolves.toEqual({
+      target_user_id: targetId,
+    })).resolves.toEqual({
       revoked: true,
       runtime_tokens_revoked: 1,
     })

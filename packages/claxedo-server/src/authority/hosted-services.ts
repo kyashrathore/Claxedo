@@ -1,56 +1,31 @@
 /**
- * Worker-safe composition of the hosted control-plane services.
+ * Retained Clerk + Convex hosted composition.
  *
- * This deliberately does NOT import `authority/services.ts` values
- * (`createHostedControlPlaneServices` / `defaultControlPlaneCredentials`),
- * because `defaultControlPlaneCredentials` lazily imports the local credential
- * registry (which pulls `fs`) — even an unused lazy chunk would land in the
- * Worker bundle. Instead it assembles a `ControlPlaneServices` object from only
- * Worker-safe pieces and re-implements the fail-closed validation.
- *
- * The Worker fails closed if any required hosted dependency is missing: signed
- * auth, workspace authority, relay URL, resolver token, and a token signing key.
- *
- * Storage-backend composition (authority + lease store + user-hosted resolver)
- * is delegated to the Worker adapter in `adapters/worker/hosted-compose.ts`, so
- * this module names no storage backend.
+ * Provider-neutral construction lives in `provider-neutral-hosted-services`.
+ * This wrapper is the only production composition edge that selects the
+ * retained adapters, so importing a Better Auth + D1 entrypoint never pulls
+ * Clerk or Convex into that artifact.
  */
 
-import { clerkAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { clerkAuthAdapter } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { createClerkNativeSessionAuthPort } from "@claxedo/server-core/platform/auth/cli-session-token"
+
+import { createConvexLeaseStore } from "../sandbox/stores/convex"
 import {
-  hostTunnelTokenSigner,
-  RuntimeAccessTokenConfigurationError,
-  runtimeAccessTokenAlgorithm,
-  runtimeAccessTokenSigner,
-} from "@claxedo/server-core/platform/auth/runtime-access-token"
-import { workerTelemetry } from "../platform/auth/worker-telemetry"
-import { workerCredentials } from "../credentials/worker/index"
-import type { ControlPlaneServices, ControlPlaneTelemetry } from "./services"
-import type { ProjectionStore } from "./projection-store"
-import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
-import { createFetchBridgeSandboxDriver } from "@claxedo/sandbox-manager/drivers/fetch-bridge"
-import { createCloudflareSandboxDriver } from "@claxedo/sandbox-manager/drivers/cloudflare"
-import { createDaytonaSandboxDriver } from "@claxedo/sandbox-manager/drivers/daytona"
-import { createExeSandboxDriver } from "@claxedo/sandbox-manager/drivers/exe"
-import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
-import type { HostedDeviceAuthProvider } from "../routes/hosted/device-auth"
-import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
-import { sandboxRelayTargetLookup } from "./sandbox-relay-target"
-import type { RelayTargetLookup } from "../deployments/shared-routes/internal-relay"
-import type { SandboxDriver, SandboxEgressUnenforcedEvent } from "@claxedo/sandbox-manager"
-import type { CliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
-import {
-  HostedWorkerCompositionError,
-  clean,
   composeWorkerAuthority,
   composeWorkerCliSessionTokenRegistry,
-  composeWorkerSandboxManager,
   composeWorkerUserHostedResolver,
-  positiveInteger,
-  required,
-  workspaceRuntimePort,
-  type HostedWorkerEnv,
 } from "./adapters/worker/hosted-compose"
+import { lifecycleMinutes, sandboxDriver } from "./adapters/worker/retained-sandbox-driver"
+import {
+  composeProviderNeutralHostedControlPlane,
+  hostedDeviceAuthProvider,
+  required,
+  type HostedControlPlane,
+  type HostedWorkerEnv,
+} from "./provider-neutral-hosted-services"
+import { convexAuthorityUrlFromEnv } from "./adapters/convex/workspace-authority"
+import { HostedWorkerCompositionError } from "./composition-error"
 
 export { HostedWorkerCompositionError, type HostedWorkerEnv } from "./adapters/worker/hosted-compose"
 
@@ -372,66 +347,21 @@ export type HostedControlPlane = {
   env: HostedWorkerEnv
 }
 
+/** Preserve the existing public factory as the retained Clerk + Convex adapter wrapper. */
 export function composeHostedControlPlane(env: HostedWorkerEnv): HostedControlPlane {
-  const auth = clerkAuthAdapter({ env })
-  if (!auth.config.enabled) {
+  const selected = clerkAuthAdapter({ env })
+  if (!selected.config.enabled) {
     throw new HostedWorkerCompositionError(
       "hosted_auth_disabled",
-      `Hosted Worker control plane requires enabled signed auth: ${auth.config.reason}`,
+      `Hosted Worker control plane requires enabled signed auth: ${selected.config.reason}`,
     )
   }
 
-  // Fails closed when the hosted storage endpoint is missing.
   const authority = composeWorkerAuthority(env)
-  const limits = safetyLimits(env)
-  const relayUrl = required(
-    env.CLAXEDO_WORKSPACE_RELAY_URL,
-    "hosted_dependency_missing",
-    "a workspace relay URL (CLAXEDO_WORKSPACE_RELAY_URL)",
-  )
-  const resolverToken = required(
-    env.CLAXEDO_RELAY_RESOLVER_TOKEN,
-    "hosted_dependency_missing",
-    "a relay resolver token (CLAXEDO_RELAY_RESOLVER_TOKEN)",
-  )
-  if (clean(env.CLAXEDO_RUNTIME_ADMIN_TOKEN) === resolverToken) {
-    throw new HostedWorkerCompositionError(
-      "hosted_token_reuse",
-      "CLAXEDO_RUNTIME_ADMIN_TOKEN must not reuse CLAXEDO_RELAY_RESOLVER_TOKEN — admin and resolver are distinct trust domains",
-    )
-  }
-  required(
-    env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
-    "hosted_dependency_missing",
-    "a token signing private key (CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)",
-  )
-  required(
-    env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
-    "hosted_dependency_missing",
-    "the current token verification key (CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)",
-  )
-  try {
-    runtimeAccessTokenAlgorithm(env)
-  } catch (error) {
-    if (!(error instanceof RuntimeAccessTokenConfigurationError)) throw error
-    throw new HostedWorkerCompositionError(error.code, error.message)
-  }
-
-  // Telemetry is composed BEFORE the sandbox manager: composing the manager is
-  // what emits the boot-time "this driver cannot contain egress" event, and a
-  // sink that does not exist yet cannot receive it.
-  const telemetry = workerTelemetry(env)
-  const manager = sandboxManager(env, telemetry)
-  const homeRegion = defaultHomeRegion(env)
-  const relayUrls = relayEndpointsFromEnv(env, relayUrl)
-  const runtimeAccessSigner = runtimeAccessTokenSigner(env)
-  const hostTunnelSigner = hostTunnelTokenSigner(env)
-  const userHostedResolver = composeWorkerUserHostedResolver(env)
-  const relayTargetLookup = sandboxRelayTargetLookup({
-    ...(manager ? { sandboxManager: manager } : {}),
-    userHostedResolver,
-    telemetry,
+  const cliSessionTokenRegistry = composeWorkerCliSessionTokenRegistry(env)
+  const auth = clerkAuthAdapter({
     env,
+    native: createClerkNativeSessionAuthPort({ env, registry: cliSessionTokenRegistry }),
   })
   const relayProvider = createControlPlaneRelayProvider({
     relay: {
@@ -457,34 +387,14 @@ export function composeHostedControlPlane(env: HostedWorkerEnv): HostedControlPl
     projectionStore: unusedStore<ProjectionStore>("Session projection store"),
     durableSessionLog: unusedStore<DurableSessionLog>("Durable session log"),
     auth,
-    credentials: workerCredentials(env),
-    extensionPolicy: {},
-    relay: {
-      relayUrl,
-      relayUrls,
-      provider: relayProvider,
-      resolverToken,
-      runtimeAccessTokenSigner: runtimeAccessSigner,
-      hostTunnelTokenSigner: hostTunnelSigner,
-    },
-    sandbox: {
-      ...(manager ? { sandboxManager: manager } : {}),
-    },
-    telemetry,
-    localExecution: { enabled: false },
-    defaultHomeRegion: homeRegion,
     authority,
-  }
-
-  const deviceAuth = deviceAuthProvider(env)
-  return {
-    services,
-    relayUrl,
-    resolverToken,
-    safetyLimits: limits,
-    relayTargetLookup,
-    cliSessionTokenRegistry: composeWorkerCliSessionTokenRegistry(env),
-    ...(deviceAuth ? { deviceAuthProvider: deviceAuth } : {}),
-    env,
-  }
+    privateSessionAuthority: authority,
+    runtimeSessionAuthority: authority,
+    cliSessionTokenRegistry,
+    userHostedResolver: composeWorkerUserHostedResolver(env),
+    ...(driver
+      ? { sandbox: { driver, leaseStore: createConvexLeaseStore({ url: storageUrl, token: serviceToken }) } }
+      : {}),
+    ...(deviceAuthProvider ? { deviceAuthProvider } : {}),
+  })
 }

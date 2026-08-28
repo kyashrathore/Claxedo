@@ -139,6 +139,64 @@ function claxedoEventSource() {
 }
 
 describe("global sync event ingress", () => {
+  test("keeps central runtime session-info updates out of workspace inventory", () => {
+    const globalEvents = eventSource()
+    const applied: unknown[] = []
+    const sessionTitles = titleWriter()
+    const dispose = createGlobalSyncEventIngress({
+      globalEvents: globalEvents.source,
+      claxedoEvents: undefined,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => true,
+      applySessionEvent: (info, type) => applied.push({ info, type }),
+      sessionTitles: sessionTitles.writer,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+
+    globalEvents.emit({
+      name: "session-1",
+      details: {
+        type: "session.updated",
+        properties: {
+          info: {
+            id: "session-1",
+            slug: "session-1",
+            projectID: "session-1",
+            directory: "session-1",
+            title: "Pi session",
+            version: "local",
+            time: { created: 1, updated: 2 },
+            sessionRef: "central:session-1",
+            host: "central",
+            workspaceID: "workspace-1",
+          },
+        },
+      },
+    })
+
+    expect(applied).toEqual([])
+    expect(sessionTitles.canonical).toEqual([{
+      sessionId: "session-1",
+      directory: "session-1",
+      workspaceId: "workspace-1",
+      title: "Pi session",
+      updatedAt: 2,
+    }])
+    dispose()
+  })
+
   test("maps a signed runtime project id to the inventory project before inserting a created rail row", () => {
     queryClient.clear()
     const globalEvents = eventSource()

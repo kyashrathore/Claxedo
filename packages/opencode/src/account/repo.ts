@@ -1,5 +1,5 @@
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { eq } from "drizzle-orm"
+import { and, eq, isNotNull, sql } from "drizzle-orm"
 import { serviceUse } from "@opencode-ai/core/effect/service-use"
 import { Effect, Layer, Option, Schema, Context } from "effect"
 
@@ -7,6 +7,7 @@ import { Database } from "@opencode-ai/core/database/database"
 import { AccountStateTable, AccountTable } from "@opencode-ai/core/account/sql"
 import { AccessToken, AccountID, AccountRepoError, Info, OrgID, RefreshToken } from "./schema"
 import { normalizeServerUrl } from "./url"
+import type { PersistedNativeCredentialBinding } from "./native-auth"
 
 export type AccountRow = (typeof AccountTable)["$inferSelect"]
 
@@ -22,16 +23,18 @@ export interface Interface {
     accountID: AccountID
     accessToken: AccessToken
     refreshToken: RefreshToken
+    expectedRefreshToken: RefreshToken
     expiry: Option.Option<number>
   }) => Effect.Effect<void, AccountRepoError>
   readonly persistAccount: (input: {
     id: AccountID
-    email: string
+    userId: string
     url: string
     accessToken: AccessToken
     refreshToken: RefreshToken
     expiry: number
     orgID: Option.Option<OrgID>
+    binding: PersistedNativeCredentialBinding
   }) => Effect.Effect<void, AccountRepoError>
 }
 
@@ -46,13 +49,15 @@ const layer = Layer.effect(
     const decode = Schema.decodeUnknownSync(Info)
 
     const query = <A, E>(effect: Effect.Effect<A, E>) =>
-      effect.pipe(Effect.mapError((cause) => new AccountRepoError({ message: "Database operation failed", cause })))
+      effect.pipe(Effect.mapError((cause) => cause instanceof AccountRepoError
+        ? cause
+        : new AccountRepoError({ message: "Database operation failed", cause })))
 
     const current = Effect.fnUntraced(function* () {
       const state = yield* db.select().from(AccountStateTable).where(eq(AccountStateTable.id, ACCOUNT_STATE_ID)).get()
       if (!state?.active_account_id) return
       const account = yield* db.select().from(AccountTable).where(eq(AccountTable.id, state.active_account_id)).get()
-      if (!account) return
+      if (!account?.user_id) return
       return { ...account, active_org_id: state.active_org_id ?? null }
     })
 
@@ -77,6 +82,7 @@ const layer = Layer.effect(
         db
           .select()
           .from(AccountTable)
+          .where(isNotNull(AccountTable.user_id))
           .all()
           .pipe(Effect.map((rows) => rows.map((row: AccountRow) => decode({ ...row, active_org_id: null })))),
       ),
@@ -109,15 +115,28 @@ const layer = Layer.effect(
 
     const persistToken = Effect.fn("AccountRepo.persistToken")((input) =>
       query(
-        db
-          .update(AccountTable)
-          .set({
-            access_token: input.accessToken,
-            refresh_token: input.refreshToken,
-            token_expiry: Option.getOrNull(input.expiry),
-          })
-          .where(eq(AccountTable.id, input.accountID))
-          .run(),
+        db.transaction((tx) =>
+          Effect.gen(function* () {
+            yield* tx
+              .update(AccountTable)
+              .set({
+                access_token: input.accessToken,
+                refresh_token: input.refreshToken,
+                token_expiry: Option.getOrNull(input.expiry),
+              })
+              .where(and(
+                eq(AccountTable.id, input.accountID),
+                eq(AccountTable.refresh_token, input.expectedRefreshToken),
+              ))
+              .run()
+            const result = yield* tx.get<{ changes: number }>(sql`select changes() as changes`)
+            if (result?.changes !== 1) {
+              return yield* Effect.fail(new AccountRepoError({
+                message: "Native credential changed during refresh; refusing to overwrite the current generation",
+              }))
+            }
+          }),
+        ),
       ).pipe(Effect.asVoid),
     )
 
@@ -131,20 +150,42 @@ const layer = Layer.effect(
               .insert(AccountTable)
               .values({
                 id: input.id,
-                email: input.email,
+                email: null,
+                user_id: input.userId,
                 url,
                 access_token: input.accessToken,
                 refresh_token: input.refreshToken,
                 token_expiry: input.expiry,
+                auth_adapter: input.binding.adapter,
+                auth_deployment_id: input.binding.deploymentId,
+                auth_configuration_version: input.binding.configurationVersion,
+                auth_issuer: input.binding.issuer,
+                auth_token_endpoint_origin: input.binding.tokenEndpointOrigin,
+                auth_control_plane_origin: input.binding.controlPlaneOrigin,
+                auth_client_id: input.binding.clientId,
+                auth_resource: input.binding.resource,
+                auth_scopes: JSON.stringify(input.binding.scopes),
+                auth_token_kind: input.binding.tokenKind,
               })
               .onConflictDoUpdate({
                 target: AccountTable.id,
                 set: {
-                  email: input.email,
+                  email: null,
+                  user_id: input.userId,
                   url,
                   access_token: input.accessToken,
                   refresh_token: input.refreshToken,
                   token_expiry: input.expiry,
+                  auth_adapter: input.binding.adapter,
+                  auth_deployment_id: input.binding.deploymentId,
+                  auth_configuration_version: input.binding.configurationVersion,
+                  auth_issuer: input.binding.issuer,
+                  auth_token_endpoint_origin: input.binding.tokenEndpointOrigin,
+                  auth_control_plane_origin: input.binding.controlPlaneOrigin,
+                  auth_client_id: input.binding.clientId,
+                  auth_resource: input.binding.resource,
+                  auth_scopes: JSON.stringify(input.binding.scopes),
+                  auth_token_kind: input.binding.tokenKind,
                 },
               })
               .run()

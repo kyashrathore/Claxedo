@@ -18,8 +18,8 @@ const accountHost = (url: string) => {
   }
 }
 
-const accountLabel = (item: Pick<OrgOption, "accountEmail" | "accountUrl">) =>
-  `${item.accountEmail}  ${accountHost(item.accountUrl)}`
+const accountLabel = (item: Pick<OrgOption, "accountUserId" | "accountUrl">) =>
+  `${item.accountUserId}  ${accountHost(item.accountUrl)}`
 
 export function DialogConsoleOrg() {
   const sdk = useSDK()
@@ -85,7 +85,7 @@ export function DialogConsoleOrg() {
         category: accountLabel(item),
         categoryView: (
           <box flexDirection="row" gap={2}>
-            <text fg={theme.accent}>{item.accountEmail}</text>
+            <text fg={theme.accent}>{item.accountUserId}</text>
             <text fg={theme.textMuted}>{accountHost(item.accountUrl)}</text>
           </box>
         ),

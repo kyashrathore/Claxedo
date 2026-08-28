@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { createServer, type Server } from "node:http"
 import { once } from "node:events"
 import { exportJWK, generateKeyPair, SignJWT } from "jose"
@@ -7,15 +7,18 @@ import {
   ControlPlaneAuthError,
   bearerToken,
   betterAuthAdapter,
-  clerkAuthAdapter,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   customVerifierAuthAdapter,
   devAuthAdapter,
   localOnlyAuthAdapter,
+} from "@claxedo/server-core/platform/auth/auth"
+import {
+  clerkAuthAdapter,
+  controlPlaneAuthConfig,
   signedCloudAuthRequested,
   tokenVerifierAsClerk,
-} from "@claxedo/server-core/platform/auth/auth"
+} from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { isCliAccessTokenCandidate } from "@claxedo/server-core/platform/auth/cli-session-token"
 import {
   assertHostedBootRequirements,
   deploymentMode,
@@ -24,11 +27,20 @@ import {
 
 const enabledConfig = {
   enabled: true,
+  adapter: "clerk",
   issuer: "https://clerk.example.test",
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 } as const
 
 const servers: Server[] = []
+
+function untrustedJwt(payload: Record<string, unknown>) {
+  return [
+    Buffer.from(JSON.stringify({ alg: "none", typ: "JWT" })).toString("base64url"),
+    Buffer.from(JSON.stringify(payload)).toString("base64url"),
+    "untrusted-signature",
+  ].join(".")
+}
 
 afterEach(async () => {
   await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
@@ -90,6 +102,7 @@ describe("control plane auth", () => {
     }
     const enabled = {
       enabled: true,
+      adapter: "clerk",
       issuer: "https://clerk.example.test",
       jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
       audience: "convex",
@@ -291,6 +304,71 @@ describe("control plane auth", () => {
     } satisfies Partial<ControlPlaneAuthError>)
   })
 
+  test("keeps retained CLI token routing inside the Clerk adapter", async () => {
+    const providerVerifier = vi.fn(async () => {
+      throw new Error("the provider verifier must not receive a CLI credential")
+    })
+    const candidate = untrustedJwt({ claxedo_token_kind: "claxedo_cli_access" })
+
+    expect(isCliAccessTokenCandidate(candidate)).toBe(true)
+    expect(isCliAccessTokenCandidate(untrustedJwt({ claxedo_token_kind: "claxedo_cli_refresh" }))).toBe(false)
+    expect(isCliAccessTokenCandidate("not-a-jwt")).toBe(false)
+    const adapter = clerkAuthAdapter({
+      env: {
+        CLAXEDO_SIGNED_CLOUD_AUTH: "true",
+        CLERK_JWT_ISSUER: enabledConfig.issuer,
+        CLERK_JWKS_URL: enabledConfig.jwksUrl,
+      },
+      verifier: providerVerifier,
+      authorityConfigured: true,
+    })
+    await expect(controlPlaneAuthContext(new Request("http://localhost", {
+      headers: { authorization: `Bearer ${candidate}` },
+    }), {
+      ...adapter,
+      config: enabledConfig,
+    })).rejects.toMatchObject({ status: 503, code: "auth_verifier_unavailable" })
+    expect(providerVerifier).not.toHaveBeenCalled()
+  })
+
+  test("never routes a CLI-shaped credential around the selected Better Auth verifier", async () => {
+    const providerVerifier = vi.fn(async () => null)
+    const adapter = betterAuthAdapter({
+      issuer: "https://auth.example.test",
+      audience: "https://api.example.test",
+      verifier: providerVerifier,
+    })
+    const candidate = untrustedJwt({ claxedo_token_kind: "claxedo_cli_access" })
+
+    await expect(controlPlaneAuthContext(new Request("https://api.example.test", {
+      headers: { authorization: `Bearer ${candidate}` },
+    }), adapter)).rejects.toMatchObject({ status: 401, code: "invalid_bearer_token" })
+    expect(providerVerifier).toHaveBeenCalledTimes(1)
+    expect(providerVerifier).toHaveBeenCalledWith(candidate)
+  })
+
+  test("preserves verifier rejection versus verifier unavailability", async () => {
+    const request = new Request("https://api.example.test", {
+      headers: { authorization: "Bearer credential" },
+    })
+
+    await expect(controlPlaneAuthContext(request.clone(), {
+      config: { ...enabledConfig, adapter: "custom" },
+      verifier: async () => {
+        throw new ControlPlaneAuthError(401, "invalid_bearer_token", "rejected")
+      },
+    })).rejects.toMatchObject({ status: 401, code: "invalid_bearer_token" })
+
+    await expect(controlPlaneAuthContext(request.clone(), {
+      config: { ...enabledConfig, adapter: "custom" },
+      verifier: async () => {
+        throw new Error("sensitive upstream detail")
+      },
+    })).rejects.toEqual(
+      new ControlPlaneAuthError(503, "auth_verifier_unavailable", "Authentication verifier is unavailable"),
+    )
+  })
+
   test("delegates valid bearer verification to the configured Clerk verifier", async () => {
     await expect(controlPlaneAuthContext(new Request("http://localhost", {
       headers: {
@@ -352,18 +430,20 @@ describe("control plane auth", () => {
       .sign(keys.privateKey)
 
     for (const token of [legacyToken, currentToken]) {
+      const adapter = clerkAuthAdapter({
+        env: {
+          CLAXEDO_SIGNED_CLOUD_AUTH: "true",
+          CLERK_JWT_ISSUER: issuer,
+          CLERK_JWKS_URL: `${issuer}/.well-known/jwks.json`,
+          CLERK_JWT_AUDIENCE: "convex",
+        },
+        authorityConfigured: true,
+      })
       await expect(controlPlaneAuthContext(new Request("http://localhost", {
         headers: {
           Authorization: `Bearer ${token}`,
         },
-      }), {
-        config: {
-          enabled: true,
-          issuer,
-          jwksUrl: `${issuer}/.well-known/jwks.json`,
-          audience: "convex",
-        },
-      })).resolves.toEqual({
+      }), adapter)).resolves.toEqual({
         mode: "signed",
         token,
         user: {

@@ -14,7 +14,8 @@
  */
 
 import { reportPaymentError } from "../platform/telemetry/errors/report"
-import { createBillingStore, type BillingStore } from "./store"
+import { createBillingStore } from "./store"
+import type { BillingStore } from "./store-contract"
 import { customerStateToApplyArgs, type PolarProductConfig } from "./apply-polar-state"
 import {
   polarClientFromEnv,

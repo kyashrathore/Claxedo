@@ -1,0 +1,577 @@
+import { readFile } from "node:fs/promises"
+import { fileURLToPath } from "node:url"
+import { afterEach, describe, expect, test } from "vitest"
+import { Miniflare } from "miniflare"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/platform/auth/authentication"
+
+import { D1WorkspaceAuthority } from "./workspace-authority"
+import {
+  D1HostAccessAuthority,
+  hostEnrollmentHeartbeatPayload,
+  hostEnrollmentPayload,
+  localHostHeartbeatPayload,
+  localHostRegistrationPayload,
+} from "./host-access-authority"
+
+const MIGRATIONS = [
+  "0001_service_installations.sql",
+  "0002_workspace_authority.sql",
+  "0003_private_sessions.sql",
+  "0004_host_access_and_sharing.sql",
+].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
+
+const active: Miniflare[] = []
+
+afterEach(async () => {
+  await Promise.all(active.splice(0).map((instance) => instance.dispose()))
+})
+
+async function setup() {
+  const { database } = await emptyDatabase()
+  for (const path of MIGRATIONS) await applyMigration(database, path)
+  let clock = 1_800_000_000_000
+  let sequence = 0
+  const now = () => clock
+  const workspace = new D1WorkspaceAuthority(database, {
+    deploymentId: "deployment-a",
+    product: { kind: "claxedo-hosted" },
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+  })
+  const hostAccess = new D1HostAccessAuthority(database, {
+    deploymentId: "deployment-a",
+    now,
+    randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+    randomNonce: () => `nonce_${String(++sequence).padStart(4, "0")}`,
+  })
+  return {
+    database,
+    workspace,
+    hostAccess,
+    advance(milliseconds: number) {
+      clock += milliseconds
+    },
+  }
+}
+
+async function emptyDatabase() {
+  const instance = new Miniflare({
+    modules: true,
+    script: "export default { fetch() { return new Response('ok') } }",
+    compatibilityDate: "2025-05-01",
+    d1Databases: ["CONTROL_PLANE_DB"],
+  })
+  active.push(instance)
+  const database = await instance.getD1Database("CONTROL_PLANE_DB")
+  return { database }
+}
+
+async function applyMigration(database: Awaited<ReturnType<Miniflare["getD1Database"]>>, path: string) {
+  const migration = (await readFile(path, "utf8")).replace(/^\s*--.*$/gm, "")
+  for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
+    await database.prepare(statement).run()
+  }
+}
+
+function identity(subject: string): AuthIdentity {
+  return { adapter: "better-auth", issuer: "https://auth.example.test", subject }
+}
+
+async function signed(authority: D1WorkspaceAuthority, subject: string): Promise<SignedControlPlaneAuth> {
+  const applicationIdentity = identity(subject)
+  const result = await authority.ensureApplicationIdentity(applicationIdentity)
+  if (result.state !== "active") throw new Error(`identity did not become active: ${result.state}`)
+  const principal: ControlPlanePrincipal = {
+    userId: result.userId,
+    actorId: result.actorId,
+    actorKind: "human",
+    deploymentId: "deployment-a",
+    sessionId: `auth:${subject}`,
+    authenticatedAt: 1_800_000_000_000,
+    methods: ["oauth:github"],
+    assurance: "single-factor",
+    client: {
+      kind: "browser",
+      tokenKind: "browser-session",
+      id: "browser",
+      resource: "https://api.example.test",
+      scopes: ["openid"],
+      origin: "https://app.example.test",
+    },
+    identity: applicationIdentity,
+  }
+  return {
+    mode: "signed",
+    principal,
+    user: {
+      subject,
+      tokenIdentifier: `${applicationIdentity.issuer}|${subject}`,
+      issuer: applicationIdentity.issuer,
+    },
+  }
+}
+
+async function fixture(input: Awaited<ReturnType<typeof setup>>) {
+  const alice = await signed(input.workspace, "alice")
+  const bob = await signed(input.workspace, "bob")
+  const admin = await signed(input.workspace, "admin")
+  const outsider = await signed(input.workspace, "outsider")
+  await input.workspace.createHostedOrganization(alice, { name: "Acme", orgId: "org_acme" })
+  await input.workspace.addOrganizationMember(alice, {
+    orgId: "org_acme",
+    userId: bob.principal!.userId,
+    role: "member",
+  })
+  await input.workspace.addOrganizationMember(alice, {
+    orgId: "org_acme",
+    userId: admin.principal!.userId,
+    role: "admin",
+  })
+  const local = await input.workspace.createWorkspace(alice, {
+    workspaceId: "ws_local",
+    orgId: "org_acme",
+    displayName: "local",
+    repoUrl: "https://github.com/acme/local.git",
+    backing: "local-worktree",
+    access: "user-hosted",
+  })
+  await input.workspace.createWorkspace(alice, {
+    workspaceId: "ws_cloud",
+    orgId: "org_acme",
+    displayName: "cloud",
+    repoUrl: "https://github.com/acme/cloud.git",
+    backing: "cloud-vm",
+    access: "cloud",
+  })
+  return { alice, bob, admin, outsider, local }
+}
+
+async function hostKey() {
+  const keyPair = await crypto.subtle.generateKey(
+    { name: "ECDSA", namedCurve: "P-256" },
+    true,
+    ["sign", "verify"],
+  )
+  return {
+    publicKey: JSON.stringify(await crypto.subtle.exportKey("jwk", keyPair.publicKey)),
+    async sign(payload: string) {
+      const signature = await crypto.subtle.sign(
+        { name: "ECDSA", hash: "SHA-256" },
+        keyPair.privateKey,
+        new TextEncoder().encode(payload),
+      )
+      return base64Url(new Uint8Array(signature))
+    },
+  }
+}
+
+function base64Url(value: Uint8Array) {
+  return Buffer.from(value).toString("base64url")
+}
+
+describe("D1 host access and workspace sharing authority", () => {
+  test("preserves direct membership data while replacing the legacy table with the grant-aware view", async () => {
+    const { database } = await emptyDatabase()
+    await applyMigration(database, MIGRATIONS[0]!)
+    await applyMigration(database, MIGRATIONS[1]!)
+    await database.batch([
+      database.prepare(`insert into users values ('user-owner', 'active', 1, 1, null, null)`),
+      database.prepare(`insert into users values ('user-member', 'active', 1, 1, null, null)`),
+      database.prepare(`
+        insert into orgs values ('org-upgrade', 'Upgrade', 'team', 'user-owner', null, 1, 1, null)
+      `),
+      database.prepare(`
+        insert into org_memberships values ('org-upgrade', 'user-owner', 'owner', 1, 1, null)
+      `),
+      database.prepare(`
+        insert into org_memberships values ('org-upgrade', 'user-member', 'member', 1, 1, null)
+      `),
+      database.prepare(`
+        insert into projects values ('project-upgrade', 'org-upgrade', 'github.com/acme/upgrade', 'user-owner', 1, 1, null)
+      `),
+      database.prepare(`
+        insert into workspaces values (
+          'workspace-upgrade', 'org-upgrade', 'project-upgrade', 'user-owner',
+          'local-worktree', 'user-hosted', 'Upgrade', null, null, null, null, null, 1, 1, null
+        )
+      `),
+      database.prepare(`
+        insert into workspace_memberships values ('workspace-upgrade', 'user-member', 'editor', 1, 1, null)
+      `),
+    ])
+    await applyMigration(database, MIGRATIONS[2]!)
+    await applyMigration(database, MIGRATIONS[3]!)
+
+    expect(await database.prepare(`
+      select role from workspace_direct_memberships
+      where workspace_id = 'workspace-upgrade' and user_id = 'user-member'
+    `).first()).toEqual({ role: "editor" })
+    expect(await database.prepare(`
+      select role from workspace_memberships
+      where workspace_id = 'workspace-upgrade' and user_id = 'user-member'
+    `).first()).toEqual({ role: "editor" })
+    expect(await database.prepare(`
+      select name from sqlite_master where type = 'index' and name = 'workspace_direct_memberships_by_user'
+    `).first()).toEqual({ name: "workspace_direct_memberships_by_user" })
+  })
+
+  test("binds local host links to tenant scope and consumes every attestation signature once", async () => {
+    const input = await setup()
+    const { alice, admin, outsider } = await fixture(input)
+    const key = await hostKey()
+
+    await expect(input.hostAccess.createLocalHostLinkChallenge(outsider, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).rejects.toMatchObject({ status: 403 })
+    await expect(input.hostAccess.createLocalHostLinkChallenge(alice, {
+      workspaceId: "ws_cloud",
+      hostId: "host-a",
+    })).rejects.toMatchObject({ code: "resource_conflict" })
+
+    const challenge = await input.hostAccess.createLocalHostLinkChallenge(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })
+    const registrationSignature = await key.sign(localHostRegistrationPayload({
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      challengeId: challenge.challenge_id,
+      nonce: challenge.nonce,
+    }))
+    await expect(input.hostAccess.registerLocalHostLink(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-other",
+      publicKey: key.publicKey,
+      challengeId: challenge.challenge_id,
+      signature: registrationSignature,
+    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+    await expect(input.hostAccess.registerLocalHostLink(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      publicKey: key.publicKey,
+      challengeId: challenge.challenge_id,
+      signature: registrationSignature,
+      displayName: "Alice laptop",
+      ttlMs: 10_000,
+    })).resolves.toMatchObject({ host_id: "host-a", workspace_id: "ws_local", paused: false })
+    await expect(input.hostAccess.registerLocalHostLink(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      publicKey: key.publicKey,
+      challengeId: challenge.challenge_id,
+      signature: registrationSignature,
+      ttlMs: 10_000,
+    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+
+    expect(await input.hostAccess.activeLocalHostLink(admin, { workspaceId: "ws_local" }))
+      .toMatchObject({ active: true, host_id: "host-a", display_name: "Alice laptop" })
+    const heartbeatSignature = await key.sign(localHostHeartbeatPayload({
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      ttlMs: 10_000,
+    }))
+    await input.hostAccess.heartbeatLocalHostLink(admin, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      signature: heartbeatSignature,
+      ttlMs: 10_000,
+    })
+    await expect(input.hostAccess.heartbeatLocalHostLink(admin, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      signature: heartbeatSignature,
+      ttlMs: 10_000,
+    })).rejects.toMatchObject({ code: "signature_replayed" })
+    await expect(input.hostAccess.heartbeatLocalHostLink(admin, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      signature: malleateP256Signature(heartbeatSignature),
+      ttlMs: 10_000,
+    })).rejects.toMatchObject({ code: "signature_replayed" })
+
+    await input.hostAccess.pauseLocalHostLink(alice, { workspaceId: "ws_local", paused: true })
+    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+    await input.hostAccess.pauseLocalHostLink(alice, { workspaceId: "ws_local", paused: false })
+    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toMatchObject({ active: true })
+    input.advance(10_001)
+    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+
+    await input.hostAccess.recordRuntimeAccessToken(alice, {
+      jti: "jti-local-host",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(await input.hostAccess.revokeLocalHostLink(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toMatchObject({ revoked: 1, runtime_tokens_revoked: 1 })
+    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-local-host",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    await expect(input.database.prepare(`
+      update local_host_links set org_id = 'org_other' where workspace_id = 'ws_local' and host_id = 'host-a'
+    `).run()).rejects.toThrow(/local host link scope is immutable/)
+
+    const expiredChallenge = await input.hostAccess.createLocalHostLinkChallenge(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-expired",
+    })
+    const expiredSignature = await key.sign(localHostRegistrationPayload({
+      workspaceId: "ws_local",
+      hostId: "host-expired",
+      challengeId: expiredChallenge.challenge_id,
+      nonce: expiredChallenge.nonce,
+    }))
+    input.advance(60_001)
+    await expect(input.hostAccess.registerLocalHostLink(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-expired",
+      publicKey: key.publicKey,
+      challengeId: expiredChallenge.challenge_id,
+      signature: expiredSignature,
+    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+    await input.hostAccess.createLocalHostLinkChallenge(alice, {
+      workspaceId: "ws_local",
+      hostId: "host-next",
+    })
+    expect(await input.database.prepare(`
+      select 1 from host_attestation_challenges where challenge_id = ?
+    `).bind(expiredChallenge.challenge_id).first()).toBeNull()
+  })
+
+  test("enrolls a machine once per canonical owner with expiry, pause, revoke, and replay resistance", async () => {
+    const input = await setup()
+    const { alice, outsider } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-a" })
+    const signature = await key.sign(hostEnrollmentPayload({
+      hostId: "machine-a",
+      requestId: request.request_id,
+      nonce: request.nonce,
+    }))
+    await expect(input.hostAccess.enrollHost(outsider, {
+      hostId: "machine-a",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature,
+    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+    const enrolled = await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-a",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature,
+      displayName: "Laptop",
+      ttlMs: 8_000,
+    })
+    expect(enrolled).toMatchObject({ host_id: "machine-a", display_name: "Laptop" })
+    await expect(input.hostAccess.enrollHost(alice, {
+      hostId: "machine-a",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature,
+    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toMatchObject({ active: true, host_id: "machine-a" })
+
+    const heartbeat = await key.sign(hostEnrollmentHeartbeatPayload({ hostId: "machine-a", ttlMs: 8_000 }))
+    await input.hostAccess.heartbeatHostEnrollment(alice, {
+      hostId: "machine-a",
+      signature: heartbeat,
+      ttlMs: 8_000,
+    })
+    await expect(input.hostAccess.heartbeatHostEnrollment(alice, {
+      hostId: "machine-a",
+      signature: heartbeat,
+      ttlMs: 8_000,
+    })).rejects.toMatchObject({ code: "signature_replayed" })
+
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-a", paused: true })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "paused" })
+    await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-a", paused: false })
+    input.advance(8_001)
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "expired" })
+    await input.hostAccess.recordRuntimeAccessToken(alice, {
+      jti: "jti-machine",
+      workspaceId: "ws_local",
+      hostId: "machine-a",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(await input.hostAccess.revokeHostEnrollment(alice, {
+      hostId: "machine-a",
+    })).toMatchObject({ revoked: 1, runtime_tokens_revoked: 1 })
+    expect(await input.hostAccess.activeHostEnrollment(alice)).toEqual({ active: false, reason: "revoked" })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-machine",
+      workspaceId: "ws_local",
+      hostId: "machine-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    input.advance(10 * 60_000)
+    await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-next" })
+    expect(await input.database.prepare(`
+      select 1 from host_enrollment_requests where request_id = ?
+    `).bind(request.request_id).first()).toBeNull()
+  })
+
+  test("uses canonical share targets and revokes their runtime tokens without crossing tenants", async () => {
+    const input = await setup()
+    const { alice, bob, outsider } = await fixture(input)
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
+    await expect(input.hostAccess.grantWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      role: "editor",
+      target: { kind: "actor", actorId: outsider.principal!.actorId },
+    })).rejects.toMatchObject({ status: 403 })
+
+    const grant = await input.hostAccess.grantWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      role: "editor",
+      target: { kind: "actor", actorId: bob.principal!.actorId },
+    })
+    expect(grant).toMatchObject({ created: true, grantId: expect.any(String) })
+    expect(await input.hostAccess.grantWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      role: "editor",
+      target: { kind: "actor", actorId: bob.principal!.actorId },
+    })).toEqual({ created: false, grantId: grant.grantId })
+    await expect(input.hostAccess.revokeWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      grantId: { id: grant.grantId } as never,
+    })).rejects.toMatchObject({ code: "invalid_input" })
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "editor" })
+    await expect(input.hostAccess.grantWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      role: "admin",
+      target: { kind: "actor", actorId: bob.principal!.actorId },
+    })).rejects.toMatchObject({ code: "resource_conflict" })
+
+    await input.hostAccess.recordRuntimeAccessToken(bob, {
+      jti: "jti-bob",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-bob",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toEqual({ active: true })
+    await expect(input.hostAccess.recordRuntimeAccessToken(bob, {
+      jti: "jti-bob",
+      workspaceId: "ws_local",
+      hostId: "host-other",
+      expiresAt: 1_800_000_100_000,
+    })).rejects.toMatchObject({ code: "resource_conflict" })
+    await expect(input.hostAccess.recordRuntimeAccessTokenForActor({
+      jti: "jti-provider-subject",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      actorId: bob.user.subject,
+      expiresAt: 1_800_000_100_000,
+    })).rejects.toMatchObject({ status: 403 })
+    await input.hostAccess.recordRuntimeAccessTokenForActor({
+      jti: "jti-canonical-service",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      actorId: bob.principal!.actorId,
+      expiresAt: 1_800_000_100_000,
+    })
+
+    expect(await input.hostAccess.revokeWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      grantId: grant.grantId,
+    })).toMatchObject({ revoked: true, runtime_tokens_revoked: 2 })
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-bob",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+
+    const userGrant = await input.hostAccess.grantWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      role: "admin",
+      target: { kind: "user", userId: bob.principal!.userId },
+    })
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "admin" })
+    await input.hostAccess.revokeWorkspaceShare(alice, {
+      workspaceId: "ws_local",
+      grantId: userGrant.grantId,
+    })
+    expect(await input.workspace.openWorkspace(bob, { workspaceId: "ws_local" })).toMatchObject({ role: "viewer" })
+
+    await input.hostAccess.recordRuntimeAccessToken(bob, {
+      jti: "jti-current-authority",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      expiresAt: 1_800_000_100_000,
+    })
+    await input.database.prepare(`
+      update org_memberships set revoked_at = ?, updated_at = ?
+      where org_id = 'org_acme' and user_id = ?
+    `).bind(1_800_000_000_001, 1_800_000_000_001, bob.principal!.userId).run()
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-current-authority",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+
+    await input.hostAccess.recordRuntimeAccessToken(alice, {
+      jti: "jti-alice",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      expiresAt: 1_800_000_100_000,
+    })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-alice",
+      workspaceId: "ws_cloud",
+      hostId: "host-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_mismatch" })
+    await expect(input.hostAccess.revokeRuntimeAccessToken(outsider, {
+      jti: "jti-alice",
+      workspaceId: "ws_local",
+    })).rejects.toMatchObject({ status: 403 })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-alice",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toEqual({ active: true })
+    await input.hostAccess.revokeRuntimeAccessToken(alice, { jti: "jti-alice", workspaceId: "ws_local" })
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-alice",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+
+    await input.hostAccess.recordRuntimeAccessToken(alice, {
+      jti: "jti-expiring",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+      expiresAt: 1_800_000_000_100,
+    })
+    input.advance(101)
+    expect(await input.hostAccess.runtimeAccessTokenActive({
+      jti: "jti-expiring",
+      workspaceId: "ws_local",
+      hostId: "host-a",
+    })).toMatchObject({ active: false, code: "runtime_access_token_expired" })
+
+    await expect(input.database.prepare(`
+      update runtime_access_tokens set workspace_id = 'ws_cloud' where jti = 'jti-alice'
+    `).run()).rejects.toThrow(/runtime access token intent is immutable/)
+  })
+})
+
+function malleateP256Signature(input: string) {
+  const value = Buffer.from(input, "base64url")
+  if (value.byteLength !== 64) throw new Error("expected a raw P-256 signature")
+  const order = BigInt("0xffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551")
+  const s = BigInt(`0x${value.subarray(32).toString("hex")}`)
+  const replacement = (order - s).toString(16).padStart(64, "0")
+  Buffer.from(replacement, "hex").copy(value, 32)
+  return value.toString("base64url")
+}

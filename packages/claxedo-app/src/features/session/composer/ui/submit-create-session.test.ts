@@ -207,6 +207,55 @@ describe("acquireSubmitSessionTarget", () => {
     expect(errors[0]).toBeInstanceOf(Error)
   })
 
+  test("reserves a signed remote session before create and forwards the exact immutable ids", async () => {
+    const order: string[] = []
+    const creates: Array<{ input: Record<string, unknown>; headers?: Record<string, string> }> = []
+    const target = await acquireSessionTarget({
+      replaceSession: true,
+      signedControlPlane: true,
+      workspaceId: "ws_1",
+      reserveManagedSession: async (input) => {
+        order.push("reserve")
+        expect(input).toMatchObject({ workspaceId: "ws_1", kind: "create" })
+        return { operationId: "op_fixed", sessionId: "ses_fixed", workspaceId: "ws_1" }
+      },
+      createSessionClient: () => submitSessionClient({
+        create: async (input, init) => {
+          order.push("create")
+          creates.push({ input, headers: init?.headers })
+          return { data: { id: "ses_fixed" } }
+        },
+      }),
+    })
+
+    expect(target.session).toEqual({ id: "ses_fixed" })
+    expect(order).toEqual(["reserve", "create"])
+    expect(creates).toEqual([{
+      input: {
+        id: "ses_fixed",
+        directory: "/repo/main",
+        agent: "build",
+        model: { providerID: "test", id: "fixture" },
+      },
+      headers: { "x-claxedo-session-registration-operation": "op_fixed" },
+    }])
+  })
+
+  test("fails signed creation before runtime mutation when workspace scope is absent", async () => {
+    let creates = 0
+    await expect(acquireSessionTarget({
+      replaceSession: true,
+      signedControlPlane: true,
+      createSessionClient: () => submitSessionClient({
+        create: async () => {
+          creates += 1
+          return { data: { id: "unexpected" } }
+        },
+      }),
+    })).rejects.toThrow("authoritative workspace id")
+    expect(creates).toBe(0)
+  })
+
   test("preserves signed existing-session fallback without creating", async () => {
     const creates: string[] = []
 

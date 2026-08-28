@@ -209,7 +209,7 @@ export function createHostedConnectionOperationHandler(input: Readonly<{
         if (error instanceof RuntimeAccessTokenVerificationUnavailableError) runtimeKey = undefined
         throw error
       })
-      const result = await input.execute({ ownerUserId: claims.sub, orgId: claims.org_id }, body)
+      const result = await input.execute({ ownerUserId: claims.actor_id, orgId: claims.org_id }, body)
       return Response.json(result)
     } catch (error) {
       const failure = operationFailure(error)
@@ -312,5 +312,4 @@ function bearer(header: string | null) {
   const match = header?.match(/^Bearer\s+(\S+)$/i)
   return match?.[1]
 }
-
 

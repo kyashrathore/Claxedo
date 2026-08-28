@@ -13,7 +13,7 @@
  * See the boundary READMEs for wiring rules.
  */
 
-import { createRemoteJWKSet, jwtVerify, type JWTPayload } from "jose"
+import { createRemoteJWKSet, errors as joseErrors, jwtVerify, type JWTPayload } from "jose"
 
 export type TokenVerifierBaseClaims = {
   iss: string
@@ -26,7 +26,7 @@ export type TokenVerifierBaseClaims = {
   jti: string
 } & Record<string, unknown>
 
-export type RuntimeAccessVerifierClaims = TokenVerifierBaseClaims & {
+export type RuntimeAccessVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
   actor_id?: string
@@ -36,7 +36,7 @@ export type RuntimeAccessVerifierClaims = TokenVerifierBaseClaims & {
   actor_avatar_url?: string
 }
 
-export type RelayHostVerifierClaims = TokenVerifierBaseClaims & {
+export type RelayHostVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
   actor_id?: string
@@ -50,9 +50,9 @@ export type RelayHostVerifierClaims = TokenVerifierBaseClaims & {
 )
 
 export type TokenClaims<TClaims extends Record<string, unknown> = Record<string, unknown>> = {
-  /** Stable subject id. The boundary is responsible for mapping this
-   *  to a domain principal (user, workspace, runtime, etc.). */
-  subject: string
+  /** Provider subject for provider-backed identity verifiers. Runtime and
+   * relay-host tokens instead carry canonical actor/principal claims. */
+  subject?: string
   /** Scopes / capabilities asserted by the issuer. May be empty. */
   scopes: string[]
   /** Full claim payload. Carries the common verifier token contract plus
@@ -132,9 +132,9 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
         })
         if (!res.ok) {
           throw new TokenVerifierError({
-            code: "verifier_rejected",
+            code: res.status === 401 || res.status === 403 ? "verifier_rejected" : "verifier_unavailable",
             message: `Verifier endpoint returned ${res.status}`,
-            status: res.status === 401 || res.status === 403 ? res.status : 401,
+            status: res.status === 401 || res.status === 403 ? res.status : 503,
           })
         }
         const body = (await res.json().catch(() => null)) as
@@ -163,6 +163,7 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
         throw new TokenVerifierError({
           code: "verifier_unreachable",
           message: err instanceof Error ? err.message : String(err),
+          status: 503,
           cause: err,
         })
       } finally {
@@ -216,9 +217,11 @@ export function createClerkTokenVerifier(options: ClerkTokenVerifierOptions): To
         }
       } catch (err) {
         if (err instanceof TokenVerifierError) throw err
+        const unavailable = err instanceof joseErrors.JWKSTimeout || !(err instanceof joseErrors.JOSEError)
         throw new TokenVerifierError({
-          code: "clerk_token_invalid",
-          message: "Clerk session token is invalid",
+          code: unavailable ? "clerk_verifier_unavailable" : "clerk_token_invalid",
+          message: unavailable ? "Clerk session verifier is unavailable" : "Clerk session token is invalid",
+          status: unavailable ? 503 : 401,
           cause: err,
         })
       }

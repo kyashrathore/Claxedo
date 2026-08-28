@@ -805,6 +805,15 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string }
+      const guarded = await sessionOperationGuard(opts, c, "", "session_create")
+      if (guarded) return guarded
+      const operationId = registrationOperationId(c)
+      if (managedRegistration(opts) && (!body.id || !operationId)) {
+        return c.json(errorBody(
+          "session_reservation_required",
+          "Managed session creation requires a preassigned session id and reservation operation",
+        ), 400)
+      }
       const config = normalizeSessionCreateConfig(body)
       const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
       const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
@@ -821,9 +830,10 @@ export function createSessionRoutes(opts: Opts) {
         if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
         }
-        const session = opts.createSession
+        const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+        const session = existing ?? (opts.createSession
           ? await opts.createSession(c, directory, body.title, body.id)
-          : await adapter.createSession(directory, body.title, body.id)
+          : await adapter.createSession(directory, body.title, body.id))
         if (Object.keys(config).length > 0) {
           try {
             if (opts.updateSessionConfig) {

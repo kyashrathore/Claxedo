@@ -28,6 +28,10 @@ export const recordMint = authedMutation({
       jti: args.jti,
       workspace_id: workspace._id,
       host_id: args.host_id,
+      principal_kind: "user",
+      actor_id: args.actor_id,
+      actor_kind: "human",
+      role: args.role,
       minted_for_user_id: user._id,
       principal_kind: "user",
       minted_for_actor_id: args.actor_id,
@@ -52,6 +56,9 @@ export const recordMintForService = serviceMutation({
     expires_at: v.number(),
   },
   handler: async (ctx, args) => {
+    if (args.principal_kind !== "service" || args.actor_id !== "control-plane" || args.actor_kind !== "agent" || args.role !== "owner") {
+      throw new Error("Invalid runtime service actor")
+    }
     const existing = await ctx.db
       .query("runtime_access_tokens")
       .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
@@ -174,6 +181,10 @@ export const active = serviceQuery({
     return { active: true }
   },
 })
+
+function roleAction(value: "viewer" | "editor" | "admin" | "owner") {
+  return value === "viewer" ? "read" as const : value === "editor" ? "write" as const : value
+}
 
 export const revoke = authedMutation({
   args: {

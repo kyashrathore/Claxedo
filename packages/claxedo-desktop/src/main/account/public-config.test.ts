@@ -1,33 +1,25 @@
 import { describe, expect, test } from "bun:test"
-
 import { accountConfigEnvironment } from "./public-config"
 
 describe("accountConfigEnvironment", () => {
-  const baked = {
-    CLAXEDO_ACCOUNT_AUTHORIZE_URL: "https://identity.example/authorize",
-    CLAXEDO_ACCOUNT_TOKEN_URL: "https://identity.example/token",
-    CLAXEDO_ACCOUNT_CLIENT_ID: "desktop-public-client",
-    CLAXEDO_ACCOUNT_SCOPE: "openid offline_access",
-    CLAXEDO_SERVER_ORIGIN: "https://control.example",
-  }
-
-  test("uses baked public-client values on an end-user machine", () => {
-    expect(accountConfigEnvironment({}, baked)).toEqual(baked)
-  })
-
-  test("lets a self-built app override public values at runtime", () => {
-    expect(accountConfigEnvironment({
-      CLAXEDO_ACCOUNT_AUTHORIZE_URL: "https://local.example/authorize",
-      CLAXEDO_ACCOUNT_CLIENT_ID: "local-client",
-    }, baked)).toMatchObject({
-      CLAXEDO_ACCOUNT_AUTHORIZE_URL: "https://local.example/authorize",
-      CLAXEDO_ACCOUNT_CLIENT_ID: "local-client",
-      CLAXEDO_ACCOUNT_TOKEN_URL: baked.CLAXEDO_ACCOUNT_TOKEN_URL,
+  test("bakes only the selected core origin", () => {
+    expect(accountConfigEnvironment({}, { CLAXEDO_CORE_ORIGIN: "https://core.example" })).toEqual({
+      CLAXEDO_CORE_ORIGIN: "https://core.example",
     })
   })
 
-  test("does not let blank runtime values erase a baked registration", () => {
-    expect(accountConfigEnvironment({ CLAXEDO_ACCOUNT_TOKEN_URL: "   " }, baked))
-      .toMatchObject({ CLAXEDO_ACCOUNT_TOKEN_URL: baked.CLAXEDO_ACCOUNT_TOKEN_URL })
+  test("lets a self-built app select its own deployment", () => {
+    expect(
+      accountConfigEnvironment(
+        { CLAXEDO_CORE_ORIGIN: "https://self.example" },
+        { CLAXEDO_CORE_ORIGIN: "https://official.example" },
+      ),
+    ).toEqual({ CLAXEDO_CORE_ORIGIN: "https://self.example" })
+  })
+
+  test("contains no provider endpoint, id, scope, or credential inputs", () => {
+    const value = accountConfigEnvironment({}, {})
+    expect(Object.keys(value)).toEqual(["CLAXEDO_CORE_ORIGIN"])
+    expect(JSON.stringify(value)).not.toMatch(/AUTHORIZE|TOKEN_URL|CLIENT_ID|SCOPE|SECRET|CLERK|BETTER_AUTH/)
   })
 })

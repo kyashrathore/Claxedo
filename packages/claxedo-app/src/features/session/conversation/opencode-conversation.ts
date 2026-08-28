@@ -389,6 +389,7 @@ function assistantTurnIndex(
     const candidates = current.flatMap((item, index) => {
       const stored = storedMessage(item)
       return stored?.role === "assistant" && (stored as { parentID?: unknown }).parentID === parentID
+        && !(canonicalMessageIDs?.has(message.id) && canonicalMessageIDs.has(stored.id))
         ? [index]
         : []
     })

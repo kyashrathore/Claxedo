@@ -24,8 +24,20 @@ type RelayTokenBaseInput = {
   workspaceId: string
   hostId: string
   subject: string
-  orgId?: string
-  role?: RelayRole
+  ttlMs: number
+}
+
+export type RelayTokenInput = {
+  workspaceId: string
+  hostId: string
+  orgId: string
+  principalKind: "user" | "service"
+  actorId: string
+  actorKind: "human" | "agent"
+  role: RelayRole
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
   ttlMs: number
 }
 

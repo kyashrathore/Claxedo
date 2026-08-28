@@ -1781,7 +1781,7 @@ export function createHostedSessionTranscriptRetention(
   if (!provider || !manager) return
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
-  return async (input: { organizationId: string; ownerSubject: string; workspaceId: string; sessionId: string }) => {
+  return async (input: { organizationId: string; ownerUserId: string; workspaceId: string; sessionId: string }) => {
     try {
       if (!client.query) throw new Error("Hosted transcript retention requires users-registry lookup")
       const actor = await client.query(api.users.resolveSubjectForService, {
@@ -1823,7 +1823,7 @@ export function createHostedSessionTranscriptRetention(
       await client.mutation(api.sessions.retainWorkGraphSessionTranscript, {
         service_token: serviceToken,
         organization_id: input.organizationId,
-        owner_subject: input.ownerSubject,
+        owner_subject: input.ownerUserId,
         workspace_id: input.workspaceId,
         session_id: input.sessionId,
         updated_at: now(),

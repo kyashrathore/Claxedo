@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import stripAnsi from "strip-ansi"
 
-import { defaultConsoleUrl, formatAccountLabel, formatOrgLine } from "../../src/cli/cmd/account"
+import { defaultConsoleUrl, formatAccountLabel, formatLogoutMessage, formatOrgLine } from "../../src/cli/cmd/account"
 
 describe("console account display", () => {
   test("uses console.opencode.ai as the default login URL", () => {
@@ -9,22 +9,31 @@ describe("console account display", () => {
   })
 
   test("includes the account url in account labels", () => {
-    expect(stripAnsi(formatAccountLabel({ email: "one@example.com", url: "https://one.example.com" }, false))).toBe(
-      "one@example.com https://one.example.com",
+    expect(stripAnsi(formatAccountLabel({ user_id: "usr_one", url: "https://one.example.com" }, false))).toBe(
+      "usr_one https://one.example.com",
     )
   })
 
   test("includes the active marker in account labels", () => {
-    expect(stripAnsi(formatAccountLabel({ email: "one@example.com", url: "https://one.example.com" }, true))).toBe(
-      "one@example.com https://one.example.com (active)",
+    expect(stripAnsi(formatAccountLabel({ user_id: "usr_one", url: "https://one.example.com" }, true))).toBe(
+      "usr_one https://one.example.com (active)",
     )
   })
 
   test("includes the account url in org rows", () => {
     expect(
       stripAnsi(
-        formatOrgLine({ email: "one@example.com", url: "https://one.example.com" }, { id: "org-1", name: "One" }, true),
+        formatOrgLine({ user_id: "usr_one", url: "https://one.example.com" }, { id: "org-1", name: "One" }, true),
       ),
-    ).toBe("  ● One  one@example.com  https://one.example.com  org-1")
+    ).toBe("  ● One  usr_one  https://one.example.com  org-1")
+  })
+
+  test("reports remote revocation separately from local-only logout", () => {
+    expect(formatLogoutMessage("usr_one", { remoteRevocation: "revoked" })).toBe(
+      "Logged out from usr_one; remote credentials revoked",
+    )
+    expect(formatLogoutMessage("usr_one", { remoteRevocation: "uncertain" })).toBe(
+      "Logged out from usr_one; local credentials removed, remote revocation uncertain",
+    )
   })
 })

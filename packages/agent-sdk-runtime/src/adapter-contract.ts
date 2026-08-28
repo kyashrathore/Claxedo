@@ -103,7 +103,7 @@ export interface SupportsUnrevert {
 }
 
 export interface SupportsFork {
-  forkSession(id: string, messageId: string, directory: RuntimeDirectory): Promise<{ id: string }>
+  forkSession(id: string, messageId: string, directory: RuntimeDirectory, childSessionId?: string): Promise<{ id: string }>
 }
 
 export interface SupportsCommands {

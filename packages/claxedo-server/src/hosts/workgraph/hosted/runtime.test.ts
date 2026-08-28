@@ -2263,7 +2263,13 @@ describe("hosted WorkGraph runtime outbox", () => {
       launched: [{ state: "running" }],
       results: [{ settled: false, state: "retrying_explicit_completion" }],
     })
-    expect(mintedTokens[0]).toMatchObject({ subject: "clerk-user-a", orgId: "org-a" })
+    expect(mintedTokens[0]).toMatchObject({
+      principalKind: "user",
+      actorId: "internal-user-a",
+      actorKind: "human",
+      orgId: "org-a",
+      role: "owner",
+    })
     expect(mutations).toHaveLength(6)
     expect(ensureInputs[0]).toMatchObject({
       env: {
@@ -2413,7 +2419,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     await retain!({
       organizationId: "org-a",
-      ownerSubject: "clerk-user-a",
+      ownerUserId: "clerk-user-a",
       workspaceId: "workspace-a",
       sessionId: "session-a",
     })
@@ -2461,7 +2467,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     await expect(
       retain!({
         organizationId: "org-a",
-        ownerSubject: "clerk-user-a",
+        ownerUserId: "clerk-user-a",
         workspaceId: "workspace-a",
         sessionId: "session-a",
       }),
@@ -2483,7 +2489,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     const failure = await retain!({
       organizationId: "org-a",
-      ownerSubject: "clerk-user-a",
+      ownerUserId: "clerk-user-a",
       workspaceId: "workspace-a",
       sessionId: "session-a",
     }).catch((error) => error)
