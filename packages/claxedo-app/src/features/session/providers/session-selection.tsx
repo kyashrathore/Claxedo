@@ -379,12 +379,15 @@ const localContextInput = {
       const sessionConfigSelection = settledQueryData(sessionConfigSelectionQuery) ?? undefined
       if (!session) return store.draft ?? selectionHandoff
       if (saved.dirty[session] && saved.session[session]) return saved.session[session]
-      // Session creation publishes the exact config atomically. A remounted
-      // workbench owner must consume that handoff before the deferred config
-      // read's loading gate, otherwise it briefly renders an unconfigured
-      // composer and turns the first follow-up click into "Choose a model".
-      if (selectionHandoff) return selectionHandoff
       if (store.last === undefined) {
+        // Session creation publishes the exact config atomically. A remounted
+        // workbench owner must consume that handoff before the deferred config
+        // read's loading gate, otherwise it briefly renders an unconfigured
+        // composer and turns the first follow-up click into "Choose a model".
+        // Once this owner records a local selection, its saved state supersedes
+        // the one-shot handoff even if the disabled query mirror still exposes
+        // its last settled value after the cache entry has been consumed.
+        if (selectionHandoff) return selectionHandoff
         if (settledQueryData(sessionConfigSelectionQuery) !== undefined) return sessionConfigSelection
         if (sessionConfigSelectionLoading()) return
       }

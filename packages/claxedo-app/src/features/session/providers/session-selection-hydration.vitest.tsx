@@ -1,4 +1,4 @@
-import { cleanup, render, waitFor } from "@solidjs/testing-library"
+import { cleanup, fireEvent, render, waitFor } from "@solidjs/testing-library"
 import { QueryClientProvider, skipToken, useQuery } from "@tanstack/solid-query"
 import { createEffect, createSignal } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -74,7 +74,10 @@ vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
     all: () => new Map([["opencode", {
       id: "opencode",
-      models: { "model-restored": { id: "model-restored" } },
+      models: {
+        "model-restored": { id: "model-restored" },
+        "model-next": { id: "model-next" },
+      },
     }]]),
     connected: () => [{ id: "opencode" }],
     default: () => ({ opencode: "model-restored" }),
@@ -219,7 +222,16 @@ describe("session selection hydration scheduling", () => {
 
     const Probe = () => {
       const local = useLocal()
-      return <div data-testid="selection" data-model={local.model.selected()?.modelID ?? ""} />
+      return (
+        <div data-testid="selection" data-model={local.model.selected()?.modelID ?? ""}>
+          <button
+            type="button"
+            onClick={() => local.model.set({ providerID: "opencode", modelID: "model-next" })}
+          >
+            Pick next model
+          </button>
+        </div>
+      )
     }
     const remounted = render(() => (
       <QueryClientProvider client={queryClient}>
@@ -230,5 +242,7 @@ describe("session selection hydration scheduling", () => {
     ))
 
     await waitFor(() => expect(remounted.getByTestId("selection")).toHaveAttribute("data-model", "model-restored"))
+    fireEvent.click(remounted.getByRole("button", { name: "Pick next model" }))
+    await waitFor(() => expect(remounted.getByTestId("selection")).toHaveAttribute("data-model", "model-next"))
   })
 })
