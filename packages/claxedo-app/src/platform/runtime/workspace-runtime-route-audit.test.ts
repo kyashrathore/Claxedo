@@ -2090,7 +2090,8 @@ describe("workspace runtime route audit", () => {
 
     const offenders: string[] = []
     const glob = new Bun.Glob("**/*.{ts,tsx}")
-    for (const file of glob.scanSync({ cwd: root, onlyFiles: true })) {
+    for (const discovered of glob.scanSync({ cwd: root, onlyFiles: true })) {
+      const file = canonicalRelativePath(discovered)
       if (file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.endsWith(".vitest.tsx")) continue
       const text = await Bun.file(path.join(root, file)).text()
       for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute|WorkGraphRoute)|canonicalWorkspaceRoute|newTaskRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {

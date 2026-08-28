@@ -216,23 +216,29 @@ jobs:
       # than raising the number again -- but that job must then be added to
       # branch protection, or it runs without gating anything.
       #
-      # `--concurrency=2` matches the runner's core count and is load-bearing,
-      # not tuning. Turbo defaults to 10 parallel tasks; several newly-wired
-      # suites assert on wall-clock behaviour (wakes' timer coalescing and
+      # Linux runs two package tasks to match the runner's core count. Windows
+      # runs one package task at a time: its OpenCode suite contains wall-clock
+      # and child-process contracts that become unreliable when the 5,700-test
+      # app suite runs beside it. Turbo defaults to 10 parallel tasks; several
+      # newly-wired suites assert on wall-clock behaviour (wakes' timer coalescing and
       # workspace-runtime's PTY byte forwarding) and fail their 5s timeouts
       # when starved of CPU. WorkGraph's tests are temporarily filtered while
       # that product area is paused.
       # Measured: at 21-way parallelism on a fast many-core dev machine those
       # three went red; serialized on the same machine, all three pass. A
-      # 2-core runner at concurrency 10 is strictly worse, and oversubscribing
-      # two cores buys no wall clock anyway.
+      # 2-core runner at concurrency 10 is strictly worse. Serial Windows adds
+      # only the app suite's roughly two-minute tail and keeps every test intact.
       - name: Run unit tests
         timeout-minutes: 35
         run: |
+          concurrency=2
+          if [[ "${{ runner.os }}" == "Windows" ]]; then
+            concurrency=1
+          fi
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
-            bun turbo test --concurrency=2 --filter='!@claxedo/workgraph'
+            bun turbo test --concurrency="$concurrency" --filter='!@claxedo/workgraph'
           else
-            bun turbo test --affected --concurrency=2 --filter='!@claxedo/workgraph'
+            bun turbo test --affected --concurrency="$concurrency" --filter='!@claxedo/workgraph'
           fi
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
