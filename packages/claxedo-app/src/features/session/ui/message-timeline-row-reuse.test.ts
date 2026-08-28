@@ -122,6 +122,42 @@ describe("timeline row reuse", () => {
     expect(rows.map((row) => row._tag)).toEqual(["UserMessage", "AssistantPart"])
   })
 
+  test("emits Thinking while the active turn is busy and unsettled without assistant parts", () => {
+    const rows = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [assistantMessage("msg_assistant", "msg_user")],
+      0,
+      false,
+      "busy",
+      true,
+    )
+    expect(rows.some((row) => row._tag === "Thinking")).toBe(true)
+  })
+
+  test("drops Thinking as soon as status leaves busy (hold is applied by the timeline shell)", () => {
+    const busy = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [assistantMessage("msg_assistant", "msg_user")],
+      0,
+      false,
+      "busy",
+      true,
+    )
+    const idle = Timeline.constructMessageRows(
+      userMessage("msg_user"),
+      () => [],
+      [assistantMessage("msg_assistant", "msg_user")],
+      0,
+      false,
+      "idle",
+      true,
+    )
+    expect(busy.some((row) => row._tag === "Thinking")).toBe(true)
+    expect(idle.some((row) => row._tag === "Thinking")).toBe(false)
+  })
+
   test("every failed turn receives the typed recovery card row, not only the first", () => {
     const failed = assistantMessage("msg_assistant", "msg_user", { completed: 20 })
     failed.error = {
