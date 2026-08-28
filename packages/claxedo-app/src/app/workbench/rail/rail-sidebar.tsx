@@ -92,7 +92,7 @@ import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareU
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type SessionHost, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
 import {
@@ -242,7 +242,6 @@ type View = {
 
 type Row = SessionItem & {
   project: ProjectItem
-  host?: SessionHost
   archived?: boolean
   status: string[]
   active?: boolean
@@ -285,13 +284,12 @@ function sessionNavigationRefForRow(session: Row) {
 }
 
 function workspaceSessionBacking(
-  session: Pick<Row, "sessionRef" | "workspaceId" | "environment" | "host" | "project">,
+  session: Pick<Row, "sessionRef" | "workspaceId" | "environment" | "project">,
   directory: string,
 ): WorkspaceSessionBacking | undefined {
   return railWorkspaceSessionBacking({
     directory,
     project: session.project,
-    ...(session.host ? { host: session.host } : {}),
     ...(session.sessionRef ? { sessionRef: session.sessionRef } : {}),
     ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
     ...(session.environment?.kind ? { environmentKind: session.environment.kind } : {}),
@@ -563,7 +561,6 @@ export function RailSidebar(props: RailSidebarProps) {
         const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
         return {
           id: item.id,
-          host: "workspace",
           get title() { return title() },
           time: item.time.updated ?? item.time.created,
           directory: item.directory,
@@ -594,7 +591,7 @@ export function RailSidebar(props: RailSidebarProps) {
           ))
         return {
           id: item.id,
-          host: "central",
+          sessionRef: `central:${item.id}`,
           get title() { return title() },
           time: item.time.updated ?? item.time.created,
           directory: item.directory,
@@ -627,7 +624,6 @@ export function RailSidebar(props: RailSidebarProps) {
     const title = createMemo(() => sessionRowTitle(item.title, projectedTitle.title(), item.time.updated))
     return {
       id: item.id,
-      host: "workspace",
       get title() { return title() },
       time: item.time.updated ?? item.time.created,
       directory: directory ?? item.directory,
@@ -664,7 +660,6 @@ export function RailSidebar(props: RailSidebarProps) {
     }))
     return {
       id: item.sessionId,
-      host: item.sessionRef.startsWith("central:") ? "central" : "workspace",
       sessionRef: item.sessionRef,
       get title() { return title() },
       time: item.updatedAt ?? item.createdAt,

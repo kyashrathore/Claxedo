@@ -2,7 +2,7 @@ import { getFilename } from "@/lib/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
-import type { SessionHost, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -78,13 +78,11 @@ export function projectActionDirectory<TDirectory extends string>(input: {
 export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
   workspaceId?: string
   environmentKind?: string
-  host?: SessionHost
   sessionRef?: string
   project: Pick<ProjectItem, "workspaces">
   directory: TDirectory
 }): WorkspaceSessionBacking | undefined {
   if (
-    input.host === "central" ||
     input.sessionRef?.startsWith("central:") ||
     input.sessionRef?.startsWith("local:")
   ) return

@@ -152,7 +152,6 @@ describe("railWorkspaceSessionBacking", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/runtime/repo",
       workspaceId: "ws_pending",
-      host: "workspace",
       sessionRef: "workspace:ws_pending:session:ses_pending",
       environmentKind: "local",
       project: pending,
@@ -161,7 +160,6 @@ describe("railWorkspaceSessionBacking", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/runtime/repo",
       workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
-      host: "workspace",
       sessionRef: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e:session:ses_uuid",
       project: pending,
     })).toEqual({
@@ -174,14 +172,13 @@ describe("railWorkspaceSessionBacking", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/runtime/repo",
       workspaceId: "ws_authz_only",
-      host: "central",
+      sessionRef: "central:ses_authz_only",
       project: project({ worktree: "/repo/main" }),
     })).toBeUndefined()
 
     expect(railWorkspaceSessionBacking({
       directory: "/repo/main",
       workspaceId: "local-workspace-id",
-      host: "workspace",
       sessionRef: "local:/repo/main:session:ses_local",
       project: project({
         worktree: "/repo/main",
