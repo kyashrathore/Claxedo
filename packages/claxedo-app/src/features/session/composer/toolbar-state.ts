@@ -1,11 +1,8 @@
 import { createMemo, type Accessor } from "solid-js"
 import {
-  firstConnectedModelInfo,
-  promptModelFallbackState,
+  promptModelResolutionState,
   promptModelState,
   resolveModelVariant,
-  type ProviderItem,
-  type ProviderModelInfo,
 } from "./model-strategy"
 import { shouldShowPromptAgentSelector } from "./ui/selector-visibility"
 
@@ -17,14 +14,12 @@ export function createPromptToolbarState(input: {
   currentAgent: Accessor<PromptAgent | undefined>
   fallbackAgent: Accessor<PromptAgent | undefined>
   agentOverride: Accessor<string | undefined>
-  providerConnected: Accessor<ProviderItem[]>
-  providerDefaults: Accessor<Record<string, string | undefined>>
   providerLoading: Accessor<boolean>
   currentModel: Accessor<PromptModel | undefined>
   currentModelSource: Accessor<string | undefined>
   hasSelectedModel: Accessor<boolean>
   modelRestorePending: Accessor<boolean>
-  fallbackModel: Accessor<PromptModel | undefined>
+  selectionCatalogPending: Accessor<boolean>
   harnessMode: Accessor<boolean>
   isOpenCodeHarness: Accessor<boolean>
   existingSession: Accessor<boolean>
@@ -40,29 +35,21 @@ export function createPromptToolbarState(input: {
     return [...names, fallback]
   })
   const currentAgent = createMemo(() => input.currentAgent() ?? input.agentList()[0] ?? fallbackAgent())
-  const fallbackModel = createMemo<PromptModel | ProviderModelInfo | undefined>(() =>
-    input.currentModelSource() === "fallback"
-      ? input.currentModel()
-      : firstConnectedModelInfo({
-          connected: input.providerConnected(),
-          defaults: input.providerDefaults(),
-        }) ?? input.fallbackModel(),
-  )
-  const fallbackState = createMemo(() =>
-    promptModelFallbackState({
+  const modelResolutionState = createMemo(() =>
+    promptModelResolutionState({
       harnessMode: input.harnessMode(),
       existingSession: input.existingSession(),
       hasCurrentModel: !!input.currentModel() && input.currentModelSource() !== "fallback",
       hasSelection: input.hasSelectedModel(),
       providerLoading: input.providerLoading(),
       restoreLoading: input.modelRestorePending(),
+      selectionCatalogPending: input.selectionCatalogPending(),
     }),
   )
-  const shouldUseFallbackModel = () => fallbackState().fallback
   const currentModel = createMemo(() => {
     const current = input.currentModel()
-    if (current && input.currentModelSource() !== "fallback") return current
-    if (shouldUseFallbackModel()) return fallbackModel()
+    if (!current || input.currentModelSource() === "fallback") return undefined
+    return current
   })
   const readiness = createMemo(() =>
     promptModelState({
@@ -86,8 +73,7 @@ export function createPromptToolbarState(input: {
   return {
     agentNames,
     currentAgent,
-    fallbackModel,
-    shouldUseFallbackModel,
+    modelResolutionState,
     currentModel,
     readiness,
     modelSubmitBlocked: () => readiness().blocked,

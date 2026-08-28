@@ -91,9 +91,11 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
     if (input.harnessReadiness === "polling") return block("harness-polling")
     // readiness === "ready": still loading options, or ready but no model chosen.
     if (input.harnessOptionsLoading) return block("models-loading")
-    if (input.needsModelSelection || !input.harnessReadyForSubmit) return block("no-model")
-  } else if (input.needsModelSelection) {
-    // An opencode draft default that needs an explicit choice blocks in any mode.
+    if (!input.harnessReadyForSubmit) return block("no-model")
+  } else if (input.needsModelSelection && input.modelBlocked) {
+    // Draft-default "choose model" only blocks until the toolbar resolves a
+    // submittable model. An explicit picker choice must not lose to stale
+    // harness-store draftDefaultState (choose-model / saved-model-unavailable).
     return block("no-model")
   }
 
@@ -113,22 +115,14 @@ export function submitBlockReason(input: SubmitBlockInput): SubmitBlock | null {
   return null
 }
 
-// Clickability must never become submittability, but the opencode-mode model
-// gate (`no-model`) is surfaced by the submit pipeline's OWN
-// guard (`submit.ts` → `modelAgentRequired` toast), which both refuses to send
-// AND explains why. Hard-blocking it before the handler silently swallows the
-// keypress and the user never learns they must pick a model (regression from
-// the guard added in 71091f031a, which over-corrected past viewer-role). Let
-// the handler reach that guard for those two reasons; harness/inert reasons
-// stay hard-blocked (a harness-mode send could otherwise dispatch to a
-// not-ready harness).
+// Clickability must never become submittability. Every standing block reason
+// stops Enter/form submit before the handler; actionable reasons still explain
+// on click (and Enter opens the model picker for `no-model`) via
+// PromptSubmitControl / createPromptInputSubmitRetry.
 export function submitHardBlocked(input: {
   stoppable: boolean
   block: SubmitBlock | null
-  harnessMode: boolean
 }): boolean {
   if (input.stoppable) return false
-  if (!input.block) return false
-  if (!input.harnessMode && input.block.reason === "no-model") return false
-  return true
+  return input.block !== null
 }

@@ -30,6 +30,7 @@ import {
   removeRegisteredConversationMessage,
 } from "../../conversation/conversation-registry"
 import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
+import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { useConfigOptional } from "@/features/session/app-ports"
 import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -406,6 +407,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const freshSelectedModel = harnessMode ? undefined : local.model.current()
     const selectionOverridesExisting = !!freshSelectedModel && !infoSessionConfig && !!existingSessionConfig?.model &&
       (freshSelectedModel.provider.id !== existingSessionConfig.model.providerID || freshSelectedModel.id !== existingSessionConfig.model.modelID)
+    const submitSelectedModel = (() => {
+      const model = input.selectedModelForSubmit?.()
+      if (!model || isSignedWorkspaceDefaultModel(model)) return undefined
+      return model
+    })()
     const submittedConfig = existingSessionConfig?.model && !selectionOverridesExisting
       ? {
           model: existingSessionConfig.model,
@@ -415,9 +421,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       : await resolveSubmittedConfig({
           harnessMode,
           harnessModelKey: selectedHarnessMode(scope) ? harnessController.modelKeyForSubmit(scope) : undefined,
-          selectedModel: local.model.current(),
-          fallbackModel: isNewSession ? input.fallbackModel?.() : undefined,
-          allowModelFallback: isNewSession,
+          selectedModel: submitSelectedModel,
           currentAgent: local.agent.current(),
           defaultAgent: local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
           agentOverride: input.agent?.(),

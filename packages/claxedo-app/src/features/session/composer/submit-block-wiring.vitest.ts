@@ -7,15 +7,18 @@ vi.mock("@/features/session/app-ports", () => ({
 }))
 
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
+import { submitHardBlocked } from "./submit-block-reason"
 
 afterEach(() => {
   document.body.innerHTML = ""
 })
 
-function wiring(root: HTMLElement) {
+type WiringInput = Partial<Parameters<typeof createComposerSubmitBlockWiring>[0]>
+
+function wiring(root: HTMLElement, input: WiringInput = {}) {
   return createRoot(() =>
     createComposerSubmitBlockWiring({
-      scope: () => "draft",
+      scope: () => "draft:one",
       isHarnessMode: () => true,
       harnessReadiness: () => "ready",
       harnessReadyForSubmit: () => false,
@@ -29,8 +32,31 @@ function wiring(root: HTMLElement) {
       stoppable: () => false,
       blank: () => false,
       rootEl: () => root as HTMLDivElement,
+      ...input,
     }),
   )
+}
+
+const hy3FreeToolbar = {
+  readiness: () => ({ label: "HY3 Free", blocked: false, disabled: false }),
+  modelSubmitBlocked: () => false,
+} as never
+
+function opencodeWiring(input: WiringInput = {}) {
+  const root = document.createElement("div")
+  return {
+    root,
+    ...wiring(root, {
+      isHarnessMode: () => false,
+      harnessReadyForSubmit: () => true,
+      harnessSelectionController: {
+        read: () => ({ draftDefaultState: "choose-model" }),
+      } as never,
+      toolbarState: hy3FreeToolbar,
+      blank: () => false,
+      ...input,
+    }),
+  }
 }
 
 function picker(action: string) {
@@ -79,5 +105,44 @@ describe("createComposerSubmitBlockWiring", () => {
 
     expect(harnessClick).toHaveBeenCalledOnce()
     expect(openCodeClick).not.toHaveBeenCalled()
+  })
+
+  describe("stale draft-default choose-model regression", () => {
+    // Regression: HY3 Free (or any explicit pick) showed in the picker while
+    // harness-store draftDefaultState stayed "choose-model". needsModelSelection
+    // used to hard-block Send and reopen the picker even though the toolbar
+    // had already resolved a submittable model.
+    test("does not no-model block once the toolbar resolves HY3 Free", () => {
+      const { submitBlock, submitInertBlocked } = opencodeWiring()
+
+      expect(submitBlock()).toBeNull()
+      expect(submitInertBlocked()).toBe(false)
+      expect(submitHardBlocked({ stoppable: false, block: submitBlock() })).toBe(false)
+    })
+
+    test("still no-model blocks when draft-default choose-model and toolbar is unresolved", () => {
+      const { submitBlock } = opencodeWiring({
+        toolbarState: {
+          readiness: () => ({ label: "Select model", blocked: true, disabled: true }),
+          modelSubmitBlocked: () => true,
+        } as never,
+      })
+
+      expect(submitBlock()?.reason).toBe("no-model")
+      expect(submitHardBlocked({ stoppable: false, block: submitBlock() })).toBe(true)
+    })
+
+    test("saved-model-unavailable draft state does not block after a new explicit pick", () => {
+      const { submitBlock } = opencodeWiring({
+        harnessSelectionController: {
+          read: () => ({
+            draftDefaultState: "saved-model-unavailable",
+            draftDefaultModel: { providerID: "opencode", modelID: "north-mini-code-free" },
+          }),
+        } as never,
+      })
+
+      expect(submitBlock()).toBeNull()
+    })
   })
 })

@@ -151,7 +151,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     }).catch(() => undefined)
     if (!res?.ok) return selected
     const body = await res.json().catch(() => undefined)
-    return selectRuntimeModel(body, selected) ?? selected
+    return selectRuntimeModel(body, selected)
   }
 
   const sessionClient = (dir: string, harnessType?: string) =>

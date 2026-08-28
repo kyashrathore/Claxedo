@@ -34,11 +34,6 @@ export type ProviderItem = {
 export type ProviderModelInfo = ProviderModel & { provider: ProviderItem }
 export type SubmitModelInfo = { id: string; name?: string; provider: { id: string } }
 
-type RuntimeModelProvider = {
-  id: string
-  models?: Record<string, ProviderModel>
-}
-
 // `opencode` is the zero-key gateway: it reports itself connected on every
 // machine, so ranking it first made it the silent default even for a user who
 // had just connected their own Anthropic/OpenAI key — and its free models fail
@@ -84,16 +79,10 @@ export function firstConnectedModelInfo(input: {
     .find((model): model is ProviderModelInfo => !!model)
 }
 
-export function selectRuntimeModel(input: unknown, selected: SubmitModelInfo | undefined): SubmitModelInfo | undefined {
-  if (selected && !isSignedWorkspaceDefaultModel(selected)) return selected
-  const body = object(input)
-  const all = runtimeProviders(body?.all)
-  const connected = connectedProviderIds(body?.connected)
-  const connectedRows = all.filter((provider) => connected.has(provider.id))
-  return firstConnectedModelInfo({
-    connected: connectedRows,
-    defaults: stringDefaults(body?.default),
-  })
+/** Explicit selection only — never substitute provider defaults or placeholders. */
+export function selectRuntimeModel(_input: unknown, selected: SubmitModelInfo | undefined): SubmitModelInfo | undefined {
+  if (!selected || isSignedWorkspaceDefaultModel(selected)) return undefined
+  return selected
 }
 
 /**
@@ -142,56 +131,6 @@ function providerRank(id: string) {
   if (id === GATEWAY_PROVIDER) return preferredProviderOrder.length + 1
   const index = preferredProviderOrder.indexOf(id)
   return index === -1 ? preferredProviderOrder.length : index
-}
-
-function object(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
-function stringDefaults(input: unknown) {
-  const row = object(input)
-  if (!row) return {}
-  return Object.fromEntries(
-    Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
-  )
-}
-
-function connectedProviderIds(input: unknown) {
-  if (!Array.isArray(input)) return new Set<string>()
-  return new Set(input.filter((item): item is string => typeof item === "string"))
-}
-
-function runtimeProviders(input: unknown): RuntimeModelProvider[] {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => {
-    const row = object(item)
-    if (typeof row?.id !== "string") return []
-    const models = object(row.models)
-    return [
-      {
-        id: row.id,
-        ...(models
-          ? {
-              models: Object.fromEntries(
-                Object.entries(models).flatMap(([key, value]) => {
-                  const model = object(value)
-                  const id = typeof model?.id === "string" ? model.id : key
-                  return [
-                    [
-                      key,
-                      {
-                        id,
-                        ...(typeof model?.name === "string" ? { name: model.name } : {}),
-                      },
-                    ],
-                  ]
-                }),
-              ),
-            }
-          : {}),
-      },
-    ]
-  })
 }
 
 export function getConfiguredAgentVariant(input: { agent: Agent | undefined; model: Model | undefined }) {
@@ -277,27 +216,37 @@ export type PromptModelFallbackInput = {
   hasSelection: boolean
   providerLoading: boolean
   restoreLoading?: boolean
+  /** Provider detail for a saved selection is still merging into the index catalog. */
+  selectionCatalogPending?: boolean
 }
 
-export type PromptModelFallbackState =
-  | { type: "harness-owned"; fallback: false }
-  | { type: "selected"; fallback: false }
-  | { type: "invalid-selected"; fallback: true }
-  | { type: "resolved"; fallback: false }
-  | { type: "hydrating"; fallback: false }
-  | { type: "needs-selection"; fallback: false }
-  | { type: "uninitialized"; fallback: true }
+export type PromptModelResolutionState =
+  | { type: "harness-owned" }
+  | { type: "selected" }
+  | { type: "invalid-selected" }
+  | { type: "resolved" }
+  | { type: "hydrating" }
+  | { type: "needs-selection" }
+  | { type: "uninitialized" }
 
-export function promptModelFallbackState(input: PromptModelFallbackInput): PromptModelFallbackState {
-  if (input.harnessMode) return { type: "harness-owned", fallback: false }
-  if (input.hasCurrentModel) return { type: "resolved", fallback: false }
-  if (input.hasSelection && (input.providerLoading || input.restoreLoading)) return { type: "selected", fallback: false }
-  if (input.providerLoading || input.restoreLoading) return { type: "hydrating", fallback: false }
-  if (input.hasSelection) return { type: "invalid-selected", fallback: true }
-  if (input.existingSession) return { type: "needs-selection", fallback: false }
-  return { type: "uninitialized", fallback: true }
+export function promptModelResolutionState(input: PromptModelFallbackInput): PromptModelResolutionState {
+  if (input.harnessMode) return { type: "harness-owned" }
+  if (input.hasCurrentModel) return { type: "resolved" }
+  if (input.hasSelection && (input.providerLoading || input.restoreLoading || input.selectionCatalogPending)) {
+    return { type: "selected" }
+  }
+  if (input.providerLoading || input.restoreLoading || input.selectionCatalogPending) {
+    return { type: "hydrating" }
+  }
+  if (input.hasSelection) return { type: "invalid-selected" }
+  if (input.existingSession) return { type: "needs-selection" }
+  return { type: "uninitialized" }
 }
 
-export function shouldUsePromptFallbackModel(input: PromptModelFallbackInput) {
-  return promptModelFallbackState(input).fallback
+/** @deprecated Use {@link promptModelResolutionState}. Fallback models are never applied. */
+export const promptModelFallbackState = promptModelResolutionState
+
+/** @deprecated Composer model selection never falls back to catalog defaults. */
+export function shouldUsePromptFallbackModel(_input: PromptModelFallbackInput) {
+  return false
 }

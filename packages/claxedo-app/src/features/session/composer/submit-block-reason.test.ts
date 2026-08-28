@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { submitBlockReason, type SubmitBlockInput } from "./submit-block-reason"
+import { submitBlockReason, submitHardBlocked, type SubmitBlockInput } from "./submit-block-reason"
 
 // A healthy, typed composer: nothing blocks Send.
 const healthy: SubmitBlockInput = {
@@ -121,8 +121,14 @@ describe("submitBlockReason", () => {
 
     test("ready harness that needs an explicit model choice → no-model", () => {
       expect(
-        submitBlockReason(input({ harnessMode: true, harnessReadiness: "ready", needsModelSelection: true }))?.reason,
+        submitBlockReason(input({ harnessMode: true, harnessReadiness: "ready", needsModelSelection: true, harnessReadyForSubmit: false }))?.reason,
       ).toBe("no-model")
+    })
+
+    test("ready harness with a submittable model ignores stale needsModelSelection", () => {
+      expect(
+        submitBlockReason(input({ harnessMode: true, harnessReadiness: "ready", needsModelSelection: true, harnessReadyForSubmit: true })),
+      ).toBeNull()
     })
 
     test("harness readiness is ignored in opencode mode", () => {
@@ -142,8 +148,24 @@ describe("submitBlockReason", () => {
       ).toEqual({ reason: "models-loading", copy: "Loading models…", actionable: false })
     })
 
-    test("needs-model-selection blocks even outside harness mode", () => {
-      expect(submitBlockReason(input({ needsModelSelection: true }))?.reason).toBe("no-model")
+    test("needs-model-selection blocks when no submittable model is resolved", () => {
+      expect(submitBlockReason(input({ needsModelSelection: true, modelBlocked: true }))?.reason).toBe("no-model")
+    })
+
+    test("explicit model clears stale draft-default no-model block", () => {
+      expect(submitBlockReason(input({
+        needsModelSelection: true,
+        modelBlocked: false,
+        modelBlockLabel: "HY3 Free",
+      }))).toBeNull()
+    })
+
+    test("saved-model-unavailable draft default still blocks without a resolved toolbar model", () => {
+      expect(submitBlockReason(input({
+        needsModelSelection: true,
+        modelBlocked: true,
+        modelBlockLabel: "Select model",
+      }))?.reason).toBe("no-model")
     })
 
     test("providers refreshing with a valid model selected does NOT block", () => {
@@ -169,5 +191,23 @@ describe("submitBlockReason", () => {
       expect(reason).not.toBeNull()
       expect(reason?.copy.length ?? 0).toBeGreaterThan(0)
     }
+  })
+})
+
+describe("submitHardBlocked", () => {
+  test("blocks every standing reason while idle, including opencode no-model", () => {
+    expect(submitHardBlocked({ stoppable: false, block: { reason: "no-model", copy: "Choose a model to continue", actionable: true } })).toBe(true)
+    expect(submitHardBlocked({ stoppable: false, block: { reason: "empty", copy: "Type a message to get started", actionable: false } })).toBe(true)
+  })
+
+  test("never blocks while a turn is stoppable", () => {
+    expect(submitHardBlocked({
+      stoppable: true,
+      block: { reason: "no-model", copy: "Choose a model to continue", actionable: true },
+    })).toBe(false)
+  })
+
+  test("allows submit when there is no block", () => {
+    expect(submitHardBlocked({ stoppable: false, block: null })).toBe(false)
   })
 })

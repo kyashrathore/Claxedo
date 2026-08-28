@@ -181,8 +181,6 @@ export type ResolveSubmittedConfigContext = {
   harnessMode: boolean
   harnessModelKey?: ModelKey
   selectedModel?: SubmitModel
-  fallbackModel?: SubmitModel
-  allowModelFallback: boolean
   currentAgent?: SubmitAgent
   defaultAgent?: SubmitAgent
   agentOverride?: string

@@ -158,4 +158,78 @@ describe("prompt input submit UI state", () => {
       dispose()
     })
   })
+
+  test("missing-model Enter opens the model picker instead of the submit pipeline", async () => {
+    await createRoot(async (dispose) => {
+      let rawCalls = 0
+      let pickerOpened = 0
+      const retry = createPromptInputSubmitRetry({
+        resetKey: () => "scope-a",
+        rawHandleSubmit: () => {
+          rawCalls++
+        },
+        roleSubmitBlocked: () => false,
+        submitBlocked: () => true,
+        submitBlock: () => ({ reason: "no-model", copy: "Choose a model to continue", actionable: true }),
+        onChooseModel: () => {
+          pickerOpened++
+        },
+        prompt: {
+          current: () => [{ type: "text", content: "hi", start: 0, end: 2 }],
+          set: () => undefined,
+        },
+        imageCount: () => 0,
+        commentCount: () => 0,
+        mode: () => "normal",
+        setMode: () => undefined,
+        promptLength: () => 2,
+        clearBoot: () => undefined,
+      })
+
+      const event = new Event("submit", { cancelable: true })
+      await retry.handleSubmit(event)
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(rawCalls).toBe(0)
+      expect(pickerOpened).toBe(1)
+      dispose()
+    })
+  })
+
+  test("resolved model with stale draft-default state reaches the submit pipeline", async () => {
+    await createRoot(async (dispose) => {
+      let rawCalls = 0
+      let pickerOpened = 0
+      const retry = createPromptInputSubmitRetry({
+        resetKey: () => "draft:one",
+        rawHandleSubmit: () => {
+          rawCalls++
+        },
+        roleSubmitBlocked: () => false,
+        submitBlocked: () => false,
+        submitBlock: () => null,
+        onChooseModel: () => {
+          pickerOpened++
+        },
+        prompt: {
+          current: () => [{ type: "text", content: "hi", start: 0, end: 2 }],
+          set: () => undefined,
+        },
+        imageCount: () => 0,
+        commentCount: () => 0,
+        mode: () => "normal",
+        setMode: () => undefined,
+        promptLength: () => 2,
+        clearBoot: () => undefined,
+      })
+
+      const event = new Event("submit", { cancelable: true })
+      await retry.handleSubmit(event)
+
+      expect(event.defaultPrevented).toBe(false)
+      expect(rawCalls).toBe(1)
+      expect(pickerOpened).toBe(0)
+      dispose()
+    })
+  })
 })
