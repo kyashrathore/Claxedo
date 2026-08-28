@@ -75,7 +75,7 @@ export function runtimeEventsHandler(
         heartbeat,
         heartbeatMs: 30_000,
         lastEventId: c.req.header("last-event-id"),
-        replay: scopedReplay,
+        replay: replayForScope,
         replayLive: false,
         replayGap: ({ lastEventId, throughId }) => ({
           contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION as RuntimeEventEnvelope["contractVersion"],
@@ -100,20 +100,5 @@ export function runtimeEventsHandler(
         })
       })
     })
-  }
-}
-
-function filterReplay(
-  replay: SseReplayBuffer<RuntimeEventEnvelope>,
-  allows: (event: RuntimeEventEnvelope) => boolean,
-): SseReplayBuffer<RuntimeEventEnvelope> {
-  return {
-    push: (event) => replay.push(event),
-    idFor: (event) => replay.idFor(event),
-    lastId: () => replay.lastId(),
-    hasGap: (lastEventId, throughId) => replay.hasGap(lastEventId, throughId),
-    replayAfter: (lastEventId, throughId) => replay.replayAfter(lastEventId, throughId)
-      .filter((event) => allows(event.payload)),
-    isTerminal: (event) => replay.isTerminal(event),
   }
 }

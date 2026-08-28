@@ -120,6 +120,7 @@ const DirectoryLayout = lazy(() => import("@/app/routes/directory-layout"))
 const PermissionsPage = lazy(() => import("@/app/routes/permissions"))
 const ConfigPage = lazy(() => import("@/app/routes/config"))
 const LoginPage = lazy(() => import("@/app/routes/login"))
+const BootstrapOwnerPage = lazy(() => import("@/app/routes/bootstrap-owner"))
 const CliLoginPage = lazy(() => import("@/app/routes/cli-login"))
 const DialogMatrixHarness = lazy(() => import("@/app/routes/dialog-matrix-harness"))
 const ErrorPageHarness = lazy(() => import("@/app/routes/error-page-harness"))
@@ -499,6 +500,16 @@ export function AppInterface(props: {
               <LoginPage />
             </Suspense>
           </BoundAccountPortProvider>
+        )}
+      />
+      <Route
+        path="/bootstrap-owner"
+        component={() => (
+          <AccountPortProvider>
+            <Suspense fallback={<Loading />}>
+              <BootstrapOwnerPage />
+            </Suspense>
+          </AccountPortProvider>
         )}
       />
       <Route

@@ -67,9 +67,9 @@ export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAc
   app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy))
 }
 
-export function mountWorkspaceFiles(app: Hono) {
+export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
   app.route(WorkspaceRuntimeRoutes.diff, DiffRoutes())
-  app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes())
+  app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes(sessionAccessPolicy ? { sessionAccessPolicy } : {}))
   app.route(WorkspaceRuntimeApiPrefix, FileRoutes())
   // OpenCode-compatible adapter routes. The neutral public runtime API is
   // mounted above under /api/wr.
@@ -85,6 +85,7 @@ export function mountWorkspaceCore(
     sessionAccessPolicy?: SessionAccessPolicy
     processObserver?: ProcessObserver
     runtimeEventAuthorization?: RuntimeEventAuthorization
+    sessionAccessPolicy?: SessionAccessPolicy
     transcripts?: WorkspaceTranscriptRoutesOptions
   },
 ) {

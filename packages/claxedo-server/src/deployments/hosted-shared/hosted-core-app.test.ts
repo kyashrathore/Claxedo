@@ -85,6 +85,7 @@ describe("resource-closed hosted core app", () => {
     const paths = [...new Set(app.routes.map((route) => route.path))].toSorted()
     for (const expected of [
       "/api/claxedo/auth/descriptor",
+      "/api/claxedo/auth/bootstrap-owner",
       "/api/claxedo/auth/profile",
       "/api/claxedo/bootstrap",
       "/api/claxedo/events",

@@ -113,6 +113,13 @@ export function SessionRoutes(
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermissionRow[]>
     listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestionRow[]>
     listSessions?: (c: unknown, directory: string) => Promise<AgentSessionRow[]>
+    /** Host-owned status transport. The session-core route remains the only
+     * public handler so its private-session filter cannot be shadowed. */
+    getStatus?: (
+      c: unknown,
+      directory: string,
+      adapter: AgentHarnessAdapter,
+    ) => Promise<Response | unknown> | Response | unknown
     /**
      * Own session creation instead of delegating straight to the adapter.
      *
@@ -287,21 +294,23 @@ export function SessionRoutes(
     getTodos: options?.getTodos
       ? (_c, directory, sessionId) => options.getTodos!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
-    getStatus: async (_c, directory, adapter) => {
-      const target = requiredDirectory(directory)
-      if (!hasAdapterCapability(adapter, "http-proxy")) return sessionStatusSnapshot(await adapter.listSessions(target))
-      const url = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getServerUrl()
-      const headers = new Headers(options?.opencodeHeaders)
-      headers.set("x-opencode-directory", target)
-      const res = await fetch(`${url}/session/status`, {
-        headers,
-      })
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: res.headers,
-      })
-    },
+    getStatus: options?.getStatus
+      ? (c, directory, adapter) => options.getStatus!(c, requiredDirectory(directory), adapter)
+      : async (_c, directory, adapter) => {
+          const target = requiredDirectory(directory)
+          if (!hasAdapterCapability(adapter, "http-proxy")) return sessionStatusSnapshot(await adapter.listSessions(target))
+          const url = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getServerUrl()
+          const headers = new Headers(options?.opencodeHeaders)
+          headers.set("x-opencode-directory", target)
+          const res = await fetch(`${url}/session/status`, {
+            headers,
+          })
+          return new Response(res.body, {
+            status: res.status,
+            statusText: res.statusText,
+            headers: res.headers,
+          })
+        },
     sessionBus: workspaceRuntimeBus,
     publishGlobal: (event) => {
       eventHub.publishGlobal(event)

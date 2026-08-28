@@ -59,6 +59,7 @@ import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { OpenCodeCompatRoutes } from "../routes/opencode-compat"
 import { SessionRoutes } from "../routes/session"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
+import { sessionV2Proxy } from "../routes/session-v2-proxy"
 import {
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
@@ -2043,6 +2044,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           exposure: options.exposure,
           sessionAccessPolicy,
           processObserver: hostOptions.processObserver,
+          sessionAccessPolicy: hostOptions.sessionAccessPolicy,
           runtimeEventAuthorization: hostOptions.runtimeEventAuthorization,
           transcripts: hostOptions.transcripts,
         })
@@ -2099,15 +2101,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 502)
         }
-      })
-
-      app.get("/session/status", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
-          const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
-          return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       })
 
       app.get("/mcp", async (c) => {
@@ -2224,7 +2217,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // so a session pinned to a non-default harness gets ITS adapter. That
         // helper only creates and configures; it does not spawn, so it does not
         // reintroduce the start this gate exists to prevent.
-        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true
+        // A managed-private stream is served from the canonical hub so replay
+        // and live frames pass through one session filter. The raw upstream
+        // proxy cannot enforce that boundary.
+        const proxy = !scope.managed && runner.id === "opencode" && hostOptions.opencodeCompat === true
           ? await ensureSessionAdapter(runner)
           : undefined
         const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
@@ -2372,6 +2368,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           collection.rebuild(collection.rows.filter((row) => allowed.has(sessionV2RowId(row)))),
         )
       }
+      const proxySessionV2 = sessionV2Proxy({
+        ...(hostOptions.sessionAccessPolicy ? { policy: hostOptions.sessionAccessPolicy } : {}),
+        forward: forwardSessionV2,
+      })
       app.all("/api/model", proxySessionV2)
       app.all("/api/session", proxySessionV2)
       app.all("/api/session/*", proxySessionV2)
@@ -2447,6 +2447,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         },
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
+        getStatus: async (c, directory, adapter) => {
+          if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
+            return sessionStatusSnapshot(await adapter.listSessions(directory))
+          }
+          return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        },
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),

@@ -24,7 +24,7 @@ function relayAuth(
     iss: "workspace-relay",
     aud: "workspace-host-service",
     principal_kind: "user",
-    actor_id: "user_1",
+    actor_id: actorId,
     actor_kind: "human",
     org_id: "org_1",
     workspace_id: "ws_1",
@@ -57,10 +57,10 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
 function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth(role))
+    c.set("relayHostAuth", relayAuth(role, actorId))
     return await next()
   })
-  app.route("/", PtyRoutes(upgradeWebSocket))
+  app.route("/", PtyRoutes(upgradeWebSocket, { sessionAccessPolicy: accessPolicy }))
   return app
 }
 

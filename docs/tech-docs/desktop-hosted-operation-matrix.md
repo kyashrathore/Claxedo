@@ -31,6 +31,13 @@ directly using the short-lived Runtime Access Token in that response. Relay is
 the data plane; Hosted Server is not a byte proxy and Electron IPC is not one
 either.
 
+The one-time user-deployed owner claim is also browser-only. The operator-facing
+`app/routes/bootstrap-owner.tsx` sends the claim from a transient password input
+to the fixed `POST /api/claxedo/auth/bootstrap-owner` route using the browser's
+same signed session. It is deliberately absent from Electron's account port:
+desktop is not an initial deployment-owner provisioning surface, and main must
+never receive or retain this one-use secret.
+
 Two consequences worth stating plainly:
 
 - Tunnelling Runtime bytes through Electron IPC would serialize every terminal

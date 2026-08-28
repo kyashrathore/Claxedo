@@ -6,7 +6,6 @@
 
 import { Hono, type Context } from "hono"
 import z from "zod/v3"
-import { lazy } from "../lazy"
 import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
@@ -41,6 +40,10 @@ function processLogNotFound(message: string, details?: Record<string, unknown>) 
   return errorBody("process_log_target_not_found", message, details)
 }
 
+function processLogPrivate() {
+  return errorBody("process_log_private", "Terminal logs require their creator or a workspace administrator")
+}
+
 export type CreateProcessRoutesDeps = {
   manager: {
     get(directory: string, id: string): { ptyId?: string } | undefined
@@ -49,6 +52,7 @@ export type CreateProcessRoutesDeps = {
   pty: {
     get(id: string): { id: string; sessionId?: string } | undefined
     snapshot(id: string): string
+    accessOwner?(id: string): string | undefined
   }
 }
 
@@ -273,5 +277,5 @@ export function createProcessRoutes(
       }
       throw err
     }
-  })
+    })
 }

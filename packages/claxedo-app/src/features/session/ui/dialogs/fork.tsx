@@ -17,6 +17,16 @@ function formatTime(date: Date): string {
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
 }
 
+function managedWorkspaceKind(kind: "local" | "cloud" | "user-hosted" | undefined) {
+  switch (kind) {
+    case "cloud":
+    case "user-hosted":
+      return true
+    default:
+      return false
+  }
+}
+
 export const DialogFork: Component = () => {
   const params = useParams()
   const navigate = useNavigate()
@@ -50,7 +60,7 @@ export const DialogFork: Component = () => {
       client: sdk.client.session,
       sessionId: sessionID,
       messageId: item.id,
-      managed: workspace?.kind === "cloud" || workspace?.kind === "user-hosted",
+      managed: managedWorkspaceKind(workspace?.kind),
       workspaceId: workspace?.workspaceId ?? workspace?.id,
       serverUrl: globalSDK.url,
     })

@@ -12,6 +12,7 @@ const state = {
   names: new Map<string, { ptyId?: string }>(),
   ptys: new Map<string, { id: string; sessionId?: string }>(),
   snapshots: new Map<string, string>(),
+  owners: new Map<string, string>(),
 }
 
 const manager = {
@@ -36,6 +37,7 @@ const manager = {
 const pty = {
   get: mock((id: string) => state.ptys.get(id)),
   snapshot: mock((id: string) => state.snapshots.get(id) ?? ""),
+  accessOwner: mock((id: string) => state.owners.get(id)),
   listDetailed: mock(() => []),
   remove: mock(async () => {}),
 }
@@ -48,6 +50,7 @@ describe("ProcessRoutes logs", () => {
     state.names.clear()
     state.ptys.clear()
     state.snapshots.clear()
+    state.owners.clear()
   })
 
   afterEach(() => {

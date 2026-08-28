@@ -172,6 +172,11 @@ export function PtyRoutes(
             }
           : undefined,
       )
+      const actorId = sessionAccessContext(c).actor?.actorId
+      if (actorId && !Pty.bindAccessOwner(info.id, actorId)) {
+        await Pty.remove(info.id)
+        return c.json(errorBody("pty_owner_bind_failed", "Terminal ownership could not be recorded"), 503)
+      }
       // Ownership transfers only once the public create path has completed.
       // From this point the PTY belongs to the user and must outlive any
       // renderer/WebSocket connection that happens to observe it.

@@ -15,6 +15,16 @@ function mount(
   return app
 }
 
+const managedPolicy = (): SessionAccessPolicy => ({
+  sessionAuthority: "managed-private",
+  authorize: (input) => input.sessionId === "session-a"
+    ? { allowed: true }
+    : { allowed: false, status: 403, code: "session_private", message: "private" },
+  authorizePrefix: () => ({ allowed: true }),
+  filterSessions: (input) => input.sessionIds,
+  registerSession: () => ({ allowed: true }),
+})
+
 type Connection = {
   /** Everything decoded from the stream so far. */
   text: () => string
