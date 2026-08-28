@@ -8,6 +8,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { marketplaceRoute, workGraphRoute } from "@/platform/identity/route"
 import { userExtensionViews } from "@/platform/extensions/user-extension-views"
 import type { AppShellState } from "./app-shell-state"
+import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
 
 export function useAppShellActions(input: {
   shell: AppShellState
@@ -58,6 +59,7 @@ export function useAppShellActions(input: {
     activeWorkspaceRouteId: input.shell.activeWorkspaceRouteId,
     activeProjectId: input.shell.activeProjectId,
     workspaceRouteId: input.shell.routeIdForDirectory,
+    workspaceKindForRoute: (routeId) => workspaceConnection(routeId)?.kind,
     canUseDocuments: input.shell.canUseDocuments,
     flowLog: input.shell.flowLog,
   })

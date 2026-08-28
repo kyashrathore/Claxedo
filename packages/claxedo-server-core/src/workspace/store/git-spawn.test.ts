@@ -17,7 +17,8 @@ import path from "node:path"
  * spawns the store actually performs rather than a mocked module boundary.
  */
 
-const root = path.join(realpathSync(os.tmpdir()), `workspace-store-git-spawn-${randomUUID().slice(0, 8)}`)
+const canonicalDirectory = (directory: string) => path.resolve(realpathSync.native?.(directory) ?? realpathSync(directory))
+const root = path.join(canonicalDirectory(os.tmpdir()), `workspace-store-git-spawn-${randomUUID().slice(0, 8)}`)
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const previousGitTrace = process.env.GIT_TRACE2_EVENT
 process.env.CLAXEDO_DATA_DIR = root
@@ -119,7 +120,7 @@ describe("workspace store git subprocess cost", () => {
       store.ensureWorkspace({ directory: dir }),
     ]))
     const workspaces = ensured.value.map(defined)
-    const stored = (await store.listWorkspaces()).filter((item) => item.directory === realpathSync(dir))
+    const stored = (await store.listWorkspaces()).filter((item) => item.directory === canonicalDirectory(dir))
 
     expect(new Set(workspaces.map((item) => item.id))).toHaveLength(1)
     expect(stored).toHaveLength(1)
@@ -146,7 +147,7 @@ describe("workspace store git subprocess cost", () => {
     ])
 
     expect(new Set(results.map((workspace) => defined(workspace).id))).toHaveLength(1)
-    expect((await store.listWorkspaces()).filter((workspace) => workspace.directory === realpathSync(dir))).toHaveLength(1)
+    expect((await store.listWorkspaces()).filter((workspace) => workspace.directory === canonicalDirectory(dir))).toHaveLength(1)
   })
 
   test("rebinding a known id to a different directory still reads git identity", async () => {
@@ -161,7 +162,7 @@ describe("workspace store git subprocess cost", () => {
 
     expect(moved.spawns).toBe(4)
     expect(ws.id).toBe("ws_rebind")
-    expect(ws.directory).toBe(realpathSync(after))
+    expect(ws.directory).toBe(canonicalDirectory(after))
     expect(ws.repo_key).not.toBe(first.repo_key)
     expect(ws.repo_name).toBe("rebind-after")
     expect(ws.git_remote).toBe("https://github.com/foo/rebind-after.git")

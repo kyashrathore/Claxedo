@@ -11,6 +11,7 @@ export type RailSidebarShellProps = {
   activeProjectId?: string
   activeSessionId?: string
   activeDirectory?: string
+  activeWorkspaceRouteId?: string
   closeMobileSidebar: () => void
   globalChatEnabled?: boolean
   hasOpenSurfaces: Accessor<boolean>
@@ -175,6 +176,7 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
             projects={props.projects}
             activeProjectId={props.activeProjectId}
             activeDirectory={props.activeDirectory}
+            activeWorkspaceRouteId={props.activeWorkspaceRouteId}
             activeSessionId={props.activeSessionId}
             activeGlobal={props.activeGlobal()}
             globalChatEnabled={props.globalChatEnabled}

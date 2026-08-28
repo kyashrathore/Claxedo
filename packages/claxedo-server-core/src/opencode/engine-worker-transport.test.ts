@@ -88,9 +88,12 @@ describe("embedded engine worker transport", () => {
       return child as never
     })
     let outgoingSignal: AbortSignal | undefined
+    let markFetchStarted!: () => void
+    const fetchStarted = new Promise<void>((resolve) => (markFetchStarted = resolve))
     const fetchMock = vi.fn(async (input: Request | string | URL) => {
       const request = input instanceof Request ? input : new Request(input)
       outgoingSignal = request.signal
+      markFetchStarted()
       return new Promise<Response>((_resolve, reject) => {
         if (request.signal.aborted) {
           reject(request.signal.reason)
@@ -111,7 +114,7 @@ describe("embedded engine worker transport", () => {
     )
     const rejected = expect(pending).rejects.toMatchObject({ name: "AbortError" })
 
-    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1))
+    await fetchStarted
     controller.abort(new DOMException("request cancelled", "AbortError"))
 
     await rejected

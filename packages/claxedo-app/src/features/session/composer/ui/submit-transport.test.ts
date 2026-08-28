@@ -277,11 +277,16 @@ describe("submit transport adapter", () => {
         throw new Error("signed workspace request bypassed the relay")
       },
       config: undefined,
-      createClient: () => ({
+      createClient: ({ baseUrl, fetch: runtimeFetch, directory }) => ({
         session: {
           get: async () => ({}),
           prompt: async () => ({}),
           promptAsync: async () => ({}),
+          status: async () => {
+            const url = new URL("/session/status", baseUrl)
+            url.searchParams.set("directory", directory)
+            return { data: await (await runtimeFetch(url)).json() }
+          },
         },
       }),
       showToast: (toast) => toasts.push(toast),
@@ -294,9 +299,38 @@ describe("submit transport adapter", () => {
       directory: "/repo/main",
       harnessType: "opencode",
     })).resolves.toMatchObject({ harness: { type: "opencode" } })
+
+    const promptClient = adapter.createRuntimePromptClient({
+      signedControlPlane: true,
+      sessionDirectory: "/repo/main",
+      sessionRef: {
+        sessionId: "session-signed",
+        host: "workspace",
+        cwd: "/repo/main",
+        toolSandbox: { kind: "local", cwd: "/repo/main" },
+      },
+      opencodeClient: {
+        session: {
+          prompt: async () => ({}),
+          promptAsync: async () => ({}),
+        },
+      },
+    })
+    await promptClient.session.promptAsync({
+      sessionID: "session-signed",
+      directory: "/repo/main",
+      agent: "build",
+      model: { providerID: "test", modelID: "test" },
+      messageID: "message-signed",
+      parts: [],
+    })
+    await adapter.sessionClient("/repo/main", "opencode").session.status()
+
     expect(runtimeCalls).toEqual([
       "GET http://127.0.0.1:4527/api/workspace/ws_signed/connection",
       "GET https://relay.test/workspaces/ws_signed/session/session-signed/config?harness=opencode",
+      "POST https://relay.test/workspaces/ws_signed/session/session-signed/prompt_async",
+      "GET https://relay.test/workspaces/ws_signed/session/status?harness=opencode",
     ])
   })
 })

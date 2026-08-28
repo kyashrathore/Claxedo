@@ -375,14 +375,20 @@ const localContextInput = {
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
+      const selectionHandoff = settledQueryData(selectionHandoffQuery)
       const sessionConfigSelection = settledQueryData(sessionConfigSelectionQuery) ?? undefined
-      if (!session) return store.draft ?? settledQueryData(selectionHandoffQuery)
+      if (!session) return store.draft ?? selectionHandoff
       if (saved.dirty[session] && saved.session[session]) return saved.session[session]
+      // Session creation publishes the exact config atomically. A remounted
+      // workbench owner must consume that handoff before the deferred config
+      // read's loading gate, otherwise it briefly renders an unconfigured
+      // composer and turns the first follow-up click into "Choose a model".
+      if (selectionHandoff) return selectionHandoff
       if (store.last === undefined) {
         if (settledQueryData(sessionConfigSelectionQuery) !== undefined) return sessionConfigSelection
         if (sessionConfigSelectionLoading()) return
       }
-      return saved.session[session] ?? settledQueryData(selectionHandoffQuery) ?? sessionConfigSelection
+      return saved.session[session] ?? sessionConfigSelection
     })
 
     const restorePending = () => {
@@ -680,6 +686,12 @@ const localContextInput = {
           if (!next) return
 
           clearLocalSelectionHandoff(localDraftSelectionHandoffID(sdk.directory))
+          // The created session can remount in a different workbench content
+          // owner even when its directory is unchanged. Publish the atomic
+          // create config through the shared handoff before updating this
+          // provider's local store, so that remount does not briefly expose an
+          // unconfigured composer while its deferred config query catches up.
+          setLocalSelectionHandoff(session, next)
           if (dir === sdk.directory) {
             // The create request already persisted this exact state atomically.
             // Install it locally without scheduling a redundant config PATCH.
@@ -689,7 +701,6 @@ const localContextInput = {
             return
           }
 
-          setLocalSelectionHandoff(session, next)
           setStore("draft", undefined)
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey }) {

@@ -212,7 +212,9 @@ describe("frontend API contract", () => {
           })
         }
         if (url.pathname === "/provider/auth") return Response.json({})
-        if (url.pathname === "/config/providers") return Response.json({ providers: [], default: {} })
+        if (url.pathname === "/config/providers") {
+          return Response.json({ providers: [{ id: "opencode" }], default: { opencode: "big-pickle" } })
+        }
         if (url.pathname === "/config" || url.pathname === "/global/config") {
           return Response.json({ model: "", provider: {}, mcp: {} })
         }
@@ -312,7 +314,10 @@ describe("frontend API contract", () => {
       "claude-acp": [expect.objectContaining({ type: "api" })],
       "codex-acp": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
     })
-    await expect(responses.configProviders.json()).resolves.toEqual({ providers: [], default: {} })
+    await expect(responses.configProviders.json()).resolves.toEqual({
+      providers: [{ id: "opencode" }],
+      default: { opencode: "big-pickle" },
+    })
     await expect(responses.workspaceResolve.json()).resolves.toMatchObject({
       workspaceId: "ws_frontend_contract",
       directory: "/workspace",

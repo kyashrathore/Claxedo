@@ -71,6 +71,7 @@ function makeProps() {
     activeDirectory: () => "/workspace/main",
     activeProjectId: () => "p1",
     workspaceRouteId: () => "p1",
+    workspaceKindForRoute: () => undefined,
     projects: () => [{ id: "p1", worktree: "/workspace/main" }],
     navigate: () => undefined,
     dialog: {},
@@ -158,7 +159,15 @@ describe("createSessionActions", () => {
       directory: "/workspace/main",
       sessionId: "new",
       title: "New Session",
-      opts: { workspaceRouteId: "p1" },
+      opts: {
+        workspaceRouteId: "p1",
+        sessionRef: {
+          sessionId: "new",
+          host: "workspace",
+          cwd: "/workspace/main",
+          toolSandbox: { kind: "local", cwd: "/workspace/main" },
+        },
+      },
     }])
     expect(navs).toEqual([
       {
@@ -184,7 +193,15 @@ describe("createSessionActions", () => {
       directory: "/workspace/shared",
       sessionId: "new",
       title: "New Session",
-      opts: { workspaceRouteId: "p2" },
+      opts: {
+        workspaceRouteId: "p2",
+        sessionRef: {
+          sessionId: "new",
+          host: "workspace",
+          cwd: "/workspace/shared",
+          toolSandbox: { kind: "local", cwd: "/workspace/shared" },
+        },
+      },
     }])
     expect(navs.map((item) => item.path)).toEqual([workspaceSessionRoute("p2")])
   })

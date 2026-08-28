@@ -2,6 +2,7 @@ import { getFilename } from "@/lib/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
+import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -59,6 +60,38 @@ export function shouldHydrateSidebarRuntime(input: {
   requested: boolean
 }) {
   return input.open && (input.active || input.requested)
+}
+
+export function projectActionDirectory<TDirectory extends string>(input: {
+  directories: readonly TDirectory[]
+  activeDirectory?: string
+  projectWorktree: TDirectory
+  workspaceIdForDirectory: (directory: TDirectory) => string | undefined
+}) {
+  const active = input.activeDirectory
+    ? input.directories.find((directory) =>
+        directory === input.activeDirectory || input.workspaceIdForDirectory(directory) === input.activeDirectory)
+    : undefined
+  return active ?? input.directories[0] ?? input.projectWorktree
+}
+
+export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
+  workspaceId?: string
+  environmentKind?: string
+  project: Pick<ProjectItem, "workspaces">
+  directory: TDirectory
+}): WorkspaceSessionBacking | undefined {
+  const workspace = input.project.workspaces?.[input.directory] ??
+    Object.values(input.project.workspaces ?? {}).find((item) =>
+      item.directory === input.directory ||
+      item.id === input.directory ||
+      item.workspaceId === input.directory
+    )
+  const kind = input.environmentKind ?? workspace?.kind
+  if (kind !== "cloud" && kind !== "user-hosted") return
+  const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
+  if (!workspaceId) return
+  return { workspaceId, kind }
 }
 
 export function sessionIsTerminalLike(session: { id: string; title?: string }) {

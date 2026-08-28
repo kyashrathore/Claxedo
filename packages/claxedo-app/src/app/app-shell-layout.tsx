@@ -440,6 +440,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           activeProjectId={props.activeProjectId}
           activeSessionId={props.activeSessionId}
           activeDirectory={props.activeDirectory}
+          activeWorkspaceRouteId={props.activeWorkspaceRouteId}
           closeMobileSidebar={chrome.closeMobileSidebar}
           globalChatEnabled={props.globalChatEnabled}
           hasOpenSurfaces={emptyDraft.hasOpenSurfaces}

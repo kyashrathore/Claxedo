@@ -239,7 +239,10 @@ export function BootstrapRoutes(options: Options = {}) {
         return c.json(await localBootstrap(c.req.url, queryHarnessId(c.req.url), options))
       } catch (err) {
         return c.json({
-          error: err instanceof Error ? err.message : String(err),
+          error: {
+            code: "bootstrap_provider_unavailable",
+            message: err instanceof Error ? err.message : String(err),
+          },
         }, 502)
       }
     })

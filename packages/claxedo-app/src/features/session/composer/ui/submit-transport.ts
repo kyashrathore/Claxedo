@@ -190,6 +190,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
         : localSessionFetch(clientInput.sessionDirectory),
       signedControlPlane: clientInput.signedControlPlane,
       sessionRef: clientInput.sessionRef,
+      workspaceId: input.workspaceId(),
+      workspaceKind: input.workspaceKind(),
       opencodeClient: clientInput.opencodeClient,
     })
     const runtimePromptClient: typeof clientInput.opencodeClient = {

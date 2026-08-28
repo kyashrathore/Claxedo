@@ -64,6 +64,8 @@ import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 import {
   activateDisclosureFromKeyboard,
   isRootWorktreeRef,
+  projectActionDirectory as resolveProjectActionDirectory,
+  railWorkspaceSessionBacking,
   railProjectCaptionFromName,
   railProjectLabel,
   sessionProjectSort,
@@ -193,6 +195,7 @@ export type RailSidebarProps = {
   projects: ProjectItem[]
   activeProjectId?: string
   activeDirectory?: string
+  activeWorkspaceRouteId?: string
   activeSessionId?: string
   activeGlobal?: boolean
   globalChatEnabled?: boolean
@@ -284,15 +287,12 @@ function workspaceSessionBacking(
   session: Pick<Row, "workspaceId" | "environment" | "project">,
   directory: string,
 ): WorkspaceSessionBacking | undefined {
-  const kind = session.environment?.kind
-  if (kind !== "cloud" && kind !== "user-hosted") return
-  const workspace = projectWorkspaceInfo(session.project, directory)
-  const workspaceId = session.workspaceId ?? workspace?.workspaceId ?? workspace?.id
-  if (!workspaceId) return
-  return {
-    workspaceId,
-    kind,
-  }
+  return railWorkspaceSessionBacking({
+    directory,
+    project: session.project,
+    ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
+    ...(session.environment?.kind ? { environmentKind: session.environment.kind } : {}),
+  })
 }
 
 function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
@@ -1512,7 +1512,9 @@ export function RailSidebar(props: RailSidebarProps) {
     scope: "project" | "workspace"
   }) => {
     const [sharing, setSharing] = createSignal(false)
-    const selectedRouteId = () => workspaceRouteId([input.project], input.workspaceDir)
+    const selectedRouteId = () =>
+      workspaceRouteId([input.project], input.workspaceDir) ??
+      (input.workspaceDir === props.activeDirectory ? props.activeWorkspaceRouteId : undefined)
     const createTerminal = (command?: string, title?: string) =>
       props.onNewTerminal?.(input.workspaceDir, command, title, selectedRouteId())
     // Opened directly rather than through `onNewTerminal`: the creator is a
@@ -2270,11 +2272,12 @@ export function RailSidebar(props: RailSidebarProps) {
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
     const terminalItems = createMemo(() => terminalSurfaceRows({ directories: directories() }))
     const projectActionDirectory = createMemo(() => {
-      if (props.activeDirectory && directories().some((directory) =>
-        directory === props.activeDirectory ||
-        projectWorkspaceInfo(section.project, directory)?.workspaceId === props.activeDirectory
-      )) return props.activeDirectory
-      return directories()[0] ?? section.project.worktree
+      return resolveProjectActionDirectory({
+        directories: directories(),
+        activeDirectory: props.activeDirectory,
+        projectWorktree: section.project.worktree,
+        workspaceIdForDirectory: (directory) => projectWorkspaceInfo(section.project, directory)?.workspaceId,
+      })
     })
     const projectActionLabel = createMemo(() => workspaceName(projectActionDirectory(), section.project))
     // Cloud workspaces are lazily connected: dim the entry until its runtime

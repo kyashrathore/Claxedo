@@ -233,7 +233,16 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       if (project) props.state.workspace.recordAccess(project.id, providerDirectory)
       setFocusedWorkspace(providerDirectory)
       seedDraftSelection(providerDirectory)
-      props.state.layout.openSession(providerDirectory, "new", "New Session", { workspaceRouteId: routeId })
+      props.state.layout.openSession(providerDirectory, "new", "New Session", {
+        workspaceRouteId: routeId,
+        sessionRef: sessionRefForActionWorkspace({
+          projects: props.projects,
+          workspaceDir: providerDirectory,
+          sessionId: "new",
+          workspaceRouteId: routeId,
+          workspaceKind: props.workspaceKindForRoute(routeId),
+        }),
+      })
       nav(workspaceSessionRoute(routeId), "new-session", {
         workspaceDir: providerDirectory,
       })
@@ -247,7 +256,16 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       props.state.workspace.recordAccess(project.id, created)
       setFocusedWorkspace(created)
       seedDraftSelection(created)
-      props.state.layout.openSession(created, "new", "New Session", { workspaceRouteId: routeId })
+      props.state.layout.openSession(created, "new", "New Session", {
+        workspaceRouteId: routeId,
+        sessionRef: sessionRefForActionWorkspace({
+          projects: props.projects,
+          workspaceDir: created,
+          sessionId: "new",
+          workspaceRouteId: routeId,
+          workspaceKind: props.workspaceKindForRoute(routeId),
+        }),
+      })
       nav(workspaceSessionRoute(routeId), "new-session:recovered-workspace", {
         projectId: project.id,
         workspaceDir,
@@ -268,7 +286,16 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
 
     setFocusedWorkspace(workspaceDir)
     seedDraftSelection(workspaceDir)
-    props.state.layout.openSession(workspaceDir, "new", "New Session", { workspaceRouteId: routeId })
+    props.state.layout.openSession(workspaceDir, "new", "New Session", {
+      workspaceRouteId: routeId,
+      sessionRef: sessionRefForActionWorkspace({
+        projects: props.projects,
+        workspaceDir,
+        sessionId: "new",
+        workspaceRouteId: routeId,
+        workspaceKind: props.workspaceKindForRoute(routeId),
+      }),
+    })
     nav(workspaceSessionRoute(routeId), wsInfo?.isCloud ? "new-session:cloud" : "new-session", {
       workspaceDir,
     })
