@@ -45,6 +45,13 @@ describe("cross-harness tool registry", () => {
     expect(source).not.toContain("props.metadata.sessionId")
   })
 
+  test("task cards use canonical subagent lifecycle even when the parent tool call errors", async () => {
+    const source = await Bun.file(`${import.meta.dir}/message-part.tsx`).text()
+    expect(source).toContain(
+      'part().tool !== "task" && part().state.status === "error" && (part().state as any).error',
+    )
+  })
+
   test("uses only authoritative subagent associations for grouped chips", async () => {
     const source = await Bun.file(`${import.meta.dir}/subagent-chip.tsx`).text()
     expect(source).not.toContain("fallbackChip")

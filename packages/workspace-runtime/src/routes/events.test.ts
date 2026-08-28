@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../runtime-event-hub"
-import { runtimeEventsHandler } from "./events"
+import { isTerminalRuntimeEvent, runtimeEventsHandler } from "./events"
 import { createWorkspaceHost } from "../workspace"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 
 const event = (sessionId: string, delta: string): Omit<RuntimeEventEnvelope, "contractVersion"> => ({
   directory: "/workspace",
@@ -36,6 +37,25 @@ async function readUntil(response: Response, value: string) {
 }
 
 describe("runtime event parent authorization", () => {
+  test("retains every terminal subagent lifecycle update for replay", () => {
+    for (const status of ["completed", "failed", "killed", "interrupted"] as const) {
+      expect(isTerminalRuntimeEvent({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/workspace",
+        sessionId: "parent",
+        payload: { type: "subagent-updated", subagentKey: "child", revision: 2, status },
+      })).toBe(true)
+    }
+    for (const status of ["pending", "running", "paused"] as const) {
+      expect(isTerminalRuntimeEvent({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/workspace",
+        sessionId: "parent",
+        payload: { type: "subagent-updated", subagentKey: "child", revision: 1, status },
+      })).toBe(false)
+    }
+  })
+
   test("filters replayed child events to the authorized parent", async () => {
     const { app, hub } = mount({})
     hub.publishRuntime(event("child-parent-a", "allowed-replay"))

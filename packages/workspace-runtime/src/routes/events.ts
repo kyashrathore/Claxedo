@@ -10,10 +10,16 @@ import {
   type EventDeliveryOptions,
 } from "../event-delivery"
 
-function isTerminalRuntimeEvent(event: RuntimeEventEnvelope) {
+export function isTerminalRuntimeEvent(event: RuntimeEventEnvelope) {
   return event.payload.type === "finish" ||
     event.payload.type === "error" ||
-    (event.payload.type === "session-status" && (event.payload.status === "idle" || event.payload.status === "error"))
+    (event.payload.type === "session-status" && (event.payload.status === "idle" || event.payload.status === "error")) ||
+    (event.payload.type === "subagent-updated" && (
+      event.payload.status === "completed" ||
+      event.payload.status === "failed" ||
+      event.payload.status === "killed" ||
+      event.payload.status === "interrupted"
+    ))
 }
 
 export type RuntimeEventAuthorization = {

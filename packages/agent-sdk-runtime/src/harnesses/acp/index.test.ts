@@ -259,6 +259,103 @@ describe("AcpHarnessAdapter subagent routing", () => {
       payload: expect.objectContaining({ type: "text-delta", delta: "child result" }),
     }))
   })
+
+  test("settles a Codex status-only spawn when the parent prompt completes", async () => {
+    const runtimeEvents: RuntimeEventEnvelope[] = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => runtimeEvents.push(event))
+    const store = new MemoryRuntimeStore()
+    store.bindSession({
+      sessionId: "parent-session",
+      directory: path.resolve("/work"),
+      title: "Parent",
+      agentSessionId: "parent-agent-session",
+    })
+    store.updateSessionConfig("parent-session", {
+      harness: { id: "codex", access: "acp" },
+      model: { providerID: "codex-acp", modelID: "gpt-5.6-sol" },
+      agent: "read-only",
+      variant: "ultra",
+    })
+    const adapter = new AcpHarnessAdapter({
+      binary: "codex-acp",
+      harness: "codex",
+      store,
+      eventHub,
+    })
+    internalsOf<{
+      getOrSpawnProcess: () => Promise<{ proc: {
+        permissionPushers: Map<string, unknown>
+        syncSession: () => Promise<void>
+        prompt: (_sessionId: string, _input: unknown, forward: (update: SessionUpdate) => void) => Promise<{ stopReason: "end_turn" }>
+        cancel: () => Promise<void>
+      }; isNew: false }>
+    }>(adapter).getOrSpawnProcess = async () => ({
+      isNew: false,
+      proc: {
+        permissionPushers: new Map(),
+        async syncSession() {},
+        async setPermissionMode(_sessionId: string, modeId: string) {
+          return { modes: [], currentModeId: modeId, appliesFrom: "next-turn" as const }
+        },
+        async prompt(_sessionId, _input, forward) {
+          forward({
+            sessionUpdate: "tool_call",
+            toolCallId: "call-10",
+            title: "Start subagent demo_child",
+            status: "completed",
+            rawInput: {
+              agentThreadId: "thread-child",
+              agentPath: "/root/demo_child",
+              activityKind: "started",
+            },
+            _meta: {
+              codex: {
+                subagent: {
+                  threadId: "thread-child",
+                  path: "/root/demo_child",
+                  activity: "started",
+                },
+              },
+            },
+          })
+          return { stopReason: "end_turn" }
+        },
+        async cancel() {},
+      },
+    })
+
+    for await (const _event of adapter.sendMessage("parent-session", {
+      parts: [{ type: "text", text: "delegate" }],
+      userMessageId: "parent-user",
+      assistantMessageId: "parent-assistant",
+      agent: "read-only",
+      model: { providerID: "codex-acp", modelID: "gpt-5.6-sol" },
+      permissionMode: "agent-full-access",
+      variant: "ultra",
+    }, path.resolve("/work"))) {}
+
+    const lifecycle = runtimeEvents
+      .filter((event) => event.sessionId === "parent-session" && event.payload.type === "subagent-updated")
+      .map((event) => event.payload.type === "subagent-updated" ? event.payload : undefined)
+      .filter((event): event is NonNullable<typeof event> => !!event)
+    expect(lifecycle.map((event) => event.status)).toEqual(["running", "completed"])
+    expect(new Set(lifecycle.map((event) => event.subagentKey)).size).toBe(1)
+    expect(lifecycle.at(-1)).toMatchObject({
+      toolCallId: "call-10",
+      toolCallRole: "spawn",
+      providerId: "thread-child",
+      providerKind: "codex-acp-thread",
+      transcript: { kind: "none" },
+      status: "completed",
+    })
+    expect(runtimeEvents).not.toContainEqual(expect.objectContaining({
+      payload: expect.objectContaining({
+        type: "diagnostic",
+        diagnostic: expect.objectContaining({ code: "acp_subagent_admission_failed" }),
+      }),
+    }))
+  })
 })
 
 describe("AcpHarnessAdapter active turn cleanup", () => {

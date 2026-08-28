@@ -497,11 +497,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: sameArrayItems },
         )
-        const visibleAssistantMessageIDs = createMemo(() => {
-          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return
-          const finalAssistant = turnAssistants().at(-1)
-          return finalAssistant ? new Set([finalAssistant.id]) : undefined
-        })
         const turnParts = createMemo(
           () => {
             const conversation = sessionConversation()
@@ -516,6 +511,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: samePartsRecord },
         )
+        const visibleAssistantMessageIDs = createMemo(() => {
+          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return
+          const parts = turnParts()
+          return Timeline.coldFinalVisibleAssistantMessageIDs(
+            turnAssistants(),
+            (messageID) => parts[messageID] ?? emptyParts,
+          )
+        })
         const isActive = createMemo(() => activeMessageID() === userMessage.id)
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()

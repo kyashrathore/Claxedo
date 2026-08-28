@@ -303,6 +303,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
   const row = rec(input)
   const lastTurn = normalizeSessionTurnOutcome(row?.lastTurn)
   const created = typeof row?.createdAt === "number" ? row.createdAt : 0
+  const workspaceID = txt(row?.workspaceID) ?? txt(row?.workspaceId)
   return {
     id: txt(row?.sessionID) ?? txt(row?.id) ?? "",
     ...(txt(row?.sessionRef) ?? txt(row?.session_ref)
@@ -310,6 +311,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
       : {}),
     title: txt(row?.title) ?? "New Session",
     directory: txt(row?.directory) ?? "",
+    ...(workspaceID ? { workspaceID } : {}),
     ...(txt(row?.projectID) ? { projectID: txt(row?.projectID) } : {}),
     ...(txt(row?.parentID) ? { parentID: txt(row?.parentID) } : {}),
     ...(txt(row?.rootID) ? { rootID: txt(row?.rootID) } : {}),
@@ -626,23 +628,31 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       const sessions = await fetchLocalControlSessions()
       const byDir = new Map<string, InventoryGlobalSession[]>()
       for (const session of sessions) {
-        const key = session.directory || session.projectID || session.id
+        const key = session.workspaceID || session.workspaceId || session.directory || session.projectID || session.id
         byDir.set(key, [...(byDir.get(key) ?? []), session])
       }
-      return [...byDir.entries()].map(([directory, group]) => ({
-        key: directory,
-        directory,
-        projectID: group[0]?.projectID ?? directory,
-        ...(() => {
-          const page = paginateSessions(group, { limit: opts.perGroup ?? input.pageSize })
-          return {
-            sessions: page.sessions.map((session) => toSessionInventoryRow(session)),
-            hasMore: page.hasMore,
-            total: page.total,
-            nextCursor: page.nextCursor,
-          }
-        })(),
-      }))
+      return [...byDir.entries()].map(([key, group]) => {
+        const directory = group.find((session) =>
+          !session.sessionRef?.startsWith("central:") && !!session.directory
+        )?.directory ?? key
+        return {
+          key,
+          directory,
+          ...(group[0]?.workspaceID || group[0]?.workspaceId
+            ? { workspaceId: group[0]?.workspaceID ?? group[0]?.workspaceId }
+            : {}),
+          projectID: group[0]?.projectID ?? key,
+          ...(() => {
+            const page = paginateSessions(group, { limit: opts.perGroup ?? input.pageSize })
+            return {
+              sessions: page.sessions.map((session) => toSessionInventoryRow(session)),
+              hasMore: page.hasMore,
+              total: page.total,
+              nextCursor: page.nextCursor,
+            }
+          })(),
+        }
+      })
     }
     const url = experimentalSessionUrl({
       serverUrl: getClaxedoServerUrl(),

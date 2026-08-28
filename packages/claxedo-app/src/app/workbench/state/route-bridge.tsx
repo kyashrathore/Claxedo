@@ -39,7 +39,13 @@ import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
 import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
-import { createRouteIntentAdapter, isRouteIntentClosed, markRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
+import {
+  createRouteIntentAdapter,
+  isRouteIntentClosed,
+  markRouteIntentClosed,
+  sessionInventoryCentralSession,
+  sessionInventoryTarget,
+} from "./route-intent"
 import {
   collectRouteResolutionDirectories,
   directSessionResolutionDependencies,
@@ -403,6 +409,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           }),
         }
       }
+      if (sessionInventoryCentralSession(id, sessionInventory())) return
       const cached = cachedRouteSessionTarget(id)
       if (cached) return cached
       const session = await fetchRouteSessionMeta({
@@ -724,7 +731,26 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           byProject: sessionInventory().byProject,
           loaded: sessionInventory().loaded,
         })
+        const centralInventorySession = sessionInventoryCentralSession(sessionId, {
+          global: sessionInventory().global,
+          byWorkspace: sessionInventory().byWorkspace,
+          byProject: sessionInventory().byProject,
+          loaded: sessionInventory().loaded,
+        })
         const directories = routeResolutionDirectories()
+        if (centralInventorySession) {
+          const harness = routeSessionHarness(centralInventorySession)
+          resolveRouteSessionFromMeta(sessionId, directories)
+          state.layout.openCentralSession(sessionId, centralInventorySession.title || "Session", {
+            authoritative: true,
+            sessionRef: centralSessionRef({
+              sessionId,
+              ...(centralInventorySession.workspaceId ? { workspaceId: centralInventorySession.workspaceId } : {}),
+              ...(harness ? { harness } : {}),
+            }),
+          })
+          return
+        }
         const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
         const matchesActiveWorkspaceSurface =
           !!routeDirectory() &&
