@@ -579,9 +579,10 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         if (request.method === "PATCH" && state.sessionConfigSaveError) {
           return new Response(state.sessionConfigSaveError, { status: 500 })
         }
-        return request.method === "PATCH" && init?.body
-          ? Response.json(canonicalSessionConfig(String(init.body)))
-          : Response.json(state.localSessionConfig ?? { harness: { id: "opencode", access: "native" } })
+        if (request.method === "PATCH" && init?.body) {
+          state.localSessionConfig = canonicalSessionConfig(String(init.body))
+        }
+        return Response.json(state.localSessionConfig ?? { harness: { id: "opencode", access: "native" } })
       }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,

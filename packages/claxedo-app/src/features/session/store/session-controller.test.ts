@@ -1088,6 +1088,10 @@ describe("session controller helpers", () => {
   })
 
   test("syncSessionMeta status-only refresh clears busy when no request is pending", async () => {
+    queryClient.setQueryData(shellDataKeys.sessionId("ses_1", "requests"), {
+      permissions: [],
+      questions: [],
+    })
     setSessionStatusQueryData({ queryClient, sessionId: "ses_1", status: busy })
 
     const ok = await syncSessionMeta({
