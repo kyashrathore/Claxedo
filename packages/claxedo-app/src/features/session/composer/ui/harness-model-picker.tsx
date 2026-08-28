@@ -31,7 +31,7 @@ import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics
  *
  * The model section hosts the REAL `ModelList` — same search, provider
  * grouping, tags and `model_selected` commit point as the standalone picker,
- * including its connect-provider and manage-models actions. Nothing forks.
+ * including its manage-models action and Settings → Providers redirect. Nothing forks.
  */
 
 export type HarnessModelPickerSection = "harness" | "model" | "effort"

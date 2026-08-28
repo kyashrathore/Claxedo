@@ -29,6 +29,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   ): boolean
   completeRememberedHarness?(scope: string, type: HarnessType, model?: ModelKey, labels?: DraftDefaultLabels): boolean
   setOptionsLoading(scope: string, value: boolean): void
+  readState?(scope: string): { readiness?: string; configError?: string } | undefined
   errorMessage(res: Response, fallback: string): Promise<string>
   scheduleRetry?(run: () => void): HarnessOptionsTimer
   clearRetry?(timer: HarnessOptionsTimer): void
@@ -77,6 +78,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         input.cache.clearTries(scope)
         input.applyPatch(scope, {
           dynamicModels: [],
+          selectedModel: "",
           optionsSource: "empty",
           optionsStale: true,
           optionsLoading: false,
@@ -98,6 +100,11 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       })
       if (decision.clearTries) input.cache.clearTries(scope)
       const resolvingDefault = !!draftDefault && !!input.resolveDraftDefault
+      const current = input.readState?.(scope)
+      if (current?.readiness === "error" && current.configError && decision.patch.configError === undefined) {
+        input.setOptionsLoading(scope, false)
+        return payload
+      }
       input.applyPatch(scope, resolvingDefault ? withoutSelection(decision.patch, payload.stale) : decision.patch)
       if (!resolvingDefault && decision.saveModel) input.saveModel(scope, decision.saveModel)
       if (resolvingDefault && !payload.stale) {
@@ -143,6 +150,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       input.cache.clearTries(scope)
       input.applyPatch(scope, {
         dynamicModels: [],
+        selectedModel: "",
         optionsSource: "empty",
         optionsStale: true,
         optionsLoading: false,

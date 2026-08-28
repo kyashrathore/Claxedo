@@ -4,6 +4,7 @@ import {
   HARNESS_DISPLAY_NAMES,
   effectiveHarnessModel,
   harnessDisplayLabel,
+  isClientDefaultPlaceholder,
   type HarnessModelOption,
   type HarnessType,
 } from "./profile"
@@ -40,32 +41,43 @@ export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness" 
 
 export type HarnessModelChoice = HarnessModelOption & { providerID?: string }
 
+function isTerminalModelOptionsError(state: Pick<HarnessSelectionState, "configError" | "optionsLoading">) {
+  if (!state.configError || state.optionsLoading) return false
+  return state.configError !== "Loading model options..." && state.configError !== "Selected model unavailable"
+}
+
 export function harnessModels(
-  state: Pick<HarnessSelectionState, "harness" | "selectedModel" | "selectedModelProvider" | "dynamicModels">,
+  state: Pick<
+    HarnessSelectionState,
+    "harness" | "selectedModel" | "selectedModelProvider" | "dynamicModels" | "configError" | "optionsLoading"
+  >,
 ): HarnessModelChoice[] {
-  const selected = effectiveHarnessModel(state.harness, state.selectedModel)
+  const raw = state.selectedModel ?? ""
   if (state.dynamicModels?.length) {
-    if (!selected || state.dynamicModels.some((item) => item.id === selected)) return [...state.dynamicModels]
+    if (!raw || state.dynamicModels.some((item) => item.id === raw)) return [...state.dynamicModels]
+    if (isClientDefaultPlaceholder(raw)) return [...state.dynamicModels]
     return [
-      { id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected, providerID: state.selectedModelProvider },
+      { id: raw, name: raw, providerID: state.selectedModelProvider },
       ...state.dynamicModels,
     ]
   }
-  if (!selected) return []
-  return [{ id: selected, name: selected === DEFAULT_HARNESS_MODEL.id ? DEFAULT_HARNESS_MODEL.name : selected, providerID: state.selectedModelProvider }]
+  if (isTerminalModelOptionsError(state)) return []
+  if (isClientDefaultPlaceholder(raw)) return []
+  return [{ id: raw, name: raw, providerID: state.selectedModelProvider }]
 }
 
 export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey | undefined {
   if (state.harness === "opencode") return undefined
-  const selected = effectiveHarnessModel(state.harness, state.selectedModel)
-  if (!selected) return undefined
-  const match = harnessModels(state).find((item) => item.id === selected && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
+  const raw = state.selectedModel ?? ""
+  if (!raw) return undefined
+  if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
+  const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
   if (!match) return undefined
   const providerID = state.harness === "pi" ? state.selectedModelProvider : state.harness
   if (!providerID) return undefined
   return {
     providerID,
-    modelID: selected,
+    modelID: raw,
     // Effort rides the model key's `variant`, the same field opencode uses. A
     // harness turn is one `query()` and the SDK takes `effort` per query, so
     // the level travels WITH the prompt instead of being pushed at the running

@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test"
 import { unwrap } from "solid-js/store"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
-import { DEFAULT_HARNESS_MODEL } from "./profile"
 import { createHarnessStore } from "./harness-store"
 import { createDraftDefaultPreferences } from "./draft-defaults"
 
@@ -132,7 +131,7 @@ describe("harness store facade", () => {
       optionsStale: false,
     })
     expect(store.read("draft:/repo:route").configError).toBeUndefined()
-    expect(store.selectedModel("draft:/repo:route")).toBe(DEFAULT_HARNESS_MODEL.id)
+    expect(store.selectedModel("draft:/repo:route")).toBe("")
   })
 
   test("applyPatch seeds missing scopes before applying falsy values", () => {
@@ -154,7 +153,7 @@ describe("harness store facade", () => {
       optionsStale: false,
       configError: "",
     })
-    expect(store.selectedModel("draft:/repo:route")).toBe(DEFAULT_HARNESS_MODEL.id)
+    expect(store.selectedModel("draft:/repo:route")).toBe("")
   })
 
   test("promotes full transient state without writing harness preference maps", () => {

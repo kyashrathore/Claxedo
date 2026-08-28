@@ -177,7 +177,7 @@ describe("Cursor SDK driver", () => {
     expect(JSON.stringify(ingested)).toContain("child failed")
   })
 
-  test("serves the static Cursor model catalog before any live listing", () => {
+  test("does not serve the static catalog before Cursor SDK credentials exist", async () => {
     const driver = createCursorSdkDriver({
       lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
       pendingPermissions: new Map(),
@@ -185,16 +185,10 @@ describe("Cursor SDK driver", () => {
       bindSession() {},
     } as never)
 
-    expect(driver.peekConfigOptions("gpt-5.5")).toEqual([
-      expect.objectContaining({
-        id: "model",
-        currentValue: "gpt-5.5",
-        selectOptions: expect.arrayContaining([
-          expect.objectContaining({ id: "auto" }),
-          expect.objectContaining({ id: "gpt-5.5" }),
-        ]),
-      }),
-    ])
+    expect(driver.peekConfigOptions("gpt-5.5")).toEqual([])
+    await expect(driver.configOptions("gpt-5.5")).rejects.toThrow(
+      "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login.",
+    )
   })
 
   test("keeps an SDK-only local root inferred and action-ineligible", () => {

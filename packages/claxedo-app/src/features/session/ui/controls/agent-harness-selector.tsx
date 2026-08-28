@@ -13,7 +13,8 @@ import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import { watchHarnessReprobe } from "@/features/session/harness/harness-reprobe"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { createModelSelectionController, modelKeyFromPickerSelection } from "@/features/session/commands/model-selection"
-import { loadConnectProviderDialog, useProviders } from "@/features/session/app-ports"
+import { useProviders } from "@/features/session/app-ports"
+import { openSettingsProviders } from "@/features/settings/open-settings-providers"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultLabels } from "@/features/session/harness/draft-defaults"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
@@ -137,10 +138,6 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     }
     return HARNESS_OPTION_LABELS[input] ?? label(input)
   }
-  let disposed = false
-  onCleanup(() => {
-    disposed = true
-  })
   const sessionId = createMemo(() => {
     const next = props.sessionId
     return next
@@ -324,7 +321,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       name: item.name,
       ...(item.description ? { description: item.description } : {}),
       provider: { id: item.providerID ?? currentHarness, name: label(item.providerID ?? currentHarness) },
-      connected: true,
+      connected: !selection().configError && !selection().optionsLoading && selection().models.length > 0,
     }))
   })
   const picked = createMemo(() => {
@@ -345,6 +342,9 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       },
     })
   )
+  const openProviders = () => {
+    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+  }
   const model = createMemo<PickerState>(() => ({
     list: () => rows() as PickerItem[],
     current: () => picked() as PickerItem | undefined,
@@ -355,42 +355,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       const hit = rows().find((row) => row.id === modelKey.modelID && row.provider.id === modelKey.providerID)
       if (!hit) return
       if (harness() === "pi" && !hit.connected) {
-        const intended = { providerID: hit.provider.id, modelID: hit.id }
-        const intendedScope = scope()
-        const intendedDirectory = directory()
-        const intendedSession = sessionId()
-        const intendedHarness = harness()
-        void loadConnectProviderDialog().then((module) => {
-          if (
-            disposed ||
-            intendedHarness !== "pi" ||
-            harness() !== intendedHarness ||
-            scope() !== intendedScope ||
-            directory() !== intendedDirectory ||
-            sessionId() !== intendedSession
-          ) return
-          dialog.show(() => (
-            <module.DialogConnectProvider
-              provider={hit.provider.id}
-              harness="pi"
-              onConnected={() => {
-                if (
-                  disposed ||
-                  harness() !== intendedHarness ||
-                  scope() !== intendedScope ||
-                  directory() !== intendedDirectory ||
-                  sessionId() !== intendedSession
-                ) return
-                if (!piProviders.connected().some((item) => item.id === intended.providerID)) return
-                if (!piProviders.all().get(intended.providerID)?.models[intended.modelID]) return
-                return props.harnessController.setModel(intendedScope, intended, {
-                  directory: intendedDirectory,
-                  sessionId: intendedSession,
-                }, { provider: hit.provider.name, model: hit.name })
-              }}
-            />
-          ))
-        })
+        openProviders()
         return
       }
       void modelSelection().set({
@@ -419,9 +384,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const modelUnavailable = createMemo(() => {
     return !modelLoading() && !hasModelOptions()
   })
-  const modelOptionsFailed = createMemo(() => harness() === "pi"
-    ? !!piProviders.error() && !modelLoading()
-    : !!selection().configError && isStale() && !optionsLoading())
+  const modelOptionsFailed = createMemo(() => {
+    if (harness() === "pi") return !!piProviders.error() && !modelLoading()
+    const error = selection().configError
+    if (!error || error === "Loading model options..." || error === "Selected model unavailable") return false
+    return !optionsLoading() && !hasModelOptions()
+  })
   const modelDisabled = createMemo(() => {
     return (harness() === "pi" && !!props.modelLocked) || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
@@ -470,6 +438,14 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   }))
 
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
+  const needsProviderSetup = createMemo(() => {
+    if (modelOptionsFailed()) return false
+    if (harness() === "pi") {
+      return !piProviders.loading() && !piProviders.error() && piProviders.connected().length === 0
+    }
+    if (harness() === "opencode") return false
+    return !modelLoading() && !hasModelOptions() && !isPolling() && !isError()
+  })
   const notice = createMemo<ComposerNotice | undefined>(() => {
     // A backgrounded pane must not publish over the visible one, and opencode
     // mode is served by the merged picker state supplied by the toolbar —
@@ -487,9 +463,12 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
           ? selection().draftDefaultLabels?.model || selection().selectedModel || "Saved model"
           : undefined,
       piModelMissing: harness() === "pi" && !!selection().selectedModel && !picked(),
+      setupRequired: needsProviderSetup(),
+      openProviders,
     })
     if (!resolved) return undefined
-    const { retry, ...rest } = resolved
+    const { retry, action, ...rest } = resolved
+    if (action) return { ...rest, action }
     if (!retry) return rest
     return {
       ...rest,

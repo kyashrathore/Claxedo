@@ -164,6 +164,7 @@ describe("harness options state", () => {
         optionsLoading: false,
         thoughtLevels: [],
         dynamicModels: [],
+        selectedModel: "",
         configError: "Model options unavailable",
       },
       retry: false,
@@ -171,7 +172,7 @@ describe("harness options state", () => {
     })
   })
 
-  test("uses fallback model for fresh empty configurable harness options", () => {
+  test("clears the placeholder model for fresh empty configurable harness options", () => {
     expect(applyHarnessOptionsResponse({
       type: "codex-acp",
       selectedModel: "",
@@ -184,16 +185,50 @@ describe("harness options state", () => {
         optionsLoading: false,
         thoughtLevels: [],
         dynamicModels: [],
-        selectedModel: "default",
+        selectedModel: "",
         configError: "No model options available",
       },
-      saveModel: "default",
       retry: false,
       clearTries: true,
     })
   })
 
-  test("falls back without retry when model options contain no usable next id", () => {
+  test("rejects native SDK static catalog backstops as a model load failure", () => {
+    expect(applyHarnessOptionsResponse({
+      type: "cursor-sdk",
+      selectedModel: "",
+      tries: 0,
+      payload: {
+        source: "catalog",
+        stale: true,
+        options: [{
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "auto",
+          selectOptions: [
+            { id: "auto", name: "Auto" },
+            { id: "gpt-5.5", name: "GPT-5.5" },
+          ],
+        }],
+      },
+    })).toEqual({
+      patch: {
+        optionsSource: "catalog",
+        optionsStale: true,
+        optionsLoading: false,
+        thoughtLevels: [],
+        dynamicModels: [],
+        selectedModel: "",
+        configError: "Model options unavailable",
+      },
+      retry: false,
+      clearTries: false,
+    })
+  })
+
+  test("keeps retrying when model options contain no usable next id while stale", () => {
     expect(applyHarnessOptionsResponse({
       type: "codex-acp",
       selectedModel: "",
@@ -219,11 +254,9 @@ describe("harness options state", () => {
         optionsLoading: true,
         thoughtLevels: [],
         dynamicModels: [{ id: "", name: "Empty" }],
-        selectedModel: "default",
         configError: "Loading model options...",
       },
-      saveModel: "default",
-      retry: false,
+      retry: true,
       clearTries: false,
     })
   })

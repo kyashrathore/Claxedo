@@ -2,7 +2,7 @@ import { batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
-import { effectiveHarnessModel, harnessHasConfigOptions, type HarnessType } from "./profile"
+import { harnessHasConfigOptions, type HarnessType } from "./profile"
 import {
   harnessDisplayName,
   harnessModelKeyForSubmit,
@@ -318,7 +318,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     },
     selectedThoughtLevel: (scope: string) => read(scope).selectedThoughtLevel,
     selectedAgent: (scope: string) => read(scope).selectedAgent,
-    selectedModel: (scope: string) => effectiveHarnessModel(read(scope).harness, read(scope).selectedModel),
+    selectedModel: (scope: string) => read(scope).selectedModel ?? "",
     selectedModelKey: (scope: string) => harnessModelKeyForSubmit(read(scope)),
     optionsSource: (scope: string) => read(scope).optionsSource,
     optionsStale: (scope: string) => read(scope).optionsStale,

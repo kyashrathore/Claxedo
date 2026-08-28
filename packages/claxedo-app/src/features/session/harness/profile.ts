@@ -73,6 +73,19 @@ export function effectiveHarnessModel(type: HarnessType, selected?: string | nul
   return selected || DEFAULT_HARNESS_MODEL.id
 }
 
+/** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
+export function isNativeSdkHarness(type: HarnessType) {
+  return type === "claude-sdk" || type === "codex-app-server" || type === "cursor-sdk"
+}
+
+export function isStaticCatalogOptions(payload: Pick<OptionsResponse, "source" | "stale">) {
+  return payload.source === "catalog" && payload.stale
+}
+
+export function isClientDefaultPlaceholder(model?: string | null) {
+  return !model || model === DEFAULT_HARNESS_MODEL.id
+}
+
 export function desiredHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.type, data.binary) }
 
 export function activeHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.activeType ?? data.type, data.activeBinary ?? data.binary) }

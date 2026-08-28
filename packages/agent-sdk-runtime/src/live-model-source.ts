@@ -24,8 +24,11 @@ export function createLiveModelSource(input: {
   harness: NativeSdkHarnessId
   fetchModels: (directory?: string) => Promise<SdkModelEntry[]>
   ttlMs?: number
+  /** When false, fetch failures propagate instead of serving the static catalog. */
+  fallbackToCatalog?: boolean
 }): LiveModelSource {
   const ttl = input.ttlMs ?? DEFAULT_TTL_MS
+  const fallbackToCatalog = input.fallbackToCatalog ?? true
   let cached: readonly SdkModelEntry[] | null = null
   let fetchedAt = 0
   let inflight: Promise<SdkModelEntry[]> | null = null
@@ -45,12 +48,15 @@ export function createLiveModelSource(input: {
       log.warn("live model list came back empty; serving fallback", { harness: input.harness })
     } catch (err) {
       log.warn("live model list failed; serving fallback", { harness: input.harness, err })
+      if (!fallbackToCatalog) throw err
     }
+    if (!fallbackToCatalog) return cached ?? []
     return cached ?? SDK_MODEL_CATALOG[input.harness]
   }
 
   function peek(): readonly SdkModelEntry[] {
-    return cached ?? SDK_MODEL_CATALOG[input.harness]
+    if (!fallbackToCatalog && !cached) return []
+    return cached ?? (fallbackToCatalog ? SDK_MODEL_CATALOG[input.harness] : [])
   }
 
   return { models, peek }
