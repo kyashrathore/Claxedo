@@ -27,9 +27,6 @@ export const createBackend: CreateBackendFn = async (
   // disposal so xterm addons can deregister and refresh while a renderer still
   // exists.
   const cleanups: VoidFunction[] = [instance.cleanup, () => xterm.dispose()]
-  const updateScrollbarState = () => {
-    container.toggleAttribute("data-terminal-scrollbar", xterm.buffer.active.baseY > 0)
-  }
 
   // Load serialize addon
   const serializeAddon = new SerializeAddon()
@@ -216,7 +213,6 @@ export const createBackend: CreateBackendFn = async (
   cleanups.push(() => xtermOnKey.dispose())
 
   const xtermOnWriteParsed = xterm.onWriteParsed(() => {
-    updateScrollbarState()
     if (!parsedWriteData || parsedWriteData.length === 0) return
     const data = parsedWriteData.join("")
     parsedWriteData.length = 0
@@ -227,15 +223,9 @@ export const createBackend: CreateBackendFn = async (
       parsedAtMs: performance.now(),
     })
   })
-  const xtermOnScroll = xterm.onScroll(updateScrollbarState)
-  const xtermOnResize = xterm.onResize(updateScrollbarState)
   cleanups.push(() => {
     xtermOnWriteParsed.dispose()
-    xtermOnScroll.dispose()
-    xtermOnResize.dispose()
-    container.removeAttribute("data-terminal-scrollbar")
   })
-  updateScrollbarState()
 
   let disposed = false
 

@@ -28,11 +28,8 @@ describe("TERMINAL_OPTIONS.cursorBlink", () => {
 })
 
 describe("TERMINAL_OPTIONS.scrollbar", () => {
-  test("scrollbar.showScrollbar should be true so terminal scrollback has a visible handle", () => {
-    // The pane owns the scrollbar styling, but xterm must not be configured to
-    // hide the overlay entirely. The CSS keeps it slim and only exposes it when
-    // the backend marks that scrollback exists.
-    expect(TERMINAL_OPTIONS.scrollbar?.showScrollbar).toBe(true)
+  test("uses the same thin scrollbar width as the app's scrollable panes", () => {
+    expect(TERMINAL_OPTIONS.scrollbar).toEqual({ showScrollbar: true, width: 6 })
   })
 })
 

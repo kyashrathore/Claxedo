@@ -15,7 +15,7 @@ const TERMINAL_FONT_FAMILY = [
 
 type TerminalOptions = ITerminalOptions & {
   // xterm v6 supports this option before its public typings expose it.
-  scrollbar?: { showScrollbar: boolean }
+  scrollbar?: { showScrollbar: boolean; width: number }
 }
 
 export const TERMINAL_OPTIONS = {
@@ -29,7 +29,7 @@ export const TERMINAL_OPTIONS = {
   cursorInactiveStyle: "outline",
   fastScrollSensitivity: 5,
   screenReaderMode: false,
-  scrollbar: { showScrollbar: true },
+  scrollbar: { showScrollbar: true, width: 6 },
 } satisfies TerminalOptions
 
 // Resize coordinator settings.
