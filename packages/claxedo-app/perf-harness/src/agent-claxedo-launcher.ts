@@ -248,7 +248,15 @@ async function captureColdReadyDiagnostics(input: {
 export function ambientIsolationEnv(isolatedProfilePath: string): Record<string, string> {
   if (process.env.CLAXEDO_BENCH_ISOLATE_AMBIENT !== "1") return {}
   const root = path.join(isolatedProfilePath, "ambient")
-  return { XDG_CONFIG_HOME: path.join(root, "config"), XDG_CACHE_HOME: path.join(root, "cache"), HOME: root }
+  const xauthority =
+    process.env.XAUTHORITY
+    ?? (process.env.HOME ? path.join(process.env.HOME, ".Xauthority") : undefined)
+  return {
+    XDG_CONFIG_HOME: path.join(root, "config"),
+    XDG_CACHE_HOME: path.join(root, "cache"),
+    HOME: root,
+    ...(xauthority ? { XAUTHORITY: xauthority } : {}),
+  }
 }
 
 export function ambientIsolationMode(): "isolated" | "operator-ambient" {
