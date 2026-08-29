@@ -442,6 +442,7 @@ function copySession(input: {
       workspaceId: assignment.workspaceId,
       title,
       createdAt: assignment.source.time_created,
+      updatedAt: assignment.source.time_updated,
     },
     readinessTarget: {
       logicalSessionId: assignment.logicalSessionId,

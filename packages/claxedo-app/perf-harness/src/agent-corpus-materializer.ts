@@ -188,6 +188,9 @@ export async function materializeClaxedoCorpus(input: {
       let latestTurnContentSha256: Record<string, string> = {};
       let latestTurnTextPartSha256: Record<string, string> = {};
       let latestTurnPartIds: string[] = [];
+      const displayTitle = /^\d+\.\s/.test(session.title)
+        ? session.title
+        : `${session.order + 1}. ${session.title}`;
       database
         .prepare(
           "INSERT INTO session (id, project_id, slug, directory, title, version, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)",
@@ -197,10 +200,10 @@ export async function materializeClaxedoCorpus(input: {
           home.projectId,
           session.id,
           home.directory,
-          session.title,
+          displayTitle,
           "agent-app-v1",
           sessionTime,
-          sessionTime + 999_999,
+          sessionTime + 999_999 + session.order * 60_000,
         );
       for (const turn of session.turns.toSorted((a, b) => a.index - b.index)) {
         let parentId: string | undefined;
@@ -329,7 +332,7 @@ export async function materializeClaxedoCorpus(input: {
         expectedTextPartSha256: latestTurnTextPartSha256,
         expectedPartIds: latestTurnPartIds,
         sessionId,
-        title: session.title,
+        title: displayTitle,
         expectedMessageIds: latestTurnMessageIds,
         expectedContentSha256: latestTurnContentSha256,
       });
@@ -508,10 +511,13 @@ async function seedSessionMeta(input: {
         directory?: string | null;
         host?: "central" | "workspace";
         title?: string | null;
+        createdAt?: number;
+        updatedAt?: number;
       },
     ): Promise<unknown>;
   };
   await withClaxedoDataDirectory(input.dataDirectory, async () => {
+    const baseTime = Date.parse("2020-01-01T00:00:00.000Z");
     for (const session of input.sessions.toSorted(
       (left, right) => left.order - right.order,
     )) {
@@ -519,6 +525,10 @@ async function seedSessionMeta(input: {
       const sessionId = input.materializedSessions.get(session.id);
       if (!workspace || !sessionId)
         throw new Error(`session meta seed is missing ${session.id}`);
+      const createdAt = baseTime + session.order * 1_000_000;
+      const displayTitle = /^\d+\.\s/.test(session.title)
+        ? session.title
+        : `${session.order + 1}. ${session.title}`;
       await putSessionMeta(sessionId, {
         // The project-scoped rail query filters on project_id, which only
         // input.ws carries.
@@ -530,7 +540,9 @@ async function seedSessionMeta(input: {
         workspaceID: workspace.projectId,
         directory: workspace.directory,
         host: "workspace",
-        title: session.title,
+        title: displayTitle,
+        createdAt,
+        updatedAt: createdAt + 999_999 + session.order * 60_000,
       });
     }
   });
@@ -551,6 +563,7 @@ async function registerSessionInventory(input: {
         title: string;
         agentSessionId: string;
         createdAt: number;
+        updatedAt?: number;
       }): void;
       updateSessionConfig(
         id: string,
@@ -589,9 +602,12 @@ async function registerSessionInventory(input: {
         store.bindSession({
           sessionId,
           directory: workspace.directory,
-          title: session.title,
+          title: /^\d+\.\s/.test(session.title)
+            ? session.title
+            : `${session.order + 1}. ${session.title}`,
           agentSessionId: sessionId,
           createdAt: baseTime + session.order * 1_000_000,
+          updatedAt: baseTime + session.order * 1_000_000 + 999_999 + session.order * 60_000,
         });
         store.updateSessionConfig(
           sessionId,

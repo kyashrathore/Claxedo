@@ -301,8 +301,8 @@ describe("settlement contract", () => {
 })
 
 describe("public session navigation", () => {
-  test("clicks every session without beginning with the already-active session", () => {
-    expect(memoryVisitOrder(["a", "b", "c"])).toEqual(["b", "c", "a"])
+  test("clicks every session top→bottom in the supplied rail order", () => {
+    expect(memoryVisitOrder(["a", "b", "c"])).toEqual(["a", "b", "c"])
   })
 
   test("builds the canonical visible rail-row selector without synthetic routing", () => {

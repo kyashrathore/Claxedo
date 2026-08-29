@@ -133,7 +133,8 @@ export type ClaxedoPublicDriver = {
 export function createClaxedoPublicDriver(dependencies: DriverDependencies): ClaxedoPublicDriver {
   let prepared: Prepared | undefined
   let active = false
-  let pendingFirstVisit: Pick<SessionNavigationCase, "sourceSessionId" | "destinationSessionId" | "transcriptBytes"> | undefined
+  /** Logical session IDs first-visited in the current app process (history returns may reuse them later). */
+  let visitedDestinations = new Set<string>()
 
   const requirePrepared = () => {
     if (!prepared) throw new Error("Claxedo driver has not prepared the public corpus")
@@ -184,7 +185,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       const launch = await dependencies.launch(params.stateHandle, params.initialSessionId)
       if (launch.processes.length === 0) throw new Error("Claxedo launch returned no application root")
       active = true
-      pendingFirstVisit = undefined
+      visitedDestinations = new Set()
       return { ready: true, processes: launch.processes, readiness: launch.readiness }
     },
     execute: async (params) => {
@@ -204,27 +205,17 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
           throw new Error("Claxedo panel-open session navigation requires a declared load profile")
         }
         if (params.case.navigationType === "first-visit") {
-          if (pendingFirstVisit) {
-            throw new Error("Claxedo first-visit navigation was not followed by its adjacent return case")
+          if (visitedDestinations.has(params.case.destinationSessionId)) {
+            throw new Error("Claxedo first-visit destination was already displayed in this process")
           }
         } else if (params.case.navigationType === "return-visited-panel-closed") {
-          const previous = pendingFirstVisit
-          pendingFirstVisit = undefined
-          if (!previous || previous.sourceSessionId !== params.case.sourceSessionId ||
-            previous.destinationSessionId !== params.case.destinationSessionId ||
-            previous.transcriptBytes !== params.case.transcriptBytes) {
-            throw new Error("Claxedo return navigation must immediately follow its matching first-visit case")
+          if (!visitedDestinations.has(params.case.destinationSessionId)) {
+            throw new Error("Claxedo return navigation requires a prior first-visit of the destination in this process")
           }
-        } else if (pendingFirstVisit) {
-          throw new Error("Claxedo first-visit navigation was not followed by its adjacent return case")
         }
         const measured = await dependencies.executeSessionNavigation(params.case, source, destination, preset)
         if (params.case.navigationType === "first-visit") {
-          pendingFirstVisit = {
-            sourceSessionId: params.case.sourceSessionId,
-            destinationSessionId: params.case.destinationSessionId,
-            transcriptBytes: params.case.transcriptBytes,
-          }
+          visitedDestinations.add(params.case.destinationSessionId)
         }
         return navigationExecution(params.case.caseId, measured)
       }
@@ -298,7 +289,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
     shutdown: async () => {
       const result = await dependencies.shutdown()
       active = false
-      pendingFirstVisit = undefined
+      visitedDestinations = new Set()
       return result
     },
   }

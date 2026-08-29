@@ -368,19 +368,22 @@ export async function executeSessionNavigation(input: {
   }
 
   if (benchmarkCase.navigationType === "first-visit") {
-    await activateExact(page, source)
+    // Measured history walks dest→dest. Launch already leaves the app on
+    // control once; do not bounce back to source/control between destinations.
     await ensurePanelClosed(page, true)
     return measureNavigation(page, destination)
   }
 
   if (benchmarkCase.navigationType === "return-visited-panel-closed") {
-    await ensurePanelClosed(page, true)
-    await activateExact(page, source)
+    // Destination was first-visited earlier in this process. Continue from the
+    // current session without an untimed activateExact(control/source).
     await ensurePanelClosed(page, true)
     return measureNavigation(page, destination)
   }
 
   if (!preset) throw new Error("Claxedo panel-open session navigation requires a load preset")
+  // Panel-open only: source/control seeding stays isolated here so history
+  // measured clicks are not reset to control between destinations.
   await activateExact(page, destination)
   await seedPanelLoad(page, fixture, preset)
   await waitForPanelOwner(page, "diff", destination, fixture, {
