@@ -4,8 +4,28 @@ import {
   paintedContentVerification,
   seededSwitchSequence,
   semanticTimelinePaintReady,
+  sessionReadyMode,
   warmSwitchPlan,
 } from "../src/agent-browser-observer"
+
+describe("session ready mode", () => {
+  test("defaults to painted-and-input-ready and accepts Julius aliases", () => {
+    const previous = process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE
+    try {
+      delete process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE
+      expect(sessionReadyMode()).toBe("painted-and-input-ready")
+      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "dom-message-present"
+      expect(sessionReadyMode()).toBe("dom-message-present")
+      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "last-message-in-dom"
+      expect(sessionReadyMode()).toBe("dom-message-present")
+      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "DOM_MESSAGE_PRESENT"
+      expect(sessionReadyMode()).toBe("dom-message-present")
+    } finally {
+      if (previous === undefined) delete process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE
+      else process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = previous
+    }
+  })
+})
 
 describe("agent browser scenario ordering", () => {
   test("rejects an overflowing first fold whose mounted rows leave a blank gap", () => {
