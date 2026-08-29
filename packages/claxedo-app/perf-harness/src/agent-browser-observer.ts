@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import type { BenchmarkPage as Page } from "./agent-cdp-page";
 import {
   blockedFrameRatio,
@@ -238,21 +239,32 @@ export function paintedContentVerification(
 export type SessionReadyMode = "painted-and-input-ready" | "dom-message-present";
 
 /**
- * Default keeps the published painted+input-ready contract.
- * `dom-message-present` matches Julius/T3 replay-harness: stop when the
+ * Default is `dom-message-present` (Julius/T3 replay-harness): stop when the
  * session owner is correct and a terminal expected message id exists in the
  * DOM (no composer, hit-test, or two-frame paint stability).
+ * Set AGENT_APP_BENCHMARK_SESSION_READY_MODE=painted-and-input-ready for the
+ * stricter published painted+input-ready contract.
  */
+let sessionReadyModeLogged = false;
+
 export function sessionReadyMode(): SessionReadyMode {
   const raw = process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE?.trim().toLowerCase();
-  if (
-    raw === "dom-message-present" ||
-    raw === "last-message-in-dom" ||
-    raw === "dom_message_present"
-  ) {
-    return "dom-message-present";
+  const mode: SessionReadyMode =
+    raw === "painted-and-input-ready" ||
+    raw === "painted" ||
+    raw === "painted_and_input_ready"
+      ? "painted-and-input-ready"
+      : "dom-message-present";
+  if (!sessionReadyModeLogged) {
+    sessionReadyModeLogged = true;
+    process.stderr.write(`[claxedo-driver] SESSION_READY_MODE=${mode}\n`);
+    try {
+      writeFileSync("/tmp/agent-app-session-ready-mode-claxedo.txt", `${mode}\n`);
+    } catch {
+      // best-effort diagnostic for smoke verification
+    }
   }
-  return "painted-and-input-ready";
+  return mode;
 }
 
 export function semanticTimelinePaintReady(

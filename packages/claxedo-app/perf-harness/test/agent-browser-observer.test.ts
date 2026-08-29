@@ -9,16 +9,18 @@ import {
 } from "../src/agent-browser-observer"
 
 describe("session ready mode", () => {
-  test("defaults to painted-and-input-ready and accepts Julius aliases", () => {
+  test("defaults to dom-message-present; painted mode is explicit opt-in", () => {
     const previous = process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE
     try {
       delete process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE
+      expect(sessionReadyMode()).toBe("dom-message-present")
+      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "painted-and-input-ready"
+      expect(sessionReadyMode()).toBe("painted-and-input-ready")
+      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "painted"
+      expect(sessionReadyMode()).toBe("painted-and-input-ready")
+      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "PAINTED_AND_INPUT_READY"
       expect(sessionReadyMode()).toBe("painted-and-input-ready")
       process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "dom-message-present"
-      expect(sessionReadyMode()).toBe("dom-message-present")
-      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "last-message-in-dom"
-      expect(sessionReadyMode()).toBe("dom-message-present")
-      process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE = "DOM_MESSAGE_PRESENT"
       expect(sessionReadyMode()).toBe("dom-message-present")
     } finally {
       if (previous === undefined) delete process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE
