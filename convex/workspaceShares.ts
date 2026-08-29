@@ -34,18 +34,23 @@ function targetSelectorCount(args: {
   granted_to_token_identifier?: string
   granted_to_clerk_subject?: string
   granted_to_clerk_org_id?: string
+  granted_to_team_public_id?: string
+  granted_to_team_id?: string
 }) {
   return [
     args.grant_id,
     args.granted_to_token_identifier,
     args.granted_to_clerk_subject,
     args.granted_to_clerk_org_id,
+    args.granted_to_team_public_id,
+    args.granted_to_team_id,
   ].filter(Boolean).length
 }
 
 async function grantsForTarget(ctx: any, workspaceId: unknown, target: {
   user?: { _id: unknown }
   org?: { _id: unknown }
+  team?: { _id: unknown }
 }) {
   if (target.user) {
     return await ctx.db
@@ -61,7 +66,30 @@ async function grantsForTarget(ctx: any, workspaceId: unknown, target: {
         q.eq("workspace_id", workspaceId).eq("granted_to_org_id", target.org!._id))
       .collect()
   }
+  if (target.team) {
+    return await ctx.db
+      .query("workspace_share_grants")
+      .withIndex("by_workspace_team", (q: any) =>
+        q.eq("workspace_id", workspaceId).eq("granted_to_team_id", target.team!._id))
+      .collect()
+  }
   return []
+}
+
+async function teamUserIds(ctx: any, teamId: unknown) {
+  return (await ctx.db
+    .query("team_memberships")
+    .withIndex("by_team", (q: any) => q.eq("team_id", teamId))
+    .collect())
+    .map((membership: any) => membership.user_id)
+}
+
+async function orgUserIds(ctx: any, orgId: unknown) {
+  return (await ctx.db
+    .query("org_memberships")
+    .withIndex("by_org_user", (q: any) => q.eq("org_id", orgId))
+    .collect())
+    .map((membership: any) => membership.user_id)
 }
 
 async function revokeRuntimeTokensForUsers(ctx: any, workspaceId: unknown, userIds: unknown[]) {
@@ -82,12 +110,21 @@ async function revokeRuntimeTokensForUsers(ctx: any, workspaceId: unknown, userI
   return rows.filter((token: any) => !token.revoked_at).length
 }
 
-async function orgUserIds(ctx: any, orgId: unknown) {
-  return (await ctx.db
-    .query("org_memberships")
-    .withIndex("by_org_user", (q: any) => q.eq("org_id", orgId))
-    .collect())
-    .map((membership: any) => membership.user_id)
+async function grantedTeam(ctx: any, teamPublicId: string | undefined, teamDocId: string | undefined) {
+  if (teamDocId) {
+    try {
+      const team = await ctx.db.get(teamDocId as never)
+      if (team && !(team as any).deleted_at) return team
+    } catch {
+      /* fall through */
+    }
+  }
+  if (!teamPublicId) return undefined
+  const team = await ctx.db
+    .query("teams")
+    .withIndex("by_public_id", (q: any) => q.eq("public_id", teamPublicId))
+    .unique()
+  return team && !team.deleted_at ? team : undefined
 }
 
 export const grant = authedMutation({
@@ -97,28 +134,38 @@ export const grant = authedMutation({
     granted_to_token_identifier: v.optional(v.string()),
     granted_to_clerk_subject: v.optional(v.string()),
     granted_to_clerk_org_id: v.optional(v.string()),
+    granted_to_team_public_id: v.optional(v.string()),
+    granted_to_team_id: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    if (targetSelectorCount(args) !== 1) throw new Error("Share target must be exactly one user or org")
+    if (targetSelectorCount(args) !== 1) throw new Error("Share target must be exactly one user, org, or team")
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "admin")) throw new Error("Workspace not found")
     const user = await grantedUser(ctx, args)
     const org = await grantedOrg(ctx, args.granted_to_clerk_org_id)
-    if (!user && !org) throw new Error("Share target not found")
+    const team = await grantedTeam(ctx, args.granted_to_team_public_id, args.granted_to_team_id)
+    if (!user && !org && !team) throw new Error("Share target not found")
     const actor = await upsertUser(ctx)
-    const active = (await grantsForTarget(ctx, workspace._id, { user, org }))
+    const active = (await grantsForTarget(ctx, workspace._id, { user, org, team }))
       .filter((item: any) => !item.revoked_at)
     if (active.length === 1 && active[0].role === args.role) return active[0]._id
     const now = Date.now()
     for (const item of active) await ctx.db.patch(item._id, { revoked_at: now })
     if (active.length > 0) {
-      const userIds = user ? [user._id] : org ? await orgUserIds(ctx, org._id) : []
+      const userIds = user
+        ? [user._id]
+        : org
+          ? await orgUserIds(ctx, org._id)
+          : team
+            ? await teamUserIds(ctx, team._id)
+            : []
       await revokeRuntimeTokensForUsers(ctx, workspace._id, userIds)
     }
     return await ctx.db.insert("workspace_share_grants", {
       workspace_id: workspace._id,
       granted_to_user_id: user?._id,
       granted_to_org_id: org?._id,
+      granted_to_team_id: team?._id,
       role: args.role,
       created_by_user_id: actor._id,
       created_at: now,
@@ -133,18 +180,21 @@ export const revoke = authedMutation({
     granted_to_token_identifier: v.optional(v.string()),
     granted_to_clerk_subject: v.optional(v.string()),
     granted_to_clerk_org_id: v.optional(v.string()),
+    granted_to_team_public_id: v.optional(v.string()),
+    granted_to_team_id: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     if (targetSelectorCount(args) !== 1) {
-      throw new Error("Share revoke target must be exactly one grant, user, or org")
+      throw new Error("Share revoke target must be exactly one grant, user, org, or team")
     }
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "admin")) throw new Error("Workspace not found")
     const user = await grantedUser(ctx, args)
     const org = await grantedOrg(ctx, args.granted_to_clerk_org_id)
+    const team = await grantedTeam(ctx, args.granted_to_team_public_id, args.granted_to_team_id)
     const grants = args.grant_id
       ? [await ctx.db.get(args.grant_id)].filter((item: any) => item?.workspace_id === workspace._id)
-      : await grantsForTarget(ctx, workspace._id, { user, org })
+      : await grantsForTarget(ctx, workspace._id, { user, org, team })
     const active = grants.filter((item: any) => item && !item.revoked_at)
     if (active.length === 0) return { revoked: false }
     const now = Date.now()
@@ -154,6 +204,9 @@ export const revoke = authedMutation({
       if (grant.granted_to_user_id) userIds.add(grant.granted_to_user_id)
       if (grant.granted_to_org_id) {
         for (const userId of await orgUserIds(ctx, grant.granted_to_org_id)) userIds.add(userId)
+      }
+      if (grant.granted_to_team_id) {
+        for (const userId of await teamUserIds(ctx, grant.granted_to_team_id)) userIds.add(userId)
       }
     }
     return {

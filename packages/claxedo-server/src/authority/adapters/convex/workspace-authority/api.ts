@@ -12,6 +12,17 @@ type ConvexApi = {
   orgs: {
     listForMe: ConvexQuery
     resolveForMe: ConvexMutation
+    createTeam: ConvexMutation
+  }
+  teams: {
+    listForOrg: ConvexQuery
+    create: ConvexMutation
+    addMember: ConvexMutation
+    removeMember: ConvexMutation
+    listMembers: ConvexQuery
+    grantProject: ConvexMutation
+    revokeProject: ConvexMutation
+    ensureDefaultTeamForOrg: ConvexMutation
   }
   projects: {
     role: ConvexQuery
@@ -35,6 +46,11 @@ type ConvexApi = {
     replaceVisibilityForService: ConvexMutation
     deleteVisibility: ConvexMutation
     deleteVisibilityForService: ConvexMutation
+  }
+  sessionShares: {
+    grant: ConvexMutation
+    revoke: ConvexMutation
+    list: ConvexQuery
   }
   workspaces: {
     authorizeCreate: ConvexQuery

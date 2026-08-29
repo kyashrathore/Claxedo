@@ -104,6 +104,75 @@ describe("session navigation islands", () => {
     expect(rows[0]).not.toHaveProperty("sessionRef")
   })
 
+  test("matches terminal rows by workspace route id when meta carries a filesystem directory", () => {
+    const rows = deriveTerminalSurfaceRows({
+      metas: [{
+        id: "content_terminal",
+        type: "terminal",
+        directory: "/var/tmp/workspace",
+        terminalId: "pty_1",
+        content: {
+          type: "terminal",
+          directory: "/var/tmp/workspace",
+          terminalId: "pty_1",
+          title: "Shell",
+          workspaceRouteId: "ws_signed",
+        },
+      }],
+      directory: "workspace:ws_signed",
+      focusedContentId: "content_terminal",
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.terminalId).toBe("pty_1")
+  })
+
+  test("matches terminal rows across macOS /private path aliases", () => {
+    const rows = deriveTerminalSurfaceRows({
+      metas: [{
+        id: "content_terminal",
+        type: "terminal",
+        directory: "/var/folders/t2/tmp/workspace",
+        terminalId: "pty_1",
+        content: {
+          type: "terminal",
+          directory: "/var/folders/t2/tmp/workspace",
+          terminalId: "pty_1",
+          title: "Shell",
+          workspaceRouteId: "ws_signed",
+        },
+      }],
+      directory: "/private/var/folders/t2/tmp/workspace",
+      focusedContentId: "content_terminal",
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.terminalId).toBe("pty_1")
+  })
+
+  test("matches terminal rows when meta directory is the opaque workspace id", () => {
+    const rows = deriveTerminalSurfaceRows({
+      metas: [{
+        id: "content_terminal",
+        type: "terminal",
+        directory: "ws_signed",
+        terminalId: "pty_1",
+        content: {
+          type: "terminal",
+          directory: "ws_signed",
+          terminalId: "pty_1",
+          title: "Shell",
+          workspaceRouteId: "ws_signed",
+        },
+      }],
+      directory: "ws_signed",
+      focusedContentId: "content_terminal",
+    })
+
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.terminalId).toBe("pty_1")
+  })
+
   test("keeps terminal focus projection lazy per row", () => {
     let focused = "content_a"
     let reads = 0

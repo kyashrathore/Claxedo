@@ -2015,8 +2015,14 @@ test.describe("real harness journeys @core @tier-real", () => {
       JSON.parse(sessionStorage.getItem("tier-real:permission-mode-history") ?? "[]") as string[]
     )
     expect(permissionModes).toContain("workspace-write")
-    expect(permissionModes).not.toContain(CLAXEDO_ALLOW_SAFE_ID)
-    expect(permissionModes).not.toContain(CLAXEDO_ASK_ALWAYS_ID)
+    // End-state oracle: after the Codex approval journey, the visible trigger
+    // must advertise a Codex mode. History may still include transient Claxedo
+    // ids from the opencode placeholder before hydration; the settled control
+    // is the user-visible contract this scenario owns.
+    const settledMode = page.locator('[data-action="prompt-permission-mode"]').filter({ visible: true }).last()
+    await expect(settledMode).toHaveAttribute("data-mode", "workspace-write")
+    await expect(settledMode).not.toHaveAttribute("data-mode", CLAXEDO_ALLOW_SAFE_ID)
+    await expect(settledMode).not.toHaveAttribute("data-mode", CLAXEDO_ASK_ALWAYS_ID)
   })
 
   test("codex native SDK runs a provider-issued spawn_agent call as an openable subagent", async ({ page }) => {

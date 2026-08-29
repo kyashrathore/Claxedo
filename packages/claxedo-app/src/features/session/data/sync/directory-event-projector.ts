@@ -55,6 +55,46 @@ function updateSessionRequests(
   })
 }
 
+function sessionIdFromDirectoryEvent(properties: unknown): string | undefined {
+  if (!properties || typeof properties !== "object" || Array.isArray(properties)) return undefined
+  const record = properties as Record<string, unknown>
+  const info = record.info
+  if (info && typeof info === "object" && !Array.isArray(info)) {
+    const id = (info as Record<string, unknown>).id
+    if (typeof id === "string" && id.length > 0) return id
+  }
+  const part = record.part
+  if (part && typeof part === "object" && !Array.isArray(part)) {
+    const sessionID = (part as Record<string, unknown>).sessionID
+    if (typeof sessionID === "string" && sessionID.length > 0) return sessionID
+  }
+  const sessionID = record.sessionID ?? record.sessionId
+  return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : undefined
+}
+
+function bumpSessionListActivity(input: { event: DirectoryEvent; directory: string; workspaceId?: string }) {
+  const sessionId = sessionIdFromDirectoryEvent(input.event.properties)
+  if (!sessionId) return
+  const eventWorkspaceId = input.workspaceId
+    ?? (() => {
+      const record = input.event.properties as Record<string, unknown>
+      const info = record.info && typeof record.info === "object" && !Array.isArray(record.info)
+        ? record.info as Record<string, unknown>
+        : undefined
+      const fromInfo = info?.workspaceID ?? info?.workspaceId
+      return typeof fromInfo === "string" && fromInfo.length > 0 ? fromInfo : undefined
+    })()
+  const signedWorkspaceId = typeof eventWorkspaceId === "string" && /^ws_/.test(eventWorkspaceId)
+    ? eventWorkspaceId
+    : undefined
+  reconcileUpdatedSessionListQueryData({
+    sessionId,
+    directory: input.directory,
+    ...(signedWorkspaceId ? { workspaceId: signedWorkspaceId } : {}),
+    updatedAt: Date.now(),
+  })
+}
+
 export function applyDirectoryEventToShellQueries(input: {
   event: DirectoryEvent
   directory: string
@@ -71,6 +111,11 @@ export function applyDirectoryEventToShellQueries(input: {
       if (info.time?.archived) {
         removeSessionShellQueries(info.id)
       }
+      break
+    }
+    case "message.completed":
+    case "session.idle": {
+      bumpSessionListActivity(input)
       break
     }
     case "session.deleted": {

@@ -28,6 +28,11 @@ export type SessionItem = {
   attachments?: Array<{ kind: string; targetID: string }>
   environment?: { kind?: string; driver?: string }
   git?: { repo?: string; branch?: string; remote?: string }
+  owner?: {
+    name?: string
+    avatarUrl?: string
+    publicId?: string
+  }
 }
 
 export type WorkspaceItem = {

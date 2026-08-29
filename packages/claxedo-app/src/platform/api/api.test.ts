@@ -15,6 +15,7 @@ let token: string | null = null
 const tokenRequests: Array<{ skipCache?: boolean } | undefined> = []
 const calls: Array<{
   auth: string | null
+  accept: string | null
   body: string
   cache: RequestCache
   dir: string | null
@@ -107,6 +108,7 @@ beforeEach(() => {
     const req = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
     calls.push({
       auth: req.headers.get("Authorization"),
+      accept: req.headers.get("Accept"),
       body: await req.clone().text(),
       cache: init?.cache ?? req.cache ?? "default",
       dir: req.headers.get("x-opencode-directory"),
@@ -215,6 +217,7 @@ describe("authFetch", () => {
       const req = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
       calls.push({
         auth: req.headers.get("Authorization"),
+        accept: req.headers.get("Accept"),
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
         dir: req.headers.get("x-opencode-directory"),
@@ -262,6 +265,7 @@ describe("authFetch", () => {
       const req = input instanceof Request ? new Request(input, init) : new Request(String(input), init)
       calls.push({
         auth: req.headers.get("Authorization"),
+        accept: req.headers.get("Accept"),
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
         dir: req.headers.get("x-opencode-directory"),
@@ -330,6 +334,67 @@ describe("apiBearerToken", () => {
     expect(await apiBearerToken()).toBe("tok_123")
     expect(await apiBearerToken({ skipCache: true })).toBe("tok_123")
     expect(tokenRequests).toEqual([undefined, { skipCache: true }])
+  })
+})
+
+describe("authFetch event streams", () => {
+  test("leaves unsigned loopback engine events on the local stream", async () => {
+    resetApiRuntime()
+
+    await authFetch("http://127.0.0.1:2594/global/event", {
+      headers: { Accept: "text/event-stream" },
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.url).toBe("http://127.0.0.1:2594/global/event")
+    expect(calls[0]?.accept).toBe("text/event-stream")
+  })
+
+  test("rewrites hosted engine events onto the control-plane lifecycle stream", async () => {
+    token = "tok_123"
+    window.location.href = "https://app.claxedo.com/workspace"
+    setServerEnv({
+      claxedo: "https://control.test/",
+      legacy: undefined,
+    })
+
+    await authFetch("https://control.test/global/event", {
+      headers: { Accept: "text/event-stream" },
+    })
+
+    expect(calls[0]?.url).toBe("https://control.test/api/wr/events")
+    expect(calls[0]?.accept).toBe("text/event-stream")
+  })
+
+  test("rewrites signed loopback engine events onto the control-plane lifecycle stream", async () => {
+    token = "tok_123"
+    setServerEnv({
+      claxedo: "http://127.0.0.1:4527/",
+      legacy: undefined,
+    })
+
+    await authFetch("http://127.0.0.1:4527/global/event", {
+      headers: { Accept: "text/event-stream" },
+    })
+
+    expect(calls[0]?.url).toBe("http://127.0.0.1:4527/api/wr/events")
+    expect(calls[0]?.accept).toBe("text/event-stream")
+  })
+
+  test("keeps Accept when rewriting a hosted event Request", async () => {
+    token = "tok_123"
+    window.location.href = "https://app.claxedo.com/workspace"
+    setServerEnv({
+      claxedo: "https://control.test/",
+      legacy: undefined,
+    })
+
+    await authFetch(new Request("https://control.test/global/event", {
+      headers: { Accept: "text/event-stream" },
+    }))
+
+    expect(calls[0]?.url).toBe("https://control.test/api/wr/events")
+    expect(calls[0]?.accept).toBe("text/event-stream")
   })
 })
 

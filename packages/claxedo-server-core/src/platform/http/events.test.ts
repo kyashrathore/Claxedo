@@ -127,6 +127,20 @@ describe("eventVisibleTo — per-event authorization", () => {
     expect(eventVisibleTo(signedAs("user_b"), event)).toBe(false)
   })
 
+  test("session.share.changed is visible only to its recipient subject", () => {
+    const event = {
+      type: "session.share.changed",
+      phase: "granted",
+      ownerUserId: "user_bob",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      ts: 1,
+    } as const
+    expect(eventVisibleTo(signedAs("user_bob"), event)).toBe(true)
+    expect(eventVisibleTo(signedAs("user_alice"), event)).toBe(false)
+    expect(eventVisibleTo(signedAs("user_casey"), event)).toBe(false)
+  })
+
   test("document.changed is visible only within its org", () => {
     const event = {
       type: "document.changed",

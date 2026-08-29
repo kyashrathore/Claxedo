@@ -12,6 +12,8 @@ import { HTTPException } from "hono/http-exception"
 import { serve } from "@hono/node-server"
 import { serveStatic } from "@hono/node-server/serve-static"
 import { createNodeWebSocket } from "@hono/node-ws"
+import { importJWK, importSPKI } from "jose"
+import { verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { z } from "zod"
 import { optionalGit, setupAgentHooks } from "@claxedo/workspace-runtime/host"
 import type { ProcessObserver } from "@claxedo/workspace-runtime"
@@ -92,6 +94,7 @@ import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./em
 import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
+import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
@@ -550,22 +553,88 @@ export function createSelfHostedApp(
     ...(services.authority
       ? {
           resolveRelayActor: async (request: Request, workspaceId: string) => {
-            const auth = await controlPlaneAuthContext(request, {
-              config: services.auth.config,
-              ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-            })
-            if (auth.mode !== "signed") return
-            const [actor, workspace] = await Promise.all([
-              resolveRuntimeActor(services.authority!, auth),
-              services.authority!.openWorkspace(auth, { workspaceId }),
-            ])
-            const orgId = workspace.workspace?.org_id
-            if (typeof orgId !== "string") throw new Error("Workspace organization is unavailable")
-            return {
-              ...actor,
-              subject: auth.user.subject,
-              orgId,
-              role: relayRole(workspace.role),
+            // Loopback browser traffic may carry a control-plane JWT. Relay-
+            // forwarded user-hosted traffic carries a Runtime Access Token
+            // (audience `workspace-relay`). Treat RAT as a first-class actor
+            // proof — verifying it as a CP bearer throws `invalid_bearer_token`
+            // and used to 503 every `/workspaces/:id/*` session route.
+            try {
+              const auth = await controlPlaneAuthContext(request, {
+                config: services.auth.config,
+                ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+              })
+              if (auth.mode === "signed") {
+                const [actor, workspace] = await Promise.all([
+                  resolveRuntimeActor(services.authority!, auth),
+                  services.authority!.openWorkspace(auth, { workspaceId }),
+                ])
+                const orgId = workspace.workspace?.org_id
+                if (typeof orgId !== "string") throw new Error("Workspace organization is unavailable")
+                return {
+                  ...actor,
+                  subject: auth.user.subject,
+                  orgId,
+                  role: relayRole(workspace.role),
+                }
+              }
+            } catch (error) {
+              if (!(error instanceof ControlPlaneAuthError)) throw error
+            }
+
+            const header = request.headers.get("authorization") ?? ""
+            const match = /^Bearer\s+(\S+)/i.exec(header.trim())
+            if (!match?.[1]) return
+            const token = match[1]
+
+            // Relay-forwarded user-hosted hops carry a Relay Host Token
+            // (audience `workspace-host-service`). Direct loopback clients may
+            // still present a Runtime Access Token (`workspace-relay`).
+            const relayHostJwk = process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK?.trim()
+            if (relayHostJwk) {
+              try {
+                const claims = await verifyRelayHostToken(
+                  token,
+                  await importJWK(JSON.parse(relayHostJwk), "EdDSA"),
+                  { workspaceId },
+                )
+                if (claims.actor_id && claims.actor_kind && claims.actor_public_id && claims.actor_name) {
+                  return {
+                    actorId: claims.actor_id,
+                    actorKind: claims.actor_kind,
+                    actorPublicId: claims.actor_public_id,
+                    actorName: claims.actor_name,
+                    ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+                    subject: claims.sub,
+                    orgId: claims.org_id,
+                    role: claims.role,
+                  }
+                }
+              } catch {
+                // Fall through to Runtime Access Token verification.
+              }
+            }
+
+            const publicPem = process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.replaceAll("\\n", "\n")
+            if (!publicPem?.trim()) return
+            try {
+              const claims = await verifyRuntimeAccessToken(
+                token,
+                await importSPKI(publicPem, "EdDSA"),
+                { workspaceId },
+              )
+              if (!claims.actor_id || !claims.actor_kind || !claims.actor_public_id || !claims.actor_name) return
+              return {
+                actorId: claims.actor_id,
+                actorKind: claims.actor_kind,
+                actorPublicId: claims.actor_public_id,
+                actorName: claims.actor_name,
+                ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+                subject: claims.sub,
+                orgId: claims.org_id,
+                role: claims.role,
+              }
+            } catch {
+              return
             }
           },
         }
@@ -602,6 +671,7 @@ export function createSelfHostedApp(
     ...(usageOutbox ? { onUsageTerminal: () => { void usageOutbox.notify() } } : {}),
     mountPublicUsageRoute: !options.usageRevisionStore,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
+    sessionShareChangedSink: (event) => claxedoBus.publish(event),
   })
   const controlPlaneChannels = createControlPlaneChannels({
     services,
@@ -857,6 +927,7 @@ export function createSelfHostedApp(
   }))
   app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
+  app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
   app.route("/", centralControl.app)
   app.route(
     "/api/claxedo/credentials",

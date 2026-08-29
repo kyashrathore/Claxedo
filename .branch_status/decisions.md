@@ -26,11 +26,11 @@ Session privacy covers transcript-bearing session, event, PTY, process-log, and 
 
 Why: per-session filesystem privacy is a different product and storage model.
 
-### D5: Team terminology
+### D5: Team terminology (superseded by D17)
 
-User-facing copy says `Team`; code retains `org`.
+~~User-facing copy says `Team`; code retains `org`.~~
 
-Why: the product term can improve without a risky internal rename.
+Superseded 2026-08-29 by **D17** (Org → Team nesting). Historical copy that equated Team with `org` is obsolete.
 
 ### D6: Compatibility boundary
 
@@ -44,7 +44,31 @@ Creating a project or workspace in a team requires current write authority.
 
 ### D8: Participant administration
 
-The session creator or organization administrator may add/remove participants only while retaining current workspace authority.
+The session creator or organization administrator may add/remove participants (and session share grants) only while retaining current workspace authority. After Org→Team nesting, a **team admin** may also administer grants for sessions whose project the team can access.
+
+### D17: Org → Team nesting
+
+**Org** is the company/tenant (billing, credentials, RAT `org_id`, live-sync isolation). **Team** is an access group **inside** an org (`teams` / `team_memberships`). Projects belong to an org; teams receive `team_project_grants` to projects.
+
+Migration: each non-personal org gets one **default team**; existing `org_memberships` copy into that team's memberships; the default team is granted all current projects in the org. Do **not** auto-enroll historical private sessions onto the default team.
+
+Personal orgs need no team CRUD (D2 preserved). User-facing copy says **Org** and **Team** distinctly; code uses `orgs` and `teams`.
+
+### D18: Session share targets
+
+Private sessions may be shared with an **individual user** (`session_participants` and/or user-targeted `session_share_grants`) or a **team** (team-targeted `session_share_grants`, evaluate-time membership join). Org-targeted session grants are an interim Phase-1 shape and retarget to `team_id` when nesting lands.
+
+Org-admin session bypass remains for support (private ≠ hidden from org admins). Team grants control normal collaborator visibility. Revoking a group session grant fans out RAT revoke like workspace org shares.
+
+### D19: Active org and team
+
+Principal carries application `orgId` (tenant) and optional active `teamId` (filter). Hosted multi-org deployments expose an org switcher; user-deployed one-org hides org switching. Team switcher applies whenever the org has multiple teams.
+
+### D20: CF/Better Auth + D1 ports the same nested model
+
+Cloudflare cutover requirements **R31** and **R35** (see `docs/plans/2026-08-27-147-refactor-cloudflare-d1-better-auth-cutover-plan.md`) certify `org → team → project → workspace → session` with session share targets user XOR team. D1 and SQLite authority adapters must grow the same `teams`, `team_memberships`, `team_project_grants`, and `session_share_grants` tables and evaluation as Convex—Better Auth remains identity-only (no Organizations UI as source of truth).
+
+SQLite schema + tenancy migration v3, evaluate/list/grant/revoke, and default-team org→team share retarget have landed in `workspace-authority-store.ts` / `workspace-authority.ts`. D1 `CONTROL_PLANE_DB` DDL must mirror those tables when the Better Auth+D1 profile is implemented (see Core target data notes in the cutover plan); do not certify D1 without them.
 
 ## Settled technical decisions
 

@@ -118,11 +118,24 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/control/sessions",
     "/api/control/sessions/:sessionId/gateway",
     "/api/control/sessions/:sessionId/messages",
+    "/api/control/sessions/:sessionId/participants",
+    "/api/control/sessions/:sessionId/shares",
     "/api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint",
     "/api/control/workspaces/:workspaceId/sessions/:sessionId/register",
     "/api/control/workspaces/:workspaceId/sessions/:sessionId/repair",
     "/api/runtime-authority/session-authorize",
     "/api/wr/events",
+  ],
+  /**
+   * Application-owned Org → Team nesting (D17–D19): create/list orgs and
+   * nested teams, members, and project grants. Distinct from Clerk Organizations.
+   */
+  orgTeams: [
+    "/api/control/orgs",
+    "/api/control/orgs/:orgId/ensure-default-team",
+    "/api/control/orgs/:orgId/teams",
+    "/api/control/teams/:teamId/members",
+    "/api/control/teams/:teamId/projects",
   ],
   workgraph: [
     "/api/workgraph",

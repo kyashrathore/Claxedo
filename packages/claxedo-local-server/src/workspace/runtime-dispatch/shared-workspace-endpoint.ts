@@ -41,10 +41,13 @@ async function localWorkspaceRelayProxyWithOptions(c: Context, options: RuntimeP
   try {
     const pathname = new URL(c.req.url).pathname.replace(/^\/workspaces\/[^/]+/, "") || "/"
     if (ws.kind !== "cloud") {
-      if (options.requireRelayActor) {
-        requireRuntimeProxyActor(await options.resolveRelayActor?.(c.req.raw, ws.id), true)
-      }
-      return await embedded(c, ws, pathname)
+      // Host-tunnel traffic carries a relay-minted RHT; loopback browser traffic
+      // may carry a control-plane JWT. `embedded()` stamps actor profile claims
+      // for message author attribution without re-parsing an RHT as CP auth.
+      return await embedded(c, ws, pathname, {
+        ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+        ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+      })
     }
 
     const runtime = await ensureCloudRuntime(ws, options)

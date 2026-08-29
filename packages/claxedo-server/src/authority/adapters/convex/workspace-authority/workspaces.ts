@@ -237,6 +237,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       grantedToTokenIdentifier?: string
       grantedToClerkSubject?: string
       grantedToClerkOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.grant, {
         workspace_id: args.workspaceId,
@@ -244,6 +246,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
         ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
         ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
         ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
+        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
       })
     },
     async revokeWorkspaceShare(auth: SignedControlPlaneAuth, args: {
@@ -252,6 +256,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       grantedToTokenIdentifier?: string
       grantedToClerkSubject?: string
       grantedToClerkOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.revoke, {
         workspace_id: args.workspaceId,
@@ -259,6 +265,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
         ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
         ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
         ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
+        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
       })
     },
   }

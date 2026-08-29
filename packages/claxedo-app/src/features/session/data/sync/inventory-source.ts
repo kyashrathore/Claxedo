@@ -376,12 +376,11 @@ export function createSignedInventorySource(input: {
     status?: string | null
   }) {
     const { status: knownStatus, ...runtimeInput } = sessionInput
-    // User-hosted workspaces have no central session copy — the owner's machine
-    // is the only store, so the runtime is the only possible answer. When that
-    // host is offline `runtimeSessions` already resolves to `[]` rather than
-    // hanging, which is the honest empty state for this kind.
-    if (sessionInput.kind === "user-hosted") return await fetchSignedRuntimeSessions(runtimeInput)
     const control = await fetchControlPlaneSessions(sessionInput.workspaceId)
+    // User-hosted workspaces register session visibility in the authority.
+    // The runtime list is complete but not filtered by participant — using it
+    // after an empty control-plane answer would show private sessions to Bob.
+    if (sessionInput.kind === "user-hosted") return control
     if (control.length > 0) return control
     // Empty control-plane result: only a REACHABLE runtime can hold sessions the
     // control plane has not seen yet. On a dead/stopped sandbox the control

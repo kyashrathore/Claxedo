@@ -1,11 +1,18 @@
 // Row time labels and the session-status batch bookkeeping, split from
 // rail-sidebar.tsx: standalone helpers with no component state, extracted to
 // keep the sidebar under its size-budget ceiling.
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import {
   railSessionStatusBatchKey,
   type RailSessionStatusTarget,
   type RailSessionStatusTargetGroup,
 } from "./rail-session-status-target"
+import {
+  dispatchSessionStatusEvent,
+  promptSessionStatusMeta,
+} from "@/features/session/store/session-status-dispatcher"
+import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
 
 export const SIDEBAR_SESSION_STATUS_FRESH_MS = 10_000
 
@@ -136,6 +143,37 @@ export function publishFocusedRailSessionMeta<TStatus, TPermission, TQuestion>(i
     questions: input.questions,
   })
   return true
+}
+
+function sessionStatusIsActive(status: SessionStatus | undefined) {
+  return !!status && status.type !== "idle"
+}
+
+/** Reject a stale batch poll that would regress an in-flight optimistic/SSE status. */
+export function shouldAcceptRailBatchStatus(sessionID: string, incoming: SessionStatus) {
+  if (promptSessionStatusMeta(sessionID)?.source !== "optimistic") return true
+  const cached = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(sessionID, "status"))
+  if (!sessionStatusIsActive(cached)) return true
+  return sessionStatusIsActive(incoming)
+}
+
+/** Push an unfocused row's batch read into the session-id cache so compact-switcher dots match the rail. */
+export function syncUnfocusedRailBatchStatusToCache(input: {
+  focusedSessionId?: string
+  targets: readonly Pick<RailSessionStatusTarget, "sessionID">[]
+  statuses?: Record<string, SessionStatus>
+}) {
+  if (!input.statuses) return
+  for (const target of input.targets) {
+    if (target.sessionID === input.focusedSessionId) continue
+    const status = input.statuses[target.sessionID] ?? { type: "idle" as const }
+    if (!shouldAcceptRailBatchStatus(target.sessionID, status)) continue
+    const cached = queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))
+    if (cached && JSON.stringify(cached) === JSON.stringify(status)) continue
+    dispatchSessionStatusEvent({
+      event: { type: "session.status", source: "server", sessionID: target.sessionID, status },
+    })
+  }
 }
 
 /**

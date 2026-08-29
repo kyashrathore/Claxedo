@@ -72,6 +72,37 @@ async function writableWorkspaceForUser(ctx: any, user: { _id: unknown }, worksp
   return { user, workspace }
 }
 
+async function sessionShareAllowsUser(
+  ctx: any,
+  input: { user: { _id: unknown }; sessionId: string },
+) {
+  const grants = await ctx.db
+    .query("session_share_grants")
+    .withIndex("by_session", (q: any) => q.eq("session_id", input.sessionId))
+    .collect()
+  const active = grants.filter((grant: any) => !grant.revoked_at)
+  for (const grant of active) {
+    if (grant.granted_to_user_id === input.user._id) return true
+    if (grant.granted_to_org_id) {
+      const membership = await ctx.db
+        .query("org_memberships")
+        .withIndex("by_org_user", (q: any) =>
+          q.eq("org_id", grant.granted_to_org_id).eq("user_id", input.user._id))
+        .unique()
+      if (membership) return true
+    }
+    if (grant.granted_to_team_id) {
+      const membership = await ctx.db
+        .query("team_memberships")
+        .withIndex("by_team_user", (q: any) =>
+          q.eq("team_id", grant.granted_to_team_id).eq("user_id", input.user._id))
+        .unique()
+      if (membership) return true
+    }
+  }
+  return false
+}
+
 async function sessionRoleForUser(
   ctx: any,
   input: {
@@ -90,6 +121,7 @@ async function sessionRoleForUser(
     .withIndex("by_session_user", (q: any) => q.eq("session_id", input.session.session_id).eq("user_id", input.user._id))
     .unique()
   if (participant && !participant.revoked_at) return role
+  if (await sessionShareAllowsUser(ctx, { user: input.user, sessionId: input.session.session_id })) return role
   if (await orgAdminForUser(ctx.db, input.user._id, input.workspace.org_id)) return role
 }
 
@@ -763,19 +795,28 @@ export const list = authedQuery({
         .collect())
         .filter((participant) => !participant.revoked_at)
         .map((participant) => participant.session_id))
+    const sharedSessions = canAdminSessions
+      ? new Set<string>()
+      : await sessionIdsSharedWithUser(ctx, user._id, workspace._id)
     const sessions = await ctx.db
       .query("session_history")
       .withIndex("by_workspace_updated", (q) => q.eq("workspace_id", workspace._id))
       .order("desc")
       .collect()
-    return sessions
+    return await Promise.all(sessions
       .filter((session) => !session.deleted_at && (
         session.created_by_user_id === user._id
         || canAdminSessions
         || participantSessions.has(session.session_id)
+        || sharedSessions.has(session.session_id)
       ))
-      .map((session) => {
+      .map(async (session) => {
         const projectId = publicProjectId(session.project_id)
+        // Owner favicon is for shared/other-user rows only — creators don't need
+        // their own face on sessions they already own.
+        const creator = session.created_by_user_id && session.created_by_user_id !== user._id
+          ? await ctx.db.get(session.created_by_user_id)
+          : null
         return {
           session_id: session.session_id,
           ...(projectId ? { project_id: projectId } : {}),
@@ -783,10 +824,38 @@ export const list = authedQuery({
           directory_hint: session.directory_hint,
           created_at: session.created_at,
           updated_at: session.updated_at,
+          ...(typeof creator?.name === "string" && creator.name ? { owner_name: creator.name } : {}),
+          ...(typeof creator?.image_url === "string" && creator.image_url ? { owner_avatar_url: creator.image_url } : {}),
+          ...(typeof creator?.public_id === "string" && creator.public_id ? { owner_public_id: creator.public_id } : {}),
         }
-      })
+      }))
   },
 })
+
+async function sessionIdsSharedWithUser(ctx: any, userId: unknown, workspaceDocId: unknown) {
+  const grants = await ctx.db
+    .query("session_share_grants")
+    .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceDocId))
+    .collect()
+  const teamIds = new Set((await ctx.db
+    .query("team_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", userId))
+    .collect())
+    .map((row: any) => row.team_id))
+  const orgIds = new Set((await ctx.db
+    .query("org_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", userId))
+    .collect())
+    .map((row: any) => row.org_id))
+  const ids = new Set<string>()
+  for (const grant of grants) {
+    if (grant.revoked_at) continue
+    if (grant.granted_to_user_id === userId) ids.add(grant.session_id)
+    else if (grant.granted_to_team_id && teamIds.has(grant.granted_to_team_id)) ids.add(grant.session_id)
+    else if (grant.granted_to_org_id && orgIds.has(grant.granted_to_org_id)) ids.add(grant.session_id)
+  }
+  return ids
+}
 
 export const readMessages = authedQuery({
   args: {

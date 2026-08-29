@@ -42,7 +42,7 @@ const danaIdentity = {
 }
 
 describe("two-user managed-product proof", () => {
-  test("drives team, workspace, private-session, attribution, and revocation through real Convex functions", async () => {
+  test("drives org, nested team, team session share, attribution, and revocation through real Convex functions", async () => {
     const testBackend = convexTest(schema, modules)
     const alice = testBackend.withIdentity(aliceIdentity)
     const bob = testBackend.withIdentity(bobIdentity)
@@ -70,27 +70,22 @@ describe("two-user managed-product proof", () => {
     expect(aliceProfile.actor_public_id).not.toBe(bobProfile.actor_public_id)
     expect(aliceProfile.actor_id).not.toBe(aliceProfile.actor_public_id)
 
-    const team = await alice.mutation(api.orgs.createTeam, { name: "Acme" })
+    // `orgs.createTeam` creates a collaborative Org and seeds the default Team (D17).
+    const org = await alice.mutation(api.orgs.createTeam, { name: "Acme" })
+    expect(org.default_team_id).toMatch(/^team_/)
     await testBackend.run(async (ctx) => {
       const now = Date.now()
       await Promise.all([
         ctx.db.insert("org_memberships", {
-          org_id: team.org_id,
+          org_id: org.org_id,
           user_id: danaProfile.user_id,
           role: "admin",
           created_at: now,
           updated_at: now,
         }),
         ctx.db.insert("org_memberships", {
-          org_id: team.org_id,
+          org_id: org.org_id,
           user_id: bobProfile.user_id,
-          role: "member",
-          created_at: now,
-          updated_at: now,
-        }),
-        ctx.db.insert("org_memberships", {
-          org_id: team.org_id,
-          user_id: caseyProfile.user_id,
           role: "member",
           created_at: now,
           updated_at: now,
@@ -98,37 +93,39 @@ describe("two-user managed-product proof", () => {
       ])
     })
 
+    await alice.mutation(api.teams.addMember, {
+      team_id: org.default_team_id,
+      token_identifier: bobIdentity.tokenIdentifier,
+      role: "member",
+    })
+
     await expect(dana.mutation(api.workspaces.createCloud, {
       workspace_id: "ws_dana",
-      org_id: team.org_id,
+      org_id: org.org_id,
       display_name: "Admin workspace",
       repo_url: "https://github.com/acme/admin.git",
     })).resolves.toMatchObject({ workspace_doc_id: expect.any(String) })
+    // Casey is not an org member — only a later workspace share recipient.
     await expect(casey.mutation(api.workspaces.createCloud, {
       workspace_id: "ws_casey",
-      org_id: team.org_id,
+      org_id: org.org_id,
       display_name: "Member workspace",
       repo_url: "https://github.com/acme/member.git",
-    })).rejects.toThrow("workspace_create_forbidden")
+    })).rejects.toThrow()
 
     await alice.mutation(api.workspaces.createCloud, {
       workspace_id: "ws_private",
-      org_id: team.org_id,
+      org_id: org.org_id,
       display_name: "Private workspace",
       repo_url: "https://github.com/acme/private.git",
     })
-    await Promise.all([
-      alice.mutation(api.workspaceShares.grant, {
-        workspace_id: "ws_private",
-        role: "editor",
-        granted_to_token_identifier: bobIdentity.tokenIdentifier,
-      }),
-      alice.mutation(api.workspaceShares.grant, {
-        workspace_id: "ws_private",
-        role: "editor",
-        granted_to_token_identifier: caseyIdentity.tokenIdentifier,
-      }),
-    ])
+    await alice.mutation(api.teams.ensureDefaultTeamForOrg, { org_id: org.org_id })
+    // Casey: workspace editor without team session share.
+    await alice.mutation(api.workspaceShares.grant, {
+      workspace_id: "ws_private",
+      role: "editor",
+      granted_to_token_identifier: caseyIdentity.tokenIdentifier,
+    })
     await alice.mutation(api.sessions.upsertVisibility, {
       workspace_id: "ws_private",
       sessions: [{ session_id: "ses_private", title: "Private design" }],
@@ -145,11 +142,12 @@ describe("two-user managed-product proof", () => {
     })).resolves.toEqual({ allowed: false, messages: [] })
     await expect(casey.query(api.sessions.list, { workspace_id: "ws_private" })).resolves.toEqual([])
     await expect(casey.query(api.sessions.resolve, { session_id: "ses_private" })).resolves.toBeNull()
+    await expect(bob.query(api.sessions.list, { workspace_id: "ws_private" })).resolves.toEqual([])
 
-    await alice.mutation(api.sessions.addParticipant, {
+    await alice.mutation(api.sessionShares.grant, {
       workspace_id: "ws_private",
       session_id: "ses_private",
-      participant_token_identifier: bobIdentity.tokenIdentifier,
+      granted_to_team_public_id: org.default_team_id,
     })
     await expect(bob.query(api.sessions.readMessages, {
       workspace_id: "ws_private",
@@ -169,6 +167,7 @@ describe("two-user managed-product proof", () => {
     })).resolves.toEqual({ ok: true })
     await expect(alice.query(api.sessions.list, { workspace_id: "ws_private" }))
       .resolves.toEqual([expect.objectContaining({ session_id: "ses_private" })])
+    await expect(casey.query(api.sessions.list, { workspace_id: "ws_private" })).resolves.toEqual([])
 
     await bob.mutation(api.runtimeAccessTokens.recordMint, {
       jti: "jti_bob",
@@ -179,14 +178,10 @@ describe("two-user managed-product proof", () => {
       role: "editor",
       expires_at: Date.now() + 60_000,
     })
-    await alice.mutation(api.sessions.removeParticipant, {
+    await alice.mutation(api.sessionShares.revoke, {
       workspace_id: "ws_private",
       session_id: "ses_private",
-      participant_token_identifier: bobIdentity.tokenIdentifier,
-    })
-    await alice.mutation(api.workspaceShares.revoke, {
-      workspace_id: "ws_private",
-      granted_to_token_identifier: bobIdentity.tokenIdentifier,
+      granted_to_team_public_id: org.default_team_id,
     })
 
     await expect(bob.query(api.sessions.readMessages, {

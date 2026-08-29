@@ -372,6 +372,29 @@ function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
 }
 
+/** Keep host-stamped `claxedo.author` when an engine envelope omits it. */
+function preserveClaxedoAuthor(
+  previous: Record<string, unknown> | undefined,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  if (str(next.role) !== "user") return next
+  const nextClaxedo = next.claxedo && typeof next.claxedo === "object" && !Array.isArray(next.claxedo)
+    ? next.claxedo as Record<string, unknown>
+    : undefined
+  if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
+  const prevClaxedo = previous?.claxedo && typeof previous.claxedo === "object" && !Array.isArray(previous.claxedo)
+    ? previous.claxedo as Record<string, unknown>
+    : undefined
+  if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
+  return {
+    ...next,
+    claxedo: {
+      ...(nextClaxedo ?? {}),
+      author: prevClaxedo.author,
+    },
+  }
+}
+
 function subagentCorrelationKeys(observation: SubagentObservation) {
   return [
     observation.providerId && observation.providerKind
@@ -1734,12 +1757,15 @@ export class RuntimeStore {
     const id = str(info.id)
     const role = str(info.role)
     if (!sessionId || !id || !role) return
-    const prev = this.db.prepare("SELECT created_at FROM message WHERE id = ?").get(id) as { created_at: number } | null
+    const prev = this.db.prepare("SELECT created_at, info_json FROM message WHERE id = ?").get(id) as
+      | { created_at: number; info_json: string }
+      | null
+    const merged = preserveClaxedoAuthor(prev ? JSON.parse(prev.info_json) as Record<string, unknown> : undefined, info)
     this.db
       .prepare(
         "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(info), prev?.created_at ?? ts)
+      .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? ts)
   }
 
   private upsertPart(part: Record<string, unknown>, ts: number) {

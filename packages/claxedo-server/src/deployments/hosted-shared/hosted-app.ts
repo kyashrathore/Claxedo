@@ -48,6 +48,8 @@ import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNames
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
 import { HostedControlRoutes } from "../../routes/hosted/control"
+import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
+import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
 import { configureCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
@@ -763,6 +765,38 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       cliTokenEnv: plane.env,
+    }),
+  )
+  // Org→Team nesting and private-session people (D17–D19). Worker-safe routers
+  // only — do not mount ControlPlaneSessionRoutes here (pulls Node supervisor).
+  app.route(
+    "/api/control",
+    OrgTeamControlRoutes(services, {
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      cliTokenEnv: plane.env,
+    }),
+  )
+  app.route(
+    "/api/control",
+    SessionPeopleControlRoutes(services, {
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      cliTokenEnv: plane.env,
+      ...(liveSyncRoom
+        ? {
+            sessionShareChangedSink: (event) =>
+              nudgeLiveSyncRoom(
+                liveSyncRoom,
+                liveSyncRoomNameForPrincipal(
+                  event.orgId
+                    ? { orgId: event.orgId }
+                    : { ownerUserId: event.ownerUserId },
+                ),
+                event,
+              ),
+          }
+        : {}),
     }),
   )
 

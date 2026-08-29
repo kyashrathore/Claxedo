@@ -114,12 +114,11 @@ export const appLocal: Policy = {
   // Session markdown first-fold preload, environment-card persistence, Thinking
   // visibility hold, provider-settings detect/disconnect logic, models-settings
   // logic, provider setup row, and the settings-providers dialog opener add
-  // eight named owners on the already-reachable session/settings path
-  // (897 + 8 = 905). Tenant-aware multiplayer adds four already-reachable
-  // local owners (message author, user-message timeline row, PTY launch-command
-  // parsing, agent-runtime request-error mapper): 905 + 4 = 909 modules, still
-  // no package edge.
-  ceilings: { modules: 909, packages: 41 },
+  // eight named owners (897 + 8 = 905). Tenant-aware multiplayer adds four
+  // already-reachable local owners: 905 + 4 = 909. Org→Team product UI adds six
+  // local owners (settings org-team section + API, session share API + Share
+  // control, rail org/team switcher): 909 + 6 = 915 modules, still no package edge.
+  ceilings: { modules: 915, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

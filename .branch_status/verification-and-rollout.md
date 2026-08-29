@@ -70,7 +70,7 @@ The branch may merge only when:
 2. P2 findings #23, #24, and #28 are closed. **Passed.**
 3. The deployment migration gate (#18) is implemented. **Passed in code; staging rehearsal remains a deploy gate.**
 4. The targeted unit/integration matrix passes on the rebased branch. **Passed.**
-5. The local two-user production-like smoke passes. **Passed.**
+5. The local Org→Team multiplayer production-like smoke passes (see below). **Required.**
 6. The Pi and Codex ACP real-harness lifecycle failures are resolved. **Passed.**
 7. The complete real-harness lane is rerun. **Passed: 14 passed, 1 recording-only skip.**
 8. The complete app unit command passes, or the two composer failures receive
@@ -113,21 +113,44 @@ The branch may merge only when:
 - A valid PTY remains connected beyond 60 seconds (#21).
 - Participant revocation closes PTY and SSE within the lease bound (#21).
 
-## Production-like two-user smoke
+## Production-like Org→Team multiplayer smoke
 
-Use two real signed identities, real runtime/relay proofs, and the production route composition.
+Canonical `@tier-real` browser proof (replaces the old participant-only two-user suite):
 
-1. User A creates a workspace and private session.
-2. User B has workspace access but cannot see the session.
-3. User A adds User B as participant.
-4. User B opens HTTP transcript, replay, live SSE, and PTY.
-5. Both submit concurrently; exactly one turn is admitted.
-6. Verify each user message displays the correct author.
-7. User A forks; User A can use the child and User B cannot unless granted.
-8. Remove User B.
-9. Confirm HTTP, process logs, replay, reconnect, SSE, and PTY all deny/close.
-10. Keep an authorized PTY open beyond 60 seconds and confirm it remains active.
-11. Simulate authority 503 and confirm retryable failure with bounded queue/reconnect behavior.
+```bash
+CLAXEDO_TIER_REAL_E2E=1 bunx playwright test \
+  packages/claxedo-app/e2e/playwright/web-signed-org-team-multiplayer.spec.ts
+```
+
+Real layers: production web build, self-hosted `createSelfHostedApp`, SQLite `WorkspaceAuthority`, JWT control plane, workspace runtime/relay, People UI, composer drive. Substitutes: local JWKS teammate mint, page token seed, scripted model.
+
+Required evidence artifacts (fail if missing):
+
+- `test-results/evidence/web-signed-org-team-multiplayer/videos/alice.webm`
+- `.../bob.webm`, `.../casey.webm`
+- `.../side-by-side.mp4`
+- `.../manifest.json` plus deny/allow/drive/revoke screenshots
+
+Journey checklist:
+
+1. Alice's collaborative org has a default team; Bob is a team member.
+2. Casey has workspace editor access but is not on the team.
+3. Alice creates a private session; Bob and Casey cannot list/read it.
+4. Alice shares the session with the team via People UI.
+5. Bob lists, opens, reads, and drives a turn; authors visible.
+6. Casey remains denied.
+7. Alice revokes the team session share; Bob is denied again.
+
+Cheaper subsets (no browser/video): `two-user-signed-transport.e2e.test.ts` (HTTP org/team/share) and `two-user-product.e2e.test.ts` (Convex nested team share).
+
+## Legacy two-user checklist (subsumed)
+
+The older participant-add smoke is subsumed by the Org→Team video suite. Remaining items not covered there stay as focused gates:
+
+1. Concurrent turn admission (Journey 4) — separate harness/runtime tests.
+2. Fork child registration (Journey 5) — separate tests.
+3. PTY/SSE hard-close timing after revoke (Journey 6 deep) — lease-bound tests.
+4. Authority 503 / bounded queue — reliability suite.
 
 ## Convex rollout
 
@@ -225,7 +248,7 @@ Before merge:
 - Implementation behavior satisfies the PRD through real entrypoints.
 - All P1 findings are closed with evidence.
 - Targeted tests, typechecks, and relevant builds pass.
-- Production-like two-user smoke passes.
+- Production-like Org→Team multiplayer smoke passes (video + manifest).
 - Migration rehearsal passes on representative legacy data.
 - Rollback procedure is exercised.
 - No obsolete fallback identity, local lease, duplicate policy, or temporary compatibility path remains.

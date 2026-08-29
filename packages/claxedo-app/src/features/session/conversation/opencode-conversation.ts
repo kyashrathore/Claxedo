@@ -282,6 +282,34 @@ function withPreservedError(current: Message | undefined, next: Message): Messag
   return { ...next, error } as Message
 }
 
+/**
+ * OpenCode engine envelopes do not carry `claxedo.author`. A later
+ * `message.updated` without author must not erase attribution that arrived on
+ * the signed host's opening user-message event.
+ */
+function withPreservedAuthor(current: Message | undefined, next: Message): Message {
+  if (next.role !== "user") return next
+  const currentAuthor = messageAuthorRecord(current)
+  if (!currentAuthor || messageAuthorRecord(next)) return next
+  const nextClaxedo = propertyRecord((next as { claxedo?: unknown }).claxedo) ?? {}
+  return {
+    ...next,
+    claxedo: {
+      ...nextClaxedo,
+      author: currentAuthor,
+    },
+  } as Message
+}
+
+function messageAuthorRecord(message: Message | undefined) {
+  if (!message || message.role !== "user") return
+  return propertyRecord(propertyRecord((message as { claxedo?: unknown }).claxedo)?.author)
+}
+
+function preserveMessageFields(current: Message | undefined, next: Message): Message {
+  return withPreservedAuthor(current, withPreservedError(current, next))
+}
+
 function storedMessage(message: UIMessage | undefined) {
   return (message as ConversationUIMessage | undefined)?.metadata?.opencodeMessage
 }
@@ -292,8 +320,15 @@ function mergeChatMessage(
   authority?: { canonicalMessage?: boolean; canonicalParts?: boolean },
 ): UIMessage {
   const preserved = storedMessage(snapshot)
-  if (preserved && !authority?.canonicalMessage) {
-    const merged = withPreservedError(storedMessage(current), preserved)
+  if (preserved) {
+    // Always keep signed author chips across engine envelopes (including
+    // canonical REST rows that omit `claxedo.author`). Error preservation is
+    // skipped for canonical assistant rows so a settled transcript can clear
+    // a transient failure — preserveMessageFields still ranks errors when
+    // both sides are non-canonical.
+    const merged = authority?.canonicalMessage && preserved.role === "assistant"
+      ? withPreservedAuthor(storedMessage(current), preserved)
+      : preserveMessageFields(storedMessage(current), preserved)
     if (merged !== preserved) {
       const meta = (snapshot as ConversationUIMessage).metadata
       snapshot = { ...snapshot, metadata: { ...meta, opencodeMessage: merged } } as UIMessage
@@ -373,8 +408,9 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
   const existing = index === -1 ? undefined : current[index]
   const next = markUnpersistedLive(opencodeMessageToChatMessage({
     // A later event carrying a thinner error must not downgrade what the card
-    // already rendered for this turn.
-    message: withPreservedError(storedMessage(existing), message),
+    // already rendered for this turn. Same for signed author chips: engine
+    // envelopes omit `claxedo.author` and must not erase the host stamp.
+    message: preserveMessageFields(storedMessage(existing), message),
     parts: existing?.parts ?? [],
   }))
   chat.setMessages(index === -1 ? [...current, next] : replaceAt(current, index, next))

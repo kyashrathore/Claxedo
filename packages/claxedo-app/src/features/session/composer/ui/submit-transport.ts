@@ -1,4 +1,6 @@
-import { selectRuntimeModel } from "@/features/session/composer/model-strategy"
+import { queryKeys } from "@/platform/query/keys"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import type { ProjectCatalogItem } from "../workspace-resolver"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
@@ -52,7 +54,11 @@ export type SaveSessionConfigInput = {
 }
 
 export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
-  return directory ? sessionWorkspaceRuntimeRef({ directory }) : undefined
+  if (!directory) return undefined
+  const projects = queryClient.getQueryData<ProjectCatalogItem[]>(
+    queryKeys.controlPlane.projects(getClaxedoServerUrl()),
+  ) ?? []
+  return sessionWorkspaceRuntimeRef({ directory, projects })
 }
 
 export function submitWorkspaceBacking(input: {

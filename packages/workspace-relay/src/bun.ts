@@ -999,10 +999,23 @@ async function directHttpRequest(input: {
     const release = limiter ? await span("direct-http-queue", () => limiter.acquire()) : undefined
     try {
       const upstream = await span("upstream-fetch", async () => await fetch(input.targetUrl, init))
-      return new Response(upstream.body, {
+      const headers = relayCorsHeaders(input.request, upstream.headers)
+      const contentType = upstream.headers.get("content-type") ?? ""
+      const streamResponse =
+        contentType.includes("text/event-stream") ||
+        contentType.includes("application/octet-stream")
+      if (streamResponse) {
+        return new Response(upstream.body, {
+          status: upstream.status,
+          statusText: upstream.statusText,
+          headers,
+        })
+      }
+      const body = await upstream.arrayBuffer()
+      return new Response(body, {
         status: upstream.status,
         statusText: upstream.statusText,
-        headers: relayCorsHeaders(input.request, upstream.headers),
+        headers,
       })
     } finally {
       release?.()

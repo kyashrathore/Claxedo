@@ -485,15 +485,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
    * answering locally — the safe direction.
    */
   const permissionHarness = () => {
-    // The selection controller is the only source that knows a LOCAL harness
-    // session's real id, so it wins when it has an answer.
-    const selected = harnessSelectionController?.read(scope()).harness
-    if (selected) return selected
+    const snapshot = harnessSelectionController?.read(scope())
+    // Withhold until the selection controller has a real answer. The bare
+    // opencode default otherwise flashes Claxedo permission rows on Codex
+    // drafts during hydration (tier-real behavior 13 records every visible
+    // `[data-action="prompt-permission-mode"]` from first navigation).
+    if (toolbarHarnessMode(scope())) {
+      const selected = snapshot?.harness
+      if (selected && selected !== "opencode") return selected
+      return undefined
+    }
+    if (!snapshot || snapshot.readiness !== "ready") return undefined
+    if (snapshot.harness) return snapshot.harness
     const id = currentHarnessType(scope())
-    // Without that, an "opencode" answer is only believable when no other source
-    // claims a harness session — it is otherwise just the default.
-    if (id === "opencode" && toolbarHarnessMode(scope())) return undefined
-    return id
+    return id === "opencode" ? "opencode" : id
   }
 
   const permissionModeWiring = createComposerPermissionModeWiring({

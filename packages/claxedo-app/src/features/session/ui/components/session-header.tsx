@@ -28,6 +28,7 @@ import { Persist, persisted } from "@/platform/persistence/persist"
 import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { StatusPopover } from "@/features/session/app-ports"
+import { SessionPeopleControl } from "@/features/session/ui/components/session-people-control"
 import { useData } from "@/ui/session-kit-context"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
@@ -184,6 +185,27 @@ export function SessionHeader() {
     if (current) return current.name || getFilename(current.worktree)
     return getFilename(projectDirectory())
   })
+  const sessionPeopleWorkspaceId = createMemo(() => {
+    const current = project() as {
+      workspaceId?: string
+      sandboxes?: Array<string | { workspaceId?: string; id?: string }>
+      workspaces?: Record<string, { id?: string; workspaceId?: string; workspace_id?: string }>
+    } | undefined
+    if (current?.workspaceId) return current.workspaceId
+    const sandbox = current?.sandboxes?.find((item) => typeof item === "object" && item && ("workspaceId" in item || "id" in item)) as
+      | { workspaceId?: string; id?: string }
+      | undefined
+    if (sandbox?.workspaceId || sandbox?.id) return sandbox.workspaceId ?? sandbox.id
+    const fromMap = current?.workspaces
+      ? Object.values(current.workspaces).find((row) => row?.id || row?.workspaceId || row?.workspace_id)
+      : undefined
+    if (fromMap) return fromMap.id ?? fromMap.workspaceId ?? fromMap.workspace_id
+    const dir = projectDirectory()
+    if (dir?.startsWith("ws_")) return dir
+    if (dir?.startsWith("workspace:")) return dir.slice("workspace:".length)
+    return undefined
+  })
+  const sessionPeopleSessionId = createMemo(() => params.id)
   const hotkey = createMemo(() => command.keybind("file.open"))
   const os = createMemo(() => detectOS(platform))
   const isDesktopBeta = platform.platform === "desktop" && import.meta.env.VITE_OPENCODE_CHANNEL === "beta"
@@ -342,7 +364,7 @@ export function SessionHeader() {
 
   return (
     <>
-      <Show when={search() && centerMount()}>
+      <Show when={paneActive() ? search() && centerMount() : false}>
         {(mount) => (
           <Portal mount={mount()}>
             <Button
@@ -372,7 +394,7 @@ export function SessionHeader() {
           </Portal>
         )}
       </Show>
-      <Show when={rightMount()}>
+      <Show when={paneActive() ? rightMount() : false}>
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-2">
@@ -490,6 +512,12 @@ export function SessionHeader() {
                 </div>
               </Show>
               <div class="flex items-center gap-1">
+                <Show when={sessionPeopleSessionId() && sessionPeopleWorkspaceId()}>
+                  <SessionPeopleControl
+                    sessionId={sessionPeopleSessionId()!}
+                    workspaceId={sessionPeopleWorkspaceId()!}
+                  />
+                </Show>
                 <Show when={status()}>
                   <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
                     <StatusPopover />

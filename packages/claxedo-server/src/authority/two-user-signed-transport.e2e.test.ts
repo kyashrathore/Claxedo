@@ -76,7 +76,7 @@ afterAll(async () => {
 })
 
 describe("two-user signed app transport", () => {
-  test("uses real bearer sessions for private-session HTTP policy and participant revocation", async () => {
+  test("uses real bearer sessions for org/team membership, team session share, and revoke", async () => {
     const alice = await signUp("alice@two-user.test", "Alice")
     const bob = await signUp("bob@two-user.test", "Bob")
     const casey = await signUp("casey@two-user.test", "Casey")
@@ -100,18 +100,31 @@ describe("two-user signed app transport", () => {
     inspectAuthority().prepare("UPDATE users SET name = ?, image_url = ? WHERE token_identifier = ?")
       .run("Bob", "https://images.example.test/bob.png", bobIdentity.token_identifier)
 
+    const org = await authority.createOrg!(aliceAuth, { name: "Acme Signed" }) as {
+      org_id: string
+      default_team_id: string
+    }
     await authority.createCloudWorkspace(aliceAuth, {
       workspaceId: "ws_signed_private",
       displayName: "Signed private workspace",
       repoUrl: "https://github.com/acme/private.git",
+      orgId: org.org_id,
     })
-    for (const identity of [bobIdentity, caseyIdentity]) {
-      const response = await signedRequest(alice.token, "/api/workspace/ws_signed_private/shares", {
-        method: "POST",
-        body: JSON.stringify({ role: "editor", grantedToTokenIdentifier: identity.token_identifier }),
-      })
-      expect(response.status).toBe(200)
-    }
+    await authority.ensureDefaultTeam!(aliceAuth, { orgId: org.org_id })
+
+    const addMember = await signedRequest(alice.token, `/api/control/teams/${org.default_team_id}/members`, {
+      method: "POST",
+      body: JSON.stringify({ tokenIdentifier: bobIdentity.token_identifier, role: "member" }),
+    })
+    expect(addMember.status).toBe(200)
+
+    // Casey: workspace editor only (not on the team).
+    const caseyShare = await signedRequest(alice.token, "/api/workspace/ws_signed_private/shares", {
+      method: "POST",
+      body: JSON.stringify({ role: "editor", grantedToTokenIdentifier: caseyIdentity.token_identifier }),
+    })
+    expect(caseyShare.status).toBe(200)
+
     await authority.upsertSessionVisibility(aliceAuth, {
       workspaceId: "ws_signed_private",
       sessions: [{ sessionId: "ses_signed_private", title: "Signed private session" }],
@@ -135,16 +148,21 @@ describe("two-user signed app transport", () => {
       await expect(messages.json()).resolves.toMatchObject({ allowed: false, messages: [] })
     }
 
-    const added = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/participants", {
+    const shared = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
       method: "POST",
       body: JSON.stringify({
         workspaceId: "ws_signed_private",
-        participantTokenIdentifier: bobIdentity.token_identifier,
+        grantedToTeamId: org.default_team_id,
       }),
     })
-    expect(added.status).toBe(200)
-    await expect(added.json()).resolves.toMatchObject({ participant_id: expect.any(String) })
+    expect(shared.status).toBe(200)
+    await expect(shared.json()).resolves.toMatchObject({ grant_id: expect.any(String) })
 
+    const bobList = await signedRequest(bob.token, "/api/control/sessions?workspaceId=ws_signed_private")
+    expect(bobList.status).toBe(200)
+    await expect(bobList.json()).resolves.toMatchObject({
+      sessions: [expect.objectContaining({ session_id: "ses_signed_private" })],
+    })
     const bobMessages = await signedRequest(
       bob.token,
       "/api/control/sessions/ses_signed_private/messages?workspaceId=ws_signed_private",
@@ -167,6 +185,9 @@ describe("two-user signed app transport", () => {
       sessionId: "ses_signed_private",
       messages: [{ id: "msg_casey", role: "user", text: "Casey must not write" }],
     })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+
+    const caseyList = await signedRequest(casey.token, "/api/control/sessions?workspaceId=ws_signed_private")
+    await expect(caseyList.json()).resolves.toEqual({ sessions: [] })
 
     const [aliceProfile, bobProfile] = await Promise.all([
       authority.usersMe(aliceAuth),
@@ -218,21 +239,18 @@ describe("two-user signed app transport", () => {
       role: "editor",
       expiresAt: Date.now() + 60_000,
     })
-    const removed = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/participants", {
+    const revokedShare = await signedRequest(alice.token, "/api/control/sessions/ses_signed_private/shares", {
       method: "DELETE",
       body: JSON.stringify({
         workspaceId: "ws_signed_private",
-        participantTokenIdentifier: bobIdentity.token_identifier,
+        grantedToTeamId: org.default_team_id,
       }),
     })
-    expect(removed.status).toBe(200)
-    await expect(removed.json()).resolves.toEqual({ removed: true })
-    const revoked = await signedRequest(alice.token, "/api/workspace/ws_signed_private/shares", {
-      method: "DELETE",
-      body: JSON.stringify({ grantedToTokenIdentifier: bobIdentity.token_identifier }),
+    expect(revokedShare.status).toBe(200)
+    await expect(revokedShare.json()).resolves.toMatchObject({
+      revoked: true,
+      runtime_tokens_revoked: expect.any(Number),
     })
-    expect(revoked.status).toBe(200)
-    await expect(revoked.json()).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
     await expect(authority.runtimeAccessTokenActive({
       jti: "jti_signed_bob",
       workspaceId: "ws_signed_private",

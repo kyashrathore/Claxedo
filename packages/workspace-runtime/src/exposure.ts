@@ -1,5 +1,8 @@
 import type { MiddlewareHandler } from "hono"
-import type { RelayHostAuthOptions } from "./workspace-host-service-auth"
+import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
+
+/** Hop-only header stamped by `@claxedo/local-server` `embedded()` for author attribution. */
+export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
 
 export type WorkspaceRuntimeRequestGuard = (input: {
   request: Request
@@ -142,6 +145,13 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
         },
       }, 403)
     }
+    if (exposure.kind === "embedded") {
+      const stamped = parseEmbeddedRelayHostAuth(c.req.header(EMBEDDED_RELAY_HOST_AUTH_HEADER))
+      if (stamped) {
+        ;(c as unknown as { set(name: "relayHostAuth", value: RelayHostAuthContext["relayHostAuth"]): void })
+          .set("relayHostAuth", stamped)
+      }
+    }
     if (exposure.kind === "private-network" && exposure.protection.kind === "host-guard") {
       const runtimeAuth = typeof exposure.runtimeAuth === "function"
         ? await exposure.runtimeAuth(request)
@@ -158,4 +168,51 @@ export function createWorkspaceRuntimeExposureMiddleware(exposure: WorkspaceRunt
     }
     return await next()
   }
+}
+
+function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthContext["relayHostAuth"] {
+  if (!value?.trim()) return
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return
+    const row = parsed as Record<string, unknown>
+    const actor_id = stringValue(row.actor_id)
+    const actor_kind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
+    const actor_public_id = stringValue(row.actor_public_id)
+    const actor_name = stringValue(row.actor_name)
+    const workspace_id = stringValue(row.workspace_id)
+    const org_id = stringValue(row.org_id)
+    const role = row.role === "viewer" || row.role === "editor" || row.role === "admin" || row.role === "owner"
+      ? row.role
+      : undefined
+    if (!actor_id || !actor_kind || !actor_public_id || !actor_name || !workspace_id || !org_id || !role) return
+    return {
+      actor_id,
+      actor_kind,
+      actor_public_id,
+      actor_name,
+      ...(stringValue(row.actor_avatar_url) ? { actor_avatar_url: stringValue(row.actor_avatar_url) } : {}),
+      workspace_id,
+      org_id,
+      role,
+      ...(stringValue(row.host_id) ? { host_id: stringValue(row.host_id) } : {}),
+      // Attribution-only: chips need author; do not flip local embedded policy
+      // into managed-private session authority (no registerSession there).
+      attribution_only: true,
+      access: "user-hosted",
+      backing: "local-worktree",
+      iss: "workspace-relay",
+      aud: "workspace-host-service",
+      sub: actor_id,
+      exp: Math.floor(Date.now() / 1000) + 60,
+      iat: Math.floor(Date.now() / 1000),
+      jti: `embedded_${actor_public_id}`,
+    } as RelayHostAuthContext["relayHostAuth"]
+  } catch {
+    return
+  }
+}
+
+function stringValue(input: unknown) {
+  return typeof input === "string" && input.trim() ? input.trim() : undefined
 }

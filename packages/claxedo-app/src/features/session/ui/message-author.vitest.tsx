@@ -106,5 +106,8 @@ describe("message author lane", () => {
     expect(
       [...view.container.querySelectorAll('[data-slot="message-author-initials"]')].map((node) => node.textContent),
     ).toEqual(["YS", "AL"])
+    expect(
+      [...view.container.querySelectorAll('[data-slot="message-author-name"]')].map((node) => node.textContent),
+    ).toEqual(["Yash Singh", "Ada Lovelace"])
   })
 })

@@ -3,6 +3,7 @@ import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
 import { runtimeEventsHandler } from "@claxedo/workspace-runtime/routes"
 import { createCentralSessionRuntime } from "./session/runtime"
 import { ControlPlaneSessionRoutes } from "./session/routes/control-plane-session"
+import { OrgTeamControlRoutes } from "./session/routes/org-team-routes"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
@@ -22,6 +23,7 @@ import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 import type { UsageRevisionReader, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import type { SessionShareChangedSink } from "./session/routes/session-share-fanout"
 
 export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
@@ -50,6 +52,8 @@ export type CentralControlAppOptions = {
   mountPublicUsageRoute?: boolean
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
+  /** Injected by composition roots (local bus or hosted LiveSync). */
+  sessionShareChangedSink?: SessionShareChangedSink
 }
 
 function centralControlRequest(request: Request) {
@@ -181,7 +185,12 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.authConfig ? { authConfig: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),
     ...(options.beforeLocalSessionList ? { beforeLocalList: options.beforeLocalSessionList } : {}),
+    ...(options.sessionShareChangedSink ? { sessionShareChangedSink: options.sessionShareChangedSink } : {}),
     createHybridSession: runtime.createHybridSession,
+  }))
+  app.route("/api/control", OrgTeamControlRoutes(services, {
+    ...(options.authConfig ? { authConfig: options.authConfig } : {}),
+    ...(options.verifier ? { verifier: options.verifier } : {}),
   }))
   if (options.usageLedger) {
     const usageOptions = {

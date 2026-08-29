@@ -488,6 +488,25 @@ describe("opencode conversation chat adapter", () => {
     })
   })
 
+  test("a later engine message.updated without claxedo.author keeps the signed host stamp", () => {
+    const attributed = {
+      ...message("msg_user", "user"),
+      claxedo: { author: { id: "usr_alice", name: "Alice", kind: "human" } },
+    } as Message
+    const engine = message("msg_user", "user") as Message
+
+    const handle = chat()
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: attributed }))
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: engine }))
+
+    const stored = (handle.messages()[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    expect((stored as { claxedo?: { author?: { name?: string } } } | undefined)?.claxedo?.author).toEqual({
+      id: "usr_alice",
+      name: "Alice",
+      kind: "human",
+    })
+  })
+
   test("snapshot merge keeps the richest error when refetched history carries less", () => {
     const body = '{"type":"error","error":{"type":"authentication_error"}}'
     const live = opencodeConversationSnapshot({

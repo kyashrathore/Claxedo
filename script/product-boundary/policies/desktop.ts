@@ -202,13 +202,11 @@ export const desktopRendererUnsigned: Policy = {
   // status work adds eight named owners while removing four obsolete owners,
   // bringing the reviewed closure to 980 modules with no new package edge.
   // Durable archive cleanup adds its canonical projection-cancellation owner.
-  // Session markdown first-fold preload, environment-card persistence, Thinking
-  // visibility hold, provider-settings detect/disconnect logic, models-settings
-  // logic, provider setup row, and the settings-providers dialog opener add the
-  // same eight named owners as app-local (981 + 8 = 989). Tenant-aware
-  // multiplayer follows the same four local app owners as app-local:
-  // 989 + 4 = 993 modules, still no package edge.
-  ceilings: { modules: 993, packages: 62 },
+  // Session markdown / settings owners (981 + 8 = 989) plus tenant-aware
+  // multiplayer's four local owners (989 + 4 = 993). Org→Team product UI adds
+  // the same six local app owners as app-local: 993 + 6 = 999 modules, still
+  // no package edge.
+  ceilings: { modules: 999, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

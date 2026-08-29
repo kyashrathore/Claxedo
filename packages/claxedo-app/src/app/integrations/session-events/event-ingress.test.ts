@@ -425,4 +425,57 @@ describe("global sync event ingress", () => {
     ])
     dispose()
   })
+
+  test("session.share.changed invalidates session-list and session-inventory queries", async () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const listKey = queryKeys.shell.sessionList("http://test.local", {
+      scope: "project",
+      projectId: "proj_1",
+      limit: 5,
+    })
+    const inventoryKey = queryKeys.shell.sessionInventory("http://test.local")
+    queryClient.setQueryData(listKey, {
+      view: { scope: "project", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [],
+      totalKnown: 0,
+    })
+    queryClient.setQueryData(inventoryKey, { sessions: [], projects: [], workspaces: [] })
+    const dispose = createGlobalSyncEventIngress({
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+
+    claxedoEvents.emit({
+      type: "session.share.changed",
+      phase: "granted",
+      ownerUserId: "user_bob",
+      sessionId: "ses_shared",
+      workspaceId: "ws_1",
+      ts: 1,
+    })
+
+    await Promise.resolve()
+    expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(inventoryKey)?.isInvalidated).toBe(true)
+    dispose()
+  })
 })

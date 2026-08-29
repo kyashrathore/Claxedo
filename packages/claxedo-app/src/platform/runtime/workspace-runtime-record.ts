@@ -1,4 +1,4 @@
-import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -40,13 +40,21 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
  * whatever the user was doing when the freshness window happened to elapse.
  */
 
+function cachedProjectCatalog() {
+  return queryClient.getQueryData<Array<{ id?: string; worktree?: string; workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string }> }>>(
+    queryKeys.controlPlane.projects(getClaxedoServerUrl()),
+  ) ?? []
+}
+
 /**
  * Collapse a `{ directory, workspaceId }` pair to whichever one identifies the
  * runtime, so a directory that is really a workspace ref resolves by id.
  */
 export function runtimeScope(input: { directory?: string; workspaceId?: string }) {
   const workspaceId = input.workspaceId ??
-    (input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined)
+    (input.directory
+      ? sessionWorkspaceRuntimeRef({ directory: input.directory, projects: cachedProjectCatalog() })?.workspaceId
+      : undefined)
   return {
     workspaceId,
     directory: workspaceId ? undefined : input.directory,

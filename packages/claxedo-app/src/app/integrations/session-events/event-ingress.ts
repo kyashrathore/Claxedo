@@ -1,5 +1,5 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
-import { invalidateSessionListQueries, upsertCreatedSessionListRow } from "@/features/session/data/query/session-list"
+import { invalidateSessionListQueries, invalidateSessionShareQueries, upsertCreatedSessionListRow } from "@/features/session/data/query/session-list"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
@@ -188,6 +188,10 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     void retryUnsettledSessionProjectionPulls()
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })
+  const unsubscribeClaxedoShareChanged = input.claxedoEvents?.on("session.share.changed", () => {
+    // Doorbell only — control-plane list/inventory already include shares.
+    void invalidateSessionShareQueries()
+  })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
     .map((type) => input.claxedoEvents?.on(type, (event) => {
       applyClaxedoDirectoryEventToSync(input, event)
@@ -198,6 +202,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
   return () => {
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
+    unsubscribeClaxedoShareChanged?.()
     unsubscribeClaxedoDirectoryEvents.forEach((cleanup) => cleanup())
     detachProjectionSelfHeal()
   }
@@ -292,13 +297,22 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   // created session row appears without a reload (matches the flat-inventory
   // refresh `applySessionEvent` performs below).
   void invalidateSessionListQueries()
+  const eventWorkspaceId = typeof info.workspaceID === "string"
+    ? info.workspaceID
+    : event.workspaceId
+  // Local association UUIDs are not signed workspace ids. Stamping them here
+  // mints a `workspace:<uuid>:session:<id>` row beside the `local:<dir>` row
+  // (open issue #14 / tier-real local harness strict-mode duplicates).
+  const signedWorkspaceId = typeof eventWorkspaceId === "string" && /^ws_/.test(eventWorkspaceId)
+    ? eventWorkspaceId
+    : undefined
   upsertCreatedSessionListRow({
     row: {
       sessionId: info.id,
       title: info.title,
       directory: info.directory,
       projectId: info.projectID,
-      ...(typeof info.workspaceID === "string" ? { workspaceId: info.workspaceID } : event.workspaceId ? { workspaceId: event.workspaceId } : {}),
+      ...(signedWorkspaceId ? { workspaceId: signedWorkspaceId } : {}),
       createdAt: info.time.created,
       updatedAt: info.time.updated,
     },

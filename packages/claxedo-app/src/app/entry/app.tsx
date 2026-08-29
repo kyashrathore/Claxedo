@@ -129,6 +129,14 @@ const ErrorPageHarness = lazy(() => import("@/app/routes/error-page-harness"))
 const Loading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
 
+function BootSplash() {
+  return (
+    <div class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
+      <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
+    </div>
+  )
+}
+
 function UiI18nBridge(props: ParentProps) {
   const language = useLanguage()
   return <I18nProvider value={{ locale: language.locale, t: language.t }}>{props.children}</I18nProvider>
@@ -269,9 +277,7 @@ function ConnectionGate(props: ParentProps) {
         </Show>
       </Show>
       <Show when={showBlockingSplash()}>
-        <div class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-          <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
-        </div>
+        <BootSplash />
       </Show>
     </>
   )
@@ -452,7 +458,9 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders>{props.children}</RuntimeProviders>
+            <Suspense fallback={<BootSplash />}>
+              <RuntimeProviders>{props.children}</RuntimeProviders>
+            </Suspense>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>
@@ -493,31 +501,38 @@ export function AppInterface(props: {
           </Suspense>
         )}
       />
-      {import.meta.env.DEV ? (
-        <Route
-          path="/__e2e/dialog-matrix"
-          component={() => (
+      <Route
+        path="/__e2e/dialog-matrix"
+        component={() =>
+          import.meta.env.DEV ? (
             <Suspense fallback={<Loading />}>
               <DialogMatrixHarness />
             </Suspense>
-          )}
-        />
-      ) : null}
-
-      {import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1" ? (
-        <Route
-          path="/__e2e/error-page"
-          component={() => (
+          ) : (
+            <Navigate href="/" />
+          )
+        }
+      />
+      <Route
+        path="/__e2e/error-page"
+        component={() =>
+          import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1" ? (
             <Suspense fallback={<Loading />}>
               <ErrorPageHarness />
             </Suspense>
-          )}
-        />
-      ) : null}
+          ) : (
+            <Navigate href="/" />
+          )
+        }
+      />
 
       <Route
         path="/"
-        component={(p) => <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />}
+        component={(p) => (
+          <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
+            <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />
+          </ErrorBoundary>
+        )}
       >
         <Route
           path="/"

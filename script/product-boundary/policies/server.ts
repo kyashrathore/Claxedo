@@ -61,7 +61,11 @@ export const serverCloudNode: Policy = {
   // The central usage route and durable revision store add five measured
   // modules. `tokentracker-cli` is the one added package and is the canonical
   // pricing catalog used by the dashboard; no local-server edge is permitted.
-  ceilings: { modules: 137, packages: 27 },
+  // Org→Team + session-people Worker-safe routers add two measured modules:
+  // 137 + 2 = 139 modules, still no package edge.
+  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
+  // 139 + 1 = 140 modules, still no package edge.
+  ceilings: { modules: 140, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -133,7 +137,11 @@ export const serverWorkerd: Policy = {
   // message paging remain Worker-safe shared owners with no package growth.
   // Tenant-aware runtime session authority is Worker-safe shared owner:
   // 112 + 1 = 113 modules, still no package edge.
-  ceilings: { modules: 113, packages: 13 },
+  // Org→Team + session-people control routers (Worker-safe; no supervisor):
+  // 113 + 2 = 115 modules, still no package edge.
+  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
+  // 115 + 1 = 116 modules, still no package edge.
+  ceilings: { modules: 116, packages: 13 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
@@ -201,8 +209,9 @@ export const serverSelfHosted: Policy = {
   },
   // Nine modules complete the single-binary usage pipeline: central/local
   // routes, durable revision/provenance stores, outbox, scanner, pricing, and
-  // host identity. Package reach is unchanged.
-  ceilings: { modules: 150, packages: 33 },
+  // host identity. Package reach includes `posthog-node` via platform
+  // telemetry (`platform/telemetry/errors/posthog.ts`) — measured 34 packages.
+  ceilings: { modules: 150, packages: 34 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

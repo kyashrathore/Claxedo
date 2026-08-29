@@ -223,6 +223,8 @@ export type WorkspaceAuthority = {
       grantedToTokenIdentifier?: string
       grantedToClerkSubject?: string
       grantedToClerkOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
     },
   ) => Promise<unknown>
   revokeWorkspaceShare: (
@@ -233,6 +235,8 @@ export type WorkspaceAuthority = {
       grantedToTokenIdentifier?: string
       grantedToClerkSubject?: string
       grantedToClerkOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
     },
   ) => Promise<unknown>
 
@@ -267,6 +271,71 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
   ) => Promise<unknown>
+  grantSessionShare?: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      sessionId: string
+      workspaceId: string
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToUserId?: string
+      grantedToClerkOrgId?: string
+      grantedToOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
+    },
+  ) => Promise<unknown>
+  revokeSessionShare?: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      sessionId: string
+      workspaceId: string
+      grantId?: string
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToUserId?: string
+      grantedToClerkOrgId?: string
+      grantedToOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
+    },
+  ) => Promise<unknown>
+  listSessionShares?: (
+    auth: SignedControlPlaneAuth,
+    args: { sessionId: string; workspaceId: string },
+  ) => Promise<unknown>
+  createOrg?: (auth: SignedControlPlaneAuth, args: { name: string }) => Promise<unknown>
+  listTeams?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
+  createTeamInOrg?: (auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) => Promise<unknown>
+  addTeamMember?: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+      role?: "member" | "admin" | "owner"
+    },
+  ) => Promise<unknown>
+  removeTeamMember?: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+    },
+  ) => Promise<unknown>
+  listTeamMembers?: (auth: SignedControlPlaneAuth, args: { teamId: string }) => Promise<unknown>
+  grantTeamProject?: (
+    auth: SignedControlPlaneAuth,
+    args: { teamId: string; projectId: string; role: "viewer" | "editor" | "admin" },
+  ) => Promise<unknown>
+  revokeTeamProject?: (
+    auth: SignedControlPlaneAuth,
+    args: { teamId: string; projectId: string },
+  ) => Promise<unknown>
+  ensureDefaultTeam?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
   listSessions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (

@@ -19,38 +19,41 @@ Failure states:
 - Authority unavailable: show a retryable service failure, not a private-session denial.
 - Session registration denied: return no session and allow retry with the same id.
 
-## Journey 2: Team owner creates a collaborative workspace
+## Journey 2: Org owner creates a collaborative workspace
 
-Actor: team owner or organization administrator
+Actor: organization administrator
 
-1. The owner creates a team using the first-party team creation flow.
-2. The owner creates a project for a repository.
-3. The system reuses the same project for the same canonical repository key inside the organization.
-4. The owner creates a workspace under that project.
-5. The system stores immutable org/project identity on the workspace.
-6. The owner invites or grants workspace access to a collaborator.
+1. The owner creates a collaborative **org** using the first-party org creation flow (nested default **team** is seeded).
+2. The owner adds collaborators to the default team (and optionally creates more teams).
+3. The owner creates a project for a repository under the org.
+4. The system reuses the same project for the same canonical repository key inside the organization.
+5. The owner creates a workspace under that project; `ensureDefaultTeam` mirrors team project grants.
+6. Workspace access may also use direct workspace shares; session transcripts still require session share or participation.
 
-Expected result: Team resources are explicit and tenant-scoped. An existing personal workspace is never silently moved into the team.
+Expected result: Org and Team are distinct. An existing personal workspace is never silently moved into the org.
 
 Closure evidence: Convex and SQLite share the dependency-light canonical
 repository-key implementation and parity corpus; finding #6 is closed.
+Real-tier browser proof: `packages/claxedo-app/e2e/playwright/web-signed-org-team-multiplayer.spec.ts`.
 
-## Journey 3: Creator shares one private session
+## Journey 3: Creator shares one private session with a team
 
-Actors: session creator and collaborator
+Actors: session creator, team member, and workspace-only peer
 
-1. The creator creates a private session.
-2. The collaborator can access the workspace but cannot see the session.
-3. The creator adds the collaborator as a session participant.
-4. The collaborator's session list now includes the session.
-5. The collaborator opens the transcript and receives authorized replay.
-6. Both users receive new live events and see message authors.
+1. The creator creates a private session in a collaborative-org workspace.
+2. A team member and a workspace editor (not on the team) cannot see the session.
+3. The creator shares the session with the **team** (People UI / `session_share_grants`).
+4. The team member's session list includes the session; they can open, read, and drive turns.
+5. The workspace-only peer still cannot see the session.
+6. Both authorized users see message authors; revoke of the team grant denies the member again.
 
-Expected result: Workspace membership alone does not expose private transcripts. Explicit participation enables HTTP, live, and replay access.
+Expected result: Workspace membership alone does not expose private transcripts. Explicit team (or user) session share enables HTTP, live, and replay access.
 
 Closure evidence: signed global visibility, bounded live/replay authorization,
 accurate authority status mapping, renewable grants, and producer-backed
 attribution close findings #5, #8-#11, #15, and #28.
+Real-tier video proof: `CLAXEDO_TIER_REAL_E2E=1` playwright `web-signed-org-team-multiplayer.spec.ts`
+(artifacts under `test-results/evidence/web-signed-org-team-multiplayer/`).
 
 ## Journey 4: Two users submit at the same time
 

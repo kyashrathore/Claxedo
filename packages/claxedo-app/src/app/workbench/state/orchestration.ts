@@ -456,11 +456,13 @@ export function createLayoutOrchestration(input: {
 
     openTerminal(directory, terminalId, title, opts) {
       const existing = meta.find(
-        (m) =>
-          m.type === "terminal" &&
-          m.directory === directory &&
-          m.terminalId === terminalId &&
-          (!opts?.workspaceRouteId || m.content?.workspaceRouteId === opts.workspaceRouteId),
+        (m) => {
+          if (m.type !== "terminal" || m.terminalId !== terminalId) return false
+          if (opts?.workspaceRouteId) {
+            return m.content?.workspaceRouteId === opts.workspaceRouteId
+          }
+          return m.directory === directory
+        },
       )
       if (existing) patchTerminalTitle(existing, directory, terminalId, title)
       return showOrCreate(

@@ -90,7 +90,18 @@ export function MessageAuthorLane(props: { message: MessageWithAuthor; children:
       {(author) => (
         <div data-slot="message-author-lane" class="flex w-full items-start justify-end gap-2">
           <div data-slot="message-author-content" class="min-w-0 flex-1">{content()}</div>
-          <MessageAuthorAvatar author={author()} />
+          <div data-slot="message-author-meta" class="flex shrink-0 flex-col items-center gap-1">
+            <MessageAuthorAvatar author={author()} />
+            <Show when={author().name.trim()}>
+              <span
+                data-slot="message-author-name"
+                class="max-w-[4.75rem] truncate text-center text-11-regular text-text-weak"
+                title={author().name}
+              >
+                {author().name}
+              </span>
+            </Show>
+          </div>
         </div>
       )}
     </Show>

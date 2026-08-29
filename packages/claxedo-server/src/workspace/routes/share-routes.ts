@@ -16,6 +16,8 @@ const shareBody = z.object({
   grantedToOrgId: z.string().optional(),
   grantedToClerkSubject: z.string().optional(),
   grantedToClerkOrgId: z.string().optional(),
+  grantedToTeamId: z.string().optional(),
+  grantedToTeamPublicId: z.string().optional(),
 }).strict()
 
 const revokeShareBody = z.object({
@@ -25,6 +27,8 @@ const revokeShareBody = z.object({
   grantedToOrgId: z.string().optional(),
   grantedToClerkSubject: z.string().optional(),
   grantedToClerkOrgId: z.string().optional(),
+  grantedToTeamId: z.string().optional(),
+  grantedToTeamPublicId: z.string().optional(),
 }).strict()
 
 export function workspaceShareRoutes(
@@ -55,7 +59,7 @@ export function workspaceShareRoutes(
       const target = shareTarget(body)
       const count = targetCount(target)
       if (count === 0) return c.json(shareTargetError("workspace_share_target_required", "Share target is required"), 400)
-      if (count > 1) return c.json(shareTargetError("workspace_share_target_ambiguous", "Share target must be exactly one user or org"), 400)
+      if (count > 1) return c.json(shareTargetError("workspace_share_target_ambiguous", "Share target must be exactly one user, org, or team"), 400)
       try {
         return c.json(await requireAuthority(services).grantWorkspaceShare(auth, {
           workspaceId: c.req.param("id"),
@@ -81,7 +85,7 @@ export function workspaceShareRoutes(
       const target = revokeShareTarget(body)
       const count = targetCount(target)
       if (count === 0) return c.json(shareTargetError("workspace_share_target_required", "Share target is required"), 400)
-      if (count > 1) return c.json(shareTargetError("workspace_share_target_ambiguous", "Share revoke target must be exactly one grant, user, or org"), 400)
+      if (count > 1) return c.json(shareTargetError("workspace_share_target_ambiguous", "Share revoke target must be exactly one grant, user, org, or team"), 400)
       try {
         return c.json(await requireAuthority(services).revokeWorkspaceShare(auth, {
           workspaceId: c.req.param("id"),
@@ -103,6 +107,8 @@ function shareTarget(input: z.infer<typeof shareBody>) {
     grantedToTokenIdentifier: input.grantedToTokenIdentifier,
     grantedToClerkSubject: input.grantedToClerkSubject ?? input.grantedToSubject,
     grantedToClerkOrgId: input.grantedToClerkOrgId ?? input.grantedToOrgId,
+    grantedToTeamId: input.grantedToTeamId,
+    grantedToTeamPublicId: input.grantedToTeamPublicId,
   }
 }
 
@@ -112,6 +118,8 @@ function revokeShareTarget(input: z.infer<typeof revokeShareBody>) {
     grantedToTokenIdentifier: input.grantedToTokenIdentifier,
     grantedToClerkSubject: input.grantedToClerkSubject ?? input.grantedToSubject,
     grantedToClerkOrgId: input.grantedToClerkOrgId ?? input.grantedToOrgId,
+    grantedToTeamId: input.grantedToTeamId,
+    grantedToTeamPublicId: input.grantedToTeamPublicId,
   }
 }
 

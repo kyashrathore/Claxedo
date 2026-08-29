@@ -24,15 +24,33 @@ import {
   sessionInventoryResponse,
 } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
+import {
+  notifySessionShareChanged,
+  type SessionShareChangedSink,
+  type SessionShareFanoutTarget,
+} from "./session-share-fanout"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   beforeLocalList?: () => Promise<void>
   createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
+  sessionShareChangedSink?: SessionShareChangedSink
 }
 
 const participantBodyLimitBytes = 16 * 1024
+
+function shareTargetFromBody(body: Record<string, unknown>): SessionShareFanoutTarget {
+  return {
+    ...(typeof body.grantedToTokenIdentifier === "string" ? { grantedToTokenIdentifier: body.grantedToTokenIdentifier } : {}),
+    ...(typeof body.grantedToClerkSubject === "string" ? { grantedToClerkSubject: body.grantedToClerkSubject } : {}),
+    ...(typeof body.grantedToUserId === "string" ? { grantedToUserId: body.grantedToUserId } : {}),
+    ...(typeof body.grantedToClerkOrgId === "string" ? { grantedToClerkOrgId: body.grantedToClerkOrgId } : {}),
+    ...(typeof body.grantedToOrgId === "string" ? { grantedToOrgId: body.grantedToOrgId } : {}),
+    ...(typeof body.grantedToTeamId === "string" ? { grantedToTeamId: body.grantedToTeamId } : {}),
+    ...(typeof body.grantedToTeamPublicId === "string" ? { grantedToTeamPublicId: body.grantedToTeamPublicId } : {}),
+  }
+}
 
 async function signedAuth(req: Request, options: Options) {
   const auth = await controlPlaneAuthContext(req, {
@@ -111,6 +129,15 @@ function authorityMessages(body: unknown) {
     : body && typeof body === "object" && Array.isArray((body as { messages?: unknown }).messages)
       ? (body as { messages: unknown[] }).messages
       : []
+}
+
+function authorityReadAllowed(body: unknown) {
+  return !(
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    (body as { allowed?: boolean }).allowed === false
+  )
 }
 
 function messagePageJson(
@@ -288,6 +315,15 @@ function hybridHarness(input: unknown): string {
 export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
   const app = new Hono()
   app.use("/sessions/:sessionId/participants", bodyLimit({
+    maxSize: participantBodyLimitBytes,
+    onError: (c) => c.json({
+      error: {
+        code: "request_body_too_large",
+        message: `Request body exceeds the ${participantBodyLimitBytes}-byte limit`,
+      },
+    }, 413),
+  }))
+  app.use("/sessions/:sessionId/shares", bodyLimit({
     maxSize: participantBodyLimitBytes,
     onError: (c) => c.json({
       error: {
@@ -500,6 +536,104 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         throw err
       }
     })
+    .get("/sessions/:sessionId/shares", async (c) => {
+      const workspaceId = c.req.query("workspaceId")
+      if (!workspaceId) {
+        return c.json({
+          error: {
+            code: "session_share_input_required",
+            message: "workspaceId is required",
+          },
+        }, 400)
+      }
+      try {
+        const auth = await signedAuth(c.req.raw, options)
+        const list = requireAuthority(services).listSessionShares
+        if (!list) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
+        return c.json(await list(auth, {
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+        }))
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        throw err
+      }
+    })
+    .post("/sessions/:sessionId/shares", async (c) => {
+      const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+      const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined
+      if (!workspaceId) {
+        return c.json({
+          error: {
+            code: "session_share_input_required",
+            message: "workspaceId is required",
+          },
+        }, 400)
+      }
+      try {
+        const auth = await signedAuth(c.req.raw, options)
+        const authority = requireAuthority(services)
+        const grant = authority.grantSessionShare
+        if (!grant) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
+        const target = shareTargetFromBody(body)
+        const result = await grant(auth, {
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+          ...target,
+        })
+        await notifySessionShareChanged({
+          auth,
+          authority,
+          phase: "granted",
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+          target,
+          ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
+        })
+        return c.json(result)
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        throw err
+      }
+    })
+    .delete("/sessions/:sessionId/shares", async (c) => {
+      const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
+      const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined
+      if (!workspaceId) {
+        return c.json({
+          error: {
+            code: "session_share_input_required",
+            message: "workspaceId is required",
+          },
+        }, 400)
+      }
+      try {
+        const auth = await signedAuth(c.req.raw, options)
+        const authority = requireAuthority(services)
+        const revoke = authority.revokeSessionShare
+        if (!revoke) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
+        const target = shareTargetFromBody(body)
+        const result = await revoke(auth, {
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+          ...(typeof body.grantId === "string" ? { grantId: body.grantId } : {}),
+          ...target,
+        })
+        await notifySessionShareChanged({
+          auth,
+          authority,
+          phase: "revoked",
+          sessionId: c.req.param("sessionId"),
+          workspaceId,
+          target,
+          ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
+        })
+        return c.json(result)
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        throw err
+      }
+    })
     .get("/sessions/:sessionId/gateway", async (c) => {
       try {
         if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
@@ -545,9 +679,10 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           if (replayMessages.length === 0 && workspaceId && hasBearerToken(c.req.raw)) {
             const auth = await signedAuth(c.req.raw, options)
             const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
+            const messages = authorityReadAllowed(body) ? authorityMessages(body) : []
             return c.json({
               ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-              messages: authorityMessages(body),
+              messages,
               maxEventOrdinal,
             })
           }
@@ -564,6 +699,22 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
             const projected = projectedMessagePage(services, sessionId, page)
             return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
           }
+          const workspaceId = c.req.query("workspaceId")
+          if (workspaceId) {
+            const body = await requireAuthority(services).readSessionMessages(auth, {
+              sessionId,
+              workspaceId,
+            })
+            const replayMessages = services.projectionStore.read_session_messages(sessionId)
+            const visibleMessages = authorityReadAllowed(body)
+              ? (replayMessages.length > 0 ? replayMessages : authorityMessages(body))
+              : []
+            return c.json({
+              ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
+              messages: visibleMessages,
+              maxEventOrdinal,
+            })
+          }
           return c.json({ messages: services.projectionStore.read_session_messages(sessionId), maxEventOrdinal })
         }
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
@@ -575,9 +726,12 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const messages = authorityMessages(body)
         if (page) return messagePageJson(c, body, messages, maxEventOrdinal)
         const replayMessages = services.projectionStore.read_session_messages(sessionId)
+        const visibleMessages = authorityReadAllowed(body)
+          ? (replayMessages.length > 0 ? replayMessages : messages)
+          : []
         return c.json({
           ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-          messages: replayMessages.length > 0 ? replayMessages : messages,
+          messages: visibleMessages,
           maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
         })
       } catch (err) {

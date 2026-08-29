@@ -11,6 +11,7 @@ vi.mock("@/features/session/app-ports", async () => {
   const workbench = await import("@/app/workbench/workbench")
   return {
     NavigationRow: navigation.NavigationRow,
+    NavigationRowGlyph: navigation.NavigationRowGlyph,
     NavigationRowStatusGutter: navigation.NavigationRowStatusGutter,
     NavigationStatusDot: navigation.NavigationStatusDot,
     workbenchDrag: workbench.workbenchDrag,
@@ -84,6 +85,33 @@ afterEach(() => {
 })
 
 describe("SessionNavigation", () => {
+  test("shows owner favicon only when the row carries an owner", () => {
+    const withOwner = row({
+      nested: true,
+      owner: { name: "Alice", avatarUrl: "https://example.test/alice.png" },
+    })
+    const own = row({
+      nested: true,
+      source: {
+        ...row().source,
+        sessionRef: "local:/repo:session:ses_own",
+        sessionId: "ses_own",
+        title: "Own session",
+      },
+      title: "Own session",
+    })
+    const view = render(() => (
+      <SessionNavigation
+        rows={[withOwner, own]}
+        onActivate={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    expect(view.getAllByTestId("rail-sidebar-session-owner-avatar")).toHaveLength(1)
+    expect(view.getByLabelText("Alice")).toBeTruthy()
+    expect(view.getByText("Own session")).toBeTruthy()
+  })
+
   test("updates a stable row's status projection without remounting it", async () => {
     const [status, setStatus] = createSignal<SessionNavigationDisplayRow["status"]>("idle")
     const displayRow = row({ nested: true })

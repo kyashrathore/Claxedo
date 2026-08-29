@@ -1,51 +1,58 @@
 # Access model
 
-Claxedo presents a **Team** to users and represents it as an `org` in code. A
-personal org is created implicitly for every user, preserving unbranched solo
-onboarding. A team org is created explicitly and begins with its creator as the
-owner. Invites, active-team navigation, and workspace transfer are product
-surfaces layered on this model.
+Claxedo presents an **Org** (company/tenant) and **Teams** (access groups inside
+an org). A personal org is created implicitly for every user, preserving
+unbranched solo onboarding. Collaborative orgs are created explicitly and begin
+with their creator as owner. Nested teams, invites, active org/team navigation,
+and workspace transfer are product surfaces layered on this model.
 
 ## Resource hierarchy
 
 Access combines a people axis with a code axis:
 
 ```text
-People: Team (`org`) → members → roles
-Code:   Project → Workspace → Session → participants
+People: Org → Teams → members → roles
+Code:   Project → Workspace → Session → participants / session share grants
 ```
 
 A project represents one repository inside one org. It has a globally unique,
 opaque `project_id`; `(org_id, repo_key)` is the canonical repository identity
 used to reuse a project inside an org. The same repository opened by two orgs
-produces two isolated projects.
+produces two isolated projects. Teams receive project access through
+`team_project_grants`; they do not own projects.
 
 A workspace is a checkout and execution location. Every workspace is created
 with both `org_id` and `project_id`; those identities are immutable. Solo
-creation resolves the caller's personal org. Team creation requires an
-effective workspace role of editor or above. Creating a workspace never moves
-an existing personal workspace into a team; workspace transfer is an explicit
-future billing operation.
+creation resolves the caller's personal org. Creating a workspace in a
+collaborative org requires an effective workspace role of editor or above.
+Creating a workspace never moves an existing personal workspace into another
+org; workspace transfer is an explicit future billing operation.
 
 ## Roles and authority
 
-Org roles are `member`, `admin`, and `owner`. Workspace roles are `viewer`,
-`editor`, `admin`, and `owner`. Org owner/admin authority projects to workspace
-admin; an org member projects to workspace viewer. Direct workspace, project,
-and share grants combine additively, with the highest effective role winning.
+Org roles are `member`, `admin`, and `owner`. Team roles are `member`, `admin`,
+and `owner`. Workspace roles are `viewer`, `editor`, `admin`, and `owner`. Org
+owner/admin authority projects to workspace admin; an org member projects to
+workspace viewer unless narrowed by team project grants. Direct workspace,
+project, team-project, and share grants combine additively, with the highest
+effective role winning.
 
 Session authority is conjunctive:
 
 ```text
 may access a private session
   = has the required workspace authority
-  AND is the session creator, an active participant, or an org admin
+  AND is the session creator, an active participant,
+      a user- or team-targeted session share grant (evaluate-time),
+      or an org admin
 ```
 
-The creator is enrolled when the session is created. The creator or an org
-admin may add and remove participants; a participant cannot enroll others.
-Read and write checks live in both the managed route policy and the storage
-authority so alternate clients cannot bypass the rule.
+The creator is enrolled when the session is created. The creator, an org admin,
+or a team admin for an in-scope project may add and remove participants and
+session share grants; a participant cannot enroll others. Read and write checks
+live in both the managed route policy and the storage authority so alternate
+clients cannot bypass the rule. Private sessions are not hidden from org
+admins (support/compliance).
 
 Session privacy protects transcript-derived content: metadata, messages,
 prompts, tool activity, questions, permissions, checkpoints, and live or
@@ -165,11 +172,11 @@ unless the subscription has an authority decision. Self-host compatibility
 streams retain the explicit local policy described above; that local boundary
 is not presented as private multiplayer isolation.
 
-Invite and accept UI, team switching, personal-to-team workspace transfer,
-participant-management UI, and presence UI are tracked product surfaces.
-Presence derives from identity-attached subscriptions. External artifacts such
-as pull requests and Slack messages remain governed by their destination
-systems.
+Invite and accept UI, org and team switching, personal-to-org workspace transfer,
+participant and session-share management UI, and presence UI are tracked product
+surfaces. Presence derives from identity-attached subscriptions. External
+artifacts such as pull requests and Slack messages remain governed by their
+destination systems.
 
-The Team=`org` glossary is the naming source for future invite strings before
-those strings are propagated across locales.
+The Org / Team glossary is the naming source for invite strings before those
+strings are propagated across locales.

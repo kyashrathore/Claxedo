@@ -292,6 +292,7 @@ export default defineSchema({
     workspace_id: v.id("workspaces"),
     granted_to_user_id: v.optional(v.id("users")),
     granted_to_org_id: v.optional(v.id("orgs")),
+    granted_to_team_id: v.optional(v.id("teams")),
     role: v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin")),
     created_by_user_id: v.id("users"),
     created_at: v.number(),
@@ -300,8 +301,66 @@ export default defineSchema({
     .index("by_workspace", ["workspace_id"])
     .index("by_user", ["granted_to_user_id"])
     .index("by_org", ["granted_to_org_id"])
+    .index("by_team", ["granted_to_team_id"])
     .index("by_workspace_user", ["workspace_id", "granted_to_user_id"])
-    .index("by_workspace_org", ["workspace_id", "granted_to_org_id"]),
+    .index("by_workspace_org", ["workspace_id", "granted_to_org_id"])
+    .index("by_workspace_team", ["workspace_id", "granted_to_team_id"]),
+
+  teams: defineTable({
+    public_id: v.string(),
+    org_id: v.id("orgs"),
+    name: v.string(),
+    is_default: v.optional(v.boolean()),
+    created_by_user_id: v.id("users"),
+    created_at: v.number(),
+    updated_at: v.number(),
+    deleted_at: v.optional(v.number()),
+  })
+    .index("by_public_id", ["public_id"])
+    .index("by_org", ["org_id"])
+    .index("by_org_name", ["org_id", "name"]),
+
+  team_memberships: defineTable({
+    team_id: v.id("teams"),
+    user_id: v.id("users"),
+    role: orgRole,
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_team_user", ["team_id", "user_id"])
+    .index("by_user", ["user_id"])
+    .index("by_team", ["team_id"]),
+
+  team_project_grants: defineTable({
+    team_id: v.id("teams"),
+    project_id: v.union(v.id("projects"), v.string()),
+    role: v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin")),
+    created_by_user_id: v.id("users"),
+    created_at: v.number(),
+    revoked_at: v.optional(v.number()),
+  })
+    .index("by_team_project", ["team_id", "project_id"])
+    .index("by_project", ["project_id"])
+    .index("by_team", ["team_id"]),
+
+  session_share_grants: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    granted_to_user_id: v.optional(v.id("users")),
+    granted_to_org_id: v.optional(v.id("orgs")),
+    granted_to_team_id: v.optional(v.id("teams")),
+    created_by_user_id: v.id("users"),
+    created_at: v.number(),
+    revoked_at: v.optional(v.number()),
+  })
+    .index("by_session", ["session_id"])
+    .index("by_workspace", ["workspace_id"])
+    .index("by_session_user", ["session_id", "granted_to_user_id"])
+    .index("by_session_org", ["session_id", "granted_to_org_id"])
+    .index("by_session_team", ["session_id", "granted_to_team_id"])
+    .index("by_user", ["granted_to_user_id"])
+    .index("by_org", ["granted_to_org_id"])
+    .index("by_team", ["granted_to_team_id"]),
 
   local_host_links: defineTable({
     workspace_id: v.id("workspaces"),

@@ -63,7 +63,8 @@ export function useRailHeaderSurfaces(input: {
     const sessionStatus = () => {
       activityRevision()
       const id = sessionId()
-      return id ? queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(id, "status")) : undefined
+      if (!id) return undefined
+      return queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(id, "status"))
     }
     const sessionRequests = () => {
       activityRevision()

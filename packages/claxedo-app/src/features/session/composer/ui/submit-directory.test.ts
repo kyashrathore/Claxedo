@@ -71,8 +71,11 @@ describe("resolvePreparedSubmitDirectory", () => {
     const result = await resolveDirectory({
       workspaceKind: "user-hosted",
       worktreeSelection: "workspace:uh_1",
-      runtimeWorkspaceRef: () => ({ workspaceId: "uh_1", kind: "user-hosted" }),
-      workspaceForDirectory: () => ({ workspaceId: "uh_1", kind: "user-hosted" }),
+      projectDirectory: "workspace:uh_1",
+      runtimeWorkspaceRef: (directory) =>
+        directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "user-hosted" } : undefined,
+      workspaceForDirectory: (directory) =>
+        directory === "workspace:uh_1" ? { workspaceId: "uh_1", kind: "user-hosted" } : undefined,
       createCloudWorkspace: async (projectId) => {
         createdProjects.push(projectId)
         return { workspaceId: "ws_1" }
@@ -159,11 +162,9 @@ describe("resolvePreparedSubmitDirectory", () => {
 
     expect(result).toBeUndefined()
     expect(handoffs).toEqual([])
-    expect(states.at(-1)).toMatchObject({
-      open: true,
-      status: "error",
-      err: "Runtime failed",
-    })
+    // Submit-time cloud prepare uses overlay: false — failures publish to
+    // rememberCloudStartup only, not the full-screen gate overlay.
+    expect(states).toEqual([])
   })
 
   test("cloud workspace creation rejection shows exactly one toast and aborts", async () => {
@@ -252,6 +253,37 @@ describe("resolvePreparedSubmitDirectory", () => {
     })
 
     expect(result).toEqual({ directory: "/repo/feature" })
+  })
+
+  test("does not steal a remote directory from an unrelated project in the catalog", async () => {
+    const prepared: string[] = []
+    const result = await resolveDirectory({
+      workspaceKind: "cloud",
+      projectDirectory: "/repo/selected",
+      defaultDirectory: "/repo/selected",
+      projects: [
+        { id: "selected", worktree: "/repo/selected" },
+        {
+          id: "other",
+          worktree: "/repo/other",
+          workspaces: {
+            ws_other: { directory: "ws_other", kind: "cloud" },
+          },
+        },
+      ],
+      runtimeWorkspaceRef: (directory) =>
+        directory === "ws_other" ? { workspaceId: "ws_other", kind: "cloud" } : undefined,
+      workspaceForDirectory: (directory) =>
+        directory === "ws_other" ? { workspaceId: "ws_other", kind: "cloud" } : undefined,
+      createCloudWorkspace: async () => ({ workspaceId: "ws_selected" }),
+      prepareWorkspaceRuntime: async (input) => {
+        prepared.push(input.directory)
+        return { ok: true, startup: true, workspace: { kind: "cloud", workspaceId: input.directory, status: "ready" } }
+      },
+    })
+
+    expect(result).toEqual({ directory: "ws_selected" })
+    expect(prepared).toEqual(["ws_selected"])
   })
 })
 

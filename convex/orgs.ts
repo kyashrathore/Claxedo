@@ -87,10 +87,8 @@ export const createTeam = authedMutation({
     if (!name) throw new Error("team_name_required")
     const user = await upsertUser(ctx)
     const now = Date.now()
-    // Mirrored subscription fields are owned solely by the Polar mirror in
-    // convex/billing.ts (single-writer guard I-3). A new team defaults to the
-    // free tier via ABSENT fields — fail-closed, same convention as
-    // personalOrgForUser / ensurePersonalOrg, which set none.
+    // Creates an Org (collaborative tenant). Nested default Team is seeded so
+    // Org→Team nesting is available immediately (D17).
     const orgId = await ctx.db.insert("orgs", {
       name,
       kind: "team",
@@ -105,7 +103,29 @@ export const createTeam = authedMutation({
       created_at: now,
       updated_at: now,
     })
-    return { org_id: orgId, name, role: "owner" as const }
+    const defaultTeamPublicId = `team_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`
+    const defaultTeamId = await ctx.db.insert("teams", {
+      public_id: defaultTeamPublicId,
+      org_id: orgId,
+      name: "Everyone",
+      is_default: true,
+      created_by_user_id: user._id,
+      created_at: now,
+      updated_at: now,
+    })
+    await ctx.db.insert("team_memberships", {
+      team_id: defaultTeamId,
+      user_id: user._id,
+      role: "owner",
+      created_at: now,
+      updated_at: now,
+    })
+    return {
+      org_id: orgId,
+      name,
+      role: "owner" as const,
+      default_team_id: defaultTeamPublicId,
+    }
   },
 })
 
@@ -633,6 +653,8 @@ export const ORG_DIRECT_TABLES: readonly ScopedRows[] = [
   // Grants handed TO this org over OTHER orgs' workspaces. The reverse
   // direction (grants over this org's workspaces) is a workspace child below.
   { table: "workspace_share_grants", index: "by_org", field: "granted_to_org_id" },
+  // Session grants targeted at this org (interim Phase-1 shape; D18).
+  { table: "session_share_grants", index: "by_org", field: "granted_to_org_id" },
 ]
 
 /**
@@ -664,6 +686,7 @@ export const ORG_CLERK_TABLES: readonly ScopedRows[] = [
 export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
   { table: "workspace_memberships", index: "by_workspace_user", field: "workspace_id" },
   { table: "workspace_share_grants", index: "by_workspace", field: "workspace_id" },
+  { table: "session_share_grants", index: "by_workspace", field: "workspace_id" },
   { table: "local_host_links", index: "by_workspace", field: "workspace_id" },
   { table: "runtime_access_tokens", index: "by_workspace_user", field: "workspace_id" },
   { table: "agent_extension_installs", index: "by_workspace", field: "workspace_id" },
@@ -709,6 +732,25 @@ const ORG_PROJECT_CASCADE: ParentCascade = {
     // it runs before that migration. Disjoint from the pass above (a row holds
     // one keying or the other), so no double-delete.
     { table: "project_memberships", index: "by_project_user", field: "project_id", parentKey: "_id" },
+    // Team project grants keyed by project public id (or legacy doc id).
+    { table: "team_project_grants", index: "by_project", field: "project_id", parentKey: "project_id" },
+    { table: "team_project_grants", index: "by_project", field: "project_id", parentKey: "_id" },
+  ],
+}
+
+/**
+ * Nested teams (D17). Memberships and remaining team-targeted grants must
+ * drain before the team row; teams themselves drain before org membership.
+ */
+const ORG_TEAM_CASCADE: ParentCascade = {
+  table: "teams",
+  index: "by_org",
+  field: "org_id",
+  children: [
+    { table: "team_memberships", index: "by_team", field: "team_id", parentKey: "_id" },
+    { table: "team_project_grants", index: "by_team", field: "team_id", parentKey: "_id" },
+    { table: "workspace_share_grants", index: "by_team", field: "granted_to_team_id", parentKey: "_id" },
+    { table: "session_share_grants", index: "by_team", field: "granted_to_team_id", parentKey: "_id" },
   ],
 }
 
@@ -728,7 +770,7 @@ export const ORG_PURGED_TABLES: readonly string[] = [
   ...ORG_CLERK_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_DOC_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_PUBLIC_TABLES.map((plan) => plan.table),
-  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_CONNECTION_CASCADE]
+  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_TEAM_CASCADE, ORG_CONNECTION_CASCADE]
     .flatMap((cascade) => [cascade.table, ...cascade.children.map((child) => child.table)]),
   "workspaces",
 ]
@@ -974,6 +1016,7 @@ export async function deleteOrgRecordBatch(ctx: any, org: any, budget: number) {
   const drain = async () => {
     if (!await drainWorkspaces(ctx, org._id, state)) return false
     if (!await drainCascade(ctx, ORG_PROJECT_CASCADE, org._id, state)) return false
+    if (!await drainCascade(ctx, ORG_TEAM_CASCADE, org._id, state)) return false
     if (!await drainCascade(ctx, ORG_CONNECTION_CASCADE, org._id, state)) return false
     if (!await drainAll(ctx, ORG_CLERK_TABLES, org.clerk_org_id, state)) return false
     return await drainAll(ctx, ORG_DIRECT_TABLES, org._id, state)

@@ -135,6 +135,28 @@ describe("SessionAccessPolicy", () => {
     })
   })
 
+  test("embedded attribution-only stamp yields author without managed authority", () => {
+    const context = sessionAccessContext({
+      get(name: "relayHostAuth" | "relayHostDirectAuth") {
+        if (name === "relayHostDirectAuth") return undefined
+        return {
+          actor_id: "actor_alice",
+          actor_kind: "human" as const,
+          actor_public_id: "usr_alice",
+          actor_name: "Alice",
+          workspace_id: "ws_1",
+          org_id: "org_1",
+          role: "editor" as const,
+          attribution_only: true,
+        }
+      },
+    } as never)
+
+    expect(context).toEqual({
+      author: { id: "usr_alice", name: "Alice", kind: "human" },
+    })
+  })
+
   test("bounds concurrent authority calls while filtering large session collections", async () => {
     let active = 0
     let peak = 0

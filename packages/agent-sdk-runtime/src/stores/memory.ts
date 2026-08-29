@@ -604,8 +604,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       const info = event.properties.info as unknown as Record<string, unknown>
       const messageId = typeof info.id === "string" ? info.id : undefined
       const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
+      const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
       this.upsertMessage(sessionId, {
-        info,
+        info: preservedInfo,
         parts: previous?.parts ?? [],
       })
       return
@@ -711,6 +712,28 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
 function terminalSubagentStatus(status: string | undefined) {
   return status === "completed" || status === "failed" || status === "killed" || status === "interrupted"
+}
+
+function preserveClaxedoAuthorOnInfo(
+  previous: Record<string, unknown> | undefined,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  if (next.role !== "user") return next
+  const nextClaxedo = next.claxedo && typeof next.claxedo === "object" && !Array.isArray(next.claxedo)
+    ? next.claxedo as Record<string, unknown>
+    : undefined
+  if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
+  const prevClaxedo = previous?.claxedo && typeof previous.claxedo === "object" && !Array.isArray(previous.claxedo)
+    ? previous.claxedo as Record<string, unknown>
+    : undefined
+  if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
+  return {
+    ...next,
+    claxedo: {
+      ...(nextClaxedo ?? {}),
+      author: prevClaxedo.author,
+    },
+  }
 }
 
 function errorMessage(input: unknown) {

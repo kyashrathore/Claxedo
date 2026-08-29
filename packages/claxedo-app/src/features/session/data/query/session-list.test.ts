@@ -9,6 +9,7 @@ import {
   sessionListRequest,
   sessionListQueryOptions,
   upsertCreatedSessionListRow,
+  reconcileUpdatedSessionListQueryData,
   type SessionListResponse,
 } from "./session-list"
 import { authFetch } from "@/platform/api/api"
@@ -625,5 +626,139 @@ describe("upsertCreatedSessionListRow", () => {
     expect(items?.filter((item) => item.sessionId === "ses_new")).toHaveLength(1)
     expect(queryClient.getQueryData<SessionListResponse>(filteredKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
     expect(queryClient.getQueryData<SessionListResponse>(archivedKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
+  })
+
+  test("bootstraps an in-flight query with no cached page yet", () => {
+    const query = { scope: "workspace" as const, workspaceId: "ws_1", directory: "/repo", limit: 2 }
+    const workspaceKey = key(query)
+    void queryClient.fetchQuery({
+      ...sessionListQueryOptions({
+        baseUrl: "http://test.local",
+        query,
+        request: () => new Promise<Response>(() => {}),
+      }),
+    })
+
+    upsertCreatedSessionListRow({ row: newRow })
+
+    expect(queryClient.getQueryData<SessionListResponse>(workspaceKey)?.items?.[0]?.sessionId).toBe("ses_new")
+    expect(queryClient.getQueryData<SessionListResponse>(workspaceKey)?.totalKnown).toBe(1)
+  })
+
+  test("adopts project id from a sibling workspace row when create-time upsert omits it", () => {
+    const projectKey = key({ scope: "project", projectId: "proj_1", archived: "active", limit: 2 })
+    queryClient.setQueryData(projectKey, response())
+
+    upsertCreatedSessionListRow({
+      row: {
+        sessionId: "ses_live",
+        title: "Live",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        createdAt: 5,
+        updatedAt: 5,
+      },
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(projectKey)?.items?.[0]).toMatchObject({
+      sessionId: "ses_live",
+      projectId: "proj_1",
+      workspaceId: "ws_1",
+    })
+  })
+})
+
+describe("session list merge + updated reconcile", () => {
+  const listKeyFor = (query: Parameters<typeof queryKeys.shell.sessionList>[1]) =>
+    queryKeys.shell.sessionList("http://test.local", query)
+
+  test("refetch merge keeps one row when local and workspace refs share a sessionId", async () => {
+    const query = { scope: "workspace" as const, directory: "/repo", limit: 5 }
+    const listKey = listKeyFor(query)
+    queryClient.setQueryData(listKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [
+        {
+          type: "session",
+          sessionRef: "local:/repo:session:ses_dup",
+          sessionId: "ses_dup",
+          title: "Local",
+          directory: "/repo",
+          createdAt: 1,
+          updatedAt: 1,
+          tags: [],
+          attachments: [],
+        },
+      ],
+    })
+
+    await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "http://test.local",
+      query,
+      request: async () => new Response(JSON.stringify({
+        view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+        items: [
+          {
+            type: "session",
+            sessionRef: "workspace:assoc-uuid:session:ses_dup",
+            sessionId: "ses_dup",
+            title: "Workspace",
+            directory: "/repo",
+            workspaceId: "assoc-uuid",
+            createdAt: 1,
+            updatedAt: 2,
+            tags: [],
+            attachments: [],
+          },
+        ],
+      })),
+    }))
+
+    const items = queryClient.getQueryData<SessionListResponse>(listKey)?.items
+    expect(items).toHaveLength(1)
+    expect(items?.[0]?.sessionRef).toBe("workspace:assoc-uuid:session:ses_dup")
+  })
+
+  test("reconcile bumps updatedAt and reorders when event directory differs from the row", () => {
+    const listKey = listKeyFor({ scope: "workspace", workspaceId: "ws_1", directory: "/repo", limit: 5 })
+    queryClient.setQueryData(listKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [
+        {
+          type: "session",
+          sessionRef: "workspace:ws_1:session:ses_old",
+          sessionId: "ses_old",
+          title: "Older activity",
+          directory: "/repo",
+          workspaceId: "ws_1",
+          createdAt: 1,
+          updatedAt: 200,
+          tags: [],
+          attachments: [],
+        },
+        {
+          type: "session",
+          sessionRef: "workspace:ws_1:session:ses_target",
+          sessionId: "ses_target",
+          title: "Target",
+          directory: "/repo",
+          workspaceId: "ws_1",
+          createdAt: 1,
+          updatedAt: 100,
+          tags: [],
+          attachments: [],
+        },
+      ],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_target",
+      directory: "workspace:ws_1",
+      updatedAt: 300,
+    })
+
+    const items = queryClient.getQueryData<SessionListResponse>(listKey)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_target", "ses_old"])
+    expect(items?.[0]?.updatedAt).toBe(300)
   })
 })

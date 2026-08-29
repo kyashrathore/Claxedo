@@ -102,6 +102,7 @@ CREATE TABLE IF NOT EXISTS workspace_share_grants (
   granted_to_token_identifier TEXT,
   granted_to_subject TEXT,
   granted_to_org_id TEXT,
+  granted_to_team_id TEXT,
   role TEXT NOT NULL,
   created_by_token_identifier TEXT NOT NULL,
   created_at INTEGER NOT NULL,
@@ -109,7 +110,8 @@ CREATE TABLE IF NOT EXISTS workspace_share_grants (
   CHECK (
     (granted_to_token_identifier IS NOT NULL)
     + (granted_to_subject IS NOT NULL)
-    + (granted_to_org_id IS NOT NULL) = 1
+    + (granted_to_org_id IS NOT NULL)
+    + (granted_to_team_id IS NOT NULL) = 1
   )
 );
 CREATE TABLE IF NOT EXISTS host_attestation_challenges (
@@ -256,6 +258,52 @@ CREATE TABLE IF NOT EXISTS session_participants (
   PRIMARY KEY (session_id, actor_token_identifier)
 );
 CREATE INDEX IF NOT EXISTS session_participants_by_actor ON session_participants (actor_token_identifier);
+-- Nested teams under an org (D17) and private-session share grants (D18).
+-- Evaluate-time membership joins mirror Convex; methods land with authority ports.
+CREATE TABLE IF NOT EXISTS teams (
+  team_id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  is_default INTEGER,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS teams_by_org ON teams (org_id);
+CREATE TABLE IF NOT EXISTS team_memberships (
+  team_id TEXT NOT NULL,
+  user_token_identifier TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (team_id, user_token_identifier)
+);
+CREATE INDEX IF NOT EXISTS team_memberships_by_user ON team_memberships (user_token_identifier);
+CREATE TABLE IF NOT EXISTS team_project_grants (
+  team_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (team_id, project_id)
+);
+CREATE INDEX IF NOT EXISTS team_project_grants_by_project ON team_project_grants (project_id);
+CREATE TABLE IF NOT EXISTS session_share_grants (
+  grant_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  granted_to_user_token_identifier TEXT,
+  granted_to_org_id TEXT,
+  granted_to_team_id TEXT,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS session_share_grants_by_session ON session_share_grants (session_id);
+CREATE INDEX IF NOT EXISTS session_share_grants_by_workspace ON session_share_grants (workspace_id);
+CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants (granted_to_team_id);
 CREATE TABLE IF NOT EXISTS audit_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   token_identifier TEXT,
@@ -276,7 +324,7 @@ CREATE TABLE IF NOT EXISTS channel_identities (
 );
 `
 
-const SQLITE_TENANCY_SCHEMA_VERSION = 2
+const SQLITE_TENANCY_SCHEMA_VERSION = 3
 
 /**
  * Upgrades pre-tenant local authority databases in one SQLite transaction.
@@ -293,6 +341,55 @@ export function migrateAuthorityTenancySchema(db: SqliteAuthorityDb) {
     addColumn(db, "runtime_access_tokens", "principal_kind", "TEXT")
     addColumn(db, "runtime_access_tokens", "minted_for_actor_kind", "TEXT")
     addColumn(db, "workspace_share_grants", "target_key", "TEXT")
+    // D17/D18 tables for existing authority DBs that already passed tenancy v2.
+    db.exec(`
+CREATE TABLE IF NOT EXISTS teams (
+  team_id TEXT PRIMARY KEY,
+  org_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  is_default INTEGER,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  deleted_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS teams_by_org ON teams (org_id);
+CREATE TABLE IF NOT EXISTS team_memberships (
+  team_id TEXT NOT NULL,
+  user_token_identifier TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (team_id, user_token_identifier)
+);
+CREATE INDEX IF NOT EXISTS team_memberships_by_user ON team_memberships (user_token_identifier);
+CREATE TABLE IF NOT EXISTS team_project_grants (
+  team_id TEXT NOT NULL,
+  project_id TEXT NOT NULL,
+  role TEXT NOT NULL,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (team_id, project_id)
+);
+CREATE INDEX IF NOT EXISTS team_project_grants_by_project ON team_project_grants (project_id);
+CREATE TABLE IF NOT EXISTS session_share_grants (
+  grant_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  granted_to_user_token_identifier TEXT,
+  granted_to_org_id TEXT,
+  granted_to_team_id TEXT,
+  created_by_token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE INDEX IF NOT EXISTS session_share_grants_by_session ON session_share_grants (session_id);
+CREATE INDEX IF NOT EXISTS session_share_grants_by_workspace ON session_share_grants (workspace_id);
+CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants (granted_to_team_id);
+`)
+    // Team target column first; CHECK rebuild waits until target_key is backfilled below.
+    addColumn(db, "workspace_share_grants", "granted_to_team_id", "TEXT")
 
     if (tableExists(db, "workspace_share_grants")) {
       if (tableExists(db, "orgs")) {
@@ -323,7 +420,8 @@ export function migrateAuthorityTenancySchema(db: SqliteAuthorityDb) {
         WHERE revoked_at IS NULL AND (
           (granted_to_token_identifier IS NOT NULL)
           + (granted_to_subject IS NOT NULL)
-          + (granted_to_org_id IS NOT NULL) != 1
+          + (granted_to_org_id IS NOT NULL)
+          + (granted_to_team_id IS NOT NULL) != 1
         )
         LIMIT 1
       `).get() as { grant_id: string } | undefined
@@ -334,6 +432,7 @@ export function migrateAuthorityTenancySchema(db: SqliteAuthorityDb) {
           WHEN granted_to_token_identifier IS NOT NULL THEN 'token:' || granted_to_token_identifier
           ${subjectTargetSql}
           WHEN granted_to_org_id IS NOT NULL THEN 'org:' || granted_to_org_id
+          WHEN granted_to_team_id IS NOT NULL THEN 'team:' || granted_to_team_id
         END
         WHERE target_key IS NULL;
         UPDATE workspace_share_grants
@@ -352,6 +451,49 @@ export function migrateAuthorityTenancySchema(db: SqliteAuthorityDb) {
         ON workspace_share_grants (workspace_id, target_key)
         WHERE revoked_at IS NULL AND target_key IS NOT NULL;
       `)
+      // Expand CHECK to allow team targets only after every active row has a non-null target_key.
+      const hasTeamCheck = (db.prepare(`SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'workspace_share_grants'`)
+        .get() as { sql?: string } | undefined)?.sql?.includes("granted_to_team_id IS NOT NULL")
+      if (!hasTeamCheck) {
+        const nullTarget = db.prepare(`
+          SELECT grant_id FROM workspace_share_grants WHERE target_key IS NULL LIMIT 1
+        `).get() as { grant_id: string } | undefined
+        if (nullTarget) throw new Error(`workspace_share_target_key_unresolved:${nullTarget.grant_id}`)
+        db.exec(`
+          CREATE TABLE workspace_share_grants_v3 (
+            grant_id TEXT PRIMARY KEY,
+            workspace_id TEXT NOT NULL,
+            target_key TEXT NOT NULL,
+            granted_to_token_identifier TEXT,
+            granted_to_subject TEXT,
+            granted_to_org_id TEXT,
+            granted_to_team_id TEXT,
+            role TEXT NOT NULL,
+            created_by_token_identifier TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            revoked_at INTEGER,
+            CHECK (
+              (granted_to_token_identifier IS NOT NULL)
+              + (granted_to_subject IS NOT NULL)
+              + (granted_to_org_id IS NOT NULL)
+              + (granted_to_team_id IS NOT NULL) = 1
+            )
+          );
+          INSERT INTO workspace_share_grants_v3 (
+            grant_id, workspace_id, target_key, granted_to_token_identifier, granted_to_subject,
+            granted_to_org_id, granted_to_team_id, role, created_by_token_identifier, created_at, revoked_at
+          )
+          SELECT
+            grant_id, workspace_id, target_key, granted_to_token_identifier, granted_to_subject,
+            granted_to_org_id, granted_to_team_id, role, created_by_token_identifier, created_at, revoked_at
+          FROM workspace_share_grants;
+          DROP TABLE workspace_share_grants;
+          ALTER TABLE workspace_share_grants_v3 RENAME TO workspace_share_grants;
+          CREATE UNIQUE INDEX IF NOT EXISTS workspace_share_grants_active_target
+          ON workspace_share_grants (workspace_id, target_key)
+          WHERE revoked_at IS NULL;
+        `)
+      }
     }
 
     db.exec(`
@@ -981,6 +1123,33 @@ function orgShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: s
   return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
 }
 
+function teamShareRole(db: SqliteAuthorityDb, user: AuthorityUser, workspaceId: string) {
+  const rows = db.prepare(`
+    SELECT g.role AS role FROM workspace_share_grants g
+    JOIN team_memberships m ON m.team_id = g.granted_to_team_id
+    WHERE g.workspace_id = ? AND g.revoked_at IS NULL AND m.user_token_identifier = ?
+  `).all(workspaceId, user.token_identifier) as Array<{ role: string }>
+  return maxRole(rows.map((row) => workspaceRoleValue(row.role)))
+}
+
+function teamProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId: string | undefined, orgId: string | undefined) {
+  if (!projectId || !orgId) return
+  const memberships = db.prepare(`
+    SELECT m.team_id AS team_id FROM team_memberships m
+    JOIN teams t ON t.team_id = m.team_id
+    WHERE m.user_token_identifier = ? AND t.org_id = ? AND t.deleted_at IS NULL
+  `).all(user.token_identifier, orgId) as Array<{ team_id: string }>
+  const roles: Array<WorkspaceRole | undefined> = []
+  for (const membership of memberships) {
+    const grant = db.prepare(`
+      SELECT role FROM team_project_grants
+      WHERE team_id = ? AND project_id = ? AND revoked_at IS NULL
+    `).get(membership.team_id, projectId) as { role: string } | undefined
+    if (grant) roles.push(workspaceRoleValue(grant.role))
+  }
+  return maxRole(roles)
+}
+
 /** Role precedence mirror of `combineRolePrecedence` in convex/model.ts. */
 export function workspaceRoleForUser(db: SqliteAuthorityDb, workspace: WorkspaceRow, user: AuthorityUser) {
   if (workspace.deleted_at) return
@@ -990,8 +1159,10 @@ export function workspaceRoleForUser(db: SqliteAuthorityDb, workspace: Workspace
     directWorkspaceRole(db, user, workspace.workspace_id),
     project ? directProjectRole(db, user, project.project_id) : undefined,
     workspace.org_id ? directOrgRole(db, user, workspace.org_id) : undefined,
+    teamProjectRole(db, user, project?.project_id ?? workspace.project_id, workspace.org_id),
     shareRole(db, user, workspace.workspace_id),
     orgShareRole(db, user, workspace.workspace_id),
+    teamShareRole(db, user, workspace.workspace_id),
   ])
 }
 
@@ -1011,6 +1182,7 @@ export function projectRoleForUser(db: SqliteAuthorityDb, project: ProjectRow, u
   return maxRole([
     directProjectRole(db, user, project.project_id),
     project.org_id ? directOrgRole(db, user, project.org_id) : undefined,
+    teamProjectRole(db, user, project.project_id, project.org_id),
   ])
 }
 

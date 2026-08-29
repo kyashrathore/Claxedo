@@ -257,10 +257,17 @@ function shareTarget(db: SqliteAuthorityDb, args: {
   grantedToTokenIdentifier?: string
   grantedToClerkSubject?: string
   grantedToClerkOrgId?: string
+  grantedToTeamId?: string
+  grantedToTeamPublicId?: string
 }, options: { requireExisting: boolean }) {
-  const selectors = [args.grantedToTokenIdentifier, args.grantedToClerkSubject, args.grantedToClerkOrgId]
-    .filter(Boolean)
-  if (selectors.length !== 1) throw new Error("Share target must be exactly one user or org")
+  const selectors = [
+    args.grantedToTokenIdentifier,
+    args.grantedToClerkSubject,
+    args.grantedToClerkOrgId,
+    args.grantedToTeamId,
+    args.grantedToTeamPublicId,
+  ].filter(Boolean)
+  if (selectors.length !== 1) throw new Error("Share target must be exactly one user, org, or team")
 
   if (args.grantedToTokenIdentifier) {
     const target = db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
@@ -292,6 +299,21 @@ function shareTarget(db: SqliteAuthorityDb, args: {
           activeKeys: [`subject:${args.grantedToClerkSubject}`],
           subject: args.grantedToClerkSubject,
         }
+  }
+
+  const teamSelector = args.grantedToTeamId ?? args.grantedToTeamPublicId
+  if (teamSelector) {
+    const team = db.prepare(`
+      SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL
+    `).get(teamSelector) as { team_id: string; org_id: string } | undefined
+    if (!team && options.requireExisting) throw new Error("Share target not found")
+    const teamId = team?.team_id ?? teamSelector
+    return {
+      primaryKey: `team:${teamId}`,
+      activeKeys: [`team:${teamId}`],
+      teamId,
+      ...(team ? { teamOrgId: team.org_id } : {}),
+    }
   }
 
   const orgSelector = args.grantedToClerkOrgId!
@@ -524,7 +546,54 @@ export function createSqliteWorkspaceAuthority(
       SELECT revoked_at FROM session_participants WHERE session_id = ? AND actor_token_identifier = ?
     `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
     if (participant && !participant.revoked_at) return role
+    if (sessionShareAllowsUser(db, who, session.session_id)) return role
     if (orgAdminForUser(db, who, workspace.org_id)) return role
+  }
+
+  const sessionShareAllowsUser = (db: SqliteAuthorityDb, who: AuthorityUser, sessionId: string) => {
+    const grants = db.prepare(`
+      SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+      FROM session_share_grants
+      WHERE session_id = ? AND revoked_at IS NULL
+    `).all(sessionId) as Array<{
+      granted_to_user_token_identifier: string | null
+      granted_to_org_id: string | null
+      granted_to_team_id: string | null
+    }>
+    for (const grant of grants) {
+      if (grant.granted_to_user_token_identifier === who.token_identifier) return true
+      if (grant.granted_to_org_id) {
+        const membership = db.prepare(`
+          SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+        `).get(grant.granted_to_org_id, who.token_identifier)
+        if (membership) return true
+      }
+      if (grant.granted_to_team_id) {
+        const membership = db.prepare(`
+          SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
+        `).get(grant.granted_to_team_id, who.token_identifier)
+        if (membership) return true
+      }
+    }
+    return false
+  }
+
+  const teamAdminForProject = (db: SqliteAuthorityDb, who: AuthorityUser, workspace: WorkspaceRow) => {
+    if (!workspace.org_id || !workspace.project_id) return false
+    const memberships = db.prepare(`
+      SELECT m.team_id AS team_id, m.role AS role FROM team_memberships m
+      JOIN teams t ON t.team_id = m.team_id
+      WHERE m.user_token_identifier = ? AND t.org_id = ? AND t.deleted_at IS NULL
+        AND (m.role = 'admin' OR m.role = 'owner')
+    `).all(who.token_identifier, workspace.org_id) as Array<{ team_id: string; role: string }>
+    for (const membership of memberships) {
+      const grant = db.prepare(`
+        SELECT 1 FROM team_project_grants
+        WHERE team_id = ? AND project_id = ? AND revoked_at IS NULL
+      `).get(membership.team_id, workspace.project_id)
+      if (grant) return true
+    }
+    return false
   }
 
   // Mirror of convex/projects.ts `authResult`: role (optionally action-gated)
@@ -634,6 +703,313 @@ export function createSqliteWorkspaceAuthority(
         JOIN orgs o ON o.org_id = m.org_id
         WHERE m.token_identifier = ? AND o.deleted_at IS NULL
       `).all(who.token_identifier) as unknown[]
+    },
+    async createOrg(auth: SignedControlPlaneAuth, args: { name: string }) {
+      const db = database()
+      const who = user(auth)
+      const name = args.name.trim()
+      if (!name) throw new Error("org_name_required")
+      const now = Date.now()
+      const orgId = `org_${randomToken()}`
+      const teamId = `team_${randomToken()}`
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO orgs (org_id, name, kind, owner_token_identifier, created_at, updated_at)
+          VALUES (?, ?, 'team', ?, ?, ?)
+        `).run(orgId, name, who.token_identifier, now, now)
+        db.prepare(`
+          INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+          VALUES (?, ?, 'owner', ?, ?)
+        `).run(orgId, who.token_identifier, now, now)
+        db.prepare(`
+          INSERT INTO teams (team_id, org_id, name, is_default, created_by_token_identifier, created_at, updated_at)
+          VALUES (?, ?, 'Everyone', 1, ?, ?, ?)
+        `).run(teamId, orgId, who.token_identifier, now, now)
+        db.prepare(`
+          INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
+          VALUES (?, ?, 'owner', ?, ?)
+        `).run(teamId, who.token_identifier, now, now)
+      })()
+      return { org_id: orgId, name, role: "owner" as const, default_team_id: teamId }
+    },
+    async listTeams(auth: SignedControlPlaneAuth, args: { orgId: string }) {
+      const db = database()
+      const who = user(auth)
+      const org = db.prepare(`SELECT org_id, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+        .get(args.orgId) as { org_id: string; owner_token_identifier: string } | undefined
+      if (!org) return []
+      const membership = db.prepare(`
+        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(args.orgId, who.token_identifier)
+      if (!membership && org.owner_token_identifier !== who.token_identifier) return []
+      return db.prepare(`
+        SELECT team_id, org_id, name, is_default FROM teams
+        WHERE org_id = ? AND deleted_at IS NULL
+        ORDER BY name ASC
+      `).all(args.orgId).map((row: any) => ({
+        team_id: row.team_id,
+        org_id: row.org_id,
+        name: row.name,
+        is_default: row.is_default === 1,
+      }))
+    },
+    async createTeamInOrg(auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) {
+      const db = database()
+      const who = user(auth)
+      const name = args.name.trim()
+      if (!name) throw new Error("team_name_required")
+      const org = db.prepare(`SELECT org_id, kind FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+        .get(args.orgId) as { org_id: string; kind: string } | undefined
+      if (!org) throw new Error("Organization not found")
+      if (org.kind === "personal") throw new Error("team_not_allowed_on_personal_org")
+      if (!orgAdminForUser(db, who, args.orgId)) throw new Error("org_admin_required")
+      const now = Date.now()
+      const teamId = `team_${randomToken()}`
+      db.transaction(() => {
+        db.prepare(`
+          INSERT INTO teams (team_id, org_id, name, is_default, created_by_token_identifier, created_at, updated_at)
+          VALUES (?, ?, ?, 0, ?, ?, ?)
+        `).run(teamId, args.orgId, name, who.token_identifier, now, now)
+        db.prepare(`
+          INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
+          VALUES (?, ?, 'owner', ?, ?)
+        `).run(teamId, who.token_identifier, now, now)
+      })()
+      return { team_id: teamId, name, role: "owner" as const }
+    },
+    async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
+      const db = database()
+      const who = user(auth)
+      const org = db.prepare(`SELECT org_id, kind, name, owner_token_identifier FROM orgs WHERE org_id = ? AND deleted_at IS NULL`)
+        .get(args.orgId) as { org_id: string; kind: string; name: string; owner_token_identifier: string } | undefined
+      if (!org) throw new Error("Organization not found")
+      if (org.kind === "personal") return { skipped: true as const }
+      const membership = db.prepare(`
+        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(args.orgId, who.token_identifier)
+      if (!membership && org.owner_token_identifier !== who.token_identifier) throw new Error("org_membership_required")
+      const now = Date.now()
+      return db.transaction(() => {
+        let defaultTeam = db.prepare(`
+          SELECT team_id FROM teams WHERE org_id = ? AND is_default = 1 AND deleted_at IS NULL
+        `).get(args.orgId) as { team_id: string } | undefined
+        if (!defaultTeam) {
+          const teamId = `team_${randomToken()}`
+          db.prepare(`
+            INSERT INTO teams (team_id, org_id, name, is_default, created_by_token_identifier, created_at, updated_at)
+            VALUES (?, ?, ?, 1, ?, ?, ?)
+          `).run(teamId, args.orgId, org.name || "Everyone", who.token_identifier, now, now)
+          defaultTeam = { team_id: teamId }
+        }
+        const orgMembers = db.prepare(`
+          SELECT token_identifier, role FROM org_memberships WHERE org_id = ?
+        `).all(args.orgId) as Array<{ token_identifier: string; role: string }>
+        for (const member of orgMembers) {
+          const existing = db.prepare(`
+            SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
+          `).get(defaultTeam!.team_id, member.token_identifier)
+          if (existing) continue
+          const role = member.role === "owner" || member.role === "admin" ? member.role : "member"
+          db.prepare(`
+            INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+          `).run(defaultTeam!.team_id, member.token_identifier, role, now, now)
+        }
+        const projects = db.prepare(`
+          SELECT project_id FROM projects WHERE org_id = ? AND deleted_at IS NULL
+        `).all(args.orgId) as Array<{ project_id: string }>
+        for (const project of projects) {
+          const grant = db.prepare(`
+            SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
+          `).get(defaultTeam!.team_id, project.project_id) as { revoked_at: number | null } | undefined
+          if (grant && !grant.revoked_at) continue
+          if (grant) {
+            db.prepare(`
+              UPDATE team_project_grants
+              SET role = 'editor', revoked_at = NULL, created_by_token_identifier = ?
+              WHERE team_id = ? AND project_id = ?
+            `).run(who.token_identifier, defaultTeam!.team_id, project.project_id)
+          } else {
+            db.prepare(`
+              INSERT INTO team_project_grants (
+                team_id, project_id, role, created_by_token_identifier, created_at
+              ) VALUES (?, ?, 'editor', ?, ?)
+            `).run(defaultTeam!.team_id, project.project_id, who.token_identifier, now)
+          }
+        }
+
+        // D18: retarget interim org-scoped shares onto the default team.
+        const teamTargetKey = `team:${defaultTeam!.team_id}`
+        let workspaceSharesRetargeted = 0
+        const orgWorkspaceShares = db.prepare(`
+          SELECT grant_id, workspace_id FROM workspace_share_grants
+          WHERE granted_to_org_id = ? AND revoked_at IS NULL
+        `).all(args.orgId) as Array<{ grant_id: string; workspace_id: string }>
+        for (const share of orgWorkspaceShares) {
+          const existingTeam = db.prepare(`
+            SELECT grant_id FROM workspace_share_grants
+            WHERE workspace_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
+          `).get(share.workspace_id, defaultTeam!.team_id) as { grant_id: string } | undefined
+          if (existingTeam) {
+            db.prepare(`UPDATE workspace_share_grants SET revoked_at = ? WHERE grant_id = ?`)
+              .run(now, share.grant_id)
+            continue
+          }
+          db.prepare(`
+            UPDATE workspace_share_grants
+            SET granted_to_org_id = NULL, granted_to_team_id = ?, target_key = ?
+            WHERE grant_id = ?
+          `).run(defaultTeam!.team_id, teamTargetKey, share.grant_id)
+          workspaceSharesRetargeted += 1
+        }
+
+        let sessionSharesRetargeted = 0
+        const orgSessionShares = db.prepare(`
+          SELECT grant_id, session_id FROM session_share_grants
+          WHERE granted_to_org_id = ? AND revoked_at IS NULL
+        `).all(args.orgId) as Array<{ grant_id: string; session_id: string }>
+        for (const share of orgSessionShares) {
+          const existingTeam = db.prepare(`
+            SELECT grant_id FROM session_share_grants
+            WHERE session_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
+          `).get(share.session_id, defaultTeam!.team_id) as { grant_id: string } | undefined
+          if (existingTeam) {
+            db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`)
+              .run(now, share.grant_id)
+            continue
+          }
+          db.prepare(`
+            UPDATE session_share_grants
+            SET granted_to_org_id = NULL, granted_to_team_id = ?
+            WHERE grant_id = ?
+          `).run(defaultTeam!.team_id, share.grant_id)
+          sessionSharesRetargeted += 1
+        }
+
+        return {
+          team_id: defaultTeam!.team_id,
+          org_id: args.orgId,
+          workspace_shares_retargeted: workspaceSharesRetargeted,
+          session_shares_retargeted: sessionSharesRetargeted,
+        }
+      })()
+    },
+    async addTeamMember(auth: SignedControlPlaneAuth, args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+      role?: "member" | "admin" | "owner"
+    }) {
+      const db = database()
+      const who = user(auth)
+      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      if (!team) throw new Error("Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      const target = args.tokenIdentifier
+        ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier) as AuthorityUser | undefined
+        : args.clerkSubject
+          ? userBySubject(db, args.clerkSubject)
+          : args.userPublicId
+            ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
+            : undefined
+      if (!target) throw new Error("team_member_not_found")
+      const now = Date.now()
+      const role = args.role ?? "member"
+      db.prepare(`
+        INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT (team_id, user_token_identifier) DO UPDATE SET role = excluded.role, updated_at = excluded.updated_at
+      `).run(args.teamId, target.token_identifier, role, now, now)
+      return { team_id: args.teamId, user_id: target.token_identifier, role }
+    },
+    async removeTeamMember(auth: SignedControlPlaneAuth, args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+    }) {
+      const db = database()
+      const who = user(auth)
+      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      if (!team) throw new Error("Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      const target = args.tokenIdentifier
+        ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier) as AuthorityUser | undefined
+        : args.clerkSubject
+          ? userBySubject(db, args.clerkSubject)
+          : args.userPublicId
+            ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
+            : undefined
+      if (!target) return { removed: false }
+      const result = db.prepare(`
+        DELETE FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
+      `).run(args.teamId, target.token_identifier)
+      return { removed: result.changes > 0 }
+    },
+    async listTeamMembers(auth: SignedControlPlaneAuth, args: { teamId: string }) {
+      const db = database()
+      const who = user(auth)
+      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      if (!team) return []
+      const membership = db.prepare(`
+        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(team.org_id, who.token_identifier)
+      if (!membership && !orgAdminForUser(db, who, team.org_id)) return []
+      return db.prepare(`
+        SELECT m.user_token_identifier AS user_id, u.public_id, u.name AS display_name, u.subject AS token_identifier, m.role
+        FROM team_memberships m
+        LEFT JOIN users u ON u.token_identifier = m.user_token_identifier
+        WHERE m.team_id = ?
+        ORDER BY m.role DESC, m.user_token_identifier ASC
+      `).all(args.teamId) as unknown[]
+    },
+    async grantTeamProject(auth: SignedControlPlaneAuth, args: {
+      teamId: string
+      projectId: string
+      role: "viewer" | "editor" | "admin"
+    }) {
+      const db = database()
+      const who = user(auth)
+      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      if (!team) throw new Error("Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      const project = projectByPublicId(db, args.projectId)
+      if (!project || project.org_id !== team.org_id) throw new Error("Project not found")
+      const now = Date.now()
+      const existing = db.prepare(`
+        SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
+      `).get(args.teamId, args.projectId) as { revoked_at: number | null } | undefined
+      if (existing) {
+        db.prepare(`
+          UPDATE team_project_grants
+          SET role = ?, revoked_at = NULL, created_by_token_identifier = ?
+          WHERE team_id = ? AND project_id = ?
+        `).run(args.role, who.token_identifier, args.teamId, args.projectId)
+      } else {
+        db.prepare(`
+          INSERT INTO team_project_grants (team_id, project_id, role, created_by_token_identifier, created_at)
+          VALUES (?, ?, ?, ?, ?)
+        `).run(args.teamId, args.projectId, args.role, who.token_identifier, now)
+      }
+      return { team_id: args.teamId, project_id: args.projectId, role: args.role }
+    },
+    async revokeTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string }) {
+      const db = database()
+      const who = user(auth)
+      const team = db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+        .get(args.teamId) as { team_id: string; org_id: string } | undefined
+      if (!team) throw new Error("Team not found")
+      if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
+      const result = db.prepare(`
+        UPDATE team_project_grants SET revoked_at = ?
+        WHERE team_id = ? AND project_id = ? AND revoked_at IS NULL
+      `).run(Date.now(), args.teamId, args.projectId)
+      return { revoked: result.changes > 0 }
     },
     async resolveOrgId(auth: SignedControlPlaneAuth) {
       const db = database()
@@ -871,17 +1247,21 @@ export function createSqliteWorkspaceAuthority(
             : args.grantedToClerkSubject
               ? [userBySubject(db, args.grantedToClerkSubject)?.token_identifier]
                 .filter((item): item is string => !!item)
-              : (db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
-                .all(target.orgId) as Array<{ token_identifier: string }>)
-                .map((item) => item.token_identifier)
+              : target.teamId
+                ? (db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
+                  .all(target.teamId) as Array<{ user_token_identifier: string }>)
+                  .map((item) => item.user_token_identifier)
+                : (db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+                  .all(target.orgId) as Array<{ token_identifier: string }>)
+                  .map((item) => item.token_identifier)
           revokeRuntimeTokensForUsers(db, args.workspaceId, tokenIdentifiers)
         }
         const grantId = `grant_${randomToken()}`
         db.prepare(`
           INSERT INTO workspace_share_grants (
             grant_id, workspace_id, target_key, granted_to_token_identifier, granted_to_subject, granted_to_org_id,
-            role, created_by_token_identifier, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            granted_to_team_id, role, created_by_token_identifier, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `).run(
           grantId,
           args.workspaceId,
@@ -889,6 +1269,7 @@ export function createSqliteWorkspaceAuthority(
           target.tokenIdentifier ?? null,
           target.subject ?? null,
           target.orgId ?? null,
+          target.teamId ?? null,
           args.role,
           who.token_identifier,
           now,
@@ -900,9 +1281,15 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
-      const selectorCount = [args.grantId, args.grantedToTokenIdentifier, args.grantedToClerkSubject, args.grantedToClerkOrgId]
-        .filter(Boolean).length
-      if (selectorCount !== 1) throw new Error("Share revoke target must be exactly one grant, user, or org")
+      const selectorCount = [
+        args.grantId,
+        args.grantedToTokenIdentifier,
+        args.grantedToClerkSubject,
+        args.grantedToClerkOrgId,
+        args.grantedToTeamId,
+        args.grantedToTeamPublicId,
+      ].filter(Boolean).length
+      if (selectorCount !== 1) throw new Error("Share revoke target must be exactly one grant, user, org, or team")
       const target = args.grantId ? undefined : shareTarget(db, args, { requireExisting: false })
       const grants = (args.grantId
         ? db.prepare(`SELECT * FROM workspace_share_grants WHERE workspace_id = ? AND grant_id = ? AND revoked_at IS NULL`)
@@ -915,6 +1302,7 @@ export function createSqliteWorkspaceAuthority(
           granted_to_token_identifier: string | null
           granted_to_subject: string | null
           granted_to_org_id: string | null
+          granted_to_team_id: string | null
           revoked_at: number | null
         }>
       if (grants.length === 0) return { revoked: false }
@@ -935,6 +1323,12 @@ export function createSqliteWorkspaceAuthority(
             for (const membership of db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
               .all(grant.granted_to_org_id) as Array<{ token_identifier: string }>) {
               tokenIdentifiers.add(membership.token_identifier)
+            }
+          }
+          if (grant.granted_to_team_id) {
+            for (const membership of db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
+              .all(grant.granted_to_team_id) as Array<{ user_token_identifier: string }>) {
+              tokenIdentifiers.add(membership.user_token_identifier)
             }
           }
         }
@@ -1451,6 +1845,197 @@ export function createSqliteWorkspaceAuthority(
       `).run(Date.now(), args.sessionId, args.participantTokenIdentifier)
       return { removed: result.changes > 0 }
     },
+    async grantSessionShare(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
+      if (
+        session.created_by_token_identifier !== who.token_identifier
+        && !orgAdminForUser(db, who, workspace.org_id)
+        && !teamAdminForProject(db, who, workspace)
+      ) denied()
+      const selectors = [
+        args.grantedToTokenIdentifier,
+        args.grantedToClerkSubject,
+        args.grantedToUserId,
+        args.grantedToClerkOrgId,
+        args.grantedToOrgId,
+        args.grantedToTeamId,
+        args.grantedToTeamPublicId,
+      ].filter(Boolean)
+      if (selectors.length !== 1) throw new Error("session_share_target_required")
+      const userTarget = args.grantedToTokenIdentifier
+        ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.grantedToTokenIdentifier) as AuthorityUser | undefined
+        : args.grantedToClerkSubject
+          ? userBySubject(db, args.grantedToClerkSubject)
+          : args.grantedToUserId
+            ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
+              .get(args.grantedToUserId, args.grantedToUserId) as AuthorityUser | undefined
+            : undefined
+      const orgSelector = args.grantedToOrgId ?? args.grantedToClerkOrgId
+      const org = orgSelector
+        ? db.prepare(`
+            SELECT org_id FROM orgs WHERE deleted_at IS NULL AND (org_id = ? OR clerk_org_id = ?) LIMIT 1
+          `).get(orgSelector, orgSelector) as { org_id: string } | undefined
+        : undefined
+      const teamSelector = args.grantedToTeamId ?? args.grantedToTeamPublicId
+      const team = teamSelector
+        ? db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
+          .get(teamSelector) as { team_id: string; org_id: string } | undefined
+        : undefined
+      if (!userTarget && !org && !team) throw new Error("session_share_target_not_found")
+      if (userTarget && !authorizeWorkspaceForUser(db, workspace, userTarget, "read")) {
+        throw new Error("session_participant_workspace_access_required")
+      }
+      if (team && team.org_id !== workspace.org_id) throw new Error("session_share_team_org_mismatch")
+      if (org && workspace.org_id && org.org_id !== workspace.org_id) throw new Error("session_share_org_mismatch")
+      const now = Date.now()
+      const existing = db.prepare(`
+        SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+        FROM session_share_grants WHERE session_id = ? AND revoked_at IS NULL
+      `).all(args.sessionId) as Array<{
+        grant_id: string
+        granted_to_user_token_identifier: string | null
+        granted_to_org_id: string | null
+        granted_to_team_id: string | null
+      }>
+      const match = existing.filter((grant) => {
+        if (userTarget) return grant.granted_to_user_token_identifier === userTarget.token_identifier
+        if (team) return grant.granted_to_team_id === team.team_id
+        if (org) return grant.granted_to_org_id === org.org_id
+        return false
+      })
+      if (match.length === 1) return { grant_id: match[0].grant_id }
+      for (const grant of match) {
+        db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
+      }
+      const grantId = `ssg_${randomToken()}`
+      db.prepare(`
+        INSERT INTO session_share_grants (
+          grant_id, session_id, workspace_id, granted_to_user_token_identifier, granted_to_org_id,
+          granted_to_team_id, created_by_token_identifier, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        grantId,
+        args.sessionId,
+        args.workspaceId,
+        userTarget?.token_identifier ?? null,
+        org?.org_id ?? null,
+        team?.team_id ?? null,
+        who.token_identifier,
+        now,
+      )
+      return { grant_id: grantId }
+    },
+    async revokeSessionShare(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
+      if (
+        session.created_by_token_identifier !== who.token_identifier
+        && !orgAdminForUser(db, who, workspace.org_id)
+        && !teamAdminForProject(db, who, workspace)
+      ) denied()
+      const now = Date.now()
+      let grants: Array<{
+        grant_id: string
+        granted_to_user_token_identifier: string | null
+        granted_to_org_id: string | null
+        granted_to_team_id: string | null
+      }>
+      if (args.grantId) {
+        grants = db.prepare(`
+          SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+          FROM session_share_grants
+          WHERE session_id = ? AND grant_id = ? AND revoked_at IS NULL
+        `).all(args.sessionId, args.grantId) as typeof grants
+      } else {
+        const selectors = [
+          args.grantedToTokenIdentifier,
+          args.grantedToClerkSubject,
+          args.grantedToUserId,
+          args.grantedToClerkOrgId,
+          args.grantedToOrgId,
+          args.grantedToTeamId,
+          args.grantedToTeamPublicId,
+        ].filter(Boolean)
+        if (selectors.length !== 1) throw new Error("session_share_target_required")
+        const userTarget = args.grantedToTokenIdentifier
+          ? args.grantedToTokenIdentifier
+          : args.grantedToClerkSubject
+            ? userBySubject(db, args.grantedToClerkSubject)?.token_identifier
+            : args.grantedToUserId
+              ? (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
+                .get(args.grantedToUserId, args.grantedToUserId) as { token_identifier: string } | undefined)?.token_identifier
+              : undefined
+        const orgSelector = args.grantedToOrgId ?? args.grantedToClerkOrgId
+        const orgId = orgSelector
+          ? (db.prepare(`SELECT org_id FROM orgs WHERE deleted_at IS NULL AND (org_id = ? OR clerk_org_id = ?) LIMIT 1`)
+            .get(orgSelector, orgSelector) as { org_id: string } | undefined)?.org_id
+          : undefined
+        const teamId = args.grantedToTeamId ?? args.grantedToTeamPublicId
+        grants = db.prepare(`
+          SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+          FROM session_share_grants WHERE session_id = ? AND revoked_at IS NULL
+        `).all(args.sessionId).filter((grant: any) => {
+          if (userTarget) return grant.granted_to_user_token_identifier === userTarget
+          if (teamId) return grant.granted_to_team_id === teamId
+          if (orgId) return grant.granted_to_org_id === orgId
+          return false
+        }) as typeof grants
+      }
+      if (grants.length === 0) return { revoked: false }
+      const tokenIdentifiers = new Set<string>()
+      for (const grant of grants) {
+        db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
+        if (grant.granted_to_user_token_identifier) tokenIdentifiers.add(grant.granted_to_user_token_identifier)
+        if (grant.granted_to_org_id) {
+          for (const membership of db.prepare(`SELECT token_identifier FROM org_memberships WHERE org_id = ?`)
+            .all(grant.granted_to_org_id) as Array<{ token_identifier: string }>) {
+            tokenIdentifiers.add(membership.token_identifier)
+          }
+        }
+        if (grant.granted_to_team_id) {
+          for (const membership of db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
+            .all(grant.granted_to_team_id) as Array<{ user_token_identifier: string }>) {
+            tokenIdentifiers.add(membership.user_token_identifier)
+          }
+        }
+      }
+      return {
+        revoked: true,
+        runtime_tokens_revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [...tokenIdentifiers]),
+      }
+    },
+    async listSessionShares(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const workspace = workspaceByPublicId(db, args.workspaceId)
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
+      if (!sessionRole(db, workspace, session, who, "read")) denied()
+      const grants = db.prepare(`
+        SELECT grant_id, session_id, workspace_id, granted_to_user_token_identifier AS granted_to_user_id,
+          granted_to_org_id, granted_to_team_id, created_by_token_identifier AS created_by_user_id,
+          created_at, revoked_at
+        FROM session_share_grants
+        WHERE session_id = ? AND revoked_at IS NULL
+        ORDER BY created_at ASC
+      `).all(args.sessionId) as unknown[]
+      const participants = db.prepare(`
+        SELECT actor_token_identifier AS user_id, added_by_token_identifier AS added_by_user_id, created_at
+        FROM session_participants
+        WHERE session_id = ? AND revoked_at IS NULL
+        ORDER BY created_at ASC
+      `).all(args.sessionId) as unknown[]
+      return { grants, participants }
+    },
     async listSessions(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
@@ -1469,7 +2054,31 @@ export function createSqliteWorkspaceAuthority(
         session.created_by_token_identifier === who.token_identifier
         || canAdminSessions
         || participantSessions.has(session.session_id)
-      )
+        || sessionShareAllowsUser(db, who, session.session_id)
+      ).map((session) => {
+        // Owner favicon is for shared/other-user rows only — creators don't need
+        // their own face on sessions they already own.
+        const showOwner = session.created_by_token_identifier !== who.token_identifier
+        const creator = showOwner
+          ? db.prepare(`
+              SELECT public_id, name, image_url FROM users WHERE token_identifier = ?
+            `).get(session.created_by_token_identifier) as {
+              public_id: string | null
+              name: string | null
+              image_url: string | null
+            } | undefined
+          : undefined
+        return {
+          session_id: session.session_id,
+          workspace_id: session.workspace_id,
+          title: session.title,
+          created_at: session.created_at,
+          updated_at: session.updated_at,
+          ...(creator?.name ? { owner_name: creator.name } : {}),
+          ...(creator?.image_url ? { owner_avatar_url: creator.image_url } : {}),
+          ...(creator?.public_id ? { owner_public_id: creator.public_id } : {}),
+        }
+      })
     },
     async readSessionMessages(auth: SignedControlPlaneAuth, args) {
       const db = database()

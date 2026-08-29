@@ -8,6 +8,10 @@ import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/gove
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import type { RuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import {
+  EMBEDDED_RELAY_HOST_AUTH_HEADER,
+  embeddedRelayHostAuthFromActor,
+} from "./embedded-relay-host-auth"
 
 const WR_INTERNAL = ["/api/wr/health", "/api/wr/config", "/api/wr/harness-config-options", "/api/wr/capabilities"]
 
@@ -248,11 +252,17 @@ export async function proxy(c: Context, hit: Hit, options?: {
   workspaceSupervisor().markUse(hit.workspaceId)
   if (options?.sandboxManager?.touch) void options.sandboxManager.touch(hit.workspaceId).catch(() => undefined)
   if (!options?.sandboxManager) workspaceSupervisor().touch(hit.workspaceId)
-  if (!res.body || !streaming(url.pathname, res.headers)) {
-    return new Response(res.body, {
+  const responseHeaders = runtimeProxyResponseHeaders(res.headers)
+  const contentType = res.headers.get("content-type") ?? ""
+  const streamResponse =
+    streaming(url.pathname, res.headers) ||
+    contentType.includes("application/octet-stream")
+  if (!res.body || !streamResponse) {
+    const body = res.body ? await res.arrayBuffer() : null
+    return new Response(body, {
       status: res.status,
       statusText: res.statusText,
-      headers: runtimeProxyResponseHeaders(res.headers),
+      headers: responseHeaders,
     })
   }
 
@@ -381,7 +391,12 @@ export function embeddedRuntimeTargetUrl(requestUrl: URL, targetPath: string): U
   return new URL(targetPath + requestUrl.search, requestUrl)
 }
 
-export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>, pathname?: string) {
+export async function embedded(
+  c: Context,
+  ws: NonNullable<Awaited<ReturnType<typeof resolveWorkspace>>>,
+  pathname?: string,
+  options?: Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor">,
+) {
   const url = new URL(c.req.url)
   const targetPath = pathname ?? url.pathname
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath, c.req.method) })
@@ -392,6 +407,13 @@ export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<ty
   headers.set("x-opencode-directory", ws.directory)
   headers.delete("host")
   headers.delete("connection")
+  // Never trust a client-supplied stamp; only this in-process hop may set it.
+  headers.delete(EMBEDDED_RELAY_HOST_AUTH_HEADER)
+  const stamped = await resolveEmbeddedRelayHostAuth(c.req.raw, ws.id, options)
+  if (stamped) headers.set(EMBEDDED_RELAY_HOST_AUTH_HEADER, JSON.stringify(stamped))
+  else if (options?.requireRelayActor) {
+    requireRuntimeProxyActor(undefined, true)
+  }
   const res = await runtime.app.fetch(new Request(target.toString(), {
     method: c.req.method,
     headers,
@@ -404,4 +426,18 @@ export async function embedded(c: Context, ws: NonNullable<Awaited<ReturnType<ty
     statusText: res.statusText,
     headers: runtimeProxyResponseHeaders(res.headers),
   })
+}
+
+async function resolveEmbeddedRelayHostAuth(
+  request: Request,
+  workspaceId: string,
+  options?: Pick<RuntimeProxyOptions, "resolveRelayActor" | "requireRelayActor">,
+) {
+  // Attribution stamps must come from a verified control-plane/relay actor.
+  // Never decode an unsigned Bearer payload here — that skipped requireRelayActor
+  // and allowed author misattribution on any caller that can reach embedded().
+  if (!options?.resolveRelayActor) return
+  const actor = await options.resolveRelayActor(request, workspaceId)
+  if (!actor) return
+  return embeddedRelayHostAuthFromActor(actor, workspaceId)
 }

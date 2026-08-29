@@ -147,6 +147,9 @@ function createHarness(input: {
   const refreshCalls: string[] = []
   const findMeta = (predicate: (meta: ContentMeta) => boolean) =>
     Array.from(meta.values()).find(predicate)
+  const findAllMeta = (predicate: (meta: ContentMeta) => boolean) =>
+    Array.from(meta.values()).filter(predicate)
+  const owners = new Map<string, string>()
 
   const state = {
     wb: {
@@ -162,12 +165,21 @@ function createHarness(input: {
     },
     meta: {
       find: findMeta,
+      findAll: findAllMeta,
       get: (id: string) => meta.get(id),
       patch: (id: string, patch: Partial<ContentMeta>) => {
         patches.push({ id, patch })
         const existing = meta.get(id)
         if (existing) meta.set(id, { ...existing, ...patch })
       },
+    },
+    terminal: {
+      owner: (terminalId: string) => owners.get(terminalId),
+      own: (contentId: string, terminalId: string) => {
+        owners.set(terminalId, contentId)
+      },
+      ownedIds: (contentId: string) =>
+        Array.from(owners.entries()).filter(([, owner]) => owner === contentId).map(([id]) => id),
     },
     workspacePanel: {
       open: (mode: "review", target: { workspaceDir?: string }) => {
@@ -500,6 +512,7 @@ function createRealRouteHarness(input: {
     wb,
     meta,
     layout,
+    terminal,
     workspacePanel: {
       open: (mode: "review", target: { workspaceDir?: string }) => {
         if (!target.workspaceDir) return
@@ -1982,6 +1995,73 @@ describe("state route intent", () => {
     expect(harness.focused()).toBe("terminal-pending")
     expect(harness.workspacePanelCloseCalls).toEqual(["close"])
     expect(harness.navigateCalls).toEqual([])
+  })
+
+  test("local terminal routes do not steal a sibling pane that only shares the directory", () => {
+    const harness = createHarness({
+      focused: "session-existing",
+      meta: [
+        {
+          id: "terminal-one",
+          type: "terminal",
+          scope: "directory",
+          directory: "/repo",
+          terminalId: "pty-one",
+          content: {
+            type: "terminal",
+            directory: "/repo",
+            terminalId: "pty-one",
+          },
+        },
+      ],
+    })
+    harness.receive({
+      workspaceId: "/repo",
+      workspaceRouteId: undefined,
+      terminalId: "pty-two",
+    })
+
+    expect(harness.shown).toEqual([])
+    expect(harness.opened).toEqual([
+      {
+        name: "openTerminal",
+        directory: "/repo",
+        terminalId: "pty-two",
+        title: "Terminal",
+        focus: undefined,
+        workspaceRouteId: undefined,
+      },
+    ])
+    expect(harness.focused()).toBe("terminal:pty-two")
+  })
+
+  test("local sole pending terminal binds when the route advances to the real id", () => {
+    const harness = createHarness({
+      focused: "session-existing",
+      meta: [
+        {
+          id: "terminal-pending",
+          type: "terminal",
+          scope: "directory",
+          directory: "/repo",
+          terminalId: "pending-local",
+          content: {
+            type: "terminal",
+            directory: "/repo",
+            terminalId: "pending-local",
+          },
+        },
+      ],
+    })
+    harness.receive({
+      workspaceId: "/repo",
+      workspaceRouteId: undefined,
+      terminalId: "pty-local",
+    })
+
+    expect(harness.opened).toEqual([])
+    expect(harness.shown).toEqual(["terminal-pending"])
+    expect(harness.focused()).toBe("terminal-pending")
   })
 })
 

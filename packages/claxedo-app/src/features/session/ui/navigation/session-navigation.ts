@@ -1,6 +1,7 @@
 import { terminalSurfaceStatus } from "@/features/session/app-ports"
 import type { WORKBENCH_DRAG_MIME } from "@/features/session/app-ports"
 import type { ContentMeta, TerminalAgentStatus, TerminalLifecycleState } from "@/features/session/app-ports"
+import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
 
 export type RowActivity = "idle" | "working" | "needs_input" | "done"
 
@@ -27,6 +28,12 @@ export type SessionNavigationRow = {
   attachments: Array<{ kind: string; targetId?: string }>
   environment?: { kind?: string; driver?: string }
   git?: { repo?: string; branch?: string; remote?: string }
+  /** Session creator — owner favicon on shared/other-user rail rows. */
+  owner?: {
+    name?: string
+    avatarUrl?: string
+    publicId?: string
+  }
 }
 
 export type TerminalSurfaceRow = {
@@ -73,6 +80,25 @@ export function reconcileSessionRowsAfterArchive(input: {
   )
 }
 
+export function terminalMetaMatchesPlacement(meta: ContentMeta, placement: string) {
+  if (meta.type !== "terminal" || !meta.terminalId || !meta.directory) return false
+  return terminalSurfaceMatchesDirectory(meta, placement)
+}
+
+function terminalSurfaceMatchesDirectory(meta: ContentMeta, directory: string) {
+  // Fixture/bootstrap inventory often stores the macOS-realpath form
+  // (`/private/var/...`) while the client launch path still carries `/var/...`.
+  // Reuse the signed-workspace alias so rail placement matches the open pane.
+  if (sameWorkspaceDirectory(meta.directory, directory)) return true
+  if (
+    meta.directory === `workspace:${directory}` ||
+    directory === `workspace:${meta.directory}`
+  ) return true
+  const routeId = meta.content?.type === "terminal" ? meta.content.workspaceRouteId : undefined
+  if (!routeId) return false
+  return directory === routeId || directory === `workspace:${routeId}`
+}
+
 export function deriveTerminalSurfaceRows(input: {
   metas: readonly ContentMeta[]
   focusedContentId?: string
@@ -87,7 +113,7 @@ export function deriveTerminalSurfaceRows(input: {
       meta.type === "terminal" &&
       !!meta.terminalId &&
       !!meta.directory &&
-      (!input.directory || meta.directory === input.directory)
+      (!input.directory || terminalSurfaceMatchesDirectory(meta, input.directory))
     )
     .map((meta) => {
       const row: TerminalSurfaceRow = {

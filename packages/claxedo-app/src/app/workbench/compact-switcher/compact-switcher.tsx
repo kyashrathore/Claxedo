@@ -1,4 +1,4 @@
-import { For, Show, createEffect, createMemo, onCleanup, onMount } from "solid-js"
+import { For, Show, createEffect, createMemo, onCleanup, onMount, type Accessor } from "solid-js"
 import type { SwitcherItem } from "./switcher-items"
 import { useDragSource } from "../workbench/index"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
@@ -28,25 +28,27 @@ function hasVisibleStatus(item: SwitcherItem) {
 }
 
 function StatusDot(props: { status?: SwitcherItem["status"] }) {
-  // Minimal status palette, kept in sync with NavigationStatusDot (navigation-
-  // row.tsx): grey for working/done, red only for "needs you", nothing for idle.
-  //   working → pulsing grey · done → solid grey · permission → solid red
-  if (!props.status || props.status === "idle") return null
+  const visible = () => (props.status && props.status !== "idle" ? props.status : undefined)
   return (
-    <span
-      aria-hidden="true"
-      data-switcher-status={props.status}
-      class="inline-flex size-1.5 shrink-0 rounded-full"
-      classList={{
-        "bg-text-weak": props.status === "working" || props.status === "done",
-        "animate-pulse": props.status === "working",
-        "bg-icon-critical-base": props.status === "permission",
-      }}
-    />
+    <Show when={visible()}>
+      {(status) => (
+        <span
+          aria-hidden="true"
+          data-switcher-status={status()}
+          class="inline-flex size-1.5 shrink-0 rounded-full"
+          classList={{
+            "bg-text-weak": status() === "working" || status() === "done",
+            "animate-pulse": status() === "working",
+            "bg-icon-critical-base": status() === "permission",
+          }}
+        />
+      )}
+    </Show>
   )
 }
 
-function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean }) {
+function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean; status: Accessor<SwitcherItem["status"]> }) {
+  const status = createMemo(() => props.status())
   return (
     <span
       aria-hidden="true"
@@ -63,9 +65,9 @@ function SwitcherPrefixMark(props: { item: SwitcherItem; active?: boolean }) {
         variant="outline"
         class="size-4 shrink-0"
       />
-      <Show when={hasVisibleStatus(props.item)}>
+      <Show when={hasVisibleStatus({ ...props.item, status: status() })}>
         <span class="absolute bottom-[3px] right-0 flex rounded-full bg-background-base p-px">
-          <StatusDot status={props.item.status} />
+          <StatusDot status={status()} />
         </span>
       </Show>
     </span>
@@ -351,6 +353,7 @@ export function CompactSwitcher(props: CompactSwitcherProps) {
                       <SwitcherPrefixMark
                         item={item()}
                         active={item().active}
+                        status={() => item().status}
                       />
                     </button>
                   </Tooltip>

@@ -28,7 +28,7 @@
  *     in-flight context view isn't stolen by a background URL update.
  */
 import type { Accessor } from "solid-js"
-import { workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import { sameSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
@@ -100,7 +100,7 @@ type SessionRouteResolution =
   | { state: "workspace"; target: InventorySessionTarget }
   | { state: "central" }
 
-export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel">
+export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel" | "terminal">
 
 const CLOSED_ROUTE_TTL_MS = 10_000
 /**
@@ -615,16 +615,66 @@ export function createRouteIntentAdapter(input: {
           if (focusedContentId() !== pending.id) activate(pending.id)
           return
         }
-        if (intent.workspaceRouteId) redirect(workspaceSessionRoute(intent.workspaceRouteId))
+        if (intent.workspaceRouteId) {
+          const focusedId = focusedContentId()
+          const upgraded = focusedId
+            ? findContent(
+                (m) =>
+                  m.id === focusedId &&
+                  m.type === "terminal" &&
+                  !!m.terminalId &&
+                  !m.terminalId.startsWith("pending-") &&
+                  matchesWorkspaceRoute(m, intent.workspaceRouteId),
+              )
+            : undefined
+          if (upgraded?.terminalId) {
+            const target = workspaceTerminalRoute(intent.workspaceRouteId, upgraded.terminalId)
+            // TerminalContent quietly history.replaceState's pending→real so the
+            // live PTY socket is not torn down. Solid Router params can lag on
+            // the pending id; a redirect here would remount the pane and drop
+            // the stream before firstByte (cloud D blank xterm).
+            if (typeof window !== "undefined" && window.location.pathname === target) {
+              if (focusedContentId() !== upgraded.id) activate(upgraded.id)
+              return
+            }
+            redirect(target)
+            return
+          }
+          redirect(workspaceSessionRoute(intent.workspaceRouteId))
+        }
         return
       }
       const existing = findContent(
-        (m) =>
-          m.type === "terminal" &&
-          m.directory === workspaceId &&
-          m.terminalId === intent.terminalId &&
-          matchesWorkspaceRoute(m, intent.workspaceRouteId),
-      )
+        (m) => {
+          if (m.type !== "terminal") return false
+          if (!matchesWorkspaceRoute(m, intent.workspaceRouteId)) return false
+          return m.terminalId === intent.terminalId
+        },
+      ) ?? (() => {
+        // In-flight pending→real: route may already show pty_* while meta still
+        // says pending-*. Only bind via ownership or a sole pending on this
+        // placement — never the first of several concurrent creates, and never
+        // any other terminal that merely shares the directory.
+        if (!intent.terminalId || intent.terminalId.startsWith("pending-")) return undefined
+        const ownerContentId = state.terminal.owner(intent.terminalId)
+        if (ownerContentId) {
+          return findContent(
+            (m) =>
+              m.id === ownerContentId &&
+              m.type === "terminal" &&
+              matchesWorkspaceRoute(m, intent.workspaceRouteId),
+          )
+        }
+        const pendings = state.meta.findAll(
+          (m) =>
+            m.type === "terminal" &&
+            !!m.terminalId?.startsWith("pending-") &&
+            (intent.workspaceRouteId
+              ? matchesWorkspaceRoute(m, intent.workspaceRouteId)
+              : m.directory === workspaceId),
+        )
+        return pendings.length === 1 ? pendings[0] : undefined
+      })()
       if (!existing?.id) {
         const nextId = state.layout.openTerminal(workspaceId, intent.terminalId, "Terminal", {
           workspaceRouteId: intent.workspaceRouteId,

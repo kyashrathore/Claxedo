@@ -25,6 +25,71 @@ export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: Serv
     async listOrgs(auth: SignedControlPlaneAuth) {
       return requireExecutor(input, auth).query(convexApi.orgs.listForMe, {})
     },
+    async createOrg(auth: SignedControlPlaneAuth, args: { name: string }) {
+      return requireExecutor(input, auth).mutation(convexApi.orgs.createTeam, { name: args.name })
+    },
+    async listTeams(auth: SignedControlPlaneAuth, args: { orgId: string }) {
+      return requireExecutor(input, auth).query(convexApi.teams.listForOrg, { org_id: args.orgId })
+    },
+    async createTeamInOrg(auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) {
+      return requireExecutor(input, auth).mutation(convexApi.teams.create, {
+        org_id: args.orgId,
+        name: args.name,
+      })
+    },
+    async addTeamMember(auth: SignedControlPlaneAuth, args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+      role?: "member" | "admin" | "owner"
+    }) {
+      return requireExecutor(input, auth).mutation(convexApi.teams.addMember, {
+        team_id: args.teamId,
+        ...(args.tokenIdentifier ? { token_identifier: args.tokenIdentifier } : {}),
+        ...(args.clerkSubject ? { clerk_subject: args.clerkSubject } : {}),
+        ...(args.userPublicId ? { user_public_id: args.userPublicId } : {}),
+        ...(args.role ? { role: args.role } : {}),
+      })
+    },
+    async removeTeamMember(auth: SignedControlPlaneAuth, args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+    }) {
+      return requireExecutor(input, auth).mutation(convexApi.teams.removeMember, {
+        team_id: args.teamId,
+        ...(args.tokenIdentifier ? { token_identifier: args.tokenIdentifier } : {}),
+        ...(args.clerkSubject ? { clerk_subject: args.clerkSubject } : {}),
+        ...(args.userPublicId ? { user_public_id: args.userPublicId } : {}),
+      })
+    },
+    async listTeamMembers(auth: SignedControlPlaneAuth, args: { teamId: string }) {
+      return requireExecutor(input, auth).query(convexApi.teams.listMembers, { team_id: args.teamId })
+    },
+    async grantTeamProject(auth: SignedControlPlaneAuth, args: {
+      teamId: string
+      projectId: string
+      role: "viewer" | "editor" | "admin"
+    }) {
+      return requireExecutor(input, auth).mutation(convexApi.teams.grantProject, {
+        team_id: args.teamId,
+        project_id: args.projectId,
+        role: args.role,
+      })
+    },
+    async revokeTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string }) {
+      return requireExecutor(input, auth).mutation(convexApi.teams.revokeProject, {
+        team_id: args.teamId,
+        project_id: args.projectId,
+      })
+    },
+    async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
+      return requireExecutor(input, auth).mutation(convexApi.teams.ensureDefaultTeamForOrg, {
+        org_id: args.orgId,
+      })
+    },
     async resolveOrgId(auth: SignedControlPlaneAuth) {
       if (["1", "true", "yes"].includes((process.env.CLAXEDO_FORCE_MYORG ?? "").trim().toLowerCase()) && !auth.user.orgId) {
         throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Signed auth token is missing an organization")

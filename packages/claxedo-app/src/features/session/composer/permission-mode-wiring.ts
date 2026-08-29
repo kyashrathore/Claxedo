@@ -6,6 +6,8 @@ import {
   type SessionClient,
 } from "@/features/session/store/session-transport"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
+import { harnessUsesClaxedoPermissionPicker } from "@/features/session/permission/mechanisms"
+import type { HarnessId } from "@/platform/identity/session-ref"
 import {
   CLAXEDO_ALLOW_SAFE_ID,
   CLAXEDO_ASK_ALWAYS_ID,
@@ -251,10 +253,25 @@ export function createComposerPermissionModeWiring(input: {
    * saved choice carries over untouched.
    */
   const selection = (autoAcceptActive: boolean): PermissionSelection | undefined => {
+    const harness = input.harness()
+    // Unidentified harness: let `createComposerPermissionMode` derive the safe
+    // default. Mapping auto-accept here produced `claxedo-ask-always` on every
+    // draft whose harness had not resolved yet — including Codex sessions
+    // hydrating beside an opencode default — which tier-real behavior 13 records
+    // as a permission-mode flash via `[data-action="prompt-permission-mode"]`.
+    if (!harness) return undefined
     const current = report()
     // `Array.isArray` for the same reason as `harnessPermissionModes`: a 200
     // that is not a mode report would otherwise throw here during render.
     if (current && Array.isArray(current.modes) && current.modes.length > 0) return pending()
+    if (!harnessUsesClaxedoPermissionPicker(harness as HarnessId)) return pending()
+    // OpenCode is the composer harness default whenever SessionRef carries no
+    // harness yet. An empty or missing mode report in that window must not map
+    // auto-accept onto Claxedo rows — Codex drafts hydrating beside an opencode
+    // default would flash `claxedo-ask-always` (tier-real behavior 13).
+    if (harness === "opencode" && (!current || !Array.isArray(current.modes) || current.modes.length === 0)) {
+      return pending()
+    }
     return { kind: "claxedo", modeId: autoAcceptActive ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID }
   }
 

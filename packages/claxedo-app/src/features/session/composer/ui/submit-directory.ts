@@ -1,3 +1,6 @@
+import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
+import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { workspaceStartup } from "@/platform/runtime/workspace-startup"
 import type { WorkspaceStartupPort } from "@/platform/runtime/workspace-startup-port"
@@ -111,6 +114,12 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
     if (!workspace || !kind || kind === "local") return
     return { workspaceId: workspace.workspaceId, kind }
   }
+  const existingRemoteDirectory = existingRemoteWorkspaceDirectoryForSubmit({
+    ...input,
+    runtimeWorkspaceRef,
+  })
+  if (existingRemoteDirectory) return existingRemoteDirectory
+
   const plan = resolveWorkspaceSubmitPlan({
     isNewSession: true,
     defaultDirectory: input.defaultDirectory,
@@ -158,6 +167,56 @@ async function resolveCloudSessionDirectory(input: SubmitDirectoryProvisionInput
   return createdWorkspace.workspaceId
 }
 
+function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisionInput & {
+  readonly worktreeSelection: string
+  readonly projectDirectory: SubmitDirectory | undefined
+  readonly fallbackDirectory: SubmitDirectory | undefined
+  readonly workspaceKind: string
+  readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
+}) {
+  if (input.workspaceKind !== "cloud" && input.workspaceKind !== "user-hosted") return undefined
+
+  const remoteDirectory = (directory: SubmitDirectory | undefined) => {
+    if (!directory) return undefined
+    const ref = input.runtimeWorkspaceRef(directory)
+    if (ref?.kind === "cloud" || ref?.kind === "user-hosted") return directory
+    const workspace = input.workspaceForDirectory(directory)
+    const kind = knownWorkspaceKind(workspace?.kind)
+    if (workspace && (kind === "cloud" || kind === "user-hosted")) return directory
+    return undefined
+  }
+
+  for (const directory of [
+    input.worktreeSelection !== "main" && input.worktreeSelection !== "create" ? input.worktreeSelection : undefined,
+    input.projectDirectory,
+    input.fallbackDirectory,
+    input.defaultDirectory,
+  ]) {
+    const resolved = remoteDirectory(directory)
+    if (resolved) return resolved
+  }
+
+  // Only scan directories owned by the selected project — never the first remote
+  // directory from an unrelated project in a multi-project catalog.
+  const selectedProject =
+    projectForDirectory(input.projects, input.projectDirectory)
+    ?? projectForDirectory(input.projects, input.fallbackDirectory)
+    ?? projectForDirectory(input.projects, input.defaultDirectory)
+  if (!selectedProject) return undefined
+
+  for (const directory of [
+    selectedProject.worktree,
+    ...(selectedProject.sandboxes ?? []),
+    ...Object.keys(selectedProject.workspaces ?? {}),
+    ...Object.values(selectedProject.workspaces ?? {}).map((workspace) => workspace.directory),
+  ]) {
+    const resolved = remoteDirectory(directory)
+    if (resolved) return resolved
+  }
+
+  return undefined
+}
+
 async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & {
   readonly directory: SubmitDirectory | undefined
 }) {
@@ -195,10 +254,30 @@ async function createLocalSubmitWorktree(input: SubmitDirectoryProvisionInput & 
   return createdWorktree.directory
 }
 
+function submitRuntimeWorkspaceRef(
+  input: SubmitDirectoryProvisionInput & { readonly directory: SubmitDirectory },
+): RuntimeWorkspaceRef | undefined {
+  return input.runtimeWorkspaceRef(input.directory)
+    ?? sessionWorkspaceRuntimeRef({ directory: input.directory, projects: input.projects })
+}
+
 async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput & {
   readonly directory: SubmitDirectory
   readonly onPublish?: (state: Omit<CloudStartupState, "open">) => void
 }) {
+  const runtimeRef = submitRuntimeWorkspaceRef(input)
+  const workspace = input.workspaceForDirectory(input.directory)
+  const connectedWorkspaceId =
+    runtimeRef?.workspaceId ??
+    workspace?.workspaceId ??
+    workspaceIdFromRef(input.directory)
+  // The WorkspaceGate already drove relay-backed workspaces to `ready` before
+  // the composer unlocked. Re-running provisioning on first send can treat a
+  // stale resolve snapshot as not-ready and abort before POST .../session.
+  if (connectedWorkspaceId && workspaceConnection(connectedWorkspaceId)?.status === "ready") {
+    return true
+  }
+
   let logs: NonNullable<CloudStartupState["logs"]> = []
   // `overlay: false` suppresses the submit-time cloud-startup overlay
   // (`onCloudStartup`) while still remembering the last state for the harness
@@ -268,27 +347,27 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
         id: workspace.workspaceId,
         status: workspace.status ?? "acquiring_sandbox",
         err: undefined,
-      })
+      }, { overlay: false })
     },
     onStatus: (status) => {
       publish({
         status,
         err: status === "error" ? input.text.requestFailed : undefined,
-      })
+      }, { overlay: false })
     },
     onLog: (log) => {
       logs = appendWorkspaceRuntimeLog(logs, log.step, log.message, log.totalMs, log.ts)
       publish({
         status: log.step,
         err: log.step === "error" ? log.message : undefined,
-      })
+      }, { overlay: false })
     },
   })
   if (!result.ok) {
     publish({
       status: "error",
       err: result.message ?? input.text.requestFailed,
-    })
+    }, { overlay: false })
     return false
   }
   if (input.draftId && result.workspace?.workspaceId) {

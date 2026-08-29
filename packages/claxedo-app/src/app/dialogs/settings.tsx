@@ -12,6 +12,7 @@ import { SettingsModels } from "@/features/settings/ui/models"
 import { SettingsTerminals } from "@/features/settings/ui/terminals"
 import { SettingsConnections } from "@/features/settings/ui/connections"
 import { SandboxSettingsSection } from "@/features/settings/ui/sandbox-section"
+import { OrgTeamSettingsSection } from "@/features/settings/ui/org-team-section"
 import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
 import { useServer } from "@/app/connection/server"
@@ -90,6 +91,10 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                         <Icon name="link" />
                         Devices
                       </Tabs.Trigger>
+                      <Tabs.Trigger value="orgs">
+                        <Icon name="folders" />
+                        Orgs & Teams
+                      </Tabs.Trigger>
                     </div>
                   </div>
 
@@ -156,6 +161,11 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                 }}
                 onRevoke={(hostId) => void remoteAccess.revoke(hostId)}
               />
+            </div>
+          </Tabs.Content>
+          <Tabs.Content value="orgs" class="no-scrollbar">
+            <div class="p-6">
+              <OrgTeamSettingsSection />
             </div>
           </Tabs.Content>
           <Tabs.Content value="providers" class="no-scrollbar">

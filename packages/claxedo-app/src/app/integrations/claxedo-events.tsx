@@ -18,6 +18,7 @@ import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
+import type { SessionShareChangedEvent } from "../../features/session/data/session-share-changed-event"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
@@ -87,6 +88,7 @@ export type ClaxedoEvent =
   | SessionLifecycleEvent
   | WorkgraphChangedEvent
   | DocumentChangedEvent
+  | SessionShareChangedEvent
   | ClaxedoDirectoryEvent
   | {
       type: "provision"
@@ -195,7 +197,8 @@ type ClaxedoEventsContextValue = {
   connected: () => boolean
   /**
    * The CENTRAL control-plane stream is up. This is the stream that carries
-   * `workgraph.changed` / `document.changed` / `session.lifecycle`, so its
+   * `workgraph.changed` / `document.changed` / `session.lifecycle` /
+   * `session.share.changed`, so its
    * `false → true` edge is the revalidation trigger for every consumer of those
    * doorbells. Distinct from `connected` on purpose: with a remote workspace
    * open the aggregate never drops to false when only the central stream flaps.

@@ -20,6 +20,7 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { commandListQuery } from "../../data/query/shell"
@@ -54,12 +55,16 @@ import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
+import { reconcileUpdatedSessionListQueryData, upsertCreatedSessionListRow } from "../../data/query/session-list"
+import { projectForDirectory, projectId as catalogProjectId } from "../workspace-resolver"
 import {
   parseExistingSessionConfig,
   preferAuthoritativeExistingSessionConfig,
   sameExistingSessionConfig,
 } from "./submit-session-config"
 import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
+import { resolveCreatedSessionListWorkspaceId } from "./submit-rail-workspace"
+import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
 import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
 export type { FollowupDraft } from "./submit-input"
@@ -195,8 +200,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     usesSignedControlPlane,
   })
 
-  const globalProjects = () =>
-    queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey) ?? []
+  const globalProjects = () => {
+    const serverUrl = getClaxedoServerUrl()
+    return queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(serverUrl))
+      ?? queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey)
+      ?? (globalSDK
+        ? queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(globalSDK.url))
+        : undefined)
+      ?? []
+  }
 
   const projectCatalog = () => globalProjects()
 
@@ -248,8 +260,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const baseRef = input.newSessionBaseRef?.()?.trim() || undefined
     const sourceBranch = input.newSessionSourceBranch?.()?.trim() || undefined
     const workspaceKind = input.newSessionWorkspaceKind?.() ?? "local"
+    const relayWorkspaceConnectionReady = () => {
+      const workspaceId =
+        input.workspaceId?.() ??
+        workspaceRuntimeRef(projectDirectory ?? fallbackDirectory ?? sdk.directory)?.workspaceId
+      return workspaceId ? workspaceConnection(workspaceId)?.status === "ready" : false
+    }
     const cloudStartup = createCloudStartupController({
-      enabled: isNewSession && workspaceKind === "cloud",
+      enabled: isNewSession && workspaceKind === "cloud" && !relayWorkspaceConnectionReady(),
       onCloudStartup: input.onCloudStartup,
       errorMessage,
     })
@@ -560,7 +578,57 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!target.created && persistedHarnessRef && sessionRef) {
       patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
     }
-    handoffCreatedSession = finalizedSessionTarget.handoffCreatedSession
+    // Rail cache writes must run AFTER draft→session handoff. A synchronous
+    // upsert/reconcile remounts the sidebar first and the draft surface is no
+    // longer retargetable, so the URL stays on `/w/:id` (tier-real behavior 13).
+    // Follow-up turns must not bump the rail mid-submit either: reconcile
+    // remounts the session list while handleSubmit is still running and the
+    // composer restores the draft (tier-real T2 never leaves the input).
+    const bumpSessionRail = () => {
+      if (!target.created) return
+      // Signed public workspace ids are `ws_*` (or host === "workspace").
+      // Local inventory UUID associations must keep directory-scoped rail
+      // rows — stamping them as workspaceId duplicates the row under both
+      // `local:` and `workspace:` sessionRefs (tier-real local harness).
+      const listWorkspaceId = resolveCreatedSessionListWorkspaceId({
+        sessionRef,
+        workspaceId: input.workspaceId?.(),
+        sessionDirectory,
+      })
+      const catalog = projectCatalog()
+      const project = projectForDirectory(catalog, sessionDirectory)
+        ?? (listWorkspaceId ? projectForDirectory(catalog, listWorkspaceId) : undefined)
+        ?? (listWorkspaceId ? projectForDirectory(catalog, `workspace:${listWorkspaceId}`) : undefined)
+      const resolvedProjectId = catalogProjectId(project)
+      const createdAt = Date.now()
+      upsertCreatedSessionListRow({
+        row: {
+          sessionId: session.id,
+          title: provisionalTitle ?? "New Session",
+          directory: sessionDirectory,
+          ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
+          ...(listWorkspaceId ? { workspaceId: listWorkspaceId } : {}),
+          createdAt,
+          updatedAt: createdAt,
+        },
+      })
+      reconcileUpdatedSessionListQueryData({
+        sessionId: session.id,
+        directory: sessionDirectory,
+        ...(listWorkspaceId ? { workspaceId: listWorkspaceId } : {}),
+        updatedAt: createdAt,
+      })
+    }
+    const createdSessionHandoff = finalizedSessionTarget.handoffCreatedSession
+    handoffCreatedSession = createdSessionHandoff
+      ? () => {
+          createdSessionHandoff()
+          bumpSessionRail()
+        }
+      : undefined
+    // Created sessions without a handoff still need the optimistic rail row
+    // after session id is known; never remount the rail for follow-up submits.
+    if (!createdSessionHandoff && target.created) bumpSessionRail()
 
     const refreshPromptDirectory = () =>
       directorySessionCacheActions.refresh({
@@ -758,7 +826,24 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       demo: isDemoMode(),
       globalSDK,
       refreshDirectory: refreshPromptDirectory,
-      clearInput,
+      clearInput: () => {
+        clearInput()
+        // Follow-up turns: bump updatedAt only after the composer is cleared so a
+        // rail remount cannot restore the draft (tier-real T2). Create turns already
+        // wrote the optimistic row via bumpSessionRail.
+        if (target.created) return
+        const listWorkspaceId = resolveCreatedSessionListWorkspaceId({
+          sessionRef,
+          workspaceId: input.workspaceId?.(),
+          sessionDirectory,
+        })
+        reconcileUpdatedSessionListQueryData({
+          sessionId: session.id,
+          directory: sessionDirectory,
+          ...(listWorkspaceId ? { workspaceId: listWorkspaceId } : {}),
+          updatedAt: Date.now(),
+        })
+      },
       restoreInput,
       removeCommentItems,
       restoreCommentItems,

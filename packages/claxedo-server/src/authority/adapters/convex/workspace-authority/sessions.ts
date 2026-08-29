@@ -121,6 +121,69 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         participant_token_identifier: args.participantTokenIdentifier,
       })
     },
+    async grantSessionShare(
+      auth: SignedControlPlaneAuth,
+      args: {
+        sessionId: string
+        workspaceId: string
+        grantedToTokenIdentifier?: string
+        grantedToClerkSubject?: string
+        grantedToUserId?: string
+        grantedToClerkOrgId?: string
+        grantedToOrgId?: string
+        grantedToTeamId?: string
+        grantedToTeamPublicId?: string
+      },
+    ) {
+      return requireExecutor(input, auth).mutation(convexApi.sessionShares.grant, {
+        session_id: args.sessionId,
+        workspace_id: args.workspaceId,
+        ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
+        ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
+        ...(args.grantedToUserId ? { granted_to_user_id: args.grantedToUserId } : {}),
+        ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.grantedToOrgId ? { granted_to_org_id: args.grantedToOrgId } : {}),
+        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
+        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
+      })
+    },
+    async revokeSessionShare(
+      auth: SignedControlPlaneAuth,
+      args: {
+        sessionId: string
+        workspaceId: string
+        grantId?: string
+        grantedToTokenIdentifier?: string
+        grantedToClerkSubject?: string
+        grantedToUserId?: string
+        grantedToClerkOrgId?: string
+        grantedToOrgId?: string
+        grantedToTeamId?: string
+        grantedToTeamPublicId?: string
+      },
+    ) {
+      return requireExecutor(input, auth).mutation(convexApi.sessionShares.revoke, {
+        session_id: args.sessionId,
+        workspace_id: args.workspaceId,
+        ...(args.grantId ? { grant_id: args.grantId as never } : {}),
+        ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
+        ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
+        ...(args.grantedToUserId ? { granted_to_user_id: args.grantedToUserId } : {}),
+        ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.grantedToOrgId ? { granted_to_org_id: args.grantedToOrgId } : {}),
+        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
+        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
+      })
+    },
+    async listSessionShares(
+      auth: SignedControlPlaneAuth,
+      args: { sessionId: string; workspaceId: string },
+    ) {
+      return requireExecutor(input, auth).query(convexApi.sessionShares.list, {
+        session_id: args.sessionId,
+        workspace_id: args.workspaceId,
+      })
+    },
     async listSessions(
       auth: SignedControlPlaneAuth,
       args: {
