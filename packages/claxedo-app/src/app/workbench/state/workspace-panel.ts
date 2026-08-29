@@ -246,15 +246,19 @@ export function createWorkspacePanelSlice(input: {
     },
     rememberSession(sessionId) {
       if (!usableSessionId(sessionId)) return
-      touchSnapshot(sessionId, snapshotPanel(state.workspacePanel))
+      const current = state.workspacePanel
+      // Closed sessions store a minimal snapshot so restore cannot reopen a
+      // stale navigator/mode without a workspace bind (that left Files with
+      // zero rows during panel-open session-navigation seeds).
+      touchSnapshot(sessionId, current.open ? snapshotPanel(current) : { open: false })
     },
     restoreSession(sessionId, target) {
       if (!usableSessionId(sessionId)) return false
       const snapshot = sessionPanelSnapshots.get(sessionId)
       const resolved = resolvedTarget(target ?? {})
-      if (!snapshot) {
-        // First visit: closed panel. Do not inherit the previous session's open
-        // Files/Changes/Processes surface onto a session that never opened it.
+      if (!snapshot || !snapshot.open) {
+        // First visit or last closed on this session: do not inherit the
+        // previous session's open Files/Changes/Processes surface.
         if (state.workspacePanel.open) replacePanel(closeWorkspacePanel(state.workspacePanel))
         return false
       }

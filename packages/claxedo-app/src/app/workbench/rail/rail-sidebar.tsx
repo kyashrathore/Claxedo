@@ -132,6 +132,9 @@ const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
+/** Stable rail order: visit/activate must not reshuffle rows. Content edits still
+ *  surface when a view opts into `updated_desc`. */
+const SESSION_LIST_SORT_DEFAULT = "created_desc" as const
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -478,10 +481,6 @@ export function RailSidebar(props: RailSidebarProps) {
   const projectMatches = (project: ProjectItem) =>
     props.activeProjectId === project.id || props.activeProjectId === project.worktree
 
-  const showSessionContent = (contentId: string) => {
-    claxedoState.wb.navigation.show(contentId)
-  }
-
   onMount(() => {
     const timer = setInterval(() => setClock(Date.now()), 10000)
     onCleanup(() => {
@@ -659,7 +658,7 @@ export function RailSidebar(props: RailSidebarProps) {
       id: item.sessionId,
       sessionRef: item.sessionRef,
       get title() { return title() },
-      time: item.updatedAt ?? item.createdAt,
+      time: item.createdAt ?? item.updatedAt,
       directory: resolvedDirectory,
       workspaceId: item.workspaceId,
       projectID: item.projectId,
@@ -1073,10 +1072,10 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   }
 
-  // Both "is this row the active one?" sources are broadcast signals (the
-  // focused workbench surface, the route's active session). `createSelector`
-  // gives each row a per-key subscription, so a session switch re-runs the
-  // bindings of the TWO affected rows instead of every row in every section.
+  // "Is this row the active one?" comes from the focused workbench surface.
+  // `createSelector` gives each row a per-key subscription, so a session switch
+  // re-runs the bindings of the TWO affected rows instead of every row in every
+  // section.
   const workbenchActiveSessionKey = createMemo(() => {
     const focusedId = claxedoState.wb.selectors.focusedContent()
     const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
@@ -1086,9 +1085,6 @@ export function RailSidebar(props: RailSidebarProps) {
   const isWorkbenchActiveSession = createSelector<string | undefined, string>(workbenchActiveSessionKey)
   const sessionActiveInWorkbench = (session: Row, directory: string) =>
     isWorkbenchActiveSession(`${directory}\0${session.id}`)
-  const isRouteActiveSession = createSelector<string | undefined, string>(
-    () => (props.activeSessionId ? `${props.activeDirectory}\0${props.activeSessionId}` : undefined),
-  )
 
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
@@ -1180,18 +1176,20 @@ export function RailSidebar(props: RailSidebarProps) {
       },
       directory: sessionDirectory(session),
       // `active` is read HERE, lazily, for the same reason as `timeLabel`:
-      // the activation sources (route active session, focused workbench
-      // surface) change on EVERY session switch, and reading them while
-      // BUILDING the row invalidated the whole rows array — every row object
-      // in every section was rebuilt so that TWO rows could change. As an
-      // accessor over `createSelector` keys, a switch re-runs only the
+      // the focused workbench surface changes on EVERY session switch, and
+      // reading it while BUILDING the row invalidated the whole rows array.
+      // As an accessor over `createSelector` keys, a switch re-runs only the
       // active-reading bindings of the outgoing and incoming rows.
       // Must stay an accessor: spreading this object would evaluate it
       // eagerly and restore the whole-list invalidation.
+      //
+      // Authoritative selection is the focused workbench session only. Do not
+      // OR route/`session.active` here — those can mark a row selected while
+      // the pane still shows a previous session (click show no-op / boot draft).
       get active() {
-        return (inputActive ? inputActive() : false) ||
-          !!session.active ||
-          isRouteActiveSession(`${sessionDirectory(session)}\0${session.id}`)
+        return inputActive
+          ? inputActive()
+          : sessionActiveInWorkbench(session, sessionDirectory(session))
       },
       ...(input?.nested ? { nested: true } : {}),
       get status() { return sessionStatus(session) },
@@ -1227,47 +1225,38 @@ export function RailSidebar(props: RailSidebarProps) {
     const directory = sessionDirectory(session)
     abortSidebarSessionStatusBatches()
     // A click-owned read has no reason to survive a different activation. Do
-    // this before either the mounted or cold navigation branch so stale JSON
-    // cannot parse in the next session's foreground task.
+    // this before navigation so stale JSON cannot parse in the next session's
+    // foreground task.
     prefetchSidebarSessionMessages.supersede(directory, session.id)
     // `activateSession` owns navigation; this notification only closes the
     // mobile drawer and must not open the session again.
     measure("sessionActivate.onSessionSelect", () => props.onSessionSelect?.(sessionDirectory(session), session.id))
     const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
-    if (existingId) {
-      const serial = ++sessionActivationSerial
-      measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
-        networkQuiet: hasFreshMessagePrefetch(directory, session.id),
-      }))
-      // Keep selection in the trusted action; a timer adds a task boundary
-      // where unrelated work can delay the first useful frame.
-      measure("sessionActivate.showContent", () => showSessionContent(existingId))
-      measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
-      afterVisibleActivation(() => {
-        if (serial !== sessionActivationSerial) return
-        scheduleSidebarStatusPrime(directory)
-        const meta = claxedoState.meta.get(existingId)
-        if (meta) props.onTabSelect?.(meta)
-      })
-      return
-    }
+    const existingAlive = !!existingId && claxedoState.wb.state.contentIds.includes(existingId)
     const backing = workspaceSessionBacking(session, directory)
-    markFastSessionSwitch(session.id, Date.now(), { networkQuiet: false })
-    const firstFoldReadyOrLoading = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages.start(directory, session.id, { bypassQuiet: true, sessionRef: sessionWorkbenchRef(session), ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}) }))
+    // Decide open vs show synchronously inside openSession/showOrCreate in this
+    // click. Never defer the content swap to afterVisibleActivation, route/URL
+    // sync, or a later remount — those stay status/tab side-effects only.
+    let networkQuiet = existingAlive && hasFreshMessagePrefetch(directory, session.id)
+    if (!existingAlive) {
+      networkQuiet = measure("sessionActivate.prefetch", () => prefetchSidebarSessionMessages.start(directory, session.id, {
+        bypassQuiet: true,
+        sessionRef: sessionWorkbenchRef(session),
+        ...(backing ? { workspaceKind: backing.kind, workspaceId: backing.workspaceId } : {}),
+      }))
+    }
     const serial = ++sessionActivationSerial
-    measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), {
-      networkQuiet: firstFoldReadyOrLoading,
-    }))
+    measure("sessionActivate.markFastSwitch", () => markFastSessionSwitch(session.id, Date.now(), { networkQuiet }))
     const contentId = measure("sessionActivate.openSession", () => claxedoState.layout.openSession(directory, session.id, sessionRowTitle(session.title), {
       sessionRef: sessionWorkbenchRef(session),
     }))
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
-    measure("sessionActivate.afterVisible", () => afterVisibleActivation(() => {
+    afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
       scheduleSidebarStatusPrime(directory)
       const meta = claxedoState.meta.get(contentId)
       if (meta) props.onTabSelect?.(meta)
-    }))
+    })
   }
   const prepareSessionDrag = (session: Row) => {
     const sessionRef = () => sessionWorkbenchRef(session)
@@ -1290,7 +1279,8 @@ export function RailSidebar(props: RailSidebarProps) {
       return
     }
     abortSidebarSessionStatusBatches()
-    if (existingSessionContentId(session)) {
+    const existingId = existingSessionContentId(session)
+    if (existingId && claxedoState.wb.state.contentIds.includes(existingId)) {
       markRendererPhase("sessionActivate.pointerPrepare.skip")
       return
     }
@@ -1700,6 +1690,7 @@ export function RailSidebar(props: RailSidebarProps) {
       status: view().status,
       environment: view().environment,
       git: view().git,
+      sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
     const globalSessionListSignature = createMemo(() => JSON.stringify(globalSessionListQuery()))
@@ -1916,6 +1907,7 @@ export function RailSidebar(props: RailSidebarProps) {
       status: view().status,
       environment: view().environment,
       git: view().git,
+      sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
     const sessionListSignature = createMemo(() => JSON.stringify(sessionListQuery()))
@@ -2208,6 +2200,7 @@ export function RailSidebar(props: RailSidebarProps) {
       status: view().status,
       environment: view().environment,
       git: view().git,
+      sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
     const projectSessionListSignature = createMemo(() => JSON.stringify(projectSessionListQuery()))

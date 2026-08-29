@@ -203,6 +203,27 @@ describe("state/orchestration", () => {
     expect(wb.selectors.focusedContent()).toBe(id)
   })
 
+  test("openSession re-opens a meta-only surface missing from contentIds in the same call", () => {
+    const { layout, wb, meta, getState } = makeFixture()
+    const id = layout.openSession("/work/foo", "ses_1", "Session 1", {
+      sessionRef: localSessionRef("ses_1"),
+    })
+    // Simulate eviction/orphan: content gone from the workbench but meta retained.
+    wb.contents.remove(id)
+    expect(getState().contentIds).not.toContain(id)
+    expect(meta.get(id)?.sessionId).toBe("ses_1")
+
+    const draft = layout.openSession("/work/foo", "new", "New Session")
+    expect(wb.selectors.focusedContent()).toBe(draft)
+
+    const restored = layout.openSession("/work/foo", "ses_1", "Session 1", {
+      sessionRef: localSessionRef("ses_1"),
+    })
+    expect(restored).toBe(id)
+    expect(getState().contentIds).toContain(id)
+    expect(wb.selectors.focusedContent()).toBe(id)
+  })
+
   test("openSession prefers explicit session refs over directory-derived backing", () => {
     const { layout, meta } = makeFixture()
     const id = layout.openSession("/work/foo", "ses_1", "Session 1", {

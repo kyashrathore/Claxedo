@@ -135,7 +135,16 @@ export function createLayoutOrchestration(input: {
     opts?: { focus?: boolean },
   ): string => {
     if (existing) {
-      if (opts?.focus !== false) wb.navigation.show(existing.id)
+      // `navigation.show` no-ops when the id is absent from contentIds (evicted
+      // or never published). Re-open in this same call so the destination
+      // focuses now — never leave the previous pane selected while callers
+      // assume show succeeded.
+      const alive = wb.state.contentIds.includes(existing.id)
+      if (alive) {
+        if (opts?.focus !== false) wb.navigation.show(existing.id)
+      } else {
+        addContent(existing.id, opts?.focus !== false)
+      }
       return existing.id
     }
     const { meta: nextMeta, payload } = measureRendererPhase("openSession.build", build)
@@ -332,7 +341,10 @@ export function createLayoutOrchestration(input: {
             },
           })
         }
-        if (opts?.focus !== false) wb.navigation.show(workspaceExisting.id)
+        if (opts?.focus !== false) {
+          if (wb.state.contentIds.includes(workspaceExisting.id)) wb.navigation.show(workspaceExisting.id)
+          else addContent(workspaceExisting.id, true)
+        }
         return workspaceExisting.id
       }
       const existing = meta.find(
@@ -489,7 +501,8 @@ export function createLayoutOrchestration(input: {
           }
         }
         if (Object.keys(updates).length > 0) meta.patch(existing.id, updates)
-        wb.navigation.show(existing.id)
+        if (wb.state.contentIds.includes(existing.id)) wb.navigation.show(existing.id)
+        else addContent(existing.id, true)
         return existing.id
       }
       const id = newId("page")
