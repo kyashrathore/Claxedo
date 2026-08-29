@@ -3,6 +3,8 @@ import {
   ACCOUNT_SIGN_IN_CHANNEL,
   ACCOUNT_SIGN_OUT_CHANNEL,
   ACCOUNT_STATE_CHANNEL,
+  ACCOUNT_STREAM_CLOSE_CHANNEL,
+  ACCOUNT_STREAM_OPEN_CHANNEL,
   RENDERER_WITHHELD_OPERATIONS,
   registerAccountIpc,
   type AccountIpcService,
@@ -28,6 +30,7 @@ function harness(overrides: Partial<AccountIpcService> = {}) {
       calls.push({ name, input })
       return { ran: name }
     },
+    openStream: async () => {},
     ...overrides,
   }
   const registered = registerAccountIpc({
@@ -52,6 +55,8 @@ describe("registered channels", () => {
       ACCOUNT_STATE_CHANNEL,
       ACCOUNT_SIGN_IN_CHANNEL,
       ACCOUNT_SIGN_OUT_CHANNEL,
+      ACCOUNT_STREAM_OPEN_CHANNEL,
+      ACCOUNT_STREAM_CLOSE_CHANNEL,
       ...Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never)),
     ]
 
@@ -189,17 +194,22 @@ describe("operations whose result is a credential", () => {
   test("withholds nothing else — every other operation still resolves", async () => {
     // Positive control for the branch. A refusal applied to the whole loop
     // would satisfy every assertion above and break the desktop entirely.
+    // Stream ops refuse unary invoke on purpose (open via stream IPC).
     const h = harness()
     const withheld = new Set<string>(RENDERER_WITHHELD_OPERATIONS)
+    const { isStreamHostedOperation } = await import("./hosted-operations")
     const ran: string[] = []
 
     for (const name of Object.keys(HOSTED_OPERATIONS)) {
-      if (withheld.has(name)) continue
+      if (withheld.has(name) || isStreamHostedOperation(name)) continue
       expect(await h.invoke(hostedOperationChannel(name as never))).toEqual({ ran: name })
       ran.push(name)
     }
 
-    expect(ran.length).toBe(Object.keys(HOSTED_OPERATIONS).length - RENDERER_WITHHELD_OPERATIONS.length)
+    const streamCount = Object.keys(HOSTED_OPERATIONS).filter((name) => isStreamHostedOperation(name)).length
+    expect(ran.length).toBe(
+      Object.keys(HOSTED_OPERATIONS).length - RENDERER_WITHHELD_OPERATIONS.length - streamCount,
+    )
     expect(ran.length).toBeGreaterThan(0)
   })
 })

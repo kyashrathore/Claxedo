@@ -45,6 +45,7 @@ function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(ove
   fetch?: Parameters<typeof createAccountService>[0]["fetch"]
   refresh?: (token: string) => Promise<RefreshOutcome>
   exchange?: OAuthSeams["exchange"]
+  resolveIdentity?: Parameters<typeof createAccountService>[0]["resolveIdentity"]
   now?: number
   errors?: Array<{ stage: string; error: unknown }>
   states?: AccountState[]
@@ -82,6 +83,7 @@ function service<S extends CredentialStore = ReturnType<typeof memoryStore>>(ove
         return new Response(JSON.stringify({ ok: true }), { status: 200 })
       }),
     ...(overrides.refresh ? { refresh: overrides.refresh } : {}),
+    ...(overrides.resolveIdentity ? { resolveIdentity: overrides.resolveIdentity } : {}),
     ...(overrides.errors ? { onError: (stage, error) => overrides.errors!.push({ stage, error }) } : {}),
     ...(overrides.states ? { onStateChange: (next) => overrides.states!.push(next) } : {}),
   })
@@ -160,6 +162,22 @@ describe("run", () => {
     expect(calls).toBe(1)
     expect(store.held()).toBeUndefined()
     expect(api.state()).toMatchObject({ status: "unavailable", reason: "revoked" })
+  })
+
+  test("keeps the session when the control plane rejects a non-JWT bearer", async () => {
+    // Opaque Clerk OAuth access tokens fail JWKS as invalid_bearer_token. That
+    // is a token-format problem, not a revoked refresh grant.
+    const { api, store } = service({
+      store: memoryStore(TOKENS),
+      fetch: async () => new Response(JSON.stringify({
+        error: { code: "invalid_bearer_token", message: "Bearer token is invalid" },
+      }), { status: 401, headers: { "content-type": "application/json" } }),
+    })
+    api.restore()
+
+    await expect(api.run("account.get")).rejects.toThrow(/Bearer token is invalid/)
+    expect(store.held()).toEqual(TOKENS)
+    expect(api.state()).toMatchObject({ status: "signed" })
   })
 
   test("surfaces a non-401 failure without discarding the session", async () => {
@@ -500,6 +518,40 @@ describe("signIn", () => {
     expect(store.held()).toEqual(TOKENS)
   })
 
+  test("publishes display identity from resolveIdentity after sign-in", async () => {
+    const { api, completeSignIn } = service({
+      resolveIdentity: async () => ({
+        userId: "user_yash",
+        displayName: "Yash Rathore",
+        email: "yash@example.com",
+      }),
+    })
+
+    await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
+    expect(api.state()).toEqual({
+      status: "signed",
+      identity: {
+        userId: "user_yash",
+        displayName: "Yash Rathore",
+        email: "yash@example.com",
+      },
+    })
+  })
+
+  test("stays signed with an empty identity when resolveIdentity fails", async () => {
+    const errors: Array<{ stage: string; error: unknown }> = []
+    const { api, completeSignIn } = service({
+      errors,
+      resolveIdentity: async () => {
+        throw new Error("userinfo down")
+      },
+    })
+
+    await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
+    expect(api.state()).toEqual({ status: "signed", identity: { userId: "" } })
+    expect(errors.map((entry) => entry.stage)).toContain("identity")
+  })
+
   test("leaves no live token and no pending state when the credential cannot be stored", async () => {
     // `save` throws when the keyring has gone away. Publishing the token in
     // memory first would leave `run()` able to spend a credential this process
@@ -561,6 +613,40 @@ describe("signIn", () => {
     expect(api.state()).toEqual({ status: "unsigned" })
     expect(store.held()).toBeUndefined()
   })
+
+  test("returns to unsigned after the browser callback times out", async () => {
+    // A resting `unavailable`/`pending` after timeout hid Sign in in the rail.
+    // Unsigned is the retryable resting state for a failed browser round-trip.
+    let fireTimeout: (() => void) | undefined
+    let announce: (url: string) => void = () => {}
+    const opened = new Promise<string>((resolve) => {
+      announce = resolve
+    })
+    const api = createAccountService({
+      config: CONFIG,
+      seams: {
+        openExternal: async (url) => announce(url),
+        listen: async () => ({ port: 49_152, close: async () => {} }),
+        exchange: async () => TOKENS,
+        safeStorage: () => ({ available: true, platform: "darwin" }),
+        setTimeout: (fn) => {
+          fireTimeout = fn
+          return { cancel: () => { fireTimeout = undefined } }
+        },
+      },
+      store: memoryStore(),
+      serverOrigin: "https://control.test",
+      now: () => 1_000,
+      fetch: async () => new Response("{}", { status: 200 }),
+    })
+
+    const signingIn = api.signIn()
+    await opened
+    expect(api.state()).toEqual({ status: "pending" })
+    fireTimeout!()
+    await expect(signingIn).resolves.toMatchObject({ ok: false, reason: "timeout" })
+    expect(api.state()).toEqual({ status: "unsigned" })
+  })
 })
 
 describe("signOut", () => {
@@ -594,7 +680,7 @@ describe("the service surface", () => {
     api.restore()
 
     const members = Object.keys(api)
-    expect(members.sort()).toEqual(["restore", "run", "signIn", "signOut", "state"])
+    expect(members.sort()).toEqual(["openStream", "restore", "run", "signIn", "signOut", "state"])
     expect(JSON.stringify(api.state())).not.toContain("at_1")
   })
 })

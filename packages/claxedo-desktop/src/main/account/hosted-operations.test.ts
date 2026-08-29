@@ -103,6 +103,112 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
+  test("appends only declared query keys from input", () => {
+    expect(resolveHostedOperation("session.shares.list", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/sessions/ses_1/shares?workspaceId=ws_1",
+    })
+    expect(() => resolveHostedOperation("session.shares.list", { sessionId: "ses_1" })).toThrow(
+      MissingOperationParameter,
+    )
+  })
+
+  test("workspace.resolve omits empty optional query keys", () => {
+    expect(resolveHostedOperation("workspace.resolve", { workspaceId: "ws_1" })).toEqual({
+      method: "GET",
+      path: "/api/workspace/resolve?workspaceId=ws_1",
+    })
+    expect(resolveHostedOperation("workspace.resolve", { directory: "/tmp/ws", create: true })).toEqual({
+      method: "GET",
+      path: "/api/workspace/resolve?directory=%2Ftmp%2Fws&create=true",
+    })
+    expect(resolveHostedOperation("workspace.resolve", {})).toEqual({
+      method: "GET",
+      path: "/api/workspace/resolve",
+    })
+  })
+
+  test("encodes declared query values", () => {
+    const resolved = resolveHostedOperation("session.shares.list", {
+      sessionId: "ses_1",
+      workspaceId: "ws a&b=c",
+    })
+    expect(resolved.path).toBe("/api/control/sessions/ses_1/shares?workspaceId=ws+a%26b%3Dc")
+  })
+
+  test("resolves DELETE session share revoke with body fields", () => {
+    expect(resolveHostedOperation("session.shares.revoke", {
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      grantId: "ssg_1",
+    })).toEqual({
+      method: "DELETE",
+      path: "/api/control/sessions/ses_1/shares",
+      body: { workspaceId: "ws_1", grantId: "ssg_1" },
+    })
+  })
+
+  test("resolves org and team control-plane operations", () => {
+    expect(resolveHostedOperation("org.list")).toEqual({
+      method: "GET",
+      path: "/api/control/orgs",
+    })
+    expect(resolveHostedOperation("org.create", { name: "Acme" })).toEqual({
+      method: "POST",
+      path: "/api/control/orgs",
+      body: { name: "Acme" },
+    })
+    expect(resolveHostedOperation("org.teams.list", { orgId: "org_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/orgs/org_1/teams",
+    })
+    expect(resolveHostedOperation("org.teams.create", { orgId: "org_1", name: "Eng" })).toEqual({
+      method: "POST",
+      path: "/api/control/orgs/org_1/teams",
+      body: { name: "Eng" },
+    })
+    expect(resolveHostedOperation("org.ensureDefaultTeam", { orgId: "org_1" })).toEqual({
+      method: "POST",
+      path: "/api/control/orgs/org_1/ensure-default-team",
+    })
+    expect(resolveHostedOperation("team.members.list", { teamId: "team_1" })).toEqual({
+      method: "GET",
+      path: "/api/control/teams/team_1/members",
+    })
+    expect(resolveHostedOperation("team.members.add", {
+      teamId: "team_1",
+      tokenIdentifier: "tok_1",
+      role: "member",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/teams/team_1/members",
+      body: { tokenIdentifier: "tok_1", role: "member" },
+    })
+    expect(resolveHostedOperation("team.members.remove", {
+      teamId: "team_1",
+      userPublicId: "usr_1",
+    })).toEqual({
+      method: "DELETE",
+      path: "/api/control/teams/team_1/members",
+      body: { userPublicId: "usr_1" },
+    })
+    expect(resolveHostedOperation("team.projects.grant", {
+      teamId: "team_1",
+      projectId: "proj_1",
+      role: "editor",
+    })).toEqual({
+      method: "POST",
+      path: "/api/control/teams/team_1/projects",
+      body: { projectId: "proj_1", role: "editor" },
+    })
+    expect(() => resolveHostedOperation("org.teams.create", { name: "Eng" })).toThrow(
+      MissingOperationParameter,
+    )
+  })
+
   test("fills path parameters from named input", () => {
     // `replace`, not `start`: the server's lifecycle operations are stop,
     // replace, cleanup and destroy, and every one but `stop` refuses without
@@ -157,6 +263,25 @@ describe("resolveHostedOperation", () => {
 
     expect(resolved.body).toEqual({ hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })
     expect(resolved.body).not.toHaveProperty("elevate")
+  })
+
+  test("nests connected-repo create into the hosted schema shape", () => {
+    expect(resolveHostedOperation("workspace.create", {
+      projectName: "demo",
+      workspaceName: "main",
+      connectionId: "conn_1",
+      repoFullName: "acme/demo",
+      driver: "daytona",
+    })).toEqual({
+      method: "POST",
+      path: "/api/workspace/create",
+      body: {
+        projectName: "demo",
+        workspaceName: "main",
+        connectionId: "conn_1",
+        repo: { fullName: "acme/demo" },
+      },
+    })
   })
 
   test("omits a body entirely for operations that take none", () => {

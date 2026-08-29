@@ -264,6 +264,25 @@ const api: ElectronAPI = {
     signOut: () => ipcRenderer.invoke("claxedo.account.signOut"),
     run: (operation: string, input?: Record<string, unknown>) =>
       ipcRenderer.invoke(`claxedo.account.operation:${operation}`, input),
+    streamOpen: (operation: string, input?: Record<string, unknown>) =>
+      ipcRenderer.invoke("claxedo.account.stream.open", { operation, input }),
+    streamClose: (streamId: string) =>
+      ipcRenderer.invoke("claxedo.account.stream.close", { streamId }),
+    onStreamChunk: (listener: (payload: { streamId: string; text: string }) => void) => {
+      const handler = (_event: unknown, payload: { streamId: string; text: string }) => listener(payload)
+      ipcRenderer.on("claxedo.account.stream.chunk", handler)
+      return () => ipcRenderer.removeListener("claxedo.account.stream.chunk", handler)
+    },
+    onStreamEnd: (listener: (payload: { streamId: string }) => void) => {
+      const handler = (_event: unknown, payload: { streamId: string }) => listener(payload)
+      ipcRenderer.on("claxedo.account.stream.end", handler)
+      return () => ipcRenderer.removeListener("claxedo.account.stream.end", handler)
+    },
+    onStreamError: (listener: (payload: { streamId: string; message: string }) => void) => {
+      const handler = (_event: unknown, payload: { streamId: string; message: string }) => listener(payload)
+      ipcRenderer.on("claxedo.account.stream.error", handler)
+      return () => ipcRenderer.removeListener("claxedo.account.stream.error", handler)
+    },
   },
 }
 

@@ -12,14 +12,26 @@
  * is exactly why `ipc-caller-guard.wiring.test.ts` checks the entry instead.
  */
 
+import { randomUUID } from "node:crypto"
 import type { IpcMainInvokeEvent } from "electron"
-import { HOSTED_OPERATIONS, hostedOperationChannel, type HostedOperationName } from "./hosted-operations"
+import {
+  HOSTED_OPERATIONS,
+  hostedOperationChannel,
+  isStreamHostedOperation,
+  type HostedOperationName,
+} from "./hosted-operations"
 import type { AccountState } from "./account-service"
+import { accountPerfEnabled, accountPerfMark, accountPerfNow } from "./account-perf"
 
 export const ACCOUNT_STATE_CHANNEL = "claxedo.account.state"
 export const ACCOUNT_STATE_CHANGED_CHANNEL = "claxedo.account.stateChanged"
 export const ACCOUNT_SIGN_IN_CHANNEL = "claxedo.account.signIn"
 export const ACCOUNT_SIGN_OUT_CHANNEL = "claxedo.account.signOut"
+export const ACCOUNT_STREAM_OPEN_CHANNEL = "claxedo.account.stream.open"
+export const ACCOUNT_STREAM_CLOSE_CHANNEL = "claxedo.account.stream.close"
+export const ACCOUNT_STREAM_CHUNK_CHANNEL = "claxedo.account.stream.chunk"
+export const ACCOUNT_STREAM_END_CHANNEL = "claxedo.account.stream.end"
+export const ACCOUNT_STREAM_ERROR_CHANNEL = "claxedo.account.stream.error"
 
 /**
  * Operations the renderer may not ask for, though main itself performs them.
@@ -121,6 +133,12 @@ export type AccountIpcService = {
   signIn: () => Promise<unknown>
   signOut: () => Promise<void>
   run: (name: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
+  openStream: (input: {
+    name: HostedOperationName
+    params?: Record<string, unknown>
+    signal?: AbortSignal
+    onChunk: (text: string) => void
+  }) => Promise<void>
 }
 
 /**
@@ -150,6 +168,7 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
   })
 
   const withheld = new Set<HostedOperationName>(RENDERER_WITHHELD_OPERATIONS)
+  const activeStreams = new Map<string, AbortController>()
 
   for (const name of Object.keys(HOSTED_OPERATIONS) as HostedOperationName[]) {
     if (withheld.has(name)) {
@@ -162,13 +181,103 @@ export function registerAccountIpc(input: { ipcMain: AccountIpcTarget; service: 
       continue
     }
 
-    handle(hostedOperationChannel(name), async (_event: never, input?: Record<string, unknown>) =>
+    if (isStreamHostedOperation(name)) {
+      // Stream ops stay registered so channel inventory matches HOSTED_OPERATIONS,
+      // but unary invoke is refused — open via ACCOUNT_STREAM_OPEN_CHANNEL.
+      handle(hostedOperationChannel(name), async () => {
+        throw new Error(`hosted operation "${name}" is a stream; use ${ACCOUNT_STREAM_OPEN_CHANNEL}`)
+      })
+      continue
+    }
+
+    handle(hostedOperationChannel(name), async (_event: never, input?: Record<string, unknown>) => {
       // The operation name is bound HERE, at registration, not taken from the
       // message. A renderer can choose which channel to call and cannot choose
       // what that channel does.
-      service.run(name, input ?? {}),
-    )
+      const started = accountPerfNow()
+      try {
+        return await service.run(name, input ?? {})
+      } finally {
+        accountPerfMark("account.unary_ipc_handler_ms", {
+          operation: name,
+          ms: accountPerfNow() - started,
+        })
+      }
+    })
   }
+
+  handle(ACCOUNT_STREAM_OPEN_CHANNEL, async (event: IpcMainInvokeEvent, payload?: {
+    operation?: string
+    input?: Record<string, unknown>
+  }) => {
+    const operation = payload?.operation
+    if (!operation || !isStreamHostedOperation(operation)) {
+      throw new Error(`hosted stream operation "${String(operation)}" is not allowed`)
+    }
+    if (withheld.has(operation)) {
+      throw new Error(`hosted operation "${operation}" is performed by Electron main and is not available to the renderer`)
+    }
+    const streamId = randomUUID()
+    const controller = new AbortController()
+    activeStreams.set(streamId, controller)
+    const sender = event.sender
+    const openInvokeAt = accountPerfNow()
+    let chunkSeq = 0
+    const cleanup = () => {
+      activeStreams.delete(streamId)
+      controller.abort()
+    }
+    sender.once("destroyed", cleanup)
+    void service.openStream({
+      name: operation,
+      params: payload?.input ?? {},
+      signal: controller.signal,
+      onChunk: (text) => {
+        if (sender.isDestroyed()) return
+        const seq = chunkSeq++
+        const sentAt = accountPerfNow()
+        if (accountPerfEnabled() && seq === 0) {
+          accountPerfMark("account.stream_chunk_ipc_first_ms", {
+            streamId,
+            operation,
+            ms: sentAt - openInvokeAt,
+            bytes: text.length,
+          })
+        }
+        sender.send(ACCOUNT_STREAM_CHUNK_CHANNEL, {
+          streamId,
+          text,
+          ...(accountPerfEnabled() ? { seq, sentAt } : {}),
+        })
+      },
+    }).then(() => {
+      if (!sender.isDestroyed()) sender.send(ACCOUNT_STREAM_END_CHANNEL, { streamId })
+    }).catch((error) => {
+      if (!sender.isDestroyed()) {
+        sender.send(ACCOUNT_STREAM_ERROR_CHANNEL, {
+          streamId,
+          message: error instanceof Error ? error.message : String(error),
+        })
+      }
+    }).finally(() => {
+      activeStreams.delete(streamId)
+      try {
+        sender.removeListener("destroyed", cleanup)
+      } catch {
+        // sender may already be gone
+      }
+    })
+    return { streamId }
+  })
+
+  handle(ACCOUNT_STREAM_CLOSE_CHANNEL, async (_event: never, payload?: { streamId?: string }) => {
+    const streamId = payload?.streamId
+    if (!streamId) return
+    const controller = activeStreams.get(streamId)
+    if (!controller) return
+    controller.abort()
+    activeStreams.delete(streamId)
+  })
 
   return { channels }
 }

@@ -22,8 +22,13 @@
 
 import { createOAuthFlow, type OAuthConfig, type OAuthSeams, type SignInResult } from "./oauth-flow"
 import { shouldRefresh } from "./secure-storage"
-import { resolveHostedOperation, type HostedOperationName } from "./hosted-operations"
+import {
+  isStreamHostedOperation,
+  resolveHostedOperation,
+  type HostedOperationName,
+} from "./hosted-operations"
 import type { CredentialStore, TokenSet } from "./credential-store"
+import { accountPerfMark, accountPerfNow } from "./account-perf"
 
 export type AccountIdentity = {
   userId: string
@@ -73,6 +78,13 @@ export type AccountServiceOptions = {
   ) => Promise<Response>
   /** Exchanges a refresh token. Absent means refresh is unsupported. */
   refresh?: (refreshToken: string) => Promise<RefreshOutcome>
+  /**
+   * Loads display identity for a live access token (OIDC userinfo).
+   *
+   * Optional: when absent the service still signs in, and the rail falls back
+   * to the generic "Account" label until something else supplies a name.
+   */
+  resolveIdentity?: (accessToken: string) => Promise<AccountIdentity>
   now: () => number
   onError?: (stage: string, error: unknown) => void
   /** Canonical state transition feed for main-process lifecycle consumers. */
@@ -204,6 +216,26 @@ export function createAccountService(options: AccountServiceOptions) {
     setState({ status: "unavailable", reason, detail })
   }
 
+  /**
+   * Publish signed state with whatever profile userinfo can supply.
+   *
+   * Sign-in must not fail when userinfo is down — the credential is already
+   * adopted — but the rail's label is `displayName ?? email ?? "Account"`, so
+   * leaving `userId: ""` forever is what made a successful login look anonymous.
+   */
+  const publishSigned = async (accessToken: string, startedIn: number) => {
+    let identity: AccountIdentity = { userId: "" }
+    if (options.resolveIdentity) {
+      try {
+        identity = await options.resolveIdentity(accessToken)
+      } catch (error) {
+        options.onError?.("identity", error)
+      }
+    }
+    if (startedIn !== era) return
+    setState({ status: "signed", identity })
+  }
+
   return {
     state: () => state,
 
@@ -226,7 +258,10 @@ export function createAccountService(options: AccountServiceOptions) {
         const stored = options.store.load(options.now())
         if (!stored) return state
         tokens = stored
+        const startedIn = era
         setState({ status: "signed", identity: { userId: "" } })
+        // Profile is best-effort and must not delay launch.
+        void publishSigned(stored.accessToken, startedIn)
       } catch (error) {
         options.onError?.("restore", error)
       }
@@ -241,11 +276,17 @@ export function createAccountService(options: AccountServiceOptions) {
         return { ok: false, reason: "callback-failed", detail: "sign-in was cancelled" }
       }
       if (!result.ok) {
-        setState(
-          result.reason === "already-running"
-            ? state
-            : { status: "unavailable", reason: mapReason(result.reason), detail: result.detail },
-        )
+        if (result.reason === "already-running") {
+          // Another attempt owns `pending`; do not clobber it.
+          return result
+        }
+        if (result.reason === "no-secure-storage") {
+          setState({ status: "unavailable", reason: "no-secure-storage", detail: result.detail })
+          return result
+        }
+        // timeout / callback-failed — back to unsigned so the rail can offer
+        // Sign in again instead of resting on a dead `pending`/`unavailable`.
+        setState({ status: "unsigned" })
         return result
       }
       const adopted = adopt(result.tokens)
@@ -256,7 +297,7 @@ export function createAccountService(options: AccountServiceOptions) {
         // that is over.
         return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
       }
-      setState({ status: "signed", identity: { userId: "" } })
+      await publishSigned(result.tokens.accessToken, startedIn)
       return result
     },
 
@@ -276,6 +317,9 @@ export function createAccountService(options: AccountServiceOptions) {
      * credential can live in this process at all.
      */
     async run(name: HostedOperationName, input: Record<string, unknown> = {}): Promise<unknown> {
+      if (isStreamHostedOperation(name)) {
+        throw new Error(`hosted operation "${name}" is a stream; use account.stream.open`)
+      }
       const startedIn = era
       const credential = await currentAccessToken()
       if (!credential.ok) throw new Error(credential.detail)
@@ -283,6 +327,7 @@ export function createAccountService(options: AccountServiceOptions) {
       const request = resolveHostedOperation(name, input)
       const controller = new AbortController()
       activeRequests.add(controller)
+      const fetchStarted = accountPerfNow()
       let response: Response
       try {
         response = await options.fetch(`${options.serverOrigin}${request.path}`, {
@@ -290,6 +335,7 @@ export function createAccountService(options: AccountServiceOptions) {
           headers: {
             authorization: `Bearer ${credential.token}`,
             ...(request.body ? { "content-type": "application/json" } : {}),
+            ...(request.headers ?? {}),
           },
           ...(request.body ? { body: JSON.stringify(request.body) } : {}),
           signal: controller.signal,
@@ -297,8 +343,25 @@ export function createAccountService(options: AccountServiceOptions) {
       } finally {
         activeRequests.delete(controller)
       }
+      accountPerfMark("account.unary_main_fetch_ms", {
+        operation: name,
+        ms: accountPerfNow() - fetchStarted,
+        status: response.status,
+      })
       if (startedIn !== era) throw new Error("not signed in")
       if (response.status === 401) {
+        const body = await response.json().catch(() => undefined) as {
+          error?: { code?: string; message?: string }
+        } | undefined
+        const code = body?.error?.code
+        // Opaque or wrong-shaped OAuth tokens fail JWKS as invalid_bearer_token.
+        // That is not a revoked refresh grant — do not wipe the local session.
+        if (code === "invalid_bearer_token" || code === "missing_bearer_token") {
+          throw new Error(
+            body?.error?.message
+              ?? "Control plane rejected the account token. Enable JWT access tokens on the Clerk OAuth app, then sign out and sign in again.",
+          )
+        }
         // The server disagrees with our credential. Not refreshed-and-retried
         // here: renewal already happened ahead of expiry on the way in, so a
         // 401 is not staleness — it is revocation, and a retry loop against a
@@ -307,25 +370,132 @@ export function createAccountService(options: AccountServiceOptions) {
         signOutLocally("revoked", "the server rejected this session")
         throw new Error("session rejected")
       }
-      if (!response.ok) throw new Error(`operation "${name}" failed: ${response.status}`)
+      if (!response.ok) {
+        const body = await response.json().catch(() => undefined) as {
+          error?: { code?: string; message?: string }
+          code?: string
+          message?: string
+        } | undefined
+        if (name === "session.shares.list" && response.status >= 500) {
+          throw new Error(
+            "Could not load session people. This session may only exist locally — People shares a control-plane session.",
+          )
+        }
+        // Status + body must survive Electron IPC (Error properties do not).
+        // Callers that need 409 bodies (connections.connect) parse this prefix.
+        const detail = body?.error?.message ?? body?.message
+        throw new Error(
+          `HOSTED_HTTP ${response.status} ${JSON.stringify({
+            detail: detail ?? `operation "${name}" failed: ${response.status}`,
+            body: body ?? null,
+          })}`,
+        )
+      }
       if (startedIn !== era) throw new Error("not signed in")
+      // Binary export: never return a raw Response (headers include auth
+      // surface). Envelope the bytes so IPC stays JSON-shaped.
+      if (name === "documents.export") {
+        const bytes = Buffer.from(await response.arrayBuffer())
+        return {
+          bytesBase64: bytes.toString("base64"),
+          contentType: response.headers.get("content-type") ?? undefined,
+        }
+      }
       // Decoded. Returning the Response would hand the renderer the headers,
       // and one of them is the one thing this design exists to withhold.
       const value = await response.json().catch(() => undefined)
       if (startedIn !== era) throw new Error("not signed in")
       return value
     },
-  }
-}
 
-/**
- * The flow's failure reasons, narrowed to the ones the renderer can act on.
- *
- * `timeout` and `callback-failed` are the same thing to a user — sign-in did
- * not complete, try again — and giving the UI a third case to handle would buy
- * nothing. `no-secure-storage` is genuinely different: retrying will never
- * work, and the message has to say why.
- */
-function mapReason(reason: "no-secure-storage" | "callback-failed" | "timeout") {
-  return reason === "no-secure-storage" ? ("no-secure-storage" as const) : ("callback-failed" as const)
+    /**
+     * Open a named SSE stream. Main owns the fetch + AbortController; the
+     * caller (IPC) forwards text chunks to the renderer that opened it.
+     */
+    async openStream(input: {
+      name: HostedOperationName
+      params?: Record<string, unknown>
+      signal?: AbortSignal
+      onChunk: (text: string) => void
+    }): Promise<void> {
+      if (!isStreamHostedOperation(input.name)) {
+        throw new Error(`hosted operation "${input.name}" is not a stream`)
+      }
+      const startedIn = era
+      const credential = await currentAccessToken()
+      if (!credential.ok) throw new Error(credential.detail)
+      if (startedIn !== era) throw new Error("not signed in")
+      const request = resolveHostedOperation(input.name, input.params ?? {})
+      const controller = new AbortController()
+      activeRequests.add(controller)
+      const onAbort = () => controller.abort()
+      input.signal?.addEventListener("abort", onAbort, { once: true })
+      const openStarted = accountPerfNow()
+      let firstChunk = true
+      let httpOkAt: number | undefined
+      try {
+        const response = await options.fetch(`${options.serverOrigin}${request.path}`, {
+          method: request.method,
+          headers: {
+            authorization: `Bearer ${credential.token}`,
+            Accept: "text/event-stream",
+            ...(request.headers ?? {}),
+          },
+          signal: controller.signal,
+        })
+        if (startedIn !== era) throw new Error("not signed in")
+        if (response.status === 401) {
+          signOutLocally("revoked", "the server rejected this session")
+          throw new Error("session rejected")
+        }
+        if (!response.ok || !response.body) {
+          const detail = (await response.text().catch(() => "")).trim()
+          throw new Error(
+            `HOSTED_HTTP ${response.status} ${JSON.stringify({
+              detail: detail || `operation "${input.name}" failed: ${response.status}`,
+              body: null,
+            })}`,
+          )
+        }
+        httpOkAt = accountPerfNow()
+        accountPerfMark("account.stream_http_ok_ms", {
+          operation: input.name,
+          ms: httpOkAt - openStarted,
+          status: response.status,
+        })
+        const reader = response.body.getReader()
+        const decoder = new TextDecoder()
+        while (true) {
+          if (startedIn !== era) throw new Error("not signed in")
+          const next = await reader.read()
+          if (next.done) break
+          const text = decoder.decode(next.value, { stream: true })
+          if (firstChunk && text.length > 0) {
+            firstChunk = false
+            accountPerfMark("account.stream_open_to_first_byte_ms", {
+              operation: input.name,
+              ms: accountPerfNow() - openStarted,
+              after_http_ok_ms: httpOkAt === undefined ? undefined : accountPerfNow() - httpOkAt,
+            })
+          }
+          input.onChunk(text)
+        }
+        const tail = decoder.decode()
+        if (tail.length > 0) {
+          if (firstChunk) {
+            firstChunk = false
+            accountPerfMark("account.stream_open_to_first_byte_ms", {
+              operation: input.name,
+              ms: accountPerfNow() - openStarted,
+              after_http_ok_ms: httpOkAt === undefined ? undefined : accountPerfNow() - httpOkAt,
+            })
+          }
+          input.onChunk(tail)
+        }
+      } finally {
+        input.signal?.removeEventListener("abort", onAbort)
+        activeRequests.delete(controller)
+      }
+    },
+  }
 }
