@@ -105,6 +105,7 @@ export type WorkspaceRuntimeStore =
       ownerKey?: string | null
       parentSessionId?: string
       createdAt?: number
+      updatedAt?: number
     }): void
     updateSessionConfig(
       id: string,
@@ -1534,6 +1535,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         title: typeof session.title === "string" ? session.title : undefined,
         agentSessionId: id,
         createdAt: sessionTime(session, "created") ?? Date.now(),
+        updatedAt: sessionTime(session, "updated") || undefined,
       })
     }
     if (!store().getSessionConfig(id) && (!existing || sessionTime(session, "updated") >= sessionTime(existing, "updated"))) {

@@ -545,10 +545,11 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!prev) return
     this.sessions.set(id, {
       ...prev,
-      time: { ...prev.time, updated: Date.now() },
+      // Status / idle / error must not invent a newer time.updated — visit and
+      // status polls were reshuffling the rail list via session meta sync.
       ...(status !== undefined ? { status } : {}),
       ...(recoveryError !== undefined ? { recoveryError } : {}),
-      ...(lastTurn ? { lastTurn } : {}),
+      ...(lastTurn ? { lastTurn, time: { ...prev.time, updated: Date.now() } } : {}),
     })
   }
 

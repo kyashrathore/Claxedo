@@ -492,4 +492,62 @@ describe("session meta", () => {
 
     await expect(sessionMeta("partial-model")).rejects.toThrow("incomplete model configuration")
   })
+
+  test("putSessionMeta preserves updated_at when rewriting the same identity fields", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await putSessionMeta("stable", {
+      directory: "/tmp/repo",
+      title: "Stable",
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    })
+    expect((await sessionMeta("stable"))?.updatedAt).toBe(2_000)
+    await putSessionMeta("stable", {
+      directory: "/tmp/repo",
+      title: "Stable",
+    })
+    const after = await sessionMeta("stable")
+    expect(after?.updatedAt).toBe(2_000)
+    expect(after?.createdAt).toBe(1_000)
+  })
+
+  test("putSessionMeta bumps updated_at when the title changes", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await putSessionMeta("renamed", {
+      directory: "/tmp/repo",
+      title: "Before",
+      createdAt: 1_000,
+      updatedAt: 2_000,
+    })
+    await putSessionMeta("renamed", {
+      directory: "/tmp/repo",
+      title: "After",
+    })
+    const after = await sessionMeta("renamed")
+    expect(after?.title).toBe("After")
+    expect(after?.updatedAt).toBeGreaterThan(2_000)
+  })
+
+  test("listSessionNavigationMetas supports created_desc order", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await putSessionMeta("older", {
+      directory: "/tmp/repo",
+      title: "1. Older",
+      createdAt: 1_000,
+      updatedAt: 9_000,
+    })
+    await putSessionMeta("newer", {
+      directory: "/tmp/repo",
+      title: "2. Newer",
+      createdAt: 2_000,
+      updatedAt: 3_000,
+    })
+    const rows = await listSessionNavigationMetas({
+      directory: "/tmp/repo",
+      archived: "active",
+      sort: "created_desc",
+      limit: 10,
+    })
+    expect(rows.map((row) => row.sessionID)).toEqual(["newer", "older"])
+  })
 })

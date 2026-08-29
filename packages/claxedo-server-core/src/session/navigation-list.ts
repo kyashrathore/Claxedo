@@ -4,6 +4,8 @@ export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
 
+export type SessionListSort = "updated_desc" | "created_desc"
+
 export type SessionListQuery = {
   scope: SessionListScope
   projectId?: string
@@ -15,7 +17,7 @@ export type SessionListQuery = {
   environment: string[]
   git: string[]
   search?: string
-  sort: "updated_desc"
+  sort: SessionListSort
   limit: number
   cursor?: string
 }
@@ -41,7 +43,7 @@ export type SessionListResponse = {
   view: {
     scope: SessionListScope
     groupBy: SessionListGroupBy
-    sort: "updated_desc"
+    sort: SessionListSort
     limit: number
   }
   items?: SessionNavigationRow[]
@@ -59,6 +61,7 @@ export type SessionListResponse = {
 type CursorShape = {
   query: string
   updatedAt: number
+  createdAt?: number
   sessionId: string
   sessionRef?: string
 }
@@ -77,7 +80,7 @@ export function parseSessionListQuery(url: URL): SessionListQuery {
     environment: list(url.searchParams.get("environment") ?? url.searchParams.get("filter.environment")),
     git: list(url.searchParams.get("git") ?? url.searchParams.get("filter.git")),
     ...(text(url.searchParams.get("search")) ? { search: text(url.searchParams.get("search")) } : {}),
-    sort: "updated_desc",
+    sort: sortValue(url.searchParams.get("sort")),
     limit: limitValue(url.searchParams.get("limit")),
     ...(text(url.searchParams.get("cursor")) ? { cursor: text(url.searchParams.get("cursor")) } : {}),
   }
@@ -97,7 +100,7 @@ export function buildSessionListResponse(input: {
     .filter((row) => valuesMatch(input.query.environment, rowEnvironmentValues(row)))
     .filter((row) => valuesMatch(input.query.git, rowGitValues(row)))
     .filter((row) => !input.query.search || row.title.toLowerCase().includes(input.query.search.toLowerCase()))
-    .sort(compareRows)
+    .sort((a, b) => compareRows(a, b, input.query.sort))
 
   if (input.query.groupBy !== "none") {
     return groupedResponse(input.query, rows)
@@ -134,7 +137,15 @@ export function sessionListStorePageFilter(query: SessionListQuery) {
     status: query.status,
     search: query.search,
     limit: query.limit + 1,
-    ...(cursor ? { cursor: { updatedAt: cursor.updatedAt, sessionID: cursor.sessionId, sessionRef: cursor.sessionRef } } : {}),
+    sort: query.sort,
+    ...(cursor ? {
+      cursor: {
+        updatedAt: cursor.updatedAt,
+        ...(cursor.createdAt !== undefined ? { createdAt: cursor.createdAt } : {}),
+        sessionID: cursor.sessionId,
+        sessionRef: cursor.sessionRef,
+      },
+    } : {}),
   }
 }
 
@@ -160,7 +171,13 @@ function pageRows(query: SessionListQuery, rows: SessionNavigationRow[], cursorA
     throw new Error("invalid_session_list_cursor")
   }
   const window = cursor && !cursorApplied
-    ? rows.filter((row) => row.updatedAt < cursor.updatedAt || (row.updatedAt === cursor.updatedAt && row.sessionRef < (cursor.sessionRef ?? cursor.sessionId)))
+    ? rows.filter((row) => {
+      const key = query.sort === "created_desc" ? row.createdAt : row.updatedAt
+      const cursorKey = query.sort === "created_desc"
+        ? (cursor.createdAt ?? cursor.updatedAt)
+        : cursor.updatedAt
+      return key < cursorKey || (key === cursorKey && row.sessionRef < (cursor.sessionRef ?? cursor.sessionId))
+    })
     : rows
   const items = window.slice(0, query.limit)
   const last = items[items.length - 1]
@@ -301,7 +318,10 @@ function valuesMatch(filters: string[], values: string[]) {
   return filters.some((filter) => values.includes(filter))
 }
 
-function compareRows(a: SessionNavigationRow, b: SessionNavigationRow) {
+function compareRows(a: SessionNavigationRow, b: SessionNavigationRow, sort: SessionListSort = "updated_desc") {
+  if (sort === "created_desc") {
+    return b.createdAt - a.createdAt || b.sessionRef.localeCompare(a.sessionRef)
+  }
   return b.updatedAt - a.updatedAt || b.sessionRef.localeCompare(a.sessionRef)
 }
 
@@ -309,6 +329,7 @@ function encodeCursor(query: SessionListQuery, row: SessionNavigationRow) {
   return Buffer.from(JSON.stringify({
     query: querySignature(query),
     updatedAt: row.updatedAt,
+    createdAt: row.createdAt,
     sessionId: row.sessionId,
     sessionRef: row.sessionRef,
   } satisfies CursorShape), "utf8").toString("base64url")
@@ -322,7 +343,8 @@ function decodeCursor(value: string): CursorShape {
     typeof parsed.query !== "string" ||
     typeof parsed.updatedAt !== "number" ||
     typeof parsed.sessionId !== "string" ||
-    ("sessionRef" in parsed && typeof parsed.sessionRef !== "string")
+    ("sessionRef" in parsed && typeof parsed.sessionRef !== "string") ||
+    ("createdAt" in parsed && typeof parsed.createdAt !== "number")
   ) {
     throw new Error("invalid_session_list_cursor")
   }
@@ -354,6 +376,11 @@ function scopeValue(input: string | null): SessionListScope {
 function groupByValue(input: string | null): SessionListGroupBy {
   if (input === "project" || input === "workspace") return input
   return "none"
+}
+
+function sortValue(input: string | null): SessionListSort {
+  if (input === "created_desc") return "created_desc"
+  return "updated_desc"
 }
 
 function archivedValue(input: string | null): SessionListArchiveMode {

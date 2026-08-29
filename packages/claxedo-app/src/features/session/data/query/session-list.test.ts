@@ -5,6 +5,7 @@ import {
   appendSessionListPageQueryData,
   reconcileArchivedSessionListQueryData,
   removeSessionListQueryData,
+  reconcileUpdatedSessionListQueryData,
   sessionListRequest,
   sessionListQueryOptions,
   upsertCreatedSessionListRow,
@@ -496,6 +497,86 @@ describe("session list query cache", () => {
       "ses_3:3",
     ])
     expect(result.nextCursor).toBe("cursor_after_ses_3")
+  })
+})
+
+describe("reconcileUpdatedSessionListQueryData", () => {
+  test("updated_desc reorders when updatedAt actually changes", () => {
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "workspace",
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+      sort: "updated_desc",
+    })
+    queryClient.setQueryData(key, {
+      ...response(),
+      view: { ...response().view, sort: "updated_desc" },
+      items: [row("ses_1", 3), row("ses_2", 2)],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      title: "Two renamed",
+      updatedAt: 10,
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
+      .toEqual(["ses_2", "ses_1"])
+  })
+
+  test("updated_desc does not reorder when updatedAt is unchanged", () => {
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "workspace",
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+      sort: "updated_desc",
+    })
+    queryClient.setQueryData(key, {
+      ...response(),
+      view: { ...response().view, sort: "updated_desc" },
+      items: [row("ses_1", 3), row("ses_2", 2)],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      title: "Two renamed",
+      updatedAt: 2,
+    })
+
+    const items = queryClient.getQueryData<SessionListResponse>(key)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2"])
+    expect(items?.[1]?.title).toBe("Two renamed")
+  })
+
+  test("created_desc keeps visit/update from reshuffling list order", () => {
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "workspace",
+      workspaceId: "ws_1",
+      directory: "/repo",
+      limit: 2,
+      sort: "created_desc",
+    })
+    queryClient.setQueryData(key, {
+      ...response(),
+      view: { ...response().view, sort: "created_desc" },
+      items: [row("ses_1", 3), row("ses_2", 2)],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      title: "Visited",
+      updatedAt: 99,
+    })
+
+    const items = queryClient.getQueryData<SessionListResponse>(key)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2"])
+    expect(items?.[1]?.updatedAt).toBe(99)
+    expect(items?.[1]?.title).toBe("Visited")
   })
 })
 

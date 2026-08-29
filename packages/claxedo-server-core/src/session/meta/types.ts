@@ -50,9 +50,11 @@ export type SessionMetaNavigationListInput = {
   archived?: "active" | "all" | "archived"
   status?: string[]
   search?: string
+  sort?: "updated_desc" | "created_desc"
   limit: number
   cursor?: {
     updatedAt: number
+    createdAt?: number
     sessionID: string
     sessionRef?: string
   }
