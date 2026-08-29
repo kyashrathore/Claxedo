@@ -50,8 +50,10 @@ export const desktopMainComposition: Policy = {
   // Renderer trust/readiness and native-rich-content supervision add nine
   // reviewed main-process modules. Durable local-server startup then adds the
   // daemon discovery and lease owners. The app-exit fix adds the canonical
-  // daemon-exit lifecycle owner; keep the ceiling exact.
-  ceilings: { modules: 77, packages: 23 },
+  // daemon-exit lifecycle owner. Account identity resolution (`account/identity.ts`,
+  // reached through the lazy account composition the source walk includes)
+  // publishes display name/email after OAuth; keep the ceiling exact.
+  ceilings: { modules: 78, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -204,9 +206,12 @@ export const desktopRendererUnsigned: Policy = {
   // Durable archive cleanup adds its canonical projection-cancellation owner.
   // Session markdown / settings owners (981 + 8 = 989) plus tenant-aware
   // multiplayer's four local owners (989 + 4 = 993). Org→Team product UI adds
-  // the same six local app owners as app-local: 993 + 6 = 999 modules, still
-  // no package edge.
-  ceilings: { modules: 999, packages: 62 },
+  // the same six local app owners as app-local: 993 + 6 = 999.
+  // Cloud workspace create / AccountPort bridge / adapters follow app-local:
+  // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
+  // documents/WorkGraph) + 1 (control-plane fetch) + 1 (SSE stream) + 1
+  // (agent-config extensions) = 1007 modules, still no package edge.
+  ceilings: { modules: 1007, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -257,7 +262,15 @@ export const desktopHostedContribution: Policy = {
   // The hosted task composer now reaches the existing canonical config owner.
   // Tenant-aware multiplayer adds the agent-runtime request-error mapper to
   // the already reachable hosted contribution graph: 301 + 1 = 302 modules.
-  ceilings: { modules: 302, packages: 40 },
+  // Workspace resolve + connection mint/refresh AccountPort wiring pulls in the
+  // shared bridge (`hosted-control-call`) and result decoders (`hosted-operations`)
+  // through `workspace-runtime-record` / `workspace-relay-connection`:
+  // 302 + 2 = 304 modules, still no package edge.
+  // Control-plane AccountPort fetch adapter:
+  // 304 + 1 = 305 modules, still no package edge.
+  // AccountPort SSE stream adapter for central `session.events`:
+  // 305 + 1 = 306 modules, still no package edge.
+  ceilings: { modules: 306, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,

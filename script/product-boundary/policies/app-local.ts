@@ -117,8 +117,16 @@ export const appLocal: Policy = {
   // eight named owners (897 + 8 = 905). Tenant-aware multiplayer adds four
   // already-reachable local owners: 905 + 4 = 909. Org→Team product UI adds six
   // local owners (settings org-team section + API, session share API + Share
-  // control, rail org/team switcher): 909 + 6 = 915 modules, still no package edge.
-  ceilings: { modules: 915, packages: 41 },
+  // control, rail org/team switcher): 909 + 6 = 915 modules.
+  // Cloud workspace create routes through AccountPort via workspace-create-api:
+  // 915 + 1 = 916. Shared AccountPort bridge (`hosted-control-call`) plus
+  // connection mint/refresh and workspace.resolve: 916 + 1 = 917.
+  // Integrations, documents, and WorkGraph AccountPort adapters: 917 + 3 = 920.
+  // Control-plane AccountPort fetch adapter: 920 + 1 = 921.
+  // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
+  // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
+  // modules, still no package edge.
+  ceilings: { modules: 923, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

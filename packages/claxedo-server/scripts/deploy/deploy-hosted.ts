@@ -67,6 +67,8 @@ export function hostedDeployCommands(input: {
           env: {
             VITE_CLAXEDO_SERVER_URL: clean(env.CLAXEDO_CENTRAL_URL) ?? "",
             VITE_AUTH_ENABLED: "true",
+            // Hosted staging/prod ship login + cloud sandbox + org/team multiplayer UI.
+            VITE_SANDBOX_ENABLED: clean(env.VITE_SANDBOX_ENABLED) ?? "true",
             ...(clean(env.VITE_CLERK_PUBLISHABLE_KEY) ? { VITE_CLERK_PUBLISHABLE_KEY: clean(env.VITE_CLERK_PUBLISHABLE_KEY)! } : {}),
             ...(clean(env.VITE_CONVEX_URL) ? { VITE_CONVEX_URL: clean(env.VITE_CONVEX_URL)! } : {}),
           },
