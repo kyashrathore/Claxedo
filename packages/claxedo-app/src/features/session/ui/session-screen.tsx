@@ -502,8 +502,10 @@ export default function SessionPage() {
       messagesLoaded: messageState()?.value !== undefined,
     }),
   )
-  const [markdownReady, setMarkdownReady] = createSignal(false)
-  let markdownGateSessionKey: string | undefined
+  // Warm historical switches: mount the timeline as soon as messages are ready.
+  // Sync rich first paint (markdown.tsx) prevents plain→rich flash. Idle preload
+  // warms the cache off the critical path so marked.parse cannot delay timeline
+  // rows or starve workspace-panel Files readiness (waitForOpenFiles).
   const firstFoldIdentity = createMemo(() =>
     firstFoldMarkdownPreloadIdentity(conversation()?.messages ?? []),
   )
@@ -515,36 +517,31 @@ export default function SessionPage() {
       sessionKey: key,
       firstFoldIdentity: firstFoldIdentity(),
     })
-    if (key !== markdownGateSessionKey) {
-      markdownGateSessionKey = key
-      setMarkdownReady(false)
-    }
-    if (gate === "blocked") {
-      setMarkdownReady(false)
-      return
-    }
-    // Live turns must mount immediately. Token deltas do not change the
-    // first-fold identity, so this effect does not retrigger mid-stream.
-    if (gate === "live") {
-      setMarkdownReady(true)
-      return
-    }
+    if (gate !== "preload") return
     const snapshot = untrack(() => conversation())
     const bodies = firstFoldMarkdownBodies({
       messages: snapshot?.messages ?? [],
       parts: snapshot?.parts ?? {},
     })
+    if (bodies.length === 0) return
     let cancelled = false
-    void preloadSessionMarkdownBodies(bodies, marked).then(
-      () => {
-        if (!cancelled) setMarkdownReady(true)
-      },
-      () => {
-        if (!cancelled) setMarkdownReady(true)
-      },
-    )
+    const schedule =
+      typeof globalThis.requestIdleCallback === "function"
+        ? (cb: () => void) => {
+            const id = globalThis.requestIdleCallback(() => cb(), { timeout: 2_000 })
+            return () => globalThis.cancelIdleCallback?.(id)
+          }
+        : (cb: () => void) => {
+            const id = setTimeout(cb, 0)
+            return () => clearTimeout(id)
+          }
+    const cancelSchedule = schedule(() => {
+      if (cancelled) return
+      void preloadSessionMarkdownBodies(bodies, marked)
+    })
     onCleanup(() => {
       cancelled = true
+      cancelSchedule()
     })
   })
   const firstFoldReady = createMemo(() =>
@@ -1354,7 +1351,7 @@ export default function SessionPage() {
                   <Show
                     keyed
                     when={timelineMountSessionKey({
-                      messagesReady: messagesReady() && markdownReady(),
+                      messagesReady: messagesReady(),
                       sessionKey: sessionKey(),
                     })}
                     fallback={
