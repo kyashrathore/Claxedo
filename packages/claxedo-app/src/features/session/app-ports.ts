@@ -22,7 +22,6 @@ import type * as WorkspaceConnection from "@/features/workspaces/data/workspace-
 import type * as WorkspaceGateModule from "@/features/workspaces/data/workspace-gate"
 import type * as WorkspaceScope from "@/features/workspaces/data/workspace-scope"
 import type * as DirectoryScopeModule from "@/app/workbench/context/directory-scope"
-import type * as StatusPopoverModule from "@/app/connection/status-popover"
 import type * as SwitcherItems from "@/app/workbench/compact-switcher/switcher-items"
 import type * as SurfaceStatus from "@/app/workbench/compact-switcher/surface-status"
 import type * as Navigation from "@/app/workbench/navigation/navigation-row"
@@ -64,7 +63,6 @@ export type SessionAppPorts = {
   WorkspaceGate: typeof WorkspaceGateModule.WorkspaceGate
   useWorkspaceScopeRegistryOptional: typeof WorkspaceScope.useWorkspaceScopeRegistryOptional
   DirectoryScope: typeof DirectoryScopeModule.DirectoryScope
-  StatusPopover: typeof StatusPopoverModule.StatusPopover
   terminalSurfaceStatus: typeof SurfaceStatus.terminalSurfaceStatus
   NavigationRow: typeof Navigation.NavigationRow
   NavigationStatusDot: typeof Navigation.NavigationStatusDot
@@ -146,7 +144,6 @@ export const workspacePlacement = bind("workspacePlacement")
 export const WorkspaceGate = bind("WorkspaceGate")
 export const useWorkspaceScopeRegistryOptional = bind("useWorkspaceScopeRegistryOptional")
 export const DirectoryScope = bind("DirectoryScope")
-export const StatusPopover = bind("StatusPopover")
 export type SwitcherStatus = SwitcherItems.SwitcherStatus
 export const terminalSurfaceStatus = bind("terminalSurfaceStatus")
 export const NavigationRow = bind("NavigationRow")

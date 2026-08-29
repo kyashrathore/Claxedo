@@ -146,10 +146,10 @@ export function WorkbenchShellHeader(props: {
         </Show>
       </div>
       <div data-testid="workbench-header-controls" class="flex shrink-0 items-center gap-1">
-        {/* SessionHeader portals People / status / terminal toggles here. The
-            legacy Titlebar that used to claim titlebarRightSlot is commented
-            out in app-shell; without this mount the People control never
-            appears on web (SessionHeader only renders via Portal). */}
+        {/* SessionHeader portals Share here when the session is signed + central.
+            The legacy Titlebar that used to claim titlebarRightSlot is commented
+            out in app-shell; without this mount Share never appears
+            (SessionHeader only renders via Portal). */}
         <div
           ref={(el) => {
             setTitlebarRightSlot(el ?? null)

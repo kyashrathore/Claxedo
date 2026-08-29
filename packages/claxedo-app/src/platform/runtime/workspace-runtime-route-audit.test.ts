@@ -2951,13 +2951,12 @@ describe("workspace runtime route audit", () => {
   test("upstream MCP status surfaces read MCP, LSP, and plugin state from query caches", async () => {
     const claxedoDialog = await Bun.file(path.join(root, "features/session/ui/dialogs/select-mcp.tsx")).text()
     const claxedoLogic = await Bun.file(path.join(root, "features/extensions/marketplace/api.ts")).text()
-    const claxedoStatus = await Bun.file(path.join(root, "app/connection/status-popover.tsx")).text()
-    const claxedoSessionHeader = await Bun.file(path.join(root, sessionHeader)).text()
     const backend = await Bun.file(path.join(root, "platform/runtime/http-backend.ts")).text()
 
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/status-popover.tsx")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "app/connection/status-popover.tsx")).exists()).toBe(false)
     // The select-mcp dialog (session feature) reaches the marketplace API
     // through session app-ports, whose types are pinned to the canonical
     // @/features/extensions/marketplace/api owner — same-owner invariant.
@@ -2965,19 +2964,12 @@ describe("workspace runtime route audit", () => {
     expect(claxedoDialog).toMatch(/loadMcpDialogData/)
     expect(claxedoDialog).toMatch(/@\/features\/session\/app-ports/)
     expect(sessionPortsText).toMatch(/import type \* as Marketplace from "@\/features\/extensions\/marketplace\/api"/)
+    expect(sessionPortsText).not.toMatch(/StatusPopover/)
     expect(claxedoLogic).toMatch(/function mcpExtensionUrl/)
     expect(claxedoLogic).not.toMatch(/RuntimeGateway\./)
-    expect(claxedoStatus).toMatch(/return null/)
-    // SessionHeader mounts StatusPopover through session app-ports, pinned to
-    // the app-owned @/app/connection/status-popover — never a relative copy.
-    expect(claxedoSessionHeader).toMatch(/StatusPopover/)
-    expect(claxedoSessionHeader).toMatch(/@\/features\/session\/app-ports/)
-    expect(sessionPortsText).toMatch(/import type \* as StatusPopoverModule from "@\/app\/connection\/status-popover"/)
-    expect(claxedoSessionHeader).not.toMatch(/\.\.\/status-popover/)
     expect(backend).toMatch(/getMcpStatus: async/)
     expect(backend).toMatch(/getLspStatus: async/)
     expect(claxedoDialog).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
-    expect(claxedoStatus).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
   })
 
   test("legacy SyncProvider bridge is deleted after DataProvider cutover", async () => {
@@ -3274,59 +3266,39 @@ describe("workspace runtime route audit", () => {
     }
   })
 
-  test("SessionHeader reads tint inputs without the global-sync message mirror", async () => {
+  test("SessionHeader portals Share only for signed central sessions", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
     expect(
       await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
     ).toBe(false)
-    // The tint's conversation read moved to the pane-scoped registry wrapper
-    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
-    expect(text).toMatch(/createActiveConversationSnapshot/)
-    expect(text).toMatch(/useData/)
-    expect(text).toMatch(/data\.store\.agent/)
-    expect(text).not.toMatch(/queryOptions\.agents/)
+    expect(text).toMatch(/SessionPeopleControl/)
+    expect(text).toMatch(/shareTarget/)
+    expect(text).toMatch(/host !== "central"/)
+    expect(text).toMatch(/status !== "signed"/)
+    expect(text).not.toMatch(/StatusPopover/)
+    expect(text).not.toMatch(/terminal\.toggle/)
+    expect(text).not.toMatch(/review\.toggle/)
+    expect(text).not.toMatch(/fileTree\.toggle/)
+    expect(text).not.toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS/)
+    expect(text).not.toMatch(/openDir/)
+    expect(text).not.toMatch(/OPEN_APPS/)
+    expect(text).not.toMatch(/createActiveConversationSnapshot/)
+    expect(text).not.toMatch(/messageAgentColor/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
-    expect(text).not.toMatch(/sync\.data\.part/)
-    expect(text).not.toMatch(/sync\.data\.agent/)
   })
 
-  test("SessionHeader bounds titlebar open-path loading state", async () => {
+  test("upstream SessionHeader portals Share only for signed central sessions", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
-    expect(
-      await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
-    ).toBe(false)
-    expect(text).toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS = 10_000/)
-    expect(text).toMatch(/let openRequestID = 0/)
-    expect(text).toMatch(/armOpenRequestTimeout\(requestID\)/)
-    expect(text).toMatch(/clearOpenRequest\(requestID\)/)
-    expect(text).toMatch(/onCleanup\(\(\) => \{[\s\S]*clearTimeout\(openRequestTimeout\)/)
-    expect(text).not.toMatch(/\.finally\(\(\) => \{[\s\S]{0,120}setOpenRequest\("app", undefined\)[\s\S]{0,40}\}\)/)
-  })
-
-  test("upstream SessionHeader reads tint inputs without the global-sync message mirror", async () => {
-    const text = await Bun.file(path.join(root, sessionHeader)).text()
-
-    expect(text).toMatch(/createActiveConversationSnapshot/)
-    expect(text).toMatch(/data\.store\.agent/)
-    expect(text).not.toMatch(/queryOptions\.agents/)
-    expect(text).toMatch(/messageAgentColor/)
+    expect(text).toMatch(/SessionPeopleControl/)
+    expect(text).toMatch(/shareTarget/)
+    expect(text).toMatch(/host !== "central"/)
+    expect(text).not.toMatch(/StatusPopover/)
+    expect(text).not.toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS/)
+    expect(text).not.toMatch(/createActiveConversationSnapshot/)
     expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/sync\.data\.message/)
-    expect(text).not.toMatch(/sync\.data\.part/)
-    expect(text).not.toMatch(/sync\.data\.agent/)
-  })
-
-  test("upstream SessionHeader bounds titlebar open-path loading state", async () => {
-    const text = await Bun.file(path.join(root, sessionHeader)).text()
-
-    expect(text).toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS = 10_000/)
-    expect(text).toMatch(/let openRequestID = 0/)
-    expect(text).toMatch(/armOpenRequestTimeout\(requestID\)/)
-    expect(text).toMatch(/clearOpenRequest\(requestID\)/)
-    expect(text).not.toMatch(/\.finally\(\(\) => \{[\s\S]{0,120}setOpenRequest\("app", undefined\)[\s\S]{0,40}\}\)/)
   })
 
   test("ReviewTab keeps VCS payloads query-owned without mount-time status fetches", async () => {

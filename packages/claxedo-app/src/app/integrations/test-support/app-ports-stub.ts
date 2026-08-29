@@ -88,7 +88,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
     "useWorkspaceScopeRegistryOptional",
   ),
   DirectoryScope: lazy("@/app/workbench/context/directory-scope", "DirectoryScope"),
-  StatusPopover: lazy("@/app/connection/status-popover", "StatusPopover"),
   terminalSurfaceStatus: lazy("@/app/workbench/compact-switcher/surface-status", "terminalSurfaceStatus"),
   NavigationRow: lazy("@/app/workbench/navigation/navigation-row", "NavigationRow"),
   NavigationStatusDot: lazy("@/app/workbench/navigation/navigation-row", "NavigationStatusDot"),
