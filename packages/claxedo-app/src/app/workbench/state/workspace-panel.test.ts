@@ -46,17 +46,13 @@ describe("workspace panel slice", () => {
       targetPaneId: "pane-current",
     })
 
+    // Closed remember is minimal: restoring it only closes, and does not
+    // resurrect a stale navigator/mode onto the live panel state.
     expect(workspacePanel.restoreSession("ses_b", {
       workspaceDir: "/repo",
       targetPaneId: "pane-current",
-    })).toBe(true)
-    expect(state.workspacePanel).toMatchObject({
-      open: false,
-      mode: "processes",
-      navigator: "processes",
-      workspaceDir: "/repo",
-      targetPaneId: "pane-current",
-    })
+    })).toBe(false)
+    expect(state.workspacePanel.open).toBe(false)
   })
 
   test("evicts the least-recently-used snapshot once the retained set exceeds its bound", () => {
