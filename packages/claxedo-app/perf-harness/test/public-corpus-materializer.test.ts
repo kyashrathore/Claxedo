@@ -8,7 +8,43 @@ import {
   buildWorkspaceFixtureManifest,
   generateWorkspaceFileBytes,
 } from "agent-app-benchmark/workspace-fixture"
-import { materializeClaxedoPublicCorpus } from "../src/public-corpus-materializer"
+import { materializeClaxedoPublicCorpus, distinctSyntheticSessionTitle, distinctSyntheticSessionCreatedAt, distinctSyntheticSessionUpdatedAt, SYNTHETIC_SESSION_TIME_BASE_MS, workspaceListRanks } from "../src/public-corpus-materializer"
+
+describe("distinct synthetic session identity", () => {
+  test("prefixes a per-list serial and rewrites any prior serial", () => {
+    expect(distinctSyntheticSessionTitle("Synthetic benchmark control", 0, "control")).toBe(
+      "1. Synthetic benchmark control",
+    )
+    expect(distinctSyntheticSessionTitle("3. Synthetic benchmark latency", 2, "latency")).toBe(
+      "3. Synthetic benchmark latency",
+    )
+    expect(distinctSyntheticSessionTitle("99. Old global serial", 0, "local")).toBe(
+      "1. Old global serial",
+    )
+  })
+
+  test("staggers created and updated times so list order is stable", () => {
+    expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
+    expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 1)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 120_000)
+    expect(distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
+    expect(distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 1)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 120_000)
+  })
+
+  test("ranks sessions per workspace so created_desc serials stay contiguous", () => {
+    const ranks = workspaceListRanks([
+      { workspaceId: "workspace-a", logicalSessionId: "a0" },
+      { workspaceId: "workspace-a", logicalSessionId: "a1" },
+      { workspaceId: "workspace-b", logicalSessionId: "b0" },
+      { workspaceId: "workspace-a", logicalSessionId: "a2" },
+    ])
+    expect([...ranks.entries()]).toEqual([
+      ["a0", 0],
+      ["a1", 1],
+      ["b0", 0],
+      ["a2", 2],
+    ])
+  })
+})
 
 describe("public OpenCode corpus materialization", () => {
   test("streams pinned durable events into the native OpenCode database and reads them back", async () => {
@@ -27,16 +63,25 @@ describe("public OpenCode corpus materialization", () => {
       expect(result.transcriptBytes).toBe(10)
       expect(result.sessionMapping.control).toBe("ses_bench_control")
       expect(result.readinessTargets.get("control")?.expectedMessageIds).toEqual(["msg_assistant"])
+      expect(result.readinessTargets.get("control")?.title).toBe("1. Control")
       expect(result.mappingDigestSha256).toMatch(/^[0-9a-f]{64}$/)
 
       const database = new Database(path.join(root, "state", "data", "opencode-engine", "opencode.db"), {
         readonly: true,
       })
+      const session = database.query("SELECT title, time_created, time_updated FROM session WHERE id = ?").get("ses_bench_control") as {
+        title: string
+        time_created: number
+        time_updated: number
+      }
       const messages = database.query("SELECT id, data FROM message ORDER BY time_created").all() as Array<{
         id: string
         data: string
       }>
       database.close()
+      expect(session.title).toBe("1. Control")
+      expect(session.time_created).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
+      expect(session.time_updated).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 100 + 60_000)
       expect(messages.map((row) => ({ id: row.id, role: JSON.parse(row.data).role }))).toEqual([
         { id: "msg_user", role: "user" },
         { id: "msg_assistant", role: "assistant" },

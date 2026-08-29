@@ -179,7 +179,10 @@ export function warmSwitchPlan<T extends { sessionId: string }>(
   seed: number,
 ) {
   const warmup = [...values];
-  const measured = seededSwitchSequence(values, seed);
+  // Headed runs should click top→bottom in rail order. `values` is already the
+  // visible/created_desc sequence; do not reshuffle into a random path.
+  void seed;
+  const measured = [...values];
   if (measured[0]?.sessionId === warmup.at(-1)?.sessionId)
     measured.push(measured.shift()!);
   return { warmup, measured };
@@ -352,6 +355,21 @@ export async function measureSessionActivation(
               : [];
             return {
               root: rect(candidate),
+              selectionSync: {
+                activeRailSessionIds: [
+                  ...document.querySelectorAll<HTMLElement>(
+                    '[data-testid="rail-sidebar-session-row"][data-active="true"]',
+                  ),
+                ].map((row) => row.dataset.sessionId ?? ""),
+                visibleSessionIds: [
+                  ...document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"),
+                ]
+                  .filter((root) => {
+                    const host = root.closest<HTMLElement>("[data-workbench-content]");
+                    return !!host && host.getAttribute("aria-hidden") !== "true" && !host.hasAttribute("inert");
+                  })
+                  .map((root) => root.dataset.sessionId ?? ""),
+              },
               sessionState: {
                 firstFoldReady: candidate?.dataset.sessionFirstFoldReady,
                 messagesReady: candidate?.dataset.sessionMessagesReady,
@@ -417,6 +435,40 @@ export async function measureSessionActivation(
               surface.hasAttribute("inert")
             )
               return undefined;
+            // Left/right sync: the rail's selected row and the painted session
+            // root must agree on this activation. A draft or previous session
+            // still owning the pane while another row looks selected is a fail.
+            const activeRows = [
+              ...document.querySelectorAll<HTMLElement>(
+                '[data-testid="rail-sidebar-session-row"][data-active="true"]',
+              ),
+            ];
+            const activeIds = activeRows.map((row) => row.dataset.sessionId ?? "");
+            if (activeIds.length !== 1 || activeIds[0] !== id) return undefined;
+            const visibleSessionRoots = [
+              ...document.querySelectorAll<HTMLElement>("[data-testid='session-page-root']"),
+            ].filter((root) => {
+              const host = root.closest<HTMLElement>("[data-workbench-content]");
+              if (!host || host.getAttribute("aria-hidden") === "true" || host.hasAttribute("inert")) {
+                return false;
+              }
+              const style = getComputedStyle(root);
+              const bounds = root.getBoundingClientRect();
+              return (
+                style.display !== "none" &&
+                style.visibility !== "hidden" &&
+                Number(style.opacity) !== 0 &&
+                bounds.width > 0 &&
+                bounds.height > 0
+              );
+            });
+            if (
+              visibleSessionRoots.length !== 1 ||
+              visibleSessionRoots[0]?.dataset.sessionId !== id ||
+              visibleSessionRoots.some((root) => root.dataset.sessionId === "new")
+            ) {
+              return undefined;
+            }
             const composer = candidate.querySelector<HTMLElement>(
               '[data-component="prompt-input"]',
             );

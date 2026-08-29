@@ -75,6 +75,7 @@ export type MaterializedSession = {
   workspaceId: string
   title: string
   createdAt: number
+  updatedAt: number
 }
 
 export type ClaxedoPublicMaterialization = {
@@ -156,10 +157,21 @@ export async function materializeClaxedoPublicCorpus(input: {
           "[]",
         )
     }
+    // Serial titles + created stamps are per-workspace, not global corpus index.
+    // A global index left workspace-a as 53…42 then a gap to 21…1 under created_desc.
+    const workspaceSessionOrdinal = new Map<string, number>()
     for (const session of manifest.sessions) {
       const workspace = workspaces.get(session.workspaceId)
       if (!workspace) throw new Error(`Claxedo has no workspace for ${session.logicalSessionId}`)
-      const parsed = await materializeSession({ database, corpusDirectory: input.corpusDirectory, session, workspace })
+      const listIndex = workspaceSessionOrdinal.get(session.workspaceId) ?? 0
+      workspaceSessionOrdinal.set(session.workspaceId, listIndex + 1)
+      const parsed = await materializeSession({
+        database,
+        corpusDirectory: input.corpusDirectory,
+        session,
+        workspace,
+        sessionIndex: listIndex,
+      })
       readinessTargets.set(session.logicalSessionId, parsed.readinessTarget)
       materializedSessions.push(parsed.session)
       expectedMessageCount += parsed.messageCount
@@ -214,6 +226,7 @@ async function materializeSession(input: {
   corpusDirectory: string
   session: ManifestSession
   workspace: Workspace
+  sessionIndex: number
 }) {
   const root = path.resolve(input.corpusDirectory)
   const file = path.resolve(root, input.session.file)
@@ -239,6 +252,12 @@ async function materializeSession(input: {
       sessionInfo = event.data.info as SessionInfo
       if (sessionInfo.id !== input.session.nativeSessionId)
         throw new Error("Claxedo received the wrong native session id")
+      // Authoritative display identity for the rail/page: per-workspace serial +
+      // recent staggered times. Applied after corpus file digest verification.
+      // created_desc then shows contiguous N…1 top→bottom inside one workspace.
+      const displayTitle = distinctSyntheticSessionTitle(sessionInfo.title, input.sessionIndex, input.session.logicalSessionId)
+      const displayCreated = distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, input.sessionIndex)
+      const displayUpdated = distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS + 100, input.sessionIndex)
       input.database
         .prepare(
           "INSERT INTO session (id, project_id, slug, directory, title, version, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)",
@@ -248,11 +267,16 @@ async function materializeSession(input: {
           input.workspace.projectId,
           sessionInfo.slug,
           input.workspace.directory,
-          sessionInfo.title,
+          displayTitle,
           sessionInfo.version,
-          sessionInfo.time.created,
-          sessionInfo.time.updated,
+          displayCreated,
+          displayUpdated,
         )
+      sessionInfo = {
+        ...sessionInfo,
+        title: displayTitle,
+        time: { ...sessionInfo.time, created: displayCreated, updated: displayUpdated },
+      }
     } else if (event.type === "message.updated.1") {
       if (!sessionInfo) throw new Error("Claxedo received a message before its session")
       const info = event.data.info as MessageInfo
@@ -319,6 +343,7 @@ async function materializeSession(input: {
       workspaceId: input.session.workspaceId,
       title: sessionInfo.title,
       createdAt: sessionInfo.time.created,
+      updatedAt: sessionInfo.time.updated,
     },
     readinessTarget: {
       logicalSessionId: input.session.logicalSessionId,
@@ -348,6 +373,43 @@ function partPayloadBytes(part: CanonicalPart): number {
 
 function normalizeSemanticText(value: string): string {
   return value.trim().replace(/\s+/gu, " ")
+}
+
+/**
+ * Recent base so rail relative labels are hours/days, not "2y" from 2023 corpus
+ * event stamps. Index offsets still decide created_desc order.
+ */
+export const SYNTHETIC_SESSION_TIME_BASE_MS = Date.UTC(2026, 7, 28, 12, 0, 0)
+
+/** Strip any prior serial and prefix the per-workspace 1-based list rank. */
+export function distinctSyntheticSessionTitle(title: string, sessionIndex: number, logicalSessionId: string) {
+  const stripped = title.trim().replace(/^\d+\.\s+/u, "")
+  const stem = stripped || `Synthetic benchmark ${logicalSessionId}`
+  return `${sessionIndex + 1}. ${stem}`
+}
+
+/** Distinct created times so created_desc order matches serial titles top→bottom. */
+export function distinctSyntheticSessionCreatedAt(createdAt: number, sessionIndex: number) {
+  return createdAt + (sessionIndex + 1) * 60_000
+}
+
+/** Guarantee updated_desc order even when corpus stamps identical updated times. */
+export function distinctSyntheticSessionUpdatedAt(updatedAt: number, sessionIndex: number) {
+  return updatedAt + (sessionIndex + 1) * 60_000
+}
+
+/** Contiguous per-workspace ranks for created_desc: newest/top = highest serial. */
+export function workspaceListRanks(
+  sessions: readonly { workspaceId: string; logicalSessionId: string }[],
+): Map<string, number> {
+  const ranks = new Map<string, number>()
+  const ordinal = new Map<string, number>()
+  for (const session of sessions) {
+    const listIndex = ordinal.get(session.workspaceId) ?? 0
+    ordinal.set(session.workspaceId, listIndex + 1)
+    ranks.set(session.logicalSessionId, listIndex)
+  }
+  return ranks
 }
 
 function verifyRequestedWorkspaceFixture(input: {
@@ -520,6 +582,7 @@ export async function registerSessionInventory(input: {
         title: string
         agentSessionId: string
         createdAt: number
+        updatedAt?: number
       }): void
       updateSessionConfig(
         id: string,
@@ -543,6 +606,7 @@ export async function registerSessionInventory(input: {
           title: session.title,
           agentSessionId: session.nativeSessionId,
           createdAt: session.createdAt,
+          updatedAt: session.updatedAt,
         })
         store.updateSessionConfig(
           session.nativeSessionId,
@@ -573,6 +637,8 @@ export async function seedSessionMeta(input: {
         directory: string
         host: "workspace"
         title: string
+        createdAt?: number
+        updatedAt?: number
       },
     ): Promise<unknown>
   }
@@ -586,6 +652,8 @@ export async function seedSessionMeta(input: {
         directory: workspace.directory,
         host: "workspace",
         title: session.title,
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
       })
     }
   })

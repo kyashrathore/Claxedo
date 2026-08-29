@@ -127,7 +127,7 @@ describe("Claxedo agent-app corpus materializer", () => {
       expect(result.readinessTargets).toEqual([
         {
           sessionId,
-          title: "Fixture",
+          title: "1. Fixture",
           expectedMessageIds: [
             expect.stringMatching(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/),
           ],
@@ -136,6 +136,9 @@ describe("Claxedo agent-app corpus materializer", () => {
           expectedPartIds: expect.any(Array),
         },
       ]);
+      expect(
+        (database.query("SELECT title FROM session WHERE id = ?").get(sessionId) as { title: string }).title,
+      ).toBe("1. Fixture");
       const chronologicalMessageIds = database
         .query("SELECT id FROM message ORDER BY time_created ASC, id ASC")
         .all()

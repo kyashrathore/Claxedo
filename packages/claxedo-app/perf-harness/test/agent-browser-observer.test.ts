@@ -115,7 +115,7 @@ describe("agent browser scenario ordering", () => {
     expect(first).not.toEqual(Array.from({ length: 20 }, (_, index) => `session-${index}`))
   })
 
-  test("warms every work item before a seeded measured pass of real switches", () => {
+  test("warms every work item then measures top→bottom rail order", () => {
     const targets = Array.from({ length: 20 }, (_, index) => ({
       sessionId: `session-${index}`,
       title: `Session ${index}`,
@@ -124,10 +124,7 @@ describe("agent browser scenario ordering", () => {
     const plan = warmSwitchPlan(targets, 42)
 
     expect(plan.warmup).toEqual(targets)
-    expect(plan.measured).toHaveLength(20)
-    expect(plan.measured.map((target) => target.sessionId).toSorted()).toEqual(
-      targets.map((target) => target.sessionId).toSorted(),
-    )
+    expect(plan.measured).toEqual(targets)
     expect(plan.measured[0]?.sessionId).not.toBe(plan.warmup.at(-1)?.sessionId)
   })
 })

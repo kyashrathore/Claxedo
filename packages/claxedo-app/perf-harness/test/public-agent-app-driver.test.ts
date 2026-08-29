@@ -248,7 +248,7 @@ describe("Claxedo public driver", () => {
     expect(navigationExecutions[0]?.preset).toEqual(panelScenarioDefinition.cases.panelLoads[1])
   })
 
-  test("routes an adjacent first-visit and first return as one navigation pair", async () => {
+  test("allows return after a prior first-visit even when other first-visits intervene", async () => {
     const { driver, navigationExecutions } = harness()
     await driver.prepare({
       scenarioId: "session-navigation-v1",
@@ -273,27 +273,36 @@ describe("Claxedo public driver", () => {
       trend: "history-size" as const,
       transcriptBytes: 1_048_576,
       sourceSessionId: "source",
-      destinationSessionId: "destination",
     }
-    const first = await driver.execute({
+    await driver.execute({
       scenarioId: "session-navigation-v1",
-      case: { ...common, caseId: "first", navigationType: "first-visit" },
+      case: { ...common, caseId: "first-a", navigationType: "first-visit", destinationSessionId: "destination" },
+    })
+    await driver.execute({
+      scenarioId: "session-navigation-v1",
+      case: {
+        ...common,
+        caseId: "first-b",
+        navigationType: "first-visit",
+        destinationSessionId: "within-workspace-warm-1048576",
+        transcriptBytes: 2_097_152,
+      },
     })
     const returned = await driver.execute({
       scenarioId: "session-navigation-v1",
-      case: { ...common, caseId: "return", navigationType: "return-visited-panel-closed" },
+      case: { ...common, caseId: "return-a", navigationType: "return-visited-panel-closed", destinationSessionId: "destination" },
     })
 
     expect(navigationExecutions.map((item) =>
       (item.benchmarkCase as { navigationType: string }).navigationType)).toEqual([
       "first-visit",
+      "first-visit",
       "return-visited-panel-closed",
     ])
-    expect(first.timingEvidence).toEqual({ trustedInputAt: 20, trustedInputEvent: "pointerdown" })
     expect(returned.timingEvidence).toEqual({ trustedInputAt: 20, trustedInputEvent: "pointerdown" })
   })
 
-  test("rejects a return that is not adjacent to its matching first visit", async () => {
+  test("rejects a return without a prior first-visit in this process", async () => {
     const { driver, navigationExecutions } = harness()
     await driver.prepare({
       scenarioId: "session-navigation-v1",
@@ -324,7 +333,7 @@ describe("Claxedo public driver", () => {
         sourceSessionId: "source",
         destinationSessionId: "destination",
       },
-    })).rejects.toThrow("immediately follow its matching first-visit case")
+    })).rejects.toThrow("prior first-visit of the destination in this process")
     expect(navigationExecutions).toHaveLength(0)
   })
 

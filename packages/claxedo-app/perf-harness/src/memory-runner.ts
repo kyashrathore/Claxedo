@@ -262,8 +262,9 @@ export function memorySamplesStable(samples: readonly MemorySample[]) {
 }
 
 export function memoryVisitOrder<T>(sessions: readonly T[]) {
-  if (sessions.length < 2) return [...sessions]
-  return [...sessions.slice(1), sessions[0]!]
+  // Caller supplies rail / created_desc order; click top→bottom without rotating
+  // the first row to the end (that looked like random jumping in headed runs).
+  return [...sessions]
 }
 
 export function needsFinalMemorySample(samples: readonly Pick<MemorySample, "step">[], finalStep: number) {
