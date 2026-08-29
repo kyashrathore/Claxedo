@@ -3,26 +3,19 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { api, authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { api, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { createIntegrationsRequest } from "@/platform/account/integrations-request"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
 import { DialogConnectIntegration, useClaxedoEvents } from "@/features/workspaces/app-ports"
-import { workspaceCreateUrl, workspaceSandboxDriversUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
+import { workspaceSandboxDriversUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
 import { sandboxProviderFacts } from "./provider-facts"
 import { loadRepositoryPickerState, type IntegrationChoice, type RepositoryChoice } from "./repository-picker"
 
 type DialogCreateCloudProjectProps = {
   onSelect: (result: string | string[] | null) => void
-}
-
-interface CreateWorkspaceResult {
-  workspaceId: string
-  projectId?: string
-  directory?: string
-  workspaceBaseUrl?: string
-  provider?: string
-  kind?: string
-  status?: string
 }
 
 function controlPlaneBaseUrl(baseUrl: string) {
@@ -34,20 +27,19 @@ async function createCloudProject(
   provider: string,
   name: string,
   source: { repoUrl: string } | { connectionId: string; repo: { fullName: string } },
-): Promise<CreateWorkspaceResult> {
-  return api.post<CreateWorkspaceResult>(
-    workspaceCreateUrl({ baseUrl }),
-    {
-      // Omitted rather than sent empty when this control plane exposes no
-      // driver choice: the hosted create route accepts `driver` and ignores it
-      // (it composes ONE driver from env), so an absent field is the honest
-      // shape for "the server picks".
-      ...(provider ? { driver: provider } : {}),
-      projectName: name,
-      workspaceName: "main",
-      ...source,
-    },
-  )
+) {
+  return createCloudWorkspace({
+    baseUrl,
+    // Omitted rather than sent empty when this control plane exposes no
+    // driver choice: the hosted create route accepts `driver` and ignores it
+    // (it composes ONE driver from env), so an absent field is the honest
+    // shape for "the server picks". Desktop AccountPort strips undeclared
+    // fields; browser local create still forwards `driver`.
+    ...(provider ? { driver: provider } : {}),
+    projectName: name,
+    workspaceName: "main",
+    ...source,
+  })
 }
 
 // Wire shape of `GET /api/workspace/drivers` (see `listSandboxDrivers` in
@@ -142,10 +134,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
     void loadRepositories()
   })
 
-  const integrationsRequest = (path: string, init?: RequestInit) => authFetch(
-    new URL(`/api/claxedo/integrations${path}`, controlPlaneBaseUrl(baseUrl)).toString(),
-    init,
-  )
+  const integrationsRequest = createIntegrationsRequest(controlPlaneBaseUrl(baseUrl))
 
   const loadRepositories = () => loadRepositoryPickerState(integrationsRequest)
     .then((state) => {
@@ -284,9 +273,11 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       unsub = events.on("provision", (ev) => appendProvision(ev, created.directory!))
       onCleanup(unsub)
       for (const ev of buffered) appendProvision(ev, created.directory)
-      const current = await api
-        .get<{ status?: string | null }>(workspaceResolveUrl({ baseUrl, workspaceId }))
-        .catch(() => undefined)
+      const current = await hostedControlCall<{ status?: string | null } | null>(
+        "workspace.resolve",
+        { workspaceId },
+        () => api.get<{ status?: string | null }>(workspaceResolveUrl({ baseUrl, workspaceId })),
+      ).catch(() => undefined)
       const status = current?.status ?? created.status
       if (isProvisionStep(status)) {
         appendProvision({

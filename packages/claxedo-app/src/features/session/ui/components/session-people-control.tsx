@@ -89,7 +89,7 @@ export const SessionPeopleControl: Component<{
             onChange={(event) => setTeamPublicId(event.currentTarget.value)}
           >
             <option value="">Share with team…</option>
-            <For each={teams() ?? []}>
+            <For each={teams.error ? [] : (teams() ?? [])}>
               {(team) => <option value={team.team_id}>{team.name}</option>}
             </For>
           </select>
@@ -118,7 +118,14 @@ export const SessionPeopleControl: Component<{
             Add team
           </Button>
         </div>
-        <Show when={shares()}>
+        <Show when={shares.error}>
+          {(error) => (
+            <p class="text-12-regular text-text-weak">
+              {error() instanceof Error ? error().message : String(error())}
+            </p>
+          )}
+        </Show>
+        <Show when={shares.state === "ready" || shares.state === "refreshing" ? shares.latest : undefined}>
           {(data) => (
             <div class="flex flex-col gap-1 max-h-40 overflow-auto">
               <For each={data().participants}>

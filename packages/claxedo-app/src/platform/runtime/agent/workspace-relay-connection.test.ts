@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
 import {
@@ -17,6 +17,7 @@ afterEach(() => {
   queryClient.clear()
   resetApiRuntime()
   setWorkspaceConnectionObserver(undefined)
+  delete (globalThis as { api?: unknown }).api
 })
 
 function token(jti: string, payload: Record<string, unknown> = {}) {
@@ -678,5 +679,63 @@ describe("workspace relay connection", () => {
       url: "wss://relay.example.test/workspaces/ws_1/api/wr/pty/pty_1/connect",
       protocols: [runtimeAccessTokenProtocol(token("new")), "pty.v1"],
     }])
+  })
+
+  test("desktop signed mode mints and refreshes through AccountPort", async () => {
+    const run = mock(async (operation: string, input?: Record<string, unknown>) => {
+      if (operation === "workspace.connection.mint") {
+        expect(input).toEqual({ id: "ws_account" })
+        return connection({ workspaceId: "ws_account", runtimeAccessToken: token("jti_mint") })
+      }
+      if (operation === "workspace.connection.refresh") {
+        expect(input).toEqual({ id: "ws_account", previousJti: "jti_mint" })
+        return connection({ workspaceId: "ws_account", runtimeAccessToken: token("jti_refresh") })
+      }
+      throw new Error(`unexpected operation ${operation}`)
+    })
+    ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
+      account: {
+        run,
+        state: async () => ({ status: "signed" }),
+        onState: () => () => undefined,
+        signIn: async () => ({ status: "signed" }),
+        signOut: async () => ({ status: "unsigned" }),
+      },
+    }
+
+    const opened = await openWorkspaceConnection("ws_account", {
+      serverUrl: "http://server.test",
+    })
+    expect(opened.workspaceId).toBe("ws_account")
+    expect(runtimeAccessTokenJti(opened.runtimeAccessToken)).toBe("jti_mint")
+
+    const refreshed = await refreshWorkspaceConnection(opened, {
+      serverUrl: "http://server.test",
+    })
+    expect(runtimeAccessTokenJti(refreshed.runtimeAccessToken)).toBe("jti_refresh")
+    expect(run).toHaveBeenCalledTimes(2)
+  })
+
+  test("options.request override bypasses AccountPort", async () => {
+    const run = mock(async () => {
+      throw new Error("AccountPort should not run when request is overridden")
+    })
+    ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
+      account: {
+        run,
+        state: async () => ({ status: "signed" }),
+        onState: () => () => undefined,
+        signIn: async () => ({ status: "signed" }),
+        signOut: async () => ({ status: "unsigned" }),
+      },
+    }
+
+    const result = await openWorkspaceConnection("ws_override", {
+      serverUrl: "http://server.test",
+      request: (async () => Response.json(connection({ workspaceId: "ws_override" }))) as typeof fetch,
+    })
+
+    expect(result.workspaceId).toBe("ws_override")
+    expect(run).not.toHaveBeenCalled()
   })
 })

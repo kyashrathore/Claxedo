@@ -1,4 +1,5 @@
 import { authFetch } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
 
 export type OrgListItem = {
   org_id: string
@@ -53,40 +54,80 @@ async function json<T>(res: Response): Promise<T> {
   return await res.json() as T
 }
 
+/**
+ * Desktop signed mode: renderer has no bearer. Named AccountPort ops reach the
+ * hosted control plane through Electron main. Browser signed mode keeps
+ * authFetch against `VITE_CLAXEDO_SERVER_URL`.
+ */
+
 export async function listOrgs() {
-  return json<OrgListItem[]>(await authFetch("/api/control/orgs"))
+  return hostedControlCall(
+    "org.list",
+    {},
+    async () => json<OrgListItem[]>(await authFetch("/api/control/orgs")),
+  )
 }
 
 export async function createOrg(name: string) {
-  return json<{ org_id: string; name: string; default_team_id?: string }>(await authFetch("/api/control/orgs", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name }),
-  }))
+  return hostedControlCall(
+    "org.create",
+    { name },
+    async () => json<{ org_id: string; name: string; default_team_id?: string }>(
+      await authFetch("/api/control/orgs", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      }),
+    ),
+  )
 }
 
 export async function listTeams(orgId: string) {
-  return json<TeamListItem[]>(await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/teams`))
+  return hostedControlCall(
+    "org.teams.list",
+    { orgId },
+    async () => json<TeamListItem[]>(
+      await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/teams`),
+    ),
+  )
 }
 
 export async function createTeam(orgId: string, name: string) {
-  return json<{ team_id: string; name: string }>(await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/teams`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name }),
-  }))
+  return hostedControlCall(
+    "org.teams.create",
+    { orgId, name },
+    async () => json<{ team_id: string; name: string }>(
+      await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/teams`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name }),
+      }),
+    ),
+  )
 }
 
 export async function ensureDefaultTeam(orgId: string) {
-  return json<unknown>(await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/ensure-default-team`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: "{}",
-  }))
+  return hostedControlCall(
+    "org.ensureDefaultTeam",
+    { orgId },
+    async () => json<unknown>(
+      await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/ensure-default-team`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      }),
+    ),
+  )
 }
 
 export async function listTeamMembers(teamId: string) {
-  return json<TeamMember[]>(await authFetch(`/api/control/teams/${encodeURIComponent(teamId)}/members`))
+  return hostedControlCall(
+    "team.members.list",
+    { teamId },
+    async () => json<TeamMember[]>(
+      await authFetch(`/api/control/teams/${encodeURIComponent(teamId)}/members`),
+    ),
+  )
 }
 
 export async function addTeamMember(input: {
@@ -96,16 +137,26 @@ export async function addTeamMember(input: {
   userPublicId?: string
   role?: "member" | "admin" | "owner"
 }) {
-  return json<unknown>(await authFetch(`/api/control/teams/${encodeURIComponent(input.teamId)}/members`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
+  return hostedControlCall(
+    "team.members.add",
+    {
+      teamId: input.teamId,
       ...(input.tokenIdentifier ? { tokenIdentifier: input.tokenIdentifier } : {}),
       ...(input.clerkSubject ? { clerkSubject: input.clerkSubject } : {}),
       ...(input.userPublicId ? { userPublicId: input.userPublicId } : {}),
       ...(input.role ? { role: input.role } : {}),
-    }),
-  }))
+    },
+    async () => json<unknown>(await authFetch(`/api/control/teams/${encodeURIComponent(input.teamId)}/members`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...(input.tokenIdentifier ? { tokenIdentifier: input.tokenIdentifier } : {}),
+        ...(input.clerkSubject ? { clerkSubject: input.clerkSubject } : {}),
+        ...(input.userPublicId ? { userPublicId: input.userPublicId } : {}),
+        ...(input.role ? { role: input.role } : {}),
+      }),
+    })),
+  )
 }
 
 export async function removeTeamMember(input: {
@@ -113,14 +164,22 @@ export async function removeTeamMember(input: {
   tokenIdentifier?: string
   userPublicId?: string
 }) {
-  return json<unknown>(await authFetch(`/api/control/teams/${encodeURIComponent(input.teamId)}/members`, {
-    method: "DELETE",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
+  return hostedControlCall(
+    "team.members.remove",
+    {
+      teamId: input.teamId,
       ...(input.tokenIdentifier ? { tokenIdentifier: input.tokenIdentifier } : {}),
       ...(input.userPublicId ? { userPublicId: input.userPublicId } : {}),
-    }),
-  }))
+    },
+    async () => json<unknown>(await authFetch(`/api/control/teams/${encodeURIComponent(input.teamId)}/members`, {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        ...(input.tokenIdentifier ? { tokenIdentifier: input.tokenIdentifier } : {}),
+        ...(input.userPublicId ? { userPublicId: input.userPublicId } : {}),
+      }),
+    })),
+  )
 }
 
 export async function grantTeamProject(input: {
@@ -128,9 +187,17 @@ export async function grantTeamProject(input: {
   projectId: string
   role: "viewer" | "editor" | "admin"
 }) {
-  return json<unknown>(await authFetch(`/api/control/teams/${encodeURIComponent(input.teamId)}/projects`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ projectId: input.projectId, role: input.role }),
-  }))
+  return hostedControlCall(
+    "team.projects.grant",
+    {
+      teamId: input.teamId,
+      projectId: input.projectId,
+      role: input.role,
+    },
+    async () => json<unknown>(await authFetch(`/api/control/teams/${encodeURIComponent(input.teamId)}/projects`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ projectId: input.projectId, role: input.role }),
+    })),
+  )
 }

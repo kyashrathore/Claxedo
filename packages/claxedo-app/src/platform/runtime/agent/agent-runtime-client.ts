@@ -9,6 +9,7 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
+import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import { runtimeRequestError } from "./agent-runtime-request-error"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
@@ -187,7 +188,7 @@ export function createAgentRuntimeClient(options: {
   workspaceKind?: "cloud" | "user-hosted"; workspaceReachable?: boolean
   opencodeClient?: AgentRuntimeOpenCodeClient
 } = {}) {
-  const request = options.request ?? authFetch
+  const request = options.request ?? createControlPlaneAccountFetch(authFetch)
   const signed = options.signedControlPlane === true
   const serverUrl = () => options.serverUrl?.trim() || undefined
 

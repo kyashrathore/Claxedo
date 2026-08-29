@@ -8,6 +8,8 @@ import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { accountRun } from "@/platform/account/hosted-control-call"
+import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { controlSessionListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { applySessionFilter, type SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
@@ -399,6 +401,18 @@ export function createSignedInventorySource(input: {
     return await input.queryClient.fetchQuery({
       queryKey: ["shell", "control-plane-sessions", input.baseUrl(), workspaceId] as const,
       queryFn: async () => {
+        const run = accountRun()
+        if (run) {
+          try {
+            const body = decodeHostedResult<{ sessions: unknown[] }>(
+              "session.list",
+              await run("session.list", { workspaceId }),
+            )
+            return Array.isArray(body.sessions) ? body.sessions : []
+          } catch {
+            return [] as unknown[]
+          }
+        }
         const res = await input.authFetch(controlSessionListUrl({
           baseUrl: inventoryServerUrl(input.baseUrl()),
           workspaceId,
@@ -442,6 +456,19 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchControlPlaneWorkspaces(access: SignedWorkspaceKind) {
+    const run = accountRun()
+    if (run) {
+      const operation = access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
+      try {
+        const body = decodeHostedResult<{ workspaces: unknown[] }>(
+          operation,
+          await run(operation, {}),
+        )
+        return Array.isArray(body.workspaces) ? body.workspaces : []
+      } catch {
+        return []
+      }
+    }
     const res = await input.authFetch(controlWorkspaceListUrl({
       serverUrl: input.baseUrl(),
       access,

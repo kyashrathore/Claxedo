@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import {
   sessionNavigationListUrl,
   type ControlSessionNavigationListQuery,
@@ -112,13 +113,9 @@ export function sessionListRequest(input: {
   request?: typeof fetch
 }) {
   if (input.request) return input.request
-  // The hosted web entry can deliberately point at a loopback control-plane
-  // fixture (and desktop does the same with its owned server). URL locality
-  // therefore does not determine whether the request needs the credential
-  // installed by the composition root. authFetch is also the canonical local
-  // transport: with no bearer configured it falls through to fetch, while a
-  // configured desktop password is attached as Basic auth.
-  return authFetch
+  // Signed desktop: AccountPort via control-plane adapter. Browser / unsigned:
+  // authFetch (bearer or Basic, or plain fetch when neither is configured).
+  return createControlPlaneAccountFetch(authFetch)
 }
 
 export function sessionListQueryOptions(input: {

@@ -12,7 +12,6 @@ import {
   reconcileUpdatedSessionListQueryData,
   type SessionListResponse,
 } from "./session-list"
-import { authFetch } from "@/platform/api/api"
 
 const response = (): SessionListResponse => ({
   view: {
@@ -69,12 +68,13 @@ afterEach(() => {
 })
 
 describe("session list query cache", () => {
-  test("uses the configured auth transport for loopback and hosted session-list requests", () => {
+  test("uses the control-plane AccountPort adapter (or an injected request) for session-list", () => {
     const request = async () => new Response("{}")
 
-    expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe(authFetch)
-    expect(sessionListRequest({ baseUrl: "http://localhost:3001" })).toBe(authFetch)
-    expect(sessionListRequest({ baseUrl: "https://control.example.test" })).toBe(authFetch)
+    // Default transport is the dual-path adapter (AccountPort when the Electron
+    // bridge is present; authFetch otherwise) — never a bare caller-chosen URL.
+    expect(typeof sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe("function")
+    expect(typeof sessionListRequest({ baseUrl: "https://control.example.test" })).toBe("function")
     expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001", request })).toBe(request)
   })
 

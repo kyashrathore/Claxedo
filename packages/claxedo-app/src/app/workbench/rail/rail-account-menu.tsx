@@ -1,5 +1,6 @@
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Spinner } from "@opencode-ai/ui/spinner"
 import { Show, createContext, createMemo, createSignal, onCleanup, useContext, type JSX } from "solid-js"
 
 import { useConfigOptional } from "@/app/providers/config"
@@ -120,18 +121,19 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
   const user = createMemo(() => auth.user() as AuthDisplayUser | undefined)
   const accountState = createMemo(() => account.state())
   const signed = createMemo(() => accountState().status === "signed")
+  const pending = createMemo(() => accountState().status === "pending")
   const productUi = createMemo(() => resolveProductUiFlags(config))
   const hostedAccount = createMemo(() => config?.authEnabled === true || config?.loadHostedContributions !== undefined)
   const showSignIn = createMemo(
-    () => productUi().accountSignIn && hostedAccount() && accountState().status !== "pending" && !signed(),
+    () => productUi().accountSignIn && hostedAccount() && !pending() && !signed(),
   )
-  const local = createMemo(() => accountState().status !== "pending" && !signed() && !showSignIn())
+  const local = createMemo(() => !pending() && !signed() && !showSignIn())
   const label = createMemo(() => {
     const state = accountState()
     if (state.status === "signed") {
       return state.identity.displayName ?? state.identity.email ?? language.t("settings.general.section.account")
     }
-    if (state.status === "pending") return language.t("settings.general.section.account")
+    if (pending()) return "Signing in…"
     return showSignIn() ? "Sign in" : "Local workspace"
   })
   const image = createMemo(() => signed() && auth.status() === "signed" ? user()?.imageUrl ?? undefined : undefined)
@@ -175,20 +177,29 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
         data-testid="rail-account-trigger"
       >
         <Show
-          when={signed()}
+          when={pending()}
           fallback={
-            <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
-              <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
-            </span>
+            <Show
+              when={signed()}
+              fallback={
+                <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
+                  <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
+                </span>
+              }
+            >
+              <Avatar
+                fallback={label()}
+                src={image()}
+                size="small"
+                class="shrink-0"
+                aria-hidden="true"
+              />
+            </Show>
           }
         >
-          <Avatar
-            fallback={label()}
-            src={image()}
-            size="small"
-            class="shrink-0"
-            aria-hidden="true"
-          />
+          <span class="flex size-7 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base" aria-hidden="true">
+            <Spinner class="size-3.5" />
+          </span>
         </Show>
         <span data-slot="rail-account-label" class="min-w-0 flex-1 truncate text-13-medium">
           {label()}
@@ -207,14 +218,23 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
           */}
           <div class="flex items-center gap-2 px-2 py-1" aria-hidden="true">
             <Show
-              when={signed()}
+              when={pending()}
               fallback={
-                <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base">
-                  <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
-                </span>
+                <Show
+                  when={signed()}
+                  fallback={
+                    <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base">
+                      <Icon name={local() ? "laptop" : "arrow-right"} size="small" />
+                    </span>
+                  }
+                >
+                  <Avatar fallback={label()} src={image()} size="small" class="shrink-0" />
+                </Show>
               }
             >
-              <Avatar fallback={label()} src={image()} size="small" class="shrink-0" />
+              <span class="flex size-5 shrink-0 items-center justify-center rounded-full bg-surface-inset-base text-icon-base">
+                <Spinner class="size-3" />
+              </span>
             </Show>
             <span class="min-w-0 flex-1 truncate text-13-medium text-text-strong" title={label()}>{label()}</span>
           </div>
@@ -252,6 +272,20 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
               <DropdownMenu.ItemLabel>{language.t("sidebar.help")}</DropdownMenu.ItemLabel>
             </DropdownMenu.Item>
           </DropdownMenu.Group>
+
+          <Show when={pending()}>
+            <DropdownMenu.Item
+              onSelect={() => {
+                // Cancels the in-flight OAuth attempt (era bump + flow.abort)
+                // and restores unsigned so Sign in is available again.
+                void account.signOut()
+                changeOpen(false)
+              }}
+            >
+              <Icon name="circle-ban-sign" size="small" />
+              <DropdownMenu.ItemLabel>Cancel sign in</DropdownMenu.ItemLabel>
+            </DropdownMenu.Item>
+          </Show>
 
           <Show when={authAction()}>
             <DropdownMenu.Item

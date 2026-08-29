@@ -205,6 +205,25 @@ describe("RailAccountMenu", () => {
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
   })
 
+  test("shows Signing in with a spinner and Cancel while pending", async () => {
+    state.status = "loading"
+    state.accountStatus = "pending"
+    state.accountSignInEnabled = true
+    state.hostedCapable = true
+    state.user = {}
+    state.platform = "desktop"
+    const props = renderMenu()
+
+    await openMenu("Signing in…")
+    expect(document.querySelector('[data-component="spinner"]')).toBeTruthy()
+    expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
+    expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
+
+    selectMenuItem("Cancel sign in")
+    await waitFor(() => expect(state.signOut).toHaveBeenCalledOnce())
+    expect(props.onRailLockChange).toHaveBeenLastCalledWith(false)
+  })
+
   test("keeps non-auth actions available while auth is loading", async () => {
     state.status = "loading"
     state.accountStatus = "pending"
@@ -213,12 +232,26 @@ describe("RailAccountMenu", () => {
     state.platform = "desktop"
     const props = renderMenu()
 
-    await openMenu("Account")
+    await openMenu("Signing in…")
     selectMenuItem("Diagnostics")
 
     expect(props.onDiagnostics).toHaveBeenCalledOnce()
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
     expect(screen.queryByRole("menuitem", { name: "Log out" })).toBeNull()
+  })
+
+  test("offers Sign in again after an unavailable callback failure", async () => {
+    state.status = "anonymous"
+    state.accountStatus = "unavailable"
+    state.accountSignInEnabled = true
+    state.hostedCapable = true
+    state.platform = "desktop"
+    state.user = {}
+    renderMenu()
+
+    await openMenu("Sign in")
+    selectMenuItem("Sign in")
+    await waitFor(() => expect(state.signIn).toHaveBeenCalledWith())
   })
 
   test("hides diagnostics in hosted cloud web and keeps it in the desktop app", async () => {

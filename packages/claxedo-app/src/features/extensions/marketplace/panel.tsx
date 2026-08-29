@@ -4,7 +4,9 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { requestMarketplaceConfirm } from "./confirm-dialog"
 import { mcpExtensionUrl } from "./api"
-import { getClaxedoServerUrl } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { accountRun } from "@/platform/account/hosted-control-call"
+import { createAgentConfigAccountFetch } from "@/platform/account/agent-config-account-fetch"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import {
   applyDiscoveredState,
@@ -47,10 +49,12 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   // URL helper instead, which respects VITE_CLAXEDO_SERVER_URL and
   // falls back to the local Claxedo server.
   const apiBase = () => getClaxedoServerUrl()
-  const fetchFn = props.request ?? globalThis.fetch
+  const fetchFn = props.request
+    ?? (accountRun() ? createAgentConfigAccountFetch(authFetch, apiBase()) : authFetch)
   // Rubric Q4: replace the URL-shape-inferred `claxedoServerFetch` with an
   // explicit branch on loopback. Loopback Claxedo server bypasses the bearer
-  // (`unsignedLocalFetch`); remote control plane uses the signed fetch.
+  // (`unsignedLocalFetch`); remote control plane uses AccountPort (desktop) or
+  // authFetch (browser).
   const localRequest = (): typeof fetch =>
     centralTransportForServer(apiBase()) === "loopback"
       ? unsignedLocalFetch

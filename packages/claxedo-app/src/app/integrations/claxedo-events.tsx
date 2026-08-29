@@ -15,6 +15,10 @@ import {
 import { createStreamConnectivity } from "../connection/stream-connectivity"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import {
+  accountStreamAvailable,
+  openAccountStreamResponse,
+} from "@/platform/account/account-stream-fetch"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
@@ -384,6 +388,14 @@ export function eventStreamFetch(
   overrides?: { request?: typeof fetch; relayRequest?: typeof fetch },
 ) {
   if (target.kind === "central") {
+    if (!overrides?.request && accountStreamAvailable()) {
+      const lastEventId = new Headers(init.headers).get("Last-Event-ID") ?? undefined
+      return openAccountStreamResponse({
+        operation: "session.events",
+        params: lastEventId ? { lastEventId } : {},
+        signal: init.signal ?? undefined,
+      })
+    }
     return (overrides?.request ?? authFetch)(target.url, init)
   }
   const serverTransport = centralTransportForServer(target.serverUrl)

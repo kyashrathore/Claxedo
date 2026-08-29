@@ -9,7 +9,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { createIntegrationsRequest } from "@/platform/account/integrations-request"
 import {
   DialogConnectIntegration,
   useSettingsSourceViews,
@@ -19,13 +19,11 @@ import {
   createConnectionsStore,
   createSourceViewsStore,
   type ConnectionInfo,
-  type ConnectionsRequest,
   type IntegrationInfo,
 } from "./connections-logic"
 
-/** All UI traffic goes through the authenticated fetch helper, same-origin to the control plane. */
-const integrationsRequest: ConnectionsRequest = (path, init) =>
-  authFetch(new URL(`/api/claxedo/integrations${path}`, getClaxedoServerUrl()).toString(), init)
+/** All UI traffic goes through the dual-path integrations helper. */
+const integrationsRequest = createIntegrationsRequest()
 
 const STATUS_LABEL: Record<ConnectionInfo["status"], string> = {
   connected: "Connected",

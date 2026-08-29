@@ -34,7 +34,7 @@ import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { useConfigOptional } from "@/features/session/app-ports"
-import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
 import {
   recordPromptSubmission,
   resolvePromptDispatchClient,
@@ -293,15 +293,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       onCloudStartup: input.onCloudStartup,
       rememberCloudStartup,
       publishCloudHandoff,
-      createCloudWorkspace: async (projectId) => {
-        const response = await authFetch(workspaceCreateUrl({ baseUrl: getDefaultBaseUrl() }), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, ...(sourceBranch ? { gitBranch: sourceBranch } : {}) }),
-        })
-        if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)
-        return await response.json() as CreateWorkspaceResult
-      },
+      createCloudWorkspace: async (projectId) => createCloudWorkspace({
+        baseUrl: getDefaultBaseUrl(),
+        projectId,
+        ...(sourceBranch ? { gitBranch: sourceBranch } : {}),
+      }),
       createLocalWorktree: (directory) => sdk.client.worktree.create({
         directory,
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),

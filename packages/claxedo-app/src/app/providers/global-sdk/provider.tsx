@@ -11,6 +11,10 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { useServer } from "@/app/connection/server"
 import { authFetch } from "@/platform/api/api"
+import {
+  accountStreamAvailable,
+  openAccountStreamResponse,
+} from "@/platform/account/account-stream-fetch"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
@@ -473,7 +477,25 @@ const globalSDKContextInput = {
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
             const sessionWorkspaceKind = runtimeWorkspaceKind(session.workspaceKind)
             const response = session.host === "central"
-              ? await request(new URL(`/api/control/session/${encodeURIComponent(session.sessionID)}/runtime-events?parentSessionId=${encodeURIComponent(session.sessionID)}`, currentServer.http.url), init)
+              ? (
+                accountStreamAvailable()
+                  ? await openAccountStreamResponse({
+                      operation: "session.runtimeEvents",
+                      params: {
+                        sessionId: session.sessionID,
+                        parentSessionId: session.sessionID,
+                        ...(lastRuntimeEventId ? { lastEventId: lastRuntimeEventId } : {}),
+                      },
+                      signal: runtimeAttempt.signal,
+                    })
+                  : await request(
+                      new URL(
+                        `/api/control/session/${encodeURIComponent(session.sessionID)}/runtime-events?parentSessionId=${encodeURIComponent(session.sessionID)}`,
+                        currentServer.http.url,
+                      ),
+                      init,
+                    )
+              )
               : await createTransport({
               placement: {
                 ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),

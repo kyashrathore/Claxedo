@@ -1,4 +1,6 @@
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -85,6 +87,32 @@ export type WorkspaceRecordScope = {
  * throws, so a transient failure is never cached as a real "no workspace".
  */
 export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
+  // Custom request (tests) keeps the HTTP path. Desktop AccountPort otherwise.
+  if (!input.request) {
+    const workspaceId = input.workspaceId ?? workspaceIdFromRef(input.directory)
+    const params: Record<string, unknown> = {}
+    // Mirror workspaceResolveUrl: directory only when not identified by id.
+    if (input.directory && !workspaceId) params.directory = input.directory
+    if (workspaceId) params.workspaceId = workspaceId
+    if (input.create) params.create = true
+    try {
+      return await hostedControlCall<WorkspaceRuntimeSnapshot | null>(
+        "workspace.resolve",
+        params,
+        async () => fetchWorkspaceRecordHttp(input),
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (/operation "workspace\.resolve" failed: 404\b/.test(message) || /\bfailed: 404\b/.test(message)) {
+        return null
+      }
+      throw err
+    }
+  }
+  return fetchWorkspaceRecordHttp(input)
+}
+
+async function fetchWorkspaceRecordHttp(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
   const baseUrl = normalizeUrl(input.baseUrl) ?? getDefaultBaseUrl()
   const request = input.request ?? authFetch
   const res = await request(

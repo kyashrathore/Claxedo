@@ -36,7 +36,7 @@ import {
   type SetupStepSubmit,
 } from "@/features/onboarding"
 import { workspaceSandboxDriverAuthUrl } from "@/features/settings/ui/sandbox-section-logic"
-import { authFetch } from "@/platform/api/api"
+import { createIntegrationsRequest } from "@/platform/account/integrations-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
 import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
@@ -106,8 +106,7 @@ export function OnboardingEmptyState(props: {
   }))
   // Cloud sessions clone from a repository, so the cloud answer is only usable
   // once an account that owns one is connected.
-  const codeHostRequest: CodeHostRequest = (path, init) =>
-    authFetch(new URL(`/api/claxedo/integrations${path}`, globalSDK.url).toString(), init)
+  const codeHostRequest: CodeHostRequest = createIntegrationsRequest(globalSDK.url)
   const codeHostQuery = useQuery(() => ({
     queryKey: ["claxedo", "onboarding", "code-hosts", server.url] as const,
     queryFn: () => readCodeHostStatus(codeHostRequest),

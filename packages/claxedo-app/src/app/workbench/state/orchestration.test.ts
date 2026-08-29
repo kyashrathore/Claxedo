@@ -520,6 +520,18 @@ describe("state/orchestration", () => {
     expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
+  test("openTerminal isolates pending creators that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_a" })
+    const again = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_a" })
+    const b = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
+  })
+
   test("openPagesIndex is global when directory omitted", () => {
     const { layout, meta } = makeFixture()
     const id = layout.openPagesIndex()
