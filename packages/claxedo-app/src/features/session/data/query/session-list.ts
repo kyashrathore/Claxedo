@@ -14,7 +14,7 @@ export type SessionListResponse = {
   view: {
     scope: SessionListQuery["scope"]
     groupBy: NonNullable<SessionListQuery["groupBy"]>
-    sort: "updated_desc"
+    sort: NonNullable<SessionListQuery["sort"]>
     limit: number
   }
   items?: SessionNavigationRow[]
@@ -59,6 +59,7 @@ function mergeSessionListResponses(input: {
   const items = reorder(
     merged,
     !input.append && input.page.view.sort === "updated_desc",
+    input.page.view.sort,
   )
   return {
     ...input.page,
@@ -249,24 +250,41 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
   })) {
     setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) => {
       if (!response) return response
-      // `updated_desc` is the list's contract, and this reconcile can move a
-      // row's `updatedAt` — so the rows have to be re-ordered, not just
-      // rewritten in place. Without this an auto-titled session stayed at
-      // whatever index it was first inserted at while claiming a brand-new
-      // timestamp: observed live as a 30-second-old "Greeting" sitting at
-      // position 6, below rows 12-29 minutes older than it.
+      // `updated_desc` is the list's contract for surfacing content edits, and
+      // this reconcile can move a row's `updatedAt` — so those rows have to be
+      // re-ordered, not just rewritten in place. Without this an auto-titled
+      // session stayed at whatever index it was first inserted at while
+      // claiming a brand-new timestamp: observed live as a 30-second-old
+      // "Greeting" sitting at position 6, below rows 12-29 minutes older than it.
       //
-      // Guarded on the view's own sort so a list ordered some other way is
-      // left exactly as the server sent it.
-      const sorted = response.view?.sort === "updated_desc"
+      // Guarded on the view's own sort so a list ordered by `created_desc`
+      // (stable on visit) is left exactly as the server sent it. Also skip
+      // reordering when the update did not actually change `updatedAt`.
+      const sort = response.view?.sort
+      const shouldReorder = sort === "updated_desc"
+      const nextItems = response.items
+        ? reconcileUpdatedSessionListRows(response.items, input)
+        : undefined
+      const nextGroups = response.groups
+        ? response.groups.map((group) => ({
+          ...group,
+          items: reconcileUpdatedSessionListRows(group.items, input),
+        }))
+        : undefined
+      const itemsMoved = shouldReorder && nextItems
+        && updatedAtChanged(response.items ?? [], nextItems, input)
+      const groupsMoved = shouldReorder && nextGroups
+        && nextGroups.some((group, index) =>
+          updatedAtChanged(response.groups?.[index]?.items ?? [], group.items, input))
       return {
         ...response,
-        ...(response.items ? { items: reorder(reconcileUpdatedSessionListRows(response.items, input), sorted) } : {}),
-        ...(response.groups ? {
-          groups: response.groups.map((group) => ({
-            ...group,
-            items: reorder(reconcileUpdatedSessionListRows(group.items, input), sorted),
-          })),
+        ...(nextItems ? {
+          items: itemsMoved ? reorder(nextItems, true, sort) : nextItems,
+        } : {}),
+        ...(nextGroups ? {
+          groups: groupsMoved
+            ? nextGroups.map((group) => ({ ...group, items: reorder(group.items, true, sort) }))
+            : nextGroups,
         } : {}),
       }
     })
@@ -279,9 +297,24 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
  * ties keep the server's relative order, so this never reshuffles a list it
  * had no reason to touch.
  */
-function reorder(rows: readonly SessionNavigationRow[], sorted: boolean) {
-  if (!sorted) return rows as SessionNavigationRow[]
+function reorder(
+  rows: readonly SessionNavigationRow[],
+  sorted: boolean,
+  sort: SessionListResponse["view"]["sort"] = "updated_desc",
+) {
+  if (!sorted || sort !== "updated_desc") return rows as SessionNavigationRow[]
   return [...rows].sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0))
+}
+
+function updatedAtChanged(
+  before: readonly SessionNavigationRow[],
+  after: readonly SessionNavigationRow[],
+  input: SessionListUpdate,
+) {
+  const prev = before.find((row) => row.sessionId === input.sessionId && row.directory === input.directory)
+  const next = after.find((row) => row.sessionId === input.sessionId && row.directory === input.directory)
+  if (!prev || !next) return false
+  return (prev.updatedAt ?? 0) !== (next.updatedAt ?? 0)
 }
 
 function reconcileUpdatedSessionListRows(

@@ -42,6 +42,8 @@ export type SessionProjectionStore = {
       archived?: number | null
       tags?: string[]
       attachments?: SessionAttachment[]
+      createdAt?: number
+      updatedAt?: number
     },
   ) => Promise<void>
   delete_session_meta: (sessionID: string) => Promise<void>

@@ -62,6 +62,7 @@ type Bind = {
   parentSessionId?: string
   processKey?: string | null
   createdAt: number
+  updatedAt?: number
 }
 
 type Turn = {
@@ -1979,6 +1980,9 @@ export class RuntimeStore {
     const control = row.control
     if (control.type === "session.bind") {
       this.db.prepare("DELETE FROM deleted_session WHERE session_id = ?").run(row.sessionId)
+      const existing = this.getSession(row.sessionId) as
+        | { time?: { created?: number; updated?: number } }
+        | null
       this.upsertSession({
         id: row.sessionId,
         directory: control.directory,
@@ -1986,8 +1990,9 @@ export class RuntimeStore {
         agentSessionId: control.agentSessionId,
         processKey: control.ownerKey !== undefined ? control.ownerKey : control.processKey,
         parentSessionId: control.parentSessionId,
-        createdAt: control.createdAt,
-        updatedAt: row.ts,
+        createdAt: control.createdAt ?? existing?.time?.created ?? row.ts,
+        // Re-bind / rediscovery must not bump list order on visit.
+        updatedAt: control.updatedAt ?? existing?.time?.updated ?? row.ts,
       })
       return
     }
@@ -2225,37 +2230,48 @@ export class RuntimeStore {
         return
       }
 
-      case "session.status":
+      case "session.status": {
+        const current = this.getSession(event.properties.sessionID) as
+          | { directory?: string; time?: { created?: number; updated?: number } }
+          | null
         this.upsertSession({
           id: event.properties.sessionID,
-          directory: (this.getSession(event.properties.sessionID) as { directory?: string } | null)?.directory ?? "",
-          createdAt: row.ts,
-          updatedAt: row.ts,
+          directory: current?.directory ?? "",
+          createdAt: current?.time?.created ?? row.ts,
+          // Status polls / visit must not reshuffle the session list.
+          updatedAt: current?.time?.updated ?? row.ts,
           status: event.properties.status.type,
         })
         return
+      }
 
-      case "session.idle":
+      case "session.idle": {
+        const current = this.getSession(event.properties.sessionID) as
+          | { directory?: string; time?: { created?: number; updated?: number } }
+          | null
         this.upsertSession({
           id: event.properties.sessionID,
-          directory: (this.getSession(event.properties.sessionID) as { directory?: string } | null)?.directory ?? "",
-          createdAt: row.ts,
-          updatedAt: row.ts,
+          directory: current?.directory ?? "",
+          createdAt: current?.time?.created ?? row.ts,
+          updatedAt: current?.time?.updated ?? row.ts,
           status: "idle",
         })
         return
+      }
 
-      case "session.error":
+      case "session.error": {
+        const current = this.getSession(event.properties.sessionID ?? row.sessionId) as
+          | { directory?: string; time?: { created?: number; updated?: number } }
+          | null
         this.upsertSession({
           id: event.properties.sessionID ?? row.sessionId,
-          directory:
-            (this.getSession(event.properties.sessionID ?? row.sessionId) as { directory?: string } | null)
-              ?.directory ?? "",
-          createdAt: row.ts,
-          updatedAt: row.ts,
+          directory: current?.directory ?? "",
+          createdAt: current?.time?.created ?? row.ts,
+          updatedAt: current?.time?.updated ?? row.ts,
           status: "error",
         })
         return
+      }
 
       default:
         return
@@ -2285,6 +2301,7 @@ export class RuntimeStore {
     ownerKey?: string | null
     parentSessionId?: string
     createdAt?: number
+    updatedAt?: number
   }) {
     const ts = input.createdAt ?? Date.now()
     const row: Row = {
@@ -2301,6 +2318,7 @@ export class RuntimeStore {
         ...(input.ownerKey !== undefined ? { ownerKey: input.ownerKey } : {}),
         ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
         createdAt: ts,
+        ...(input.updatedAt !== undefined ? { updatedAt: input.updatedAt } : {}),
       },
     }
     this.commit(row)
@@ -3473,7 +3491,8 @@ export class RuntimeStore {
           model_id,
           variant,
           agent,
-          handoff_json
+          handoff_json,
+          updated_at
         FROM session
         WHERE id = ?
       `,
@@ -3491,6 +3510,7 @@ export class RuntimeStore {
       variant: string | null
       agent: string | null
       handoff_json: string | null
+      updated_at: number
     } | null
     const prevHarness = prev ? sessionHarness(prev) : undefined
     if (!prevHarness && !patch.harness) return
@@ -3510,6 +3530,7 @@ export class RuntimeStore {
     }
     const nextHarness = patch.harness ?? prevHarness
     const nextModelId = patch.model === undefined ? (prev?.model_id ?? null) : (patch.model?.modelID ?? null)
+    // Config hydrate / visit must not bump the session list's updated_at.
     this.db
       .prepare(
         `
@@ -3530,7 +3551,7 @@ export class RuntimeStore {
         patch.variant === undefined ? (prev?.variant ?? null) : patch.variant,
         patch.agent === undefined ? (prev?.agent ?? null) : patch.agent,
         patch.handoff === undefined ? (prev?.handoff_json ?? null) : sessionHandoffJson(patch.handoff),
-        ts,
+        prev.updated_at,
         id,
       )
   }

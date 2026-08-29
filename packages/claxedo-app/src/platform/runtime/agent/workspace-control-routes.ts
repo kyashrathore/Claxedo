@@ -119,6 +119,7 @@ export type ControlSessionNavigationListQuery = {
   environment?: readonly string[]
   git?: readonly string[]
   search?: string
+  sort?: "updated_desc" | "created_desc"
   limit: number
   cursor?: string
 }
@@ -138,6 +139,7 @@ export function controlSessionNavigationListUrl(input: {
   if (input.environment?.length) url.searchParams.set("environment", input.environment.join(","))
   if (input.git?.length) url.searchParams.set("git", input.git.join(","))
   if (input.search) url.searchParams.set("search", input.search)
+  if (input.sort && input.sort !== "updated_desc") url.searchParams.set("sort", input.sort)
   if (input.cursor) url.searchParams.set("cursor", input.cursor)
   return url
 }

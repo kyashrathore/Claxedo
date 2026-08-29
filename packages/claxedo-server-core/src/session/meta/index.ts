@@ -100,6 +100,9 @@ export async function putSessionMeta(
     archived?: number | null
     tags?: string[]
     attachments?: SessionAttachment[]
+    /** Preserve corpus/import stamps; do not invent "now" for seeds. */
+    createdAt?: number
+    updatedAt?: number
   },
 ) {
   const stamp = now()
@@ -122,36 +125,59 @@ export async function putSessionMeta(
       : serializeToolSandbox(input.toolSandbox)
     const modelProviderID = input.model === undefined ? prev?.model_provider_id ?? null : input.model?.providerID ?? null
     const modelID = input.model === undefined ? prev?.model_id ?? null : input.model?.modelID ?? null
+    const title = input.title === undefined ? prev?.title ?? null : input.title
+    const parentSessionID = input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID
+    const archivedAt = input.archived === undefined ? prev?.archived_at ?? null : input.archived
+    const projectID = input.ws?.project_id ?? prev?.project_id ?? null
+    const contentChanged = !prev
+      || prev.workspace_id !== workspaceID
+      || prev.project_id !== projectID
+      || prev.host !== hostValue
+      || prev.directory !== directory
+      || prev.tool_sandbox !== toolSandbox
+      || prev.model_provider_id !== modelProviderID
+      || prev.model_id !== modelID
+      || prev.title !== title
+      || prev.parent_session_id !== parentSessionID
+      || prev.archived_at !== archivedAt
+      || input.tags !== undefined
+      || input.attachments !== undefined
+    const createdAt = prev?.created_at ?? input.createdAt ?? stamp
+    const updatedAt = input.updatedAt !== undefined
+      ? Math.max(input.updatedAt, prev?.updated_at ?? 0)
+      : contentChanged
+        ? stamp
+        : prev?.updated_at ?? stamp
     db.insert(ClaxedoSessionMetaTable).values({
       session_ref: sessionRef,
       session_id: sessionID,
       workspace_id: workspaceID,
-      project_id: input.ws?.project_id ?? prev?.project_id ?? null,
+      project_id: projectID,
       host: hostValue,
       directory,
       tool_sandbox: toolSandbox,
       model_provider_id: modelProviderID,
       model_id: modelID,
-      title: input.title === undefined ? prev?.title ?? null : input.title,
-      parent_session_id: input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID,
-      archived_at: input.archived === undefined ? prev?.archived_at ?? null : input.archived,
-      created_at: prev?.created_at ?? stamp,
-      updated_at: stamp,
+      title,
+      parent_session_id: parentSessionID,
+      archived_at: archivedAt,
+      created_at: createdAt,
+      updated_at: updatedAt,
     }).onConflictDoUpdate({
       target: ClaxedoSessionMetaTable.session_ref,
       set: {
         session_id: sessionID,
         workspace_id: workspaceID,
-        project_id: input.ws?.project_id ?? prev?.project_id ?? null,
+        project_id: projectID,
         host: hostValue,
         directory,
         tool_sandbox: toolSandbox,
         model_provider_id: modelProviderID,
         model_id: modelID,
-        title: input.title === undefined ? prev?.title ?? null : input.title,
-        parent_session_id: input.parentID === undefined ? prev?.parent_session_id ?? null : input.parentID,
-        archived_at: input.archived === undefined ? prev?.archived_at ?? null : input.archived,
-        updated_at: stamp,
+        title,
+        parent_session_id: parentSessionID,
+        archived_at: archivedAt,
+        updated_at: updatedAt,
       },
     }).run()
 
@@ -300,17 +326,22 @@ export async function listSessionNavigationMetas(input: SessionMetaNavigationLis
     }
   }
   if (input.cursor) {
-    where.push("(m.updated_at < ? OR (m.updated_at = ? AND m.session_ref < ?))")
-    params.push(input.cursor.updatedAt, input.cursor.updatedAt, input.cursor.sessionRef ?? input.cursor.sessionID)
+    const sortKey = input.sort === "created_desc" ? "created_at" : "updated_at"
+    const cursorAt = input.sort === "created_desc"
+      ? (input.cursor.createdAt ?? input.cursor.updatedAt)
+      : input.cursor.updatedAt
+    where.push(`(m.${sortKey} < ? OR (m.${sortKey} = ? AND m.session_ref < ?))`)
+    params.push(cursorAt, cursorAt, input.cursor.sessionRef ?? input.cursor.sessionID)
   }
 
+  const orderKey = input.sort === "created_desc" ? "created_at" : "updated_at"
   const rows = safeMetaRead("session navigation list", [], () =>
     ClaxedoDB.raw()
       .prepare(`
         SELECT m.session_ref
         FROM claxedo_session_meta m
         ${where.length ? `WHERE ${where.join(" AND ")}` : ""}
-        ORDER BY m.updated_at DESC, m.session_ref DESC
+        ORDER BY m.${orderKey} DESC, m.session_ref DESC
         LIMIT ?
       `)
       .all(...params, Math.max(0, input.limit)) as Array<{ session_ref: string }>,
