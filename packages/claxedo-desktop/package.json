@@ -18,6 +18,7 @@
     "smoke:diagnostics": "bun ./scripts/performance-diagnostics-smoke.ts",
     "smoke:diagnostics:packaged": "bun ./scripts/performance-diagnostics-smoke.ts --packaged",
     "perf:startup": "bun ./scripts/startup-perf.ts",
+    "perf:account-port": "bun ./scripts/account-port-perf-bench.ts",
     "test": "bun run test:broad && bun run test:bundle-single && bun run test:server-boot && bun run test:compile-cache",
     "test:broad": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test ./src ./scripts --max-concurrency=1 --path-ignore-patterns='**/bundle-single-instance.test.ts' --path-ignore-patterns='**/claxedo-server-boot.test.ts' --path-ignore-patterns='**/opencode-compile-cache-boot.test.ts' --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml",
     "test:bundle-single": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test ./scripts/bundle-single-instance.test.ts --max-concurrency=1 --reporter=junit --reporter-outfile=.artifacts/unit/bundle-single-junit.xml",
