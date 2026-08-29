@@ -293,7 +293,9 @@ export async function launchPackagedClaxedo(input: {
       `--claxedo-window-size=${String(AGENT_APP_WINDOW.width)},${String(AGENT_APP_WINDOW.height)}`,
       "--claxedo-window-maximized",
       ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
-      ...(process.platform === "linux" ? ["--no-sandbox"] : []),
+      ...(process.platform === "linux"
+        ? ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+        : []),
     ],
     env: {
       ...process.env,
@@ -304,6 +306,9 @@ export async function launchPackagedClaxedo(input: {
       CLAXEDO_SERVER_PORT: String(serverPort),
       CLAXEDO_DEVTOOLS: "0",
       GOMAXPROCS: process.env.GOMAXPROCS ?? "2",
+      ...(process.platform === "linux"
+        ? { LIBGL_ALWAYS_SOFTWARE: process.env.LIBGL_ALWAYS_SOFTWARE ?? "1" }
+        : {}),
       ...(input.extraEnv ?? {}),
     },
     stdout: "pipe",
