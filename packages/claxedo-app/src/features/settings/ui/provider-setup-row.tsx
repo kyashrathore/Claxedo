@@ -2,7 +2,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { createSignal, Show, type Component } from "solid-js"
-import { ProviderConnectForm } from "@/app/dialogs/provider-connect-form"
+import { ProviderConnectForm } from "@/features/settings/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
 
 export type ProviderSetupStatus = "connected" | "detected" | "broken" | "missing"

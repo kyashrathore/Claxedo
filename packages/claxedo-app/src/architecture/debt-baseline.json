@@ -3,8 +3,8 @@
   "asAnyCastsTest": 23,
   "conversationHydrationEntrypoints": 0,
   "deepSessionUiImports": 0,
-  "directoryStringParams": 315,
-  "effectStateWrites": 96,
+  "directoryStringParams": 314,
+  "effectStateWrites": 100,
   "filesystemShapeRegexClones": 2,
   "isFilesystemDirectory": 11,
   "isLoopbackHttpUrl": 4,
@@ -22,6 +22,6 @@
   "signedControlPlaneAccess": 0,
   "suppressionFlags": 7,
   "timerDrivenDataPolls": 1,
-  "untrackCalls": 20,
+  "untrackCalls": 21,
   "userHostedComparisons": 62
 }

@@ -269,7 +269,7 @@ const localContextInput = {
       return !!provider?.models[model.modelID] && connected().has(model.providerID)
     }
 
-    const isUsableSelection = (model: ModelKey | undefined) =>
+    const isUsableSelection = (model: ModelKey | undefined): model is ModelKey =>
       !!model && !isSignedWorkspaceDefaultModel({ id: model.modelID, provider: { id: model.providerID } })
 
     const selectionCatalogPending = (model: ModelKey | undefined) => {

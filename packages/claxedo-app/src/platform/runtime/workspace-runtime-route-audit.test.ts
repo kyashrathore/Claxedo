@@ -1077,10 +1077,12 @@ describe("workspace runtime route audit", () => {
     expect(manageModels).toMatch(/open-settings-providers/)
     expect(manageModels).not.toMatch(/@\/components\/dialogs?\/select-provider|@\/components\/dialog-select-provider/)
     // The session feature's model picker lazy-loads manage models and redirects
-    // provider setup to Settings → Providers.
-    expect(selectModel).toMatch(/open-settings-providers/)
+    // provider setup to Settings → Providers through session app-ports.
+    expect(selectModel).toMatch(/openSettingsProviders/)
     expect(selectModel).toMatch(/loadManageModelsDialog/)
     expect(selectModel).toMatch(/@\/features\/session\/app-ports/)
+    expect(selectModel).not.toMatch(/@\/features\/settings\/open-settings-providers/)
+    expect(selectModel).not.toMatch(/@\/app\/dialogs\/settings/)
     expect(sessionPorts).toMatch(/import type \* as ManageModels from "@\/app\/dialogs\/manage-models"/)
     expect(sessionPorts).not.toMatch(/import type \* as SelectProvider from "@\/app\/dialogs\/select-provider"/)
     expect(sessionPorts).not.toMatch(/import type \* as ConnectProvider from "@\/app\/dialogs\/connect-provider"/)

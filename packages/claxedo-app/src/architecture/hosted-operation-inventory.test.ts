@@ -53,6 +53,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Local route shell. Unit 9 replaces its authFetch use with the injected local transport; it never calls Hosted Server.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
     "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
+  "features/settings/ui/providers.tsx":
+    "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest; hosted account identity stays on account-section.",
 }
 
 function sourceFiles(root: string) {

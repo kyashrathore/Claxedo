@@ -101,6 +101,10 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   sessionRefForActionWorkspace: lazy("@/app/workbench/actions/shared", "sessionRefForActionWorkspace"),
   recoverMissingWorkspace: lazy("@/features/workspaces/actions/workspace-recovery", "recoverMissingWorkspace"),
   loadManageModelsDialog: () => () => import("@/app/dialogs/manage-models"),
+  openSettingsProviders: () => (dialog) => {
+    const { openSettingsProviders } = require("@/features/settings/open-settings-providers") as typeof import("@/features/settings/open-settings-providers")
+    return openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+  },
   filterMcpCatalogEntries: lazy("@/features/extensions/marketplace/api", "filterMcpCatalogEntries"),
   installDisabledReasonForEntry: lazy("@/features/extensions/marketplace/api", "installDisabledReasonForEntry"),
   installMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "installMcpDialogEntry"),
@@ -140,9 +144,14 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   parseKeybind: lazy("@/app/providers/command", "parseKeybind"),
   useCommand: lazy("@/app/providers/command", "useCommand"),
   DialogConnectIntegration: lazy("@/app/dialogs/connect-integration", "DialogConnectIntegration"),
+  ProviderConnectForm: lazy("@/app/dialogs/provider-connect-form", "ProviderConnectForm"),
   Link: lazy("@/app/controls/link", "Link"),
   useSettingsSourceViews: lazy("@/app/integrations/settings-source-views", "useSettingsSourceViews"),
   useSandboxOnboardingFunnel: () => () => ({ emit: () => {} }),
+  discoverAIConnections: lazy("@/features/onboarding/ai-connect-api", "discoverAIConnections"),
+  groupDiscoveryItems: lazy("@/features/onboarding/ai-connect-state", "groupDiscoveryItems"),
+  localHarnessStatuses: lazy("@/features/onboarding/ai-connect-state", "localHarnessStatuses"),
+  localHarnessChecks: lazy("@/features/onboarding/ai-connect-state", "localHarnessChecks"),
 }
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {

@@ -13,10 +13,6 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
 const dialogShow = vi.hoisted(() => vi.fn())
 const openSettingsProviders = vi.hoisted(() => vi.fn())
 
-vi.mock("@/features/settings/open-settings-providers", () => ({
-  openSettingsProviders,
-}))
-
 vi.mock("@tanstack/solid-query", () => ({
   useQuery: (() => {
     let count = 0
@@ -129,6 +125,7 @@ vi.mock("@/features/session/app-ports", () => ({
   workspacePlacement: () => undefined,
   listDocumentMentions: vi.fn(async () => []),
   documentMentionText: vi.fn(),
+  openSettingsProviders,
 }))
 
 vi.mock("@/features/session/providers/session-selection", () => ({

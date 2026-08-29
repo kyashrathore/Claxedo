@@ -79,7 +79,8 @@ function AccordionContent(props: ParentProps<AccordionContentProps>) {
       // slideDown/slideUp keyframes to the content element, so Kobalte's
       // presence probe and content measurement have nothing to drive. Apply an
       // animation to [data-slot="accordion-content"] and this prop must go.
-      staticPresence
+      // Current @kobalte/core types omit the prop; it is still honored at runtime.
+      {...({ staticPresence: true } as Record<string, unknown>)}
       data-slot="accordion-content"
       classList={{ "ui-accordion-content": true,
         ...split.classList,

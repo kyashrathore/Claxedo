@@ -1,12 +1,12 @@
-import { discoverAIConnections } from "@/features/onboarding/ai-connect-api"
+import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import {
+  discoverAIConnections,
   groupDiscoveryItems,
   localHarnessChecks,
   localHarnessStatuses,
   type AIDiscoveryItem,
   type LocalHarnessStatus,
-} from "@/features/onboarding/ai-connect-state"
-import { claxedoCredentialRequest } from "@/platform/api/credential-request"
+} from "@/features/settings/app-ports"
 
 export async function listStoredCredentialProviders() {
   const res = await claxedoCredentialRequest(undefined)
@@ -22,20 +22,11 @@ export async function listStoredCredentialProviders() {
 }
 
 export function discoveryRowsFromItems(items: readonly AIDiscoveryItem[]) {
-  return groupDiscoveryItems(items).map((row) => ({
-    selectionId: row.selectionId,
-    providerIds: row.providerIds,
-    label: row.label,
-    accountId: row.accountId,
-    origin: row.origin,
-    alreadyConnected: row.alreadyConnected,
-    probe: row.probe,
-    selected: row.selected,
-  }))
+  return groupDiscoveryItems(items)
 }
 
 export function agentSetupStatus(
-  check: (typeof localHarnessChecks)[number],
+  check: ReturnType<typeof localHarnessChecks>[number],
   stored: ReadonlySet<string>,
   discovered: readonly LocalHarnessStatus[],
 ): { status: "connected" | "detected" | "broken" | "missing"; detail?: string } {

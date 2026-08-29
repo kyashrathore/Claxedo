@@ -65,12 +65,9 @@ vi.mock("@/platform/i18n/provider", () => ({
   useLanguage: () => ({ t: (key: string) => key }),
 }))
 
-vi.mock("@/features/settings/open-settings-providers", () => ({
-  openSettingsProviders: vi.fn(),
-}))
-
 vi.mock("@/features/session/app-ports", () => ({
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
+  openSettingsProviders: vi.fn(),
 }))
 
 import { DialogSelectModel } from "./select-model"

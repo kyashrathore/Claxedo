@@ -1,4 +1,5 @@
 import type { ContentMeta } from "@/features/session/app-ports"
+import { SessionTimelineSkeleton } from "@/features/session/ui/content/session-timeline-skeleton"
 
 type SessionLoadingSurfaceProps = {
   meta: ContentMeta
@@ -42,7 +43,9 @@ export function SessionLoadingRoot(props: {
       data-session-visible-user-count="0"
       data-session-rendered-user-count="0"
       data-session-info-title={props.title ?? ""}
-    />
+    >
+      <SessionTimelineSkeleton />
+    </div>
   )
 }
 

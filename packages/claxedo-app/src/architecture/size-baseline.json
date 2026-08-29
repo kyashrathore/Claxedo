@@ -9,7 +9,7 @@
   "platform/i18n/bs.ts": 997,
   "platform/i18n/da.ts": 988,
   "platform/i18n/de.ts": 934,
-  "platform/i18n/en.ts": 991,
+  "platform/i18n/en.ts": 1011,
   "platform/i18n/es.ts": 1004,
   "platform/i18n/fr.ts": 933,
   "platform/i18n/ja.ts": 907,
@@ -22,7 +22,7 @@
   "platform/i18n/tr.ts": 1006,
   "platform/i18n/zh.ts": 974,
   "platform/i18n/zht.ts": 970,
-  "features/session/ui/session-screen.tsx": 1490,
-  "features/session/ui/message-timeline.tsx": 1960,
+  "features/session/ui/session-screen.tsx": 1548,
+  "features/session/ui/message-timeline.tsx": 1997,
   "features/session/store/session-controller.ts": 1107
 }

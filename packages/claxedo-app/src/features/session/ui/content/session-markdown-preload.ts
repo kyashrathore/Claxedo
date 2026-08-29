@@ -1,6 +1,11 @@
-import type { Part } from "@opencode-ai/sdk/v2/client"
-import { preloadMarkdown } from "@opencode-ai/session-ui/markdown-cache"
+import { preloadMarkdown } from "@/ui/session-kit"
 import { SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT } from "@/platform/sync/session-prefetch"
+
+type MarkdownTextPart = {
+  type: string
+  text?: string
+  id?: string
+}
 
 export type SessionMarkdownBody = {
   text: string
@@ -10,7 +15,7 @@ export type SessionMarkdownBody = {
 export type SessionMarkdownMessage = {
   id: string
   role?: string
-  time?: { completed?: number }
+  time?: { completed?: number; created?: number }
   error?: unknown
 }
 
@@ -54,7 +59,7 @@ export function sessionMarkdownTimelineGate(input: {
 
 export function firstFoldMarkdownBodies(input: {
   messages: SessionMarkdownMessage[]
-  parts: Record<string, Part[] | undefined>
+  parts: Record<string, MarkdownTextPart[] | undefined>
 }): SessionMarkdownBody[] {
   const bodies: SessionMarkdownBody[] = []
   for (const message of firstFoldMessages(input.messages)) {

@@ -111,7 +111,12 @@ export const appLocal: Policy = {
   // while retiring three AI-connect modules: 891 + 8 - 3 = 896 modules, with
   // no package-ceiling change. The ordered session-archive projection boundary
   // adds one local session owner: 896 + 1 = 897 modules, still no package edge.
-  ceilings: { modules: 897, packages: 41 },
+  // Session markdown first-fold preload, environment-card persistence, Thinking
+  // visibility hold, provider-settings detect/disconnect logic, models-settings
+  // logic, provider setup row, and the settings-providers dialog opener add
+  // eight named owners on the already-reachable session/settings path:
+  // 897 + 8 = 905 modules, still no package edge.
+  ceilings: { modules: 905, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

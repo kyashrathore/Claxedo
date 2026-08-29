@@ -12,8 +12,7 @@ import { List } from "@opencode-ai/ui/list"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ModelTooltip } from "@/features/session/ui/model/model-tooltip"
 import { useLanguage } from "@/platform/i18n/provider"
-import { loadManageModelsDialog } from "@/features/session/app-ports"
-import { openSettingsProviders } from "@/features/settings/open-settings-providers"
+import { loadManageModelsDialog, openSettingsProviders } from "@/features/session/app-ports"
 import { capture as phCapture, identityProps, type Surface } from "@/platform/telemetry/analytics"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
@@ -225,7 +224,7 @@ export function ModelSelectorPopover(props: {
 
   const handleConnectProvider = () => {
     close("provider")
-    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+    void openSettingsProviders(dialog)
   }
   const language = useLanguage()
 
@@ -312,7 +311,7 @@ export const DialogSelectModel: Component<{ provider?: string; model: PickerStat
   const language = useLanguage()
 
   const provider = () => {
-    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+    void openSettingsProviders(dialog)
   }
 
   const manage = () => {

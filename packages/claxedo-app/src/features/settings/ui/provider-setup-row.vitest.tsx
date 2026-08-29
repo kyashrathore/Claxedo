@@ -2,7 +2,7 @@ import { cleanup, render, screen } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { ProviderSetupRow, providerSetupStatusLabel } from "./provider-setup-row"
 
-vi.mock("@/app/dialogs/provider-connect-form", () => ({
+vi.mock("@/features/settings/app-ports", () => ({
   ProviderConnectForm: () => <div data-testid="connect-form" />,
 }))
 

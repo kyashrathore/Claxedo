@@ -1,4 +1,7 @@
-import type { Config } from "@opencode-ai/sdk/v2/client"
+export type ProviderConfigSlice = {
+  provider?: Record<string, { npm?: string; models?: Record<string, unknown> } | undefined>
+  disabled_providers?: string[]
+}
 
 export type ProviderSource = "env" | "api" | "config" | "custom"
 
@@ -6,7 +9,7 @@ export type ProviderDisconnectStrategy = "disabled_providers" | "auth_remove"
 
 /** Config-file openai-compatible providers (e.g. Cline pass) disconnect via disabled_providers. */
 export function isOpenAiCompatibleConfigProvider(
-  config: Pick<Config, "provider"> | undefined,
+  config: Pick<ProviderConfigSlice, "provider"> | undefined,
   providerId: string,
 ): boolean {
   const provider = config?.provider?.[providerId]
@@ -18,7 +21,7 @@ export function isOpenAiCompatibleConfigProvider(
 
 export function resolveProviderDisconnectStrategy(input: {
   source?: ProviderSource
-  config: Pick<Config, "provider"> | undefined
+  config: ProviderConfigSlice | undefined
   providerId: string
 }): ProviderDisconnectStrategy {
   if (input.source === "config" || input.source === "custom") return "disabled_providers"
@@ -33,7 +36,7 @@ export function nextDisabledProviders(before: readonly string[] | undefined, pro
 
 export function providerSourceTagKey(input: {
   source?: ProviderSource
-  config: Pick<Config, "provider"> | undefined
+  config: ProviderConfigSlice | undefined
   providerId: string
 }): string {
   const source = input.source
@@ -93,7 +96,7 @@ export type DisconnectProviderDeps = {
   providerId: string
   name: string
   source?: ProviderSource
-  config: Pick<Config, "provider" | "disabled_providers">
+  config: Pick<ProviderConfigSlice, "provider" | "disabled_providers">
   serverUrl: string
   deleteCredential: (providerId: string) => Promise<void>
   patchDisabledProviders: (disabledProviders: string[]) => Promise<void>

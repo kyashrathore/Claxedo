@@ -2,7 +2,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { openSettingsProviders } from "@/features/settings/open-settings-providers"
 
 type PiProvider = {
   id: string
@@ -13,6 +12,7 @@ type PiProvider = {
 const dialogState = vi.hoisted(() => ({
   show: vi.fn(),
 }))
+const openSettingsProviders = vi.hoisted(() => vi.fn())
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -62,10 +62,7 @@ vi.mock("@/features/session/app-ports", () => ({
     refresh: async () => { piRefreshCalls += 1 },
     default: () => piDefaults,
   }),
-}))
-
-vi.mock("@/features/settings/open-settings-providers", () => ({
-  openSettingsProviders: vi.fn(),
+  openSettingsProviders,
 }))
 
 vi.mock("@opencode-ai/ui/context/dialog", () => ({

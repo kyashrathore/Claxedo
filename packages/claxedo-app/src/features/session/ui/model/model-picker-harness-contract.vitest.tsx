@@ -25,12 +25,9 @@ vi.mock("@/platform/telemetry/analytics", () => ({
   identityProps: () => ({}),
 }))
 
-vi.mock("@/features/settings/open-settings-providers", () => ({
-  openSettingsProviders,
-}))
-
 vi.mock("@/features/session/app-ports", () => ({
   loadManageModelsDialog: async () => ({ DialogManageModels: () => null }),
+  openSettingsProviders,
 }))
 
 const { ModelSelectorPopover } = await import("./select-model")

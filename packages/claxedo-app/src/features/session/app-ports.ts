@@ -32,6 +32,7 @@ import type * as WorkspaceRecovery from "@/features/workspaces/actions/workspace
 import type * as Marketplace from "@/features/extensions/marketplace/api"
 import type * as ManageModels from "@/app/dialogs/manage-models"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
+import type { JSX } from "solid-js"
 import type * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 export { WORKBENCH_DRAG_MIME } from "@/lib/workbench-drag"
 
@@ -76,6 +77,7 @@ export type SessionAppPorts = {
   sessionRefForActionWorkspace: typeof LayoutActions.sessionRefForActionWorkspace
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   loadManageModelsDialog: () => Promise<typeof ManageModels>
+  openSettingsProviders: (dialog: { show: (element: () => JSX.Element) => unknown }) => Promise<void>
   filterMcpCatalogEntries: typeof Marketplace.filterMcpCatalogEntries
   installDisabledReasonForEntry: typeof Marketplace.installDisabledReasonForEntry
   installMcpDialogEntry: typeof Marketplace.installMcpDialogEntry
@@ -162,6 +164,7 @@ export const message = bind("message")
 export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
 export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
 export const loadManageModelsDialog = bind("loadManageModelsDialog")
+export const openSettingsProviders = bind("openSettingsProviders")
 export const filterMcpCatalogEntries = bind("filterMcpCatalogEntries")
 export const installDisabledReasonForEntry = bind("installDisabledReasonForEntry")
 export const installMcpDialogEntry = bind("installMcpDialogEntry")

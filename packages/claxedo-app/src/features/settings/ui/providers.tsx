@@ -4,7 +4,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { DialogCustomProvider, useProviders, useShellQueryOptions as useQueryOptions } from "@/features/settings/app-ports"
+import { DialogCustomProvider, localHarnessChecks, useProviders, useShellQueryOptions as useQueryOptions, type LocalHarnessStatus } from "@/features/settings/app-ports"
 import { createEffect, createMemo, createSignal, type Component, For, Show } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { Config } from "@opencode-ai/sdk/v2/client"
@@ -15,7 +15,6 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
-import { localHarnessChecks } from "@/features/onboarding/ai-connect-state"
 import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect } from "@/features/settings/provider-detect"
 import {
   canDisconnectProvider,
@@ -25,18 +24,18 @@ import {
   removeProviderAuthEntry,
 } from "@/features/settings/provider-settings-logic"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
-import type { LocalHarnessStatus } from "@/features/onboarding/ai-connect-state"
 
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
+type HarnessCheckId = ReturnType<typeof localHarnessChecks>[number]["id"]
 
-const AGENT_CONNECT: Record<(typeof localHarnessChecks)[number]["id"], string> = {
+const AGENT_CONNECT: Record<HarnessCheckId, string> = {
   claude: "claude-acp",
   codex: "codex-acp",
   cursor: "cursor-acp",
 }
 
-const AGENT_ICON: Record<(typeof localHarnessChecks)[number]["id"], string> = {
+const AGENT_ICON: Record<HarnessCheckId, string> = {
   claude: "claude-acp",
   codex: "codex-acp",
   cursor: "cursor-acp",
@@ -105,7 +104,7 @@ export const SettingsProviders: Component = () => {
     void listStoredCredentialProviders()
       .then((stored) => {
         setStoredProviders(stored)
-        setAgentStatuses(localHarnessChecks.map((check) => ({
+        setAgentStatuses(localHarnessChecks().map((check) => ({
           id: check.id,
           label: check.label,
           signIn: check.signIn,
@@ -249,7 +248,7 @@ export const SettingsProviders: Component = () => {
             </Button>
           </div>
           <SettingsList>
-            <For each={[...localHarnessChecks]}>
+            <For each={[...localHarnessChecks()]}>
               {(check) => {
                 const status = () => agentSetupStatus(check, storedProviders(), agentStatuses())
                 return (

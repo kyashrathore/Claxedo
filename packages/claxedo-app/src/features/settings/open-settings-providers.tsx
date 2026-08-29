@@ -1,9 +1,9 @@
-import type { Component } from "solid-js"
+import type { Component, JSX } from "solid-js"
 
 type SettingsDialog = Component<{ initialTab?: string }>
 
 export async function openSettingsProviders(
-  dialog: { show: (render: () => unknown) => void },
+  dialog: { show: (element: () => JSX.Element) => unknown },
   load: () => Promise<{ DialogSettings: SettingsDialog }>,
 ) {
   const module = await load()

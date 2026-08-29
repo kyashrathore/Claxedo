@@ -44,6 +44,7 @@ import * as CloudStartup from "@/features/session/ui/components/cloud-startup-vi
 import type * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
+import { openSettingsProviders as showProvidersSettings } from "@/features/settings/open-settings-providers"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { createOnboardingFunnel } from "@/features/onboarding"
 import { capture as captureTelemetry, identityProps } from "@/platform/telemetry/analytics"
@@ -124,6 +125,7 @@ configureSessionAppPorts({
   sessionRefForActionWorkspace: LayoutActions.sessionRefForActionWorkspace,
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
   loadManageModelsDialog: () => import("@/app/dialogs/manage-models"),
+  openSettingsProviders: (dialog) => showProvidersSettings(dialog, () => import("@/app/dialogs/settings")),
   filterMcpCatalogEntries: Marketplace.filterMcpCatalogEntries,
   installDisabledReasonForEntry: Marketplace.installDisabledReasonForEntry,
   installMcpDialogEntry: Marketplace.installMcpDialogEntry,

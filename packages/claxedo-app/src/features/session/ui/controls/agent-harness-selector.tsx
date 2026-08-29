@@ -13,8 +13,7 @@ import { shouldApplyHarnessSelection } from "./agent-harness-selection-guard"
 import { watchHarnessReprobe } from "@/features/session/harness/harness-reprobe"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { createModelSelectionController, modelKeyFromPickerSelection } from "@/features/session/commands/model-selection"
-import { useProviders } from "@/features/session/app-ports"
-import { openSettingsProviders } from "@/features/settings/open-settings-providers"
+import { openSettingsProviders, useProviders } from "@/features/session/app-ports"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultLabels } from "@/features/session/harness/draft-defaults"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
@@ -343,7 +342,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     })
   )
   const openProviders = () => {
-    void openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
+    void openSettingsProviders(dialog)
   }
   const model = createMemo<PickerState>(() => ({
     list: () => rows() as PickerItem[],
