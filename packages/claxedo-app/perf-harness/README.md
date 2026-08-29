@@ -25,7 +25,7 @@ After building and packaging Claxedo, run the public framework with:
 node /absolute/path/to/agent-app-benchmark/bin/agent-app-benchmark.mjs run \
   --driver /absolute/path/to/Claxedo/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts \
   --app claxedo \
-  --scenario session-switch-v1 \
+  --scenario session-switch-v001 \
   --run-profile smoke \
   --resource-monitor /absolute/path/to/agent-app-resource-monitor \
   --output /absolute/path/to/run-output
