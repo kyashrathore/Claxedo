@@ -302,7 +302,13 @@ export async function launchPackagedClaxedo(input: {
       "--claxedo-window-maximized",
       ...(process.platform === "darwin" ? ["--use-mock-keychain"] : []),
       ...(process.platform === "linux"
-        ? ["--no-sandbox", "--disable-gpu", "--disable-dev-shm-usage"]
+        ? [
+            "--no-sandbox",
+            "--disable-gpu",
+            "--disable-gpu-sandbox",
+            "--disable-dev-shm-usage",
+            "--ozone-platform=x11",
+          ]
         : []),
     ],
     env: {
