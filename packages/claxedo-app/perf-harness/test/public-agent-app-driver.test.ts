@@ -138,7 +138,7 @@ const panelScenarioDefinition = {
 
 async function prepare(driver: ReturnType<typeof createClaxedoPublicDriver>) {
   return driver.prepare({
-    scenarioId: "session-switch-v1",
+    scenarioId: "session-switch-v001",
     scenarioDigestSha256: "1".repeat(64),
     corpusDirectory: "/tmp/corpus",
     corpusManifestPath: "/tmp/corpus/manifest.json",
@@ -161,13 +161,13 @@ describe("Claxedo public driver", () => {
     const { driver, activations } = harness()
     await prepare(driver)
     await driver.launch({
-      scenarioId: "session-switch-v1",
+      scenarioId: "session-switch-v001",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
     })
     const cold = await driver.execute({
-      scenarioId: "session-switch-v1",
+      scenarioId: "session-switch-v001",
       case: {
         caseId: "cold",
         workload: "isolated-latency",
@@ -177,7 +177,7 @@ describe("Claxedo public driver", () => {
       },
     })
     const warm = await driver.execute({
-      scenarioId: "session-switch-v1",
+      scenarioId: "session-switch-v001",
       case: {
         caseId: "warm",
         workload: "isolated-latency",
@@ -201,7 +201,7 @@ describe("Claxedo public driver", () => {
     const { driver, launches } = harness()
     await prepare(driver)
     const result = await driver.execute({
-      scenarioId: "app-start-v1",
+      scenarioId: "app-start-v001",
       stateHandle: "sealed-p0",
       case: { caseId: "new-start", startMode: "new-application-state" },
     })
@@ -212,7 +212,7 @@ describe("Claxedo public driver", () => {
   test("dispatches session-navigation cases with the authoritative panel preset", async () => {
     const { driver, navigationExecutions } = harness()
     await driver.prepare({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       scenarioDigestSha256: "1".repeat(64),
       corpusDirectory: "/tmp/corpus",
       corpusManifestPath: "/tmp/corpus/manifest.json",
@@ -224,13 +224,13 @@ describe("Claxedo public driver", () => {
       workspaceFixtureManifest: workspaceFixtureManifest as never,
     })
     await driver.launch({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
     })
     const result = await driver.execute({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       case: {
         caseId: "return-open",
         workload: "session-navigation",
@@ -251,7 +251,7 @@ describe("Claxedo public driver", () => {
   test("allows return after a prior first-visit even when other first-visits intervene", async () => {
     const { driver, navigationExecutions } = harness()
     await driver.prepare({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       scenarioDigestSha256: "1".repeat(64),
       corpusDirectory: "/tmp/corpus",
       corpusManifestPath: "/tmp/corpus/manifest.json",
@@ -263,7 +263,7 @@ describe("Claxedo public driver", () => {
       workspaceFixtureManifest: workspaceFixtureManifest as never,
     })
     await driver.launch({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
@@ -275,11 +275,11 @@ describe("Claxedo public driver", () => {
       sourceSessionId: "source",
     }
     await driver.execute({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       case: { ...common, caseId: "first-a", navigationType: "first-visit", destinationSessionId: "destination" },
     })
     await driver.execute({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       case: {
         ...common,
         caseId: "first-b",
@@ -289,7 +289,7 @@ describe("Claxedo public driver", () => {
       },
     })
     const returned = await driver.execute({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       case: { ...common, caseId: "return-a", navigationType: "return-visited-panel-closed", destinationSessionId: "destination" },
     })
 
@@ -305,7 +305,7 @@ describe("Claxedo public driver", () => {
   test("rejects a return without a prior first-visit in this process", async () => {
     const { driver, navigationExecutions } = harness()
     await driver.prepare({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       scenarioDigestSha256: "1".repeat(64),
       corpusDirectory: "/tmp/corpus",
       corpusManifestPath: "/tmp/corpus/manifest.json",
@@ -317,13 +317,13 @@ describe("Claxedo public driver", () => {
       workspaceFixtureManifest: workspaceFixtureManifest as never,
     })
     await driver.launch({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
     })
     await expect(driver.execute({
-      scenarioId: "session-navigation-v1",
+      scenarioId: "session-navigation-v001",
       case: {
         caseId: "orphan-return",
         workload: "session-navigation",
@@ -337,10 +337,10 @@ describe("Claxedo public driver", () => {
     expect(navigationExecutions).toHaveLength(0)
   })
 
-  test("dispatches workspace-panel-v2 actions with the requested authoritative preset", async () => {
+  test("dispatches workspace-panel-v001 actions with the requested authoritative preset", async () => {
     const { driver, panelV2Executions } = harness()
     await driver.prepare({
-      scenarioId: "workspace-panel-v2",
+      scenarioId: "workspace-panel-v001",
       scenarioDigestSha256: "1".repeat(64),
       corpusDirectory: "/tmp/corpus",
       corpusManifestPath: "/tmp/corpus/manifest.json",
@@ -352,13 +352,13 @@ describe("Claxedo public driver", () => {
       workspaceFixtureManifest: workspaceFixtureManifest as never,
     })
     await driver.launch({
-      scenarioId: "workspace-panel-v2",
+      scenarioId: "workspace-panel-v001",
       stateHandle: "sealed-p1",
       initialSessionId: "control",
       groupId: "group",
     })
     const result = await driver.execute({
-      scenarioId: "workspace-panel-v2",
+      scenarioId: "workspace-panel-v001",
       case: {
         caseId: "review-to-files-heavy",
         workload: "workspace-panel-interaction",
@@ -371,29 +371,6 @@ describe("Claxedo public driver", () => {
     expect(result.timingEvidence).toEqual({ trustedInputAt: 20, trustedInputEvent: "pointerdown" })
   })
 
-  test("keeps workspace-panel-v1 actions on the legacy V1 route", async () => {
-    const { driver, panelV1Executions, panelV2Executions } = harness()
-    await prepare(driver)
-    await driver.launch({
-      scenarioId: "workspace-panel-v1",
-      stateHandle: "sealed-p1",
-      initialSessionId: "control",
-      groupId: "group",
-    })
-    const result = await driver.execute({
-      scenarioId: "workspace-panel-v1",
-      case: {
-        caseId: "v1-open-file",
-        workload: "workspace-panel-action",
-        action: "open-file",
-      },
-    })
-
-    expect(result.durationMs).toBe(5)
-    expect(result.timingEvidence).toBeUndefined()
-    expect(panelV1Executions).toHaveLength(1)
-    expect(panelV2Executions).toHaveLength(0)
-  })
 
   test("arms V2 readiness before click and returns its exact stable-paint timestamp", async () => {
     const order: string[] = []
@@ -472,7 +449,7 @@ describe("Claxedo public driver", () => {
   test("rejects a panel scenario that does not define all authoritative presets", async () => {
     const { driver } = harness()
     await expect(driver.prepare({
-      scenarioId: "workspace-panel-v2",
+      scenarioId: "workspace-panel-v001",
       scenarioDigestSha256: "1".repeat(64),
       corpusDirectory: "/tmp/corpus",
       corpusManifestPath: "/tmp/corpus/manifest.json",

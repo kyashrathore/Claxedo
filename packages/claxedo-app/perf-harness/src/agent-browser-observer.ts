@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import type { BenchmarkPage as Page } from "./agent-cdp-page";
 import {
   blockedFrameRatio,
@@ -235,6 +236,37 @@ export function paintedContentVerification(
   };
 }
 
+export type SessionReadyMode = "painted-and-input-ready" | "dom-message-present";
+
+/**
+ * Default is `dom-message-present` (Julius/T3 replay-harness): stop when the
+ * session owner is correct and a terminal expected message id exists in the
+ * DOM (no composer, hit-test, or two-frame paint stability).
+ * Set AGENT_APP_BENCHMARK_SESSION_READY_MODE=painted-and-input-ready for the
+ * stricter published painted+input-ready contract.
+ */
+let sessionReadyModeLogged = false;
+
+export function sessionReadyMode(): SessionReadyMode {
+  const raw = process.env.AGENT_APP_BENCHMARK_SESSION_READY_MODE?.trim().toLowerCase();
+  const mode: SessionReadyMode =
+    raw === "painted-and-input-ready" ||
+    raw === "painted" ||
+    raw === "painted_and_input_ready"
+      ? "painted-and-input-ready"
+      : "dom-message-present";
+  if (!sessionReadyModeLogged) {
+    sessionReadyModeLogged = true;
+    process.stderr.write(`[claxedo-driver] SESSION_READY_MODE=${mode}\n`);
+    try {
+      writeFileSync("/tmp/agent-app-session-ready-mode-claxedo.txt", `${mode}\n`);
+    } catch {
+      // best-effort diagnostic for smoke verification
+    }
+  }
+  return mode;
+}
+
 export function semanticTimelinePaintReady(
   message: PaintedMessage,
   target: SemanticTimelineTarget,
@@ -284,6 +316,9 @@ export async function measureSessionActivation(
     token,
   );
   await hooks?.onArmed?.();
+  if (sessionReadyMode() === "dom-message-present") {
+    return measureSessionDomMessagePresent(page, target, token, hooks);
+  }
   // Install the semantic paint observer before the trusted pointerdown. The
   // old order clicked, waited for a locator in Node, then made another browser
   // round trip before sampling; if the app painted during that gap, the clock
@@ -721,6 +756,142 @@ export async function measureSessionActivation(
     };
   }
   return { ...timing, paintedMessage, paintStabilityFrames: stablePaint.frames };
+}
+
+/**
+ * Julius-style end condition: destination session root owns the surface and at
+ * least one expected terminal message id is present in the DOM. Does not wait
+ * for composer usability, hit-testing, content hashing, or two equal frames.
+ */
+async function measureSessionDomMessagePresent(
+  page: Page,
+  target: SessionReadinessTarget,
+  token: string,
+  hooks?: ActivationHooks,
+): Promise<SessionActionResult> {
+  const presentPromise = page.evaluate(
+    ({
+      id,
+      expectedMessageIds,
+    }: {
+      id: string;
+      expectedMessageIds: string[];
+    }) =>
+      new Promise<{
+        paintedAtMs: number;
+        messageId: string;
+        frames: PaintStabilityFrame[];
+      }>((resolve, reject) => {
+        const expected = new Set(expectedMessageIds);
+        const deadline = performance.now() + 30_000;
+        const frames: PaintStabilityFrame[] = [];
+        const frame = (paintedAtMs: number) => {
+          const candidate = document.querySelector<HTMLElement>(
+            `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
+          );
+          const surface = candidate?.closest<HTMLElement>("[data-workbench-content]");
+          const surfaceOk =
+            !!candidate &&
+            !!surface &&
+            surface.getAttribute("aria-hidden") !== "true" &&
+            !surface.hasAttribute("inert");
+          const activeIds = [
+            ...document.querySelectorAll<HTMLElement>(
+              '[data-testid="rail-sidebar-session-row"][data-active="true"]',
+            ),
+          ].map((row) => row.dataset.sessionId ?? "");
+          const railOk = activeIds.length === 1 && activeIds[0] === id;
+          const messageNode = candidate
+            ? [...candidate.querySelectorAll<HTMLElement>("[data-content-message-id], [data-message-id]")].find(
+                (item) => {
+                  const messageId =
+                    item.dataset.contentMessageId ?? item.dataset.messageId ?? "";
+                  return expected.has(messageId);
+                },
+              )
+            : undefined;
+          const ready = surfaceOk && railOk && !!messageNode;
+          frames.push({
+            atMs: paintedAtMs,
+            ready,
+            observerSampleMs: 0,
+            signature: ready
+              ? {
+                  messageId:
+                    messageNode?.dataset.contentMessageId ??
+                    messageNode?.dataset.messageId,
+                }
+              : undefined,
+          });
+          if (ready && messageNode) {
+            resolve({
+              paintedAtMs,
+              messageId:
+                messageNode.dataset.contentMessageId ??
+                messageNode.dataset.messageId ??
+                expectedMessageIds[0]!,
+              frames,
+            });
+            return;
+          }
+          if (performance.now() >= deadline) {
+            reject(
+              new Error(
+                `Claxedo did not mount destination owner with a terminal message in the DOM: ${JSON.stringify({
+                  root: !!candidate,
+                  surfaceOk,
+                  railOk,
+                  activeIds,
+                  expectedMessageIds,
+                })}`,
+              ),
+            );
+            return;
+          }
+          requestAnimationFrame(frame);
+        };
+        requestAnimationFrame(frame);
+      }),
+    {
+      id: target.sessionId,
+      expectedMessageIds: [...target.expectedMessageIds],
+    },
+  );
+  await clickVisibleSessionActivation(page, target.sessionId);
+  const present = await presentPromise;
+  await hooks?.onPainted?.();
+  const timing = await page.evaluate<
+    ActionResult,
+    { token: string; paintedAtMs?: number }
+  >(
+    async (input) =>
+      (await window.__CLAXEDO_AGENT_APP_BENCHMARK__?.finishAction(
+        input.token,
+        input.paintedAtMs,
+      )) ?? {
+        state: "invalid",
+        reason: "browser-observer-missing",
+      },
+    { token, paintedAtMs: present.paintedAtMs },
+  );
+  if (timing.state !== "exact") return timing;
+  const paintedMessage: PaintedMessage = {
+    messageId: present.messageId,
+    kind: "AssistantPart",
+    partId: undefined,
+    textLength: 1,
+    contentSha256: "dom-message-present",
+    composerVisibleAndEnabled: true,
+    surfaceFocused: true,
+    timelineCoverage: {
+      overflowPx: 0,
+      topGapPx: 0,
+      visibleRowCount: 1,
+      virtualKeyCount: 1,
+      rowCount: 1,
+    },
+  };
+  return { ...timing, paintedMessage, paintStabilityFrames: present.frames };
 }
 
 async function clickVisibleSessionActivation(page: Page, sessionId: string) {
