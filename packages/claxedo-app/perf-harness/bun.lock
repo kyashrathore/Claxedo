@@ -5,7 +5,7 @@
     "": {
       "name": "@claxedo/perf-harness",
       "dependencies": {
-        "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#3e2c78d806b9cc02a552b7e1720a1d41a97ade7c",
+        "agent-app-benchmark": "file:/home/ubuntu/bench/agent-app-benchmark",
       },
       "devDependencies": {
         "@types/bun": "1.3.12",
@@ -34,7 +34,7 @@
 
     "@types/node": ["@types/node@25.8.0", "", { "dependencies": { "undici-types": ">=7.24.0 <7.24.7" } }, "sha512-TCFSk8IZh+iLX1xtksoBVtdmgL+1IX0fC9BeU4QqFSuNdN/K+HUlhqOzEmSYYpZUVsLYcPqc9KX+60iDuninSQ=="],
 
-    "agent-app-benchmark": ["agent-app-benchmark@github:kyashrathore/agent-app-benchmark#3e2c78d", { "dependencies": { "ajv": "8.20.0" }, "bin": { "agent-app-benchmark": "./bin/agent-app-benchmark.mjs" } }, "kyashrathore-agent-app-benchmark-3e2c78d", "sha512-sSG+f0ltsGWnuw/3q3UGBD/Wt+a0Omu2k5YwjV9GGfKyRf7OwIqhRMj+hsAa+adVFEtw4rZMc/k9TiNcU98sKg=="],
+    "agent-app-benchmark": ["agent-app-benchmark@file:../../../../home/ubuntu/bench/agent-app-benchmark", { "dependencies": { "ajv": "8.20.0" }, "bin": { "agent-app-benchmark": "./bin/agent-app-benchmark.mjs", "agentappbench": "./bin/agent-app-benchmark.mjs" } }],
 
     "ajv": ["ajv@8.20.0", "", { "dependencies": { "fast-deep-equal": "^3.1.3", "fast-uri": "^3.0.1", "json-schema-traverse": "^1.0.0", "require-from-string": "^2.0.2" } }, "sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA=="],
 

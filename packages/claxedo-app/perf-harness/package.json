@@ -23,6 +23,6 @@
     "typescript": "5.8.2"
   },
   "dependencies": {
-    "agent-app-benchmark": "github:kyashrathore/agent-app-benchmark#3e2c78d806b9cc02a552b7e1720a1d41a97ade7c"
+    "agent-app-benchmark": "file:/home/ubuntu/bench/agent-app-benchmark"
   }
 }
