@@ -253,13 +253,23 @@ function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
 
+type ShareTarget = {
+  primaryKey: string
+  activeKeys: string[]
+  tokenIdentifier?: string
+  subject?: string
+  orgId?: string
+  teamId?: string
+  teamOrgId?: string
+}
+
 function shareTarget(db: SqliteAuthorityDb, args: {
   grantedToTokenIdentifier?: string
   grantedToClerkSubject?: string
   grantedToClerkOrgId?: string
   grantedToTeamId?: string
   grantedToTeamPublicId?: string
-}, options: { requireExisting: boolean }) {
+}, options: { requireExisting: boolean }): ShareTarget {
   const selectors = [
     args.grantedToTokenIdentifier,
     args.grantedToClerkSubject,
@@ -529,6 +539,9 @@ export function createSqliteWorkspaceAuthority(
     session_id: string
     workspace_id: string
     created_by_token_identifier: string
+    title: string | null
+    created_at: number
+    updated_at: number
     deleted_at: number | null
   }
 
