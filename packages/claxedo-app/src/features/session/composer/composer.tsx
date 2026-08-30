@@ -471,7 +471,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
    * `currentHarnessType` cannot be trusted to assert "this is opencode": on a
    * session-mode composer it returns `composerHarnessId(mode)`, which DEFAULTS to
    * "opencode" whenever the SessionRef carries no harness — true for a local
-   * claude-acp session, whose toolbar meanwhile reads "claude-acp" from the harness
+   * ACP session, whose toolbar meanwhile reads its connection key from the harness
    * selection controller. Believing the default meant writing an opencode permission
    * ruleset to a session that is not running opencode. Caught by
    * core-permission-ruleset-delivery.spec.ts.

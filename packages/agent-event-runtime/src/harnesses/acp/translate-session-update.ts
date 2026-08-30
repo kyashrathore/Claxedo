@@ -17,7 +17,7 @@ import type {
 } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus } from "../../contracts/agent-runtime-event"
 import { createAcpTranslatorState, drainContent, drainSpots, reduceTool, viewToolWithDiagnostics, type SessionState } from "./state"
-import { acpMode, classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
+import { classifyToolCall, isSessionSurface, projectToolStart } from "./classify-tool"
 import { createAcpDiagnostics, diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 import { safeContent, safeLocations, safeMeta, safeRawInput, safeRawOutput } from "./validation"
 
@@ -39,7 +39,7 @@ export function createTranslatorContext(client?: string): TranslatorContext {
 
 /**
  * Returns true when rawInput contains at least one key — i.e. is usable structured data.
- * Rejects empty objects sent as placeholders (common in claude-agent-acp).
+ * Rejects empty objects sent as placeholders.
  */
 function hasStructuredInput(raw: unknown): raw is Record<string, unknown> {
   return raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw as object).length > 0
@@ -149,7 +149,6 @@ function translateContentChunk(input: {
       state: input.state,
     })
     if (!text) return []
-    if (isCursorWritableIterableTail(input.kind, input.state, text)) return null
     return [isThought
       ? { type: "thinking-delta", delta: text }
       : { type: "text-delta", delta: text }]
@@ -213,15 +212,6 @@ function textChunkDelta(input: {
   return delta
 }
 
-function isCursorWritableIterableTail(
-  kind: "agent_message_chunk" | "agent_thought_chunk",
-  state: SessionState,
-  text: string,
-) {
-  return state.client === "cursor-acp"
-    && kind === "agent_message_chunk"
-    && text.trim() === "Error: RetriableError: WritableIterable is closed"
-}
 
 function flattenSelectOptions(
   options: SessionConfigSelectOption[] | SessionConfigSelectGroup[],
@@ -328,107 +318,6 @@ function safeConfigOptions(value: unknown, diagnostics: AcpDiagnostics): Session
     })
     return []
   })
-}
-
-// ---------------------------------------------------------------------------
-// Session-surface helpers
-// ---------------------------------------------------------------------------
-
-/**
- * Extract a todo-update event from the tool's accumulated rawInput.
- * Handles Claude TodoWrite ({todos: [...]}) and Cursor UpdateTodos ({todos: [...]}).
- */
-function extractTodos(rawInput: Record<string, unknown> | undefined, diagnostics: AcpDiagnostics): AgentRuntimeEvent | undefined {
-  if (!rawInput) return
-  const items = Array.isArray(rawInput.todos) ? rawInput.todos : []
-  if (items.length === 0) return
-  const bad = items.find((item) => {
-    const row = object(item)
-    return row && row.status === "cancelled"
-  })
-  if (bad) {
-    diagnoseTranslation(diagnostics, "acp.dropped_content", {
-      reason: "todo_cancelled_status_preserved_as_string",
-      shape: shape(bad),
-    })
-  }
-  return {
-    type: "todo-update",
-    todos: items.map((item, i: number) => {
-      const t = object(item) ?? {}
-      return ({
-      id: String(i),
-      description: String(t?.content ?? t?.description ?? ""),
-      status: String(t?.status ?? "in_progress"),
-      priority: String(t?.priority ?? "medium"),
-    })}),
-  }
-}
-
-/**
- * Extract a question or permission-request event from the tool's rawInput.
- * question: { prompt/question, options? }
- * permission (mode=permission): { reason, scopes? }
- */
-function extractQuestion(
-  toolCallId: string,
-  rawInput: Record<string, unknown> | undefined,
-  mode: string | undefined,
-): AgentRuntimeEvent | undefined {
-  if (!rawInput) return
-
-  // Permission requests (Codex)
-  if (mode === "permission") {
-    const reason = typeof rawInput.reason === "string" ? rawInput.reason : undefined
-    const tool = typeof rawInput.tool === "string" ? rawInput.tool : (reason ?? "permission")
-    const scopes = Array.isArray(rawInput.scopes)
-      ? rawInput.scopes.filter((s): s is string => typeof s === "string")
-      : []
-    return {
-      type: "permission-request",
-      requestId: toolCallId,
-      tool,
-      paths: scopes,
-    }
-  }
-
-  // Freeform questions
-  const questions = Array.isArray(rawInput.questions)
-    ? rawInput.questions.map(object).filter((item): item is Record<string, unknown> => !!item)
-    : []
-  if (questions.length > 0) {
-    return {
-      type: "question",
-      requestId: toolCallId,
-      questions: questions.map((question, i) => {
-        const options = Array.isArray(question.options)
-          ? question.options.flatMap((option) => {
-            if (typeof option === "string") return [option]
-            const row = object(option)
-            return text(row?.label) ? [text(row?.label)!] : []
-          })
-          : []
-        return {
-          text: text(question.prompt) ?? text(question.question) ?? text(question.text) ?? `Question ${i + 1}`,
-          ...(options.length ? { options } : {}),
-        }
-      }),
-    }
-  }
-
-  const prompt =
-    (typeof rawInput.prompt === "string" ? rawInput.prompt : undefined) ??
-    (typeof rawInput.question === "string" ? rawInput.question : undefined) ??
-    (typeof rawInput.text === "string" ? rawInput.text : undefined)
-  if (!prompt) return
-  const options = Array.isArray(rawInput.options)
-    ? rawInput.options.filter((o): o is string => typeof o === "string")
-    : undefined
-  return {
-    type: "question",
-    requestId: toolCallId,
-    questions: [{ text: prompt, ...(options?.length ? { options } : {}) }],
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -545,16 +434,8 @@ export function translateSessionUpdate(
 
       // Session-surface routing: emit session events instead of tool rows
       if (isSessionSurface(classification)) {
-        if (classification.kind === "question") {
-          const mode = acpMode(next.metadata)
-          const q = extractQuestion(update.toolCallId, next.input, mode)
-          if (q) chunks.push(q)
-        }
-        if (classification.kind === "todos") {
-          const t = extractTodos(next.input, ctx.diagnostics)
-          if (t) chunks.push(t)
-        }
-        // reasoning: suppress tool row — thinking arrives via agent_thought_chunk
+        // Standard ACP `think` tools do not create a tool row; thinking
+        // content arrives through `agent_thought_chunk`.
         chunks.push(...drainContent(tool, content, ctx.diagnostics))
         chunks.push(...drainSpots(tool, locations))
         return chunks
@@ -563,7 +444,7 @@ export function translateSessionUpdate(
       chunks.push(projectToolStart(
         update.toolCallId,
         next,
-        classification.kind === "task" ? "collab_agent_tool_call" : tool.kind ?? undefined,
+        tool.kind ?? undefined,
       ))
       if (emitInput("start", next.input, rawInput, update.title, update.kind, content)) {
         chunks.push({ type: "tool-input", toolCallId: update.toolCallId, input: next.input, display: next.display, metadata: next.metadata })
@@ -609,12 +490,6 @@ export function translateSessionUpdate(
       // Session-surface routing: emit session events instead of tool rows
       if (isSessionSurface(classification)) {
         const chunks: AgentRuntimeEvent[] = [...statusChunks]
-        if (classification.kind === "todos" && (status === "completed" || status === "in_progress")) {
-          const t = extractTodos(next.input, ctx.diagnostics)
-          if (t) chunks.push(t)
-        }
-        // question: already emitted on tool_call start; updates are no-ops
-        // reasoning: suppress tool row
         chunks.push(...drainContent(tool, safeItems, ctx.diagnostics))
         chunks.push(...drainSpots(tool, safeSpots))
         return chunks

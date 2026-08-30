@@ -152,7 +152,7 @@ describe("createOpencodeCompatProjection", () => {
 
     expect(projection.ingest({
       type: "diagnostic",
-      harness: "codex-acp",
+      harness: "acp:example",
       threadId: "thread-1",
       diagnostic: {
         code: "runtime.adapter_error",
@@ -166,7 +166,7 @@ describe("createOpencodeCompatProjection", () => {
       type: "runtime.diagnostic",
       properties: {
         sessionID: "session-1",
-        harness: "codex-acp",
+        harness: "acp:example",
         threadId: "thread-1",
         code: "runtime.adapter_error",
         message: "bad frame",

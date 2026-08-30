@@ -75,8 +75,6 @@
     "@vscode/windows-process-tree": "0.8.0"
   },
   "devDependencies": {
-    "@agentclientprotocol/claude-agent-acp": "0.63.0",
-    "@agentclientprotocol/codex-acp": "1.1.7",
     "@tailwindcss/vite": "4.1.11",
     "@types/bun": "1.3.13",
     "@types/node": "24.12.2",

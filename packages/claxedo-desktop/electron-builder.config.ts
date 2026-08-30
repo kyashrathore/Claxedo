@@ -183,11 +183,6 @@ const getBase = (): Configuration => ({
       ? [{ from: "resources/diagnostics/", to: "diagnostics/", filter: ["macos-memory-impact"] }]
       : []),
     {
-      from: "resources/acp/",
-      to: "acp/",
-      filter: ["**/*"],
-    },
-    {
       // The separately fingerprinted Host Connector runs as a child process
       // beside app.asar; neither main nor renderer imports its implementation.
       ...HOST_CONNECTOR_EXTRA_RESOURCE,

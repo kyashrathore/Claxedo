@@ -29,6 +29,7 @@ import {
   type OptionsResponse,
   liveHarnessOptionsResponse,
   type SandboxHealth,
+  workspaceRuntimeHealthPath,
 } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../extension-support"
@@ -85,7 +86,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       : harness
     const body = await sandboxJson<SandboxHealth>(
       ws,
-      "/api/wr/health",
+      workspaceRuntimeHealthPath(sessionId),
       undefined,
       sandboxFetchOptions(c, options),
     ).catch((): SandboxHealth => ({
@@ -109,7 +110,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       status: body.ok ? "ready" : body.status ?? "error",
       ready: body.ok ?? false,
       agentType: body.agentType ?? saved.id,
-      // The saved harness KEY (access-qualified, e.g. "claude-acp") stays
+      // The saved harness KEY (access-qualified, e.g. "acp:openclaw") stays
       // authoritative for `activeType`. `/api/wr/health` now forwards a live
       // `agentType`, but that is the base harness id (e.g. "claude")
       // and would drop the access qualifier the harness dropdown / decode rely

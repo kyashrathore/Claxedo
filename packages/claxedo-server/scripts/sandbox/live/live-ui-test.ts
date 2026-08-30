@@ -40,7 +40,7 @@ function must(value: unknown, message: string): asserts value {
 }
 
 type Runner = {
-  type?: "claude-acp" | "codex-acp" | "cursor-acp" | "claude-sdk" | "codex-app-server" | "opencode"
+  type?: "claude-sdk" | "codex-app-server" | "cursor-sdk" | "opencode" | "pi" | `acp:${string}`
   binary?: string | null
 }
 

@@ -1,5 +1,7 @@
+import type { HarnessId } from "@/platform/identity/session-ref"
+
 export type SessionTransportCapabilities = {
-  transport: "claude-acp" | "codex-acp" | "cursor-acp" | "claude-sdk" | "codex-app-server" | "opencode"
+  transport: HarnessId
   abort: boolean
   reconnect: boolean
   replay: boolean

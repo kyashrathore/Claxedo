@@ -10,9 +10,6 @@ export type SessionHost = "central" | "workspace"
 // list was missing `cursor-sdk` and `pi`, silently mis-classifying persisted
 // profiles of those kinds — see `durability/projections.ts`).
 export const BUILTIN_HARNESS_IDS = [
-  "claude-acp",
-  "codex-acp",
-  "cursor-acp",
   "claude-sdk",
   "codex-app-server",
   "cursor-sdk",

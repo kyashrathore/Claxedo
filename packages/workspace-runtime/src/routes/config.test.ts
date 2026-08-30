@@ -56,13 +56,12 @@ describe("runtime config route", () => {
           },
         },
         runner: {
-          type: "claude-acp",
-          binary: "/tmp/claude-agent-acp",
-          model: "claude-sonnet-4-6",
+          id: "openclaw",
+          access: "acp",
+          binary: "/tmp/openclaw-acp",
+          model: "default",
         },
-        auth: {
-          "claude-acp": "sk-test",
-        },
+        auth: {},
         agent_extensions: {
           version: 1,
           installs: [{
@@ -91,17 +90,15 @@ describe("runtime config route", () => {
         },
       },
       harness: {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "process",
-          binary: "/tmp/claude-agent-acp",
+          binary: "/tmp/openclaw-acp",
         },
       },
-      model: "claude-sonnet-4-6",
-      auth: {
-        "claude-acp": "sk-test",
-      },
+      model: "default",
+      auth: {},
       agent_extensions: {
         version: 1,
         installs: [{
@@ -141,8 +138,9 @@ describe("runtime config route", () => {
           binary: "/tmp/codex",
           model: "gpt-5",
         }, {
-          type: "claude-acp",
-          binary: "/tmp/claude-agent-acp",
+          id: "openclaw",
+          access: "acp",
+          binary: "/tmp/openclaw-acp",
         }],
         auth: {
           "codex-app-server": "codex-auth",
@@ -184,11 +182,11 @@ describe("runtime config route", () => {
           binary: "/tmp/codex",
         },
       }, {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "process",
-          binary: "/tmp/claude-agent-acp",
+          binary: "/tmp/openclaw-acp",
         },
       }],
       auth: {
@@ -214,8 +212,9 @@ describe("runtime config route", () => {
       body: JSON.stringify({
         version: 1,
         mcp: {},
-        runner: {
-          type: "claude-acp",
+        harness: {
+          id: "openclaw",
+          access: "acp",
           transport: "streamable-http",
           url: "http://127.0.0.1:7331/acp",
           headers: {
@@ -229,7 +228,7 @@ describe("runtime config route", () => {
     expect(res.status).toBe(200)
     expect(seen).toMatchObject({
       harness: {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "remote",
@@ -255,8 +254,9 @@ describe("runtime config route", () => {
       body: JSON.stringify({
         version: 1,
         mcp: {},
-        runner: {
-          type: "claude-acp",
+        harness: {
+          id: "openclaw",
+          access: "acp",
           transport: "http",
           url: "http://127.0.0.1:7331/acp",
         },
@@ -267,7 +267,7 @@ describe("runtime config route", () => {
     expect(res.status).toBe(200)
     expect(seen).toMatchObject({
       harness: {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "remote",

@@ -104,8 +104,8 @@ function titleCase(value: string) {
 
 /**
  * The selected model's reasoning-effort choice, as a `thought_level` config
- * option — the same category ACP defines and that codex-acp / claude-agent-acp
- * already emit, so one extractor on the app side serves every harness.
+ * option — the same category ACP defines, so one extractor on the app side
+ * serves every harness.
  *
  * `undefined` when the model does not support effort, or offers fewer than two
  * levels: a single choice is not a choice, and surfacing it would spend a whole

@@ -48,8 +48,8 @@ describe("BootstrapRoutes", () => {
       },
     })
 
-    const empty = await emptyEnvApp.request("/api/claxedo/bootstrap?runner=claude-acp")
-    const configured = await configuredEnvApp.request("/api/claxedo/bootstrap?runner=claude-acp")
+    const empty = await emptyEnvApp.request("/api/claxedo/bootstrap?runner=claude-sdk")
+    const configured = await configuredEnvApp.request("/api/claxedo/bootstrap?runner=claude-sdk")
 
     expect(empty.status).toBe(200)
     expect(configured.status).toBe(200)
@@ -57,11 +57,11 @@ describe("BootstrapRoutes", () => {
     const emptyBody = await empty.json()
     const configuredBody = await configured.json()
 
-    expect(emptyBody.provider.connected).not.toContain("claude-acp")
-    expect(emptyBody.provider.all.find((item: { id: string }) => item.id === "claude-acp")?.source).toBe("config")
+    expect(emptyBody.provider.connected).not.toContain("claude-sdk")
+    expect(emptyBody.provider.all.find((item: { id: string }) => item.id === "claude-sdk")?.source).toBe("config")
     expect(configuredBody.version).toBe("9.9.9-test")
-    expect(configuredBody.provider.connected).toContain("claude-acp")
-    expect(configuredBody.provider.all.find((item: { id: string }) => item.id === "claude-acp")?.source).toBe("env")
+    expect(configuredBody.provider.connected).toContain("claude-sdk")
+    expect(configuredBody.provider.all.find((item: { id: string }) => item.id === "claude-sdk")?.source).toBe("env")
   })
 
   test("uses injected env for OpenCode compatibility disable flag instead of ambient process env", async () => {
@@ -113,13 +113,11 @@ describe("BootstrapRoutes", () => {
       expect(injectedDisabled.status).toBe(200)
       const injectedDisabledBody = await injectedDisabled.json()
       expect(injectedDisabledBody.provider).toEqual({ all: [], default: {}, connected: [] })
-      expect(injectedDisabledBody.provider_auth["codex-acp"]).toEqual([
+      expect(injectedDisabledBody.provider_auth["codex-app-server"]).toEqual([
         { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
         { type: "api", label: "API Key" },
       ])
-      expect(injectedDisabledBody.provider_auth["claude-acp"]).toEqual([{ type: "api", label: "API Key" }])
       expect(injectedDisabledBody.provider_auth["claude-sdk"]).toEqual([{ type: "api", label: "API Key" }])
-      expect(injectedDisabledBody.provider_auth["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
       expect(injectedDisabledBody.config_providers).toEqual({ providers: [], default: {} })
       expect(calls).toBe(0)
     } finally {

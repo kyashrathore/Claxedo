@@ -375,14 +375,21 @@ describe("workspace runtime host route auth", () => {
   test("global diagnostics report runner degradation without changing public health liveness", async () => {
     const originalListSessions = AcpHarnessAdapter.prototype.listSessions
     const originalReadRuntimeHealth = AcpHarnessAdapter.prototype.readRuntimeHealth
+    const healthContexts: Array<{ sessionId?: string } | undefined> = []
     AcpHarnessAdapter.prototype.listSessions = async () => []
-    AcpHarnessAdapter.prototype.readRuntimeHealth = () => ({
-      status: "degraded",
-      reason: "harness_process_lost",
-      message: "ACP session process restarted",
-      sessions: [{ id: "s1", status: "recovering", message: "ACP session process restarted" }],
+    AcpHarnessAdapter.prototype.readRuntimeHealth = (_directory: string, context?: { sessionId?: string }) => {
+      healthContexts.push(context)
+      return {
+        status: "degraded",
+        reason: "harness_process_lost",
+        message: "ACP session process restarted",
+        sessions: [{ id: "s1", status: "recovering", message: "ACP session process restarted" }],
+      }
+    }
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
     })
-    const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure(), harness: { id: "claude", access: "acp" } })
     try {
       const status = await runtime.app.request("http://localhost/session/status")
       expect(status.status).toBe(200)
@@ -398,7 +405,7 @@ describe("workspace runtime host route auth", () => {
           sessions: [{ id: "s1", status: "recovering" }],
         },
       })
-      const health = await (await runtime.app.request("http://localhost/api/wr/health")).json() as Record<string, unknown>
+      const health = await (await runtime.app.request("http://localhost/api/wr/health?sessionId=s1")).json() as Record<string, unknown>
       // Liveness semantics are unchanged by degradation: a degraded harness on a
       // live runtime still reports ok:true/status:"ready". Only the harness-health
       // detail (forwarded for the composer health peek) reflects the degradation.
@@ -406,7 +413,7 @@ describe("workspace runtime host route auth", () => {
         ok: true,
         status: "ready",
         service: "workspace-runtime",
-        agentType: "claude",
+        agentType: "openclaw",
         harnessHealth: {
           status: "degraded",
           reason: "harness_process_lost",
@@ -422,6 +429,7 @@ describe("workspace runtime host route auth", () => {
       expect(health).not.toHaveProperty("workspaceId")
       expect(health).not.toHaveProperty("ptyCount")
       expect(health).not.toHaveProperty("processCount")
+      expect(healthContexts).toContainEqual({ sessionId: "s1" })
     } finally {
       AcpHarnessAdapter.prototype.listSessions = originalListSessions
       AcpHarnessAdapter.prototype.readRuntimeHealth = originalReadRuntimeHealth

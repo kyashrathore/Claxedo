@@ -15,18 +15,14 @@
 
 import * as fs from "fs"
 import * as path from "path"
-import os from "os"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
-  bundledAcpBinary,
   harnessKey,
   isAcpConnectionId,
-  isAcpHarnessId,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
-  type AcpHarnessId,
   type AgentHarnessId,
   type SessionHarness,
 } from "@claxedo/agent-sdk-runtime"
@@ -108,7 +104,7 @@ export interface UserAgentConfig {
   harness?: SessionHarness
   model?: string
   runner?: unknown
-  auth?: Record<string, string>  // providerID → API key, e.g. "claude-acp" → "sk-ant-..."
+  auth?: Record<string, string>  // native provider ID → credential material
   sandbox_driver?: SandboxDriverConfig
   /** Operator-configured ACP connections, keyed by stable lowercase slug. */
   acp?: Record<string, UserAcpConnection>
@@ -146,8 +142,6 @@ export interface CommandItem {
 
 export type HarnessType = AgentHarnessId
 export type AgentConfigOptions = {
-  acpDir?: string
-  platform?: NodeJS.Platform
   /**
    * Authority used to hydrate workspace Agent Extensions into the runtime
    * snapshot pushed to sandboxes.
@@ -181,30 +175,6 @@ export function configureAgentConfig(options: AgentConfigOptions = {}) {
 
 function sanitizeName(name: string): string {
   return name.replace(/[^a-zA-Z0-9_-]/g, "-").slice(0, 64)
-}
-
-function cursorBinary() {
-  const bin = path.join(os.homedir(), ".local", "bin")
-  const choices = [path.join(bin, "agent"), path.join(bin, "cursor-agent")]
-  return choices.find((item) => fs.existsSync(item)) ?? "agent"
-}
-
-const ACP_BINARY_NAMES: Record<AcpHarnessId, string | (() => string)> = {
-  claude: "claude-agent-acp",
-  codex: "codex-acp",
-  cursor: cursorBinary,
-}
-
-function acpBinary(id: AcpHarnessId, options: AgentConfigOptions = agentConfigOptions) {
-  const binary = ACP_BINARY_NAMES[id]
-  const name = typeof binary === "function" ? binary() : binary
-  if (path.isAbsolute(name) || name.includes(path.sep)) return name
-  // In packaged Electron app, CLAXEDO_ACP_DIR points to the resources/acp directory
-  if (options.acpDir) {
-    const bundled = bundledAcpBinary(options.acpDir, name, options.platform)
-    if (bundled) return bundled
-  }
-  return path.resolve(import.meta.dirname, "../../workspace-runtime/node_modules/.bin", name)
 }
 
 function stringRecord(input: unknown) {
@@ -357,14 +327,7 @@ function normalizeHarness(input: unknown, options: AgentConfigOptions = agentCon
       connection: existingConnection,
     }
   }
-  const binary = typeof row.binary === "string"
-    ? row.binary
-    // Built-in ACP ids infer their bundled binary. An OPERATOR-configured ACP
-    // connection has no inference: its process descriptor comes only from the
-    // accepted `acp` registry (attached at snapshot time), never guessed here.
-    : identity.access === "acp" && isAcpHarnessId(identity.id)
-    ? acpBinary(identity.id, options)
-    : undefined
+  const binary = typeof row.binary === "string" ? row.binary : undefined
   const transport = normalizeAgentHarnessTransport(row.transport)
   const url = typeof row.url === "string" ? row.url : undefined
   const headers = stringRecord(row.headers)
@@ -536,7 +499,7 @@ async function runtimeMcp(
   // natively: it receives the user's configured servers (managed servers stay
   // a built-in-agent concern). The connection's `params.supportsMcpServers:
   // false` withholds the offer at the adapter for agents that reject it.
-  if (harness.access === "acp" && !isAcpHarnessId(harness.id as string)) {
+  if (harness.access === "acp") {
     return resolveUserMcp(userMcp)
   }
   const agent = harnessAgent(harnessKey(harness) ?? harness.id)
@@ -680,7 +643,7 @@ export async function getRuntimeConfigSnapshot(
   // the accepted registry at snapshot time — the session record and config
   // carry only the logical identity, so a command/env change applies to the
   // next process start without rewriting either.
-  const selectedRegistryEntry = selected.access === "acp" && !isAcpHarnessId(selected.id as string)
+  const selectedRegistryEntry = selected.access === "acp"
     ? config.acp?.[selected.id]
     : undefined
   const harness = selectedRegistryEntry && acpConnectionEnabled(selectedRegistryEntry)
@@ -697,14 +660,8 @@ export async function getRuntimeConfigSnapshot(
     // Registry may not be initialized yet during early startup
   }
   const auth = { ...legacyAuth, ...registryAuth }
-  const openaiAuth = auth.openai
-  const codexAuth = auth["codex-acp"]
-  if (!codexAuth && codexCompatible(openaiAuth)) auth["codex-acp"] = openaiAuth
-  if (!openaiAuth && codexAuth) auth.openai = codexAuth
-  if (!auth["claude-sdk"] && auth["claude-acp"]) auth["claude-sdk"] = auth["claude-acp"]
-  const codexAppServerAuth = auth["codex-acp"] ?? auth.openai
+  const codexAppServerAuth = auth.openai
   if (!auth["codex-app-server"] && codexAppServerAuth) auth["codex-app-server"] = codexAppServerAuth
-  if (!auth["cursor-sdk"] && auth["cursor-acp"]) auth["cursor-sdk"] = auth["cursor-acp"]
   const workspaceInstalls = options.workspaceDir && options.workspaceId
     ? options.workspaceInstalls ?? await runtimeWorkspaceAgentExtensions(options.workspaceId, {
         required: options.requireWorkspaceAgentExtensions ?? false,

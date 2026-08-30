@@ -68,6 +68,8 @@ export type WorkspaceHost = {
     workspaceHarnessEnabled: boolean
     configApply: RuntimeConfigApplyStatus
   }
+  /** Read health for one session's resolved harness, without unrelated session history. */
+  readHarnessHealth: (input: { sessionId: string; directory?: string }) => Promise<AgentHarnessAdapterHealth>
   capabilities: () => WorkspaceCapabilities
   /** Canonical in-process work that prevents daemon quiescence. */
   activity: () => {

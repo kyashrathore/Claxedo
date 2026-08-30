@@ -63,7 +63,7 @@ export async function providerAuthBody(harnessOverride?: string) {
   }
   // One source of truth with the control-plane route rather than a second,
   // slightly-different literal (this one used to omit `openai` and to flatten
-  // codex-acp's OAuth method down to an API key).
+  // a native Codex OAuth method down to an API key).
   const base = providerAuthMethods() as Record<string, unknown>
   if (harnessId !== "opencode") return base
   // The control plane and engine each own real methods, so compose them on a
@@ -108,11 +108,9 @@ export async function globalConfigBody(harnessOverride: string | undefined, opti
 function localProviderCatalog(harnessId: string, options: OpenCodeCompatRouteOptions) {
   if (harnessId === "opencode") return { all: [], default: {}, connected: [] }
   const envKeys: Record<string, string> = {
-    "claude-acp": "ANTHROPIC_API_KEY",
     "claude-sdk": "ANTHROPIC_API_KEY",
-    "codex-acp": "OPENAI_API_KEY",
     "codex-app-server": "OPENAI_API_KEY",
-    "cursor-acp": "CURSOR_API_KEY",
+    "cursor-sdk": "CURSOR_API_KEY",
   }
   const ids = Object.keys(envKeys)
   return {

@@ -25,7 +25,7 @@ export type RefreshedCredentialSecret = {
 }
 
 /** Providers whose stored secret can be renewed without the user present. */
-const refreshableProviders = ["openai", "codex-acp", "codex-app-server"]
+const refreshableProviders = ["openai", "codex-app-server"]
 
 /** Access tokens are minted ~1h; mirrors the same fallback `sync.ts` uses. */
 const fallbackLifetimeMs = 55 * 60 * 1000

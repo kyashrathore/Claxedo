@@ -28,7 +28,7 @@ export async function prepareSpawnEnv(env: NodeJS.ProcessEnv | Record<string, st
 }
 
 export function opencodeAuthContent(auth: Record<string, string> | undefined) {
-  const openai = authEntry(auth?.openai ?? auth?.["codex-acp"])
+  const openai = authEntry(auth?.openai)
   if (!openai) return
   return JSON.stringify({ openai })
 }

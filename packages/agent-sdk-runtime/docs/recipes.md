@@ -417,11 +417,11 @@ Use this when deciding how your backend should reach each harness.
 ACP:
 
 ```ts
-import { claude } from "@claxedo/agent-sdk-runtime/harnesses"
+import { acp } from "@claxedo/agent-sdk-runtime/harnesses"
 
-const claudeOverAcp = claude({
-  access: "acp",
-  binary: "claude-agent-acp",
+const openClaw = acp("openclaw", {
+  binary: "openclaw-acp",
+  args: ["serve"],
 })
 ```
 

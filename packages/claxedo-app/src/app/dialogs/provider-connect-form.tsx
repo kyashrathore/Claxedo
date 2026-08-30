@@ -43,7 +43,7 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
   const providers = useProviders(props.harness)
   const providerAuthQuery = useQuery(() => queryOptions.providerAuth(props.harness))
   // The catalog holds MODEL providers; callers may pass an id it does not carry
-  // (an auth-only id like `codex-acp`, or a provider the list hasn't loaded
+  // (an auth-only harness id, or a provider the list hasn't loaded
   // yet). Every consumer below reads `.name`, so a miss used to throw and take
   // the whole screen with it — fall back to the id rather than crash.
   const provider = createMemo(() =>
@@ -51,7 +51,7 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
       ?? { id: props.provider, name: props.provider, source: "custom" as const, env: [], options: {}, models: {} },
   )
   const codexBundleRequired = () => props.harness === "pi" && props.provider === "openai-codex"
-  const authProviderID = () => codexBundleRequired() ? "codex-acp" : props.provider
+  const authProviderID = () => codexBundleRequired() ? "codex-app-server" : props.provider
   const fallback = createMemo<ProviderAuthMethod[]>(() => codexBundleRequired()
     ? [{ type: "oauth", label: "ChatGPT Plus or Pro" }]
     : [{ type: "api", label: language.t("provider.connect.method.apiKey") }])

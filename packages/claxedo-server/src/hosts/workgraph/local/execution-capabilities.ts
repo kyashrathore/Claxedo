@@ -2,7 +2,7 @@ import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
-import { isAgentHarnessId, normalizeHarnessIdentity, sdkModelOptions } from "@claxedo/agent-sdk-runtime"
+import { harnessKey, isAgentHarnessId, normalizeHarnessIdentity, sdkModelOptions } from "@claxedo/agent-sdk-runtime"
 import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
@@ -12,9 +12,6 @@ import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-
 import { createExecutionCapabilitiesPort } from "../execution-capabilities"
 
 const SESSION_COMPOSER_HARNESSES = [
-  "claude-acp",
-  "codex-acp",
-  "cursor-acp",
   "claude-sdk",
   "codex-app-server",
   "cursor-sdk",
@@ -81,6 +78,7 @@ export function createLocalExecutionCapabilities(input: Readonly<{
       // Runs execute through the harness-neutral runtime contribution
       // (`workGraphRuntimeRouteContributions`) on non-OpenCode harnesses and
       // through the engine's Session V2 bridge on OpenCode.
+      const preferred = composerHarness(activeHarness)
       const harnesses = [
         ...(await Promise.all(SESSION_COMPOSER_HARNESSES.map(async (harness) => ({
           harness: { harness },
@@ -93,6 +91,17 @@ export function createLocalExecutionCapabilities(input: Readonly<{
           ),
           tools: [],
         })))),
+        ...(preferred?.startsWith("acp:") ? [{
+          harness: { harness: preferred },
+          agents: defaultAgent(preferred),
+          providers: await acpProviders(
+            preferred,
+            resolvedDirectory && harnessConfigOptions
+              ? (selectedHarness) => harnessConfigOptions(resolvedDirectory, selectedHarness)
+              : undefined,
+          ),
+          tools: [],
+        }] : []),
         {
           harness: { harness: "pi" },
           agents: defaultAgent("pi"),
@@ -101,7 +110,6 @@ export function createLocalExecutionCapabilities(input: Readonly<{
         },
         { harness: { harness: "opencode" }, agents: runtime[0], providers: runtime[1], tools: runtime[2] },
       ]
-      const preferred = composerHarness(activeHarness)
       return {
         harnesses: preferred
           ? [...harnesses.filter((catalog) => catalog.harness.harness === preferred), ...harnesses.filter((catalog) => catalog.harness.harness !== preferred)]
@@ -189,16 +197,27 @@ function defaultAgent(harness: string) {
 
 async function sdkProviders(harness: string, harnessConfigOptions?: (harness: string) => Promise<unknown>) {
   const identity = normalizeHarnessIdentity(harness)
-  // This catalog path serves the FIXED composer list only — built-in SDK/ACP
-  // harnesses with static model catalogs. Open ACP connections carry live
-  // catalogs of their own and never route here.
-  if (!identity || !isAgentHarnessId(identity.id) || identity.id === "opencode" || identity.id === "pi") {
+  // This catalog path serves the fixed native composer list only.
+  if (!identity || identity.access !== "native" || !isAgentHarnessId(identity.id) || identity.id === "opencode" || identity.id === "pi") {
     throw new Error(`Unsupported SDK Session harness ${harness}`)
   }
-  const live = identity.access === "native" || (identity.id === "codex" && identity.access === "acp")
-    ? await liveHarnessModels(harness, harnessConfigOptions)
-    : undefined
+  const live = await liveHarnessModels(harness, harnessConfigOptions)
   const models = live ?? sdkModelOptions(identity.id)
+  return {
+    connected: [harness],
+    all: [{
+      id: harness,
+      models: Object.fromEntries(models.map((model) => [model.id, {
+        ...model,
+        status: "active",
+        variants: { low: {}, medium: {}, high: {} },
+      }])),
+    }],
+  }
+}
+
+async function acpProviders(harness: string, harnessConfigOptions?: (harness: string) => Promise<unknown>) {
+  const models = await liveHarnessModels(harness, harnessConfigOptions) ?? []
   return {
     connected: [harness],
     all: [{
@@ -243,11 +262,7 @@ async function liveHarnessModels(harness: string, harnessConfigOptions?: (harnes
 function composerHarness(input: string) {
   const identity = normalizeHarnessIdentity(input)
   if (!identity) return
-  if (identity.access === "acp") return `${identity.id}-acp`
-  if (identity.id === "claude") return "claude-sdk"
-  if (identity.id === "codex") return "codex-app-server"
-  if (identity.id === "cursor") return "cursor-sdk"
-  return identity.id
+  return harnessKey(identity)
 }
 
 function withDefaultEffort(catalog: ReturnType<typeof piProviderCatalog>) {

@@ -12,9 +12,7 @@
     },
     "auth": {
       "keys": [
-        "claude-acp",
         "claude-sdk",
-        "codex-acp",
         "codex-app-server",
         "openai"
       ]

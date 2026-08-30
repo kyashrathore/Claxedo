@@ -16,14 +16,14 @@ describe("ACP session config sync", () => {
 
     await sync({ request: async (_method: unknown, params: unknown) => calls.push(params) } as never, state, "agent-session", {
       agent: "auto",
-      model: { providerID: "claude-acp", modelID: "default" },
+      model: { providerID: "acp:example", modelID: "default" },
       parts: [],
     } as never, { syncMode: false })
 
     expect(calls).toEqual([])
   })
 
-  test("maps app default model to Cursor ACP default option spelling", async () => {
+  test("does not translate app defaults to an agent-private option spelling", async () => {
     const calls: unknown[] = []
     const conn = {
       async request(_method: unknown, params: unknown) {
@@ -47,15 +47,11 @@ describe("ACP session config sync", () => {
 
     await sync(conn as never, state, "agent-session", {
       agent: "build",
-      model: { providerID: "cursor-acp", modelID: "default" },
+      model: { providerID: "acp:example", modelID: "default" },
       parts: [],
     } as never)
 
-    expect(calls).toEqual([expect.objectContaining({
-      sessionId: "agent-session",
-      configId: "model",
-      value: "default[]",
-    })])
+    expect(calls).toEqual([])
   })
 
   test("applies the selected reasoning effort through its authoritative config option", async () => {
@@ -100,7 +96,7 @@ describe("ACP session config sync", () => {
 
     await sync(conn as never, state, "agent-session", {
       agent: "read-only",
-      model: { providerID: "codex-acp", modelID: "gpt-5.6-sol" },
+      model: { providerID: "acp:example", modelID: "gpt-5.6-sol" },
       variant: "ultra",
       parts: [],
     } as never, { syncMode: false })

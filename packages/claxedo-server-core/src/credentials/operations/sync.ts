@@ -56,15 +56,10 @@ const defaultExec: CredentialExec = (file, args) =>
     timeout: 2_000,
   })
 
-const acp = {
-  "claude-acp": "ANTHROPIC_API_KEY",
+const nativeHarnessEnv = {
   "claude-sdk": "ANTHROPIC_API_KEY",
-  "codex-acp": "OPENAI_API_KEY",
   "codex-app-server": "OPENAI_API_KEY",
-  // cursor-acp is env-only on purpose: cursor-agent needs a dashboard-issued
-  // CURSOR_API_KEY, and the only token on disk (the IDE's state.vscdb entry)
-  // is a cursor.com web-session JWT, not a valid API key.
-  "cursor-acp": "CURSOR_API_KEY",
+  "cursor-sdk": "CURSOR_API_KEY",
 } as const
 
 // Mirrors the engine's xdg-basedir resolution (packages/core/src/global.ts):
@@ -279,7 +274,7 @@ function opencodeCodex(input: unknown, local: unknown) {
       : jwtExp(access) ?? Date.now() + 55 * 60 * 1000
   if (!refresh || !access) return
   return {
-    provider_id: "codex-acp",
+    provider_id: "codex-app-server",
     kind: "oauth_token" as const,
     source: row?.type === "oauth" ? "upstream_sync" as const : "local_only" as const,
     label: row?.type === "oauth" ? "Synced from OpenCode auth" : "Synced from local Codex auth",
@@ -385,14 +380,7 @@ function put(map: Map<string, LocalCredentialItem>, item: Item | undefined) {
   map.set(`${item.provider_id}\u0000${item.kind}\u0000${item.account_id ?? ""}`, normalized)
 }
 
-/**
- * `claude-acp` and `claude-sdk` are two harness bindings of the SAME underlying
- * credential, so they collect as two rows. If those rows carry the same label
- * and the same origin the user is asked to choose between things they cannot
- * tell apart — name the binding, and name the exact env var when that is where
- * the token came from, so "why are there two?" is answerable from the row.
- */
-function claudeOAuthItem(providerId: "claude-acp" | "claude-sdk", token: string | undefined) {
+function claudeOAuthItem(token: string | undefined) {
   const accessToken = clean(token)
   if (!accessToken) return
   const envVar = process.env.CLAUDE_CODE_OAUTH_TOKEN
@@ -400,14 +388,13 @@ function claudeOAuthItem(providerId: "claude-acp" | "claude-sdk", token: string 
     : process.env.ANTHROPIC_AUTH_TOKEN
       ? "ANTHROPIC_AUTH_TOKEN"
       : undefined
-  const binding = providerId === "claude-acp" ? "ACP adapter" : "agent SDK"
   return {
-    provider_id: providerId,
+    provider_id: "claude-sdk",
     kind: "oauth_token" as const,
     source: "managed" as const,
     label: envVar
-      ? `Claude token from ${envVar} · ${binding}`
-      : `Claude Code login · ${binding}`,
+      ? `Claude token from ${envVar} · agent SDK`
+      : `Claude Code login · agent SDK`,
     ...(envVar ? { origin: `Environment variable ${envVar}` } : {}),
     secret: JSON.stringify({
       type: "claude_code_oauth",
@@ -475,8 +462,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   put(map, opencodeCopilot(opencode?.["github-copilot"], "github-copilot"))
   put(map, opencodeCopilot(opencode?.["github-copilot-enterprise"], "github-copilot-enterprise"))
   const claudeOAuth = claudeCodeOAuthToken(options)
-  put(map, claudeOAuthItem("claude-acp", claudeOAuth))
-  put(map, claudeOAuthItem("claude-sdk", claudeOAuth))
+  put(map, claudeOAuthItem(claudeOAuth))
 
   for (const [providerId, secret] of Object.entries(cfg.auth ?? {})) {
     const txt = clean(secret)
@@ -542,7 +528,7 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
       : undefined,
   )
 
-  for (const [providerId, name] of Object.entries(acp)) {
+  for (const [providerId, name] of Object.entries(nativeHarnessEnv)) {
     const secret = clean(process.env[name])
     if (!secret) continue
     put(map, {

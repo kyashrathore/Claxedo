@@ -111,11 +111,9 @@ export const CONTROL_PLANE_HOSTS = [
  * group is auto-added to the network allowlist.
  */
 export const PROVIDER_TO_GROUP: Record<string, string> = {
-  "claude-acp": "anthropic",
   "claude-sdk": "anthropic",
-  "codex-acp": "openai",
   "codex-app-server": "openai",
-  "cursor-acp": "openai",
+  "cursor-sdk": "openai",
   "anthropic": "anthropic",
   "openai": "openai",
   "google": "google_ai",

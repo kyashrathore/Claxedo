@@ -547,6 +547,20 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("Select model")
   })
 
+  test("shows an operator ACP's managed model as informational and healthy", () => {
+    harnessType = "acp:openclaw"
+    acpConnections = [{ key: "acp:openclaw", id: "openclaw", label: "OpenClaw", enabled: true }]
+    models = []
+    selectedModel = "default"
+
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
+
+    expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("OpenClaw default")
+    expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("true")
+    expect(container.querySelector("[data-action='prompt-harness-model']")?.getAttribute("title")).toBe("Model is managed by OpenClaw")
+    expect(noticeRow(container)).toBeNull()
+  })
+
   test("surfaces Cursor SDK auth requirements in the notice row", () => {
     harnessType = "cursor-sdk"
     configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."

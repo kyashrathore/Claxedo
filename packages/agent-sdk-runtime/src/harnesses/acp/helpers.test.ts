@@ -13,10 +13,8 @@ import { errorMessage } from "./helpers"
  * ("Internal error", "Invalid params", ...). An `instanceof Error` check that
  * runs before the `data` check therefore returns the code name for every
  * agent-side failure and never reaches the `data` branch at all — which is how
- * a `claude-agent-acp` startup failure ("--dangerously-skip-permissions cannot
- * be used with root/sudo privileges") reached the UI as "Internal error".
- * `data.details` is where claude-agent-acp puts the adapter's stderr;
- * `data.message` is where other agents put theirs.
+ * an agent startup failure can otherwise reach the UI only as "Internal error".
+ * Agents may place their useful detail in either `data.details` or `data.message`.
  */
 describe("errorMessage", () => {
   test("the RequestError premise: it is an Error subclass whose detail lives in .data", () => {
@@ -33,9 +31,8 @@ describe("errorMessage", () => {
     expect(errorMessage(new Error("spawn ENOENT"))).toBe("spawn ENOENT")
   })
 
-  test("the claude-agent-acp shape surfaces data.details, not the JSON-RPC code name", () => {
-    const stderr =
-      "Claude Code process exited with code 1. stderr: --dangerously-skip-permissions cannot be used with root/sudo privileges for security reasons"
+  test("an agent's data.details surfaces instead of only the JSON-RPC code name", () => {
+    const stderr = "Agent process exited with code 1. stderr: configuration rejected"
 
     expect(errorMessage(RequestError.internalError({ details: stderr }))).toBe(`Internal error: ${stderr}`)
   })

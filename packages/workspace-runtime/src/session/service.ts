@@ -1,5 +1,5 @@
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
-import { firstTurnErrorData, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
+import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
 import type {
   AgentMessageRow,
@@ -158,14 +158,20 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
   // Always assign a userMessageId so adapters publish a `message.updated`
   // event for the user prompt. Without this, reload-resume can lose user input.
   const userMessageId = body.messageID ?? mkUserMessageId()
+  // ACP owns its model default unless the user or live session config selected
+  // one. Sending the native compatibility default here makes a generic ACP
+  // adapter restart under an unrelated Claude model before the first prompt.
+  const defaultModel = config
+    ? defaultSessionModel(config.harness)
+    : { providerID: "anthropic", modelID: "claude-sonnet-4-6" }
   return {
     parts: body.parts ?? [],
     userMessageId,
     assistantMessageId: mkAssistantId(userMessageId),
     agent: body.agent ?? config?.agent ?? "build",
     model: {
-      providerID: body.model?.providerID ?? config?.model?.providerID ?? "anthropic",
-      modelID: body.model?.modelID ?? config?.model?.modelID ?? "claude-sonnet-4-6",
+      providerID: body.model?.providerID ?? config?.model?.providerID ?? defaultModel.providerID,
+      modelID: body.model?.modelID ?? config?.model?.modelID ?? defaultModel.modelID,
     },
     ...(body.tools ? { tools: body.tools } : {}),
     ...(body.format ? { format: body.format } : {}),

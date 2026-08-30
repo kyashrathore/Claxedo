@@ -64,8 +64,6 @@ describe("build-sandbox-image", () => {
         dependencies: {
           "better-sqlite3": "12.10.0",
           "@lydell/node-pty": "1.2.0-beta.14",
-          "@agentclientprotocol/claude-agent-acp": "0.60.0",
-          "@agentclientprotocol/codex-acp": "0.10.0",
           "@claxedo/agent-sdk-runtime": "0.5.1",
           hono: "4.12.12",
         },
@@ -83,8 +81,6 @@ describe("build-sandbox-image", () => {
     expect(deps).toEqual({
       "better-sqlite3": "12.10.0",
       "@lydell/node-pty": "1.2.0-beta.14",
-      "@agentclientprotocol/claude-agent-acp": "0.60.0",
-      "@agentclientprotocol/codex-acp": "0.10.0",
       hono: "4.12.12",
       "just-bash": "3.0.1",
     })
@@ -100,10 +96,7 @@ describe("build-sandbox-image", () => {
     expect(Object.keys(deps)).toEqual(expect.arrayContaining([
       "better-sqlite3",
       "@lydell/node-pty",
-      "@agentclientprotocol/claude-agent-acp",
-      "@agentclientprotocol/codex-acp",
     ]))
-    expect(deps["@agentclientprotocol/claude-agent-acp"]).toBe("0.63.0")
     expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.220")
     expect(deps.zod).toBe("4.4.3")
   })

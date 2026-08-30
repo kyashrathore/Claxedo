@@ -2,7 +2,6 @@ import type { McpServer, Usage } from "@agentclientprotocol/sdk"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { Log } from "../../log"
 import type { ACPTransportEnv } from "./transport"
-import { claudeAuthEnv, claudeAuthValue } from "../claude/auth"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -18,18 +17,12 @@ export function sameAcpEnv(a: ACPTransportEnv, b: ACPTransportEnv) {
 }
 
 export function envFromConfig(config: Record<string, unknown>) {
-  const authRecord = stringRecord(config.auth)
-  const auth = envRecord(config.auth, true)
-  return mergeAcpEnv(
-    mergeAcpEnv(envRecord(config.env), auth),
-    claudeAuthEnv(claudeAuthValue(authRecord)),
-  )
+  return envRecord(config.env)
 }
 
-function envRecord(input: unknown, onlyEnvKeys = false): ACPTransportEnv {
+function envRecord(input: unknown): ACPTransportEnv {
   return Object.fromEntries(
-    Object.entries(stringRecord(input))
-      .filter(([key]) => !onlyEnvKeys || /^[A-Z_][A-Z0-9_]*$/.test(key)),
+    Object.entries(stringRecord(input)),
   )
 }
 
@@ -99,8 +92,7 @@ export function errorMessage(err: unknown): string {
   // Error` shortcut below: the ACP SDK's RequestError extends Error AND carries
   // `data`, so an early return on `.message` collapsed every agent-side failure
   // to "Internal error" and made this branch dead code for the only errors it
-  // was written for. `details` is where claude-agent-acp puts the adapter's
-  // stderr; `message` is where other agents put theirs.
+  // was written for. Agents may report the useful failure in either field.
   const data = obj?.data && typeof obj.data === "object" ? (obj.data as Record<string, unknown>) : undefined
   const detail = [data?.message, data?.details].find((v): v is string => typeof v === "string" && v.length > 0)
   if (detail) return typeof obj?.message === "string" && obj.message !== detail ? `${obj.message}: ${detail}` : detail

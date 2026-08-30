@@ -24,6 +24,7 @@ import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
 import { extractPromptTitleText, fallbackSessionTitle, hasConcreteSessionTitle } from "./session-title"
+import { resolveSessionModel } from "./session-model"
 
 declare const agentRuntimeStore: unique symbol
 declare const agentHarnessFactory: unique symbol
@@ -595,9 +596,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
-        const config = store.getSessionConfig(turn.sessionId)
+        const storedConfig = store.getSessionConfig(turn.sessionId)
         const directory = session.directory ?? undefined
         const adapter = await adapterForSession(turn.sessionId, directory)
+        const config = storedConfig ?? await adapter.getSessionConfig(turn.sessionId, directory)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
@@ -606,7 +608,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           userMessageId,
           assistantMessageId,
           agent: turn.agent ?? config?.agent ?? "build",
-          model: turn.model ?? config?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+          model: turn.model ?? resolveSessionModel(config),
           ...(turn.tools ? { tools: turn.tools } : {}),
           ...(turn.format ? { format: turn.format } : {}),
           ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),

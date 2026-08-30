@@ -666,7 +666,7 @@ describe("control plane session routes", () => {
     })
     expect(capabilities.status).toBe(200)
     await expect(capabilities.json()).resolves.toMatchObject({
-      transport: "claude-acp",
+      transport: "opencode",
       replay: true,
     })
     expect(convex.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {

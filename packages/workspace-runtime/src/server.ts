@@ -392,13 +392,19 @@ function runtimeDiagnostics(host: Host, options: WorkspaceRuntimeServerOptions) 
   }
 }
 
-function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions) {
+async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOptions, sessionId?: string) {
   const detail = host.detail()
+  const harnessHealth = sessionId
+    ? await host.readHarnessHealth({
+        sessionId,
+        ...(options.target?.directory ? { directory: options.target.directory } : {}),
+      })
+    : detail.harnessHealth
   return workspaceRuntimeLivenessResponse({
     state: detail.state,
     harness: detail.harness,
     error: detail.error,
-    harnessHealth: detail.harnessHealth,
+    harnessHealth,
     routeAuthBoundary: workspaceRuntimeRouteAuthBoundary(options),
     serviceExposure: options.serviceExposure ?? workspaceRuntimeServiceExposureFromEnv(),
     exposure: options.exposure ? { kind: exposureBoundaryName(options.exposure) } : undefined,
@@ -586,8 +592,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     },
   })
 
-  app.get(WorkspaceRuntimeRoutes.health, (c) =>
-    c.json(runtimeLiveness(host, options)),
+  app.get(WorkspaceRuntimeRoutes.health, async (c) =>
+    c.json(await runtimeLiveness(host, options, c.req.query("sessionId"))),
   )
 
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))

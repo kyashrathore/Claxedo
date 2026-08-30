@@ -6,6 +6,7 @@ import { HarnessModelPicker } from "@/features/session/composer/ui/harness-model
 import { publishComposerNotice, type ComposerNotice } from "@/features/session/composer/ui/composer-notice"
 import { resolveHarnessNotice } from "@/features/session/composer/ui/harness-notice"
 import { HARNESS_DISPLAY_NAMES, harnessDisplayLabel, type HarnessType } from "@/features/session/harness/profile"
+import { harnessUsesManagedDefaultModel } from "@/features/session/harness/selection"
 import { isAcpConnectionHarnessId } from "@/platform/identity/session-ref"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -37,7 +38,6 @@ function label(input: string) {
 
 function harnessOptionGroup(input: HarnessType) {
   if (isAcpConnectionHarnessId(input)) return "ACP"
-  if (input === "claude-acp" || input === "codex-acp" || input === "cursor-acp") return "ACP"
   if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
   return "Direct"
 }
@@ -48,13 +48,13 @@ function HarnessOptionIcon(props: { harness: HarnessType }) {
     // glyph says "an agent process you configured".
     return <Icon name="terminal-square" size="small" class="shrink-0" />
   }
-  if (props.harness === "claude-acp" || props.harness === "claude-sdk") {
+  if (props.harness === "claude-sdk") {
     return <Icon name="claude" size="small" class="shrink-0" />
   }
-  if (props.harness === "codex-acp" || props.harness === "codex-app-server") {
+  if (props.harness === "codex-app-server") {
     return <Icon name="openai" size="small" class="shrink-0" />
   }
-  if (props.harness === "cursor-acp" || props.harness === "cursor-sdk") {
+  if (props.harness === "cursor-sdk") {
     return <Icon name="cursor" size="small" class="shrink-0" />
   }
   if (props.harness === "opencode") {
@@ -380,8 +380,17 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const hasModelOptions = createMemo(() => {
     return rows().length > 0
   })
+  const managedDefaultModel = createMemo(() => harnessUsesManagedDefaultModel({
+    harness: selection().harness,
+    selectedModel: selection().selectedModel,
+    dynamicModels: selection().models,
+    readiness: selection().readiness,
+    optionsLoading: selection().optionsLoading,
+    configError: selection().configError,
+    selectedThoughtLevel: selection().selectedThoughtLevel,
+  }))
   const modelUnavailable = createMemo(() => {
-    return !modelLoading() && !hasModelOptions()
+    return !modelLoading() && !hasModelOptions() && !managedDefaultModel()
   })
   const modelOptionsFailed = createMemo(() => {
     if (harness() === "pi") return !!piProviders.error() && !modelLoading()
@@ -390,7 +399,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return !optionsLoading() && !hasModelOptions()
   })
   const modelDisabled = createMemo(() => {
-    return (harness() === "pi" && !!props.modelLocked) || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
+    return (harness() === "pi" && !!props.modelLocked) || managedDefaultModel() || modelLoading() || isError() || modelUnavailable() || modelOptionsFailed()
   })
   // Names a model, or says there is none — never reports an error. Failures are
   // the notice row's job, and this control used to duplicate its wording
@@ -402,6 +411,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     if (selection().draftDefaultState === "saved-model-unavailable") {
       return selection().draftDefaultLabels?.model ?? selection().selectedModel
     }
+    if (managedDefaultModel()) return `${harnessOptionLabel(harness())} default`
     if (harness() === "pi" && selection().selectedModel) return selection().selectedModel
     if (!hasModelOptions()) return harness() === "pi" ? "No Pi models available" : "Select model"
     return selection().selectedModel || "Select model"
@@ -415,6 +425,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // never escalate to the notice row, which is reserved for things that broke.
   const modelHint = createMemo(() => {
     if (harness() === "pi" && props.modelLocked) return "Start a new Pi session to choose a different model"
+    if (managedDefaultModel()) return `Model is managed by ${harnessOptionLabel(harness())}`
     if (isStale() && !modelOptionsFailed()) return "Model list may be outdated"
   })
   const modelTriggerProps = createMemo(() => ({
@@ -443,7 +454,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       return !piProviders.loading() && !piProviders.error() && piProviders.connected().length === 0
     }
     if (harness() === "opencode") return false
-    return !modelLoading() && !hasModelOptions() && !isPolling() && !isError()
+    return !managedDefaultModel() && !modelLoading() && !hasModelOptions() && !isPolling() && !isError()
   })
   const notice = createMemo<ComposerNotice | undefined>(() => {
     // A backgrounded pane must not publish over the visible one, and opencode

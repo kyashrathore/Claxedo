@@ -105,13 +105,18 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         input.setOptionsLoading(scope, false)
         return payload
       }
-      input.applyPatch(scope, resolvingDefault ? withoutSelection(decision.patch, payload.stale) : decision.patch)
+      input.applyPatch(scope, resolvingDefault && !decision.managedDefault
+        ? withoutSelection(decision.patch, payload.stale)
+        : decision.patch)
       if (!resolvingDefault && decision.saveModel) input.saveModel(scope, decision.saveModel)
       if (resolvingDefault && !payload.stale) {
         const eligibleModels = (decision.patch.dynamicModels ?? []).map((model) => ({
           providerID: type,
           modelID: model.id,
         }))
+        if (decision.managedDefault && decision.patch.selectedModel) {
+          eligibleModels.push({ providerID: type, modelID: decision.patch.selectedModel })
+        }
         input.resolveDraftDefault!(draftDefault, {
           supportedHarnesses: ["opencode", type],
           eligibleModels,
@@ -122,7 +127,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       }
       if (!payload.stale) {
         const resolvedModel = decision.patch.selectedModel &&
-          decision.patch.dynamicModels?.some((model) => model.id === decision.patch.selectedModel)
+          (decision.managedDefault || decision.patch.dynamicModels?.some((model) => model.id === decision.patch.selectedModel))
           ? { providerID: type, modelID: decision.patch.selectedModel }
           : undefined
         input.completeRememberedHarness?.(

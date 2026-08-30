@@ -62,6 +62,13 @@ export function sameHarness(a: SessionHarness, b: SessionHarness) {
 
 export function harnessFromRequest(input: unknown, fallback?: { type?: unknown; id?: unknown; access?: unknown; binary?: unknown; transport?: unknown; url?: unknown; headers?: unknown }) {
   const identity = normalizeHarnessIdentity(input ?? fallback)
+    // The app's canonical picker value for an operator connection is the
+    // access-qualified string `acp:<slug>`. When it arrives through the legacy
+    // `type` query/body field, structured normalization cannot infer the ACP
+    // access from an unknown id, so decode that canonical string explicitly.
+    ?? (input == null && typeof fallback?.type === "string"
+      ? normalizeHarnessIdentity(fallback.type)
+      : undefined)
   if (!identity) return
   const row = input && typeof input === "object" && !Array.isArray(input)
     ? input as Record<string, unknown>
@@ -168,6 +175,12 @@ export async function sandboxJson<T>(
     throw new Error(message)
   }
   return await res.json() as T
+}
+
+export function workspaceRuntimeHealthPath(sessionId?: string) {
+  if (!sessionId) return "/api/wr/health"
+  const params = new URLSearchParams({ sessionId })
+  return `/api/wr/health?${params}`
 }
 
 export async function sandboxSessionExists(

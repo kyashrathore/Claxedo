@@ -13,10 +13,10 @@ export type CredentialResolution = {
   defaultModel: CredentialResolvedModel | undefined
 }
 
-const anthropicProviders = ["anthropic", "claude-acp", "claude-sdk"]
+const anthropicProviders = ["anthropic", "claude-sdk"]
 const openAIProviders = ["openai"]
-const codexProviders = ["openai-codex", "codex", "codex-acp", "codex-app-server"]
-const cursorProviders = ["cursor", "cursor-acp", "cursor-sdk"]
+const codexProviders = ["openai-codex", "codex", "codex-app-server"]
+const cursorProviders = ["cursor", "cursor-sdk"]
 
 export function resolveVerifiedCredentials(input: {
   credentials: readonly VerifiedCredentialInput[]
@@ -30,16 +30,13 @@ export function resolveVerifiedCredentials(input: {
   const runnable = new Set<HarnessId>()
 
   if (anthropic) {
-    runnable.add("claude-acp")
     runnable.add("claude-sdk")
   }
   if (openai || codex) {
-    runnable.add("codex-acp")
     runnable.add("codex-app-server")
     runnable.add("opencode")
   }
   if (cursor) {
-    runnable.add("cursor-acp")
     runnable.add("cursor-sdk")
   }
   if (anthropic || openai || codex) runnable.add("pi")

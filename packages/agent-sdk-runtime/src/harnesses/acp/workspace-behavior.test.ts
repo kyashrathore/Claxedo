@@ -5,7 +5,7 @@ import { AcpHarnessAdapter } from "./index"
 type BaseInternals = {
   busySessions: Set<string>
   currentModel: string
-  options: { binary: string }
+  options: { binary: string; harness: string }
   sessions: Map<string, { directory: string; proc: null; init: null }>
   probe: null
 }
@@ -24,7 +24,7 @@ function adapter<Extra extends object = Record<never, never>>() {
   const defaults: BaseInternals = {
     busySessions: new Set(),
     currentModel: "",
-    options: { binary: "fake-acp" },
+    options: { binary: "fake-acp", harness: "openclaw" },
     sessions: new Map(),
     probe: null,
   }
@@ -37,19 +37,19 @@ describe("AcpHarnessAdapter", () => {
     const item = adapter()
 
     expect(item.readHarnessCapabilities()).toEqual({
-      harness: "claude",
+      harness: "openclaw",
       abort: true,
       reconnect: false,
       replay: true,
       permissions: true,
       questions: false,
-      todos: true,
+      todos: false,
       commands: false,
       fork: false,
       revert: false,
       unrevert: false,
       configOptions: true,
-      subagents: true,
+      subagents: false,
     })
   })
 
@@ -284,7 +284,7 @@ describe("AcpHarnessAdapter", () => {
           env: { OPENCODE_API_URL: "http://localhost:3001" },
         },
       },
-      auth: { "claude-acp": "sk-test" },
+      auth: { anthropic: "must-not-be-injected" },
     })
 
     expect(item.currentMcp).toEqual([{

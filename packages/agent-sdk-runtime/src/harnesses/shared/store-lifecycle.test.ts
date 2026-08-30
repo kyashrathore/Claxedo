@@ -17,6 +17,7 @@ describe("adapter store lifecycle", () => {
     let closed = 0
     const adapter = new AcpHarnessAdapter({
       binary: "fake-acp",
+      harness: "test-acp",
       createStore: () => acpStore(() => {
         closed++
       }),
@@ -32,6 +33,7 @@ describe("adapter store lifecycle", () => {
     let closed = 0
     const adapter = new AcpHarnessAdapter({
       binary: "fake-acp",
+      harness: "test-acp",
       store: acpStore(() => {
         closed++
       }),

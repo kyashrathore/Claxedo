@@ -10,6 +10,7 @@ type ProbeEntry = {
 }
 
 type BaseInternals = {
+  options: { binary: string; harness: string }
   sessions: Map<string, unknown>
   probe: ProbeEntry | null
 }
@@ -20,7 +21,7 @@ function adapter<Extra extends object = Record<never, never>>() {
     AcpHarnessAdapter,
     Omit<BaseInternals, keyof Extra> & Extra
   >
-  const defaults: BaseInternals = { sessions: new Map(), probe: null }
+  const defaults: BaseInternals = { options: { binary: "fake-acp", harness: "openclaw" }, sessions: new Map(), probe: null }
   Object.assign(out, defaults)
   return out
 }

@@ -162,8 +162,9 @@ describe("workspace runtime auth helpers", () => {
 
     expect(acpRemoteTransportEnabled()).toBe(false)
     expect(acpTransportFactory({
-      type: "claude-acp",
-      url: "http://127.0.0.1:7331/acp",
+      id: "example",
+      access: "acp",
+      connection: { kind: "remote", url: "http://127.0.0.1:7331/acp" },
     })).toBeUndefined()
   })
 
@@ -172,14 +173,14 @@ describe("workspace runtime auth helpers", () => {
 
     expect(acpRemoteTransportEnabled()).toBe(true)
     const factory = acpTransportFactory({
-      type: "claude-acp",
-      transport: "streamable-http",
-      url: "http://127.0.0.1:7331/acp",
+      id: "example",
+      access: "acp",
+      connection: { kind: "remote", transport: "streamable-http", url: "http://127.0.0.1:7331/acp" },
     })
     expect(factory).toBeTypeOf("function")
     expect(factory!({
       directory: "/tmp",
-      binary: "claude-agent-acp",
+      binary: "example-acp",
       args: [],
       model: "",
       env: {},
@@ -193,14 +194,14 @@ describe("workspace runtime auth helpers", () => {
     process.env[ACP_REMOTE_TRANSPORT_FLAG] = "1"
 
     const factory = acpTransportFactory({
-      type: "claude-acp",
-      transport: "http",
-      url: "http://127.0.0.1:7331/acp",
+      id: "example",
+      access: "acp",
+      connection: { kind: "remote", transport: "http", url: "http://127.0.0.1:7331/acp" },
     } as unknown as Parameters<typeof acpTransportFactory>[0])
     expect(factory).toBeTypeOf("function")
     expect(factory!({
       directory: "/tmp",
-      binary: "claude-agent-acp",
+      binary: "example-acp",
       args: [],
       model: "",
       env: {},
@@ -213,16 +214,16 @@ describe("workspace runtime auth helpers", () => {
   test("ACP remote websocket transport is also gated by the feature flag", () => {
     delete process.env[ACP_REMOTE_TRANSPORT_FLAG]
     expect(acpTransportFactory({
-      type: "claude-acp",
-      transport: "websocket",
-      url: "ws://127.0.0.1:7331/acp",
+      id: "example",
+      access: "acp",
+      connection: { kind: "remote", transport: "websocket", url: "ws://127.0.0.1:7331/acp" },
     })).toBeUndefined()
 
     process.env[ACP_REMOTE_TRANSPORT_FLAG] = "true"
     expect(acpTransportFactory({
-      type: "claude-acp",
-      transport: "websocket",
-      url: "ws://127.0.0.1:7331/acp",
+      id: "example",
+      access: "acp",
+      connection: { kind: "remote", transport: "websocket", url: "ws://127.0.0.1:7331/acp" },
     })).toBeTypeOf("function")
   })
 
@@ -556,13 +557,13 @@ describe("workspace runtime auth helpers", () => {
   })
 
   test("defaults initial runner to opencode without ambient env", () => {
-    process.env.WORKSPACE_RUNTIME_RUNNER = "cursor-acp"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "acp:ignored"
     process.env.WORKSPACE_RUNTIME_ACP_BINARY = "ambient-binary"
 
     expect(createWorkspaceHost().detail().harness).toEqual({ id: "opencode", access: "native" })
   })
 
-  test("harness config options configures current ACP runner with resolved auth env", async () => {
+  test("harness config options never injects app auth into an operator ACP", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-current-auth-"))
     tempDirs.push(dir)
     process.env.HOME = dir
@@ -590,36 +591,31 @@ describe("workspace runtime auth helpers", () => {
       dispose() {},
     } as unknown as AgentHarnessAdapter
     const registry: WorkspaceHarnessRegistry = [{
-      match: (runner) => runner.id === "claude" && runner.access === "acp",
+      match: (runner) => runner.id === "openclaw" && runner.access === "acp",
       create: () => adapter,
     }]
     const app = new Hono()
     mountTestHost(app, {
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
       harnesses: registry,
     })
 
     const accountConfig = await pushRuntimeConfig(app, {
       version: 1,
-      runner: { type: "claude-acp" },
-      auth: {
-        "claude-acp": JSON.stringify({
-          type: "claude_code_oauth",
-          claudeAiOauth: { accessToken: "sk-ant-oauth-options" },
-        }),
-      },
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+      auth: { anthropic: "must-not-reach-operator-acp" },
       mcp: {},
     })
     expect(accountConfig.status).toBe(200)
 
     const accountOptions = await app.request(
-      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=claude-acp`,
+      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:openclaw`,
     )
     expect(accountOptions.status).toBe(200)
-    expect(authCalls.at(-1)).toEqual({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oauth-options" })
+    expect(authCalls.at(-1)).toEqual({})
   })
 
-  test("harness config options probes live Codex ACP session options", async () => {
+  test("harness config options probes a generic ACP's live session options", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-codex-live-"))
     tempDirs.push(dir)
     process.env.HOME = dir
@@ -645,17 +641,17 @@ describe("workspace runtime auth helpers", () => {
       dispose() {},
     } as unknown as AgentHarnessAdapter
     const registry: WorkspaceHarnessRegistry = [{
-      match: (runner) => runner.id === "codex" && runner.access === "acp",
+      match: (runner) => runner.id === "openclaw" && runner.access === "acp",
       create: () => adapter,
     }]
     const app = new Hono()
     mountTestHost(app, {
-      harness: { id: "codex", access: "acp" },
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
       harnesses: registry,
     })
 
     const res = await app.request(
-      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=codex-acp`,
+      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:openclaw`,
     )
     const body = await res.json() as AgentConfigOption[]
 
@@ -797,7 +793,7 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  test("runtime config push rejects unsafe ACP config changes while a turn is active", async () => {
+  test("runtime config auth changes do not restart an active operator ACP", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-acp-live-config-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -818,8 +814,8 @@ describe("workspace runtime auth helpers", () => {
     const originalApplyConfig = AcpHarnessAdapter.prototype.applyConfig
 
     AcpHarnessAdapter.prototype.getSessionConfig = async () => ({
-      harness: { id: "claude", access: "acp" as const },
-      model: { providerID: "claude-acp", modelID: "sonnet" },
+      harness: { id: "openclaw", access: "acp" as const },
+      model: { providerID: "acp:openclaw", modelID: "default" },
       variant: null,
       agent: null,
     })
@@ -839,7 +835,9 @@ describe("workspace runtime auth helpers", () => {
 
     try {
       const app = new Hono()
-      const host = mountTestHost(app, { harness: { id: "claude", access: "acp" } })
+      const host = mountTestHost(app, {
+        harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+      })
 
       const message = app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
@@ -847,7 +845,7 @@ describe("workspace runtime auth helpers", () => {
         body: JSON.stringify({
           parts: [],
           agent: "build",
-          model: { providerID: "claude-acp", modelID: "sonnet" },
+          model: { providerID: "acp:openclaw", modelID: "default" },
         }),
       })
       await started
@@ -857,21 +855,11 @@ describe("workspace runtime auth helpers", () => {
       const config = await pushRuntimeConfig(app, {
         version: 1,
         mcp: {},
-        auth: { "claude-acp": "sk-new" },
-        runner: { type: "claude-acp" },
+        auth: { anthropic: "must-not-reach-operator-acp" },
+        harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
       })
 
-      expect(config.status).toBe(409)
-      await expect(config.json()).resolves.toEqual({
-        error: {
-          code: "runtime_config_unsafe_restart",
-          message: "ACP runtime config change would restart an active session",
-          details: {
-            harness: "claude",
-            activeTurns: 1,
-          },
-        },
-      })
+      expect(config.status).toBe(200)
       expect(host.detail().state).toBe("ready")
       expect(events).toEqual(["send:start"])
 
@@ -889,15 +877,12 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  test("runtime config push defers a newly active ACP promotion until its next safe use", async () => {
+  test("an auth-only ACP promotion does not block the connection's next safe use", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-acp-promote-active-"))
     tempDirs.push(dir)
     process.env.HOME = dir
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const receiptDir = path.join(dir, "runtime-config")
-    const authPath = path.join(dir, ".codex", "auth.json")
-    await fs.promises.mkdir(path.dirname(authPath), { recursive: true })
-    await fs.promises.writeFile(authPath, "previous-auth\n")
 
     let sendStarted!: () => void
     const started = new Promise<void>((resolve) => {
@@ -925,8 +910,8 @@ describe("workspace runtime auth helpers", () => {
     })
 
     AcpHarnessAdapter.prototype.getSessionConfig = async () => ({
-      harness: { id: "claude", access: "acp" as const },
-      model: { providerID: "claude-acp", modelID: "sonnet" },
+      harness: { id: "openclaw", access: "acp" as const },
+      model: { providerID: "acp:openclaw", modelID: "default" },
       variant: null,
       agent: null,
     })
@@ -962,25 +947,22 @@ describe("workspace runtime auth helpers", () => {
       const configPending = pushRuntimeConfig(app, {
         version: 1,
         mcp: {},
-        auth: {
-          "claude-acp": "sk-new",
-          "codex-app-server": codexAuth(),
-        },
-        runner: { type: "claude-acp" },
+        auth: { anthropic: "must-not-reach-operator-acp" },
+        harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
       })
       await writingReceipt
 
       // The runner-scoped ACP adapter appears only after applySnapshot's first
       // safety check, while its receipt I/O is suspended.
       const message = app.request(
-        `http://localhost/session/s-promoted/message?directory=${encodeURIComponent(dir)}&runner=claude-acp`,
+        `http://localhost/session/s-promoted/message?directory=${encodeURIComponent(dir)}&runner=acp:openclaw`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             parts: [],
             agent: "build",
-            model: { providerID: "claude-acp", modelID: "sonnet" },
+            model: { providerID: "acp:openclaw", modelID: "default" },
           }),
         },
       )
@@ -989,8 +971,11 @@ describe("workspace runtime auth helpers", () => {
       const config = await configPending
 
       expect(config.status).toBe(200)
-      expect(host.detail().harness).toEqual({ id: "claude", access: "acp" })
-      expect(await fs.promises.readFile(authPath, "utf8")).toContain("access-token")
+      expect(host.detail().harness).toEqual({
+        id: "openclaw",
+        access: "acp",
+        connection: { kind: "process", binary: "openclaw-acp" },
+      })
       expect(configEvents).toEqual([])
 
       let creationFinished = false
@@ -1003,13 +988,13 @@ describe("workspace runtime auth helpers", () => {
         return response
       })
       await Bun.sleep(10)
-      expect(creationFinished).toBe(false)
-      expect(configEvents).toEqual([])
+      expect(creationFinished).toBe(true)
+      expect(configEvents).toEqual(["createSession"])
 
       releaseSend()
       expect((await message).status).toBe(200)
       expect((await creation).status).toBe(201)
-      expect(configEvents).toEqual(["setAuth", "applyConfig", "createSession"])
+      expect(configEvents).toEqual(["createSession"])
       host.dispose()
     } finally {
       AcpHarnessAdapter.prototype.getSessionConfig = originalGetSessionConfig
@@ -1271,7 +1256,6 @@ describe("workspace runtime auth helpers", () => {
       { id: "claude", access: "native" },
       { id: "codex", access: "native" },
       { id: "cursor", access: "native" },
-      { id: "claude", access: "acp" },
       { id: "pi", access: "native" },
       { id: "opencode", access: "native" },
     ] as const
@@ -2270,15 +2254,18 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-acp-"))
     tempDirs.push(dir)
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "codex-acp"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
+    mountTestHost(app, {
+      opencodeUrl: "http://opencode.test",
+      opencodeCompat: true,
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "missing-openclaw-acp" } },
+    })
 
     const config = await pushRuntimeConfig(app, {
       version: 1,
-      runner: { type: "codex-acp" },
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "missing-openclaw-acp" } },
       auth: {},
       mcp: {},
     })
@@ -2290,7 +2277,7 @@ describe("workspace runtime auth helpers", () => {
       ok: false,
       error: {
         code: "provider_models_unavailable",
-        harness: "codex",
+        harness: "openclaw",
       },
     })
   })
@@ -3429,7 +3416,7 @@ describe("workspace host store factory seam (Unit 2)", () => {
     AcpHarnessAdapter.prototype.updateSessionConfig = async function(_id, patch) {
       calls.push((patch.model as { modelID?: string } | undefined)?.modelID ?? "none")
       return {
-        harness: { id: "claude", access: "acp" },
+        harness: { id: "openclaw", access: "acp" },
         ...(patch.model ? { model: patch.model } : {}),
         variant: patch.variant ?? null,
         agent: patch.agent ?? null,
@@ -3438,16 +3425,18 @@ describe("workspace host store factory seam (Unit 2)", () => {
 
     try {
       const app = new Hono()
-      const host = mountTestHost(app, { harness: { id: "claude", access: "acp" } })
+      const host = mountTestHost(app, {
+        harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+      })
       const patch = {
-        model: { providerID: "claude-acp", modelID: "sonnet" },
+        model: { providerID: "acp:openclaw", modelID: "default" },
         variant: null,
         agent: "build",
       }
 
       for (const _ of [0, 1]) {
         const res = await app.request(
-          `http://localhost/session/s-store/config?directory=${encodeURIComponent(dir)}&harness=claude-acp`,
+          `http://localhost/session/s-store/config?directory=${encodeURIComponent(dir)}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -3457,7 +3446,7 @@ describe("workspace host store factory seam (Unit 2)", () => {
         expect(res.status).toBe(200)
       }
 
-      expect(calls).toEqual(["sonnet", "sonnet"])
+      expect(calls).toEqual(["default", "default"])
       host.dispose()
     } finally {
       AcpHarnessAdapter.prototype.updateSessionConfig = originalUpdateSessionConfig
@@ -4356,6 +4345,79 @@ describe("operator ACP connections", () => {
       expect(removed.status).toBe(200)
       const after = await select()
       expect(after.ok).toBe(false)
+    } finally {
+      host.dispose()
+    }
+  })
+
+  test("an applied descriptor overrides stale operational details on the same logical identity", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-open-acp-registry-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    const seed = new RuntimeStore(storeRoot)
+    seed.bindSession({
+      sessionId: "s-gemini",
+      directory: dir,
+      agentSessionId: "a-gemini",
+      createdAt: 1,
+    })
+    seed.updateSessionConfig("s-gemini", {
+      harness: {
+        id: "gemini",
+        access: "acp",
+        connection: { kind: "process", binary: "/stale/gemini-acp", args: ["--stale"] },
+      },
+    }, { directory: dir })
+    seed.close()
+
+    const createdWith: unknown[] = []
+    const app = new Hono()
+    const host = mountTestHost(app, {
+      harness: { id: "codex", access: "native" },
+      storeRoot,
+      harnesses: [{
+        match: (candidate) => candidate.id === "gemini" && candidate.access === "acp",
+        create: ({ runner: candidate }) => {
+          createdWith.push(candidate)
+          return {
+            getMessages: async () => [],
+            dispose: async () => {},
+          } as unknown as AgentHarnessAdapter
+        },
+      }, ...defaultWorkspaceHarnessRegistry()],
+    })
+    try {
+      const accepted = await pushRuntimeConfig(app, {
+        version: 2,
+        mcp: {},
+        auth: {},
+        harnesses: [
+          { id: "codex", access: "native" },
+          {
+            id: "gemini",
+            access: "acp",
+            connection: {
+              kind: "process",
+              binary: "/current/gemini-acp",
+              args: ["--current"],
+            },
+          },
+        ],
+      })
+      expect(accepted.status).toBe(200)
+
+      const messages = await app.request(
+        `http://localhost/session/s-gemini/message?directory=${encodeURIComponent(dir)}`,
+      )
+      expect(messages.status).toBe(200)
+
+      expect(createdWith).toEqual([expect.objectContaining({
+        connection: expect.objectContaining({
+          binary: "/current/gemini-acp",
+          args: ["--current"],
+        }),
+      })])
     } finally {
       host.dispose()
     }

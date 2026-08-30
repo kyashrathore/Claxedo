@@ -23,11 +23,9 @@ const PROJECTION_BUDGET_MS = { 7: 40, 30: 80, 90: 180 } as const
 const ROUTE_BUDGET_MS = 5_000
 const HARNESSES = [
   "opencode",
-  "claude-acp",
   "claude-sdk",
-  "codex-acp",
   "codex-app-server",
-  "cursor",
+  "cursor-sdk",
   "pi",
 ] as const
 

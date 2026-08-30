@@ -193,6 +193,47 @@ describe("harness options state", () => {
     })
   })
 
+  test("uses an operator ACP's managed default when live config omits model selection", () => {
+    expect(applyHarnessOptionsResponse({
+      type: "acp:openclaw",
+      selectedModel: "",
+      tries: 0,
+      payload: {
+        source: "harness",
+        stale: false,
+        options: [{
+          id: "thought_level",
+          name: "Thought level",
+          category: "thought_level",
+          type: "select",
+          currentValue: "adaptive",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "adaptive", name: "Adaptive" },
+          ],
+        }],
+      },
+    })).toEqual({
+      patch: {
+        optionsSource: "harness",
+        optionsStale: false,
+        optionsLoading: false,
+        thoughtLevels: [
+          { id: "low", name: "Low" },
+          { id: "adaptive", name: "Adaptive" },
+        ],
+        selectedThoughtLevel: "adaptive",
+        dynamicModels: [],
+        selectedModel: "default",
+        configError: undefined,
+      },
+      saveModel: "default",
+      managedDefault: true,
+      retry: false,
+      clearTries: true,
+    })
+  })
+
   test("rejects native SDK static catalog backstops as a model load failure", () => {
     expect(applyHarnessOptionsResponse({
       type: "cursor-sdk",

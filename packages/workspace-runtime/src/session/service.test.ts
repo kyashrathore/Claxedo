@@ -23,7 +23,7 @@ function adapter(input: {
     sendMessage: input.sendMessage ?? (async function* () {}) as AgentHarnessAdapter["sendMessage"],
     getMessages: input.getMessages ?? (async () => []),
     getSessionConfig: input.getSessionConfig ?? (async () => ({
-      runner: { type: "opencode" },
+      harness: { id: "opencode", access: "native" },
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
       variant: "default",
       agent: "build",
@@ -110,6 +110,29 @@ describe("session service", () => {
     })
 
     expect(modes).toEqual(["agent-full-access"])
+  })
+
+  it("uses the agent-owned default model when an ACP session has no selected model", async () => {
+    const models: unknown[] = []
+    await runSessionPromptTurn({
+      adapter: adapter({
+        getSessionConfig: async () => ({
+          harness: { id: "openclaw", access: "acp" },
+          variant: null,
+          agent: null,
+        }),
+        async *sendMessage(_id, input) {
+          models.push(input.model)
+        },
+      }),
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [{ type: "text", text: "hello" }] },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    })
+
+    expect(models).toEqual([{ providerID: "acp:openclaw", modelID: "default" }])
   })
 
   it("carries the requested permission mode through the durable runtime turn", async () => {

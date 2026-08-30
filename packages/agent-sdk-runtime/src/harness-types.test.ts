@@ -37,10 +37,10 @@ describe("open ACP connection identity", () => {
     expect(harnessKey({ id: "gemini", access: "acp" })).toBe("acp:gemini")
   })
 
-  test("built-in ids keep their legacy access-qualified keys", () => {
-    expect(harnessKey({ id: "claude", access: "acp" })).toBe("claude-acp")
+  test("native ids keep their built-in keys while ACP is always qualified", () => {
+    expect(harnessKey({ id: "claude", access: "acp" })).toBe("acp:claude")
     expect(harnessKey({ id: "codex", access: "native" })).toBe("codex")
-    expect(normalizeHarnessIdentity("claude-acp")).toEqual({ id: "claude", access: "acp" })
+    expect(normalizeHarnessIdentity("acp:claude")).toEqual({ id: "claude", access: "acp" })
     expect(normalizeHarnessIdentity("codex-app-server")).toEqual({ id: "codex", access: "native" })
   })
 
@@ -55,7 +55,7 @@ describe("open ACP connection identity", () => {
     // connection; it must resolve as acp-access identity, never dispatch
     // native.
     expect(normalizeHarnessIdentity({ id: "claude", access: "acp" })).toEqual({ id: "claude", access: "acp" })
-    expect(harnessKey({ id: "claude", access: "acp" })).toBe("claude-acp")
+    expect(harnessKey({ id: "claude", access: "acp" })).toBe("acp:claude")
   })
 
   test("blank, malformed, or overlong slugs fail validation", () => {

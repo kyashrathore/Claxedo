@@ -104,7 +104,7 @@ export function createComposerPermissionMode(input: {
      * Not even Claxedo's own two options. They are offered everywhere else
      * precisely because they work everywhere — but "works everywhere" assumes
      * there is a turn to apply them to, and here the agent never came up. An
-     * "Auto" row under "codex-acp could not start" is choosable, looks applied,
+     * "Auto" row under a failed ACP connection is choosable, looks applied,
      * and changes nothing; showing the error alone is the only honest state.
      *
      * Deliberately checked BEFORE the unidentified-harness branch below: that
@@ -213,11 +213,8 @@ function harnessGroupLabel(harness: HarnessId) {
  */
 const HARNESS_GROUP_LABELS: Record<BuiltinHarnessId, string> = {
   opencode: "opencode",
-  "claude-acp": "Claude",
   "claude-sdk": "Claude",
-  "codex-acp": "Codex",
   "codex-app-server": "Codex",
-  "cursor-acp": "Cursor",
   "cursor-sdk": "Cursor",
   pi: "Pi",
 }

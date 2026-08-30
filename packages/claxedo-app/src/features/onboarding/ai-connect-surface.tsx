@@ -49,9 +49,8 @@ export type AIConnectView =
  * times: Codex carries its ChatGPT login, Claude needs one of its own, Cursor
  * takes a dashboard key.
  *
- * `providerId` is the AUTH id, which is what decides the sign-in methods on
- * offer — `codex-acp` is the one that carries the ChatGPT OAuth flow, and
- * `cursor-acp` the dashboard key. These are deliberately not model-catalog ids.
+ * `providerId` is the native harness AUTH id, which decides the sign-in methods
+ * on offer. These are deliberately not model-catalog ids.
  */
 const cloudHarnessOptions: readonly {
   id: string
@@ -63,7 +62,7 @@ const cloudHarnessOptions: readonly {
     id: "codex",
     label: "Codex",
     consequence: "Sign in with ChatGPT. Cloud agents then use your Plus or Pro plan.",
-    view: { kind: "connect", providerId: "codex-acp" },
+    view: { kind: "connect", providerId: "codex-app-server" },
   },
   {
     id: "claude",
@@ -75,7 +74,7 @@ const cloudHarnessOptions: readonly {
     id: "cursor",
     label: "Cursor",
     consequence: "Paste a key from the Cursor dashboard.",
-    view: { kind: "connect", providerId: "cursor-acp" },
+    view: { kind: "connect", providerId: "cursor-sdk" },
   },
 ]
 

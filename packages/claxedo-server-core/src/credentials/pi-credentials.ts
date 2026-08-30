@@ -3,7 +3,7 @@ import { requireCredentialRegistryLookup } from "@claxedo/server-core/credential
 export const PI_LAUNCH_PROVIDERS = ["openai-codex", "anthropic", "openai"] as const
 
 const credentialProviders: Record<(typeof PI_LAUNCH_PROVIDERS)[number], readonly string[]> = {
-  "openai-codex": ["codex-app-server", "codex-acp"],
+  "openai-codex": ["codex-app-server"],
   anthropic: ["anthropic"],
   openai: ["openai"],
 }

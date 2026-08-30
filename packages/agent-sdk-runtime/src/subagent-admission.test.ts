@@ -127,11 +127,11 @@ describe("subagent host admission", () => {
     expect(bound.revision).toBe(2)
   })
 
-  test("round-trips Claude ACP nested messages and Pi immediate child Session shapes", async () => {
+  test("round-trips generic ACP nested messages and Pi immediate child Session shapes", async () => {
     const item = harness()
-    const claude = await item.boundary.admit("parent-claude-acp", {
-      observationId: "claude-acp-nested-1",
-      harnessExecutionId: "run-claude-acp",
+    const nested = await item.boundary.admit("parent-example-acp", {
+      observationId: "example-acp-nested-1",
+      harnessExecutionId: "run-example-acp",
       stableCorrelationId: "agent-tool-call-1",
       label: "Research",
       status: "running",
@@ -148,7 +148,7 @@ describe("subagent host admission", () => {
       transcript: { kind: "live", ref: "pi-child-1" },
     })
 
-    expect(claude).toMatchObject({
+    expect(nested).toMatchObject({
       type: "subagent-updated",
       revision: 1,
       transcript: { kind: "messages", ref: "nested-messages-1" },

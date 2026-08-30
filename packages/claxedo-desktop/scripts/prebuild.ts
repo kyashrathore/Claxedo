@@ -3,14 +3,13 @@
  * Pre-build script for Claxedo Electron desktop app.
  *
  * Rebuilds the installable CLI and embedded engine, bundles server components,
- * copies ACP binaries, and copies channel-specific icons —
+ * and copies channel-specific icons —
  * so that `bun run build` + `bun run package:mac` produces
  * a fully up-to-date app.
  */
 
 import { $ } from "bun"
 import * as fs from "fs"
-import { createRequire } from "node:module"
 import * as path from "path"
 
 import { bundleClaxedoEngineWorker, bundleClaxedoServer } from "./bundle-claxedo-server"
@@ -37,7 +36,6 @@ const AGENT_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../agent-sdk-runtime")
 const OPENCODE_DIR = path.resolve(PACKAGE_DIR, "../opencode")
 const WS_RUNTIME_DIR = path.resolve(PACKAGE_DIR, "../workspace-runtime")
 const RESOURCES_DIR = path.resolve(PACKAGE_DIR, "resources")
-const ACP_DIR = path.resolve(RESOURCES_DIR, "acp")
 
 const log = (msg: string) => console.log(`[prebuild] ${msg}`)
 
@@ -115,83 +113,11 @@ async function bundleServer() {
   log(`server compile cache: ${serverCache.manifest.entries.length} entr(ies), ${serverCacheBytes} bytes`)
 }
 
-// ── ACP binaries ──
-
-async function bundleClaudeAgentAcp() {
-  const desktopPkg = await Bun.file(path.resolve(PACKAGE_DIR, "package.json")).json()
-  const version = desktopPkg.devDependencies?.["@agentclientprotocol/claude-agent-acp"]
-  if (!version) throw new Error("claxedo-desktop is missing @agentclientprotocol/claude-agent-acp")
-  const require = createRequire(path.resolve(PACKAGE_DIR, "package.json"))
-  const packagePath = require.resolve("@agentclientprotocol/claude-agent-acp/package.json")
-  const installed = await Bun.file(packagePath).json()
-  if (installed.version !== version) {
-    throw new Error(`claude-agent-acp version mismatch: expected ${version}, found ${installed.version}`)
-  }
-  const entry = path.resolve(path.dirname(packagePath), "dist/index.js")
-  if (!fs.existsSync(entry)) throw new Error(`claude-agent-acp entry not found at ${entry}`)
-
-  const dest = path.resolve(ACP_DIR, "claude-agent-acp")
-  const tmpDir = path.resolve(ACP_DIR, ".claude-acp-tmp")
-
-  log("Bundling claude-agent-acp...")
-  await $`bun build ${entry} --outdir ${tmpDir} --target=node --minify`
-  let bundled = fs.readFileSync(path.join(tmpDir, "index.js"), "utf-8")
-  bundled = bundled.replace(/^#!.*\n/, "")
-  fs.writeFileSync(
-    dest,
-    `#!/usr/bin/env node
-if (Number.parseInt(process.versions.node, 10) < 22) {
-  console.error("Claude ACP requires Node.js 22 or newer. Install Node 22+ and restart Claxedo.")
-  process.exit(1)
-}
-${bundled}`,
-  )
-  fs.chmodSync(dest, 0o755)
-  fs.rmSync(tmpDir, { recursive: true, force: true })
-  log("claude-agent-acp bundled")
-}
-
-async function bundleCodexAcp() {
-  const dest = path.resolve(ACP_DIR, "codex-acp")
-  const tmpDir = path.resolve(ACP_DIR, ".codex-acp-tmp")
-
-  fs.rmSync(dest, { force: true })
-  fs.rmSync(`${dest}.exe`, { force: true })
-  fs.rmSync(path.resolve(ACP_DIR, "codex-vendor"), { recursive: true, force: true })
-
-  // Plain bundled JS like claude-agent-acp — Node 22+ auto-detects the ESM
-  // syntax in the extensionless file. No runtime ships inside the app: the
-  // adapter runs on the user's Node and spawns the user's system `codex`.
-  log("Bundling codex-acp...")
-  await $`bun build ${path.resolve(SCRIPT_DIR, "codex-acp-entry.ts")} --outdir ${tmpDir} --target=node --minify`
-  let bundled = fs.readFileSync(path.join(tmpDir, "codex-acp-entry.js"), "utf-8")
-  bundled = bundled.replace(/^#!.*\n/, "")
-  fs.writeFileSync(
-    dest,
-    `#!/usr/bin/env node
-if (Number.parseInt(process.versions.node, 10) < 22) {
-  console.error("Codex ACP requires Node.js 22 or newer. Install Node 22+ and restart Claxedo.")
-  process.exit(1)
-}
-${bundled}`,
-  )
-  fs.chmodSync(dest, 0o755)
-  fs.rmSync(tmpDir, { recursive: true, force: true })
-  log("codex-acp bundled")
-}
-
-async function copyAcpBinaries() {
-  fs.mkdirSync(ACP_DIR, { recursive: true })
-  await bundleClaudeAgentAcp()
-  await bundleCodexAcp()
-}
-
 // ── Main ──
 
 // Optional children, native helpers, and the server are independent build outputs.
 await Promise.all([
   copyIcons(),
-  copyAcpBinaries(),
   bundleServer(),
   bundleHostConnector(),
   buildMemoryImpactHelper(),

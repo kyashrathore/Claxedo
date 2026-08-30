@@ -681,7 +681,7 @@ export function createSelfHostedApp(
     ...(services.localExecution.enabled
       ? {
           deferToHarnessRoute: async (harness) =>
-            // Normalize first so the legacy aliases (`?runner=`, `claude-acp`,
+            // Normalize first so query aliases and access-qualified ACP keys
             // …) resolve the same way the compat routes resolve them; an
             // absent or unrecognised name falls back to the configured default.
             await resolveHarnessId(harness ? normalizeHarnessIdentity(harness)?.id : undefined) === "opencode",

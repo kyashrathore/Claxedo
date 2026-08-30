@@ -1,4 +1,5 @@
 import {
+  DEFAULT_HARNESS_MODEL,
   extractModelsFromConfigOptions,
   extractThoughtLevelFromConfigOptions,
   isNativeSdkHarness,
@@ -29,6 +30,8 @@ export type HarnessOptionsStatePatch = {
 export type HarnessOptionsDecision = {
   patch: HarnessOptionsStatePatch
   saveModel?: string
+  /** A live operator ACP answered, but owns model selection outside ACP. */
+  managedDefault?: boolean
   retry: boolean
   clearTries: boolean
 }
@@ -79,6 +82,28 @@ export function applyHarnessOptionsResponse(input: {
   const clearTries = !input.payload.stale
 
   if (!result || result.models.length === 0) {
+    // Operator ACP connections are deliberately open-ended: unlike the bundled
+    // harnesses, their agents are not required to expose a `model` config
+    // option. A fresh live response with other options proves the agent is up;
+    // in that case model ownership stays with the agent (OpenClaw, for example,
+    // uses its Gateway default). `default` is the runtime's protocol sentinel,
+    // not a selectable row synthesized into the picker.
+    if (input.type.startsWith("acp:") && input.payload.source === "harness" &&
+      !input.payload.stale && input.payload.options.length > 0) {
+      return {
+        patch: {
+          ...base,
+          dynamicModels: [],
+          selectedModel: DEFAULT_HARNESS_MODEL.id,
+          configError: undefined,
+          optionsLoading: false,
+        },
+        saveModel: DEFAULT_HARNESS_MODEL.id,
+        managedDefault: true,
+        retry: false,
+        clearTries: true,
+      }
+    }
     return terminalEmptyOptionsDecision({ base, payload: input.payload, tries: input.tries })
   }
 

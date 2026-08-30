@@ -4,10 +4,8 @@ import { harnessDisplayLabel } from "@/ui/harness-display"
 /**
  * How each harness is told about permissions.
  *
- * Keyed on the canonical `HarnessId` — all eight — so a missing entry is a
- * compile error. `claude-acp` and `claude-sdk` are the same vendor with
- * unrelated mechanisms, and collapsing them by provider name loses `cursor-sdk`
- * entirely.
+ * Keyed on every built-in harness id so a missing entry is a compile error.
+ * Operator-defined ACP connections use the protocol mechanism below.
  *
  * Claims below were read off the dependency types and driver source, against the
  * versions installed in `packages/agent-sdk-runtime/node_modules`:
@@ -73,7 +71,7 @@ export type PermissionMechanism =
    */
   | { kind: "claude-sdk-permission-mode" }
   /**
-   * `claude-acp` / `codex-acp` / `cursor-acp` — ACP, which as of
+   * Operator-defined ACP connections, which as of
    * `@agentclientprotocol/sdk` 1.2.1 has two channels:
    *
    *  1. `configOptions: SessionConfigOption[]` + `session/set_config_option`
@@ -153,9 +151,6 @@ export type PermissionMechanism =
 export const PERMISSION_MECHANISMS: Record<BuiltinHarnessId, PermissionMechanism> = {
   opencode: { kind: "opencode-session-ruleset" },
   "claude-sdk": { kind: "claude-sdk-permission-mode" },
-  "claude-acp": { kind: "acp-session-mode" },
-  "codex-acp": { kind: "acp-session-mode" },
-  "cursor-acp": { kind: "acp-session-mode" },
   "codex-app-server": { kind: "codex-approval-policy" },
   "cursor-sdk": { kind: "cursor-local-agent-options" },
   pi: { kind: "sandboxed-no-policy" },
@@ -215,20 +210,16 @@ export type CursorLocalPermissionOptions = {
 
 export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
   opencode: "opencode",
-  "claude-acp": "Claude (ACP)",
   "claude-sdk": "Claude (SDK)",
-  "codex-acp": "Codex (ACP)",
   "codex-app-server": "Codex (SDK)",
-  "cursor-acp": "Cursor (ACP)",
   "cursor-sdk": "Cursor (SDK)",
   pi: "Pi",
 }
 
 /**
  * Mechanism lookup for ANY harness identity. Operator-configured ACP
- * connections speak the generic ACP session-mode surface — the same mechanism
- * the built-in ACP rows use — because the generic adapter negotiates modes
- * live from the agent; there is no per-vendor mechanism to know.
+ * connections speak the generic ACP session-mode surface because the adapter
+ * negotiates modes live from the agent; there is no per-vendor mechanism.
  */
 export function permissionMechanism(harness: HarnessId): PermissionMechanism {
   const hit = (PERMISSION_MECHANISMS as Partial<Record<string, PermissionMechanism>>)[harness]

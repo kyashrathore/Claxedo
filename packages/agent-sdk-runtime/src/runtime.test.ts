@@ -416,6 +416,30 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
+  test("leaves an operator ACP model at its own default when no model is selected", async () => {
+    const models: Array<{ providerID: string; modelID: string }> = []
+    const base = testHarness({
+      sendMessage: async function* (_id, input) {
+        models.push(input.model)
+      },
+    })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [{ ...base, id: "openclaw", access: "acp" } as AgentHarnessFactory],
+    })
+    const session = await runtime.sessions.create({
+      directory: "/workspace",
+      harness: { id: "openclaw", access: "acp" },
+    })
+
+    const turn = await runtime.turns.start({ sessionId: session.id, text: "hello" })
+    await tick()
+
+    expect(turn.prompt.model).toEqual({ providerID: "acp:openclaw", modelID: "default" })
+    expect(models).toEqual([{ providerID: "acp:openclaw", modelID: "default" }])
+    runtime.dispose()
+  })
+
   test("applies the selected runtime model before creating a session", async () => {
     const calls: string[] = []
     const runtime = createAgentRuntime({

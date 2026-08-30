@@ -211,7 +211,7 @@ export function listCredentials(org: CredentialOrgScope = SINGLE_TENANT_ORG): Cr
 
 /**
  * Ordering for "the credential to use for this provider" when more than one
- * exists — a user with two ChatGPT accounts has two `codex-acp` credentials.
+ * exists — a user with two ChatGPT accounts has two native Codex credentials.
  *
  * Write order (`updated_at` alone) is not a preference: importing an older
  * account last made every session resolve to the older, often already-revoked

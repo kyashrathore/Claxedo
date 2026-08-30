@@ -55,7 +55,7 @@ RUN npm i -g --min-release-age=2 tsx@4.22.3 ${CLAXEDO_NPM_AGENTS} && \
 
 # Claxedo workspace-runtime host: an in-repo esbuild bundle (built by
 # scripts/sandbox/build-sandbox-image.ts into .build/) plus a generated
-# package.json pinning the native modules and ACP bins that cannot be bundled.
+# package.json pinning the native modules that cannot be bundled.
 # Images are reproducible from the repo at a pinned commit; npm publishing of
 # @claxedo/workspace-runtime is a release concern and does not gate builds.
 COPY .build/ /opt/workspace-runtime/
@@ -63,19 +63,13 @@ RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
     test -x /opt/workspace-runtime/opencode && \
-    test -x /opt/workspace-runtime/node_modules/.bin/claude-agent-acp && \
-    test -x /opt/workspace-runtime/node_modules/.bin/codex-acp && \
     chmod 0755 /opt/workspace-runtime/workspace-runtime-host.mjs && \
     ln -sf /opt/workspace-runtime/workspace-runtime-host.mjs /usr/local/bin/workspace-runtime && \
     install -m 0755 /opt/workspace-runtime/opencode /usr/local/bin/opencode && \
-    ln -sf /opt/workspace-runtime/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp && \
-    ln -sf /opt/workspace-runtime/node_modules/.bin/codex-acp /usr/local/bin/codex-acp && \
     test -x /usr/local/bin/workspace-runtime && \
     command -v workspace-runtime && \
     test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)" && \
-    command -v opencode && \
-    command -v claude-agent-acp && \
-    command -v codex-acp
+    command -v opencode
 
 # Prove the exact production chain serves WorkGraph's durable Session V2
 # contract through workspace-runtime, including a compressed history page.

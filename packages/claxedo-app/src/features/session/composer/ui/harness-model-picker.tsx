@@ -202,7 +202,7 @@ export function HarnessModelPicker<H extends string>(props: {
   harnessOptions: readonly H[]
   harnessLabel: (harness: H) => string
   /**
-   * Groups the harness rows. NOT decoration: `claude-acp` and `claude-sdk` both
+   * Groups the harness rows. NOT decoration: operator ACP and native SDK rows
    * label as "Claude", as do the Codex and Cursor pairs, so a flat list shows
    * three sets of identical rows with no way to tell them apart. The group
    * heading ("ACP" / "Native SDK" / "Direct") is what disambiguates them.

@@ -4,7 +4,7 @@ import type { RuntimeSnapshot } from "../../core/state"
 import { createAcpEventTranslator, type AcpEventTranslatorState } from "./event-translator"
 
 function runtime(
-  client = "codex-acp",
+  client = "acp:example",
   initialSnapshot?: RuntimeSnapshot<AcpEventTranslatorState>,
   options?: { preserveUserMessageChunks?: boolean },
 ) {
@@ -88,8 +88,8 @@ describe("createAcpEventTranslator", () => {
     ])
   })
 
-  test("drops Cursor ACP writable-iterable transport tail text", () => {
-    const agent = runtime("cursor-acp")
+  test("preserves agent-authored error text without connection-specific filtering", () => {
+    const agent = runtime("acp:example")
 
     expect(agent.ingest({
       source: "acp.jsonrpc",
@@ -124,7 +124,10 @@ describe("createAcpEventTranslator", () => {
         messageId: "message-1",
         content: { type: "text", text: "\n\nError: RetriableError: WritableIterable is closed" },
       },
-    }).events).toEqual([])
+    }).events.map((event) => ({ type: event.type, ...("delta" in event ? { delta: event.delta } : {}) }))).toEqual([{
+      type: "text-delta",
+      delta: "\n\nError: RetriableError: WritableIterable is closed",
+    }])
   })
 
   test("preserves tool output evidence when a later rawOutput is null", () => {
@@ -230,7 +233,7 @@ describe("createAcpEventTranslator", () => {
       },
     })
 
-    const restored = runtime("codex-acp", first.snapshot())
+    const restored = runtime("acp:example", first.snapshot())
     const events = restored.ingest({
       source: "acp.jsonrpc",
       method: "session/update",
@@ -257,8 +260,8 @@ describe("createAcpEventTranslator", () => {
     expect(restored.snapshot().adapterState.tools["tool-1"]?.status).toBe("completed")
   })
 
-  test("routes todo tools to todo updates instead of tool cards", () => {
-    const agent = runtime("claude-acp")
+  test("does not infer todo semantics from a private tool name", () => {
+    const agent = runtime("acp:example")
 
     expect(agent.ingest({
       source: "acp.jsonrpc",
@@ -271,13 +274,13 @@ describe("createAcpEventTranslator", () => {
           todos: [{ content: "Ship runtime", status: "in_progress", priority: "high" }],
         },
       },
-    }).events.map((event) => event.type)).toEqual(["todo-update"])
+    }).events.map((event) => event.type)).toEqual(["tool-start", "tool-input"])
   })
 
-  test("routes codex permission tools to permission requests", () => {
-    const agent = runtime("codex-acp")
+  test("does not infer permission semantics from a private tool payload", () => {
+    const agent = runtime("acp:example")
 
-    expect(agent.ingest({
+    const events = agent.ingest({
       source: "acp.jsonrpc",
       method: "session/update",
       payload: {
@@ -286,16 +289,17 @@ describe("createAcpEventTranslator", () => {
         title: "Permission",
         rawInput: { tool: "shell", reason: "needs access", scopes: ["/repo"] },
       },
-    }).events.find((event) => event.type === "permission-request")).toMatchObject({
-      type: "permission-request",
-      requestId: "permission-1",
-      tool: "shell",
-      paths: ["/repo"],
+    }).events
+    expect(events.some((event) => event.type === "permission-request")).toBe(false)
+    expect(events.find((event) => event.type === "tool-start")).toMatchObject({
+      type: "tool-start",
+      toolCallId: "permission-1",
+      display: { intent: "generic" },
     })
   })
 
-  test("U7: reads Codex ACP subagent identity instead of leaving metadata.sessionId undefined", () => {
-    const agent = runtime("codex-acp")
+  test("does not interpret connection-private metadata as subagent protocol", () => {
+    const agent = runtime("acp:example")
 
     const event = agent.ingest({
       source: "acp.jsonrpc",
@@ -304,59 +308,15 @@ describe("createAcpEventTranslator", () => {
         sessionUpdate: "tool_call",
         toolCallId: "spawn-1",
         title: "Start subagent 1",
-        rawInput: { agentThreadId: "codex-child-thread-1" },
-        _meta: { codex: { subagent: { threadId: "codex-child-thread-1", status: "running" } } },
+        rawInput: { privateThread: "child-thread-1" },
+        _meta: { vendor: { child: { thread: "child-thread-1" } } },
       },
     }).events.find((item) => item.type === "tool-start")
 
     expect(event).toMatchObject({
       type: "tool-start",
-      kind: "collab_agent_tool_call",
-      metadata: { sessionId: "codex-child-thread-1" },
-    })
-  })
-
-  test("U7: recognizes Claude ACP subagent metadata as a task tool", () => {
-    const agent = runtime("claude-acp")
-
-    const event = agent.ingest({
-      source: "acp.jsonrpc",
-      method: "session/update",
-      payload: {
-        sessionUpdate: "tool_call",
-        toolCallId: "agent-1",
-        title: "Agent",
-        rawInput: { description: "Inspect the cache" },
-        _meta: { claudeCode: { subagent: true } },
-      },
-    }).events.find((item) => item.type === "tool-start")
-
-    expect(event).toMatchObject({
-      type: "tool-start",
-      toolName: "task",
-      kind: "collab_agent_tool_call",
-      display: { intent: "task" },
-    })
-  })
-
-  test("U7: recognizes the Cursor ACP subagent title while declaring no child transcript", () => {
-    const agent = runtime("cursor-acp")
-
-    const event = agent.ingest({
-      source: "acp.jsonrpc",
-      method: "session/update",
-      payload: {
-        sessionUpdate: "tool_call",
-        toolCallId: "task-1",
-        title: "Task: Subagent task",
-        rawInput: { description: "Inspect the cache" },
-      },
-    }).events.find((item) => item.type === "tool-start")
-
-    expect(event).toMatchObject({
-      type: "tool-start",
-      toolName: "task",
-      display: { intent: "task" },
+      toolCallId: "spawn-1",
+      display: { intent: "generic" },
     })
     expect(JSON.stringify(event)).not.toContain("sessionId")
   })
@@ -551,7 +511,7 @@ describe("createAcpEventTranslator", () => {
   })
 
   test("can preserve user message chunks as runtime events when explicitly requested", () => {
-    const agent = runtime("codex-acp", undefined, { preserveUserMessageChunks: true })
+    const agent = runtime("acp:example", undefined, { preserveUserMessageChunks: true })
 
     expect(agent.ingest({
       source: "acp.jsonrpc",

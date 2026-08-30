@@ -311,14 +311,8 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
         `npm install ${runtimePackage(expectedRuntimeVersion)} --min-release-age=2`,
         `node -e "const fs=require('fs');const actual=JSON.parse(fs.readFileSync('${RUNTIME_DIR}/node_modules/@claxedo/workspace-runtime/package.json','utf8')).version;if(actual!=='${expectedRuntimeVersion}'){throw new Error('workspace-runtime snapshot package version mismatch: expected ${expectedRuntimeVersion}, got '+actual)}"`,
         "test -x node_modules/.bin/workspace-runtime",
-        "test -x node_modules/.bin/claude-agent-acp",
-        "test -x node_modules/.bin/codex-acp",
         `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/workspace-runtime /usr/local/bin/workspace-runtime`,
-        `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/claude-agent-acp /usr/local/bin/claude-agent-acp`,
-        `sudo ln -sf ${RUNTIME_DIR}/node_modules/.bin/codex-acp /usr/local/bin/codex-acp`,
         "command -v workspace-runtime",
-        "command -v claude-agent-acp",
-        "command -v codex-acp",
       ].join(" && "))
       const snapshot = await builder.snapshot({
         expiration: 0,

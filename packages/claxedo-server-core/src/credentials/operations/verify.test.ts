@@ -8,7 +8,7 @@ const TOKEN_URL = "https://auth.openai.com/oauth/token"
 function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata {
   return {
     id: "cred_1",
-    provider_id: "codex-acp",
+    provider_id: "codex-app-server",
     kind: "oauth_token",
     source: "local_only",
     status: "available",
@@ -154,7 +154,7 @@ describe("verifyCredential — stale and not refreshable", () => {
     const transports = transport({})
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "claude-acp", expires_at: NOW - 1 }),
+      credential({ provider_id: "claude-sdk", expires_at: NOW - 1 }),
       JSON.stringify({ claudeAiOauth: { accessToken: "access_old" } }),
       { fetch: transports.stub, now: () => NOW },
     )
@@ -278,7 +278,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     const transports = transport({})
 
     await verifyCredential(
-      credential({ provider_id: "claude-acp", kind: "api_key" }),
+      credential({ provider_id: "claude-sdk", kind: "api_key" }),
       "sk-ant-api03-console-key",
       { fetch: transports.stub, now: () => NOW },
     )
@@ -293,7 +293,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     const transports = transport({})
 
     await verifyCredential(
-      credential({ provider_id: "claude-acp", kind: "oauth_token" }),
+      credential({ provider_id: "claude-sdk", kind: "oauth_token" }),
       JSON.stringify({ type: "claude_code_oauth", claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" } }),
       { fetch: transports.stub, now: () => NOW },
     )
@@ -349,7 +349,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     const transports = transport({})
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "cursor-acp", kind: "api_key" }),
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
       "cursor-dashboard-key",
       { fetch: transports.stub, now: () => NOW },
     )
@@ -366,7 +366,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     const transports = transport({ probe: { ok: false, status: 401, body: "unauthorized" } })
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "cursor-acp", kind: "api_key" }),
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
       "cursor-revoked-key",
       { fetch: transports.stub, now: () => NOW },
     )
@@ -378,7 +378,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     const transports = transport({ probe: { ok: false, status: 429, body: "too many requests" } })
 
     const outcome = await verifyCredential(
-      credential({ provider_id: "cursor-acp", kind: "api_key" }),
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
       "cursor-dashboard-key",
       { fetch: transports.stub, now: () => NOW },
     )
@@ -399,7 +399,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
 
     await expect(
       verifyCredential(
-        credential({ provider_id: "cursor-acp", kind: "api_key" }),
+        credential({ provider_id: "cursor-sdk", kind: "api_key" }),
         "cursor-dashboard-key",
         { fetch: offline, now: () => NOW },
       ),
@@ -410,7 +410,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     const transports = transport({})
 
     await verifyCredential(
-      credential({ provider_id: "cursor-acp", kind: "api_key" }),
+      credential({ provider_id: "cursor-sdk", kind: "api_key" }),
       "  cursor-dashboard-key\n",
       { fetch: transports.stub, now: () => NOW },
     )

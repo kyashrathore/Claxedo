@@ -1,29 +1,5 @@
 export const AGENT_HARNESS_DEFINITIONS = [
   {
-    key: "claude-acp",
-    id: "claude",
-    access: "acp",
-    label: "Claude (ACP)",
-    authEnv: "ANTHROPIC_API_KEY",
-    authSlot: "anthropic",
-  },
-  {
-    key: "codex-acp",
-    id: "codex",
-    access: "acp",
-    label: "Codex (ACP)",
-    authEnv: "OPENAI_API_KEY",
-    authSlot: "openai",
-  },
-  {
-    key: "cursor-acp",
-    id: "cursor",
-    access: "acp",
-    label: "Cursor (ACP)",
-    authEnv: "CURSOR_API_KEY",
-    authSlot: "cursor",
-  },
-  {
     key: "claude",
     id: "claude",
     access: "native",
@@ -72,7 +48,6 @@ export const AGENT_HARNESS_KEYS = AGENT_HARNESS_DEFINITIONS.map((item) => item.k
 export type AgentHarnessId = (typeof AGENT_HARNESS_IDS)[number]
 export type AgentHarnessAccess = (typeof AGENT_HARNESS_ACCESSES)[number]
 export type AgentHarnessKey = (typeof AGENT_HARNESS_KEYS)[number]
-export type AcpHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
 export type NativeHarnessId = AgentHarnessId
 /**
  * A harness identity's id field: one of the finite built-in ids, or a
@@ -109,10 +84,6 @@ export function isAgentHarnessId(id: string): id is AgentHarnessId {
 
 export function isAgentHarnessAccess(access: string): access is AgentHarnessAccess {
   return (AGENT_HARNESS_ACCESSES as readonly string[]).includes(access)
-}
-
-export function isAcpHarnessId(id: string): id is AcpHarnessId {
-  return id === "claude" || id === "codex" || id === "cursor"
 }
 
 export function normalizeAgentHarnessTransport(input: unknown): AgentHarnessTransport | undefined {
@@ -163,9 +134,6 @@ export function normalizeHarnessIdentity(input: unknown): { id: SessionHarnessId
 }
 
 function legacyHarnessIdentity(input: string): { id: AgentHarnessId; access: AgentHarnessAccess } | undefined {
-  if (input === "claude-acp") return { id: "claude", access: "acp" }
-  if (input === "codex-acp") return { id: "codex", access: "acp" }
-  if (input === "cursor-acp") return { id: "cursor", access: "acp" }
   if (input === "claude-sdk") return { id: "claude", access: "native" }
   if (input === "codex-app-server") return { id: "codex", access: "native" }
   if (input === "cursor-sdk") return { id: "cursor", access: "native" }

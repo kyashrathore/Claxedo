@@ -17,31 +17,16 @@ export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsS
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
 const harnessStatuses = ["configured", "ready", "applying", "error"] as const
 
-export function pickHarness(type?: string | null, binary?: string | null, access?: string | null): HarnessType | undefined {
-  // An explicit operator-ACP identity wins BEFORE binary sniffing: a custom
-  // connection whose command happens to contain "claude"/"codex"/"cursor" must
-  // never be misread as a built-in.
+export function pickHarness(type?: string | null, _binary?: string | null, access?: string | null): HarnessType | undefined {
   if (type && isAcpConnectionHarnessId(type)) return type
-  if (access === "acp" && type && isAcpConnectionHarnessId(`acp:${type}`) &&
-    type !== "claude" && type !== "codex" && type !== "cursor") {
+  if (access === "acp" && type && isAcpConnectionHarnessId(`acp:${type}`)) {
     return `acp:${type}`
-  }
-  if (binary) {
-    const name = (binary.includes("/") ? binary.split("/").pop()! : binary).replace(/\.exe$/i, "")
-    if (name === "agent" || name === "cursor-agent" || name.includes("cursor")) return "cursor-acp"
-    if (name.includes("codex")) return "codex-acp"
-    if (name.includes("claude")) return "claude-acp"
   }
   if (access === "native") {
     if (type === "claude") return "claude-sdk"
     if (type === "codex") return "codex-app-server"
     if (type === "cursor") return "cursor-sdk"
     if (type === "opencode" || type === "pi") return type
-  }
-  if (access === "acp") {
-    if (type === "claude") return "claude-acp"
-    if (type === "codex") return "codex-acp"
-    if (type === "cursor") return "cursor-acp"
   }
   if ((HARNESS_IDS as readonly string[]).includes(type ?? "")) return type as HarnessType
   return undefined
@@ -58,9 +43,6 @@ export function harnessProfile(id: HarnessType) {
 
 export function sessionHarnessIdentity(type: HarnessType) {
   if (type.startsWith("acp:")) return { id: type.slice(4), access: "acp" as const }
-  if (type === "claude-acp") return { id: "claude", access: "acp" as const }
-  if (type === "codex-acp") return { id: "codex", access: "acp" as const }
-  if (type === "cursor-acp") return { id: "cursor", access: "acp" as const }
   if (type === "claude-sdk") return { id: "claude", access: "native" as const }
   if (type === "codex-app-server") return { id: "codex", access: "native" as const }
   if (type === "cursor-sdk") return { id: "cursor", access: "native" as const }
@@ -117,9 +99,7 @@ export function extractModelsFromConfigOptions(
  * The harness's reasoning/thinking-effort choice, when it offers one.
  *
  * `thought_level` is a first-class category in the ACP schema alongside `mode`
- * and `model`, and both bundled agents already emit it — codex-acp as
- * "Reasoning effort", claude-agent-acp as "Effort" with a leading `default`
- * row. Native SDK harnesses report the same category through the same channel;
+ * and `model`. Native SDK harnesses report the same category through the same channel;
  * the Claude SDK's `ModelInfo` carries `supportedEffortLevels` PER MODEL, which
  * is why this is re-derived whenever the option payload changes rather than
  * cached against the harness.
