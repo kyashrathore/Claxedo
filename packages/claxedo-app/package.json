@@ -2,7 +2,7 @@
   "name": "@claxedo/app",
   "version": "0.0.59",
   "private": true,
-  "description": "Cloud extension package for OpenCode (Claxedo)",
+  "description": "Claxedo desktop and web application",
   "type": "module",
   "exports": {
     ".": "./src/app/entry/index.tsx",
@@ -110,7 +110,6 @@
     "@claxedo/usage-contract": "workspace:0.7.0",
     "@kobalte/core": "0.13.12",
     "@opencode-ai/core": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/session-ui": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@solid-primitives/event-bus": "1.1.4",

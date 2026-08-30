@@ -68,7 +68,7 @@ RUN cd packages/opencode && OPENCODE_CHANNEL=selfhost OPENCODE_VERSION=0.0.0-sel
 # fails inside it — which is why nothing caught this until the image was built.
 # 4096 rather than the runtime's 2048 because this bundle emits hidden
 # sourcemaps, and those are what the heap is spent on.
-RUN cd packages/claxedo-app && VITE_CLAXEDO_SERVER_URL="" VITE_OPENCODE_BACKEND_URL="" VITE_AUTH_ENABLED=false \
+RUN cd packages/claxedo-app && VITE_CLAXEDO_SERVER_URL="" VITE_AUTH_ENABLED=false \
     NODE_OPTIONS=--max-old-space-size=4096 \
     node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts --outDir dist-selfhost
 

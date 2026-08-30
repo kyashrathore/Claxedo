@@ -55,6 +55,7 @@ type ReleaseValidationBinding = {
 
 const cfg = {
   base: undefined as string | undefined,
+  username: "",
   password: "",
   bearerToken: undefined as BearerTokenSource | undefined,
   browserCredentials: undefined as RequestCredentials | undefined,
@@ -69,6 +70,7 @@ function envString(input: unknown) {
 
 export function configureApiRuntime(input: {
   baseUrl?: string | null
+  username?: string | null
   password?: string | null
   bearerToken?: BearerTokenSource | null
   browserCredentials?: RequestCredentials | null
@@ -79,6 +81,9 @@ export function configureApiRuntime(input: {
   }
   if ("password" in input) {
     cfg.password = input.password?.trim() ?? ""
+  }
+  if ("username" in input) {
+    cfg.username = input.username?.trim() ?? ""
   }
   if ("bearerToken" in input) {
     cfg.bearerToken = input.bearerToken ?? undefined
@@ -100,6 +105,7 @@ export function configureApiRuntime(input: {
 
 export function resetApiRuntime() {
   cfg.base = undefined
+  cfg.username = ""
   cfg.password = ""
   cfg.bearerToken = undefined
   cfg.browserCredentials = undefined
@@ -394,18 +400,14 @@ export function getClaxedoServerUrl(): string {
 }
 
 /**
- * Returns the explicitly-configured server URL (env var only), with
- * VITE_CLAXEDO_SERVER_URL preferred over the legacy VITE_OPENCODE_BACKEND_URL
- * compatibility alias. Returns `undefined` when neither env var is
- * set (callers fall back to runtime detection / default).
+ * Returns the explicitly-configured Claxedo server URL. Returns `undefined`
+ * when it is not set (callers fall back to runtime detection / default).
  *
  * Distinct from `getClaxedoServerUrl()` which always returns a usable URL.
  */
 export function getConfiguredClaxedoServerUrl(): string | undefined {
   const claxedo = envString(import.meta.env.VITE_CLAXEDO_SERVER_URL)
   if (claxedo?.trim()) return claxedo.trim().replace(/\/+$/, "")
-  const legacy = envString(import.meta.env.VITE_OPENCODE_BACKEND_URL)
-  if (legacy?.trim()) return legacy.trim().replace(/\/+$/, "")
   return undefined
 }
 
@@ -423,7 +425,7 @@ export function getDefaultBaseUrl(): string {
   const serverUrl = (window as typeof window & { __OPENCODE__?: { serverUrl?: string } }).__OPENCODE__?.serverUrl
   if (serverUrl) return normalized(serverUrl) ?? serverUrl
 
-  const backendUrl = normalized(envString(import.meta.env.VITE_OPENCODE_BACKEND_URL))
+  const backendUrl = normalized(envString(import.meta.env.VITE_CLAXEDO_SERVER_URL))
   const remoteOrigin = sameOriginForRemoteLocalBackend(backendUrl)
   if (remoteOrigin) return remoteOrigin
   if (backendUrl) return backendUrl
@@ -479,7 +481,7 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
         return
       }
       if (!cfg.password) return
-      headers.set("Authorization", `Basic ${btoa(`opencode:${cfg.password}`)}`)
+      headers.set("Authorization", `Basic ${btoa(`${cfg.username}:${cfg.password}`)}`)
     }
 
     const setReleaseValidation = (headers: Headers) => {

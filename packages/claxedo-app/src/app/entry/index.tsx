@@ -140,7 +140,7 @@ export function getDefaultConfig(): ClaxedoConfig {
 
   return {
     authBaseUrl: envString(import.meta.env.VITE_AUTH_BASE_URL) ?? window.location.origin,
-    gatewayUrl: envString(import.meta.env.VITE_OPENCODE_BACKEND_URL) ?? "http://127.0.0.1:3000",
+    gatewayUrl: envString(import.meta.env.VITE_CLAXEDO_SERVER_URL) ?? "http://127.0.0.1:3000",
     cloudAutoSwitch: import.meta.env.VITE_CLOUD_AUTOSWITCH !== "false",
 
     // Feature flags - all default to false for standalone mode

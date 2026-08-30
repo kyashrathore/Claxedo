@@ -1,18 +1,17 @@
 import type { PermissionModeDelivery } from "@/features/session/permission/modes"
 
 /**
- * The one call needed to deliver an opencode permission mode, narrowed to a port so
+ * The one call needed to deliver a session permission mode, narrowed to a port so
  * this module is testable without constructing an SDK client.
  *
- * Mirrors `client.session.update` from `@opencode-ai/sdk/v2/client`, which takes flat
- * arguments and maps `permission` into the request body (see the generated
- * `PATCH /session/{sessionID}` method).
+ * The Claxedo client contract takes flat arguments and maps `permission` into
+ * the session update request body.
  */
 export type SessionPermissionWriter = {
   /**
    * Optional because the runtime session transport is not always in play — a
-   * cloud opencode session talks to the opencode client, which has no such
-   * method. Absent means the harness delivery reports `not-wired` rather than
+   * selected runtime may not expose this operation. Absent means the harness
+   * delivery reports `not-wired` rather than
    * throwing, which is the honest outcome: there is genuinely no route to it.
    */
   setPermissionMode?: (input: {

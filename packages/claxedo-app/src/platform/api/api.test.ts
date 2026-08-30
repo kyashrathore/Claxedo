@@ -47,11 +47,9 @@ const {
 } = await import(`${import.meta.dir}/api.ts?test`)
 
 const originalClaxedoServerUrl = import.meta.env.VITE_CLAXEDO_SERVER_URL
-const originalLegacyBackendUrl = import.meta.env.VITE_OPENCODE_BACKEND_URL
 
-function setServerEnv(input: { claxedo?: string; legacy?: string }) {
+function setServerEnv(input: { claxedo?: string }) {
   import.meta.env.VITE_CLAXEDO_SERVER_URL = input.claxedo
-  import.meta.env.VITE_OPENCODE_BACKEND_URL = input.legacy
 }
 
 /**
@@ -96,7 +94,6 @@ beforeEach(() => {
   calls.length = 0
   setServerEnv({
     claxedo: originalClaxedoServerUrl,
-    legacy: originalLegacyBackendUrl,
   })
   resetApiRuntime()
   // After the reset, or it would clear the binding it is meant to install.
@@ -192,7 +189,7 @@ describe("authFetch", () => {
     await authFetch("http://localhost/test")
 
     expect(calls).toHaveLength(1)
-    expect(calls[0]?.auth).toBe(`Basic ${btoa("opencode:desk-secret")}`)
+    expect(calls[0]?.auth).toBe(`Basic ${btoa(":desk-secret")}`)
   })
 
   test("sends no bearer, and asks for none, when the build bound no source", async () => {
@@ -436,7 +433,6 @@ describe("authFetch event streams", () => {
     window.location.href = "https://app.claxedo.com/workspace"
     setServerEnv({
       claxedo: "https://control.test/",
-      legacy: undefined,
     })
 
     await authFetch("https://control.test/global/event", {
@@ -451,7 +447,6 @@ describe("authFetch event streams", () => {
     token = "tok_123"
     setServerEnv({
       claxedo: "http://127.0.0.1:4527/",
-      legacy: undefined,
     })
 
     await authFetch("http://127.0.0.1:4527/global/event", {
@@ -467,7 +462,6 @@ describe("authFetch event streams", () => {
     window.location.href = "https://app.claxedo.com/workspace"
     setServerEnv({
       claxedo: "https://control.test/",
-      legacy: undefined,
     })
 
     await authFetch(new Request("https://control.test/global/event", {
@@ -484,7 +478,6 @@ describe("authFetch workspace routing boundary", () => {
     token = "tok_123"
     setServerEnv({
       claxedo: "https://control.test/",
-      legacy: undefined,
     })
     await authFetch("https://control.test/provider?directory=%2Frepo%2Fmain")
 
@@ -501,7 +494,6 @@ describe("authFetch workspace routing boundary", () => {
     token = "tok_123"
     setServerEnv({
       claxedo: "http://127.0.0.1:3001/",
-      legacy: undefined,
     })
     await authFetch("http://127.0.0.1:3001/session?directory=%2Frepo%2Fmain")
 
@@ -544,35 +536,24 @@ describe("getDefaultBaseUrl", () => {
 describe("getClaxedoServerUrl on the packaged desktop renderer", () => {
   test("falls through to claxedo-server rather than the file:// origin", () => {
     asPackagedDesktopRenderer()
-    setServerEnv({ claxedo: undefined, legacy: undefined })
+    setServerEnv({ claxedo: undefined })
     expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:2593")
   })
 })
 
 describe("configured server env", () => {
-  test("prefers VITE_CLAXEDO_SERVER_URL over the legacy OpenCode backend alias", () => {
+  test("reads VITE_CLAXEDO_SERVER_URL", () => {
     setServerEnv({
       claxedo: "http://claxedo.test/",
-      legacy: "http://legacy.test/",
     })
 
     expect(getConfiguredClaxedoServerUrl()).toBe("http://claxedo.test")
-  })
-
-  test("keeps VITE_OPENCODE_BACKEND_URL only as a compatibility alias", () => {
-    setServerEnv({
-      claxedo: "",
-      legacy: "http://legacy.test/",
-    })
-
-    expect(getConfiguredClaxedoServerUrl()).toBe("http://legacy.test")
   })
 
   test("does not send remote deployments to a local configured server URL", () => {
     window.location.href = "https://app.example.com/workspace"
     setServerEnv({
       claxedo: "http://127.0.0.1:3001/",
-      legacy: undefined,
     })
 
     expect(getClaxedoServerUrl()).toBe("https://app.example.com")
@@ -582,7 +563,6 @@ describe("configured server env", () => {
     window.location.href = "http://127.0.0.1:4444/workspace"
     setServerEnv({
       claxedo: "http://localhost:3001/",
-      legacy: undefined,
     })
 
     expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:3001")
@@ -592,7 +572,6 @@ describe("configured server env", () => {
     window.location.href = "http://[::1]:4444/workspace"
     setServerEnv({
       claxedo: "http://127.0.0.1:3001/",
-      legacy: undefined,
     })
 
     expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:3001")

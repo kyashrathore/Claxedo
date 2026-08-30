@@ -35,7 +35,7 @@ export function normalizeServerUrl(input: string) {
     const local = url.hostname === "localhost" || url.hostname === "127.0.0.1"
     // In demo mode, keep the origin as-is so MSW can intercept all requests
     if (local && (url.port === "3000" || url.port === "4444") && !isDemoMode()) {
-      const env = import.meta.env.VITE_OPENCODE_BACKEND_URL as string | undefined
+      const env = import.meta.env.VITE_CLAXEDO_SERVER_URL as string | undefined
       if (env?.trim()) return env.trim().replace(/\/+$/, "")
       url.port = String(DEFAULT_LOCAL_CLAXEDO_SERVER_PORT)
       return url.toString().replace(/\/+$/, "")
