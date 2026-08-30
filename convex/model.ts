@@ -219,14 +219,27 @@ async function directProjectRole(db: Db, userId: unknown, projectId: unknown) {
   return typeof membership?.role === "string" ? membership.role as WorkspaceRole : undefined
 }
 
-async function shareRole(db: Db, userId: unknown, workspaceId: unknown) {
-  const grants = await db
+type WorkspaceShareGrant = {
+  revoked_at?: unknown
+  granted_to_user_id?: unknown
+  granted_to_org_id?: unknown
+  granted_to_team_id?: unknown
+  role?: unknown
+}
+
+type OrgMembership = { org_id: unknown }
+type TeamMembership = { team_id: unknown }
+
+async function workspaceShareGrants(db: Db, workspaceId: unknown): Promise<WorkspaceShareGrant[]> {
+  return await db
     .query("workspace_share_grants")
-    .withIndex("by_workspace_user", (q: any) =>
-      q.eq("workspace_id", workspaceId).eq("granted_to_user_id", userId))
-    .collect()
+    .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceId))
+    .collect() as WorkspaceShareGrant[]
+}
+
+function shareRole(grants: readonly WorkspaceShareGrant[], userId: unknown) {
   return maxRole(grants
-    .filter((grant) => !grant.revoked_at)
+    .filter((grant) => !grant.revoked_at && grant.granted_to_user_id === userId)
     .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
@@ -295,60 +308,47 @@ async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
   return org?.owner_user_id === userId ? "admin" : undefined
 }
 
-async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
-  const [memberships, grants] = await Promise.all([
-    db
-      .query("org_memberships")
-      .withIndex("by_user", (q) => q.eq("user_id", userId))
-      .collect(),
-    db
-      .query("workspace_share_grants")
-      .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceId))
-      .collect(),
-  ])
+function orgShareRole(memberships: readonly OrgMembership[], grants: readonly WorkspaceShareGrant[]) {
   const memberOrgIds = new Set(memberships.map((membership) => membership.org_id))
   return maxRole(grants
     .filter((grant) => !grant.revoked_at && grant.granted_to_org_id && memberOrgIds.has(grant.granted_to_org_id))
     .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
-async function teamShareRole(db: Db, userId: unknown, workspaceId: unknown) {
-  const [memberships, grants] = await Promise.all([
-    db
-      .query("team_memberships")
-      .withIndex("by_user", (q: any) => q.eq("user_id", userId))
-      .collect(),
-    db
-      .query("workspace_share_grants")
-      .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceId))
-      .collect(),
-  ])
+function teamShareRole(memberships: readonly TeamMembership[], grants: readonly WorkspaceShareGrant[]) {
   const memberTeamIds = new Set(memberships.map((membership: any) => membership.team_id))
   return maxRole(grants
     .filter((grant: any) => !grant.revoked_at && grant.granted_to_team_id && memberTeamIds.has(grant.granted_to_team_id))
     .map((grant: any) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
-async function teamProjectRole(db: Db, userId: unknown, projectId: unknown, orgId: unknown) {
+async function teamProjectRole(
+  db: Db,
+  userId: unknown,
+  projectId: unknown,
+  orgId: unknown,
+  existingMemberships?: readonly TeamMembership[],
+) {
   if (!projectId || !orgId) return
-  const memberships = await db
+  const memberships = existingMemberships ?? await db
     .query("team_memberships")
     .withIndex("by_user", (q: any) => q.eq("user_id", userId))
-    .collect()
-  const roles: Array<WorkspaceRole | undefined> = []
-  for (const membership of memberships) {
-    const team = await db.get(membership.team_id as never)
-    if (!team || (team as any).deleted_at || (team as any).org_id !== orgId) continue
-    const grant = await db
+    .collect() as TeamMembership[]
+  const teams = await Promise.all(memberships.map(async (membership) => ({
+    membership,
+    team: await db.get(membership.team_id as never),
+  })))
+  const grants = await Promise.all(teams
+    .filter(({ team }) => team && !(team as any).deleted_at && (team as any).org_id === orgId)
+    .map(async ({ membership }) => await db
       .query("team_project_grants")
       .withIndex("by_team_project", (q: any) =>
         q.eq("team_id", membership.team_id).eq("project_id", projectId))
-      .unique()
-    if (grant && !(grant as any).revoked_at && typeof (grant as any).role === "string") {
-      roles.push((grant as any).role as WorkspaceRole)
-    }
-  }
-  return maxRole(roles)
+      .unique()))
+  return maxRole(grants.map((grant) =>
+    grant && !(grant as any).revoked_at && typeof (grant as any).role === "string"
+      ? (grant as any).role as WorkspaceRole
+      : undefined))
 }
 
 export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }) {
@@ -357,15 +357,43 @@ export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<st
     ? await projectByPublicId(ctx.db, workspace.project_id, workspace.org_id)
     : undefined
   const projectKey = project?.project_id ?? (typeof workspace.project_id === "string" ? workspace.project_id : undefined)
+  const workspaceShares = workspaceShareGrants(ctx.db, workspace._id)
+  const orgMemberships = ctx.db
+    .query("org_memberships")
+    .withIndex("by_user", (q) => q.eq("user_id", user._id))
+    .collect() as Promise<OrgMembership[]>
+  const teamMemberships = ctx.db
+    .query("team_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", user._id))
+    .collect() as Promise<TeamMembership[]>
+  const teamProject = teamMemberships.then((teams) =>
+    teamProjectRole(ctx.db, user._id, projectKey, workspace.org_id, teams))
+  const [
+    directWorkspace,
+    directProject,
+    directOrg,
+    shares,
+    orgs,
+    teams,
+    teamProjectResult,
+  ] = await Promise.all([
+    directWorkspaceRole(ctx.db, user._id, workspace._id),
+    project ? directProjectRole(ctx.db, user._id, project.project_id) : undefined,
+    workspace.org_id ? directOrgRole(ctx.db, user._id, workspace.org_id) : undefined,
+    workspaceShares,
+    orgMemberships,
+    teamMemberships,
+    teamProject,
+  ])
   return combineRolePrecedence({
     owner: workspace.owner_user_id === user._id,
-    directWorkspace: await directWorkspaceRole(ctx.db, user._id, workspace._id),
-    directProject: project ? await directProjectRole(ctx.db, user._id, project.project_id) : undefined,
-    directOrg: workspace.org_id ? await directOrgRole(ctx.db, user._id, workspace.org_id) : undefined,
-    teamProject: await teamProjectRole(ctx.db, user._id, projectKey, workspace.org_id),
-    share: await shareRole(ctx.db, user._id, workspace._id),
-    orgShare: await orgShareRole(ctx.db, user._id, workspace._id),
-    teamShare: await teamShareRole(ctx.db, user._id, workspace._id),
+    directWorkspace,
+    directProject,
+    directOrg,
+    teamProject: teamProjectResult,
+    share: shareRole(shares, user._id),
+    orgShare: orgShareRole(orgs, shares),
+    teamShare: teamShareRole(teams, shares),
   })
 }
 
