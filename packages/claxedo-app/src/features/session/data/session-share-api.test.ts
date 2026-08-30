@@ -10,7 +10,8 @@ afterEach(() => {
 
 describe("listSessionShares", () => {
   test("uses the named AccountPort operation in signed desktop mode", async () => {
-    const run = mock(async () => ({ grants: [], participants: [] }))
+    const result = { can_manage_shares: false as const, grants: [], participants: [], teams: [] }
+    const run = mock(async () => result)
     ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
       account: {
         run,
@@ -21,7 +22,7 @@ describe("listSessionShares", () => {
       },
     }
 
-    await expect(listSessionShares("ses_1", "ws_1")).resolves.toEqual({ grants: [], participants: [] })
+    await expect(listSessionShares("ses_1", "ws_1")).resolves.toEqual(result)
     expect(run).toHaveBeenCalledWith("session.shares.list", { sessionId: "ses_1", workspaceId: "ws_1" })
   })
 })

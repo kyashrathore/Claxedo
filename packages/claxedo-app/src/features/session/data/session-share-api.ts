@@ -10,37 +10,23 @@ async function json<T>(res: Response): Promise<T> {
   return await res.json() as T
 }
 
-const ACTIVE_ORG_KEY = "claxedo.activeOrgId"
-
-export function readActiveOrgId() {
-  return localStorage.getItem(ACTIVE_ORG_KEY) ?? undefined
-}
-
-export async function listTeamsForActiveOrg() {
-  const orgId = readActiveOrgId()
-  if (!orgId) return [] as Array<{ team_id: string; name: string }>
-  return hostedControlCall(
-    "org.teams.list",
-    { orgId },
-    async () => json<Array<{ team_id: string; name: string }>>(
-      await authFetch(`/api/control/orgs/${encodeURIComponent(orgId)}/teams`),
-    ),
-  )
+export type SessionPeopleContext = {
+  can_manage_shares: boolean
+  grants: Array<{
+    grant_id: string
+    granted_to_user_id?: string
+    granted_to_org_id?: string
+    granted_to_team_id?: string
+  }>
+  participants: Array<{ user_id: string }>
+  teams: Array<{ team_id: string; name: string; is_shared: boolean }>
 }
 
 export async function listSessionShares(sessionId: string, workspaceId: string) {
   return hostedControlCall(
     "session.shares.list",
     { sessionId, workspaceId },
-    async () => json<{
-      grants: Array<{
-        grant_id: string
-        granted_to_user_id?: string
-        granted_to_org_id?: string
-        granted_to_team_id?: string
-      }>
-      participants: Array<{ user_id: string }>
-    }>(await authFetch(controlSessionUrl({
+    async () => json<SessionPeopleContext>(await authFetch(controlSessionUrl({
       baseUrl: getClaxedoServerUrl(),
       sessionID: sessionId,
       suffix: "/shares",

@@ -31,6 +31,7 @@ import {
   type SqliteWorkspaceAuthorityOptions,
   type WorkspaceAction,
   type WorkspaceRow,
+  type WorkspaceRole,
 } from "./workspace-authority-store"
 
 // Claxedo's LOCAL workspace-authority adapter: the full `WorkspaceAuthority`
@@ -552,6 +553,23 @@ export function createSqliteWorkspaceAuthority(
     deleted_at: number | null
   }
 
+  const sessionRoleForWorkspaceUser = (
+    db: SqliteAuthorityDb,
+    workspace: WorkspaceRow,
+    session: SessionRow,
+    who: AuthorityUser,
+    workspaceRole: WorkspaceRole,
+    isOrgAdmin?: boolean,
+  ) => {
+    if (session.created_by_token_identifier === who.token_identifier) return workspaceRole
+    const participant = db.prepare(`
+      SELECT revoked_at FROM session_participants WHERE session_id = ? AND actor_token_identifier = ?
+    `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
+    if (participant && !participant.revoked_at) return workspaceRole
+    if (sessionShareAllowsUser(db, who, session.session_id)) return workspaceRole
+    if (isOrgAdmin ?? orgAdminForUser(db, who, workspace.org_id)) return workspaceRole
+  }
+
   const sessionRole = (
     db: SqliteAuthorityDb,
     workspace: WorkspaceRow,
@@ -559,15 +577,9 @@ export function createSqliteWorkspaceAuthority(
     who: AuthorityUser,
     action: WorkspaceAction,
   ) => {
-    const role = authorizeWorkspaceForUser(db, workspace, who, action)
-    if (!role) return
-    if (session.created_by_token_identifier === who.token_identifier) return role
-    const participant = db.prepare(`
-      SELECT revoked_at FROM session_participants WHERE session_id = ? AND actor_token_identifier = ?
-    `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
-    if (participant && !participant.revoked_at) return role
-    if (sessionShareAllowsUser(db, who, session.session_id)) return role
-    if (orgAdminForUser(db, who, workspace.org_id)) return role
+    const workspaceRole = authorizeWorkspaceForUser(db, workspace, who, action)
+    if (!workspaceRole) return
+    return sessionRoleForWorkspaceUser(db, workspace, session, who, workspaceRole)
   }
 
   const sessionShareAllowsUser = (db: SqliteAuthorityDb, who: AuthorityUser, sessionId: string) => {
@@ -1873,7 +1885,7 @@ export function createSqliteWorkspaceAuthority(
         session.created_by_token_identifier !== who.token_identifier
         && !orgAdminForUser(db, who, workspace.org_id)
         && !teamAdminForProject(db, who, workspace)
-      ) denied()
+      ) throw new Error("session_share_admin_required")
       const selectors = [
         args.grantedToTokenIdentifier,
         args.grantedToClerkSubject,
@@ -1958,7 +1970,7 @@ export function createSqliteWorkspaceAuthority(
         session.created_by_token_identifier !== who.token_identifier
         && !orgAdminForUser(db, who, workspace.org_id)
         && !teamAdminForProject(db, who, workspace)
-      ) denied()
+      ) throw new Error("session_share_admin_required")
       const now = Date.now()
       let grants: Array<{
         grant_id: string
@@ -2048,8 +2060,22 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!sessionRole(db, workspace, session, who, "read")) denied()
+      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) {
+        throw new Error("Session not found")
+      }
+      const workspaceRole = authorizeWorkspaceForUser(db, workspace, who, "read")
+      if (!workspaceRole) throw new Error("session_share_admin_required")
+      const isOrgAdmin = orgAdminForUser(db, who, workspace.org_id)
+      const canManageShares = session.created_by_token_identifier === who.token_identifier
+        || isOrgAdmin
+        || teamAdminForProject(db, who, workspace)
+      if (
+        !canManageShares
+        && !sessionRoleForWorkspaceUser(db, workspace, session, who, workspaceRole, isOrgAdmin)
+      ) throw new Error("session_share_admin_required")
+      if (!canManageShares) {
+        return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+      }
       const grants = db.prepare(`
         SELECT grant_id, session_id, workspace_id, granted_to_user_token_identifier AS granted_to_user_id,
           granted_to_org_id, granted_to_team_id, created_by_token_identifier AS created_by_user_id,
@@ -2057,14 +2083,25 @@ export function createSqliteWorkspaceAuthority(
         FROM session_share_grants
         WHERE session_id = ? AND revoked_at IS NULL
         ORDER BY created_at ASC
-      `).all(args.sessionId) as unknown[]
+      `).all(args.sessionId) as Array<Record<string, unknown>>
       const participants = db.prepare(`
         SELECT actor_token_identifier AS user_id, added_by_token_identifier AS added_by_user_id, created_at
         FROM session_participants
         WHERE session_id = ? AND revoked_at IS NULL
         ORDER BY created_at ASC
-      `).all(args.sessionId) as unknown[]
-      return { grants, participants }
+      `).all(args.sessionId) as Array<Record<string, unknown>>
+      const sharedTeamIds = new Set(grants.flatMap((grant: any) =>
+        typeof grant.granted_to_team_id === "string" ? [grant.granted_to_team_id] : []))
+      const teams = db.prepare(`
+        SELECT team_id, name FROM teams
+        WHERE org_id = ? AND deleted_at IS NULL
+        ORDER BY name ASC
+      `).all(workspace.org_id).map((team: any) => ({
+        team_id: team.team_id,
+        name: team.name,
+        is_shared: sharedTeamIds.has(team.team_id),
+      }))
+      return { can_manage_shares: true, grants, participants, teams }
     },
     async listSessions(auth: SignedControlPlaneAuth, args) {
       const db = database()

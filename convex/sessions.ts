@@ -19,6 +19,7 @@ import {
 import { recordLlmTurnFact } from "./usageMetering"
 import { enqueueIndependentSessionIntake } from "./workgraphBackground"
 import { requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
+import { sessionRoleForUser } from "./sessionAccess"
 import type { Doc, Id } from "./_generated/dataModel"
 
 const sessionVisibility = v.object({
@@ -81,56 +82,6 @@ async function writableWorkspaceForUser(ctx: any, user: { _id: unknown }, worksp
   if (!workspace || !(await authorizeWorkspaceForUser(ctx, workspace, user, "write")))
     throw new Error("Workspace not found")
   return { user, workspace }
-}
-
-async function sessionShareAllowsUser(ctx: any, input: { user: { _id: unknown }; sessionId: string }) {
-  const grants = await ctx.db
-    .query("session_share_grants")
-    .withIndex("by_session", (q: any) => q.eq("session_id", input.sessionId))
-    .collect()
-  const active = grants.filter((grant: any) => !grant.revoked_at)
-  for (const grant of active) {
-    if (grant.granted_to_user_id === input.user._id) return true
-    if (grant.granted_to_org_id) {
-      const membership = await ctx.db
-        .query("org_memberships")
-        .withIndex("by_org_user", (q: any) => q.eq("org_id", grant.granted_to_org_id).eq("user_id", input.user._id))
-        .unique()
-      if (membership) return true
-    }
-    if (grant.granted_to_team_id) {
-      const membership = await ctx.db
-        .query("team_memberships")
-        .withIndex("by_team_user", (q: any) => q.eq("team_id", grant.granted_to_team_id).eq("user_id", input.user._id))
-        .unique()
-      if (membership) return true
-    }
-  }
-  return false
-}
-
-async function sessionRoleForUser(
-  ctx: any,
-  input: {
-    user: { _id: unknown }
-    workspace: Record<string, any>
-    session: Record<string, any>
-    action: "read" | "write"
-  },
-) {
-  if (input.session.workspace_id !== input.workspace._id) return
-  const role = await authorizeWorkspaceForUser(ctx, input.workspace, input.user, input.action)
-  if (!role) return
-  if (input.session.created_by_user_id === input.user._id) return role
-  const participant = await ctx.db
-    .query("session_participants")
-    .withIndex("by_session_user", (q: any) =>
-      q.eq("session_id", input.session.session_id).eq("user_id", input.user._id),
-    )
-    .unique()
-  if (participant && !participant.revoked_at) return role
-  if (await sessionShareAllowsUser(ctx, { user: input.user, sessionId: input.session.session_id })) return role
-  if (await orgAdminForUser(ctx.db, input.user._id, input.workspace.org_id)) return role
 }
 
 async function requireSessionParticipantAdmin(ctx: any, args: { session_id: string; workspace_id: string }) {

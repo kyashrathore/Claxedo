@@ -1,6 +1,7 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
   AuthoritySessionInventoryRow,
+  SessionPeopleContext,
   SessionShareRevokeResult,
 } from "@claxedo/server-core/platform/auth/authority"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
@@ -186,7 +187,7 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
       return requireExecutor(input, auth).query(convexApi.sessionShares.list, {
         session_id: args.sessionId,
         workspace_id: args.workspaceId,
-      })
+      }) as Promise<SessionPeopleContext>
     },
     async listSessions(
       auth: SignedControlPlaneAuth,

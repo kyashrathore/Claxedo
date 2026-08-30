@@ -99,6 +99,17 @@ export type SessionShareRevokeResult = {
   revokedTargets: SessionShareFanoutTarget[]
 }
 
+export type SessionPeopleContext = {
+  can_manage_shares: boolean
+  grants: Array<Record<string, unknown>>
+  participants: Array<Record<string, unknown>>
+  teams: Array<{
+    team_id: string
+    name: string
+    is_shared: boolean
+  }>
+}
+
 /**
  * Neutral authority capability. Every method mirrors a concrete route or
  * pull-flow call site; the shapes are the structural contract the core relies
@@ -331,7 +342,7 @@ export type WorkspaceAuthority = {
   listSessionShares?: (
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string },
-  ) => Promise<unknown>
+  ) => Promise<SessionPeopleContext>
   createOrg?: (auth: SignedControlPlaneAuth, args: { name: string }) => Promise<unknown>
   listTeams?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
   createTeamInOrg?: (auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) => Promise<unknown>

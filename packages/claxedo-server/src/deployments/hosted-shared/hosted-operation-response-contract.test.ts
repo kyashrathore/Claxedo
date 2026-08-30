@@ -248,7 +248,12 @@ function contractAuthority(): WorkspaceAuthority {
       revoked: true,
       revokedTargets: [{ grantedToTokenIdentifier: "token_bob" }],
     })),
-    listSessionShares: vi.fn(async () => ({ grants: [], participants: [] })),
+    listSessionShares: vi.fn(async () => ({
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [],
+    })),
     createOrg: vi.fn(async (_auth, args) => ({ org_id: orgId, name: args.name })),
     listTeams: vi.fn(async () => [{ team_id: "team_1", name: "Engineering" }]),
     createTeamInOrg: vi.fn(async (_auth, args) => ({ team_id: "team_1", name: args.name })),

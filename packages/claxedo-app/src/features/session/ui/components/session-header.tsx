@@ -128,11 +128,11 @@ export function SessionHeader() {
         {(mount) => (
           <Portal mount={mount()}>
             <div class="flex items-center gap-1">
-              <Show when={shareTarget()}>
+              <Show when={shareTarget()} keyed>
                 {(target) => (
                   <SessionPeopleControl
-                    sessionId={target().sessionId}
-                    workspaceId={target().workspaceId}
+                    sessionId={target.sessionId}
+                    workspaceId={target.workspaceId}
                   />
                 )}
               </Show>

@@ -11,8 +11,9 @@ import {
   userByTokenIdentifier,
   workspaceByPublicId,
 } from "./model"
+import { sessionRoleForWorkspaceUser } from "./sessionAccess"
 
-async function requireSessionShareAdmin(
+async function sessionPeopleAccess(
   ctx: any,
   args: { session_id: string; workspace_id: string },
 ) {
@@ -27,16 +28,34 @@ async function requireSessionShareAdmin(
   if (!workspace || !session || session.workspace_id !== workspace._id || session.deleted_at) {
     throw new Error("Session not found")
   }
-  if (!await authorizeWorkspaceForUser(ctx, workspace, actor, "read")) {
+  const workspaceRole = await authorizeWorkspaceForUser(ctx, workspace, actor, "read")
+  if (!workspaceRole) {
     throw new Error("session_share_admin_required")
   }
   const isCreator = session.created_by_user_id === actor._id
   const isOrgAdmin = await orgAdminForUser(ctx.db, actor._id, workspace.org_id)
   const isTeamAdmin = await teamAdminForProject(ctx, actor._id, workspace)
-  if (!isCreator && !isOrgAdmin && !isTeamAdmin) {
-    throw new Error("session_share_admin_required")
+  const canManageShares = isCreator || isOrgAdmin || isTeamAdmin
+  if (!canManageShares) {
+    const role = await sessionRoleForWorkspaceUser(ctx, {
+      user: actor,
+      workspace,
+      session,
+      workspaceRole,
+      isOrgAdmin,
+    })
+    if (!role) throw new Error("session_share_admin_required")
   }
-  return { actor, workspace, session }
+  return { actor, workspace, session, canManageShares }
+}
+
+async function requireSessionShareAdmin(
+  ctx: any,
+  args: { session_id: string; workspace_id: string },
+) {
+  const access = await sessionPeopleAccess(ctx, args)
+  if (!access.canManageShares) throw new Error("session_share_admin_required")
+  return access
 }
 
 async function teamAdminForProject(ctx: any, userId: unknown, workspace: Record<string, any>) {
@@ -302,16 +321,31 @@ export const list = authedQuery({
     workspace_id: v.string(),
   },
   handler: async (ctx, args) => {
-    await requireSessionShareAdmin(ctx, args)
-    const grants = await ctx.db
-      .query("session_share_grants")
-      .withIndex("by_session", (q: any) => q.eq("session_id", args.session_id))
-      .collect()
-    const participants = await ctx.db
-      .query("session_participants")
-      .withIndex("by_session_user", (q: any) => q.eq("session_id", args.session_id))
-      .collect()
+    const access = await sessionPeopleAccess(ctx, args)
+    if (!access.canManageShares) {
+      return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+    }
+    const [grants, participants, teams] = await Promise.all([
+      ctx.db
+        .query("session_share_grants")
+        .withIndex("by_session", (q: any) => q.eq("session_id", args.session_id))
+        .collect(),
+      ctx.db
+        .query("session_participants")
+        .withIndex("by_session_user", (q: any) => q.eq("session_id", args.session_id))
+        .collect(),
+      access.workspace.org_id
+        ? ctx.db
+          .query("teams")
+          .withIndex("by_org", (q: any) => q.eq("org_id", access.workspace.org_id))
+          .collect()
+        : [],
+    ])
+    const sharedTeamIds = new Set(grants
+      .filter((grant: any) => !grant.revoked_at && grant.granted_to_team_id)
+      .map((grant: any) => grant.granted_to_team_id))
     return {
+      can_manage_shares: true,
       grants: grants.filter((grant: any) => !grant.revoked_at).map(publicGrant),
       participants: participants
         .filter((row: any) => !row.revoked_at)
@@ -320,6 +354,14 @@ export const list = authedQuery({
           added_by_user_id: row.added_by_user_id,
           created_at: row.created_at,
         })),
+      teams: teams
+        .filter((team: any) => !team.deleted_at)
+        .map((team: any) => ({
+          team_id: team.public_id,
+          name: team.name,
+          is_shared: sharedTeamIds.has(team._id),
+        }))
+        .sort((a: { name: string }, b: { name: string }) => a.name.localeCompare(b.name)),
     }
   },
 })

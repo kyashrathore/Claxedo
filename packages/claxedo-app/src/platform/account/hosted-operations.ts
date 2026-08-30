@@ -85,6 +85,42 @@ function withArrays(...fields: string[]) {
   }
 }
 
+function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
+  const shape = withArrays("grants", "participants", "teams")(raw)
+  if (!shape.ok) return shape
+  if (typeof shape.value.can_manage_shares !== "boolean") {
+    return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
+  }
+  for (const [index, team] of (shape.value.teams as unknown[]).entries()) {
+    const row = object(team)
+    if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
+    for (const field of ["team_id", "name", "is_shared"] as const) {
+      const expected = field === "is_shared" ? "boolean" : "string"
+      if (typeof row.value[field] !== expected) {
+        return { ok: false, reason: `expected teams[${index}].${field} to be a ${expected}` }
+      }
+    }
+  }
+  for (const [index, participant] of (shape.value.participants as unknown[]).entries()) {
+    const row = object(participant)
+    if (!row.ok || typeof row.value.user_id !== "string") {
+      return { ok: false, reason: `expected participants[${index}].user_id to be a string` }
+    }
+  }
+  for (const [index, grant] of (shape.value.grants as unknown[]).entries()) {
+    const row = object(grant)
+    if (!row.ok || typeof row.value.grant_id !== "string") {
+      return { ok: false, reason: `expected grants[${index}].grant_id to be a string` }
+    }
+    for (const field of ["granted_to_user_id", "granted_to_org_id", "granted_to_team_id"] as const) {
+      if (row.value[field] !== undefined && typeof row.value[field] !== "string") {
+        return { ok: false, reason: `expected grants[${index}].${field} to be a string when present` }
+      }
+    }
+  }
+  return shape
+}
+
 /** Requires a named field holding an object, checked by `inner`. */
 function withRecord(field: string, inner: (raw: unknown) => DecodeResult<unknown>) {
   return (raw: unknown): DecodeResult<Record<string, unknown>> => {
@@ -199,8 +235,8 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "session.events": { safe: true, decode: object },
   // Per-session central runtime SSE. Stream IPC.
   "session.runtimeEvents": { safe: true, decode: object },
-  // Private-session people: grants + participants on the hosted control plane.
-  "session.shares.list": { safe: true, decode: withArrays("grants", "participants") },
+  // Private-session People capability, grants, participants, and session-org teams.
+  "session.shares.list": { safe: true, decode: sessionPeople },
   "session.shares.grant": { safe: false, decode: object },
   "session.shares.revoke": { safe: false, decode: object },
   "session.participants.add": { safe: false, decode: object },
@@ -208,7 +244,7 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // through AccountPort; browser keeps authFetch in org-team-api.
   "org.list": { safe: true, decode: array },
   "org.create": { safe: false, decode: withStrings("org_id", "name") },
-  // Bare team rows for the active org (People "share with team" picker + Settings).
+  // Bare team rows for the active org in Settings.
   "org.teams.list": { safe: true, decode: array },
   "org.teams.create": { safe: false, decode: withStrings("team_id", "name") },
   "org.ensureDefaultTeam": { safe: false, decode: object },

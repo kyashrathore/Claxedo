@@ -74,6 +74,56 @@ describe("the registry", () => {
 })
 
 describe("decodeHostedResult", () => {
+  test("requires the complete session People capability envelope", () => {
+    expect(decodeHostedResult("session.shares.list", {
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: false }],
+    })).toEqual({
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: false }],
+    })
+    expect(() => decodeHostedResult("session.shares.list", {
+      grants: [],
+      participants: [],
+      teams: [],
+    })).toThrow(/can_manage_shares/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      can_manage_shares: false,
+      grants: [],
+      participants: [],
+    })).toThrow(/teams/)
+  })
+
+  test("rejects malformed nested session People rows through the named operation", () => {
+    const valid = {
+      can_manage_shares: true,
+      grants: [],
+      participants: [],
+      teams: [],
+    }
+
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      teams: [{ team_id: "team_1", name: "Everyone", is_shared: "false" }],
+    })).toThrow(/session\.shares\.list.*teams\[0\]\.is_shared/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      participants: [{ user_id: 1 }],
+    })).toThrow(/session\.shares\.list.*participants\[0\]\.user_id/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      grants: [{ grant_id: "ssg_1", granted_to_team_id: 1 }],
+    })).toThrow(/session\.shares\.list.*grants\[0\]\.granted_to_team_id/)
+    expect(() => decodeHostedResult("session.shares.list", {
+      ...valid,
+      grants: [{ grant_id: 1 }],
+    })).toThrow(/session\.shares\.list.*grants\[0\]\.grant_id/)
+  })
+
   test("names the operation when a shape is wrong", () => {
     // "expected a non-empty relayUrl" from an unnamed decoder sends someone
     // reading the wrong route.
