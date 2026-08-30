@@ -188,6 +188,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   readHarnessCapabilities(): HarnessCapabilities {
     return harnessCapabilities({
       harness: this.driver.type,
+      modelSelection: { status: "optional" },
       abort: true,
       reconnect: false,
       replay: true,

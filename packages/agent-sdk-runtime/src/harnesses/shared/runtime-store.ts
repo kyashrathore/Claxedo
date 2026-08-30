@@ -18,6 +18,9 @@ export type AgentRuntimeSessionBinding = {
   directory: string
   title?: string
   agentSessionId: string
+  workspaceId?: string
+  connectionId?: string
+  upstreamSessionId?: string
   ownerKey?: string | null
   parentSessionId?: string
 }

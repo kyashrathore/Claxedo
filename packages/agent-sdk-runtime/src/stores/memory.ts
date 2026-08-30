@@ -34,6 +34,8 @@ type SessionRow = {
   directory: string
   title?: string | null
   agentSessionId?: string | null
+  workspaceId?: string
+  connectionId?: string
   ownerKey?: string | null
   time: { created: number; updated: number; archived?: number }
   status?: string | null
@@ -119,7 +121,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       parentID: input.parentSessionId ?? prev?.parentID ?? null,
       directory: input.directory,
       title: input.title ?? prev?.title ?? null,
-      agentSessionId: input.agentSessionId,
+      agentSessionId: input.upstreamSessionId ?? input.agentSessionId,
+      workspaceId: input.workspaceId ?? prev?.workspaceId,
+      connectionId: input.connectionId ?? prev?.connectionId,
       ownerKey: input.ownerKey === undefined ? prev?.ownerKey ?? null : input.ownerKey,
       time: {
         created: prev?.time.created ?? now,
@@ -325,11 +329,11 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const events: CompatEvent[] = []
     if (input.outcome.status === "failed") {
       const message = this.ensureMessage(input.sessionId, assistantMessageId)
-      const info = message.info as unknown as AssistantMessage
+      const info = message.info as AgentMessageInfo
       events.push(
         messageUpdated({
           ...info,
-          time: { ...info.time, completed: input.outcome.completedAt },
+          time: { created: info.time?.created ?? input.outcome.completedAt, completed: input.outcome.completedAt },
           error: { name: "UnknownError", data: firstTurnErrorData(input.outcome.error ?? "turn failed") },
         }),
         sessionError(input.outcome.error ?? "turn failed", input.sessionId),

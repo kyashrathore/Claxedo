@@ -39,6 +39,7 @@ describe("AcpHarnessAdapter", () => {
 
     expect(item.readHarnessCapabilities()).toEqual({
       harness: "openclaw",
+      modelSelection: { status: "optional" },
       abort: true,
       reconnect: false,
       replay: true,
@@ -463,7 +464,12 @@ describe("AcpHarnessAdapter", () => {
     }, "/work", Date.now())) {
       out.push({
         type: event.type,
-        ...("properties" in event && "status" in event.properties ? { status: event.properties.status } : {}),
+        ...("properties" in event
+          && event.properties
+          && typeof event.properties === "object"
+          && "status" in event.properties
+          ? { status: event.properties.status }
+          : {}),
       })
     }
 

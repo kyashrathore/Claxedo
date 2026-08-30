@@ -736,10 +736,9 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       const identity = turnIdentity()
       if (identity) usageIdentities.set(`${sessionId}\u0000${messageId}`, identity)
       if (event.payload.type === "message.updated") {
-        const created = event.payload.properties.info.time.created
-        const completed = "completed" in event.payload.properties.info.time
-          ? event.payload.properties.info.time.completed
-          : undefined
+        const time = event.payload.properties.info.time
+        const created = time?.created
+        const completed = time?.completed
         if (typeof created === "number" && typeof completed === "number") {
           usageTimings.set(`${sessionId}\u0000${messageId}`, { created, completed })
         }
@@ -748,8 +747,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     const metered = turnMeter.consume(event)
     const terminal = event.payload.type === "message.completed"
       || event.payload.type === "session.error"
-      || (event.payload.type === "message.updated" && "completed" in event.payload.properties.info.time
-        && typeof event.payload.properties.info.time.completed === "number")
+      || (event.payload.type === "message.updated"
+        && typeof event.payload.properties.info.time?.completed === "number")
     if (terminal && options.onUsageTerminal) {
       void metered.then(() => options.onUsageTerminal?.()).catch((error) => console.error("[central-runtime] usage terminal sync wake failed:", error))
     }

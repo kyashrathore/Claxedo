@@ -1,7 +1,6 @@
 import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
 import {
   ACP_RECOVER,
   AgentRuntimeStaleTurnError,
@@ -56,7 +55,10 @@ type SessionModel = SessionConfig["model"]
 
 type Bind = {
   type: "session.bind"
+  workspaceId?: string
   directory: string
+  connectionId?: string
+  upstreamSessionId?: string
   title?: string
   agentSessionId: string
   ownerKey?: string | null
@@ -74,7 +76,7 @@ type Turn = {
   model: Model
   parts: unknown[]
   tools?: Record<string, boolean>
-  format?: UserMessage["format"]
+  format?: PromptFormat
   system?: string
   variant?: string
   actorId?: string
@@ -802,6 +804,15 @@ export class RuntimeStore {
       )
     `)
     this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_execution_binding (
+        session_id TEXT PRIMARY KEY,
+        workspace_id TEXT NOT NULL,
+        directory TEXT NOT NULL,
+        connection_id TEXT NOT NULL,
+        upstream_session_id TEXT NOT NULL
+      )
+    `)
+    this.db.exec(`
       CREATE TABLE IF NOT EXISTS message (
         id TEXT PRIMARY KEY,
         session_id TEXT NOT NULL,
@@ -874,18 +885,6 @@ export class RuntimeStore {
       CREATE TABLE IF NOT EXISTS deleted_session (
         session_id TEXT PRIMARY KEY,
         deleted_at INTEGER NOT NULL
-      )
-    `)
-    // One row per workspace directory whose inventory has been imported from
-    // the harnesses at least once. Generic listing is store-only, so a profile
-    // that predates the store — or a fresh profile sitting on top of an
-    // existing harness install — would otherwise show an empty session list.
-    // The marker is durable so that import happens exactly once per directory
-    // instead of on every launch, which is what keeps an idle shell idle.
-    this.db.exec(`
-      CREATE TABLE IF NOT EXISTS session_inventory_import (
-        directory TEXT PRIMARY KEY,
-        imported_at INTEGER NOT NULL
       )
     `)
     this.db.exec(`
@@ -1367,6 +1366,7 @@ export class RuntimeStore {
       this.db.exec("DELETE FROM todo")
       this.db.exec("DELETE FROM part")
       this.db.exec("DELETE FROM message")
+      this.db.exec("DELETE FROM session_execution_binding")
       this.db.exec("DELETE FROM session_map")
       this.db.exec("DELETE FROM session")
     })
@@ -2088,6 +2088,7 @@ export class RuntimeStore {
     this.db.prepare("DELETE FROM todo WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM part WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM message WHERE session_id = ?").run(id)
+    this.db.prepare("DELETE FROM session_execution_binding WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session_map WHERE session_id = ?").run(id)
     this.db.prepare("DELETE FROM session WHERE id = ?").run(id)
   }
@@ -2121,6 +2122,28 @@ export class RuntimeStore {
         // Re-bind / rediscovery must not bump list order on visit.
         updatedAt: control.updatedAt ?? existing?.time?.updated ?? row.ts,
       })
+      if (control.workspaceId && control.connectionId && control.upstreamSessionId) {
+        this.db
+          .prepare(
+            `
+            INSERT INTO session_execution_binding (
+              session_id, workspace_id, directory, connection_id, upstream_session_id
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(session_id) DO UPDATE SET
+              workspace_id = excluded.workspace_id,
+              directory = excluded.directory,
+              connection_id = excluded.connection_id,
+              upstream_session_id = excluded.upstream_session_id
+          `,
+          )
+          .run(
+            row.sessionId,
+            control.workspaceId,
+            control.directory,
+            control.connectionId,
+            control.upstreamSessionId,
+          )
+      }
       return
     }
     if (control.type === "turn.start") {
@@ -2423,7 +2446,10 @@ export class RuntimeStore {
 
   bindSession(input: {
     sessionId: string
+    workspaceId?: string
     directory: string
+    connectionId?: string
+    upstreamSessionId?: string
     title?: string
     agentSessionId: string
     ownerKey?: string | null
@@ -2440,7 +2466,10 @@ export class RuntimeStore {
       kind: "control",
       control: {
         type: "session.bind",
+        ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
         directory: input.directory,
+        ...(input.connectionId ? { connectionId: input.connectionId } : {}),
+        ...(input.upstreamSessionId ? { upstreamSessionId: input.upstreamSessionId } : {}),
         title: input.title,
         agentSessionId: input.agentSessionId,
         ...(input.ownerKey !== undefined ? { ownerKey: input.ownerKey } : {}),
@@ -2499,7 +2528,7 @@ export class RuntimeStore {
     model: Model
     parts: unknown[]
     tools?: Record<string, boolean>
-    format?: UserMessage["format"]
+    format?: PromptFormat
     system?: string
     variant?: string
     actorId?: string
@@ -2935,27 +2964,6 @@ export class RuntimeStore {
     return row?.assistant_message_id ?? undefined
   }
 
-  /**
-   * Whether this directory's inventory has already been imported from the
-   * harnesses. `false` means generic listing must run discovery once before it
-   * can answer for this directory.
-   */
-  sessionInventoryImported(directory: string) {
-    return Boolean(this.db.prepare("SELECT 1 FROM session_inventory_import WHERE directory = ?").get(directory))
-  }
-
-  markSessionInventoryImported(directory: string, at = Date.now()) {
-    this.db
-      .prepare(
-        `
-        INSERT INTO session_inventory_import (directory, imported_at)
-        VALUES (?, ?)
-        ON CONFLICT(directory) DO NOTHING
-      `,
-      )
-      .run(directory, at)
-  }
-
   listSessions(directory: string) {
     return (
       this.db
@@ -3152,6 +3160,32 @@ export class RuntimeStore {
     return row?.agent_session_id ?? null
   }
 
+  getExecutionBinding(sessionId: string): AgentExecutionBinding | null {
+    const row = this.db
+      .prepare(
+        `
+        SELECT session_id, workspace_id, directory, connection_id, upstream_session_id
+        FROM session_execution_binding
+        WHERE session_id = ?
+      `,
+      )
+      .get(sessionId) as {
+      session_id: string
+      workspace_id: string
+      directory: string
+      connection_id: string
+      upstream_session_id: string
+    } | null
+    if (!row) return null
+    return {
+      sessionId: row.session_id,
+      workspaceId: row.workspace_id,
+      directory: row.directory,
+      connectionId: row.connection_id,
+      upstreamSessionId: row.upstream_session_id,
+    }
+  }
+
   getSessionOwnerKey(id: string) {
     const row = this.db.prepare("SELECT process_key FROM session WHERE id = ?").get(id) as {
       process_key: string | null
@@ -3261,7 +3295,7 @@ export class RuntimeStore {
       const messageParts = partsByMessage.get(msg.id) ?? []
       return {
         info,
-        parts: terminal ? messageParts.map((part) => this.terminalizedPart(part, ts, message)) : messageParts,
+        parts: (terminal ? messageParts.map((part) => this.terminalizedPart(part, ts, message)) : messageParts) as AgentMessage["parts"],
       }
     })
   }

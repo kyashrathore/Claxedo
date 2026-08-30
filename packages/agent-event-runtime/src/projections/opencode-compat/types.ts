@@ -1,195 +1,57 @@
-import type { Event as OpenCodeSdkEvent, Part, SessionStatus } from "@opencode-ai/sdk/v2"
-import type { RuntimeUsageObservation } from "../../contracts/agent-runtime-event"
+import type {
+  AgentConfigOption,
+  AgentContentPart,
+  AgentEventEnvelope,
+  AgentMessageAuthor,
+  AgentPresentationEvent,
+  AgentPresentationSession,
+  AgentRuntimeStatus,
+  AgentSnapshotFileDiff,
+  AgentTodo,
+} from "@claxedo/agent-runtime-contract"
 
-export type OpenCodeCompatEnvelope<Event extends OpenCodeCompatEvent = OpenCodeCompatEvent> = {
-  directory: string
-  payload: Event
-}
+/**
+ * Transitional projection names. Their source of truth is the dependency-free
+ * Claxedo contract; this projection contains no provider SDK aliases.
+ */
+export type OpenCodeCompatEnvelope<Event extends OpenCodeCompatEvent = OpenCodeCompatEvent> = AgentEventEnvelope<Event>
+export type OpenCodeCompatRecoveringStatus = Extract<AgentRuntimeStatus, { type: "recovering" }>
+export type OpenCodeCompatStatus = AgentRuntimeStatus
+export type OpenCodeCompatPart = AgentContentPart
+export type OpenCodeCompatEvent = Exclude<AgentPresentationEvent, { type: "server.heartbeat" }>
 
-export type OpenCodeCompatRecoveringStatus = {
-  type: "recovering"
-  kind: "process_restart"
-  message: string
-}
+export type ClaxedoMessageAuthor = AgentMessageAuthor
+export type ClaxedoMessageInfoExtension = { claxedo?: { author: ClaxedoMessageAuthor } }
 
-export type OpenCodeCompatStatus = SessionStatus | OpenCodeCompatRecoveringStatus
-
-type OpenCodeProjectionBaseSdkEvent = Extract<OpenCodeSdkEvent, {
-  type:
-    | "message.updated"
-    | "message.part.updated"
-    | "message.part.delta"
-    | "permission.asked"
-    | "permission.replied"
-    | "question.asked"
-    | "question.replied"
-    | "question.rejected"
-    | "todo.updated"
-    | "session.status"
-    | "session.idle"
-    | "session.error"
-    | "session.updated"
-    | "session.diff"
-    | "session.compacted"
-    | "server.connected"
-}>
-
-type EventSessionStatusBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "session.status" }>
-type EventMessagePartUpdatedBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "message.part.updated" }>
-type EventMessageUpdatedBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "message.updated" }>
-
-export type OpenCodeCompatHandoffPart = {
-  id: string
-  sessionID: string
-  messageID: string
-  type: "handoff"
-  from: { id: string; access: string; connection?: unknown }
-  to: { id: string; access: string; connection?: unknown }
-}
-
-export type OpenCodeCompatPart = Part | OpenCodeCompatHandoffPart
-
-export type EventMessagePartUpdated = Omit<EventMessagePartUpdatedBase, "properties"> & {
-  properties: Omit<EventMessagePartUpdatedBase["properties"], "part"> & {
-    part: OpenCodeCompatPart
-  }
-}
-
-export type ClaxedoMessageAuthor = {
-  id: string
-  name: string
-  avatarUrl?: string
-  kind: "human" | "agent"
-}
-
-export type ClaxedoMessageInfoExtension = {
-  claxedo?: {
-    author: ClaxedoMessageAuthor
-  }
-}
-
-export type EventMessageUpdated = Omit<EventMessageUpdatedBase, "properties"> & {
-  properties: Omit<EventMessageUpdatedBase["properties"], "info"> & {
-    info: EventMessageUpdatedBase["properties"]["info"] & ClaxedoMessageInfoExtension
-  }
-}
-
-export type EventSessionStatus = Omit<EventSessionStatusBase, "properties"> & {
-  properties: Omit<EventSessionStatusBase["properties"], "status"> & {
-    status: OpenCodeCompatStatus
-  }
-}
-
-export type OpenCodeProjectionBaseEvent =
-  | Exclude<OpenCodeProjectionBaseSdkEvent, { type: "message.updated" | "message.part.updated" | "session.status" }>
-  | EventMessageUpdated
-  | EventSessionStatus
-  | EventMessagePartUpdated
-
-export type ClaxedoProjectionExtensionEvent =
-  | EventMessageCompleted
-  | EventSessionAgent
-  | EventSessionConfig
-  | EventSessionUsage
-  | EventRuntimeDiagnostic
-
-export type OpenCodeCompatEvent = OpenCodeProjectionBaseEvent | ClaxedoProjectionExtensionEvent
-
-export type EventMessagePartDelta = Extract<OpenCodeProjectionBaseEvent, { type: "message.part.delta" }>
-export type EventPermissionAsked = Extract<OpenCodeProjectionBaseEvent, { type: "permission.asked" }>
-export type EventPermissionReplied = Extract<OpenCodeProjectionBaseEvent, { type: "permission.replied" }>
-export type EventQuestionAsked = Extract<OpenCodeProjectionBaseEvent, { type: "question.asked" }>
-export type EventQuestionReplied = Extract<OpenCodeProjectionBaseEvent, { type: "question.replied" }>
-export type EventQuestionRejected = Extract<OpenCodeProjectionBaseEvent, { type: "question.rejected" }>
-export type EventTodoUpdated = Extract<OpenCodeProjectionBaseEvent, { type: "todo.updated" }>
-export type EventSessionIdle = Extract<OpenCodeProjectionBaseEvent, { type: "session.idle" }>
-export type EventSessionError = Extract<OpenCodeProjectionBaseEvent, { type: "session.error" }>
-export type EventSessionUpdated = Extract<OpenCodeProjectionBaseEvent, { type: "session.updated" }>
-export type EventSessionDiff = Extract<OpenCodeProjectionBaseEvent, { type: "session.diff" }>
-export type EventSessionCompacted = Extract<OpenCodeProjectionBaseEvent, { type: "session.compacted" }>
-export type EventServerConnected = Extract<OpenCodeProjectionBaseEvent, { type: "server.connected" }>
-
-export type EventMessageCompleted = {
-  type: "message.completed"
-  properties: {
-    sessionID: string
-    messageID: string
-  }
-}
-
-export type EventSessionAgent = {
-  type: "session.agent"
-  properties: {
-    sessionID: string
-    agentId: string
-  }
-}
-
-export type EventSessionConfig = {
-  type: "session.config"
-  properties: {
-    sessionID: string
-    options: OpenCodeCompatConfigOption[]
-  }
-}
-
-export type EventSessionUsage = {
-  type: "session.usage"
-  properties: {
-    sessionID: string
-    messageID?: string
-    contextSize: number
-    contextUsed: number
-    observation?: RuntimeUsageObservation
-    cost?: {
-      amount: number
-      currency: string
-    }
-  }
-}
-
-export type EventRuntimeDiagnostic = {
-  id?: string
-  type: "runtime.diagnostic"
-  properties: {
-    sessionID: string
-    harness?: string
-    threadId?: string
-    projection?: "opencode-compat"
-    phase?: "ingest" | "terminalize"
-    code: string
-    message: string
-    severity: "debug" | "info" | "warn" | "error"
-    eventType?: string
-    issues?: string[]
-    details?: unknown
-    auth?: unknown
-    rateLimit?: unknown
-    mcp?: unknown
-    diagnostic?: unknown
-    raw?: unknown
-  }
-}
+export type EventMessageUpdated = Extract<OpenCodeCompatEvent, { type: "message.updated" }>
+export type EventMessagePartUpdated = Extract<OpenCodeCompatEvent, { type: "message.part.updated" }>
+export type EventMessagePartDelta = Extract<OpenCodeCompatEvent, { type: "message.part.delta" }>
+export type EventMessageCompleted = Extract<OpenCodeCompatEvent, { type: "message.completed" }>
+export type EventPermissionAsked = Extract<OpenCodeCompatEvent, { type: "permission.asked" }>
+export type EventPermissionReplied = Extract<OpenCodeCompatEvent, { type: "permission.replied" }>
+export type EventQuestionAsked = Extract<OpenCodeCompatEvent, { type: "question.asked" }>
+export type EventQuestionReplied = Extract<OpenCodeCompatEvent, { type: "question.replied" }>
+export type EventQuestionRejected = Extract<OpenCodeCompatEvent, { type: "question.rejected" }>
+export type EventTodoUpdated = Extract<OpenCodeCompatEvent, { type: "todo.updated" }>
+export type EventSessionStatus = Extract<OpenCodeCompatEvent, { type: "session.status" }>
+export type EventSessionIdle = Extract<OpenCodeCompatEvent, { type: "session.idle" }>
+export type EventSessionError = Extract<OpenCodeCompatEvent, { type: "session.error" }>
+export type EventSessionUpdated = Extract<OpenCodeCompatEvent, { type: "session.updated" }>
+export type EventSessionDiff = Extract<OpenCodeCompatEvent, { type: "session.diff" }>
+export type EventSessionCompacted = Extract<OpenCodeCompatEvent, { type: "session.compacted" }>
+export type EventSessionAgent = Extract<OpenCodeCompatEvent, { type: "session.agent" }>
+export type EventSessionConfig = Extract<OpenCodeCompatEvent, { type: "session.config" }>
+export type EventSessionUsage = Extract<OpenCodeCompatEvent, { type: "session.usage" }>
+export type EventRuntimeDiagnostic = Extract<OpenCodeCompatEvent, { type: "runtime.diagnostic" }>
+export type EventServerConnected = Extract<OpenCodeCompatEvent, { type: "server.connected" }>
 
 export type PermissionRequest = EventPermissionAsked["properties"]
 export type QuestionRequest = EventQuestionAsked["properties"]
-export type OpenCodeCompatTodo = EventTodoUpdated["properties"]["todos"][number]
-export type OpenCodeCompatSnapshotFileDiff = EventSessionDiff["properties"]["diff"][number]
-
-export type OpenCodeCompatSession = EventSessionUpdated["properties"]["info"]
-
-export type OpenCodeCompatConfigOption = {
-  id: string
-  name: string
-  category?: string
-  type: "select" | "boolean"
-  currentValue: string | boolean
-  selectOptions?: Array<{
-    id: string
-    name: string
-  }>
-}
+export type OpenCodeCompatTodo = AgentTodo
+export type OpenCodeCompatSnapshotFileDiff = AgentSnapshotFileDiff
+export type OpenCodeCompatSession = AgentPresentationSession
+export type OpenCodeCompatConfigOption = AgentConfigOption
 
 export type CompatEvent = OpenCodeCompatEvent
-export type CompatEnvelope<Event extends OpenCodeCompatEvent = OpenCodeCompatEvent> = OpenCodeCompatEnvelope<Event>
-export type CompatPart = OpenCodeCompatPart
+export type CompatEnvelope<Event extends OpenCodeCompatEvent = OpenCodeCompatEvent> = AgentEventEnvelope<Event>
+export type CompatPart = AgentContentPart

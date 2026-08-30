@@ -1,7 +1,8 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import type { AgentRuntimeEvent as ProjectionRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
-import type { Message } from "@opencode-ai/sdk/v2"
+import { AgentRuntimeContractError, assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type {
   AgentMessage,
   AgentRuntime,
@@ -71,6 +72,8 @@ export type SessionPromptTurnResult = {
 
 export type SessionPromptTurnInput = {
   adapter: AgentHarnessAdapter
+  /** Required for the legacy direct-adapter path; canonical routes use AgentRuntime. */
+  binding?: AgentExecutionBinding
   sessionId: string
   directory: RuntimeDirectory
   body: SessionPromptBody
@@ -140,12 +143,18 @@ function nextWithAbort<T>(iterator: AsyncIterator<T>, signal: AbortSignal | unde
 
 async function* sendMessageWithAbort(
   adapter: AgentHarnessAdapter,
-  id: string,
+  binding: AgentExecutionBinding,
   input: PromptInput,
-  directory: RuntimeDirectory,
   signal: AbortSignal | undefined,
 ) {
-  const iterator = adapter.sendMessage(id, input, directory)[Symbol.asyncIterator]()
+  if (!adapter.executeTurn) {
+    throw new AgentRuntimeContractError({
+      code: "unsupported_operation",
+      operation: "executeTurn",
+      message: `Harness ${binding.connectionId} does not support bound execution`,
+    })
+  }
+  const iterator = adapter.executeTurn(binding, input)[Symbol.asyncIterator]()
   try {
     while (true) {
       const result = await nextWithAbort(iterator, signal)
@@ -199,11 +208,13 @@ async function promptForSession(
   return prompt(body, await adapter.getSessionConfig(sessionId, directory).catch(() => undefined))
 }
 
-function isMessage(input: unknown): input is { info: { id: string; role: string }; parts: unknown[] } {
+function isMessage(input: unknown): input is AgentMessage {
   if (!input || typeof input !== "object") return false
   const info = (input as { info?: unknown }).info
   return !!info && typeof info === "object" && typeof (info as { id?: unknown }).id === "string"
     && typeof (info as { role?: unknown }).role === "string"
+    && typeof (info as { sessionID?: unknown }).sessionID === "string"
+    && Array.isArray((input as { parts?: unknown }).parts)
 }
 
 function failure(input: unknown): string {
@@ -237,7 +248,7 @@ function createPromptEventProjection(input: {
     events(event: AgentRuntimeStreamEvent): CompatEvent[] {
       if (isCompatEvent(event)) return [event]
       if (event.type === "step-start") assistantId = event.newMessageId
-      return projection.ingest(event).map((item) => item.payload)
+      return projection.ingest(event as unknown as ProjectionRuntimeEvent).map((item) => item.payload)
     },
   }
 }
@@ -356,6 +367,18 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
 }
 
 export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promise<SessionPromptTurnResult> {
+  if (!input.binding) {
+    throw new AgentRuntimeContractError({
+      code: "invalid_execution_binding",
+      field: "upstreamSessionId",
+      message: `Session ${input.sessionId} has no complete execution binding`,
+    })
+  }
+  const binding = assertAgentExecutionBinding(input.binding, {
+    ...input.binding,
+    sessionId: input.sessionId,
+    directory: input.directory ?? "",
+  })
   const promptInput = await promptForSession(input.adapter, input.sessionId, input.directory, input.body)
   const scope = compatScope(input.directory, input.sessionId)
 
@@ -409,14 +432,14 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
 
 export function sessionPromptReply(input: SessionPromptTurnResult): {
   body: unknown
-  assistantMessage?: Message
+  assistantMessage?: AgentMessage["info"]
 } {
   const final = reply(input.messages, input.assistantId)
   if (final) {
     return {
       body: final,
       ...(!input.assistantMessagePublished && final.info.role === "assistant"
-        ? { assistantMessage: final.info as Message }
+        ? { assistantMessage: final.info }
         : {}),
     }
   }

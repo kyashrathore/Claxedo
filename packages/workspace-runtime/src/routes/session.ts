@@ -27,6 +27,7 @@ import { harnessQueryParam } from "./http"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy } from "../session-access-policy"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 
 function bridgeLifecycleEvent(event: Parameters<RuntimeEventHub["publishGlobal"]>[0]) {
   const payload = event.payload as { type?: unknown; properties?: Record<string, unknown> }
@@ -242,6 +243,13 @@ export function SessionRoutes(
             ...(harness ? { harness } : {}),
           })
         }
+      : undefined,
+    resolveExecutionBinding: options?.resolveExecutionBinding
+      ? (_c, directory, sessionId, adapter) => options.resolveExecutionBinding!({
+          adapter,
+          directory: requiredDirectory(directory),
+          sessionId,
+        })
       : undefined,
     resolveDirectory: (c, input) => dir(c as never, input),
     beforeSessionOperation: (_c, input) => options?.beforeSessionOperation?.(input),

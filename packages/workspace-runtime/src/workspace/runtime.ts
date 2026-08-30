@@ -4,6 +4,7 @@ import os from "os"
 import path from "path"
 import {
   AGENT_HARNESS_DEFINITIONS,
+  connectionIdForHarness,
   createAgentRuntime,
   type AgentRuntime,
   type AgentHarnessFactory,
@@ -52,7 +53,7 @@ import { runGit } from "../git"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore } from "../store"
-import { assertTarget, workspaceDir, type WorkspaceTarget } from "../target"
+import { assertTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
 import { harnessQueryParam } from "../routes/http"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
@@ -107,8 +108,6 @@ import {
  * in-memory store from `@claxedo/agent-sdk-runtime/stores/memory`.
  */
 
-const sessionInventoryLog = Log.create({ service: "session-inventory" })
-
 export type WorkspaceRuntimeStore =
   & Omit<AgentRuntimeStoreWithRecovery, "getSession" | "getMessages" | "bindSession" | "updateSessionConfig">
   & {
@@ -120,7 +119,10 @@ export type WorkspaceRuntimeStore =
     listSubagents?: (parentSessionId: string) => unknown[]
     bindSession(input: {
       sessionId: string
+      workspaceId?: string
       directory: string
+      connectionId?: string
+      upstreamSessionId?: string
       agentSessionId: string
       title?: string
       ownerKey?: string | null
@@ -133,14 +135,6 @@ export type WorkspaceRuntimeStore =
       update: SessionConfigUpdate,
       input?: { directory?: string },
     ): SessionConfig | null | undefined
-    /**
-     * Whether this directory's inventory has already been imported from the
-     * harnesses. A store that does not record it reports nothing, and generic
-     * listing then falls back to discovering on every list — correct, just not
-     * free. The SQLite store records it durably.
-     */
-    sessionInventoryImported?: (directory: string) => boolean
-    markSessionInventoryImported?: (directory: string, at?: number) => void
     recoverBusySessions?: () => unknown
     flush?: () => void
     close?: () => void
@@ -1503,6 +1497,25 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return config
   }
 
+  function canonicalExecutionBinding(sessionId: string, directory: string) {
+    const binding = store().getExecutionBinding(sessionId)
+    const config = store().getSessionConfig(sessionId)
+    if (!binding || !config) {
+      throw new AgentRuntimeContractError({
+        code: "invalid_execution_binding",
+        field: !binding ? "upstreamSessionId" : "connectionId",
+        message: `Session ${sessionId} has no complete execution binding`,
+      })
+    }
+    return assertAgentExecutionBinding(binding, {
+      ...binding,
+      sessionId,
+      workspaceId: workspaceId(),
+      directory,
+      connectionId: connectionIdForHarness(config.harness),
+    })
+  }
+
   async function adapterForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     if (!input?.sessionId) {
       if (input?.harness) return await ensureSessionAdapter(input.harness)
@@ -1516,20 +1529,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   async function runtimeForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     const config = sessionConfigFor(input)
     const nextRunner = config?.harness ?? input?.harness ?? runner
-    if (input?.sessionId && !config) {
-      if (!store().getSession(input.sessionId)) {
-        store().bindSession({
-          sessionId: input.sessionId,
-          directory: input.directory ?? input.sessionId,
-          agentSessionId: input.sessionId,
-        })
-      }
-      store().updateSessionConfig(input.sessionId, {
-        harness: nextRunner,
-        variant: null,
-        agent: null,
-      })
-    }
     const key = adapterKey(nextRunner)
     const existing = sessionRuntimes.get(key)
     if (existing) return existing
@@ -2421,19 +2420,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         eventHub,
         sessionAccessPolicy,
         resolveRuntime: (input) => runtimeForSession(input),
+        resolveExecutionBinding: ({ sessionId, directory }) => canonicalExecutionBinding(sessionId, directory),
         createSession: async (c, directory, title, id) => {
           // Write through to the durable store on CREATE.
           //
-          // Creation used to land only in the adapter; the store learned about
-          // a session solely through `bindDiscoveredSession` during the
-          // list-time adapter fan-out. That made the store a cache the fan-out
-          // happened to fill rather than the owner of local session inventory,
-          // and it is why generic listing cannot stop fanning out yet (U8-F7).
-          //
-          // Idempotent by construction: `bindSession` upserts, and
-          // `bindDiscoveredSession` skips a row already bound to this
-          // directory, so a later discovery pass neither duplicates nor
-          // clobbers what this wrote.
+          // Creation binds the canonical session immediately. Provider-native
+          // discovery is intentionally separate and never adopts rows into
+          // Claxedo inventory.
           //
           // A caller-supplied id may name a session this runtime already owns.
           // It must not be able to say which WORKSPACE that session belongs to.
@@ -2449,11 +2442,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           //
           // A repeat in the SAME directory is left alone — that is the retry
           // path, where the upsert is a no-op. Only a cross-directory claim is
-          // refused, and it is refused before the harness is asked to create
-          // anything. Discovery may still move a session between directories
-          // (`bindDiscoveredSession`); there the HARNESS reported the session
-          // under that directory, which is the authority a create does not
-          // have.
+          // refused, before the harness is asked to create anything.
           if (id) assertSessionDirectory(id, directory)
           // The requested harness must be honoured here exactly as the route's
           // own `resolveAdapter` would. Resolving the ACTIVE runner instead
@@ -2467,6 +2456,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ...(requested ? { harness: { id: requested.id, access: requested.access } } : {}),
           })
           const session = await adapter.createSession(directory, title, id)
+          assertSessionDirectory(session.id, directory)
+          const selectedHarness = requested
+            ? { id: requested.id, access: requested.access }
+            : sessionConfigFor({ sessionId: session.id, directory })?.harness ?? runner
           // The agent session id belongs to the HARNESS, never to this
           // write-through. An adapter that persists into this store has
           // already bound the id its process answers to: a codex
@@ -2480,10 +2473,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // elsewhere and left nothing here to preserve.
           store().bindSession({
             sessionId: session.id,
+            workspaceId: workspaceId(),
             directory,
+            connectionId: connectionIdForHarness(selectedHarness),
+            upstreamSessionId: store().getAgentSessionId(session.id) ?? session.id,
             ...(title ? { title } : {}),
             agentSessionId: store().getAgentSessionId(session.id) ?? session.id,
           })
+          if (!store().getSessionConfig(session.id)) {
+            const accepted = await adapter.getSessionConfig(session.id, directory)
+            store().updateSessionConfig(session.id, {
+              ...accepted,
+              harness: selectedHarness,
+            }, { directory })
+          }
           return session
         },
         afterCreateSession: hostOptions.afterCreateSession,

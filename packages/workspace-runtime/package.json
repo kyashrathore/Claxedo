@@ -134,6 +134,7 @@
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/agent-event-runtime": "0.7.0",
     "@claxedo/agent-extensions": "0.7.0",
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@claxedo/agent-sdk-runtime": "0.7.0",
     "@claxedo/workspace-relay": "0.7.0",
     "@claxedo/workspace-relay-protocol": "0.7.0",

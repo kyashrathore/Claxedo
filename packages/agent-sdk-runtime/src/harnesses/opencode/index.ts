@@ -20,6 +20,7 @@ import {
   sessionStatus as sessionStatusCompat,
   type CompatEvent,
 } from "../../compat-events"
+import { assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type {
   AgentAgent,
   AgentCommand,
@@ -391,6 +392,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   readHarnessCapabilities(): HarnessCapabilities {
     return harnessCapabilities({
       harness: "opencode",
+      modelSelection: { status: "optional" },
       abort: true,
       reconnect: false,
       replay: true,

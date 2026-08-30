@@ -94,7 +94,6 @@ export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
   readonly commitsStreamEvents?: boolean
 
-  listSessions(directory: RuntimeDirectory): Promise<AgentSession[]>
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
@@ -123,6 +122,12 @@ export interface AgentHarnessAdapterCore {
   readRuntimeHealth?(directory: RuntimeDirectory, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth
 
   dispose(): void
+}
+
+/** Provider-native discovery is separate from Claxedo inventory and is never
+ * used to construct normal session lists or history. */
+export interface SupportsSessionDiscovery {
+  discoverSessions(workspace: AgentWorkspaceIdentity): Promise<AgentSession[]>
 }
 
 export interface SupportsAbort {
@@ -365,6 +370,7 @@ export interface SupportsConfigOptions {
 
 export type AgentHarnessAdapter =
   & AgentHarnessAdapterCore
+  & Partial<SupportsSessionDiscovery>
   & Partial<SupportsAbort>
   & Partial<SupportsRevert>
   & Partial<SupportsUnrevert>

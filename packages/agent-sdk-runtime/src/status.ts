@@ -1,4 +1,4 @@
-import type { SessionStatus as WireStatus } from "@opencode-ai/sdk/v2"
+import type { AgentRuntimeStatus } from "@claxedo/agent-runtime-contract"
 
 type RetryRow = {
   status?: unknown
@@ -8,13 +8,9 @@ type RetryRow = {
   next?: unknown
 }
 
-export type StatusRecover = {
-  type: "recovering"
-  kind: "process_restart"
-  message: string
-}
+export type StatusRecover = Extract<AgentRuntimeStatus, { type: "recovering" }>
 
-export type StatusCompat = WireStatus | StatusRecover
+export type StatusCompat = AgentRuntimeStatus
 
 export type StatusChunk = "busy" | "idle" | "error" | "recovering"
 

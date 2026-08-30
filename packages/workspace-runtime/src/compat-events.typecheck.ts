@@ -1,8 +1,3 @@
-import type {
-  EventPermissionAsked,
-  EventQuestionAsked,
-  EventTodoUpdated,
-} from "@opencode-ai/sdk/v2"
 import {
   messagePartDelta,
   permissionAsked,
@@ -20,7 +15,7 @@ questionAsked({
     options: [{ label: "Yes", description: "Ship it" }],
     custom: false,
   }],
-}) satisfies EventQuestionAsked
+}) satisfies Extract<CompatEvent, { type: "question.asked" }>
 
 permissionAsked({
   id: "p1",
@@ -29,9 +24,9 @@ permissionAsked({
   patterns: ["/tmp"],
   metadata: {},
   always: ["/tmp"],
-}) satisfies EventPermissionAsked
+}) satisfies Extract<CompatEvent, { type: "permission.asked" }>
 
-todoUpdated("s1", [{ content: "Ship", status: "pending", priority: "high" }]) satisfies EventTodoUpdated
+todoUpdated("s1", [{ content: "Ship", status: "pending", priority: "high" }]) satisfies Extract<CompatEvent, { type: "todo.updated" }>
 
 messagePartDelta({
   sessionID: "s1",
@@ -72,11 +67,3 @@ void kinds
 const bad: CompatEvent = { type: "question.created", properties: {} }
 
 void bad
-
-// @ts-expect-error permission.asked requires metadata and always
-permissionAsked({
-  id: "p2",
-  sessionID: "s1",
-  permission: "bash",
-  patterns: ["/tmp"],
-})

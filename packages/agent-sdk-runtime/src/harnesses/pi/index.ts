@@ -680,6 +680,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     const subagents = !!backend?.extraTools?.some((tool) => tool.name === "subagent")
     return harnessCapabilities({
       harness: "pi",
+      modelSelection: { status: "optional" },
       abort: true,
       reconnect: true,
       replay: true,
@@ -696,6 +697,11 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       subagents,
       goals: true,
     })
+  }
+
+  executeTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeStreamEvent> {
+    assertAgentExecutionBinding(binding)
+    return this.sendMessage(binding.sessionId, input, binding.directory)
   }
 
   async *sendMessage(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {

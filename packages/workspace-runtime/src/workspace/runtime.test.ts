@@ -29,7 +29,7 @@ import { RuntimeStore } from "../store"
 import { Pty } from "../pty"
 import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
-import type { AgentConfigOption, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
+import { connectionIdForHarness, type AgentConfigOption, type SessionConfig, type SessionConfigUpdate, type SessionHarness } from "@claxedo/agent-sdk-runtime"
 import {
   AcpHarnessAdapter,
   ClaudeHarnessAdapter,
@@ -147,6 +147,35 @@ function mountTestHost(app: Hono, options?: Parameters<typeof createWorkspaceHos
   }))
   host.mount(app, { exposure: loopbackExposure })
   return host
+}
+
+function seedCanonicalSession(input: {
+  storeRoot: string
+  sessionId: string
+  directory: string
+  harness: SessionHarness
+  upstreamSessionId?: string
+  title?: string
+  model?: { providerID: string; modelID: string }
+}) {
+  const store = new RuntimeStore(input.storeRoot)
+  const upstreamSessionId = input.upstreamSessionId ?? input.sessionId
+  store.bindSession({
+    sessionId: input.sessionId,
+    workspaceId: "workspace-test",
+    directory: input.directory,
+    connectionId: connectionIdForHarness(input.harness),
+    upstreamSessionId,
+    agentSessionId: upstreamSessionId,
+    ...(input.title ? { title: input.title } : {}),
+  })
+  store.updateSessionConfig(input.sessionId, {
+    harness: input.harness,
+    ...(input.model ? { model: input.model } : {}),
+    variant: null,
+    agent: null,
+  }, { directory: input.directory })
+  store.close()
 }
 
 async function pushRuntimeConfig(app: Hono, body: unknown) {
@@ -284,7 +313,7 @@ describe("workspace runtime auth helpers", () => {
     expect(upstreamCalls).toEqual([])
   })
 
-  test("opencode compatibility default proxies adapter list/status upstream but keeps the compat route surface local", async () => {
+  test("opencode compatibility keeps canonical session inventory local while leaving the compat route surface local", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-default-"))
     tempDirs.push(dir)
     execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "ignore" })
@@ -313,11 +342,11 @@ describe("workspace runtime auth helpers", () => {
     })
     expect(config.status).toBe(200)
 
-    // Adapter mechanism ON: listSessions proxies the opencode upstream.
+    // Generic inventory is canonical store state and never provider discovery.
     const session = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
     expect(session.status).toBe(200)
-    expect(await session.json()).toMatchObject([{ id: "ses_upstream" }])
-    expect(upstreamCalls.some((url) => url.includes("/session"))).toBe(true)
+    expect(await session.json()).toEqual([])
+    expect(upstreamCalls.some((url) => url.includes("/session"))).toBe(false)
 
     // Route surface OFF: /mcp returns the local fallback and never proxies.
     const mcp = await app.request(`http://localhost/mcp?directory=${encodeURIComponent(dir)}`)
@@ -789,6 +818,14 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-runner-replace-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    seedCanonicalSession({
+      storeRoot,
+      sessionId: "s1",
+      directory: dir,
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "codex-app-server", modelID: "gpt-5" },
+    })
 
     let sendStarted!: () => void
     const started = new Promise<void>((resolve) => {
@@ -832,7 +869,7 @@ describe("workspace runtime auth helpers", () => {
 
     try {
       const app = new Hono()
-      const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
+      const host = mountTestHost(app, { harness: { id: "codex", access: "native" }, storeRoot })
 
       const message = app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
@@ -872,6 +909,14 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-acp-live-config-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    seedCanonicalSession({
+      storeRoot,
+      sessionId: "s1",
+      directory: dir,
+      harness: { id: "openclaw", access: "acp" },
+      model: { providerID: "acp:openclaw", modelID: "default" },
+    })
 
     let sendStarted!: () => void
     const started = new Promise<void>((resolve) => {
@@ -912,6 +957,7 @@ describe("workspace runtime auth helpers", () => {
       const app = new Hono()
       const host = mountTestHost(app, {
         harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+        storeRoot,
       })
 
       const message = app.request(`http://localhost/session/s1/message?directory=${encodeURIComponent(dir)}`, {
@@ -958,6 +1004,14 @@ describe("workspace runtime auth helpers", () => {
     process.env.HOME = dir
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const receiptDir = path.join(dir, "runtime-config")
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    seedCanonicalSession({
+      storeRoot,
+      sessionId: "s-promoted",
+      directory: dir,
+      harness: { id: "openclaw", access: "acp" },
+      model: { providerID: "acp:openclaw", modelID: "default" },
+    })
 
     let sendStarted!: () => void
     const started = new Promise<void>((resolve) => {
@@ -1018,6 +1072,7 @@ describe("workspace runtime auth helpers", () => {
       const host = mountTestHost(app, {
         harness: { id: "opencode", access: "native" },
         configApplyReceiptDir: receiptDir,
+        storeRoot,
       })
       const configPending = pushRuntimeConfig(app, {
         version: 1,
@@ -1090,7 +1145,10 @@ describe("workspace runtime auth helpers", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-claude",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:claude",
+      upstreamSessionId: "a-claude",
       agentSessionId: "a-claude",
       createdAt: 1,
     })
@@ -1146,7 +1204,10 @@ describe("workspace runtime auth helpers", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-claude-title",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:claude",
+      upstreamSessionId: "a-claude-title",
       title: "Generated before restart",
       agentSessionId: "a-claude-title",
       createdAt: 1,
@@ -1187,7 +1248,10 @@ describe("workspace runtime auth helpers", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-replay",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:opencode",
+      upstreamSessionId: "a-replay",
       agentSessionId: "a-replay",
       createdAt: 1,
     })
@@ -1195,6 +1259,7 @@ describe("workspace runtime auth helpers", () => {
       sessionId: "s-replay",
       agentSessionId: "a-replay",
       payload: {
+        id: "event-u-claude",
         type: "message.updated",
         properties: {
           info: {
@@ -1277,7 +1342,10 @@ describe("workspace runtime auth helpers", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-empty",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:opencode",
+      upstreamSessionId: "a-empty",
       agentSessionId: "a-empty",
       title: "Empty runtime session",
       createdAt: 1,
@@ -1336,7 +1404,15 @@ describe("workspace runtime auth helpers", () => {
     ] as const
     for (const [index, harness] of harnesses.entries()) {
       const sessionId = `s-page-${index}`
-      seed.bindSession({ sessionId, directory: dir, agentSessionId: `a-page-${index}`, createdAt: index + 1 })
+      seed.bindSession({
+        sessionId,
+        workspaceId: "workspace-test",
+        directory: dir,
+        connectionId: connectionIdForHarness(harness),
+        upstreamSessionId: `a-page-${index}`,
+        agentSessionId: `a-page-${index}`,
+        createdAt: index + 1,
+      })
       seed.updateSessionConfig(sessionId, { harness }, { directory: dir })
       for (let message = 1; message <= 2; message++) {
         seed.appendEvent({
@@ -1441,7 +1517,15 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const storeRoot = path.join(dir, ".claxedo", "store")
     const seed = new RuntimeStore(storeRoot)
-    seed.bindSession({ sessionId: "s-empty-page", directory: dir, agentSessionId: "a-empty-page", createdAt: 1 })
+    seed.bindSession({
+      sessionId: "s-empty-page",
+      workspaceId: "workspace-test",
+      directory: dir,
+      connectionId: "native:pi",
+      upstreamSessionId: "a-empty-page",
+      agentSessionId: "a-empty-page",
+      createdAt: 1,
+    })
     seed.updateSessionConfig("s-empty-page", { harness: { id: "pi", access: "native" } }, { directory: dir })
     seed.close()
 
@@ -1486,7 +1570,15 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const storeRoot = path.join(dir, ".claxedo", "store")
     const seed = new RuntimeStore(storeRoot)
-    seed.bindSession({ sessionId: "s-empty-native", directory: dir, agentSessionId: "a-empty-native", createdAt: 1 })
+    seed.bindSession({
+      sessionId: "s-empty-native",
+      workspaceId: "workspace-test",
+      directory: dir,
+      connectionId: "native:pi",
+      upstreamSessionId: "a-empty-native",
+      agentSessionId: "a-empty-native",
+      createdAt: 1,
+    })
     seed.updateSessionConfig("s-empty-native", { harness: { id: "pi", access: "native" } }, { directory: dir })
     seed.close()
 
@@ -1580,7 +1672,10 @@ describe("workspace runtime auth helpers", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-claude-to-codex",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:claude",
+      upstreamSessionId: "claude-native-thread",
       title: "Continue this conversation",
       agentSessionId: "claude-native-thread",
       createdAt: 1,
@@ -1591,6 +1686,31 @@ describe("workspace runtime auth helpers", () => {
       variant: null,
       agent: null,
     }, { directory: dir })
+    seed.appendEvent({
+      sessionId: "s-claude-to-codex",
+      agentSessionId: "claude-native-thread",
+      payload: {
+        id: "event-u-claude",
+        type: "message.updated",
+        properties: {
+          sessionID: "s-claude-to-codex",
+          info: { id: "u-claude", sessionID: "s-claude-to-codex", role: "user", time: { created: 1 } },
+        },
+      },
+    })
+    seed.appendEvent({
+      sessionId: "s-claude-to-codex",
+      agentSessionId: "claude-native-thread",
+      payload: {
+        id: "event-p-user",
+        type: "message.part.updated",
+        properties: {
+          sessionID: "s-claude-to-codex",
+          part: { id: "p-user", sessionID: "s-claude-to-codex", messageID: "u-claude", type: "text", text: "my dog is Tommy" },
+          time: 2,
+        },
+      },
+    })
     seed.close()
 
     const handoffs: string[] = []
@@ -1701,7 +1821,10 @@ describe("workspace runtime auth helpers", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-opencode-owned",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:opencode",
+      upstreamSessionId: "s-opencode-owned",
       agentSessionId: "s-opencode-owned",
       createdAt: 1,
     })
@@ -1726,10 +1849,10 @@ describe("workspace runtime auth helpers", () => {
       const after = new RuntimeStore(storeRoot)
 
       expect(listed.status).toBe(200)
-      expect(await listed.json()).toEqual([{
+      expect(await listed.json()).toMatchObject([{
         id: "s-opencode-owned",
-        title: "Discovered by Codex",
-        time: { created: 1, updated: discoveredAt },
+        title: null,
+        config,
       }])
       expect(after.getSessionConfig("s-opencode-owned")).toEqual(config)
       after.close()
@@ -1868,7 +1991,7 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  test("host dispose closes adapter-created runtime stores once", async () => {
+  test("host dispose closes the canonical and adapter-owned stores once each", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-host-store-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -1893,7 +2016,7 @@ describe("workspace runtime auth helpers", () => {
       host.dispose()
       host.dispose()
 
-      expect(closed).toBe(1)
+      expect(closed).toBe(2)
     } finally {
       RuntimeStore.prototype.close = originalClose
     }
@@ -2478,6 +2601,7 @@ describe("workspace runtime auth helpers", () => {
     mountTestHost(app, {
       opencodeUrl: "http://opencode.test",
       harness: { id: "cursor", access: "acp" },
+      storeRoot: path.join(dir, ".claxedo", "store"),
     })
 
     const session = await app.request("http://localhost/session?runner=opencode", {
@@ -2960,6 +3084,7 @@ describe("workspace runtime auth helpers", () => {
         workspaceId: "ws_auth",
         directory: dir,
       },
+      storeRoot: path.join(dir, ".claxedo", "store"),
     })
 
     const status = await app.request(`http://localhost/session/status?directory=${encodeURIComponent(dir)}`)
@@ -3023,6 +3148,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
       const app = new Hono()
       const host = mountTestHost(app, {
         harness: { id: "opencode", access: "native" },
+        storeRoot: path.join(dir, ".claxedo", "store"),
         harnesses: [{
           match: (runner) => runner.id === "opencode" && runner.access === "native",
           create: () => ({
@@ -3061,6 +3187,14 @@ describe("workspace host adapter + store caching (characterization)", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-active-adapter-model-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    seedCanonicalSession({
+      storeRoot,
+      sessionId: "s-active-codex",
+      directory: dir,
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "codex-app-server", modelID: "gpt-5" },
+    })
 
     let sendStarted!: () => void
     const started = new Promise<void>((resolve) => {
@@ -3100,6 +3234,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
       const app = new Hono()
       const host = mountTestHost(app, {
         harness: { id: "opencode", access: "native" },
+        storeRoot,
         harnesses: [{
           match: (runner) => runner.id === "opencode" && runner.access === "native",
           create: () => ({
@@ -3159,7 +3294,15 @@ describe("workspace host adapter + store caching (characterization)", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const storeRoot = path.join(dir, ".claxedo", "store")
     const seed = new RuntimeStore(storeRoot)
-    seed.bindSession({ sessionId: "s-historical", directory: dir, agentSessionId: "thread-historical", createdAt: 1 })
+    seed.bindSession({
+      sessionId: "s-historical",
+      workspaceId: "workspace-test",
+      directory: dir,
+      connectionId: "native:codex",
+      upstreamSessionId: "thread-historical",
+      agentSessionId: "thread-historical",
+      createdAt: 1,
+    })
     seed.updateSessionConfig("s-historical", {
       harness: {
         id: "codex",
@@ -3216,7 +3359,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
     host.dispose()
   })
 
-  test("reuses a single adapter instance for repeated same-runner access", async () => {
+  test("does not instantiate an adapter for repeated canonical inventory reads", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-adapter-cache-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -3239,7 +3382,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
       expect(second.status).toBe(200)
       // The adapter cache is keyed by adapterKey; both requests hit the same key
       // and therefore share a single Pi adapter instance.
-      expect(seen.size).toBe(1)
+      expect(seen.size).toBe(0)
     } finally {
       PiHarnessAdapter.prototype.listSessions = originalListSessions
     }
@@ -3254,7 +3397,10 @@ describe("workspace host adapter + store caching (characterization)", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-cache",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:codex",
+      upstreamSessionId: "a-cache",
       agentSessionId: "a-cache",
       createdAt: 1,
     })
@@ -3319,7 +3465,10 @@ describe("workspace host adapter + store caching (characterization)", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-disposed-cache",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "native:codex",
+      upstreamSessionId: "a-disposed-cache",
       agentSessionId: "a-disposed-cache",
       createdAt: 1,
     })
@@ -3505,8 +3654,10 @@ describe("workspace host adapter + store caching (characterization)", () => {
       })
 
       // Force a session-scoped Pi adapter into the sessionAdapters cache.
-      const listed = await app.request(`http://localhost/session?runner=pi&directory=${encodeURIComponent(dir)}`)
-      expect(listed.status).toBe(200)
+      const listed = await app.request(`http://localhost/api/wr/harness-config-options?harness=pi&directory=${encodeURIComponent(dir)}`)
+      // The real Pi adapter has no model backend in this fixture, so probing
+      // returns 502 after the adapter has been created and cached.
+      expect(listed.status).toBe(502)
 
       expect(subscribes).toBe(1)
       expect(unsubscribes).toBe(0)
@@ -3868,6 +4019,10 @@ describe("workspace host harness registry seam (Unit 3)", () => {
         onList(adapter)
         return []
       },
+      probeConfigOptions: async () => {
+        onList(adapter)
+        return []
+      },
       dispose: () => {},
     }
     return adapter as unknown as AgentHarnessAdapter
@@ -3910,8 +4065,8 @@ describe("workspace host harness registry seam (Unit 3)", () => {
       })
 
       // (a) the custom adapter is selected for the pi runner
-      const first = await app.request(`http://localhost/session?runner=pi&directory=${encodeURIComponent(dir)}`)
-      const second = await app.request(`http://localhost/session?runner=pi&directory=${encodeURIComponent(dir)}`)
+      const first = await app.request(`http://localhost/api/wr/harness-config-options?harness=pi&directory=${encodeURIComponent(dir)}`)
+      const second = await app.request(`http://localhost/api/wr/harness-config-options?harness=pi&directory=${encodeURIComponent(dir)}`)
       expect(first.status).toBe(200)
       expect(second.status).toBe(200)
 
@@ -3934,10 +4089,10 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const seenPi = new Set<PiHarnessAdapter>()
-    const originalPiList = PiHarnessAdapter.prototype.listSessions
-    PiHarnessAdapter.prototype.listSessions = async function (this: PiHarnessAdapter, directory) {
+    const originalCapabilities = PiHarnessAdapter.prototype.readHarnessCapabilities
+    PiHarnessAdapter.prototype.readHarnessCapabilities = async function (this: PiHarnessAdapter, directory, context) {
       seenPi.add(this)
-      return await originalPiList.call(this, directory)
+      return await originalCapabilities.call(this, directory, context)
     }
 
     try {
@@ -3949,8 +4104,8 @@ describe("workspace host harness registry seam (Unit 3)", () => {
         harnesses: defaultWorkspaceHarnessRegistry(),
       })
 
-      const first = await app.request(`http://localhost/session?runner=pi&directory=${encodeURIComponent(dir)}`)
-      const second = await app.request(`http://localhost/session?runner=pi&directory=${encodeURIComponent(dir)}`)
+      const first = await app.request(`http://localhost/permission/modes?harness=pi&directory=${encodeURIComponent(dir)}`)
+      const second = await app.request(`http://localhost/permission/modes?harness=pi&directory=${encodeURIComponent(dir)}`)
       expect(first.status).toBe(200)
       expect(second.status).toBe(200)
 
@@ -3960,7 +4115,7 @@ describe("workspace host harness registry seam (Unit 3)", () => {
 
       host.dispose()
     } finally {
-      PiHarnessAdapter.prototype.listSessions = originalPiList
+      PiHarnessAdapter.prototype.readHarnessCapabilities = originalCapabilities
     }
   })
 
@@ -4115,6 +4270,14 @@ describe("scoped Session tool compatibility", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-scoped-tools-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const storeRoot = path.join(dir, ".claxedo", "store")
+    seedCanonicalSession({
+      storeRoot,
+      sessionId: "session-1",
+      directory: dir,
+      harness: { id: "pi", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5" },
+    })
     let resolvePrompt!: (input: { parts: unknown[] }) => void
     const prompted = new Promise<{ parts: unknown[] }>((resolve) => { resolvePrompt = resolve })
     const adapter = {
@@ -4144,6 +4307,9 @@ describe("scoped Session tool compatibility", () => {
       sendMessage: async function* (_id: string, input: { parts: unknown[] }) {
         resolvePrompt(input)
       },
+      executeTurn: async function* (_binding: unknown, input: { parts: unknown[] }) {
+        resolvePrompt(input)
+      },
       getMessages: async () => [],
       dispose() {},
     } as unknown as AgentHarnessAdapter
@@ -4155,6 +4321,7 @@ describe("scoped Session tool compatibility", () => {
     const host = mountTestHost(app, {
       harness: { id: "pi", access: "native" },
       harnesses: registry,
+      storeRoot,
       target: { workspaceId: "workspace-1", directory: dir },
     })
     await host.registerSessionTools({
@@ -4192,12 +4359,8 @@ describe("scoped Session tool compatibility", () => {
   })
 })
 
-// ── Unit 4: runtime-owned session inventory ─────────────────────────────────
-// Generic session listing is the read the empty shell performs on every launch.
-// It must answer from the durable store, with no adapter selection and no
-// harness process — except for the single per-directory import that brings a
-// pre-store (or externally created) inventory in once.
-describe("runtime-owned session inventory (Unit 4)", () => {
+// ── Unit 1: canonical runtime-owned session inventory ───────────────────────
+describe("canonical runtime-owned session inventory (Unit 1)", () => {
   function countingAdapter(sessions: unknown[], onList: () => void): AgentHarnessAdapter {
     return {
       listSessions: async (_directory: string) => {
@@ -4214,7 +4377,7 @@ describe("runtime-owned session inventory (Unit 4)", () => {
     return (await response.json() as Array<{ id: string }>).map((row) => row.id)
   }
 
-  test("imports a directory once, then answers from the store with zero adapter listing", async () => {
+  test("never adopts provider discovery into canonical inventory", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-once-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -4229,27 +4392,13 @@ describe("runtime-owned session inventory (Unit 4)", () => {
     const app = new Hono()
     const host = mountTestHost(app, { harness: { id: "pi", access: "native" }, harnesses: registry })
 
-    // First generic list: the historical session is imported.
-    expect(await listIds(app, dir)).toContain("ses_before_store")
-    expect(listCalls).toBeGreaterThan(0)
+    expect(await listIds(app, dir)).toEqual([])
+    expect(await listIds(app, dir, "&harness=pi")).toEqual([])
+    expect(listCalls).toBe(0)
 
-    // Every later generic list is store-only — the session is still there and
-    // no adapter was asked for it.
-    const afterImport = listCalls
-    expect(await listIds(app, dir)).toContain("ses_before_store")
-    expect(await listIds(app, dir)).toContain("ses_before_store")
-    expect(listCalls).toBe(afterImport)
-
-    // A session that appears upstream after the import is NOT silently picked
-    // up by a generic list...
     upstream.push({ id: "ses_added_later", title: "Created outside Claxedo", time: { created: 3, updated: 4 } })
     expect(await listIds(app, dir)).not.toContain("ses_added_later")
-    expect(listCalls).toBe(afterImport)
-
-    // ...it arrives through the explicit selected-harness refresh, and is then
-    // part of the durable inventory.
-    expect(await listIds(app, dir, "&harness=pi")).toContain("ses_added_later")
-    expect(await listIds(app, dir)).toContain("ses_added_later")
+    expect(listCalls).toBe(0)
 
     host.dispose()
   })
@@ -4466,9 +4615,8 @@ describe("global compatibility stream (Unit 4)", () => {
   })
 })
 
-// ── Unit 4: an import that could not ask must not claim it did ──────────────
-describe("session inventory import completeness (Unit 4)", () => {
-  test("does not mark a directory imported when an adapter could not answer", async () => {
+describe("provider discovery isolation", () => {
+  test("does not consult or adopt provider inventory after an upstream failure recovers", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-partial-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -4477,12 +4625,14 @@ describe("session inventory import completeness (Unit 4)", () => {
     // some adapters. Writing the durable marker on the second one hides a
     // user's existing sessions from generic listing forever, with no retry and
     // no error — so a failed adapter has to leave the directory unimported.
+    let listCalls = 0
     let failNext = true
     const upstream = [{ id: "ses_recovered", title: "Present all along", time: { created: 1, updated: 2 } }]
     const registry: WorkspaceHarnessRegistry = [{
       match: () => true,
       create: () => ({
         listSessions: async () => {
+          listCalls++
           if (failNext) throw new Error("upstream unavailable")
           return upstream
         },
@@ -4499,13 +4649,10 @@ describe("session inventory import completeness (Unit 4)", () => {
       return (await response.json() as Array<{ id: string }>).map((row) => row.id)
     }
 
-    // The failing import answers from the store rather than 500-ing...
     expect(await list()).toEqual([])
-
-    // ...and crucially did NOT record itself as done, so the next list retries
-    // and the session appears.
     failNext = false
-    expect(await list()).toContain("ses_recovered")
+    expect(await list()).toEqual([])
+    expect(listCalls).toBe(0)
 
     host.dispose()
   })
@@ -4546,6 +4693,7 @@ describe("session create workspace isolation (Unit 4)", () => {
           created.push(next)
           return { id: next.id }
         },
+        getSessionConfig: async () => ({ harness: { id: "pi", access: "native" }, variant: null, agent: null }),
         dispose: () => {},
       }) as unknown as AgentHarnessAdapter,
     }]
@@ -4588,9 +4736,8 @@ describe("session create workspace isolation (Unit 4)", () => {
   })
 })
 
-// ── Unit 4: a swallowed list failure must not be recorded as an import ──────
-describe("session inventory import completeness, proxy adapters (Unit 4)", () => {
-  test("does not mark a directory imported when a proxy adapter's list failed", async () => {
+describe("provider discovery isolation for proxy adapters", () => {
+  test("does not adopt proxy inventory after the provider becomes healthy", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-proxy-"))
     const data = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-proxy-data-"))
     tempDirs.push(dir, data)
@@ -4628,13 +4775,9 @@ describe("session inventory import completeness, proxy adapters (Unit 4)", () =>
       return (await response.json() as Array<{ id: string }>).map((row) => row.id)
     }
 
-    // The failing import answers from the store...
     expect(await list()).toEqual([])
-
-    // ...and must NOT have claimed the directory imported, or the user's
-    // sessions are hidden from generic listing forever with no retry.
     healthy = true
-    expect(await list()).toContain("ses_hidden")
+    expect(await list()).toEqual([])
 
     host.dispose()
   })
@@ -4725,7 +4868,7 @@ describe("operator ACP connections", () => {
     const app = new Hono()
     const host = mountTestHost(app, { harness: { id: "codex", access: "native" } })
     const select = () =>
-      app.request(`http://localhost/session?harness=${encodeURIComponent("acp:gemini")}&directory=${encodeURIComponent(dir)}`)
+      app.request(`http://localhost/permission/modes?harness=${encodeURIComponent("acp:gemini")}&directory=${encodeURIComponent(dir)}`)
     try {
       // Identity-only selection with no applied descriptor fails closed —
       // and must never fall back to a bundled first-party ACP binary.
@@ -4756,7 +4899,6 @@ describe("operator ACP connections", () => {
       // store-backed listing for the configured identity (no process spawn).
       const listed = await select()
       expect(listed.status).toBe(200)
-      expect(await listed.json()).toEqual([])
 
       // Removing the connection from the applied registry stops NEW
       // resolution immediately.
@@ -4782,7 +4924,10 @@ describe("operator ACP connections", () => {
     const seed = new RuntimeStore(storeRoot)
     seed.bindSession({
       sessionId: "s-gemini",
+      workspaceId: "workspace-test",
       directory: dir,
+      connectionId: "acp:gemini",
+      upstreamSessionId: "a-gemini",
       agentSessionId: "a-gemini",
       createdAt: 1,
     })

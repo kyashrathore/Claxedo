@@ -279,7 +279,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
           directory: request.headers.get("x-opencode-directory"),
         })
         return Response.json(
-          [{ info: { id: "msg-1", role: "user" }, parts: [] }],
+          [{ info: { id: "msg-1", sessionID: "s1", role: "user" }, parts: [] }],
           { headers: { "X-Next-Cursor": cursor } },
         )
       },
@@ -287,7 +287,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
 
     await expect(adapter.getMessagePage("s1", { limit: 80, before: cursor }, "/work"))
       .resolves.toEqual({
-        messages: [{ info: { id: "msg-1", role: "user" }, parts: [] }],
+        messages: [{ info: { id: "msg-1", sessionID: "s1", role: "user" }, parts: [] }],
         nextCursor: cursor,
       })
     expect(seen).toEqual([{
@@ -305,7 +305,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
       request: async (request) => {
         seen = new URL(request.url)
         return Response.json(
-          [{ info: { id: "user-2", role: "user" }, parts: [] }],
+          [{ info: { id: "user-2", sessionID: "s1", role: "user" }, parts: [] }],
           { headers: { "X-Next-Cursor": "before-user-2" } },
         )
       },
@@ -313,7 +313,7 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
 
     await expect(adapter.getMessagePage("s1", { view: "latest-turn" }, "/work"))
       .resolves.toEqual({
-        messages: [{ info: { id: "user-2", role: "user" }, parts: [] }],
+        messages: [{ info: { id: "user-2", sessionID: "s1", role: "user" }, parts: [] }],
         nextCursor: "before-user-2",
       })
     expect(seen?.searchParams.get("view")).toBe("latest-turn")
@@ -326,12 +326,12 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     const adapter = new OpenCodeHarnessAdapter(undefined, {
       request: async (request) => {
         seen = new URL(request.url)
-        return Response.json([{ info: { id: "assistant-final", role: "assistant" }, parts: [] }])
+        return Response.json([{ info: { id: "assistant-final", sessionID: "s1", role: "assistant" }, parts: [] }])
       },
     })
 
     await expect(adapter.getMessagePage("s1", { view: "latest-surface" }, "/work"))
-      .resolves.toEqual({ messages: [{ info: { id: "assistant-final", role: "assistant" }, parts: [] }] })
+      .resolves.toEqual({ messages: [{ info: { id: "assistant-final", sessionID: "s1", role: "assistant" }, parts: [] }] })
     expect(seen?.searchParams.get("view")).toBe("latest-surface")
     expect(seen?.searchParams.get("limit")).toBeNull()
     expect(seen?.searchParams.get("before")).toBeNull()

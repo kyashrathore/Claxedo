@@ -173,6 +173,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   readHarnessCapabilities(_directory?: string, context?: HarnessCapabilityContext): HarnessCapabilities {
     return harnessCapabilities({
       harness: this.harnessId(),
+      modelSelection: { status: "optional" },
       abort: true,
       reconnect: false,
       replay: true,

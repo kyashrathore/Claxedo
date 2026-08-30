@@ -344,10 +344,10 @@ export function createTurnMeter(input: {
       if (tokens && current.quality.source !== "provider") {
         current.tokens = tokens
         current.hasUsage = true
-        current.observedAt = typeof info.time.completed === "number" ? info.time.completed : now()
+        current.observedAt = typeof info.time?.completed === "number" ? info.time.completed : now()
         current.quality = { source: "provider-message", knownCategories: knownTokenCategories(tokens) }
       }
-      const completedAt = info.time.completed
+      const completedAt = info.time?.completed
       if (typeof completedAt !== "number") {
         if (current.revision === 0) await persist(current)
         return

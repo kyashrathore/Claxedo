@@ -166,6 +166,7 @@ describe("opencode adapter", () => {
 
     expect(adapter.readHarnessCapabilities()).toEqual({
       harness: "opencode",
+      modelSelection: { status: "optional" },
       abort: true,
       reconnect: false,
       replay: true,

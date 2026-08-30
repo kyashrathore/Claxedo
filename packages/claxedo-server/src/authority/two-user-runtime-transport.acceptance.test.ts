@@ -433,6 +433,7 @@ describe("two-user signed runtime transport acceptance", () => {
       listSessions: () => runtime.sessions.list("/workspace"),
       createSession: (_c, directory, title, id) => runtime.sessions.create({
         id,
+        workspaceId: "ws_runtime_private",
         directory,
         title,
         harness: { id: "pi", access: "native" },

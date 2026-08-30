@@ -1,4 +1,5 @@
 import type { SessionHarnessId } from "./harness-types"
+import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
 import type { OpenCodeRequestFn } from "./harnesses/opencode"
 import type { ActivityLease } from "./harnesses/shared/process-lifecycle"
 

@@ -195,6 +195,70 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return [...adapters.values()].find((adapter) => adapter[method])
   }
 
+  const executionBinding = (sessionId: string, directory?: RuntimeDirectory): AgentExecutionBinding => {
+    const binding = store.getExecutionBinding(sessionId)
+    if (!binding) {
+      throw new AgentRuntimeContractError({
+        code: "invalid_execution_binding",
+        field: "upstreamSessionId",
+        message: `Session ${sessionId} has no complete execution binding`,
+      })
+    }
+    const session = store.getSession(sessionId) as { directory?: string } | null
+    const config = store.getSessionConfig(sessionId)
+    if (!session || !config) {
+      throw new AgentRuntimeContractError({
+        code: "invalid_execution_binding",
+        field: !session ? "sessionId" : "connectionId",
+        message: `Session ${sessionId} has no complete execution binding`,
+      })
+    }
+    return assertAgentExecutionBinding(binding, {
+      ...binding,
+      sessionId,
+      directory: runtimeDirectory(directory ?? session.directory),
+      connectionId: connectionIdForHarness(config.harness),
+    })
+  }
+
+  const assertCreateBindingScope = (sessionId: string, create: AgentRuntimeSessionCreateInput) => {
+    const existing = store.getExecutionBinding(sessionId)
+    if (!store.getSession(sessionId) && !existing) return
+    if (!existing) {
+      throw new AgentRuntimeContractError({
+        code: "invalid_execution_binding",
+        field: "upstreamSessionId",
+        message: `Session ${sessionId} has no complete execution binding`,
+      })
+    }
+    assertAgentExecutionBinding(existing, {
+      ...existing,
+      sessionId,
+      workspaceId: create.workspaceId,
+      directory: runtimeDirectory(create.directory),
+      connectionId: connectionIdForHarness(create.harness),
+    })
+  }
+
+  const presentationSession = (session: AgentSession | null): AgentSession | null => {
+    if (!session) return null
+    if (!store.getSessionConfig(session.id)) {
+      return { ...session, executionAvailability: { status: "selection-required", selection: "harness" } }
+    }
+    try {
+      executionBinding(session.id, session.directory)
+      return { ...session, executionAvailability: { status: "available" } }
+    } catch (error) {
+      return {
+        ...session,
+        executionAvailability: {
+          status: "unavailable",
+          message: error instanceof Error ? error.message : "Execution binding is unavailable",
+        },
+      }
+    }
+  }
+
   const publish = (event: AgentRuntimeEventEnvelope) => {
     for (const subscriber of subscribers) {
       if (subscriber.input.sessionId && subscriber.input.sessionId !== event.sessionId) continue
@@ -236,9 +300,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   }
 
   const runTurn = async (
-    sessionId: string,
+    binding: AgentExecutionBinding,
     prompt: PromptInput,
-    directory: RuntimeDirectory,
     adapter: AgentHarnessAdapter,
     admission: object,
     clearsHandoff = false,
@@ -400,6 +463,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       })), { dir: "in", method: "auto-title" }, fence)
     }
     try {
+      if (!adapter.executeTurn) {
+        throw new AgentRuntimeContractError({
+          code: "unsupported_operation",
+          operation: "executeTurn",
+          message: `Harness ${binding.connectionId} does not support bound execution`,
+        })
+      }
       let terminal = false
       for await (const payload of adapter.sendMessage(
         sessionId,
@@ -687,19 +757,30 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   return {
     sessions: {
       async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
+        if (typeof create.workspaceId !== "string" || create.workspaceId.trim() === "") {
+          throw new AgentRuntimeContractError({
+            code: "invalid_execution_binding",
+            field: "workspaceId",
+            message: "execution binding workspaceId is required",
+          })
+        }
+        if (create.id) assertCreateBindingScope(create.id, create)
         const adapter = await adapterFor(create.harness)
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(create.model.modelID === "default" ? "" : create.model.modelID)
         }
         const session = await adapter.createSession(create.directory, create.title, create.id)
-        if (!store.getSession(session.id)) {
-          store.bindSession({
-            sessionId: session.id,
-            directory: runtimeDirectory(create.directory),
-            title: create.title,
-            agentSessionId: session.id,
-          })
-        }
+        assertCreateBindingScope(session.id, create)
+        const upstreamSessionId = store.getAgentSessionId(session.id) ?? session.id
+        store.bindSession({
+          sessionId: session.id,
+          workspaceId: create.workspaceId,
+          directory: runtimeDirectory(create.directory),
+          connectionId: connectionIdForHarness(create.harness),
+          upstreamSessionId,
+          title: create.title,
+          agentSessionId: upstreamSessionId,
+        })
         const config: SessionConfig = {
           harness: create.harness,
           ...(create.model ? { model: create.model } : {}),
@@ -716,7 +797,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return store.getSession(sessionId) as AgentSession | null
       },
       async list(inputDirectory: RuntimeDirectory): Promise<AgentSession[]> {
-        return store.listSessions(runtimeDirectory(inputDirectory)) as AgentSession[]
+        return (store.listSessions(runtimeDirectory(inputDirectory)) as AgentSession[])
+          .map((session) => presentationSession(session)!)
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)

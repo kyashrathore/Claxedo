@@ -1,43 +1,40 @@
 import type {
-  AssistantMessage,
-  EventPermissionReplied,
-  EventQuestionRejected,
-  EventServerConnected,
-  EventSessionCompacted,
-  EventSessionDiff,
-  Session,
-  Todo,
-  UserMessage,
-} from "@opencode-ai/sdk/v2"
-import type {
-  ClaxedoMessageAuthor,
-  ClaxedoMessageInfoExtension,
-  EventMessageUpdated,
-  EventMessageCompleted,
-  EventMessagePartUpdated,
-  EventMessagePartDelta,
-  EventPermissionAsked,
-  EventQuestionAsked,
-  EventQuestionReplied,
-  EventRuntimeDiagnostic,
-  EventSessionAgent,
-  EventSessionConfig,
-  EventSessionError,
-  EventSessionIdle,
-  EventSessionStatus,
-  EventSessionUpdated,
-  EventSessionUsage,
-  EventTodoUpdated,
-  OpenCodeCompatEvent,
-  OpenCodeCompatPart,
-  PermissionRequest,
-  QuestionRequest,
-} from "@claxedo/agent-event-runtime/opencode-compat"
+  AgentContentPart,
+  AgentMessageAuthor,
+  AgentMessageInfo,
+  AgentPermission,
+  AgentPresentationEvent,
+  AgentQuestion,
+  AgentPresentationSession,
+  AgentTodo,
+} from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/opencode-compat"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 
-export type CompatPart = OpenCodeCompatPart
+type EventMessageUpdated = Extract<AgentPresentationEvent, { type: "message.updated" }>
+type EventMessageCompleted = Extract<AgentPresentationEvent, { type: "message.completed" }>
+type EventMessagePartUpdated = Extract<AgentPresentationEvent, { type: "message.part.updated" }>
+type EventMessagePartDelta = Extract<AgentPresentationEvent, { type: "message.part.delta" }>
+type EventPermissionAsked = Extract<AgentPresentationEvent, { type: "permission.asked" }>
+type EventPermissionReplied = Extract<AgentPresentationEvent, { type: "permission.replied" }>
+type EventQuestionAsked = Extract<AgentPresentationEvent, { type: "question.asked" }>
+type EventQuestionReplied = Extract<AgentPresentationEvent, { type: "question.replied" }>
+type EventQuestionRejected = Extract<AgentPresentationEvent, { type: "question.rejected" }>
+type EventRuntimeDiagnostic = Extract<AgentPresentationEvent, { type: "runtime.diagnostic" }>
+type EventSessionAgent = Extract<AgentPresentationEvent, { type: "session.agent" }>
+type EventSessionCompacted = Extract<AgentPresentationEvent, { type: "session.compacted" }>
+type EventSessionConfig = Extract<AgentPresentationEvent, { type: "session.config" }>
+type EventSessionDiff = Extract<AgentPresentationEvent, { type: "session.diff" }>
+type EventSessionError = Extract<AgentPresentationEvent, { type: "session.error" }>
+type EventSessionIdle = Extract<AgentPresentationEvent, { type: "session.idle" }>
+type EventSessionStatus = Extract<AgentPresentationEvent, { type: "session.status" }>
+type EventSessionUpdated = Extract<AgentPresentationEvent, { type: "session.updated" }>
+type EventSessionUsage = Extract<AgentPresentationEvent, { type: "session.usage" }>
+type EventTodoUpdated = Extract<AgentPresentationEvent, { type: "todo.updated" }>
+type EventServerConnected = Extract<AgentPresentationEvent, { type: "server.connected" }>
+
+export type CompatPart = AgentContentPart
 export type CompatPromptFormat =
   | { type: "json_schema"; name?: string; schema?: unknown; strict?: boolean; provider_payload?: unknown }
   | { type: string; provider_payload?: unknown; [key: string]: unknown }
@@ -49,7 +46,7 @@ export type EventServerHeartbeat = {
 
 type SdkRuntimeOnlyEvent = EventServerHeartbeat
 
-export type CompatEvent = OpenCodeCompatEvent | SdkRuntimeOnlyEvent
+export type CompatEvent = AgentPresentationEvent | SdkRuntimeOnlyEvent
 
 export type CompatEnvelope = {
   directory: string
@@ -158,8 +155,8 @@ export function buildUserMessage(input: {
   format?: CompatPromptFormat
   system?: string
   variant?: string
-  author?: ClaxedoMessageAuthor
-}): UserMessage & ClaxedoMessageInfoExtension {
+  author?: AgentMessageAuthor
+}): AgentMessageInfo {
   return withClaxedoMessageAuthor({
     id: input.id,
     sessionID: input.sessionID,
@@ -168,7 +165,7 @@ export function buildUserMessage(input: {
     agent: input.agent,
     model: input.model,
     ...(input.tools ? { tools: input.tools } : {}),
-    ...(input.format ? { format: input.format as UserMessage["format"] } : {}),
+    ...(input.format ? { format: input.format } : {}),
     ...(input.system ? { system: input.system } : {}),
     ...(input.variant ? { variant: input.variant } : {}),
   }, input.author)
@@ -183,10 +180,10 @@ export function buildAssistantMessage(input: {
   directory: string
   created?: number
   completed?: number
-  error?: AssistantMessage["error"]
+  error?: AgentMessageInfo["error"]
   finish?: string
   variant?: string
-}): AssistantMessage {
+}): AgentMessageInfo {
   return {
     id: input.id,
     sessionID: input.sessionID,
@@ -217,7 +214,7 @@ export function buildSession(input: {
   updated?: number
   projectID?: string
   workspaceID?: string
-}): Session {
+}): AgentPresentationSession {
   const created = input.created ?? Date.now()
   const updated = input.updated ?? created
   return {
@@ -293,7 +290,7 @@ export function messageCompleted(sessionID: string, messageID: string): EventMes
   }
 }
 
-export function permissionAsked(properties: PermissionRequest): EventPermissionAsked {
+export function permissionAsked(properties: AgentPermission): EventPermissionAsked {
   return {
     id: `permission.asked:${properties.id}`,
     type: "permission.asked",
@@ -309,7 +306,7 @@ export function permissionReplied(sessionID: string, requestID: string, reply: "
   }
 }
 
-export function questionAsked(properties: QuestionRequest): EventQuestionAsked {
+export function questionAsked(properties: AgentQuestion): EventQuestionAsked {
   return {
     id: `question.asked:${properties.id}`,
     type: "question.asked",
@@ -333,7 +330,7 @@ export function questionRejected(sessionID: string, requestID: string): EventQue
   }
 }
 
-export function todoUpdated(sessionID: string, todos: Array<Todo>): EventTodoUpdated {
+export function todoUpdated(sessionID: string, todos: Array<AgentTodo>): EventTodoUpdated {
   return {
     id: `todo.updated:${sessionID}`,
     type: "todo.updated",
@@ -387,7 +384,7 @@ export function sessionError(message: string, sessionID?: string): EventSessionE
   }
 }
 
-export function sessionUpdated(info: Session): EventSessionUpdated {
+export function sessionUpdated(info: AgentPresentationSession): EventSessionUpdated {
   return {
     id: `session.updated:${info.id}`,
     type: "session.updated",

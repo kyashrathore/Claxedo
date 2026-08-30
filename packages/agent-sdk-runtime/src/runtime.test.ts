@@ -74,15 +74,12 @@ function testHarness(options: {
           async applyConfig() {},
         }
       : {}),
-    async listSessions() {
-      return []
-    },
     async getSession() {
       return null
     },
-    async createSession() {
+    async createSession(directory, title, id) {
       options.runtimeConfigCalls?.push("createSession")
-      return { id: "ses_test" }
+      return options.createSession?.(directory, title, id) ?? { id: "ses_test" }
     },
     async updateSession() {
       return null
@@ -165,7 +162,6 @@ function handoffHarness(input: {
 }): AgentHarnessFactory {
   let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
   const adapter: AgentHarnessAdapter = {
-    async listSessions() { return [] },
     async getSession(id) { return { id } },
     async createSession(_directory, _title, id = "ses_handoff") { return { id } },
     async createHandoffSession(_directory, _title, id, options) {
@@ -190,7 +186,8 @@ function handoffHarness(input: {
     },
     async deleteSession() {},
     readHarnessCapabilities() { return {} as never },
-    async *sendMessage(id, prompt) {
+    async *executeTurn(binding, prompt) {
+      const id = binding.sessionId
       input.prompts?.push(prompt.system ?? "")
       if (input.turnError) throw new Error(input.turnError)
       yield messagePartUpdated({ id: `${id}-part`, sessionID: id, messageID: prompt.assistantMessageId, type: "text", text: `reply from ${input.id}` })
@@ -918,7 +915,7 @@ describe("createAgentRuntime", () => {
         return targetAdapter
       },
     })
-    const session = await runtime.sessions.create({
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       id: "ses_lazy",
       directory: "/repo",
       harness: { id: "pi", access: "native" },
@@ -961,7 +958,7 @@ describe("createAgentRuntime", () => {
         handoffHarness({ id: "claude", prompts, handoffs, handoffSystems }),
       ],
     })
-    const session = await runtime.sessions.create({ id: "ses_cross", directory: "/repo", harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_cross", directory: "/repo", harness: { id: "pi", access: "native" } })
     await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect the bug" })
     await tick()
 
@@ -995,7 +992,7 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
-  test("snapshots canonical source-adapter history for a discovered session", async () => {
+  test("snapshots only canonical store history during handoff", async () => {
     const store = createMemoryRuntimeStore()
     const rows = storeRows(store)
     const prompts: string[] = []
@@ -1007,29 +1004,42 @@ describe("createAgentRuntime", () => {
           messages: [
             {
               info: { id: "u-existing", sessionID: "ses_discovered", role: "user" },
-              parts: [{ id: "p-user", sessionID: "ses_discovered", messageID: "u-existing", type: "text", text: "my dog is Tommy" }],
-            },
-            {
-              info: { id: "a-existing", sessionID: "ses_discovered", role: "assistant", parentID: "u-existing" },
-              parts: [{ id: "p-assistant", sessionID: "ses_discovered", messageID: "a-existing", type: "text", text: "I will remember that." }],
+              parts: [{ id: "foreign", sessionID: "ses_discovered", messageID: "u-existing", type: "text", text: "provider-only history" }],
             },
           ] as AgentMessage[],
         }),
         handoffHarness({ id: "claude", prompts }),
       ],
     })
-    const session = await runtime.sessions.create({ id: "ses_discovered", directory: "/repo", harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_discovered", directory: "/repo", harness: { id: "pi", access: "native" } })
+    rows.appendEvent({
+      sessionId: session.id,
+      payload: messageUpdated({ id: "u-canonical", sessionID: session.id, role: "user" }),
+    })
+    rows.appendEvent({
+      sessionId: session.id,
+      payload: messagePartUpdated({ id: "p-user", sessionID: session.id, messageID: "u-canonical", type: "text", text: "my dog is Tommy" }),
+    })
+    rows.appendEvent({
+      sessionId: session.id,
+      payload: messageUpdated({ id: "a-canonical", sessionID: session.id, role: "assistant", parentID: "u-canonical" }),
+    })
+    rows.appendEvent({
+      sessionId: session.id,
+      payload: messagePartUpdated({ id: "p-assistant", sessionID: session.id, messageID: "a-canonical", type: "text", text: "I will remember that." }),
+    })
 
     await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
-    expect(rows.getMessages(session.id)).toEqual([
+    expect(rows.getMessages(session.id).at(-1)).toEqual(
       expect.objectContaining({ parts: [expect.objectContaining({ type: "handoff" })] }),
-    ])
+    )
     const pending = rows.getSessionConfig(session.id)?.handoff
     expect(pending).toMatchObject({
       from: { id: "pi", access: "native" },
       pending: true,
     })
     expect(pending?.transcript).toContain("User:\nmy dog is Tommy")
+    expect(pending?.transcript).not.toContain("provider-only history")
 
     const continued = await runtime.turns.start({ sessionId: session.id, messageId: "u-next", text: "what is my dog's name?" })
 
@@ -1046,7 +1056,7 @@ describe("createAgentRuntime", () => {
       store,
       harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", turnError: "target failed" })],
     })
-    const session = await runtime.sessions.create({ id: "ses_retry", directory: "/repo", harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_retry", directory: "/repo", harness: { id: "pi", access: "native" } })
     await runtime.turns.start({ sessionId: session.id, messageId: "u1", text: "inspect" })
     await tick()
     await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
@@ -1070,7 +1080,7 @@ describe("createAgentRuntime", () => {
       store,
       harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" })],
     })
-    const session = await runtime.sessions.create({
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       id: "ses_model_boundary",
       directory: "/repo",
       harness: { id: "pi", access: "native" },
@@ -1090,7 +1100,7 @@ describe("createAgentRuntime", () => {
       store,
       harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", configError: "configuration failed" })],
     })
-    const session = await runtime.sessions.create({ id: "ses_rollback", directory: "/repo", harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", id: "ses_rollback", directory: "/repo", harness: { id: "pi", access: "native" } })
 
     await expect(runtime.sessions.updateConfig(
       session.id,
@@ -1109,8 +1119,8 @@ describe("createAgentRuntime", () => {
       store: createMemoryRuntimeStore(),
       harnesses: [pi()],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
       model: { providerID: "pi", modelID: "virtual" },
       title: "Facade",
@@ -1146,6 +1156,108 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
+  test("executes only through the complete canonical binding and reads history from the store", async () => {
+    const store = createMemoryRuntimeStore()
+    let executionInput: unknown
+    let providerHistoryReads = 0
+    const adapter = {
+      async listSessions() {
+        return [{ id: "foreign-provider-session", title: "Must not be adopted" }]
+      },
+      async getSession() { return null },
+      async createSession(_directory: string, _title?: string, id = "session-bound") { return { id } },
+      async updateSession() { return null },
+      async getSessionConfig() { return { harness: { id: "pi", access: "native" } as const } },
+      async updateSessionConfig() { return { harness: { id: "pi", access: "native" } as const } },
+      async deleteSession() {},
+      readHarnessCapabilities() { return {} as never },
+      async *executeTurn(binding: unknown) {
+        executionInput = binding
+        yield { type: "finish", sessionId: "session-bound" } as const
+      },
+      async getMessages() {
+        providerHistoryReads += 1
+        return [{ info: { id: "foreign-message", sessionID: "foreign-provider-session", role: "assistant" }, parts: [] }]
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [{ id: "pi", access: "native", create: () => adapter } as unknown as AgentHarnessFactory],
+    })
+    const create = {
+      id: "session-bound",
+      workspaceId: "workspace-1",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" as const },
+    }
+    await runtime.sessions.create(create)
+
+    expect(await runtime.sessions.list("/repo")).toMatchObject([{
+      id: "session-bound",
+      executionAvailability: { status: "available" },
+    }])
+    expect(await runtime.events.list("session-bound", "/repo")).toEqual([])
+    expect(providerHistoryReads).toBe(0)
+
+    await runtime.turns.start({ sessionId: "session-bound", text: "hello" })
+    await tick()
+    expect(executionInput).toEqual({
+      sessionId: "session-bound",
+      workspaceId: "workspace-1",
+      directory: "/repo",
+      connectionId: "native:pi",
+      upstreamSessionId: "session-bound",
+    })
+  })
+
+  test("rejects a caller-supplied id bound to another workspace before adapter creation", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    let creates = 0
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        createSession: async (_directory, _title, id = "session-bound") => {
+          creates++
+          return { id }
+        },
+      })],
+    })
+    await expect(runtime.sessions.create({
+      id: "new-session",
+      workspaceId: "",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })).rejects.toThrow("execution binding workspaceId is required")
+    expect(creates).toBe(0)
+    await runtime.sessions.create({
+      id: "session-bound",
+      workspaceId: "workspace-1",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+    const binding = rows.getExecutionBinding("session-bound")
+
+    await expect(runtime.sessions.create({
+      id: "session-bound",
+      workspaceId: "workspace-2",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })).rejects.toThrow("execution binding workspaceId mismatch")
+    expect(creates).toBe(1)
+    expect(rows.getExecutionBinding("session-bound")).toEqual(binding)
+
+    await expect(runtime.sessions.create({
+      workspaceId: "workspace-2",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })).rejects.toThrow("execution binding workspaceId mismatch")
+    expect(creates).toBe(2)
+    expect(rows.getExecutionBinding("session-bound")).toEqual(binding)
+    runtime.dispose()
+  })
+
   test("carries a turn permission mode into the harness prompt", async () => {
     const modes: Array<string | undefined> = []
     const runtime = createAgentRuntime({
@@ -1157,7 +1269,7 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({ directory: undefined, harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
 
     await runtime.turns.start({ sessionId: session.id, text: "hello", permissionMode: "agent-full-access" })
     await tick()
@@ -1201,7 +1313,7 @@ describe("createAgentRuntime", () => {
       store: createMemoryRuntimeStore(),
       harnesses: [{ ...base, id: "openclaw", access: "acp" } as AgentHarnessFactory],
     })
-    const session = await runtime.sessions.create({
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: "/workspace",
       harness: { id: "openclaw", access: "acp" },
     })
@@ -1221,7 +1333,7 @@ describe("createAgentRuntime", () => {
       harnesses: [testHarness({ runtimeConfigCalls: calls })],
     })
 
-    await runtime.sessions.create({
+    await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: "/workspace",
       harness: { id: "pi", access: "native" },
       model: { providerID: "pi", modelID: "gpt-5.5" },
@@ -1249,8 +1361,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1307,8 +1419,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1349,8 +1461,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1382,8 +1494,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1441,7 +1553,7 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
@@ -1520,7 +1632,7 @@ describe("createAgentRuntime", () => {
       harnesses: [pi()],
     })
 
-    const session = await runtime.sessions.create({
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: undefined,
       harness: { id: "pi", access: "native" },
       title: "Central",
@@ -1541,8 +1653,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
 
@@ -1566,8 +1678,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
 
@@ -1662,8 +1774,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
       title: "New session - 2026-07-08T09:09:30.378Z",
     })
@@ -1688,8 +1800,8 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1720,8 +1832,8 @@ describe("createAgentRuntime", () => {
         sendMessage: () => failingStream("adapter exploded"),
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1760,8 +1872,8 @@ describe("createAgentRuntime", () => {
         abort: async () => ({ ok: true, status: "cancelled" }),
       })],
     })
-    const session = await runtime.sessions.create({
-      directory: undefined,
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
 
@@ -1913,7 +2025,10 @@ describe("createAgentRuntime", () => {
     })
     store.appendEvent({
       sessionId: "ses_1",
-      payload: messageUpdated({ ...info, time: { ...info.time, completed: Date.now() } }),
+      payload: messageUpdated({
+        ...info,
+        time: { created: info.time?.created ?? Date.now(), completed: Date.now() },
+      }),
     })
 
     expect(store.getMessages("ses_1")).toMatchObject([
@@ -1953,7 +2068,8 @@ describe("createAgentRuntime", () => {
         harnesses: [pi()],
       })
       const session = await first.sessions.create({
-        directory: undefined,
+        workspaceId: "workspace-test",
+        directory: "/repo",
         harness: { id: "pi", access: "native" },
         title: "Durable",
       })
@@ -1968,7 +2084,7 @@ describe("createAgentRuntime", () => {
         harnesses: [pi()],
       })
       await expect(second.sessions.get(session.id)).resolves.toMatchObject({ id: session.id, title: "Durable" })
-      await expect(second.sessions.list(undefined)).resolves.toMatchObject([{
+      await expect(second.sessions.list("/repo")).resolves.toMatchObject([{
         id: session.id,
         title: "Durable",
         status: null,
@@ -1990,7 +2106,8 @@ describe("createAgentRuntime", () => {
         })],
       })
       const session = await first.sessions.create({
-        directory: undefined,
+        workspaceId: "workspace-test",
+        directory: "/repo",
         harness: { id: "pi", access: "native" },
         title: "Failed durable",
       })
@@ -2120,7 +2237,7 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: "/repo",
       harness: { id: "pi", access: "native" },
       model: { providerID: "pi", modelID: "virtual" },

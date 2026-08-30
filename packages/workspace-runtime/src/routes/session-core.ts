@@ -14,6 +14,7 @@ import type {
   HarnessCapabilities,
   AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type {
   AgentHarnessAdapter,
   AgentMessagePage,
@@ -208,6 +209,12 @@ type Opts = {
       directory?: string
     },
   ) => Promise<AgentRuntime | undefined> | AgentRuntime | undefined
+  resolveExecutionBinding?: (
+    c: Ctx,
+    directory: RuntimeDirectory,
+    sessionId: string,
+    adapter: AgentHarnessAdapter,
+  ) => Promise<AgentExecutionBinding | undefined> | AgentExecutionBinding | undefined
   // Upper bound on how long POST /prompt_async waits for the turn's admission
   // decision before falling back to its fire-and-forget 204 ack. Guards against a
   // wedged turns.start (adapter spawn that never settles admission and never
@@ -411,8 +418,7 @@ function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unk
   if (!s || typeof s !== "object") return s
   const r = s as Record<string, unknown>
   if (r.time) return r
-  const ts = typeof r.created_at === "number" ? r.created_at : Date.now()
-  const archived = typeof r.archived_at === "number" ? r.archived_at : undefined
+  const ts = Date.now()
   return {
     id: r.id,
     title: r.title ?? null,
@@ -426,7 +432,7 @@ function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unk
     ...(Array.isArray(r.attachments) ? { attachments: r.attachments } : {}),
     ...(typeof r.status === "string" || r.status === null ? { status: r.status } : {}),
     ...(r.lastTurn ? { lastTurn: r.lastTurn } : {}),
-    time: { created: ts, updated: ts, ...(archived !== undefined ? { archived } : {}) },
+    time: { created: ts, updated: ts },
   }
 }
 
@@ -462,8 +468,6 @@ function sessionLifecycleInfo(input: {
   const time = rec(row.time)
   const created = typeof time?.created === "number"
     ? time.created
-    : typeof row.created_at === "number"
-    ? row.created_at
     : Date.now()
   const archived = typeof time?.archived === "number" ? time.archived : undefined
   return {
@@ -479,8 +483,6 @@ function sessionLifecycleInfo(input: {
       created,
       updated: typeof time?.updated === "number"
         ? time.updated
-        : typeof row.updated_at === "number"
-        ? row.updated_at
         : created,
       ...(archived !== undefined ? { archived } : {}),
     },
@@ -503,7 +505,7 @@ async function flushDocumentsAfterTurn(opts: Opts, sessionId: string) {
 
 type CapabilityKey = {
   [K in keyof HarnessCapabilities]: HarnessCapabilities[K] extends boolean ? K : never
-}[keyof HarnessCapabilities]
+}[keyof HarnessCapabilities] & string
 
 function unsupportedOperation(
   c: Ctx,
@@ -993,7 +995,7 @@ export function createSessionRoutes(opts: Opts) {
       const roots = c.req.query("roots") === "true" || c.req.query("roots") === "1"
       const sessions = opts.listSessions
         ? await opts.listSessions(c, directory)
-        : await (await opts.resolveAdapter(c)).listSessions(directory)
+        : []
       await after(opts.afterListSessions?.(c, directory, sessions))
       const visible = await filterSessionRows(opts, c, "session_list", sessions)
       const data = (visible as unknown[]).map((session) => normalizeSession(session, directory))
@@ -1006,7 +1008,7 @@ export function createSessionRoutes(opts: Opts) {
       const archived = c.req.query("archived") === "true" || c.req.query("archived") === "1"
       const sessions = opts.listSessions
         ? await opts.listSessions(c, directory)
-        : await (await opts.resolveAdapter(c)).listSessions(directory)
+        : []
       await after(opts.afterListSessions?.(c, directory, sessions))
       const visible = await filterSessionRows(opts, c, "session_list", sessions)
       const data = (visible as unknown[])
@@ -1731,6 +1733,7 @@ export function createSessionRoutes(opts: Opts) {
               })
             : await runSessionPromptTurn({
                 adapter,
+                binding: await opts.resolveExecutionBinding?.(c, directory, id, adapter),
                 sessionId: id,
                 directory,
                 body,

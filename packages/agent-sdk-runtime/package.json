@@ -182,6 +182,7 @@
     "@anthropic-ai/claude-agent-sdk": "0.3.220",
     "@anthropic-ai/sdk": "0.115.0",
     "@claxedo/agent-event-runtime": "0.7.0",
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@cursor/sdk": "1.0.24",
     "@mariozechner/pi-agent-core": "0.73.1",
     "@mariozechner/pi-ai": "0.73.1",

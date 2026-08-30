@@ -89,6 +89,9 @@ function adapter(input: {
         for (const event of input.events ?? []) yield event
       })()
     },
+    executeTurn: (_binding, _prompt) => (async function* () {
+      for (const event of input.events ?? []) yield event
+    })(),
     getMessages: async (_id, directory) => {
       input.onDirectory?.(directory)
       return input.messages ?? []
@@ -727,6 +730,13 @@ function routes(input: {
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
+    resolveExecutionBinding: (_c, directory, sessionId) => ({
+      sessionId,
+      workspaceId: "workspace-test",
+      directory: directory ?? "",
+      connectionId: "native:opencode",
+      upstreamSessionId: sessionId,
+    }),
     resolveDirectory: () => undefined,
     sessionBus: {
       publish: (event) => input.busEvents?.push(event),
@@ -1765,7 +1775,8 @@ describe("createSessionRoutes directory-less sessions", () => {
     }]
     const integrationAdapter: AgentHarnessAdapter = {
       ...adapter({ messages }),
-      async *sendMessage(id, prompt) {
+      async *executeTurn(binding, prompt) {
+        const id = binding.sessionId
         if (prompt.permissionMode) modes.push(prompt.permissionMode)
         markStarted?.()
         yield messageUpdated({
@@ -1794,15 +1805,16 @@ describe("createSessionRoutes directory-less sessions", () => {
       } as unknown as AgentHarnessFactory],
     })
     await runtime.sessions.create({
+      workspaceId: "workspace-test",
       id: "session_1",
-      directory: undefined,
+      directory: "/work",
       harness: { id: "pi", access: "native" },
     })
     const events: CompatEnvelope[] = []
     const app = createSessionRoutes({
       resolveAdapter: () => integrationAdapter,
       resolveRuntime: () => runtime,
-      resolveDirectory: () => undefined,
+      resolveDirectory: () => "/work",
       sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
       createActiveTurnScope: () => {

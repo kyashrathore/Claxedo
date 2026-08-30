@@ -1,10 +1,10 @@
 import type {
   ClaxedoMessageAuthor,
   ClaxedoMessageInfoExtension,
-  EventMessageUpdated,
 } from "./types"
+import type { AgentMessageInfo } from "@claxedo/agent-runtime-contract"
 
-export function withClaxedoMessageAuthor<Info extends EventMessageUpdated["properties"]["info"]>(
+export function withClaxedoMessageAuthor<Info extends AgentMessageInfo>(
   info: Info,
   author?: ClaxedoMessageAuthor,
 ): Info & ClaxedoMessageInfoExtension {

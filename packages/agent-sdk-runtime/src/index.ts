@@ -1,4 +1,17 @@
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type {
+  AgentAgent,
+  AgentCommand,
+  AgentConfigOption,
+  AgentMessage,
+  AgentPermission,
+  AgentQuestion,
+  AgentRuntimeEvent,
+  AgentSession,
+  AgentTurnOutcome,
+  PromptFormat,
+  PromptInput,
+  PromptModel,
+} from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
 import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport, SessionHarnessId } from "./harness-types"
 
@@ -140,34 +153,6 @@ export {
   type AgentProcessObserverHandle,
   type AgentProcessRole,
 } from "./process-observer"
-
-export type PromptModel = {
-  providerID: string
-  modelID: string
-}
-
-export type PromptFormat =
-  | { type: "json_schema"; name?: string; schema?: unknown; strict?: boolean; provider_payload?: unknown }
-  | { type: string; provider_payload?: unknown; [key: string]: unknown }
-
-export type PromptInput = {
-  parts: unknown[]
-  userMessageId?: string
-  assistantMessageId: string
-  agent: string
-  model: PromptModel
-  tools?: Record<string, boolean>
-  format?: PromptFormat
-  system?: string
-  variant?: string
-  permissionMode?: string
-  author?: {
-    id: string
-    name: string
-    avatarUrl?: string
-    kind: "human" | "agent"
-  }
-}
 
 export type ProcessHarnessConnection = {
   kind: "process"

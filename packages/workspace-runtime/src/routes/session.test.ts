@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentRuntime,
   AgentRuntimeStreamEvent,
+  AgentSession,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -31,9 +32,38 @@ import {
 } from "../compat-events"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
-import { createSessionRoutes } from "./session-core"
-import { SessionRoutes } from "./session"
+import { createSessionRoutes as createRawSessionRoutes } from "./session-core"
+import { SessionRoutes as createRawSessionRoutesFacade } from "./session"
 import type { SessionAccessPolicy } from "../session-access-policy"
+
+function createSessionRoutes(options: Parameters<typeof createRawSessionRoutes>[0]) {
+  return createRawSessionRoutes({
+    resolveExecutionBinding: (_c, directory, sessionId) => ({
+      sessionId,
+      workspaceId: "workspace-test",
+      directory: directory ?? "",
+      connectionId: "native:opencode",
+      upstreamSessionId: sessionId,
+    }),
+    ...options,
+  })
+}
+
+function SessionRoutes(
+  getAdapter: Parameters<typeof createRawSessionRoutesFacade>[0],
+  options: Parameters<typeof createRawSessionRoutesFacade>[1] = {},
+) {
+  return createRawSessionRoutesFacade(getAdapter, {
+    resolveExecutionBinding: ({ directory, sessionId }) => ({
+      sessionId,
+      workspaceId: "workspace-test",
+      directory,
+      connectionId: "native:opencode",
+      upstreamSessionId: sessionId,
+    }),
+    ...options,
+  })
+}
 
 function adapter(input: {
   // The adapter interface hands these a `RuntimeDirectory` (`string |
@@ -85,6 +115,10 @@ function adapter(input: {
       input.onPrompt?.(prompt, directory)
       return input.sendMessage?.(id, prompt, directory) ?? (async function* () {})()
     },
+    executeTurn(binding, prompt) {
+      input.onPrompt?.(prompt, binding.directory)
+      return input.sendMessage?.(binding.sessionId, prompt, binding.directory) ?? (async function* () {})()
+    },
     getMessages: async (id, directory) => input.getMessages?.(id, directory) ?? [],
     ...(input.getMessagePage ? { getMessagePage: input.getMessagePage } : {}),
     abort: async () => ({ ok: true, status: "cancelled" }),
@@ -109,7 +143,7 @@ function adapter(input: {
 describe("SessionRoutes message paging bridge", () => {
   it("passes a page request to the workspace authority before the adapter", async () => {
     const directory = process.cwd()
-    const message = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessage
+    const message = { info: { id: "message-1", sessionID: "session-1", role: "user" }, parts: [] } as AgentMessage
     const calls: Array<{ directory: string; sessionId: string; page: AgentMessagePageInput }> = []
     const fixture = adapter({
       getMessagePage: async () => {
@@ -429,9 +463,7 @@ describe("session Goal routes", () => {
 describe("session prompt route", () => {
   it("serves experimental session summaries", async () => {
     const directory = process.cwd()
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      listSessions: async () => [
+    const sessions: AgentSession[] = [
         buildSession({
           id: "s2",
           directory,
@@ -450,13 +482,12 @@ describe("session prompt route", () => {
           id: "s1",
           directory,
           title: "First",
-          created_at: 10,
-          updated_at: 15,
+          time: { created: 10, updated: 15 },
           status: null,
           lastTurn: { status: "completed", completedAt: 40 },
         },
-      ],
-    }))
+      ]
+    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
 
     const res = await app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(directory)}&roots=true&limit=5`)
 
@@ -472,7 +503,7 @@ describe("session prompt route", () => {
       {
         id: "s1",
         title: "First",
-        time: { created: 10, updated: 10 },
+        time: { created: 10, updated: 15 },
         directory,
         status: null,
         lastTurn: { status: "completed", completedAt: 40 },
@@ -520,9 +551,7 @@ describe("session prompt route", () => {
 
   it("excludes archived sessions by default and includes them with ?archived=true", async () => {
     const directory = process.cwd()
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      listSessions: async () => [
+    const sessions = [
         buildSession({ id: "active-1", directory, title: "Active", created: 10 }),
         {
           id: "archived-1",
@@ -530,8 +559,8 @@ describe("session prompt route", () => {
           title: "Archived",
           time: { created: 8, updated: 8, archived: 200 },
         },
-      ],
-    }))
+      ]
+    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
 
     // Default: archived sessions excluded
     const res1 = await app.request(`http://localhost/experimental/session?directory=${encodeURIComponent(directory)}`)
@@ -547,60 +576,50 @@ describe("session prompt route", () => {
     expect(list2.find((s) => s.id === "archived-1")!.time.archived).toBe(200)
   })
 
-  it("preserves archived timestamp when archived_at is zero", async () => {
+  it("preserves a canonical archived timestamp of zero", async () => {
     const directory = process.cwd()
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      listSessions: async () => [{
+    const sessions = [{
         id: "s-epoch",
         directory,
         title: "Epoch Archive",
-        created_at: 10,
-        updated_at: 20,
-        archived_at: 0,
-      }],
-    }))
+        time: { created: 10, updated: 20, archived: 0 },
+      }]
+    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
 
     const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([{
       id: "s-epoch",
       title: "Epoch Archive",
-      slug: "s-epoch",
-      version: "local",
       directory,
       time: {
         created: 10,
-        updated: 10,
+        updated: 20,
         archived: 0,
       },
     }])
   })
 
-  it("preserves project identity fields when normalizing legacy session rows", async () => {
+  it("preserves project identity fields in canonical session rows", async () => {
     const directory = process.cwd()
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      listSessions: async () => [{
+    const sessions = [{
         id: "s-project",
         directory,
         title: "Project Session",
-        created_at: 10,
+        time: { created: 10, updated: 10 },
         projectID: "proj_1",
         parentID: "parent_1",
         rootID: "root_1",
         tags: ["review"],
         attachments: [{ kind: "page", targetID: "p1" }],
-      }],
-    }))
+      }]
+    const app = SessionRoutes(() => adapter({}), { listSessions: async () => sessions })
 
     const res = await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`)
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([{
       id: "s-project",
       title: "Project Session",
-      slug: "s-project",
-      version: "local",
       directory,
       projectID: "proj_1",
       parentID: "parent_1",
@@ -1038,7 +1057,7 @@ describe("session prompt route", () => {
         directory,
         completed: Date.now(),
       }),
-      parts: [{ id: "p1", sessionID: "s1", messageID: "asm-final", type: "text", text: "done" }],
+      parts: [{ id: "p1", sessionID: "s1", messageID: "asm-final", type: "text" as const, text: "done" }],
     }]
     const app = createSessionRoutes({
       resolveAdapter: () => adapter({
@@ -1930,8 +1949,8 @@ describe("session prompt route", () => {
       const app = SessionRoutes(() =>
         adapter({
           getMessages: () => [{
-            info: { id: "msg-1", role: "user" },
-            parts: [{ type: "text", text: "hello" }],
+            info: { id: "msg-1", sessionID: "s1", role: "user" },
+            parts: [{ id: "part-1", sessionID: "s1", messageID: "msg-1", type: "text", text: "hello" }],
           }],
         }),
       )
@@ -1965,8 +1984,8 @@ describe("session prompt route", () => {
       const app = SessionRoutes(() =>
         adapter({
           getMessages: () => [{
-            info: { id: "msg-1", role: "user" },
-            parts: [{ type: "text", text: "hello" }],
+            info: { id: "msg-1", sessionID: "s1", role: "user" },
+            parts: [{ id: "part-1", sessionID: "s1", messageID: "msg-1", type: "text", text: "hello" }],
           }],
         }),
       )

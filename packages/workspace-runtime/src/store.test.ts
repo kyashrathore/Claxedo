@@ -2435,23 +2435,28 @@ describe("RuntimeStore", () => {
   })
 })
 
-describe("session inventory import marker", () => {
-  it("records the import per directory and survives reopen", () => {
+describe("canonical execution binding", () => {
+  it("persists the complete binding and never derives it from provider inventory", () => {
     const root = tmp()
     const store = new RuntimeStore(root)
-
-    assert(!store.sessionInventoryImported("/work/a"))
-    store.markSessionInventoryImported("/work/a", 100)
-    assert(store.sessionInventoryImported("/work/a"))
-    // A sibling directory has its own inventory and its own import.
-    assert(!store.sessionInventoryImported("/work/b"))
-
-    // Marking twice is idempotent and keeps the first timestamp, so a repeated
-    // import cannot look like a fresh one.
-    store.markSessionInventoryImported("/work/a", 200)
+    store.bindSession({
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      directory: "/work/a",
+      connectionId: "native:pi",
+      upstreamSessionId: "thread-1",
+      agentSessionId: "thread-1",
+    })
+    assert.deepEqual(store.getExecutionBinding("session-1"), {
+      sessionId: "session-1",
+      workspaceId: "workspace-1",
+      directory: "/work/a",
+      connectionId: "native:pi",
+      upstreamSessionId: "thread-1",
+    })
     const reopened = new RuntimeStore(root)
-    assert(reopened.sessionInventoryImported("/work/a"))
-    assert(!reopened.sessionInventoryImported("/work/b"))
+    assert.deepEqual(reopened.getExecutionBinding("session-1"), store.getExecutionBinding("session-1"))
+    assert.equal(reopened.getExecutionBinding("provider-only"), null)
   })
 })
 

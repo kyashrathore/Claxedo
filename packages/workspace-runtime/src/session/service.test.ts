@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -21,6 +22,9 @@ function adapter(input: {
 }) {
   return {
     sendMessage: input.sendMessage ?? (async function* () {}) as AgentHarnessAdapter["sendMessage"],
+    executeTurn(binding: AgentExecutionBinding, prompt: Parameters<NonNullable<AgentHarnessAdapter["executeTurn"]>>[1]) {
+      return input.sendMessage?.(binding.sessionId, prompt, binding.directory) ?? (async function* () {})()
+    },
     getMessages: input.getMessages ?? (async () => []),
     getSessionConfig: input.getSessionConfig ?? (async () => ({
       harness: { id: "opencode", access: "native" },
@@ -31,11 +35,40 @@ function adapter(input: {
   } as unknown as AgentHarnessAdapter
 }
 
+const executionBinding: AgentExecutionBinding = {
+  sessionId: "s1",
+  workspaceId: "workspace-test",
+  directory: "/work",
+  connectionId: "native:opencode",
+  upstreamSessionId: "s1",
+}
+
 describe("session service", () => {
+  it("rejects a binding for another session before adapter execution", async () => {
+    let executed = false
+    const fixture = adapter({
+      async *sendMessage() {
+        executed = true
+      },
+    })
+
+    await expect(runSessionPromptTurn({
+      adapter: fixture,
+      binding: { ...executionBinding, sessionId: "another-session" },
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [] },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    })).rejects.toThrow("execution binding sessionId mismatch")
+    expect(executed).toBe(false)
+  })
+
   it("runs a prompt turn without a Hono route", async () => {
     const events: CompatEnvelope[] = []
     const statuses: RuntimeSessionBusEvent[] = []
     const turn = await runSessionPromptTurn({
+      binding: executionBinding,
       adapter: adapter({
         async *sendMessage(id, input, directory) {
           yield messageUpdated(buildUserMessage({
@@ -61,7 +94,7 @@ describe("session service", () => {
           }))
         },
         getMessages: async () => [{
-          info: { id: "msg-user_r", role: "assistant" },
+          info: { id: "msg-user_r", sessionID: "s1", role: "assistant" },
           parts: [],
         }],
       }),
@@ -88,7 +121,7 @@ describe("session service", () => {
       { type: "process.status", directory: "/work", configId: "s1", status: "streaming" },
     ])
     expect(output.body).toEqual({
-      info: { id: "msg-user_r", role: "assistant" },
+      info: { id: "msg-user_r", sessionID: "s1", role: "assistant" },
       parts: [],
     })
     expect(output.assistantMessage).toBeUndefined()
@@ -97,6 +130,7 @@ describe("session service", () => {
   it("carries the requested permission mode into the adapter turn", async () => {
     const modes: Array<string | undefined> = []
     await runSessionPromptTurn({
+      binding: executionBinding,
       adapter: adapter({
         async *sendMessage(_id, input) {
           modes.push(input.permissionMode)
@@ -115,6 +149,7 @@ describe("session service", () => {
   it("uses the agent-owned default model when an ACP session has no selected model", async () => {
     const models: unknown[] = []
     await runSessionPromptTurn({
+      binding: executionBinding,
       adapter: adapter({
         getSessionConfig: async () => ({
           harness: { id: "openclaw", access: "acp" },
@@ -244,6 +279,7 @@ describe("session service", () => {
     const events: CompatEnvelope[] = []
 
     await runSessionPromptTurn({
+      binding: executionBinding,
       adapter: adapter({}),
       sessionId: "s1",
       directory: "/work",
