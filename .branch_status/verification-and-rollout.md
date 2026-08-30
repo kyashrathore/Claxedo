@@ -4,6 +4,8 @@
 
 Takeover-reviewed code head: `4caaf0698356e2310c04d71708f7094071e0b0a0`.
 
+Reconciled code head: `3684ef54d81840fc0b4b3dbe65b152fc5f2bea42`.
+
 Passed on the exact local code head:
 
 - App canonical test: 5,887 Bun + 1,099 Vitest, zero failures.
@@ -14,14 +16,18 @@ Passed on the exact local code head:
 - Server core: 490 passed. Desktop broad: 700 passed, 7 skipped.
 - Workspace runtime and relay suites passed, including 59 real PTY/storage
   tests and zero relay JUnit failures.
-- Root lint reported zero errors and 17,595 existing warnings.
+- Root lint reported zero errors and 17,627 existing warnings.
 - All ten source architecture ratchets passed at exact reviewed ceilings.
 - `git diff --check` passed.
 
+The 12 tracking-branch-only commit objects were reconciled with a history-only
+merge after confirming their rebased local counterparts. The merge changed no
+files relative to its first parent. On the reconciled merge commit, the app,
+server/Convex, app/server typecheck, app build, root lint, all ten architecture
+ratchets, and `git diff --check` passed.
+
 Environment/process gates still open:
 
-- Reconcile the 12 tracking-branch-only commits, review conflicts, and rerun
-  the canonical app/server/typecheck/ratchet matrix.
 - Run the credentialed staging migration rehearsal and legacy-session smoke.
 - Run live-provider tests with production credentials.
 - Run packaged Electron E2E.

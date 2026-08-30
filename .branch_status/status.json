@@ -1,11 +1,19 @@
 {
   "schema_version": 2,
   "updated_at": "2026-08-30",
-  "status": "takeover_review_closed_local_verification_passed_remote_reconciliation_required",
-  "verdict": "All validated takeover findings are closed and canonical local suites pass; reconcile the tracking branch and rerun the post-reconciliation gates before merge",
+  "status": "takeover_review_closed_remote_reconciled_local_verification_passed",
+  "verdict": "All validated takeover findings are closed, the tracking history is reconciled, and canonical local suites pass on the reconciled head",
   "branch": "codex/single-tenant-multiplayer-ready",
   "takeover_code_commit": "4caaf0698356e2310c04d71708f7094071e0b0a0",
   "takeover_code_tree": "629d5bfd78c6219c77dfd6e1d6034b5d88bbf081",
+  "reconciled_code_commit": "3684ef54d81840fc0b4b3dbe65b152fc5f2bea42",
+  "reconciliation": {
+    "remote_head": "96a176c89a6edd80cab0ed4fd30883f27eabf12f",
+    "strategy": "history-only ours merge after range-diff confirmation of the rebased local counterparts",
+    "tree_unchanged_from_first_parent": true,
+    "remote_ahead": 0,
+    "local_ahead_at_reconciled_code_head": 58
+  },
   "authority_closure_commit": "2adbe6ca4c22cf24252581e498e037782c9fcec5",
   "implementation_commit": "430fa0bc1dfd7cfb0db39f742e786c2c880a7ca9",
   "implementation_tree": "4dedcb9a90058320e947f0fcbc0ec78397c2f401",
@@ -17,7 +25,7 @@
   },
   "change_size": {
     "files": 560,
-    "insertions": 37003,
+    "insertions": 37116,
     "deletions": 4437
   },
   "takeover_review": {
@@ -64,12 +72,9 @@
     "mobile_browser_e2e": "5 passed in each auth mode",
     "affected_package_typechecks": "passed, including full app and server commands",
     "architecture_ratchets": "10 of 10 passed at exact reviewed ceilings",
-    "root_lint": "passed with 17595 warnings and 0 errors"
+    "root_lint": "passed with 17627 warnings and 0 errors"
   },
-  "remaining_merge_gates": [
-    "Reconcile the 12 commits currently present only on origin/codex/single-tenant-multiplayer-ready",
-    "Review conflict resolutions and rerun the canonical app, server, typecheck, and architecture gates on the reconciled head"
-  ],
+  "remaining_merge_gates": [],
   "remaining_deploy_gates": [
     "Run the credentialed staging migration rehearsal and legacy-session smoke",
     "Run live-provider tests with real credentials",

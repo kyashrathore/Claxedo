@@ -1,16 +1,16 @@
 ---
 artifact_contract: "ce-handoff/v1"
 created_at: "2026-08-28T06:27:18Z"
-updated_at: "2026-08-30T12:10:00Z"
+updated_at: "2026-08-30T12:36:00Z"
 title: "Tenant-aware multiplayer branch continuation"
-summary: "The takeover review closed all actionable code findings and canonical local gates pass; reconcile the tracking branch before merge."
+summary: "The takeover review closed all actionable code findings, reconciled the tracking history, and passed the canonical local gates on the merge commit."
 keywords: ["multitenant", "multiplayer", "session-authority", "central-routing", "subagent-lifecycle", "composer"]
 cwd: "/Users/yashvardhansingh/test/opencode/.worktrees/codex/single-tenant-multiplayer-ready"
-resume_focus: "Reconcile the 12 tracking-branch-only commits, review conflicts, and rerun canonical local and credentialed release gates."
+resume_focus: "Run the credentialed staging migration rehearsal, live-provider lane, and packaged Electron E2E before production deployment; push only when authorized."
 repository: "Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "codex/single-tenant-multiplayer-ready"
-head: "4caaf0698356e2310c04d71708f7094071e0b0a0"
+head: "3684ef54d81840fc0b4b3dbe65b152fc5f2bea42"
 worktree_path: "/Users/yashvardhansingh/test/opencode/.worktrees/codex/single-tenant-multiplayer-ready"
 ---
 
@@ -19,8 +19,8 @@ worktree_path: "/Users/yashvardhansingh/test/opencode/.worktrees/codex/single-te
 ## User intent
 
 The current user asked to take over this worktree, review it adversarially, and
-fix all surfaced issues. No push or tracking-branch reconciliation was
-authorized in this takeover.
+fix all surfaced issues, then authorized tracking-branch reconciliation. The
+reconciliation is complete. No push was authorized.
 
 The user explicitly challenged a prior tendency to chase only newly written
 E2E assertions. Continue from the canonical producer and real runtime/UI flow;
@@ -59,8 +59,11 @@ Convex, affected typechecks/builds, lint, and all ten architecture ratchets pass
 on the reviewed local head. The external adversarial peer was unavailable due
 to a provider subscription 403; its absence is recorded in the review artifact.
 
-Do not push this local history as-is. The tracking branch has 12 commits absent
-locally. Reconcile them first, inspect conflicts, then rerun the full gates.
+The 12 tracking-branch-only commit objects are reconciled by
+`3684ef54d81840fc0b4b3dbe65b152fc5f2bea42`. Ten were exact patch equivalents;
+the remaining two mapped to rebased local counterparts. The history-only merge
+changed no files relative to its first parent, and the full canonical local
+matrix passed on the merge commit. Do not push until the user authorizes it.
 
 ### Tenant-aware multiplayer authority
 
@@ -143,8 +146,7 @@ At the 2026-08-28 checkpoint, `packages/claxedo-app: bun run test` reported
    Expected one config PATCH after two identical submits; observed two.
 
 Both failures are fixed on the takeover head and the canonical app command is
-green. Preserve those contracts during tracking-branch reconciliation; do not
-weaken the tests if conflicts reintroduce them.
+green. The reconciliation preserved those contracts and changed no files.
 
 After fixing them, run:
 
@@ -190,7 +192,8 @@ tenant/project provenance is a hard stop; do not guess or synthesize it.
 
 ## Expected repository state
 
-The implementation commits are `430fa0bc1d` and `9bf5849c41` on
-`codex/single-tenant-multiplayer-ready`. The review dossier should be committed
-after them and pushed to `origin/codex/single-tenant-multiplayer-ready`. A fresh
-agent should verify `git status --short` and the remote head before acting.
+The takeover-reviewed code head is `4caaf06983`; the reconciled merge commit is
+`3684ef54d8` on `codex/single-tenant-multiplayer-ready`. The branch is locally
+ahead of its tracking ref and no longer behind. A fresh agent should verify
+`git status --short` and fetch the remote before pushing or acting on release
+gates.

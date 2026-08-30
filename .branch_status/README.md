@@ -1,6 +1,6 @@
 # Single-Tenant to Multiplayer-Ready Branch Status
 
-Status: **TAKEOVER REVIEW CLOSED - LOCAL GATES PASS; REMOTE RECONCILIATION REQUIRED**
+Status: **TAKEOVER REVIEW CLOSED - REMOTE RECONCILED; LOCAL GATES PASS**
 
 Last updated: 2026-08-30
 
@@ -10,9 +10,12 @@ Takeover-reviewed code head: `4caaf0698356e2310c04d71708f7094071e0b0a0`
 
 Review base: `07599f40265170bbc426f1b0b7d4701ad7cc060d`
 
-Tracking divergence at verification: origin is 12 commits ahead; local is 55 commits ahead.
+Reconciled code head: `3684ef54d81840fc0b4b3dbe65b152fc5f2bea42`
 
-Reviewed implementation diff: 560 files, 37,003 insertions, 4,437 deletions.
+Tracking divergence at the reconciled code head: origin is 0 commits ahead;
+local is 58 commits ahead.
+
+Reviewed implementation diff: 560 files, 37,116 insertions, 4,437 deletions.
 
 ## Takeover result
 
@@ -28,11 +31,13 @@ recovery, live revocation proof, canonical account identities, provider
 translations, release-pinned runtime builds, and bounded ledger-backed default
 team reconciliation. The full app command now passes 5,887 Bun tests plus
 1,099 Vitest tests. Server, Convex, affected typechecks, build, lint, and all
-ten architecture ratchets pass on the reviewed local head.
+ten architecture ratchets pass on the reconciled local head.
 
-The branch is not ready to push or merge unchanged because its tracking branch
-contains 12 commits that are not in this worktree. Reconcile those commits,
-review the resulting diff, and rerun the canonical gates before merge.
+The 12 tracking-branch-only commit objects were reconciled in `3684ef54d81`.
+Ten were exact patch equivalents. The other two had direct rebased local
+counterparts (`da715c377b` and `7d6616f2c7`), with only reviewed rebase-context
+differences. A history-only merge joined the lineages without changing the
+reviewed tree, and the full canonical matrix passed again on that merge commit.
 
 ## Historical implementation record
 
@@ -104,9 +109,8 @@ recorded in `verification-and-rollout.md`.
 
 ## Readiness rule
 
-The original review is complete: no P1 or P2 finding remains open, and the
-real-provider follow-up is green. Merge should wait for the two composer unit
-contracts to be fixed or explicitly waived and for `bun run test` in
-`packages/claxedo-app` to pass. Deployment additionally requires the
-credentialed staging migration rehearsal and legacy-session smoke described in
-`verification-and-rollout.md`.
+The original review is complete: no P1 or P2 finding remains open, the tracking
+history is reconciled, the real-provider follow-up is green, and the canonical
+local merge gates pass. Production deployment still requires the credentialed
+staging migration rehearsal, live-provider lane, and packaged Electron lane
+described in `verification-and-rollout.md`.

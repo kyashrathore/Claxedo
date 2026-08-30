@@ -20,9 +20,10 @@ revocation proof, bounded desktop identity enrichment, canonical SQLite team
 member identities, shared-owner read caching, bounded PTY-create recovery, and
 stale dossier evidence.
 
-Remaining non-code gates: reconcile the 12 tracking-branch-only commits, rerun
-the canonical gates after conflict resolution, and complete credentialed
-staging/live-provider/packaged-desktop release exercises.
+The 12 tracking-branch-only commit objects were reconciled without changing the
+reviewed tree, and the canonical gates passed on the merge commit. Remaining
+non-code gates are the credentialed staging, live-provider, and packaged
+desktop release exercises.
 
 ## Historical 2026-08-28 review scope
 
