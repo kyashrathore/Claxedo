@@ -14,7 +14,7 @@ import type { ContentSurfaceContribution } from "../integrations/content-surface
  * The distinction that makes this worth a module: `loadHosted` is a LOADER, not
  * a set. The caller hands over a function that dynamically imports the hosted
  * module, so the hosted implementations are absent from the local entry's
- * static graph rather than merely unregistered. That is the property Unit 12's
+ * static graph rather than merely unregistered. That is the property the
  * emitted-artifact gate checks, and the reason a flag was never going to be
  * enough.
  *
@@ -26,10 +26,8 @@ import type { ContentSurfaceContribution } from "../integrations/content-surface
  * all-or-nothing duplicate refusal — is generic and lives down there, and this
  * module binds it to `ContentSurfaceContribution` and to the registry.
  *
- * Deliberately not a general plugin system. Unit 9 extends this with providers,
- * routes, settings sections, and navigation; Unit 10 supplies the
- * implementations from `@claxedo/cloud-app`. Anything beyond that belongs in
- * the contribution registry the surfaces already use.
+ * Deliberately not a general plugin system. Anything beyond content surfaces
+ * belongs in the contribution registry the surfaces already use.
  */
 
 export type HostedContributionSet = {

@@ -32,14 +32,9 @@ import { hostedContributionLoader } from "@/app/composition/hosted-contribution-
 /**
  * Bind the hosted workspace-startup implementation.
  *
- * This is the only place `platform/runtime/cloud` is imported by anything
- * outside itself. The composer and the session actions menu wake cloud and
- * user-hosted runtimes through `workspaceStartup()`, which is why they can
- * stay in `@claxedo/app` while this file — and the implementation it binds —
- * move to `@claxedo/cloud-app`.
- *
- * `local.tsx` deliberately has no counterpart: a local build has no sandbox to
- * wake, so the port stays unbound and reaching it throws instead of pretending.
+ * Local callers (composer, session actions) wake cloud and user-hosted
+ * runtimes through `workspaceStartup()`. `local.tsx` binds nothing: a local
+ * build has no sandbox to wake, so reaching the port throws.
  */
 configureWorkspaceStartup(cloudWorkspaceStartup)
 
@@ -65,13 +60,10 @@ configureHttpMachineRemoteAccess((path, init) => authFetch(new URL(path, getClax
 /**
  * Bind the identity provider to the authenticated transport.
  *
- * `platform/api/api.ts` used to import `getAuthToken` itself. It stays in
- * `@claxedo/app` while `auth-client.ts` moves to `@claxedo/cloud-app`, so that
- * import was a cycle across the package boundary — and it was the chain by
- * which `local.tsx` reached Clerk through `app.tsx`. The transport now names a
- * bearer source and the hosted entry supplies one; `local.tsx` supplies none,
- * which is why an unsigned build talks to its loopback server with no
- * Authorization header at all rather than with a stub that returns null.
+ * `platform/api/api.ts` used to import `getAuthToken` itself, which is how
+ * `local.tsx` reached Clerk through `app.tsx`. The transport now names a
+ * bearer source and this entry supplies one; `local.tsx` supplies none, so an
+ * unsigned build talks to its loopback server with no Authorization header.
  *
  * At module scope, not inside a component: `authFetch` is called from plain
  * modules during bootstrap, and a binding installed during render would leave

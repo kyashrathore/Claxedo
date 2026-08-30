@@ -13,9 +13,9 @@ import type { WorkspaceRuntimeSnapshot } from "./workspace-runtime"
  *
  * They are still REACHED from local surfaces — the session composer and the
  * session actions menu — because "send a prompt" is one flow whether the
- * workspace is on this laptop or in a sandbox. Those two files must therefore
- * name the operation without importing the implementation, or the hosted
- * renderer cannot be extracted at all.
+ * workspace is on this laptop or in a sandbox. Those callers name the
+ * operation through `workspaceStartup()` and must not import this
+ * implementation.
  *
  * Same shape as `platform/account/account-port.ts`, for the same reason: the
  * contract is declared here and stays import-free of any implementation, so it

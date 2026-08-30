@@ -7,9 +7,9 @@ account-bearing transport, so none of them exist in a local build.
 
 Nothing outside this directory imports it except `app/entry/main.tsx`, which
 binds `cloudWorkspaceStartup` for the hosted build (`app/entry/local.tsx`
-deliberately binds nothing) and the hosted connection authority
-`features/workspaces/data/workspace-connection.ts`, which moves with it. Local
-callers name the operation through `workspaceStartup()`.
+deliberately binds nothing), and `features/workspaces/data/workspace-connection.ts`,
+which is hosted so it imports the implementation directly. Local callers name
+the operation through `workspaceStartup()`.
 
 Reading the workspace runtime RECORD is NOT here — see
 `platform/runtime/workspace-runtime-record.ts`. Distinct from `agent/` (general

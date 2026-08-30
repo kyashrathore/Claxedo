@@ -7,29 +7,17 @@ import { shortestForbiddenImportChain, type ProductImportRef } from "./import-gr
 const appRoot = path.resolve(import.meta.dir, "../..")
 
 /**
- * Local product boundary — the app half of the U8 package split.
+ * Local product boundary.
  *
- * `@claxedo/app` is the LOCAL/shared renderer. Its production entry must close
- * over the local shell, workbench, sessions, terminals, providers, and settings
- * and nothing else; hosted identity, WorkGraph, Documents, cloud runtime, and
- * hosted API clients belong to `@claxedo/cloud-app`.
+ * `@claxedo/app`'s production entry must not close over hosted identity,
+ * WorkGraph, Documents, cloud runtime, or hosted API clients. Type-only
+ * imports are excluded: the bundler erases them. The emitted-artifact gate
+ * covers what source scanning cannot see.
  *
- * Today that separation does not exist yet — the single `app/entry/index.tsx`
- * is simultaneously the local and the hosted entry, and it initializes Clerk on
- * line one. So this file has two jobs, and only the second one changes later:
- *
- *  1. Prove the SCANNER is discriminating. An injected cross-product edge must
- *     be reported with its shortest import chain. A guard that cannot fail on a
- *     planted violation proves nothing about the real graph, so the fixtures
- *     below are the load-bearing part of this suite.
- *  2. Record the CURRENT hosted reach as a characterization baseline. Unit 9
- *     introduces the real local entry and Unit 10 moves the hosted files out;
- *     at that point `PRE_SPLIT_HOSTED_REACH` becomes `null` and this test flips
- *     from "records the mixed entry" to "enforces the clean one".
- *
- * Type-only imports are excluded: the bundler erases them, so a shared type
- * contract is not a runtime boundary breach. The emitted-artifact gate covers
- * what source scanning alone cannot see.
+ * Fixtures prove the scanner reports an injected edge.
+ * `PRE_SPLIT_HOSTED_REACH` is the published entry's remaining hosted reach —
+ * currently none. A new route to an identity provider fails here instead of
+ * blending into a known one.
  */
 
 /** Bare packages that only the hosted product may depend on. */
@@ -58,25 +46,7 @@ export function isHostedCapability(ref: ProductImportRef) {
   return HOSTED_SOURCE_ROOTS.some((root) => module === root || module.startsWith(root) || module.startsWith(`${root}/`))
 }
 
-/**
- * How the published entry reaches the identity provider, recorded exactly.
- *
- * This began as the pre-split reality: `app/entry/index.tsx` was the published
- * `@claxedo/app` entry AND the hosted bootstrap, calling `initializeClerk()`
- * directly — one hop, no indirection, which is why the fix had to be a package
- * split rather than a lazy import.
- *
- * That hop is gone. Starting the identity provider moved to the hosted entry,
- * and the auth surface moved to `@claxedo/app/auth`. The last recorded reach
- * was `app/routes/login.tsx` through the entry barrel's route re-exports; the
- * eager-bundle trim removed those re-exports (the barrel now exports only what
- * its three consumers import), so the published entry reaches NO hosted
- * capability at all.
- *
- * Kept as a recorded value rather than deleted: with null pinned, ANY new
- * route from the published entry to an identity provider fails here instead
- * of blending into a known one.
- */
+/** Remaining hosted reach from the published entry. Any new route fails here. */
 const PRE_SPLIT_HOSTED_REACH = null
 
 function fixtureApp(files: Record<string, string>) {
@@ -163,7 +133,7 @@ describe("local product boundary", () => {
     }
   })
 
-  test("records the pre-split mixed entry so Unit 9/10 must change it deliberately", () => {
+  test("the published entry reaches no hosted capability", () => {
     expect(
       shortestForbiddenImportChain({
         appRoot,

@@ -17,9 +17,8 @@ const appRoot = path.resolve(import.meta.dir, "../..")
  * time in a deployed Pages build rather than in CI.
  *
  * Unlike the local boundary, this one is already clean today, so it enforces
- * rather than characterizes from the start. Unit 10 moves the assertion to
- * `@claxedo/cloud-app` once the hosted entry physically lives there; until then
- * the entry under test is `app/entry/main.tsx` in this package.
+ * rather than characterizes from the start. The entry under test is
+ * `app/entry/main.tsx` in this package.
  */
 
 /** Packages that belong to the desktop/local half of the split. */

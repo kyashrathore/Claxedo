@@ -1,6 +1,6 @@
 # Desktop hosted-operation matrix
 
-Status: **reviewed baseline** (U8 Unit 1). Enforced by
+Status: **reviewed baseline**. Enforced by
 `packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`.
 
 ## Why this document exists
@@ -17,10 +17,8 @@ including ones no product surface uses. The IPC surface must therefore be a
 closed set of **named operations** with fixed method and path owned in main —
 and a closed set can only be reviewed if it is written down first.
 
-This is that list. Unit 9 turns it into `hosted-operations.ts` (app-owned
-request/result schemas), Unit 10 generates `required-hosted-operations.ts` from
-it, and Unit 11 implements it as an exhaustive Electron handler map. A hosted
-contribution that calls something absent here fails the inventory gate.
+This is that list. A hosted contribution that calls something absent here
+fails the inventory gate.
 
 ## What is deliberately NOT an account operation
 
@@ -146,9 +144,9 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 
 WorkGraph's client takes its transport by injection
 (`createWorkGraphClient({ request })`). Today `app/integrations/doc-workgraph.ts`
-injects `authFetch` directly. Unit 11 replaces that injection with the Electron
-operation port; the injection seam is what makes that a one-line change rather
-than a rewrite of every WorkGraph call site.
+injects `authFetch` directly. The injection seam is what lets a signed desktop
+rebind that client onto the Electron operation port without rewriting every
+WorkGraph call site.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
@@ -190,7 +188,7 @@ than a rewrite of every WorkGraph call site.
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
 | `sandbox.drivers.list` | `features/settings/ui/sandbox-section.tsx` | `GET /api/workspace/drivers` | unary | safe | |
-| `sandbox.drivers.read` | `features/onboarding/sandbox-provider-query.ts` | `GET /api/workspace/drivers` | unary | safe | The onboarding read path for the same route; takes its reader by injection, which is the seam Unit 11 rebinds. |
+| `sandbox.drivers.read` | `features/onboarding/sandbox-provider-query.ts` | `GET /api/workspace/drivers` | unary | safe | The onboarding read path for the same route; takes its reader by injection. |
 | `sandbox.drivers.setDefault` | `features/settings/ui/sandbox-section.tsx` | `PUT /api/workspace/drivers/default` | unary | safe | |
 | `sandbox.drivers.auth` | `features/onboarding/sandbox-provider-api.ts` | `PUT /api/workspace/drivers/:id/auth` | unary | unsafe | Carries provider credentials; must never be logged. |
 | `provisioning.events` | `features/workspaces/ui/dialogs/create-cloud-project.tsx` | `GET /api/claxedo/events` | stream | safe | Filtered view of the same shell stream as `session.events`. |
@@ -204,15 +202,13 @@ than a rewrite of every WorkGraph call site.
 
 ## Operations that are not yet platform-neutral
 
-Unit 1 is allowed to conclude that an operation cannot be platform-neutral,
-which blocks Unit 9 until it gets a typed broker contract. Two are flagged:
+Two operations still assume a browser composition:
 
 1. **`connections.connect` opens a system browser** and completes through a
    redirect back to the hosted origin. In the desktop composition there is no
    hosted origin to return to; the callback has to arrive through Electron's
-   registered scheme and be dispatched to the waiting surface. This shares the
-   OAuth callback machinery Unit 6 builds for account sign-in and must reuse it
-   rather than adding a second callback path.
+   registered scheme and be dispatched to the waiting surface. It must reuse
+   the account sign-in OAuth callback path rather than adding a second one.
 2. **`documents.export` currently returns a browser-shaped payload**
    (`Blob` + download). Electron must return a stream handle plus a filename, and
    the renderer must save through a typed operation rather than an anchor click.
