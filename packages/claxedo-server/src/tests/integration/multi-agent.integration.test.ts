@@ -177,6 +177,7 @@ describe("multi-agent integration", () => {
         if (pathname === "/config/providers")
           return json({ providers: upstreamProvider.all, default: upstreamProvider.default })
         if (pathname === "/config" || pathname === "/global/config") return json(upstreamConfig)
+        if (pathname === "/global/dispose" && req.method === "POST") return json(true)
         return json({ error: "not found" }, 404)
       },
     })
@@ -708,7 +709,7 @@ describe("multi-agent integration", () => {
 
   // ── Global dispose shim ────────────────────────────────────────────
 
-  test("POST /global/dispose returns true (no-op shim)", async () => {
+  test("POST /global/dispose returns the engine disposal result", async () => {
     const res = await fetch(`${base()}/global/dispose`, { method: "POST" })
     expect(res.status).toBe(200)
     expect(await res.json()).toBe(true)
