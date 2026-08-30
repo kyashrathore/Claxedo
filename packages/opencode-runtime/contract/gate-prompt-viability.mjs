@@ -1,10 +1,9 @@
 /**
  * The decisive viability question: can the embedded SDK actually RUN a turn?
  *
- * Session CRUD works, but `session.prompt` has to resolve an agent and a model,
- * and `agent.list` / `provider.list` / `config.get` all return 500. If
- * prompting cannot get past that, then the runtime cannot execute work at all
- * and Unit 4's session parity is unreachable regardless of packaging.
+ * Session CRUD works, but `session.prompt` also has to resolve an agent and a
+ * model. This retains the original end-to-end viability probe after upstream
+ * removed the filesystem/search cycle that made those lookups return 500.
  *
  * A credential error would be GOOD news here: it would mean agent/model
  * resolution succeeded and only auth is missing, which is expected without keys.
@@ -12,13 +11,11 @@
  *
  *   node gate-prompt-viability.mjs
  */
-import { OpenCode, repairCoreLayerGraph } from "./dist-node/sdk-entry.js"
+import { OpenCode } from "./dist-node/sdk-entry.js"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
 import * as util from "node:util"
-
-console.log("REPAIR", JSON.stringify(repairCoreLayerGraph()))
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-prompt-"))
 const ws = path.join(root, "ws")

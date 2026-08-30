@@ -1,17 +1,16 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: ROOT-CAUSED AND REPAIRED IN-PROCESS. The published
-`@opencode-ai/core` build output carries a broken layer graph:
-`FileSystem.node.dependencies[2]` is `undefined`, so every request that
-resolves a location dies with `TypeError: undefined is not an object
-(evaluating 'node.name')` and the router returns an empty 500. Cause: a benign
-`filesystem.ts` <-> `filesystem/search.ts` import cycle that
-`Bun.build({ splitting: true })` linearises into one chunk in the wrong order
-(§2.3). `packages/opencode-runtime/src/upstream-repair.ts` restores the missing
-dependency before `OpenCode.create()`; the one-line upstream fix is verified
-and kept at `packages/opencode-runtime/contract/upstream-core-cycle.patch`.
-Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18314`
-Probed on: Node v22.22.2, Bun 1.3.11, linux-x64
+Status: UPSTREAM FIXED; NO CLAXEDO REPAIR. The original
+`@opencode-ai/core@0.0.0-beta-18314` build captured an undefined filesystem
+search dependency and returned an empty 500 from every location-resolving
+request. Section 2.3 retains the root-cause record. Upstream removed the
+reciprocal runtime import in
+[PR #45684](https://github.com/anomalyco/opencode/pull/45684), and the published
+`0.0.0-beta-18684` family contains that fix. Claxedo now consumes only the
+public SDK dependency; the in-process graph mutation and direct core
+dependency have been deleted.
+Pinned baseline: `@opencode-ai/sdk@0.0.0-beta-18684`
+Revalidated on: Node v26.8.1, Bun 1.3.14, darwin-arm64
 Planning commit: `8be1be76ce`
 
 This document is the parity and deletion contract that gates the cutover. Every
@@ -23,15 +22,15 @@ Reproduce with `packages/opencode-runtime/contract/` (see "Running the probes").
 
 ## 1. Release identity
 
-| Fact | Value | Evidence |
-|---|---|---|
-| Pinned SDK | `@opencode-ai/sdk@0.0.0-beta-18314` | VERIFIED — installs from npm |
-| `beta` dist-tag | resolves to the same version | VERIFIED — `npm view dist-tags` |
-| `latest` dist-tag | `1.18.23` (legacy V1) | VERIFIED |
-| Family pinned together | `client`, `core`, `plugin`, `schema`, `server`, `util` all `0.0.0-beta-18314` | VERIFIED — SDK `dependencies` |
+| Fact                   | Value                                                                         | Evidence                        |
+| ---------------------- | ----------------------------------------------------------------------------- | ------------------------------- |
+| Pinned SDK             | `@opencode-ai/sdk@0.0.0-beta-18684`                                           | VERIFIED — installs from npm    |
+| `beta` dist-tag        | resolves to the same version                                                  | VERIFIED — `npm view dist-tags` |
+| `latest` dist-tag      | `1.18.25` (legacy V1)                                                         | VERIFIED                        |
+| Family pinned together | `client`, `core`, `plugin`, `schema`, `server`, `util` all `0.0.0-beta-18684` | VERIFIED — SDK `dependencies`   |
 
-`beta` is a **moving** tag and `dev` was already ahead (`0.0.0-dev-18332`) at
-planning time. The lockfile pin, not the tag, is the contract.
+`beta` is a **moving** tag and `dev` was already ahead (`0.0.0-dev-18695`) at
+revalidation time. The lockfile pin, not the tag, is the contract.
 
 ### 1.1 Installed production closure
 
@@ -46,13 +45,13 @@ schema, sdk, server, simulation, util
 **This is wider than the plan's Unit 2 collision list.** Local workspace
 packages that collide with the published closure:
 
-| Local package | Local name | In pinned closure? |
-|---|---|---|
-| `packages/sdk/js` | `@opencode-ai/sdk` | yes |
-| `packages/core` | `@opencode-ai/core` | yes |
-| `packages/server` | `@opencode-ai/server` | yes |
-| `packages/plugin` | `@opencode-ai/plugin` | yes |
-| `packages/schema` | `@opencode-ai/schema` | yes |
+| Local package       | Local name              | In pinned closure?       |
+| ------------------- | ----------------------- | ------------------------ |
+| `packages/sdk/js`   | `@opencode-ai/sdk`      | yes                      |
+| `packages/core`     | `@opencode-ai/core`     | yes                      |
+| `packages/server`   | `@opencode-ai/server`   | yes                      |
+| `packages/plugin`   | `@opencode-ai/plugin`   | yes                      |
+| `packages/schema`   | `@opencode-ai/schema`   | yes                      |
 | `packages/codemode` | `@opencode-ai/codemode` | **yes — newly observed** |
 | `packages/protocol` | `@opencode-ai/protocol` | **yes — newly observed** |
 
@@ -64,7 +63,7 @@ runtime-edge rule in Unit 2).
 
 ### 1.2 Native modules — and a missing Windows target
 
-`@opencode-ai/pty@0.1.9` carries optional native binaries. The full published
+`@opencode-ai/pty@0.1.13` carries optional native binaries. The full published
 set, from the resolved lockfile (VERIFIED):
 
 ```
@@ -79,48 +78,32 @@ whether the Windows build is blocked. This is a packaging gate, not a detail.
 Note also (§2.1) that SQLite does **not** need a native module on Node — it
 comes from `node:sqlite`. PTY is the real native packaging problem.
 
-### 1.3 The dependency-age policy is real, and currently blocks this pin
+### 1.3 Dependency-age adoption record
 
-`bunfig.toml` sets `minimumReleaseAge = 259200` (3 days) with an explicit
-`minimumReleaseAgeExcludes` allowlist. The plan's Prerequisites reference to
-"the repository's dependency-age policy" is therefore accurate and enforced by
-`bun install`, which fails hard:
+`bunfig.toml` keeps the repository's three-day adoption gate unchanged.
+`beta-18684` was published on 2026-08-29 and was adopted through the reviewed
+one-time `--minimum-release-age=0` path; the committed lockfile is the actual
+adoption record. The SDK integrity is
+`sha512-uABvL1V3fOqNsyV163xBMHlQMbFYXzlcR+YF5Ti0zrdALjoDem7tC109p8tpOIp7EGqd7rVGHa9/02z718vuzg==`.
+Core remains only a transitive member of the SDK family. Claxedo no longer
+declares it directly.
 
-```
-error: No version matching "@opencode-ai/sdk" found for specifier
-"0.0.0-beta-18314" (blocked by minimum-release-age: 259200 seconds)
-```
+`npm audit --omit=dev` reports no high or critical findings. Its 14 moderate
+dependency-path findings all roll up to the inherited OpenTelemetry baggage
+allocation advisory in `@opentelemetry/core@2.6.1`; that same version was
+already present in the `beta-18314` lock, so the SDK upgrade does not introduce
+the advisory. It remains an upstream dependency risk rather than a reason to
+restore a Claxedo-owned runtime path.
 
-`0.0.0-beta-18314` was published **2026-08-26T17:35:47Z** — about 4.6 hours
-before this probe, i.e. **0.19 days against a 3-day policy** (VERIFIED).
-
-Adopting it requires one of:
-
-1. **Wait** until roughly 2026-08-29, after which it installs normally.
-2. **Record the one-time exception** the plan's Prerequisites already specify
-   (registry source, integrity hashes, package-family diff, native/lifecycle
-   audit, provenance, vulnerability results), and restore the policy after.
-
-Development on the cutover branch currently proceeds with a local
-`--minimum-release-age=0`, which does **not** change the committed policy.
-Merging the lockfile entry is the actual adoption decision and must not happen
-until (1) or (2) holds.
-
-`@opencode-ai/core@0.0.0-beta-18314` was added to
-`@claxedo/opencode-runtime`'s dependencies (for §2.3's repair) under the same
-local `--minimum-release-age=0`. It is not a second adoption decision: the same
-tarball was already in the graph as a transitive dependency of the SDK, and
-`bun.lock` records the SAME integrity hash
-(`sha512-psy82L/z6tvhDfdXOmA9ldm07Pth74oYUSk0LdNY4T6Pv02/Kex0qYgjMzlvamAuA9YHx3HgJWmAcsbfz9yUWw==`)
-before and after. It rides on decision (1) or (2) above, not beside it.
-
-There is no age-eligible alternative worth taking: see §2.2 — the newest
-age-eligible V2 beta (`0.0.0-beta-17963`) cannot even be imported.
+The historical `beta-18314` adoption established why the exception mechanism
+exists: a newly published exact pin was blocked by the age gate until its
+reviewed integrity-hashed graph entered `bun.lock`. Release builds continue to
+use the frozen graph and do not make a new adoption decision.
 
 ## 2. Node loadability — RESOLVED via the existing bundle pipeline
 
-**Status: resolved.** All 28 contract assertions pass on **Node v22.22.2**
-through a `Bun.build` bundle. Cold boot on Node: **173 ms**. Reproduce with
+**Status: resolved.** All 31 contract assertions pass through the supported
+`Bun.build` Node bundle. Reproduce with
 `bun run build-node-bundle.ts && node probe-node.mjs`.
 
 The rest of this section records the blocker and why the fix is the repo's
@@ -136,10 +119,10 @@ Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../dist/opencode'
 `dist/index.js` is published as:
 
 ```js
-export * as OpenCode from "./opencode";   // no file extension
-export * as Tool from "./tool";
-export { ClientError } from "@opencode-ai/client";
-export * from "./contracts";
+export * as OpenCode from "./opencode" // no file extension
+export * as Tool from "./tool"
+export { ClientError } from "@opencode-ai/client"
+export * from "./contracts"
 ```
 
 Extensionless relative specifiers are invalid in Node ESM. The same pattern
@@ -148,11 +131,11 @@ appears throughout the published `dist/` (`./promise`, `./internal/host`,
 
 Every shipped Claxedo deployment is Node:
 
-| Deployment | Runtime | Evidence |
-|---|---|---|
-| Hosted sandbox | `FROM node:22-bookworm-slim` | `scripts/sandbox/Dockerfile:1` |
-| Desktop | esbuild/Bun bundle, `target: "node"`, `better-sqlite3` | `bundle-claxedo-server.ts:9,20` |
-| Self-hosted | `deployments/self-hosted-node` | package name |
+| Deployment     | Runtime                                                | Evidence                        |
+| -------------- | ------------------------------------------------------ | ------------------------------- |
+| Hosted sandbox | `FROM node:22-bookworm-slim`                           | `scripts/sandbox/Dockerfile:1`  |
+| Desktop        | esbuild/Bun bundle, `target: "node"`, `better-sqlite3` | `bundle-claxedo-server.ts:9,20` |
+| Self-hosted    | `deployments/self-hosted-node`                         | package name                    |
 
 So R2 ("the public embedded SDK is the only OpenCode executor") cannot be met
 by importing the package directly on Node. Resolution paths, in preference
@@ -173,7 +156,7 @@ order:
    the kind Decision 15 forbids.
 
 **Gate for Unit 2 checkpoint 2a:** the isolated runtime package must import the
-pinned SDK and boot a host under Node *by this supported build path*. That is
+pinned SDK and boot a host under Node _by this supported build path_. That is
 now demonstrated, so 2a is unblocked.
 
 Two build settings are load-bearing:
@@ -200,29 +183,29 @@ Two consequences for Unit 7:
   dependency to package per platform.
 - **New constraint:** `node:sqlite` is **experimental** in Node 22 (the probe
   emits `ExperimentalWarning: SQLite is an experimental feature and might
-  change at any time`). The runtime therefore depends on an unstable Node API,
+change at any time`). The runtime therefore depends on an unstable Node API,
   and **Electron's bundled Node version becomes load-bearing** — Unit 7 must
   verify `node:sqlite` exists and behaves on the packaged Electron for every
   desktop target, not merely on the CI Node. Claxedo's own `better-sqlite3`
   usage is unaffected; the two coexist.
 
-## 2.2 GATE FAILURE — location/project/config surfaces return 500
+## 2.2 Historical gate failure — location/project/config returned 500
 
-**This is the blocking finding of Unit 1.** On a host built through the public
+**This affected `beta-18314`; it does not affect the current pin.** On a host built through the public
 `OpenCode.create()`, every surface that resolves location, project or config
 context fails with HTTP 500, while session storage works normally.
 
 VERIFIED, reproducible, identical under **both** Bun (direct package import) and
 Node (our bundle):
 
-| Works | Returns 500 |
-|---|---|
-| `health.get` | `location.get` |
-| `server.get` | `project.list`, `project.current` |
-| `debug.location.list` | `agent.list`, `command.list`, `skill.list` |
-| `sessions.*` (create/get/list/export) | `config.get` |
-| `events.subscribe` | `model.list`, `provider.list` |
-| | `integration.list` |
+| Works                                 | Returns 500                                |
+| ------------------------------------- | ------------------------------------------ |
+| `health.get`                          | `location.get`                             |
+| `server.get`                          | `project.list`, `project.current`          |
+| `debug.location.list`                 | `agent.list`, `command.list`, `skill.list` |
+| `sessions.*` (create/get/list/export) | `config.get`                               |
+| `events.subscribe`                    | `model.list`, `provider.list`              |
+|                                       | `integration.list`                         |
 
 Ruled out, each by direct test:
 
@@ -246,10 +229,10 @@ I earlier called `node = registryNode({})` the root cause. Reading the upstream
 
 The public SDK has TWO entrypoints and they differ deliberately:
 
-| Entrypoint | `workspaceProviders` | Source |
-|---|---|---|
-| `@opencode-ai/sdk` (promise) | **omitted** | `packages/sdk/src/promise.ts:8` — `Omit<EmbeddedHost.CreateOptions, "workspaceProviders">` |
-| `@opencode-ai/sdk/effect` | **accepted** | `packages/sdk/src/effect/opencode.ts` — `export type CreateOptions = EmbeddedHost.CreateOptions` |
+| Entrypoint                   | `workspaceProviders` | Source                                                                                           |
+| ---------------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
+| `@opencode-ai/sdk` (promise) | **omitted**          | `packages/sdk/src/promise.ts:8` — `Omit<EmbeddedHost.CreateOptions, "workspaceProviders">`       |
+| `@opencode-ai/sdk/effect`    | **accepted**         | `packages/sdk/src/effect/opencode.ts` — `export type CreateOptions = EmbeddedHost.CreateOptions` |
 
 `./effect` is a documented public export, so using it is not a Decision 15
 violation. Through it, with a local driver built on the published
@@ -292,21 +275,21 @@ body**, and `sessions.prompt` likewise.
 
 **Eliminated by direct test:**
 
-| Hypothesis | Result |
-|---|---|
-| Usage shape (plain object vs `Location.Ref.make`) | identical failure, identical request URL |
-| Workspace provisioning | source works without it; install fails with it |
-| `effect` version skew | both `4.0.0-rc.111` |
-| Duplicate `effect` copies breaking Context identity | exactly one install |
-| Global `~/.config/opencode/opencode.jsonc` | fails with it present |
-| Runtime | both under Bun |
-| Our Node bundle | fails importing the package directly |
-| **Published `sdk` dist contents** | swapping in the locally built dist does **not** fix it |
-| **Published `core` dist contents** | swapping in the locally built dist does **not** fix it |
-| **Published `server` dist contents** | swapping in the locally built dist does **not** fix it |
+| Hypothesis                                          | Result                                                 |
+| --------------------------------------------------- | ------------------------------------------------------ |
+| Usage shape (plain object vs `Location.Ref.make`)   | identical failure, identical request URL               |
+| Workspace provisioning                              | source works without it; install fails with it         |
+| `effect` version skew                               | both `4.0.0-rc.111`                                    |
+| Duplicate `effect` copies breaking Context identity | exactly one install                                    |
+| Global `~/.config/opencode/opencode.jsonc`          | fails with it present                                  |
+| Runtime                                             | both under Bun                                         |
+| Our Node bundle                                     | fails importing the package directly                   |
+| **Published `sdk` dist contents**                   | swapping in the locally built dist does **not** fix it |
+| **Published `core` dist contents**                  | swapping in the locally built dist does **not** fix it |
+| **Published `server` dist contents**                | swapping in the locally built dist does **not** fix it |
 
 **Narrowed further: built output fails, source succeeds.** Swapping the
-locally built dists of *every* `@opencode-ai` package (`sdk`, `core`, `server`,
+locally built dists of _every_ `@opencode-ai` package (`sdk`, `core`, `server`,
 `util`, `client`, `schema`, `plugin`, `protocol`, `ai`, `codemode`,
 `simulation`) into the published install — dists built from the exact source
 that works — still fails identically. So this is not a bad publish of one
@@ -359,10 +342,10 @@ package (`sdk`, `server`, `client`, `util`, `schema`, `plugin`, `protocol`,
 `ai`, `codemode`, `simulation`) stays exactly as published, and the runtime is
 the same Bun in both runs:
 
-| `@opencode-ai/core` exports | `config.get` · `agent.list` · `provider.list` |
-|---|---|
-| `./dist/*.js` (published build) | **4 errors** — 500, empty body |
-| `./src/*.ts` (the source it was built from) | **4 successes** |
+| `@opencode-ai/core` exports                 | `config.get` · `agent.list` · `provider.list` |
+| ------------------------------------------- | --------------------------------------------- |
+| `./dist/*.js` (published build)             | **4 errors** — 500, empty body                |
+| `./src/*.ts` (the source it was built from) | **4 successes**                               |
 
 So the divergence lives entirely in **core's build output**. Nothing else in
 the family needs to change to make the failing calls work.
@@ -377,7 +360,7 @@ per-file bisection was the only way forward and that the cause was upstream's
 to find; instrumenting the failing request instead of the build turned out to
 answer it in one step.
 
-## 2.3 ROOT CAUSE — a build-order hazard in core's filesystem module cycle
+## 2.3 ROOT CAUSE AND UPSTREAM RESOLUTION — core filesystem module cycle
 
 VERIFIED. Reproduced from a clean `bun run build` of `sst/opencode` at
 `b731bc1`, not only from the published tarball, and fixed by a one-line change
@@ -451,30 +434,22 @@ the cycle is benign.
 and the bundler then emits the two modules in separate chunks with a real
 import edge between them:
 
-| `packages/core` at `b731bc1` | `config.get` · `agent.list` · `provider.list` · `plugin.list` |
-|---|---|
-| built dist, unmodified | 4 errors |
-| built dist, one-line import change | **4 successes** |
+| `packages/core` at `b731bc1`       | `config.get` · `agent.list` · `provider.list` · `plugin.list` |
+| ---------------------------------- | ------------------------------------------------------------- |
+| built dist, unmodified             | 4 errors                                                      |
+| built dist, one-line import change | **4 successes**                                               |
 
-The patch is `packages/opencode-runtime/contract/upstream-core-cycle.patch`.
+Upstream independently landed this exact change in
+[PR #45684](https://github.com/anomalyco/opencode/pull/45684) on 2026-08-27.
+`beta-18684` publishes it.
 
-**F. What Claxedo does about it.**
-`packages/opencode-runtime/src/upstream-repair.ts` re-points that one array
-element at `FileSystemSearch.node` before the first `OpenCode.create()`. It is
-the whole workaround: no vendored tarball, no patched `node_modules`, no second
-copy of the engine. `@opencode-ai/core` is a declared dependency at the same
-pin and the SAME integrity hash (`sha512-psy82L/...`) the SDK already resolved,
-so it adds no supply-chain surface. `upstream-repair.test.ts` asserts in a
-subprocess that the defect is STILL present in the installed core — when
-upstream fixes it and the pin moves, that test fails and names every file to
-delete. It also proves the flip end to end: without the repair the three
-surfaces answer `status 500`, with it they answer `ok`.
-
-**G. Prior art.** Nothing in `sst/opencode`'s issues or pull requests mentions
-this (searched for `layer-node`, `splitting`, `circular`, `node.name`, and
-embedded-SDK 500s), and https://opencode.ai/v2/docs/build/sdk documents exactly
-the usage that fails — `OpenCode.create()` then a call with
-`location: { directory }` — with no caveat. Not yet reported upstream.
+**F. What Claxedo does about it.** The temporary `beta-18314` graph mutation
+served only until a fixed public package existed. Upgrading to `beta-18684`
+triggered its deletion contract: Claxedo removed the mutation, its direct core
+dependency, its public exports, and its upstream patch artifact. The permanent
+contract now calls `config.get`, `agent.list`, and `provider.list` through the
+public SDK under both Bun and bundled Node; any recurrence fails without
+depending on core internals.
 
 ### The 500s carry an empty body (correcting a false finding)
 
@@ -537,14 +512,14 @@ node = registryNode({})
 `readonly [source, replacement][]`, and `@opencode-ai/core` exports `./*` as a
 public wildcard — so a fix here would need no `dist/internal` import. Tried:
 
-| Attempt | Result |
-|---|---|
-| `overrides: [WorkspaceDriver.node]` | no change — and malformed: `Replacements` needs PAIRS, so this proved nothing |
-| `overrides: [[WorkspaceDriver.node, registryNode({})]]` | no change — replaced empty with empty, a no-op |
-| `overrides: [[WorkspaceDriver.node, registryNode({ local: <driver built on the published makeLocalDriver> })]]` | still `ProviderNotFound` — the replacement does not reach the compiled graph |
-| local models catalog via `models.file` (+`fetch:false`) | no change — not a catalog problem |
-| git-initialised project, explicit `config.directory`, warmed location, no-arg calls | no change |
-| `WorkspaceDriver.node` override + `workspace.create` | `ProviderNotFound` |
+| Attempt                                                                                                         | Result                                                                        |
+| --------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `overrides: [WorkspaceDriver.node]`                                                                             | no change — and malformed: `Replacements` needs PAIRS, so this proved nothing |
+| `overrides: [[WorkspaceDriver.node, registryNode({})]]`                                                         | no change — replaced empty with empty, a no-op                                |
+| `overrides: [[WorkspaceDriver.node, registryNode({ local: <driver built on the published makeLocalDriver> })]]` | still `ProviderNotFound` — the replacement does not reach the compiled graph  |
+| local models catalog via `models.file` (+`fetch:false`)                                                         | no change — not a catalog problem                                             |
+| git-initialised project, explicit `config.directory`, warmed location, no-arg calls                             | no change                                                                     |
+| `WorkspaceDriver.node` override + `workspace.create`                                                            | `ProviderNotFound`                                                            |
 
 Egress was ruled out separately: Node `fetch` reaches `models.dev/api.json`
 with status 200 from the same process. The bundle was ruled out: identical
@@ -553,7 +528,7 @@ failures under Bun importing the package directly. The client surfaces only
 for the failing request, so there is no richer error to report upstream than
 the reproduction itself.
 
-### What this means for the plan — a narrower gap than it first appears
+### Historical impact on the plan
 
 The plan already answers most of this itself. Decision 7 says keep Claxedo
 stores authoritative "where the SDK has no public domain operation", Decision 9
@@ -561,28 +536,27 @@ keeps the credential registry and Agent Config authoritative, and Scope
 Boundaries puts "replacing Claxedo's own ... credential, or Agent Config
 authorities with OpenCode-owned versions" explicitly OUT of scope.
 
-So `/global/config` and `/agent` do not actually need the SDK — Claxedo's Agent
-Config is already the authority, and routing them from it is the plan's own
-ownership model rather than a workaround. The genuine casualty is narrower:
-**`provider.list` / `model.list`**, which Unit 5 wanted to derive from "public
-typed APIs plus the Claxedo-owned plugin manifest". The typed-API half of that
-is unavailable in this release.
+So `/global/config` and `/agent` did not need an alternate SDK path — Claxedo's
+Agent Config was already their authority. The genuine `beta-18314` casualty
+was **`provider.list` / `model.list`**, which Unit 5 derives from the public
+typed APIs plus the Claxedo-owned plugin manifest. The later pin restores that
+typed-API half; no Claxedo fallback is needed or permitted.
 
-Session execution, events, transfer/migration, permissions and forms are
-unaffected.
+Session persistence, events, transfer/migration, permissions and forms were
+unaffected. Turn execution was blocked because prompting also resolves an
+agent and model, as the historical prompt result below records.
 
-### RESOLVED: the SDK executes a turn once the layer graph is repaired
+### RESOLVED: the upstream-fixed SDK executes a turn without a repair
 
-VERIFIED (`gate-prompt-viability.mjs`, Node 22 against the bundled SDK, with
-`repairCoreLayerGraph()` applied — §2.3):
+VERIFIED (`gate-prompt-viability.mjs` against the bundled public SDK — §2.3):
 
-| Call | Before the repair | After |
-|---|---|---|
-| `sessions.create` | OK | OK |
-| `sessions.prompt` | **500** | **OK** — returns a real `msg_...` user message, `delivery: "steer"` |
-| `agent.list` | **500** | OK |
-| `provider.list` | **500** | OK |
-| `message.list` | `{ data: [] }` | `{ data: [] }` (nothing has run yet; no credentials in a bare temp workspace) |
+| Call              | `beta-18314`   | `beta-18684`                                                                  |
+| ----------------- | -------------- | ----------------------------------------------------------------------------- |
+| `sessions.create` | OK             | OK                                                                            |
+| `sessions.prompt` | **500**        | **OK** — returns a real `msg_...` user message, `delivery: "steer"`           |
+| `agent.list`      | **500**        | OK                                                                            |
+| `provider.list`   | **500**        | OK                                                                            |
+| `message.list`    | `{ data: [] }` | `{ data: [] }` (nothing has run yet; no credentials in a bare temp workspace) |
 
 This retires the blocking finding recorded here earlier ("session execution is
 blocked; Unit 4 is unreachable; Unit 7 would ship a product that cannot run an
@@ -599,47 +573,19 @@ There is no `parts` array and no per-call `model`. The earlier probe passed
 `{ parts: [{ type: "text", text }] , model: {...} }` and got
 `InvalidRequestError: Missing key at ["text"]` — a typed schema rejection, not a
 defect. The model is resolved from agent/config, i.e. through the surfaces the
-repair restores. Unit 4's prompt projector must map Claxedo's part list onto
+upstream fix restores. Unit 4's prompt projector must map Claxedo's part list onto
 this flat shape; `delivery: "steer" | "queue"` is how V2 expresses steer-vs-
 queue admission.
 
-### The catalog decision, quantified
+### Current catalog decision — use the SDK producer
 
-R7 requires the provider/model catalog to keep working "without raw engine
-control routes", so serving it from Claxedo is what the plan asks for. The
-question is only *from which source*, and the two options are not close.
-
-Claxedo already owns an offline provider/model registry — `piModelCatalog()` in
-`agent-sdk-runtime/src/harnesses/pi/catalog.ts`, backed by `@mariozechner/pi-ai`
-— and `credentials/pi-provider-catalog.ts` is a working precedent for filtering
-it by credential connectivity. Reusing that for OpenCode is roughly 40 lines and
-needs no network. My earlier claim that Unit 5 required building a models.dev
-ingestion service was wrong on that point.
-
-But the breadth differs sharply (VERIFIED by counting both):
-
-| Source | Providers | Notes |
-|---|---|---|
-| models.dev — what ships today | **203** | includes all four the contract requires |
-| Claxedo offline registry | **31** | includes `anthropic`, `openai`, `google`, `opencode` |
-| Providers lost by switching | **177** | e.g. `nvidia`, `ai-router`, `mixlayer`, `qiniu-ai`, `infomaniak` |
-
-So the trade is explicit:
-
-1. **Reuse the offline registry.** Cheap, deterministic, no network — and
-   **177 providers disappear from the model picker**, a user-visible regression
-   for anyone on one of them. It would also breach
-   `OPENCODE_MIN_PROVIDER_COUNT = 50` in
-   `claxedo-server/src/agent-config/harness-provider-contract.ts`, a guard that
-   exists precisely to catch "served a narrower catalog than the real one".
-   Lowering that threshold to fit the implementation would be shaping the test
-   around the result.
-2. **Ingest models.dev in Claxedo.** Matches today's 203 providers, but Claxedo
-   permanently owns a catalog pipeline — fetch, cache, staleness policy,
-   offline behaviour — duplicating what the SDK is meant to provide.
-
-Both are defensible; neither is a detail. This is the open product decision
-blocking Unit 5, and through it Units 7 and 8.
+`beta-18684` restores `provider.list` and `model.list`, so Unit 5 has one path:
+the typed runtime port consumes the public SDK catalog. The narrower offline
+registry is not a recovery source and must not be substituted when the SDK
+fails. Claxedo's model picker remains a separate, explicitly owned product
+catalog; it is not synthesized into SDK runtime facts. This closes the former
+Unit 5 blocker without dropping providers, lowering a contract threshold, or
+creating another models.dev ingestion path.
 
 ### Superseded hypothesis (kept for the record)
 
@@ -656,7 +602,7 @@ and `dist/internal/host.js:16` installs the Node workspace driver **only** when
 
 ```js
 workspaceProviders
-  ? [...embed.overrides ?? [], [WorkspaceDriver.node, WorkspaceDriver.registryNode(workspaceProviders)]]
+  ? [...(embed.overrides ?? []), [WorkspaceDriver.node, WorkspaceDriver.registryNode(workspaceProviders)]]
   : embed.overrides
 ```
 
@@ -711,96 +657,40 @@ the faithful baseline; `run-local-server-node.mjs` exists to make that explicit.
 The public V2 SDK is actually better behaved here: its `#sqlite` imports map
 carries a `bun` condition resolving to bun:sqlite, so it runs under both.
 
-### What this blocks
+### Resolution in the later public beta
 
-R7 in full, and with it Unit 5 end to end: provider/model catalog, MCP,
-credentials via `integration.*`, and Agent Config. Unit 4's typed `/provider`
-and `/mcp` handlers. Decision 8's "static config enters through explicit SDK
-config content", since `config.get` itself fails.
+The affected build-numbered releases remain useful historical evidence:
 
-Session parity (R5) and the event authority (R6) are **not** blocked — those
-surfaces work.
+| Version            | Imports?                                 | Catalog/location surface           |
+| ------------------ | ---------------------------------------- | ---------------------------------- |
+| `0.0.0-beta-18314` | yes                                      | **500s**                           |
+| `0.0.0-beta-18230` | yes                                      | **500s**                           |
+| `0.0.0-beta-18027` | **no** — `#transpile` resolution failure | n/a                                |
+| `0.0.0-beta-18684` | yes                                      | **works without a Claxedo repair** |
 
-### Upstream has not fixed this — the newest dev build fails identically
+The `beta` dist-tag now identifies the fixed build-numbered lineage. The
+timestamp-numbered `0.0.0-beta-2026...` artifacts remain a different legacy
+shape, so upgrades must still follow the dist-tag lineage and an exact pin
+rather than raw semver ordering.
 
-Tested `0.0.0-dev-18345`, the newest published build on any tag (VERIFIED, same
-reproduction): `location.get`, `project.list`, `config.get`, `provider.list`,
-`agent.list` and `sessions.prompt` all 500; `workspace.create` still returns
-`ProviderNotFound`.
-
-This matters for the decision. "Wait for the next beta" is not a strategy —
-the defect is present in the very latest build, so it is not a beta-only
-regression that a promotion would clear. Upstream almost certainly does not
-know, which makes filing the reproduction the actionable next step rather than
-waiting.
-
-(Testing `dev` here is diagnosis, not adoption. Decision 1 forbids *committing*
-`@dev`, and nothing here changes the pin.)
-
-### The gap is persistent across builds, not a single bad release
-
-Swept across the V2 build-numbered line (VERIFIED):
-
-| Version | Age | Imports? | Catalog/location surface |
-|---|---|---|---|
-| `0.0.0-beta-18314` | 0.19d | yes | **500s** |
-| `0.0.0-beta-18230` | 1.02d | yes | **500s** |
-| `0.0.0-beta-18027` | 2.89d | **no** — `Cannot find package '#transpile'` from `@opencode-ai/codemode` | n/a |
-| `0.0.0-beta-17963` | 3.56d | **no** — same `#transpile` failure | n/a |
-
-Two builds load and both fail identically, so this is a standing property of
-the public V2 embedded SDK rather than one bad publish. (18314 did improve
-project resolution: its sessions carry a real `projectID` hash where 18230
-reported the literal `"global"`.)
-
-The two older builds are the only age-eligible candidates and neither imports
-at all, so there is no version that satisfies both §1.3's age policy and this
-gate.
-
-### No newer V2 beta exists to escape to
-
-Decision 1 says to re-plan against a later exact beta on a failed gate. There
-isn't one, and the version strings are a trap:
-
-- The V2 embedded line is **build-numbered** (`0.0.0-beta-18314`) and is what
-  the `beta` dist-tag points to. It is the newest in that lineage.
-- There are ~3100 **timestamp-numbered** `0.0.0-beta-2026...` versions that sort
-  *higher*. VERIFIED: `0.0.0-beta-202608110357` is a completely different
-  artifact — the legacy fork-shaped SDK with `./client`, `./server`, `./v2`
-  exports and none of the `@opencode-ai/core` family (7 packages installed
-  versus 533). Pinning "the newest beta" silently installs the **old** product.
-
-That trap belongs in the plan's documented upgrade procedure: follow the `beta`
-dist-tag lineage and the build-numbered scheme, never `semver` ordering.
-
-### Decision required
-
-Per Decision 1 this is a stop-and-re-plan trigger, and the options are:
-
-1. **Report upstream and wait** for a V2 beta that exposes `workspaceProviders`
-   (or installs the Node driver by default) through the public entrypoint.
-2. **Narrow the cutover** to the surfaces that work — session execution and
-   events — and keep Claxedo's existing paths for provider/model catalog, MCP
-   and credentials for now. This contradicts R2/R11's "one runtime" invariant
-   and would leave the fork alive, so it is a real change of plan, not a tweak.
-3. **Use the internal host** with `workspaceProviders`. Rejected: Decision 15
-   forbids it, and it makes the public installation cosmetic — the exact
-   outcome the Alternatives section already rejected.
+This closes the former R7/Unit 5 location-resolution blocker. Provider/model,
+config, agent, integration, and prompt behavior remain governed by their own
+domain contracts, but none is blocked by the filesystem layer graph.
 
 ## 3. Host lifecycle
 
 All VERIFIED under Bun against the pinned release.
 
-| Property | Observed |
-|---|---|
-| `OpenCode.create()` cold boot | **216 ms** (empty DB, `events.persist: true`) |
-| Explicit `database.path` | honored; file created at the given path |
-| Default `database.path` | `:memory:` — `dist/internal/host.js:15` reads `database: { path: ":memory:", ...server.database }` |
-| `close()` | present, resolves |
-| `[Symbol.asyncDispose]` | present |
-| Raw `fetch` on the public interface | **`undefined`** — Decision 4 confirmed empirically |
-| Persistence across host restart | session created, host closed, fresh host on same path reads it back |
-| Suspended-session recovery | `runtime.runFork(SessionRestart.resumeSuspendedSessions)` at host create — background fiber, READ |
+| Property                            | Observed                                                                                           |
+| ----------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `OpenCode.create()` cold boot       | **216 ms** (empty DB, `events.persist: true`)                                                      |
+| Explicit `database.path`            | honored; file created at the given path                                                            |
+| Default `database.path`             | `:memory:` — `dist/internal/host.js:15` reads `database: { path: ":memory:", ...server.database }` |
+| `close()`                           | present, resolves                                                                                  |
+| `[Symbol.asyncDispose]`             | present                                                                                            |
+| Raw `fetch` on the public interface | **`undefined`** — Decision 4 confirmed empirically                                                 |
+| Persistence across host restart     | session created, host closed, fresh host on same path reads it back                                |
+| Suspended-session recovery          | `runtime.runFork(SessionRestart.resumeSuspendedSessions)` at host create — background fiber, READ  |
 
 `ServerOptions` exposes exactly what Unit 3 needs (READ, from
 `@opencode-ai/server/dist/options.d.ts`): `database.path`, `events.persist`,
@@ -812,11 +702,11 @@ All VERIFIED under Bun against the pinned release.
 
 VERIFIED with two sessions created at two directories against one shared host:
 
-| Call | Result |
-|---|---|
-| `sessions.list({ directory: wsA })` | returns only the wsA session |
-| `sessions.list({ directory: wsB })` | returns only the wsB session |
-| `sessions.list({})` | returns **both** — unscoped list is host-global |
+| Call                                                    | Result                                             |
+| ------------------------------------------------------- | -------------------------------------------------- |
+| `sessions.list({ directory: wsA })`                     | returns only the wsA session                       |
+| `sessions.list({ directory: wsB })`                     | returns only the wsB session                       |
+| `sessions.list({})`                                     | returns **both** — unscoped list is host-global    |
 | `sessions.get({ sessionID: <wsB id> })` from any caller | **succeeds**, returning wsB's `location.directory` |
 
 Two conclusions:
@@ -825,7 +715,7 @@ Two conclusions:
    Directory-scoped listing is correctly isolated at the SDK level.
 2. **`sessions.get` performs no location authorization.** Any session is
    readable by ID regardless of workspace. Decision 13's opaque workspace scope
-   and per-operation session/location revalidation are therefore the *only*
+   and per-operation session/location revalidation are therefore the _only_
    barrier to cross-workspace session reads — a required control, not
    defence-in-depth. Unit 3's "Security edge" test must assert this directly.
 
@@ -843,10 +733,10 @@ The typed port must make the scoped form the only reachable one.
 
 VERIFIED by subscribing across two session creations:
 
-| Event | has `id` | has `durable` | has `location` |
-|---|---|---|---|
-| `server.connected` | yes | **no** | no |
-| `session.created` | yes | **yes** | yes |
+| Event              | has `id` | has `durable` | has `location` |
+| ------------------ | -------- | ------------- | -------------- |
+| `server.connected` | yes      | **no**        | no             |
+| `session.created`  | yes      | **yes**       | yes            |
 
 Consistent with the published union (READ): every `V2Event` carries
 `id: string`, but only some carry `durable: { aggregateID, seq, version }`.
@@ -925,8 +815,12 @@ section is the evidence.
 and the noop is (VERIFIED, published source):
 
 ```js
-function status() { return Effect.succeed({ status: "completed" }) }
-function run()    { return Effect.succeed({ status: "completed" }) }
+function status() {
+  return Effect.succeed({ status: "completed" })
+}
+function run() {
+  return Effect.succeed({ status: "completed" })
+}
 ```
 
 On Node, in-place V1 migration does nothing and reports success. Probing a
@@ -951,7 +845,7 @@ READ from the pinned generated client.
   `remove → add` with compensation; restart is `disconnect → connect`
   (Decision 16).
 - **PTY is supported**, contrary to any "unsupported" framing: `pty.{list,
-  create,get,update,remove,connect.token}` plus `experimental.persistentPty.*`
+create,get,update,remove,connect.token}` plus `experimental.persistentPty.*`
   and a `Pty` schema contract. Claxedo retires the passthrough because its own
   terminal is authoritative, not because V2 lacks it (Decision 7).
 - **No todo API.** Claxedo-owned store plus a registered plugin tool
@@ -977,7 +871,7 @@ READ from the pinned generated client.
   message, so the adapter surfaces a typed failure rather than fabricating a
   fork id the UI would then navigate to.
 - **Prompt input is FLAT** — `{ sessionID, text, files?, agents?, skills?,
-  metadata?, delivery?, resume? }`. No `parts`, no per-call `model`; see §2.3.
+metadata?, delivery?, resume? }`. No `parts`, no per-call `model`; see §2.3.
   `delivery: "steer" | "queue"` is how V2 expresses send-while-running.
 - **`permission.reply` takes `"once" | "always" | "reject"`** with an optional
   message, and `form.reply` takes a STRUCTURED `answer` record
@@ -1008,26 +902,26 @@ packages/opencode-runtime/contract/
 ```
 
 See that directory's README. The probes are deliberately runnable outside the
-workspace so they characterize the *published* package, not monorepo
+workspace so they characterize the _published_ package, not monorepo
 resolution.
 
 ## 10. Open gates carried into later units
 
-| Gate | Unit | Status |
-|---|---|---|
-| **`sessions.prompt` executes a turn** | 1 | **FAILED — 500 with an explicit model; blocks Units 4, 7, 8 (§2.2)** |
-| Location/project/config surfaces usable from the public entrypoint | 1 | **FAILED — root cause: default driver registry is empty (§2.2)** |
-| Route `/global/config` and `/agent` from Claxedo's Agent Config instead | 4 | OPEN — the plan's own ownership model already covers this |
-| `provider.list` / `model.list` from the SDK | 5 | **BLOCKED — the genuine casualty (§2.2)** |
-| One working **Node** build of the pinned SDK | 2a | **CLOSED** — Bun.build + `jsonc-parser-esm` plugin; 28/28 on Node |
-| `integration.list/get` credential identity sufficiency | 1 → 5 | **BLOCKED by §2.2** — the surface 500s |
-| `node:sqlite` present and stable on packaged Electron per target | 7 | OPEN — new, from §2.1 |
-| V1→V2 transfer schema transformer proven over the corpus | 1 → 6 | OPEN |
-| Assistant message with no `tokens`: metering outcome | 3 | OPEN |
-| Plugin setup failure releases handles/DB locks | 1 → 3 | OPEN |
-| Remaining native modules (`@opencode-ai/pty-*`) per desktop target | 7 | OPEN — narrowed by §2.1 |
-| Packaged idle RSS / startup thresholds | 1 → 7 | OPEN |
-| Concurrent multi-location **turns** (needs provider creds) | 1 | OPEN — only CRUD isolation probed so far |
+| Gate                                                                    | Unit  | Status                                                                     |
+| ----------------------------------------------------------------------- | ----- | -------------------------------------------------------------------------- |
+| **`sessions.prompt` executes a turn**                                   | 1     | **CLOSED — upstream-fixed beta answers through the public SDK (§2.3)**     |
+| Location/project/config surfaces usable from the public entrypoint      | 1     | **CLOSED — `beta-18684`; permanent Bun/Node contract coverage (§2.3)**     |
+| Route `/global/config` and `/agent` from Claxedo's Agent Config instead | 4     | OPEN — the plan's own ownership model already covers this                  |
+| `provider.list` / `model.list` from the SDK                             | 5     | **CLOSED for location resolution** — domain projection remains Unit 5 work |
+| One working **Node** build of the pinned SDK                            | 2a    | **CLOSED** — Bun.build + `jsonc-parser-esm` plugin; 31/31 on Node          |
+| `integration.list/get` credential identity sufficiency                  | 1 → 5 | OPEN — no longer blocked by the layer graph                                |
+| `node:sqlite` present and stable on packaged Electron per target        | 7     | OPEN — new, from §2.1                                                      |
+| V1→V2 transfer schema transformer proven over the corpus                | 1 → 6 | OPEN                                                                       |
+| Assistant message with no `tokens`: metering outcome                    | 3     | OPEN                                                                       |
+| Plugin setup failure releases handles/DB locks                          | 1 → 3 | OPEN                                                                       |
+| Remaining native modules (`@opencode-ai/pty-*`) per desktop target      | 7     | OPEN — narrowed by §2.1                                                    |
+| Packaged idle RSS / startup thresholds                                  | 1 → 7 | OPEN                                                                       |
+| Concurrent multi-location **turns** (needs provider creds)              | 1     | OPEN — only CRUD isolation probed so far                                   |
 
 ### Plan amendments this unit produced
 

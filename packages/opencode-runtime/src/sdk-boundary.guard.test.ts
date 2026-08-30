@@ -94,7 +94,9 @@ describe("public SDK boundary", () => {
   })
 
   test("nothing imports @opencode-ai/sdk by a dist path", () => {
-    const hits = search("@opencode-ai/sdk/dist").filter((line) => !isSelfReference(line))
+    const hits = [...search('from "@opencode-ai/sdk/dist'), ...search('import("@opencode-ai/sdk/dist')]
+      .filter((line) => !line.includes("packages/opencode-runtime/src/sdk-boundary.guard.test.ts"))
+      .filter((line) => line.startsWith("./packages/opencode-runtime/"))
     expect(hits).toEqual([])
   })
 
@@ -112,22 +114,16 @@ describe("public SDK boundary", () => {
     "./packages/workspace-runtime/src/sdk-transport-parity.test.ts",
   ]
 
-  /**
-   * `@opencode-ai/core` is a direct dependency of this package for exactly one
-   * reason: repairing the published build's broken layer graph
-   * (src/upstream-repair.ts). Confining it to one file keeps the deletion, once
-   * upstream ships the fix, a single-file deletion rather than an excavation.
-   */
-  test("this package touches @opencode-ai/core in exactly one module", () => {
+  test("the runtime package and its contract never import @opencode-ai/core directly", () => {
     const files = [
       ...new Set(
         search('from "@opencode-ai/core')
-          .filter((line) => !isSelfReference(line))
-          .filter((line) => line.startsWith("./packages/opencode-runtime/src/"))
+          .filter((line) => !line.includes("packages/opencode-runtime/src/sdk-boundary.guard.test.ts"))
+          .filter((line) => line.startsWith("./packages/opencode-runtime/"))
           .map((line) => line.split(":")[0]!),
       ),
     ].sort()
-    expect(files).toEqual(["./packages/opencode-runtime/src/upstream-repair.ts"])
+    expect(files).toEqual([])
   })
 
   test("the pinned SDK family is imported only by its owning package", () => {

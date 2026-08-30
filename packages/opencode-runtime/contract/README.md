@@ -24,7 +24,7 @@ node node-loadability.mjs # §2 Node import gate
 
 ## Running it on Node — the §2 path
 
-`@opencode-ai/sdk@0.0.0-beta-18314` ships extensionless relative ESM specifiers
+`@opencode-ai/sdk@0.0.0-beta-18684` ships extensionless relative ESM specifiers
 (`export * as OpenCode from "./opencode"`) that Node ESM cannot resolve, so
 `probe.mjs` imports the package directly and therefore needs Bun.
 
@@ -32,7 +32,7 @@ Every shipped Claxedo deployment is Node, so that had to be solved, and it is:
 
 ```sh
 bun run build-node-bundle.ts   # Bun.build, target node, jsonc-parser ESM plugin
-node probe-node.mjs            # same 28 assertions, on Node
+node probe-node.mjs            # same 31 assertions, on Node
 ```
 
 The only non-obvious ingredient is the `jsonc-parser` resolve plugin, lifted
@@ -46,7 +46,7 @@ Also note the SDK uses **`node:sqlite`** on the Node condition, not
 `better-sqlite3` — no native SQLite module is required, but `node:sqlite` is
 experimental in Node 22, so packaged Electron needs verifying per target.
 
-`node-loadability.mjs` still tracks whether *direct* Node import works. It exits
+`node-loadability.mjs` still tracks whether _direct_ Node import works. It exits
 0 either way by design — reporting a known blocker today and a resolved one if
 upstream ever republishes with extensions — so it can sit in CI without being a
 permanent red.

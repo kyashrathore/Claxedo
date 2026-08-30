@@ -1,7 +1,7 @@
 /**
  * §2 gate: can plain Node import the pinned public SDK?
  *
- * As of `@opencode-ai/sdk@0.0.0-beta-18314` the answer is NO. The published
+ * As of `@opencode-ai/sdk@0.0.0-beta-18684` the answer is NO. The published
  * `dist/` uses extensionless relative ESM specifiers (`export * as OpenCode
  * from "./opencode"`), which Node ESM rejects. Every shipped Claxedo
  * deployment is Node, so this blocks R2 until a supported build resolves it.

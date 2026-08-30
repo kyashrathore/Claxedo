@@ -7,23 +7,13 @@
  * the typed ports exported here.
  */
 export {
-  repairCoreLayerGraph,
-  UpstreamShapeError,
-  type RepairOutcome,
-} from "./upstream-repair"
-export {
   createOpenCodeHost,
   OpenCodeUnavailableError,
   type OpenCodeClient,
   type OpenCodeHost,
   type OpenCodeHostOptions,
 } from "./host"
-export {
-  createEventPump,
-  type EventPump,
-  type EventPumpOptions,
-  type ProjectedEvent,
-} from "./event-pump"
+export { createEventPump, type EventPump, type EventPumpOptions, type ProjectedEvent } from "./event-pump"
 export {
   canServe,
   isTerminal,
@@ -31,13 +21,7 @@ export {
   type OpenCodeLifecycle,
   type OpenCodeStatus,
 } from "./lifecycle"
-export {
-  assertLocationInScope,
-  authorizeWorkspace,
-  sameScope,
-  WorkspaceScopeError,
-  type WorkspaceScope,
-} from "./scope"
+export { assertLocationInScope, authorizeWorkspace, sameScope, WorkspaceScopeError, type WorkspaceScope } from "./scope"
 export {
   assertQuiesced,
   backupDatabase,

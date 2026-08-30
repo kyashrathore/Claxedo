@@ -8,12 +8,10 @@
  *
  *   node gate-turn-events.mjs
  */
-import { OpenCode, repairCoreLayerGraph } from "./dist-node/sdk-entry.js"
+import { OpenCode } from "./dist-node/sdk-entry.js"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as path from "node:path"
-
-repairCoreLayerGraph()
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-turn-"))
 const ws = path.join(root, "ws")
