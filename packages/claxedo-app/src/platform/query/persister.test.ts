@@ -131,11 +131,13 @@ describe("query persister", () => {
     const target = storage()
     target.setItem("claxedo-query-v1", "legacy multi-megabyte provider catalog")
     target.setItem("claxedo-query-v2", "legacy synchronous cache")
+    target.setItem("claxedo-query-v3", "legacy upstream-shaped DTO cache")
 
     await installQueryPersister({ storage: target, buster: "build-a", throttleTime: 0 })?.restore
 
     expect(target.getItem("claxedo-query-v1")).toBeNull()
     expect(target.getItem("claxedo-query-v2")).toBeNull()
+    expect(target.getItem("claxedo-query-v3")).toBeNull()
   })
 
   test("drops the persisted cache when the hard byte budget is exceeded", async () => {

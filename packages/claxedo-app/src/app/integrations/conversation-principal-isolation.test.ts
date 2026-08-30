@@ -7,6 +7,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import {
   conversationPersistenceKey,
+  conversationPersistenceSchema,
   setConversationPersistencePrincipal,
 } from "@/features/session/conversation/conversation-persistence"
 
@@ -16,6 +17,8 @@ afterEach(() => {
 })
 
 describe("conversation principal isolation", () => {
+  const key = (value: string) => `${conversationPersistenceSchema}\0${value}`
+
   test("clears authoritative conversation state when user or organization changes", async () => {
     const cleared: string[] = []
     const transition = createPrincipalDataIsolation({ clear: () => cleared.push("clear") })
@@ -25,12 +28,12 @@ describe("conversation principal isolation", () => {
         orgId: "org_a",
         memberships: [],
     })
-    expect(conversationPersistenceKey("scope")).toBe("org-member:user_a:org_a\0scope")
+    expect(conversationPersistenceKey("scope")).toBe(key("org-member:user_a:org_a\0scope"))
     transition({ kind: "org-member", userId: "user_a", orgId: "org_b", memberships: [] })
-    expect(conversationPersistenceKey("scope")).toBe("org-member:user_a:org_b\0scope")
+    expect(conversationPersistenceKey("scope")).toBe(key("org-member:user_a:org_b\0scope"))
     transition({ kind: "org-member", userId: "user_b", orgId: "org_b", memberships: [] })
     expect(cleared).toEqual(["clear", "clear", "clear"])
-    expect(conversationPersistenceKey("scope")).toBe("org-member:user_b:org_b\0scope")
+    expect(conversationPersistenceKey("scope")).toBe(key("org-member:user_b:org_b\0scope"))
   })
 
   test("does not clear again for a reactive refresh of the same principal", async () => {
@@ -45,9 +48,9 @@ describe("conversation principal isolation", () => {
   test("namespaces local devices independently", async () => {
     const transition = createPrincipalDataIsolation({ clear: () => undefined })
     transition({ kind: "local", deviceId: "device_a" })
-    expect(conversationPersistenceKey("scope")).toBe("local:device_a\0scope")
+    expect(conversationPersistenceKey("scope")).toBe(key("local:device_a\0scope"))
     transition({ kind: "local", deviceId: "device_b" })
-    expect(conversationPersistenceKey("scope")).toBe("local:device_b\0scope")
+    expect(conversationPersistenceKey("scope")).toBe(key("local:device_b\0scope"))
   })
 
   test("removes authority-derived session caches before exposing a new principal", async () => {

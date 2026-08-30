@@ -4,6 +4,7 @@ import {
   conversationPersistence,
   conversationPersistenceKey,
   conversationPersistenceKeyMatchesSession,
+  conversationPersistenceSchema,
   preparePersistedSessionRevocation,
   setConversationPersistencePrincipal,
   setConversationPersistenceStorageForTest,
@@ -15,6 +16,8 @@ afterEach(() => {
 })
 
 describe("conversationPersistence", () => {
+  const key = (value: string) => `${conversationPersistenceSchema}\0${value}`
+
   test("exposes a ChatClient persistence adapter", () => {
     expect(typeof conversationPersistence.getItem).toBe("function")
     expect(typeof conversationPersistence.setItem).toBe("function")
@@ -31,22 +34,23 @@ describe("conversationPersistence", () => {
 
   test("matches every directory-scoped durable key only inside the anonymous principal", () => {
     setConversationPersistencePrincipal(undefined)
-    expect(conversationPersistenceKeyMatchesSession("anonymous\0/repo/a\0ses_shared", "ses_shared")).toBe(true)
-    expect(conversationPersistenceKeyMatchesSession("anonymous\0/repo/b\0ses_shared", "ses_shared")).toBe(true)
-    expect(conversationPersistenceKeyMatchesSession("local:device_a\0/repo/a\0ses_shared", "ses_shared")).toBe(false)
-    expect(conversationPersistenceKeyMatchesSession("anonymous\0/repo/a\0ses_other", "ses_shared")).toBe(false)
-    expect(conversationPersistenceKeyMatchesSession("anonymous\0/repo/a\0ses_shared_child", "ses_shared")).toBe(false)
+    expect(conversationPersistenceKeyMatchesSession(key("anonymous\0/repo/a\0ses_shared"), "ses_shared")).toBe(true)
+    expect(conversationPersistenceKeyMatchesSession(key("anonymous\0/repo/b\0ses_shared"), "ses_shared")).toBe(true)
+    expect(conversationPersistenceKeyMatchesSession(key("local:device_a\0/repo/a\0ses_shared"), "ses_shared")).toBe(false)
+    expect(conversationPersistenceKeyMatchesSession(key("anonymous\0/repo/a\0ses_other"), "ses_shared")).toBe(false)
+    expect(conversationPersistenceKeyMatchesSession(key("anonymous\0/repo/a\0ses_shared_child"), "ses_shared")).toBe(false)
+    expect(conversationPersistenceKeyMatchesSession("anonymous\0/repo/a\0ses_shared", "ses_shared")).toBe(false)
   })
 
   test("matches only the active signed principal namespace", () => {
     setConversationPersistencePrincipal("org-member:user_b:org_a")
 
     expect(conversationPersistenceKeyMatchesSession(
-      "org-member:user_b:org_a\0/repo\0ses_shared",
+      key("org-member:user_b:org_a\0/repo\0ses_shared"),
       "ses_shared",
     )).toBe(true)
     expect(conversationPersistenceKeyMatchesSession(
-      "org-member:user_a:org_a\0/repo\0ses_shared",
+      key("org-member:user_a:org_a\0/repo\0ses_shared"),
       "ses_shared",
     )).toBe(false)
 
@@ -55,16 +59,16 @@ describe("conversationPersistence", () => {
 
   test("isolates signed and local principals", () => {
     setConversationPersistencePrincipal("org-member:user_a:org_a")
-    expect(conversationPersistenceKey("/repo\0ses_1")).toBe("org-member:user_a:org_a\0/repo\0ses_1")
+    expect(conversationPersistenceKey("/repo\0ses_1")).toBe(key("org-member:user_a:org_a\0/repo\0ses_1"))
 
     setConversationPersistencePrincipal("org-member:user_b:org_a")
-    expect(conversationPersistenceKey("/repo\0ses_1")).toBe("org-member:user_b:org_a\0/repo\0ses_1")
+    expect(conversationPersistenceKey("/repo\0ses_1")).toBe(key("org-member:user_b:org_a\0/repo\0ses_1"))
 
     setConversationPersistencePrincipal("local:device_a")
-    expect(conversationPersistenceKey("/repo\0ses_1")).toBe("local:device_a\0/repo\0ses_1")
+    expect(conversationPersistenceKey("/repo\0ses_1")).toBe(key("local:device_a\0/repo\0ses_1"))
 
     setConversationPersistencePrincipal("local:device_b")
-    expect(conversationPersistenceKey("/repo\0ses_1")).toBe("local:device_b\0/repo\0ses_1")
+    expect(conversationPersistenceKey("/repo\0ses_1")).toBe(key("local:device_b\0/repo\0ses_1"))
 
     setConversationPersistencePrincipal(undefined)
   })
@@ -75,12 +79,12 @@ describe("conversationPersistence", () => {
     setConversationPersistencePrincipal("org-member:user_b:org_a")
 
     expect(conversationPersistenceKeyMatchesSession(
-      "org-member:user_a:org_a\0/repo\0ses_shared",
+      key("org-member:user_a:org_a\0/repo\0ses_shared"),
       "ses_shared",
       captured,
     )).toBe(true)
     expect(conversationPersistenceKeyMatchesSession(
-      "org-member:user_b:org_a\0/repo\0ses_shared",
+      key("org-member:user_b:org_a\0/repo\0ses_shared"),
       "ses_shared",
       captured,
     )).toBe(false)

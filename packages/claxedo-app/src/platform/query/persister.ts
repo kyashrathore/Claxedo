@@ -56,9 +56,9 @@ type PersistedClient = {
 let uninstall: (() => void) | undefined
 let flushInstalledPersistence: (() => Promise<void>) | undefined
 
-export const queryPersisterKey = "claxedo-query-v3"
+export const queryPersisterKey = "claxedo-query-v4"
 export const MAX_QUERY_PERSISTENCE_BYTES = 2 * 1024 * 1024
-const legacyQueryPersisterKeys = ["claxedo-query-v1", "claxedo-query-v2"]
+const legacyQueryPersisterKeys = ["claxedo-query-v1", "claxedo-query-v2", "claxedo-query-v3"]
 
 const MAP_TAG = "$claxedo:map"
 
@@ -287,7 +287,7 @@ function createThrottledQueryPersistence(input: {
         const cached = await input.storage.getItem(queryPersisterKey)
         if (!cached) return
         const parsed = JSON.parse(cached, mapReviver) as PersistedClient
-        // Pre-scope v3 snapshots and snapshots from another principal are not
+        // Pre-scope snapshots and snapshots from another principal are not
         // valid inputs. Remove them instead of briefly hydrating private rows
         // and relying on a later account-switch cleanup to catch up.
         if (

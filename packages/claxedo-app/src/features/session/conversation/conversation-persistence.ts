@@ -26,6 +26,7 @@ type ConversationStorage = {
 
 let storage: ConversationStorage | undefined
 let principalNamespace = "anonymous"
+export const conversationPersistenceSchema = "claxedo-v2"
 function createPersistenceState() {
   return {
     pendingOperations: new Map<IDBValidKey, Promise<void>>(),
@@ -35,7 +36,7 @@ function createPersistenceState() {
 const persistenceState = createPersistenceState()
 try {
   if (typeof indexedDB !== "undefined") {
-    const store = createStore("claxedo-conversations", "messages")
+    const store = createStore("claxedo-conversations-v2", "messages")
     storage = {
       get: (key) => get<UIMessage[]>(key, store),
       set: (key, value) => set(key, value, store),
@@ -96,7 +97,7 @@ export function setConversationPersistencePrincipal(namespace: string | undefine
 }
 
 export function conversationPersistenceKey(id: string) {
-  return `${principalNamespace}\0${id}`
+  return `${conversationPersistenceSchema}\0${principalNamespace}\0${id}`
 }
 
 export function conversationPersistenceKeyMatchesSession(
@@ -105,7 +106,7 @@ export function conversationPersistenceKeyMatchesSession(
   namespace = principalNamespace,
 ) {
   if (typeof key !== "string" || !key.endsWith(`\0${sessionID}`)) return false
-  return key.startsWith(`${namespace}\0`)
+  return key.startsWith(`${conversationPersistenceSchema}\0${namespace}\0`)
 }
 
 export function conversationPersistencePrincipal() {
