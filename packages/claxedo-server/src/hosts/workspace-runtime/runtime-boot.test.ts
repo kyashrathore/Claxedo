@@ -46,6 +46,28 @@ describe("claxedo workspace-runtime boot policy", () => {
       now: 10_000,
     })).toThrow("expired")
   })
+
+  test.each([
+    ["epoch NaN", { epoch: Number.NaN }],
+    ["epoch infinity", { epoch: Number.POSITIVE_INFINITY }],
+    ["port NaN", { port: Number.NaN }],
+    ["port zero", { port: 0 }],
+    ["expiry infinity", { credential: { token: "token", expiresAt: Number.POSITIVE_INFINITY } }],
+    ["now NaN", { now: Number.NaN }],
+  ])("rejects invalid launch input: %s", (_name, override) => {
+    expect(() => claxedoWorkspaceRuntimeLaunch({
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      sandboxId: "sandbox_1",
+      leaseId: "lease_1",
+      epoch: 1,
+      directory: "/workspace",
+      port: 2593,
+      credential: { token: "bootstrap-token", expiresAt: 20_000 },
+      now: 10_000,
+      ...override,
+    })).toThrow()
+  })
   test("defaults: port 3002, loopback exposure, opencode native runner", async () => {
     const boot = await claxedoWorkspaceRuntimeBootFromEnv({
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
@@ -98,6 +120,20 @@ describe("claxedo workspace-runtime boot policy", () => {
       access: "acp",
       connection: { kind: "process", binary: "/usr/local/bin/claude-agent-acp" },
     })
+  })
+
+  test("rejects an unknown explicit runner", () => {
+    expect(() => claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "mystery" })).toThrow(
+      "Unknown WORKSPACE_RUNTIME_RUNNER",
+    )
+  })
+
+  test.each(["abc", "3002junk", "0", "65536", "1.5"])("rejects invalid runtime port %s", async (port) => {
+    await expect(claxedoWorkspaceRuntimeBootFromEnv({
+      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
+      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
+      WORKSPACE_RUNTIME_PORT: port,
+    })).rejects.toThrow("WORKSPACE_RUNTIME_PORT")
   })
 
   test("non-loopback host without relay auth composes the dev-unsafe exposure", async () => {

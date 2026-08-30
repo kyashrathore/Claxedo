@@ -64,7 +64,10 @@ const ENTRIES = [
   // durable facts. The only package edges are Node `fs` for that durable local
   // ledger and the pinned, read-only `tokentracker-cli` pricing catalog.
   // Combined with dev's sandbox-contract split, the exact package count is 28.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 140, packages: 28 },
+  // +4 modules (140 -> 144): the already-reachable workspace SessionEnv facade
+  // now delegates to focused factory, protocol, runtime-env, and admission
+  // owners. No package edge was added.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 144, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
   // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single

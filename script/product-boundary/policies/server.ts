@@ -65,7 +65,10 @@ export const serverCloudNode: Policy = {
   // 137 + 2 = 139 modules, still no package edge.
   // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
   // 139 + 1 = 140 modules, still no package edge.
-  ceilings: { modules: 140, packages: 27 },
+  // The already-reachable workspace SessionEnv facade now delegates to four
+  // reviewed owners (factory, protocol, runtime env, and admission):
+  // 140 + 4 = 144 modules, still no package edge.
+  ceilings: { modules: 144, packages: 27 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -211,7 +214,10 @@ export const serverSelfHosted: Policy = {
   // routes, durable revision/provenance stores, outbox, scanner, pricing, and
   // host identity. Package reach includes `posthog-node` via platform
   // telemetry (`platform/telemetry/errors/posthog.ts`) — measured 34 packages.
-  ceilings: { modules: 150, packages: 34 },
+  // The workspace SessionEnv split keeps transport/protocol/admission policy in
+  // focused, already-reachable owners; this entry now measures 153 modules with
+  // no package growth.
+  ceilings: { modules: 153, packages: 34 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

@@ -28,9 +28,20 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
 }))
 
 import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
-import { createClaxedoSessionEnvFactory, createWorkspaceRuntimeSessionEnv } from "./session-env"
+import type { RelayProvider } from "@claxedo/server-core/adapters/relay-port"
+import type { SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
+import {
+  createClaxedoSessionEnvFactory,
+  createWorkspaceRuntimeSessionEnv,
+  prepareWorkspaceRuntimeSession,
+  WorkspaceRuntimeExecLimitError,
+  WorkspaceRuntimeProtocolError,
+  WorkspaceRuntimeRequestError,
+} from "./session-env"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { CONNECTION_TURN_HEADER, createConnectionTurnCredentials } from "../../connections/turn-credentials"
+
+type FetchCall = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
 import {
   disposeHydratedSessionDocuments,
   forgetHydratedSessionRuntime,
@@ -38,6 +49,7 @@ import {
   hydratedSessionDocumentPaths,
 } from "../../documents/session-hydration"
 import { sessionEnvBashTool } from "../../../../agent-sdk-runtime/src/harnesses/pi/model-backend"
+import { SESSION_ENV_EXEC_MAX_FRAME_BYTES } from "@claxedo/workspace-runtime/session-env-contract"
 
 // Embedded (local) workspace — dispatches in-process via
 // ensureEmbeddedWorkspaceRuntime(...).app.fetch. Used by the behaviour tests
@@ -71,7 +83,15 @@ function b64Bytes(bytes: Uint8Array) {
 }
 
 function ndjsonResponse(frames: unknown[]): Response {
-  const body = frames.map((frame) => JSON.stringify(frame)).join("\n") + "\n"
+  const body =
+    frames
+      .map((frame) => {
+        if (frame && typeof frame === "object" && (frame as { type?: unknown }).type === "exit") {
+          return JSON.stringify({ signal: null, ...frame })
+        }
+        return JSON.stringify(frame)
+      })
+      .join("\n") + "\n"
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(new TextEncoder().encode(body))
@@ -88,10 +108,15 @@ function jsonResponse(body: unknown, status = 200): Response {
   })
 }
 
+function requestUrl(input: RequestInfo | URL) {
+  return input instanceof Request ? input.url : input.toString()
+}
+
 /** Grabs the requestPath (1st arg to app.fetch's Request) + init from the last embedded fetch. */
 function lastEmbeddedCall() {
   const call = mocks.embeddedFetch.mock.calls.at(-1)!
-  const request = call[0] as Request
+  const request: unknown = call[0]
+  if (!(request instanceof Request)) throw new Error("expected embedded runtime Request")
   const url = new URL(request.url)
   return { path: `${url.pathname}${url.search}`, request }
 }
@@ -180,6 +205,28 @@ describe("createClaxedoSessionEnvFactory", () => {
     expect(new URL(lastEmbeddedCall().request.url).searchParams.get("path")).toBe("README.md")
   })
 
+  test("routes admitted Windows worktrees as registered runtime roots", async () => {
+    const factory = createClaxedoSessionEnvFactory({ fetchOptions })
+    const env = await factory({
+      sessionId: "s-worktree-win",
+      mode: "hybrid",
+      host: "central",
+      toolSandbox: {
+        kind: "workspace-runtime",
+        workspaceId: "ws-1",
+        directory: "C:\\workspace\\tree",
+        worktree: "claxedo/session/s-worktree-win",
+        baseCommit: "a".repeat(40),
+        leaseEpoch: 2,
+      },
+    })
+    mockEmbeddedResponse(jsonResponse({ exists: true }))
+
+    await expect(env.exists("README.md")).resolves.toBe(true)
+    expect(lastEmbeddedCall().request.headers.get("x-opencode-directory")).toBe("C:\\workspace\\tree")
+    expect(new URL(lastEmbeddedCall().request.url).searchParams.get("path")).toBe("README.md")
+  })
+
   test("throws for an unknown workspace", async () => {
     mocks.resolveWorkspace.mockResolvedValue(undefined)
     const factory = createClaxedoSessionEnvFactory({ fetchOptions })
@@ -231,10 +278,14 @@ describe("createClaxedoSessionEnvFactory", () => {
       host: "central",
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1" },
     })
-    mocks.ensureEmbeddedWorkspaceRuntime.mockResolvedValue({ app: { fetch: async () => {
-      await fs.writeFile(hydrated, "agent edit")
-      return ndjsonResponse([{ type: "exit", exitCode: 0 }])
-    } } })
+    mocks.ensureEmbeddedWorkspaceRuntime.mockResolvedValue({
+      app: {
+        fetch: async () => {
+          await fs.writeFile(hydrated, "agent edit")
+          return ndjsonResponse([{ type: "exit", exitCode: 0 }])
+        },
+      },
+    })
 
     await sessionEnvBashTool(env).execute(
       "tool-call-document-edit",
@@ -260,7 +311,9 @@ describe("createClaxedoSessionEnvFactory", () => {
       displayName: "Plan",
       markdown: "before",
       baseVersion: "version-1",
-      sync: async () => { throw new Error("version conflict") },
+      sync: async () => {
+        throw new Error("version conflict")
+      },
     })
     const failures = vi.fn()
     const env = await createClaxedoSessionEnvFactory({ fetchOptions, onHydrationFailure: failures })({
@@ -269,29 +322,39 @@ describe("createClaxedoSessionEnvFactory", () => {
       host: "central",
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws-1" },
     })
-    mocks.ensureEmbeddedWorkspaceRuntime.mockResolvedValue({ app: { fetch: async () => {
-      await fs.writeFile(hydrated, "preserve this edit")
-      return ndjsonResponse([{ type: "exit", exitCode: 0 }])
-    } } })
+    mocks.ensureEmbeddedWorkspaceRuntime.mockResolvedValue({
+      app: {
+        fetch: async () => {
+          await fs.writeFile(hydrated, "preserve this edit")
+          return ndjsonResponse([{ type: "exit", exitCode: 0 }])
+        },
+      },
+    })
 
-    await expect(sessionEnvBashTool(env).execute(
-      "tool-call-document-conflict",
-      { command: `printf 'preserve this edit' > '${hydrated}'` },
-      new AbortController().signal,
-    )).resolves.toBeDefined()
-    expect(failures).toHaveBeenCalledWith(expect.objectContaining({
-      phase: "end-turn",
-      sessionId: "session-sync-failure",
-      error: expect.objectContaining({ message: "version conflict" }),
-    }))
+    await expect(
+      sessionEnvBashTool(env).execute(
+        "tool-call-document-conflict",
+        { command: `printf 'preserve this edit' > '${hydrated}'` },
+        new AbortController().signal,
+      ),
+    ).resolves.toBeDefined()
+    expect(failures).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: "end-turn",
+        sessionId: "session-sync-failure",
+        error: expect.objectContaining({ message: "version conflict" }),
+      }),
+    )
     await expect(env.dispose?.()).resolves.toBeUndefined()
-    expect(failures).toHaveBeenCalledWith(expect.objectContaining({
-      phase: "dispose",
-      sessionId: "session-sync-failure",
-      documentId: "document-a",
-      path: hydrated,
-      error: expect.objectContaining({ message: "version conflict" }),
-    }))
+    expect(failures).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phase: "dispose",
+        sessionId: "session-sync-failure",
+        documentId: "document-a",
+        path: hydrated,
+        error: expect.objectContaining({ message: "version conflict" }),
+      }),
+    )
     expect(await fs.readFile(hydrated, "utf8")).toBe("preserve this edit")
     forgetHydratedSessionRuntime("session-sync-failure")
     await fs.rm(root, { recursive: true, force: true })
@@ -392,19 +455,126 @@ describe("createWorkspaceRuntimeSessionEnv", () => {
       const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
       await expect(env.exec("nope")).rejects.toThrow("spawn failed")
     })
+
+    test("rejects malformed frames and cancels the response stream", async () => {
+      const cancel = vi.fn()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('{"type":"stdout","data":"%%%"}\n'))
+        },
+        cancel,
+      })
+      mockEmbeddedResponse(new Response(stream, { status: 200 }))
+      const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
+
+      await expect(env.exec("bad-frame")).rejects.toBeInstanceOf(WorkspaceRuntimeProtocolError)
+      expect(cancel).toHaveBeenCalledTimes(1)
+    })
+
+    test("cancels the response stream when an output callback throws", async () => {
+      const cancel = vi.fn()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "stdout", data: b64("hello") })}\n`))
+        },
+        cancel,
+      })
+      mockEmbeddedResponse(new Response(stream, { status: 200 }))
+      const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
+
+      await expect(
+        env.exec("callback", {
+          onStdout: () => {
+            throw new Error("consumer failed")
+          },
+        }),
+      ).rejects.toThrow("consumer failed")
+      expect(cancel).toHaveBeenCalledTimes(1)
+    })
+
+    test("cancels and fails with a typed error when output exceeds the byte budget", async () => {
+      const cancel = vi.fn()
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "stdout", data: b64("too much") })}\n`))
+        },
+        cancel,
+      })
+      mockEmbeddedResponse(new Response(stream, { status: 200 }))
+      const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions, execOutputLimitBytes: 3 })
+
+      await expect(env.exec("verbose")).rejects.toBeInstanceOf(WorkspaceRuntimeExecLimitError)
+      expect(cancel).toHaveBeenCalledTimes(1)
+    })
+
+    test("cancels and fails with a typed error when one frame exceeds the frame budget", async () => {
+      const cancel = vi.fn()
+      const oversized = Buffer.alloc(Math.ceil(SESSION_ENV_EXEC_MAX_FRAME_BYTES * 0.8)).toString("base64")
+      const stream = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode(`${JSON.stringify({ type: "stdout", data: oversized })}\n`))
+        },
+        cancel,
+      })
+      mockEmbeddedResponse(new Response(stream, { status: 200 }))
+      const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
+
+      await expect(env.exec("one-huge-frame")).rejects.toMatchObject({
+        name: "WorkspaceRuntimeExecLimitError",
+        code: "workspace_runtime_exec_frame_limit",
+      })
+      expect(cancel).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe("file ops", () => {
     test("readFile decodes base64 content", async () => {
-      mockEmbeddedResponse(jsonResponse({ content: b64("file body") }))
+      mockEmbeddedResponse(jsonResponse({ encoding: "base64", content: b64("file body") }))
       const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
       const content = await env.readFile("/notes.txt")
       expect(new TextDecoder().decode(content)).toBe("file body")
       expect(lastEmbeddedCall().path).toBe("/api/wr/session-env/file/read?path=notes.txt")
     })
 
+    test.each([
+      [
+        "readFile",
+        () => jsonResponse({}),
+        (env: ReturnType<typeof createWorkspaceRuntimeSessionEnv>) => env.readFile("/x"),
+      ],
+      [
+        "readFile base64",
+        () => jsonResponse({ encoding: "base64", content: "%%%" }),
+        (env: ReturnType<typeof createWorkspaceRuntimeSessionEnv>) => env.readFile("/x"),
+      ],
+      [
+        "stat",
+        () => jsonResponse({ isFile: true }),
+        (env: ReturnType<typeof createWorkspaceRuntimeSessionEnv>) => env.stat("/x"),
+      ],
+      [
+        "readdir",
+        () => jsonResponse(["ok", 3]),
+        (env: ReturnType<typeof createWorkspaceRuntimeSessionEnv>) => env.readdir("/"),
+      ],
+      [
+        "exists",
+        () => jsonResponse({}),
+        (env: ReturnType<typeof createWorkspaceRuntimeSessionEnv>) => env.exists("/x"),
+      ],
+      [
+        "writeFile",
+        () => jsonResponse({}),
+        (env: ReturnType<typeof createWorkspaceRuntimeSessionEnv>) => env.writeFile("/x", "x"),
+      ],
+    ])("rejects malformed successful %s responses", async (_name, response, invoke) => {
+      mockEmbeddedResponse(response())
+      const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
+      await expect(invoke(env)).rejects.toBeInstanceOf(WorkspaceRuntimeProtocolError)
+    })
+
     test("writeFile posts base64 content with encoding and a workspace-relative path", async () => {
-      mockEmbeddedResponse(jsonResponse({}))
+      mockEmbeddedResponse(jsonResponse({ ok: true }))
       const env = createWorkspaceRuntimeSessionEnv({ workspace, directory: "sub", fetchOptions })
       await env.writeFile("out.txt", "payload")
       const { path, request } = lastEmbeddedCall()
@@ -446,7 +616,7 @@ describe("createWorkspaceRuntimeSessionEnv", () => {
     })
 
     test("mkdir posts the path and recursive flag", async () => {
-      mockEmbeddedResponse(jsonResponse({}))
+      mockEmbeddedResponse(jsonResponse({ ok: true }))
       const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
       await env.mkdir("/nested/dir")
       const { path, request } = lastEmbeddedCall()
@@ -455,7 +625,7 @@ describe("createWorkspaceRuntimeSessionEnv", () => {
     })
 
     test("rm posts the path with recursive and force flags", async () => {
-      mockEmbeddedResponse(jsonResponse({}))
+      mockEmbeddedResponse(jsonResponse({ ok: true }))
       const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
       await env.rm("/gone", { recursive: true, force: true })
       const { path, request } = lastEmbeddedCall()
@@ -467,13 +637,18 @@ describe("createWorkspaceRuntimeSessionEnv", () => {
   test("surfaces the server error message on a non-ok response", async () => {
     mockEmbeddedResponse(jsonResponse({ error: { code: "boom", message: "disk full" } }, 500))
     const env = createWorkspaceRuntimeSessionEnv({ workspace, fetchOptions })
-    await expect(env.readFile("/x")).rejects.toThrow("session-env readFile failed: disk full")
+    await expect(env.readFile("/x")).rejects.toMatchObject({
+      name: "WorkspaceRuntimeRequestError",
+      status: 500,
+      code: "boom",
+      operation: "readFile",
+      message: "workspace-runtime readFile failed: disk full",
+    })
   })
 })
 
 describe("cloud session-env caching", () => {
-  const originalFetch = globalThis.fetch
-  let fetchSpy: ReturnType<typeof vi.fn>
+  let fetchSpy: ReturnType<typeof vi.fn<FetchCall>>
 
   function ensureReady(overrides?: { hostId?: string; homeRegion?: string }) {
     return {
@@ -488,15 +663,25 @@ describe("cloud session-env caching", () => {
   }
 
   function cloudOptions() {
-    const sandboxManager = { ensure: vi.fn(async () => ensureReady()) }
+    const sandboxManager = {
+      ensure: vi.fn(async () => ensureReady()),
+      target: vi.fn(async () => ensureReady()),
+    } satisfies SandboxManagerPort
     const relayProvider = {
       getRelayEndpoint: vi.fn(async () => "https://relay.example"),
+      mintHostTunnelToken: vi.fn(async () => ({
+        token: "host-token",
+        expiresAt: Date.now() + 10 * 60_000,
+        jti: "host-jti",
+      })),
       mintRuntimeAccessToken: vi.fn(async () => ({
         token: "tok-1",
         expiresAt: Date.now() + 10 * 60_000,
         jti: "jti-1",
       })),
-    }
+      resolveTarget: vi.fn(async () => undefined),
+      drainWorkspace: vi.fn(async () => {}),
+    } satisfies RelayProvider
     const options = {
       sandboxManager,
       relayProvider,
@@ -506,18 +691,18 @@ describe("cloud session-env caching", () => {
       actorId: "control-plane",
       actorKind: "agent",
       role: "owner",
-    } as unknown as SandboxFetchOptions
+    } satisfies SandboxFetchOptions
     return { sandboxManager, relayProvider, options }
   }
 
   beforeEach(() => {
     vi.clearAllMocks()
-    fetchSpy = vi.fn()
-    globalThis.fetch = fetchSpy as unknown as typeof fetch
+    fetchSpy = vi.fn<FetchCall>()
+    vi.stubGlobal("fetch", fetchSpy)
   })
 
   afterEach(() => {
-    globalThis.fetch = originalFetch
+    vi.unstubAllGlobals()
   })
 
   test("resolves ensure + mint once across many ops and reuses the relay endpoint", async () => {
@@ -533,18 +718,20 @@ describe("cloud session-env caching", () => {
     expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledTimes(1)
     expect(relayProvider.getRelayEndpoint).toHaveBeenCalledTimes(1)
     expect(fetchSpy).toHaveBeenCalledTimes(3)
-    const firstUrl = fetchSpy.mock.calls[0][0] as string
+    const firstUrl = requestUrl(fetchSpy.mock.calls[0][0])
     expect(firstUrl).toBe("https://relay.example/workspaces/ws-cloud/api/wr/session-env/file/exists?path=a")
-    const headers = (fetchSpy.mock.calls[0][1] as RequestInit).headers as Headers
+    const headers = new Headers(fetchSpy.mock.calls[0][1]?.headers)
     expect(headers.get("authorization")).toBe("Bearer tok-1")
   })
 
   test("rejects an incomplete service principal before creating a cloud requester", () => {
     const { options } = cloudOptions()
-    delete options.role
-
-    expect(() => createWorkspaceRuntimeSessionEnv({ workspace: cloudWorkspace, fetchOptions: options }))
-      .toThrow("complete runtime principal required for runtime token minting: ws-cloud")
+    expect(() =>
+      createWorkspaceRuntimeSessionEnv({
+        workspace: cloudWorkspace,
+        fetchOptions: { ...options, role: undefined },
+      }),
+    ).toThrow("complete runtime principal required for runtime token minting: ws-cloud")
   })
 
   test("re-mints the token when it is near expiry", async () => {
@@ -559,7 +746,7 @@ describe("cloud session-env caching", () => {
     await env.exists("b")
 
     expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledTimes(2)
-    const secondHeaders = (fetchSpy.mock.calls[1][1] as RequestInit).headers as Headers
+    const secondHeaders = new Headers(fetchSpy.mock.calls[1][1]?.headers)
     expect(secondHeaders.get("authorization")).toBe("Bearer tok-2")
   })
 
@@ -580,6 +767,26 @@ describe("cloud session-env caching", () => {
     expect(fetchSpy).toHaveBeenCalledTimes(2)
   })
 
+  test("does not retry a state-changing exec after a 502 response", async () => {
+    const { sandboxManager, options } = cloudOptions()
+    fetchSpy.mockResolvedValue(new Response("bad gateway", { status: 502 }))
+    const env = createWorkspaceRuntimeSessionEnv({ workspace: cloudWorkspace, fetchOptions: options })
+
+    await expect(env.exec("touch once")).rejects.toBeInstanceOf(WorkspaceRuntimeRequestError)
+    expect(sandboxManager.ensure).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
+  test("does not retry a state-changing exec after a connectivity failure", async () => {
+    const { sandboxManager, options } = cloudOptions()
+    fetchSpy.mockRejectedValue(new TypeError("connection reset"))
+    const env = createWorkspaceRuntimeSessionEnv({ workspace: cloudWorkspace, fetchOptions: options })
+
+    await expect(env.exec("touch once")).rejects.toThrow("connection reset")
+    expect(sandboxManager.ensure).toHaveBeenCalledTimes(1)
+    expect(fetchSpy).toHaveBeenCalledTimes(1)
+  })
+
   test("does not re-ensure when the initial request succeeds", async () => {
     const { sandboxManager, options } = cloudOptions()
     fetchSpy.mockImplementation(async () => jsonResponse({ exists: true }))
@@ -588,5 +795,84 @@ describe("cloud session-env caching", () => {
     await env.exists("a")
 
     expect(sandboxManager.ensure).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe("prepareWorkspaceRuntimeSession", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.clearAllMocks()
+  })
+
+  test("creates the worktree through one exact runtime generation and returns its epoch", async () => {
+    const sandboxManager = {
+      ensure: vi.fn(async () => ({
+        status: "ready" as const,
+        workspaceId: cloudWorkspace.id,
+        sandboxId: "sbx-7",
+        url: "http://sandbox.local",
+        hostId: "host-7",
+        homeRegion: "us-east",
+        epoch: 7,
+      })),
+      target: vi.fn(async () => ({
+        status: "ready" as const,
+        workspaceId: cloudWorkspace.id,
+        sandboxId: "sbx-7",
+        url: "http://sandbox.local",
+        hostId: "host-7",
+        homeRegion: "us-east",
+        epoch: 7,
+      })),
+    } satisfies SandboxManagerPort
+    const relayProvider = {
+      getRelayEndpoint: vi.fn(async () => "https://relay.example"),
+      mintHostTunnelToken: vi.fn(async () => ({
+        token: "host-token",
+        expiresAt: Date.now() + 10 * 60_000,
+        jti: "host-jti",
+      })),
+      mintRuntimeAccessToken: vi.fn(async () => ({
+        token: "tok-7",
+        expiresAt: Date.now() + 10 * 60_000,
+        jti: "jti-7",
+      })),
+      resolveTarget: vi.fn(async () => undefined),
+      drainWorkspace: vi.fn(async () => {}),
+    } satisfies RelayProvider
+    vi.stubGlobal(
+      "fetch",
+      vi.fn<FetchCall>(async () =>
+        jsonResponse(
+          {
+            worktree: { path: "/worktrees/s-1", branch: "claxedo/session/s-1", baseCommit: "abc" },
+          },
+          201,
+        ),
+      ),
+    )
+
+    await expect(
+      prepareWorkspaceRuntimeSession({
+        workspace: cloudWorkspace,
+        sessionId: "s-1",
+        fetchOptions: {
+          sandboxManager,
+          relayProvider,
+          subject: "control-plane",
+          principalKind: "service",
+          actorId: "control-plane",
+          actorKind: "agent",
+          role: "owner",
+        },
+      }),
+    ).resolves.toEqual({
+      directory: "/worktrees/s-1",
+      worktree: "claxedo/session/s-1",
+      baseCommit: "abc",
+      leaseEpoch: 7,
+    })
+    expect(sandboxManager.ensure).toHaveBeenCalledTimes(1)
+    expect(globalThis.fetch).toHaveBeenCalledTimes(1)
   })
 })
