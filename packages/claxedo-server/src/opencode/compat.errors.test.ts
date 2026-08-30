@@ -14,7 +14,6 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
-const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 const { configureAgentConfig, saveCommand } = await import("@claxedo/server-core/agent-config/index")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
@@ -25,7 +24,6 @@ const originalFetch = globalThis.fetch
 
 afterEach(async () => {
   globalThis.fetch = originalFetch
-  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {
@@ -156,42 +154,6 @@ describe("opencode compat error model", () => {
     ).toBeGreaterThan(0)
   })
 
-  test("opencode-owned provider and config reads fail explicitly when central opencode is down", async () => {
-    configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
-
-    const provider = await app.request("/provider?runner=opencode")
-    const providerAuth = await app.request("/provider/auth?runner=opencode")
-    const config = await app.request("/config?runner=opencode")
-    const globalConfig = await app.request("/global/config?runner=opencode")
-    const configProviders = await app.request("/config/providers?runner=opencode")
-
-    expect([provider.status, providerAuth.status, config.status, globalConfig.status, configProviders.status]).toEqual([
-      502, 502, 502, 502, 502,
-    ])
-    await expect(provider.json()).resolves.toMatchObject({ error: { code: "provider_models_unavailable" } })
-    await expect(providerAuth.json()).resolves.toMatchObject({ error: { code: "provider_auth_unavailable" } })
-    await expect(config.json()).resolves.toMatchObject({ error: { code: "global_config_unavailable" } })
-    await expect(globalConfig.json()).resolves.toMatchObject({ error: { code: "global_config_unavailable" } })
-    await expect(configProviders.json()).resolves.toMatchObject({ error: { code: "provider_models_unavailable" } })
-  })
-
-  test("passive compat reads do not access central opencode", async () => {
-    configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
-    const touch = vi.fn()
-    const passive = new Hono()
-    passive.route("/", OpenCodeCompatRoutes({ onOpencodeAccess: touch }))
-
-    const provider = await passive.request("/provider")
-    const status = await passive.request("/session/status")
-    const mcp = await passive.request("/mcp")
-    const question = await passive.request("/question")
-    const agent = await passive.request("/agent")
-
-    expect([provider.status, status.status, mcp.status, question.status, agent.status]).toEqual([
-      502, 200, 200, 200, 200,
-    ])
-    expect(touch).not.toHaveBeenCalled()
-  })
 
   test("agent list uses SandboxManager when composed", async () => {
     await ensureWorkspace({

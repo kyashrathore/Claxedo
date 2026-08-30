@@ -77,10 +77,7 @@ import { pathToFileURL } from "node:url"
  * booting app — seeding must never be able to fail a boot.
  */
 
-/** Directory name under `resources/` (and `process.resourcesPath`) that holds the engine's shipped cache. */
-export const OPENCODE_COMPILE_CACHE_DIR_NAME = "opencode-compile-cache"
-
-/** The same, for the server bundle's own static closure. Two artifacts, two shipped sets, one runtime directory. */
+/** Directory name under `resources/` for the server bundle's static closure. */
 export const CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME = "claxedo-server-compile-cache"
 
 /** Manifest filename inside those directories. */

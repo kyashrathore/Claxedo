@@ -36,6 +36,7 @@
   "dependencies": {
     "@claxedo/agent-extensions": "workspace:0.7.0",
     "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@claxedo/opencode-runtime": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:0.7.0",
     "@claxedo/server-core": "workspace:*",
     "@claxedo/workspace-runtime": "workspace:*",
@@ -44,7 +45,6 @@
     "better-sqlite3": "13.0.1",
     "drizzle-orm": "catalog:",
     "hono": "4.10.7",
-    "opencode": "workspace:*",
     "tokentracker-cli": "0.91.0",
     "zod": "4.4.3"
   },

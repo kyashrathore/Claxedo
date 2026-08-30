@@ -22,7 +22,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$here"
 
 boot() {
-  CLAXEDO_DATA_DIR="$DATA_DIR" CLAXEDO_SERVER_PORT="$PORT" CLAXEDO_DISABLE_OPENCODE_COMPAT=1 \
+  CLAXEDO_DATA_DIR="$DATA_DIR" CLAXEDO_SERVER_PORT="$PORT" \
     node --conditions=development \
       --import ../workspace-runtime/src/text-imports.mjs \
       --import tsx \

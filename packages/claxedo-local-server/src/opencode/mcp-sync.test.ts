@@ -1,135 +1,101 @@
-import { afterEach, describe, expect, test } from "vitest"
-import { createServer, type Server } from "node:http"
-import { once } from "node:events"
+import { afterEach, describe, expect, test, vi } from "vitest"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
+import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import { disposeAgentConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import {
   configureOpencodeMcpSync,
-  mergeSyncedMcpStatus,
-  syncMcpConfigToOpencode,
+  connectOpencodeMcp,
+  disconnectOpencodeMcp,
+  opencodeMcpStatus,
   syncOpencodeMcpConfig,
 } from "./mcp-sync"
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
 
-const servers: Server[] = []
+const roots: string[] = []
+const previousDataDir = process.env.CLAXEDO_DATA_DIR
 
-// The MCP sync now rides an injected transport rather than a URL. In these tests
-// we forward the synthetic-base request onto the fake HTTP server via fetch.
-function transportFor(url: string): OpenCodeRequestFn {
-  return (req) => {
-    const incoming = new URL(req.url)
-    return fetch(`${url}${incoming.pathname}${incoming.search}`, {
-      method: req.method,
-      headers: req.headers,
-      ...(["GET", "HEAD"].includes(req.method) ? {} : { body: req.body, duplex: "half" }),
-    } as RequestInit)
+async function workspace() {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-mcp-sdk-"))
+  const directory = path.join(root, "workspace")
+  await fs.mkdir(directory)
+  roots.push(root)
+  process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+  return directory
+}
+
+function fakeRuntime() {
+  const configuration = {
+    mcpStatus: vi.fn(async () => ({ existing: { status: "connected" } })),
+    addMcp: vi.fn(async () => ({ docs: { status: "connected" } })),
+    removeMcp: vi.fn(async () => {}),
+    connectMcp: vi.fn(async () => true),
+    disconnectMcp: vi.fn(async () => true),
+  }
+  return {
+    runtime: { configuration } as unknown as OpenCodeRuntime,
+    configuration,
   }
 }
 
 afterEach(async () => {
-  configureOpencodeMcpSync({ enabled: false })
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
+  disposeAgentConfig()
+  if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = previousDataDir
+  await Promise.all(roots.splice(0).map((root) => fs.rm(root, { recursive: true, force: true })))
 })
 
-async function listen(handler: (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void) {
-  const server = createServer(handler)
-  servers.push(server)
-  server.listen(0, "127.0.0.1")
-  await once(server, "listening")
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error("server did not bind to a TCP port")
-  return `http://127.0.0.1:${address.port}`
-}
+describe("OpenCode SDK MCP sync", () => {
+  test("routes status and connection operations through the typed configuration port", async () => {
+    const directory = await workspace()
+    const { runtime, configuration } = fakeRuntime()
+    configureOpencodeMcpSync({ runtime })
 
-describe("opencode MCP sync", () => {
-  test("pushes effective MCP config into the live opencode MCP endpoint", async () => {
-    const requests: Array<{ url?: string; method?: string; directory?: string; body: unknown }> = []
-    const url = await listen((req, res) => {
-      const chunks: Buffer[] = []
-      req.on("data", (chunk) => chunks.push(chunk))
-      req.on("end", () => {
-        requests.push({
-          url: req.url,
-          method: req.method,
-          directory: req.headers["x-opencode-directory"]?.toString(),
-          body: JSON.parse(Buffer.concat(chunks).toString("utf8")),
-        })
-        res.writeHead(200, { "content-type": "application/json" })
-        res.end(JSON.stringify({ docs: { status: "connected" } }))
-      })
+    expect(await opencodeMcpStatus({ directory, workspaceID: "ws_mcp" })).toEqual({
+      existing: { status: "connected" },
     })
+    expect(await connectOpencodeMcp({ directory, workspaceID: "ws_mcp", name: "docs" })).toBe(true)
+    expect(await disconnectOpencodeMcp({ directory, workspaceID: "ws_mcp", name: "docs" })).toBe(true)
 
-    const results = await syncMcpConfigToOpencode(transportFor(url), {
+    expect(configuration.connectMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceID: "ws_mcp" }),
+      "docs",
+    )
+    expect(configuration.disconnectMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceID: "ws_mcp" }),
+      "docs",
+    )
+  })
+
+  test("pushes effective MCP configuration through typed SDK operations", async () => {
+    const directory = await workspace()
+    await saveUserConfig({
       mcp: {
         docs: {
-          type: "local",
-          command: ["node", "/tmp/docs-mcp.js"],
-          environment: { OPENCODE_API_URL: "http://127.0.0.1:3001" },
+          type: "stdio",
+          command: "node",
+          args: ["/tmp/docs-mcp.js"],
         },
       },
-    }, { directory: "/repo" })
-
-    expect(requests).toEqual([
-      {
-        url: "/mcp",
-        method: "POST",
-        directory: "/repo",
-        body: {
-          name: "docs",
-          config: {
-            type: "local",
-            command: ["node", "/tmp/docs-mcp.js"],
-            environment: { OPENCODE_API_URL: "http://127.0.0.1:3001" },
-          },
-        },
-      },
-    ])
-    expect(results).toEqual([
-      {
-        name: "docs",
-        ok: true,
-        status: 200,
-        body: { docs: { status: "connected" } },
-      },
-    ])
-    expect(mergeSyncedMcpStatus({})).toEqual({ docs: { status: "connected" } })
-  })
-
-  // The ACP-runner short-circuit is enforced at the call site in
-  // `agent-config.ts`, so this
-  // function-level test no longer matches a real seam. The invariant
-  // is now exercised by the agent-config integration tests.
-
-  test("a cold embedded engine is never booted to receive MCP config", async () => {
-    const { __setOpenCodeEmbedLoaderForTests, configureOpenCodeEngine } = await import(
-      "@claxedo/server-core/opencode/engine"
-    )
-    const loads: number[] = []
-    __setOpenCodeEmbedLoaderForTests(async () => {
-      loads.push(1)
-      throw new Error("the MCP fan-out must not boot the engine")
+      auth: {},
     })
-    try {
-      configureOpenCodeEngine({ embedded: true })
-      configureOpencodeMcpSync({ enabled: true })
+    const { runtime, configuration } = fakeRuntime()
+    configureOpencodeMcpSync({ runtime })
 
-      // The config fan-out calls this on every MCP mutation, whatever the
-      // user's harness. With the engine cold it must arm a boot re-sync and
-      // return without touching the transport.
-      expect(await syncOpencodeMcpConfig()).toEqual([])
-      expect(loads).toEqual([])
-    } finally {
-      __setOpenCodeEmbedLoaderForTests(undefined)
-      configureOpenCodeEngine({ embedded: true })
-    }
-  })
-
-  test("skips sync entirely when disabled, and no-ops on empty effective MCP when enabled", async () => {
-    // Disabled: returns [] without touching the transport.
-    configureOpencodeMcpSync({ enabled: false })
-    expect(await syncOpencodeMcpConfig()).toEqual([])
-
-    // Enabled but the effective MCP config is empty (no MCP servers configured
-    // in this test env), so there is nothing to push — an empty result set.
-    configureOpencodeMcpSync({ enabled: true })
-    expect(await syncOpencodeMcpConfig()).toEqual([])
+    expect(await syncOpencodeMcpConfig({ directory, workspaceID: "ws_mcp_sync" })).toEqual([{
+      name: "docs",
+      ok: true,
+      status: 200,
+      body: { docs: { status: "connected" } },
+    }])
+    expect(configuration.addMcp).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceID: "ws_mcp_sync" }),
+      "docs",
+      {
+        type: "local",
+        command: ["node", "/tmp/docs-mcp.js"],
+        environment: {},
+      },
+    )
   })
 })

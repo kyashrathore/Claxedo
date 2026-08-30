@@ -115,6 +115,8 @@ export type OpenCodeSessionPort = Readonly<{
   rename(scope: WorkspaceScope, sessionID: string, title: string): Promise<void>
   remove(scope: WorkspaceScope, sessionID: string): Promise<void>
   fork(scope: WorkspaceScope, sessionID: string, boundary: ForkBoundary): Promise<SessionSummary>
+  switchAgent(scope: WorkspaceScope, sessionID: string, agent: string): Promise<void>
+  switchModel(scope: WorkspaceScope, sessionID: string, model: { providerID: string; modelID: string }): Promise<void>
 
   prompt(scope: WorkspaceScope, sessionID: string, request: PromptRequest): Promise<AdmittedMessage>
   command(
@@ -247,6 +249,18 @@ export function createSessionPort(host: OpenCodeHost): OpenCodeSessionPort {
       await port.get(scope, sessionID)
       const forked = await client.sessions.fork({ sessionID, boundary })
       return project(scope, forked as never)
+    },
+
+    async switchAgent(scope, sessionID, agent) {
+      const client = await host.client()
+      await port.get(scope, sessionID)
+      await client.sessions.switchAgent({ sessionID, agent })
+    },
+
+    async switchModel(scope, sessionID, model) {
+      const client = await host.client()
+      await port.get(scope, sessionID)
+      await client.sessions.switchModel({ sessionID, model: { providerID: model.providerID, id: model.modelID } })
     },
 
     async prompt(scope, sessionID, request) {

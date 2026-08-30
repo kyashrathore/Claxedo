@@ -8,7 +8,6 @@ import {
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { listProjects } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { opencodeEngineMode } from "@claxedo/server-core/opencode/engine"
 import {
   configProvidersBody,
   globalConfigBody,
@@ -106,10 +105,8 @@ async function localBootstrapBody(harnessOverride: string | undefined, options: 
   return {
     healthy: true,
     version: version(options),
-    // Additive field: which opencode engine transport this composition uses
-    // ("embedded" in-process vs "external-url"). Backward-safe — existing
-    // consumers ignore it.
-    engine_mode: opencodeEngineMode(),
+    // The only OpenCode execution mode in this composition.
+    engine_mode: "embedded-sdk",
     path: bootPath(),
     project: await listProjects(),
     provider: await providerBody(harnessOverride, options),
@@ -123,7 +120,7 @@ async function localShellBootstrapBody(options: Options) {
   return {
     healthy: true,
     version: version(options),
-    engine_mode: opencodeEngineMode(),
+    engine_mode: "embedded-sdk",
     path: bootPath(),
     project: await listProjects(),
   }

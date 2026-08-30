@@ -97,7 +97,6 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
       description: language.t("provider.connect.toast.connected.description", { provider: name }),
     })
     await props.onConnected?.()
-    await globalSDK.client.global.dispose().catch(() => undefined)
     props.onDone?.()
   }
 

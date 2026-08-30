@@ -26,20 +26,15 @@ import { randomUUID } from "crypto"
 
 const root = path.join(realpathSync(os.tmpdir()), `provider-catalog-matrix-${randomUUID().slice(0, 8)}`)
 const prevDataDir = process.env.CLAXEDO_DATA_DIR
+const prevCatalogCache = process.env.CLAXEDO_OPENCODE_CATALOG_CACHE
 process.env.CLAXEDO_DATA_DIR = root
+process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = path.join(root, "catalog.json")
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
-const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
-
-const ENGINE = "http://127.0.0.1:65501"
-
 const CATALOG = {
-  providers: [
-    { id: "anthropic", name: "Anthropic", models: { "claude-sonnet-5": { id: "claude-sonnet-5" } } },
-    { id: "opencode", name: "OpenCode Zen", models: { "north-mini": { id: "north-mini" } } },
-  ],
-  default: { anthropic: "claude-sonnet-5" },
+  anthropic: { id: "anthropic", name: "Anthropic", models: { "claude-sonnet-5": { id: "claude-sonnet-5" } } },
+  opencode: { id: "opencode", name: "OpenCode Zen", models: { "north-mini": { id: "north-mini" } } },
 }
 
 const app = new Hono()
@@ -49,11 +44,7 @@ const originalFetch = globalThis.fetch
 
 /** Engine reachable and healthy. */
 function healthyEngine() {
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-    if (url.pathname === "/config/providers") return Response.json(CATALOG)
-    return new Response("not found", { status: 404 })
-  }) as typeof globalThis.fetch
+  globalThis.fetch = (async () => Response.json(CATALOG)) as unknown as typeof globalThis.fetch
 }
 
 /**
@@ -68,19 +59,19 @@ function unloadableEngine() {
 }
 
 beforeEach(() => {
-  configureOpenCodeEngine({ url: ENGINE })
   healthyEngine()
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {
   await fs.rm(root, { recursive: true, force: true })
   if (prevDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = prevDataDir
+  if (prevCatalogCache === undefined) delete process.env.CLAXEDO_OPENCODE_CATALOG_CACHE
+  else process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = prevCatalogCache
 })
 
 // Each surface reaches /config/providers with a different query shape. All of
@@ -122,6 +113,7 @@ describe("model catalog is populated on every surface", () => {
 
 describe("an unloadable engine is an explicit catalog failure", () => {
   test("the route answers 502 instead of a cacheable empty catalog", async () => {
+    await fs.rm(process.env.CLAXEDO_OPENCODE_CATALOG_CACHE!, { force: true })
     unloadableEngine()
     const res = await app.request("/config/providers?harness=opencode")
     expect(res.status).toBe(502)
@@ -134,6 +126,7 @@ describe("an unloadable engine is an explicit catalog failure", () => {
   })
 
   test("a later request recovers when the engine does", async () => {
+    await fs.rm(process.env.CLAXEDO_OPENCODE_CATALOG_CACHE!, { force: true })
     unloadableEngine()
     expect((await app.request("/config/providers?harness=opencode")).status).toBe(502)
 

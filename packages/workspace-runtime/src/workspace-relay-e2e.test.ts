@@ -352,7 +352,6 @@ async function processSeparatedRelayHarness() {
       WORKSPACE_RUNTIME_HOST_ID: "host_1",
       WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(relayHost.publicKey),
       [WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]: authority.url,
-      OPENCODE_URL: "http://127.0.0.1:4096",
       OPENCODE_PTY_ORPHAN_TIMEOUT_MS: "1000",
     },
     stdio: ["ignore", "pipe", "pipe"],

@@ -34,11 +34,9 @@ import {
   AcpHarnessAdapter,
   ClaudeHarnessAdapter,
   CodexHarnessAdapter,
-  OpenCodeHarnessAdapter,
   PiHarnessAdapter,
   type AgentConfigOptions,
   type AgentHarnessAdapter,
-  type OpenCodeRequestFn,
 } from "@claxedo/agent-sdk-runtime/adapters"
 
 const tempDirs: string[] = []
@@ -51,7 +49,6 @@ const originalDataDir = process.env.WORKSPACE_RUNTIME_DATA_DIR
 const originalAgentType = process.env.WORKSPACE_RUNTIME_RUNNER
 const originalAcpBinary = process.env.WORKSPACE_RUNTIME_ACP_BINARY
 const originalAcpModel = process.env.CLAXEDO_ACP_MODEL
-const originalOpencodeUrl = process.env.OPENCODE_URL
 const originalWrDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
 // `WORKSPACE_RUNTIME_WORKSPACE_ID` decides the STORE ROOT
 // (`workspaceRuntimeStoreDir`): set, it wins over WORKSPACE_RUNTIME_DATA_DIR
@@ -106,7 +103,6 @@ afterEach(async () => {
   process.env.WORKSPACE_RUNTIME_RUNNER = originalAgentType
   process.env.WORKSPACE_RUNTIME_ACP_BINARY = originalAcpBinary
   process.env.CLAXEDO_ACP_MODEL = originalAcpModel
-  process.env.OPENCODE_URL = originalOpencodeUrl
   process.env.WORKSPACE_RUNTIME_DIRECTORY = originalWrDirectory
   if (originalWrWorkspaceId === undefined) delete process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
   else process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = originalWrWorkspaceId
@@ -235,131 +231,7 @@ describe("workspace runtime auth helpers", () => {
     expect(runtimeAuthKey("sk-openai-direct")).toBe("sk-openai-direct")
   })
 
-  test("opencode compatibility disabled avoids upstream calls and errors for provider models", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-disabled-"))
-    tempDirs.push(dir)
-    execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "ignore" })
-
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const upstreamCalls: string[] = []
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-      upstreamCalls.push(url)
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    // Full kill switch: opencodeCompat false — both adapter mechanism and route
-    // surface off, so nothing touches the upstream.
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: false })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: { docs: {} },
-    })
-    expect(config.status).toBe(200)
-
-    const session = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
-    const status = await app.request(`http://localhost/session/status?directory=${encodeURIComponent(dir)}`)
-    const mcp = await app.request(`http://localhost/mcp?directory=${encodeURIComponent(dir)}`)
-    const lsp = await app.request(`http://localhost/lsp?directory=${encodeURIComponent(dir)}`)
-    const provider = await app.request(`http://localhost/provider?runner=opencode&directory=${encodeURIComponent(dir)}`)
-
-    expect(session.status).toBe(200)
-    expect(await session.json()).toEqual([])
-    expect(status.status).toBe(200)
-    expect(await status.json()).toEqual({})
-    expect(await mcp.json()).toEqual({})
-    expect(await lsp.json()).toEqual([])
-    expect(provider.status).toBe(502)
-    expect(await provider.json()).toMatchObject({
-      ok: false,
-      error: {
-        code: "provider_models_unavailable",
-        harness: "opencode",
-      },
-    })
-    expect(upstreamCalls).toEqual([])
-  })
-
-  test("opencode compatibility default proxies adapter list/status upstream but keeps the compat route surface local", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-default-"))
-    tempDirs.push(dir)
-    execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "ignore" })
-
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const upstreamCalls: string[] = []
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-      if (url.startsWith("http://opencode.test")) {
-        upstreamCalls.push(url)
-        if (url.includes("/session")) return Response.json([{ id: "ses_upstream", title: "from upstream" }])
-        return Response.json({ proxied: true, url })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    // Kit default: opencodeCompat undefined — adapter mechanism on, route surface off.
-    mountTestHost(app, { opencodeUrl: "http://opencode.test" })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: { docs: {} },
-    })
-    expect(config.status).toBe(200)
-
-    // Adapter mechanism ON: listSessions proxies the opencode upstream.
-    const session = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
-    expect(session.status).toBe(200)
-    expect(await session.json()).toMatchObject([{ id: "ses_upstream" }])
-    expect(upstreamCalls.some((url) => url.includes("/session"))).toBe(true)
-
-    // Route surface OFF: /mcp returns the local fallback and never proxies.
-    const mcp = await app.request(`http://localhost/mcp?directory=${encodeURIComponent(dir)}`)
-    expect(mcp.status).toBe(200)
-    expect(await mcp.json()).toEqual({})
-    expect(upstreamCalls.some((url) => url.includes("/mcp"))).toBe(false)
-  })
-
-  test("opencode compatibility enabled proxies /mcp to the opencode upstream (characterization)", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-enabled-"))
-    tempDirs.push(dir)
-    execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "ignore" })
-
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const upstreamCalls: string[] = []
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-      if (url.startsWith("http://opencode.test")) {
-        upstreamCalls.push(url)
-        return Response.json({ proxied: true, url })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: { docs: {} },
-    })
-    expect(config.status).toBe(200)
-
-    const mcp = await app.request(`http://localhost/mcp?directory=${encodeURIComponent(dir)}`)
-    expect(mcp.status).toBe(200)
-    expect(await mcp.json()).toMatchObject({ proxied: true })
-    expect(upstreamCalls.some((url) => url.includes("/mcp"))).toBe(true)
-  })
-
-  test("runtimeAuthKey extracts OPENAI_API_KEY from codex_auth bundles", () => {
+   test("runtimeAuthKey extracts OPENAI_API_KEY from codex_auth bundles", () => {
     expect(runtimeAuthKey(codexAuth({ openaiKey: "sk-openai-bundled" }))).toBe("sk-openai-bundled")
   })
 
@@ -471,13 +343,13 @@ describe("workspace runtime auth helpers", () => {
     tempDirs.push(dir)
     process.env.HOME = dir
     const authPath = path.join(dir, ".codex", "auth.json")
-    const host = createWorkspaceHost({ harness: { id: "opencode", access: "native" } })
+    const host = createWorkspaceHost({ harness: { id: "pi", access: "native" } })
 
     await host.apply({
       version: 1,
       mcp: {},
       auth: { "codex-app-server": codexAuth() },
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
     })
     expect(await fs.promises.readFile(authPath, "utf8")).toContain("access-token")
 
@@ -492,7 +364,7 @@ describe("workspace runtime auth helpers", () => {
         version: 1 as const,
         mcp: {},
         auth: {},
-        runner: { type: "opencode" as const },
+        runner: { type: "pi" as const },
       }
       await expect(host.apply(snapshot)).rejects.toThrow("cleanup failed")
       await host.apply(snapshot)
@@ -519,7 +391,7 @@ describe("workspace runtime auth helpers", () => {
 
     expect((await pushRuntimeConfig(app, {
       version: 1,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: { "codex-app-server": codexAuth() },
       mcp: {},
     })).status).toBe(200)
@@ -1226,14 +1098,14 @@ describe("workspace runtime auth helpers", () => {
     })
     seed.close()
 
-    const originalGetMessages = OpenCodeHarnessAdapter.prototype.getMessages
-    const originalGetSession = OpenCodeHarnessAdapter.prototype.getSession
+    const originalGetMessages = PiHarnessAdapter.prototype.getMessages
+    const originalGetSession = PiHarnessAdapter.prototype.getSession
     const calls: string[] = []
-    OpenCodeHarnessAdapter.prototype.getMessages = async (id) => {
+    PiHarnessAdapter.prototype.getMessages = async (id) => {
       calls.push(`messages:${id}`)
       return []
     }
-    OpenCodeHarnessAdapter.prototype.getSession = async (id) => {
+    PiHarnessAdapter.prototype.getSession = async (id) => {
       calls.push(`session:${id}`)
       throw new Error("adapter session fallback should not be called")
     }
@@ -1241,7 +1113,7 @@ describe("workspace runtime auth helpers", () => {
     try {
       const app = new Hono()
       mountTestHost(app, {
-        harness: { id: "opencode", access: "native" },
+        harness: { id: "pi", access: "native" },
         storeRoot,
       })
 
@@ -1260,15 +1132,15 @@ describe("workspace runtime auth helpers", () => {
       expect(todoBody).toEqual([])
       expect(calls).toEqual([])
     } finally {
-      OpenCodeHarnessAdapter.prototype.getMessages = originalGetMessages
-      OpenCodeHarnessAdapter.prototype.getSession = originalGetSession
+      PiHarnessAdapter.prototype.getMessages = originalGetMessages
+      PiHarnessAdapter.prototype.getSession = originalGetSession
     }
   })
 
   test("falls back to the adapter transcript when a bound session has an empty message projection", async () => {
-    // Regression: proxy-driven (Session V2) sessions keep messages in the
-    // engine and get bound into the store message-less by discovery — an empty
-    // store projection must never shadow the engine transcript (staging
+    // Regression: adapter-owned sessions can be bound into the store
+    // message-less by discovery — an empty store projection must never shadow
+    // the authoritative adapter transcript (staging
     // Retention synced [] and settled runs without transcripts).
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-bound-"))
     tempDirs.push(dir)
@@ -1288,9 +1160,9 @@ describe("workspace runtime auth helpers", () => {
       { info: { id: "msg-user", role: "user" }, parts: [{ type: "text", text: "prompt" }] },
       { info: { id: "msg-assistant", role: "assistant" }, parts: [{ type: "text", text: "done" }] },
     ]
-    const originalGetMessages = OpenCodeHarnessAdapter.prototype.getMessages
+    const originalGetMessages = PiHarnessAdapter.prototype.getMessages
     const calls: string[] = []
-    OpenCodeHarnessAdapter.prototype.getMessages = async (id) => {
+    PiHarnessAdapter.prototype.getMessages = async (id) => {
       calls.push(`messages:${id}`)
       return engineTranscript as never
     }
@@ -1298,7 +1170,7 @@ describe("workspace runtime auth helpers", () => {
     try {
       const app = new Hono()
       mountTestHost(app, {
-        harness: { id: "opencode", access: "native" },
+        harness: { id: "pi", access: "native" },
         storeRoot,
       })
 
@@ -1317,7 +1189,7 @@ describe("workspace runtime auth helpers", () => {
 
       expect(calls).toEqual(["messages:s-empty", "messages:s-empty"])
     } finally {
-      OpenCodeHarnessAdapter.prototype.getMessages = originalGetMessages
+      PiHarnessAdapter.prototype.getMessages = originalGetMessages
     }
   })
 
@@ -1739,48 +1611,6 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  test("recovers missing OpenCode config from the session row", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-opencode-config-recover-"))
-    tempDirs.push(dir)
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const storeRoot = path.join(dir, ".claxedo", "store")
-    const originalGetSession = OpenCodeHarnessAdapter.prototype.getSession
-    OpenCodeHarnessAdapter.prototype.getSession = async (id) => ({
-      id,
-      agent: "build",
-      model: {
-        providerID: "opencode",
-        id: "deepseek-v4-flash-free",
-        variant: "default",
-      },
-    })
-
-    try {
-      const app = new Hono()
-      const host = mountTestHost(app, {
-        harness: { id: "opencode", access: "native" },
-        storeRoot,
-      })
-    const recovered = {
-      harness: { id: "opencode", access: "native" },
-      model: { providerID: "opencode", modelID: "deepseek-v4-flash-free" },
-      variant: "default",
-      agent: "build",
-      } satisfies SessionConfig
-      const res = await app.request(
-        `http://localhost/session/s-opencode/config?directory=${encodeURIComponent(dir)}&runner=opencode`,
-      )
-
-      expect(res.status).toBe(200)
-      expect(await res.json()).toEqual(recovered)
-      const after = new RuntimeStore(storeRoot)
-      expect(after.getSessionConfig("s-opencode")).toBeNull()
-      after.close()
-      host.dispose()
-    } finally {
-      OpenCodeHarnessAdapter.prototype.getSession = originalGetSession
-    }
-  })
 
   test("routes new sessions through the active workspace harness", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-runner-default-"))
@@ -1934,159 +1764,6 @@ describe("workspace runtime auth helpers", () => {
     }
   })
 
-  test("opencode capability routes fall back when the embedded server fails", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-capability-fallback-"))
-    tempDirs.push(dir)
-    execFileSync("git", ["init", "-b", "main"], { cwd: dir, stdio: "ignore" })
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url
-      if (url.startsWith("http://opencode.test/")) {
-        return new Response(JSON.stringify({ error: "upstream failed" }), {
-          status: 500,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: { docs: {} },
-    })
-    expect(config.status).toBe(200)
-
-    const mcp = await app.request(`http://localhost/mcp?directory=${encodeURIComponent(dir)}`)
-    expect(mcp.status).toBe(200)
-    expect(await mcp.json()).toEqual({ docs: { status: "disabled" } })
-
-    const lsp = await app.request(`http://localhost/lsp?directory=${encodeURIComponent(dir)}`)
-    expect(lsp.status).toBe(200)
-    expect(await lsp.json()).toEqual([])
-  })
-
-  test("opencode provider route uses configured URL instead of ambient OPENCODE_URL", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-proxy-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://ambient-opencode.test"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
-        return new Response(JSON.stringify({
-          all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-          connected: ["opencode"],
-          default: { opencode: "big-pickle" },
-        }), { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-    })
-    expect(config.status).toBe(200)
-
-    const provider = await app.request("http://localhost/provider?runner=opencode")
-    expect(provider.status).toBe(200)
-    expect(await provider.json()).toMatchObject({
-      connected: ["opencode"],
-      default: { opencode: "big-pickle" },
-    })
-  })
-
-  test("opencodeRequest injected transport serves the compat proxy routes end to end", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-injected-transport-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-
-    // Fake in-process engine handler — the HOST would construct this. It routes
-    // on path only (synthetic origin) and never touches the network. Fail loudly
-    // if the kit falls back to a real fetch/URL path.
-    const seen: Array<{ path: string; directory: string | null }> = []
-    globalThis.fetch = fetchDouble((async () => {
-      throw new Error("kit must not use network when opencodeRequest is injected")
-    }))
-
-    const handler: OpenCodeRequestFn = async (req) => {
-      const url = new URL(req.url)
-      seen.push({ path: url.pathname, directory: req.headers.get("x-opencode-directory") })
-      if (url.pathname === "/provider") {
-        return new Response(JSON.stringify({
-          all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-          connected: ["opencode"],
-          default: { opencode: "big-pickle" },
-        }), { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      if (url.pathname === "/experimental/tool/ids") {
-        return Response.json(["terminal", "read"])
-      }
-      if (url.pathname === "/global/event") {
-        const enc = new TextEncoder()
-        return new Response(new ReadableStream<Uint8Array>({
-          start(ctrl) {
-            ctrl.enqueue(enc.encode(`data: ${JSON.stringify({ payload: { type: "server.connected", properties: {} } })}\n\n`))
-            ctrl.close()
-          },
-        }), { status: 200, headers: { "Content-Type": "text/event-stream" } })
-      }
-      return new Response("unexpected", { status: 500 })
-    }
-
-    const app = new Hono()
-    mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-    })
-    expect(config.status).toBe(200)
-
-    const provider = await app.request("http://localhost/provider?runner=opencode")
-    expect(provider.status).toBe(200)
-    expect(await provider.json()).toMatchObject({
-      connected: ["opencode"],
-      default: { opencode: "big-pickle" },
-    })
-
-    const tools = await app.request("http://localhost/experimental/tool/ids")
-    expect(tools.status).toBe(200)
-    expect(await tools.json()).toEqual(["terminal", "read"])
-
-    const event = await app.request("http://localhost/global/event", {
-      headers: { Accept: "text/event-stream" },
-    })
-    expect(event.status).toBe(200)
-    expect(await event.text()).toContain("server.connected")
-
-    expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
-  })
-
-  /**
-   * Non-opencode harnesses get their catalog from the HOST, through the seam,
-   * or not at all. The kit must never invent one (it has no credentials to
-   * derive it from) and must not answer "unavailable" when the host can.
-   */
   test("serves a non-opencode provider catalog through the host-injected seam", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-seam-"))
     tempDirs.push(dir)
@@ -2323,138 +2000,6 @@ describe("workspace runtime auth helpers", () => {
     host.dispose()
   })
 
-  test("proxies the real Session V2 model, create, prompt, and history contract", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-session-v2-"))
-    tempDirs.push(dir)
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const seen: Array<{ method: string; path: string; body: unknown }> = []
-    const handler: OpenCodeRequestFn = async (request) => {
-      const body = request.body ? await request.clone().json().catch(() => undefined) : undefined
-      seen.push({ method: request.method, path: new URL(request.url).pathname, body })
-      if (new URL(request.url).pathname === "/api/model") {
-        return Response.json({
-          data: [{ id: "gpt-5", providerID: "openai", enabled: true, variants: [{ id: "high" }] }],
-        })
-      }
-      if (new URL(request.url).pathname === "/api/session") {
-        expect(body).toEqual({ agent: "build", model: { id: "gpt-5", providerID: "openai" } })
-        expect(body).not.toHaveProperty("id")
-        expect(body).not.toHaveProperty("location")
-        expect((body as { model?: object }).model).not.toHaveProperty("modelID")
-        return Response.json({ id: "ses_v2" }, { status: 201 })
-      }
-      if (new URL(request.url).pathname.endsWith("/prompt")) return Response.json({ data: { admitted: true } })
-      return Response.json({ data: [{ type: "session.next.step.ended", data: {} }], hasMore: false })
-    }
-    const app = new Hono()
-    mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
-
-    expect(await (await app.request("http://localhost/api/model", {
-      headers: { "x-opencode-directory": dir },
-    })).json()).toMatchObject({ data: [{ id: "gpt-5", variants: [{ id: "high" }] }] })
-    expect((await app.request("http://localhost/api/session", {
-      method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": dir },
-      body: JSON.stringify({ agent: "build", model: { id: "gpt-5", providerID: "openai" } }),
-    })).status).toBe(201)
-    expect((await app.request("http://localhost/api/session/ses_v2/prompt", {
-      method: "POST", headers: { "content-type": "application/json", "x-opencode-directory": dir },
-      body: JSON.stringify({ prompt: { text: "no-op" }, resume: true }),
-    })).status).toBe(200)
-    expect((await app.request("http://localhost/api/session/ses_v2/history?limit=100&after=0", {
-      headers: { "x-opencode-directory": dir },
-    })).status).toBe(200)
-    expect(seen.map((request) => `${request.method} ${request.path}`)).toEqual([
-      "GET /api/model", "POST /api/session", "POST /api/session/ses_v2/prompt", "GET /api/session/ses_v2/history",
-    ])
-  })
-
-  test("opencode proxy routes do not forward relay auth headers", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-auth-strip-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const seen: Array<{
-      authorization: string | null
-      workspaceId: string | null
-      forwardedBy: string | null
-      acceptEncoding: string | null
-    }> = []
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
-        seen.push({
-          authorization: req.headers.get("authorization"),
-          workspaceId: req.headers.get("x-workspace-id"),
-          forwardedBy: req.headers.get("x-forwarded-by"),
-          acceptEncoding: req.headers.get("accept-encoding"),
-        })
-        return new Response(JSON.stringify({
-          all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-          connected: ["opencode"],
-          default: { opencode: "big-pickle" },
-        }), { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      harness: { id: "opencode", access: "native" },
-    })
-
-    const provider = await app.request("http://localhost/provider?runner=opencode", {
-      headers: {
-        Authorization: "Bearer relay-host-token",
-        "x-workspace-id": "ws_1",
-        "x-forwarded-by": "workspace-relay",
-        "accept-encoding": "gzip, deflate, br, zstd",
-      },
-    })
-
-    expect(provider.status).toBe(200)
-    expect(seen).toEqual([{
-      authorization: null,
-      workspaceId: null,
-      forwardedBy: null,
-      acceptEncoding: null,
-    }])
-  })
-
-  test("opencode provider route honors runner query while active runner is ACP", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-query-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
-        return new Response(JSON.stringify({
-          all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-          connected: ["opencode"],
-          default: { opencode: "big-pickle" },
-        }), { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      harness: { id: "claude", access: "acp" },
-    })
-
-    const provider = await app.request("http://localhost/provider?runner=opencode")
-    expect(provider.status).toBe(200)
-    expect(await provider.json()).toMatchObject({
-      connected: ["opencode"],
-      default: { opencode: "big-pickle" },
-    })
-  })
-
   test("session create honors runner query while active runner is ACP", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-session-runner-query-"))
     tempDirs.push(dir)
@@ -2497,113 +2042,11 @@ describe("workspace runtime auth helpers", () => {
     }])
   })
 
-  test("opencode provider route errors when upstream metadata is unavailable", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-fallback-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
-        return new Response("unavailable", { status: 503 })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-    })
-    expect(config.status).toBe(200)
-
-    const provider = await app.request("http://localhost/provider?runner=opencode")
-    expect(provider.status).toBe(502)
-    expect(await provider.json()).toMatchObject({
-      ok: false,
-      error: {
-        code: "provider_models_unavailable",
-        harness: "opencode",
-      },
-    })
-  })
-
-  test("opencode provider index accepts an empty model catalog", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-empty-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      if (req.url === "http://opencode.test/provider?runner=opencode&view=index") {
-        return new Response(JSON.stringify({ all: [], connected: [], default: {} }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
-      return originalFetch(input, init)
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-    })
-    expect(config.status).toBe(200)
-
-    const provider = await app.request("http://localhost/provider?runner=opencode")
-    expect(provider.status).toBe(200)
-    expect(await provider.json()).toEqual({ all: [], connected: [], default: {} })
-  })
-
-  test("provider route errors instead of returning static ACP runner model metadata", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-acp-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "missing-openclaw-acp" } },
-    })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "missing-openclaw-acp" } },
-      auth: {},
-      mcp: {},
-    })
-    expect(config.status).toBe(200)
-
-    const provider = await app.request("http://localhost/provider")
-    expect(provider.status).toBe(502)
-    expect(await provider.json()).toMatchObject({
-      ok: false,
-      error: {
-        code: "provider_models_unavailable",
-        harness: "openclaw",
-      },
-    })
-  })
-
   test("runtime config push replays agent_extensions snapshot", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-ext-replay-"))
     tempDirs.push(dir)
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "pi"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     // Host-owned state roots: both live OUTSIDE the workspace at `dir`, which
@@ -2613,15 +2056,14 @@ describe("workspace runtime auth helpers", () => {
 
     const app = new Hono()
     mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
+      harness: { id: "pi", access: "native" },
       agentExtensionStateRoot: stateRoot,
       configApplyReceiptDir: receiptDir,
     })
 
     const config = await pushRuntimeConfig(app, {
       version: 1,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: { "openai": "sk-secret-runtime-config" },
       mcp: {},
       agent_extensions: {
@@ -2654,7 +2096,7 @@ describe("workspace runtime auth helpers", () => {
     expect(applyStatus).toMatchObject({
       state: "applied",
       revision: 1,
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "pi", access: "native" },
     })
 
     const accepted = await fs.promises.readFile(
@@ -2680,22 +2122,20 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-ext-idempotent-"))
     tempDirs.push(dir)
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "pi"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const stateRoot = path.join(dir, "host-state", "agent-extensions")
 
     const app = new Hono()
     mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
+      harness: { id: "pi", access: "native" },
       agentExtensionStateRoot: stateRoot,
     })
 
     const snapshot = JSON.stringify({
       version: 1,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: {},
       mcp: {},
       agent_extensions: { version: 1, installs: [] },
@@ -2727,20 +2167,18 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-apply-noop-"))
     tempDirs.push(dir)
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "pi"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const app = new Hono()
     const host = mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
+      harness: { id: "pi", access: "native" },
       agentExtensionStateRoot: path.join(dir, "host-state", "agent-extensions"),
     })
 
     const snapshot = {
       version: 1 as const,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: { openai: "sk-test" },
       mcp: { docs: { type: "stdio", command: "docs" } },
       agent_extensions: { version: 1, installs: [] },
@@ -2756,7 +2194,7 @@ describe("workspace runtime auth helpers", () => {
       mcp: { docs: { command: "docs", type: "stdio" } },
       auth: { openai: "sk-test" },
       agent_extensions: { installs: [], version: 1 },
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       version: 1,
     })).status).toBe(200)
     expect(host.detail().configApply.revision).toBe(1)
@@ -2773,21 +2211,19 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-apply-retry-"))
     tempDirs.push(dir)
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "pi"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const app = new Hono()
     const host = mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
+      harness: { id: "pi", access: "native" },
       agentExtensionStateRoot: path.join(dir, "host-state", "agent-extensions"),
     })
 
     // Missing resolved_sha ⇒ replay fails.
     const broken = {
       version: 1 as const,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: {},
       mcp: {},
       agent_extensions: {
@@ -2817,16 +2253,14 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-ext-replay-fail-"))
     tempDirs.push(dir)
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "pi"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const receiptDir = path.join(dir, "host-state", "runtime-config")
 
     const app = new Hono()
     mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
+      harness: { id: "pi", access: "native" },
       agentExtensionStateRoot: path.join(dir, "host-state", "agent-extensions"),
       configApplyReceiptDir: receiptDir,
     })
@@ -2835,7 +2269,7 @@ describe("workspace runtime auth helpers", () => {
     // the error to the caller instead of silently swallowing it.
     const config = await pushRuntimeConfig(app, {
       version: 1,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: {},
       mcp: {},
       agent_extensions: {
@@ -2873,7 +2307,7 @@ describe("workspace runtime auth helpers", () => {
     expect(applyStatus).toMatchObject({
       state: "failed",
       revision: 1,
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "pi", access: "native" },
       error: {
         code: "runtime_config_agent_extensions_apply_failed",
         message: "Runtime agent extension snapshot replay failed",
@@ -2890,8 +2324,7 @@ describe("workspace runtime auth helpers", () => {
     tempDirs.push(dir, data)
     const commandName = `runtime-pushed-${Date.now()}`
 
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.WORKSPACE_RUNTIME_RUNNER = "pi"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     process.env.WORKSPACE_RUNTIME_DATA_DIR = data
     // Pinned explicitly: the store root is what these assertions turn on, and
@@ -2899,11 +2332,11 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_STORE_DIR = path.join(data, "store")
 
     const app = new Hono()
-    mountTestHost(app, { opencodeUrl: "http://opencode.test", opencodeCompat: true })
+    mountTestHost(app, { harness: { id: "pi", access: "native" } })
 
     const config = await pushRuntimeConfig(app, {
       version: 1,
-      runner: { type: "opencode" },
+      runner: { type: "pi" },
       auth: {},
       mcp: {},
       commands: [{
@@ -2921,81 +2354,7 @@ describe("workspace runtime auth helpers", () => {
     })
   })
 
-  test("embedded opencode requests include configured upstream auth", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-opencode-auth-"))
-    tempDirs.push(dir)
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_auth"
-    const calls: Array<{ url: string; method: string; authorization: string | null; directory: string | null }> = []
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const request = input instanceof Request ? input : new Request(input, init)
-      const url = new URL(request.url)
-      calls.push({
-        url: url.origin + url.pathname,
-        method: request.method,
-        authorization: request.headers.get("authorization"),
-        directory: request.headers.get("x-opencode-directory"),
-      })
-      if (url.origin + url.pathname === "http://opencode.test/session/status") {
-        return Response.json({ active: { type: "idle" } })
-      }
-      if (url.origin + url.pathname === "http://opencode.test/session" && request.method === "POST") {
-        return Response.json({
-          id: "ses_1",
-          title: "New Session",
-          time: { created: 1, updated: 1 },
-        })
-      }
-      return new Response("unexpected", { status: 500 })
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      opencodeHeaders: {
-        authorization: `Basic ${Buffer.from("opencode:desk-secret").toString("base64")}`,
-      },
-      target: {
-        workspaceId: "ws_auth",
-        directory: dir,
-      },
-    })
-
-    const status = await app.request(`http://localhost/session/status?directory=${encodeURIComponent(dir)}`)
-    expect(status.status).toBe(200)
-
-    const session = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "New Session" }),
-    })
-    expect(session.status).toBe(201)
-
-    expect(calls).toEqual([
-      {
-        url: "http://opencode.test/session/status",
-        method: "GET",
-        authorization: `Basic ${Buffer.from("opencode:desk-secret").toString("base64")}`,
-        directory: dir,
-      },
-      {
-        url: "http://opencode.test/session",
-        method: "POST",
-        authorization: `Basic ${Buffer.from("opencode:desk-secret").toString("base64")}`,
-        directory: dir,
-      },
-    ])
-  })
-})
-
-// ── Characterization: cache/store/dispose/queue internals (Unit 1) ──────────────
-// These pin the CURRENT behavior of the private caches inside
-// createWorkspaceHost (sessionAdapters/sessionRuntimes/adapterConfigStamps),
-// the lazy RuntimeStore, host.dispose(), and the config apply queue, so a later
-// unit can extract the adapter/store factories without silently changing them.
-describe("workspace host adapter + store caching (characterization)", () => {
-  test("promotes the cached session adapter when its harness becomes the workspace default", async () => {
+   test("promotes the cached session adapter when its harness becomes the workspace default", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-adapter-promote-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -3207,6 +2566,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
 
     await host.registerSessionTools({
       sessionId: "s-historical",
+      harness: "codex",
       callbackUrl: "http://127.0.0.1/callback",
       tools: [],
     })
@@ -3370,7 +2730,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
       })
       expect((await send()).status).toBe(200)
 
-      await host.apply({ version: 1, mcp: {}, runner: { type: "opencode" }, auth: {} })
+      await host.apply({ version: 1, mcp: {}, runner: { type: "pi" }, auth: {} })
       await host.apply({ version: 1, mcp: {}, runner: { type: "codex-app-server", model: "gpt-5" }, auth: {} })
 
       expect((await send()).status).toBe(200)
@@ -3970,10 +3330,7 @@ describe("workspace host harness registry seam (Unit 3)", () => {
     // createAdapter error rather than silently running the OpenCode engine.
     expect(registry.find((entry) => entry.match({ id: "waku", access: "native" } as never))).toBeUndefined()
     const opencodeEntry = registry.find((entry) => entry.match({ id: "opencode", access: "native" } as never))
-    if (!opencodeEntry) throw new Error("Expected the OpenCode registry entry")
-    const adapter = opencodeEntry.create({ runner: { id: "opencode", access: "native" } as never, options: {} })
-    expect(adapter).toBeInstanceOf(OpenCodeHarnessAdapter)
-    adapter.dispose()
+    expect(opencodeEntry).toBeDefined()
   })
 
   test("keeps the implicit native Codex binary out of persisted harness identity", async () => {
@@ -4258,39 +3615,12 @@ describe("runtime-owned session inventory (Unit 4)", () => {
 
 // ── Unit 4: compatibility stream must not start a harness ────────────────────
 describe("global compatibility stream (Unit 4)", () => {
-  function proxyAdapter(input: {
-    live: boolean
-    onAcquire?: () => void
-    onRelease?: () => void
-  }): AgentHarnessAdapter {
-    return {
-      adapterCapabilities: ["http-proxy"] as const,
-      listSessions: async () => [],
-      transportLive: () => input.live,
-      acquireRequestFn: async () => {
-        input.onAcquire?.()
-        return {
-          request: async () => new Response(new ReadableStream<Uint8Array>({ start() {} }), {
-            headers: { "content-type": "text/event-stream" },
-          }),
-          lease: { release: () => input.onRelease?.() },
-        }
-      },
-      getRequestFn: async () => {
-        input.onAcquire?.()
-        return async () => new Response(null, { status: 404 })
-      },
-      dispose: () => {},
-    } as unknown as AgentHarnessAdapter
-  }
-
-  async function mountOpencode(dir: string, adapter: AgentHarnessAdapter) {
+  async function mountHarness(dir: string, adapter: AgentHarnessAdapter) {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const app = new Hono()
     const host = mountTestHost(app, {
       harness: { id: "opencode", access: "native" },
       harnesses: [{ match: () => true, create: () => adapter }] as WorkspaceHarnessRegistry,
-      opencodeCompat: true,
     })
     return { app, host }
   }
@@ -4377,7 +3707,14 @@ describe("global compatibility stream (Unit 4)", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-cold-"))
     tempDirs.push(dir)
     let attached = 0
-    const { app, host } = await mountOpencode(dir, proxyAdapter({ live: false, onAcquire: () => { attached++ } }))
+    const adapter = {
+      listSessions: async () => {
+        attached++
+        return []
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const { app, host } = await mountHarness(dir, adapter)
 
     const controller = new AbortController()
     const response = await app.request("http://localhost/global/event", { signal: controller.signal })
@@ -4391,79 +3728,8 @@ describe("global compatibility stream (Unit 4)", () => {
     host.dispose()
   })
 
-  test("releases the lease when the UPSTREAM stream ends, not only when the client leaves", async () => {
-    // The leak that matters more, because nothing reports it. An OpenCode
-    // restart on config change ends the upstream body while the browser is
-    // still connected; wiring release only to the client's abort holds the
-    // lease forever, and a held lease stops the idle countdown from ever
-    // starting again — so the harness this whole change exists to reap can
-    // never be reaped.
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-upstream-end-"))
-    tempDirs.push(dir)
-    let released = 0
-    let closeUpstream!: () => void
-    const adapter = {
-      adapterCapabilities: ["http-proxy"] as const,
-      listSessions: async () => [],
-      transportLive: () => true,
-      acquireRequestFn: async () => ({
-        request: async () => new Response(
-          new ReadableStream<Uint8Array>({
-            start(controller) {
-              controller.enqueue(new TextEncoder().encode("data: {}\n\n"))
-              closeUpstream = () => controller.close()
-            },
-          }),
-          { headers: { "content-type": "text/event-stream" } },
-        ),
-        lease: { release: () => { released++ } },
-      }),
-      getRequestFn: async () => async () => new Response(null, { status: 404 }),
-      dispose: () => {},
-    } as unknown as AgentHarnessAdapter
 
-    const { app, host } = await mountOpencode(dir, adapter)
-    const response = await app.request("http://localhost/global/event")
-    expect(response.status).toBe(200)
-    expect(released).toBe(0)
 
-    // Drain the stream to completion — the client never disconnects.
-    const reader = response.body!.getReader()
-    await reader.read()
-    closeUpstream()
-    for (;;) {
-      const next = await reader.read()
-      if (next.done) break
-    }
-
-    expect(released).toBe(1)
-    host.dispose()
-  })
-
-  test("rides an already-live transport under a lease it releases when the client leaves", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-warm-"))
-    tempDirs.push(dir)
-    let attached = 0
-    let released = 0
-    const { app, host } = await mountOpencode(dir, proxyAdapter({
-      live: true,
-      onAcquire: () => { attached++ },
-      onRelease: () => { released++ },
-    }))
-
-    const controller = new AbortController()
-    const response = await app.request("http://localhost/global/event", { signal: controller.signal })
-    expect(response.status).toBe(200)
-    expect(attached).toBe(1)
-    // The lease is held for the stream's life, not the request's.
-    expect(released).toBe(0)
-
-    controller.abort()
-    await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(released).toBe(1)
-
-    host.dispose()
-  })
 })
 
 // ── Unit 4: an import that could not ask must not claim it did ──────────────
@@ -4588,57 +3854,6 @@ describe("session create workspace isolation (Unit 4)", () => {
   })
 })
 
-// ── Unit 4: a swallowed list failure must not be recorded as an import ──────
-describe("session inventory import completeness, proxy adapters (Unit 4)", () => {
-  test("does not mark a directory imported when a proxy adapter's list failed", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-proxy-"))
-    const data = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-inventory-proxy-data-"))
-    tempDirs.push(dir, data)
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    process.env.WORKSPACE_RUNTIME_DATA_DIR = data
-    // Pinned explicitly: the store root is what these assertions turn on, and
-    // `WORKSPACE_RUNTIME_STORE_DIR` is the one setting nothing else overrides.
-    process.env.WORKSPACE_RUNTIME_STORE_DIR = path.join(data, "store")
-
-    // The OpenCode adapter turns ANY non-2xx into `[]` rather than throwing, so
-    // a transient 5xx from a just-restarted server is byte-identical to a fresh
-    // install. The throw-based completeness check never sees it.
-    let healthy = false
-    const upstream = [{ id: "ses_hidden", title: "Present all along", time: { created: 1, updated: 2 } }]
-    const adapter = {
-      adapterCapabilities: ["http-proxy"] as const,
-      listSessions: async () => (healthy ? upstream : []),
-      transportLive: () => true,
-      getRequestFn: async () => async () =>
-        healthy
-          ? Response.json(upstream)
-          : new Response("upstream restarting", { status: 503 }),
-      dispose: () => {},
-    } as unknown as AgentHarnessAdapter
-
-    const app = new Hono()
-    const host = mountTestHost(app, {
-      harness: { id: "opencode", access: "native" },
-      harnesses: [{ match: () => true, create: () => adapter }] as WorkspaceHarnessRegistry,
-    })
-
-    const list = async () => {
-      const response = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}`)
-      expect(response.status).toBe(200)
-      return (await response.json() as Array<{ id: string }>).map((row) => row.id)
-    }
-
-    // The failing import answers from the store...
-    expect(await list()).toEqual([])
-
-    // ...and must NOT have claimed the directory imported, or the user's
-    // sessions are hidden from generic listing forever with no retry.
-    healthy = true
-    expect(await list()).toContain("ses_hidden")
-
-    host.dispose()
-  })
-})
 
 // ── Unit 4: rejected session config must not survive in the store ───────────
 describe("session config acceptance (Unit 4)", () => {

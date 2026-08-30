@@ -1,4 +1,8 @@
-import { loopbackWorkspaceRuntimeExposure, startServer } from "@claxedo/workspace-runtime"
+import {
+  createWorkspaceOpenCodeRuntime,
+  loopbackWorkspaceRuntimeExposure,
+  startServer,
+} from "@claxedo/workspace-runtime"
 import { findFreePort } from "@claxedo/workspace-runtime/host"
 import type { WorkspaceRelayHostTunnelEvent } from "@claxedo/workspace-runtime/relay"
 import { upsertHostRecord } from "./state"
@@ -21,16 +25,17 @@ function tunnelEvent(event: WorkspaceRelayHostTunnelEvent) {
 
 export async function startHost(input: RegisteredHost, detached: boolean) {
   const runtimePort = await findFreePort()
+  const opencodeRuntime = createWorkspaceOpenCodeRuntime(input.directory)
   startServer(runtimePort, {
     exposure: loopbackWorkspaceRuntimeExposure(),
     target: {
       workspaceId: input.workspaceId,
       directory: input.directory,
     },
-    // This host serves the OpenCode-compatible surface (stock app / Claxedo
-    // app expect /mcp, /provider, /session/status proxying). The kit default
-    // is off; hosts opt in explicitly.
-    opencodeCompat: true,
+    // This standalone host owns the public embedded SDK runtime. There is no
+    // URL proxy, sidecar process, or compatibility server in this composition.
+    opencodeRuntime,
+    ownsOpenCodeRuntime: true,
     hostTunnel: {
       relayUrl: input.relayUrl,
       hostId: input.hostId,

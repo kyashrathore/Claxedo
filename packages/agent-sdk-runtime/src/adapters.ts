@@ -54,7 +54,6 @@ export type {
   GoalCapabilities,
   GoalOptionalField,
   GoalRecovery,
-  HttpProxyAdapter,
   RuntimeConfigurableAdapter,
 } from "./capabilities"
 export {
@@ -82,8 +81,6 @@ export { CodexHarnessAdapter } from "./harnesses/codex"
 export type { CodexHarnessAdapterOptions } from "./harnesses/codex"
 export { CursorHarnessAdapter } from "./harnesses/cursor"
 export type { CursorHarnessAdapterOptions } from "./harnesses/cursor"
-export { OpenCodeHarnessAdapter, opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./harnesses/opencode"
-export type { OpenCodeRequestFn } from "./harnesses/opencode"
 export { PiHarnessAdapter } from "./harnesses/pi"
 export type { PiAdapterOptions, PiSessionPlacement } from "./harnesses/pi"
 export {

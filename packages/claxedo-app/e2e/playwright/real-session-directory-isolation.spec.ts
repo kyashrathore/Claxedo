@@ -116,7 +116,6 @@ test.describe("session directory isolation @core @tier-real @surface-web", () =>
         WORKSPACE_RUNTIME_STORE_DIR: path.join(dataDir, "store"),
         WORKSPACE_RUNTIME_WORKSPACES_DIR: path.join(dataDir, "workspaces"),
         WORKSPACE_RUNTIME_RUNNER: "pi",
-        WORKSPACE_RUNTIME_OPENCODE_COMPAT: "0",
       },
       stdio: ["ignore", "pipe", "pipe"],
     })

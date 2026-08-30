@@ -41,10 +41,8 @@ const result = await build({
     "@opencode-ai/sdk",
     "@opencode-ai/sdk/*",
     "better-sqlite3",
-    // The embedded engine is an independently built native-bearing resource.
-    // Keeping its public port external preserves that resource boundary while
-    // the smoke below proves the exact artifact loads beside this process.
-    "opencode/node-embed",
+    // The public SDK remains an external runtime dependency because its native
+    // PTY and platform packages cannot be folded into this JavaScript bundle.
   ],
 })
 

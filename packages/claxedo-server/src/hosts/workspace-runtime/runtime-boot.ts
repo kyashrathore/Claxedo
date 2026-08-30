@@ -1,5 +1,6 @@
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import {
+  createWorkspaceOpenCodeRuntime,
   isLoopbackHostname,
   workspaceRuntimeListenHostname,
   type WorkspaceRuntimeServerOptions,
@@ -119,9 +120,11 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   assertRuntimePort(port, "WORKSPACE_RUNTIME_PORT")
   const hostname = workspaceRuntimeListenHostname(env)
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
-  const opencodeUrl = text(env, "OPENCODE_URL")
+  const targetDirectory = workspaceDir(env)
+  const harness = claxedoRuntimeRunnerFromEnv(env)
+  const opencodeRuntime = harness.id === "opencode" ? createWorkspaceOpenCodeRuntime(targetDirectory) : undefined
   const options: WorkspaceRuntimeServerOptions = {
-    target: { workspaceId: workspaceId(env), directory: workspaceDir(env) },
+    target: { workspaceId: workspaceId(env), directory: targetDirectory },
     ...relayOptions,
     // Relay-host gating must come from env so a runtime spawned as a
     // subprocess (sandbox image) rejects unauthenticated direct access
@@ -133,13 +136,9 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         : privateNetworkDevUnsafeWorkspaceRuntimeExposure(
           "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK local managed-cloud runtime",
         ),
-    ...(opencodeUrl ? { opencodeUrl } : {}),
-    harness: claxedoRuntimeRunnerFromEnv(env),
+    ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
+    harness,
     corsOrigin: claxedoCorsOrigin,
-    // Claxedo keeps OpenCode compat ON unless its env flag disables it. The
-    // env var is the wire format of this HOST decision across the process
-    // boundary; the kit itself never reads it (option-only).
-    opencodeCompat: env.WORKSPACE_RUNTIME_OPENCODE_COMPAT !== "0",
   }
   return { port, hostname, options }
 }

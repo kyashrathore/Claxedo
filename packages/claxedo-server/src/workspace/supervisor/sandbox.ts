@@ -544,12 +544,6 @@ function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriver
     ...relayHostVerificationEnv(driverId, { options }),
     ...runtimeDirectAuthEnv(configToken(state)),
     WORKSPACE_RUNTIME_DISABLE_CORS: "1",
-    // Encode the host's opencode-compat decision onto the process-boundary
-    // wire: runtime-boot.ts decodes this into the opencodeCompat option. The
-    // kit itself never reads ambient env — this is the ONLY writer.
-    ...(process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT === "1"
-      ? { WORKSPACE_RUNTIME_OPENCODE_COMPAT: "0" }
-      : {}),
     ...(lease
       ? sandboxLeaseEnv({
           leaseId: lease.lease_id,

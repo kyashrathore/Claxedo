@@ -110,7 +110,7 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
     serverPort = await freePort()
     upstream = startUpstreamMock(upstreamPort)
     await new Promise<void>((resolve) => upstream.once("listening", resolve))
-    server = serverMod.startServer(serverPort, `http://127.0.0.1:${upstreamPort}`)
+    server = serverMod.startServer(serverPort)
   })
 
   beforeEach(async () => {

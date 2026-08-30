@@ -7,8 +7,8 @@
  * in external-url mode it rewrites onto the configured URL and fetches.
  */
 
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
-import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
+type OpenCodeRequestFn = (request: Request) => Promise<Response>
+const OPENCODE_INTERNAL_BASE = "http://opencode.internal"
 
 export type OpencodeEvent = {
   directory?: string

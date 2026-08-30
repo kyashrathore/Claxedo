@@ -19,7 +19,6 @@ const ENTRIES = [
   "src/harness-factories/claude.ts",
   "src/harness-factories/codex.ts",
   "src/harness-factories/cursor.ts",
-  "src/harness-factories/opencode.ts",
   "src/harness-factories/pi.ts",
   "src/adapters.ts",
   "src/message-page.ts",

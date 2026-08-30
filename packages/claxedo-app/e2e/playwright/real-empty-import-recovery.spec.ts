@@ -140,7 +140,6 @@ test.describe("empty inventory import recovery @core @tier-real @surface-web", (
         WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_tier_real_empty_import",
         WORKSPACE_RUNTIME_STORE_DIR: storeDir,
         WORKSPACE_RUNTIME_RUNNER: "opencode",
-        WORKSPACE_RUNTIME_OPENCODE_COMPAT: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     })

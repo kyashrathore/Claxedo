@@ -143,7 +143,6 @@ test.describe("OpenCode prompt idle lease @core @tier-real @surface-web", () => 
         WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_tier_real_idle_lease",
         WORKSPACE_RUNTIME_STORE_DIR: path.join(root, "store"),
         WORKSPACE_RUNTIME_RUNNER: "opencode",
-        WORKSPACE_RUNTIME_OPENCODE_COMPAT: "1",
       },
       stdio: ["ignore", "pipe", "pipe"],
     })

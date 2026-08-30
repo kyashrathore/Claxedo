@@ -2,7 +2,8 @@ import type { Context } from "hono"
 import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { opencodeHeaders } from "@claxedo/server-core/opencode/auth"
+import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
@@ -174,7 +175,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
 }) {
   const url = new URL(c.req.url)
   const target = await proxyTarget(hit, options, (options?.pathname ?? url.pathname) + url.search)
-  const headers = opencodeHeaders(c.req.raw.headers)
+  const headers = new Headers(c.req.raw.headers)
   headers.set("x-workspace-id", hit.workspaceId)
   if (hit.workspaceName) headers.set("x-workspace-name", hit.workspaceName)
   headers.set("x-opencode-directory", hit.relay ? `workspace:${hit.workspaceId}` : hit.directory)
@@ -399,7 +400,7 @@ export async function embedded(
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath, c.req.method) })
   const target = embeddedRuntimeTargetUrl(url, targetPath)
   if (target.searchParams.has("directory")) target.searchParams.set("directory", ws.directory)
-  const headers = opencodeHeaders(c.req.raw.headers)
+  const headers = new Headers(c.req.raw.headers)
   headers.set("x-workspace-id", ws.id)
   headers.set("x-opencode-directory", ws.directory)
   headers.delete("host")

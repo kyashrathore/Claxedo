@@ -19,24 +19,14 @@
 // Everything this file may import is therefore load-bearing: every module
 // reachable STATICALLY from here is compiled BEFORE seeding and can never be
 // cached. Keep it to the startup contract and the cache itself.
-import { dirname } from "node:path"
-
 import { enableShippedCompileCaches } from "../src/shared/opencode-compile-cache"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 
 const startup = claxedoServerStartup(process.env)
 
-// Two shipped sets, one runtime directory: the engine artifact's, keyed
-// relative to the engine's own directory, and this bundle's, keyed relative to
-// the directory this file was loaded from. Neither root is constructed from a
-// packaging layout — one is the path the desktop handed over, the other is
-// where this module actually is.
 const compileCache = enableShippedCompileCaches({
   dataDir: startup.dataDir,
   sources: [
-    startup.opencodeCompileCacheDir && startup.opencodeEmbedPath
-      ? { shippedDir: startup.opencodeCompileCacheDir, rootDir: dirname(startup.opencodeEmbedPath) }
-      : undefined,
     startup.serverCompileCacheDir
       ? { shippedDir: startup.serverCompileCacheDir, rootDir: import.meta.dirname }
       : undefined,

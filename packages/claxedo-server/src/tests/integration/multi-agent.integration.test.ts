@@ -182,7 +182,7 @@ describe("multi-agent integration", () => {
       },
     })
 
-    server = serverMod.startServer(serverPort, `http://127.0.0.1:${upstreamPort}`)
+    server = serverMod.startServer(serverPort)
   })
 
   beforeEach(async () => {
