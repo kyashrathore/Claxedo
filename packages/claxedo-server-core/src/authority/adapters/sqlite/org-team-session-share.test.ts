@@ -48,6 +48,17 @@ describe("sqlite Org→Team + session share", () => {
       role: "member",
     })
 
+    await expect(authority.listTeamMembers!(alice, { teamId: org.default_team_id })).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          user_id: bob.user.tokenIdentifier,
+          token_identifier: bob.user.tokenIdentifier,
+          clerk_subject: bob.user.subject,
+          role: "member",
+        }),
+      ]),
+    )
+
     await authority.createCloudWorkspace(alice, {
       workspaceId: "ws_team_share",
       displayName: "Shared repo",

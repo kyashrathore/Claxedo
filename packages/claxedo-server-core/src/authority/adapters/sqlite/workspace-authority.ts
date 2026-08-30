@@ -980,7 +980,8 @@ export function createSqliteWorkspaceAuthority(
       `).get(team.org_id, who.token_identifier)
       if (!membership && !orgAdminForUser(db, who, team.org_id)) return []
       return db.prepare(`
-        SELECT m.user_token_identifier AS user_id, u.public_id, u.name AS display_name, u.subject AS token_identifier, m.role
+        SELECT m.user_token_identifier AS user_id, u.public_id, u.name AS display_name,
+          m.user_token_identifier AS token_identifier, u.subject AS clerk_subject, m.role
         FROM team_memberships m
         LEFT JOIN users u ON u.token_identifier = m.user_token_identifier
         WHERE m.team_id = ?

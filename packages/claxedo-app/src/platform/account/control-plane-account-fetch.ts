@@ -37,10 +37,12 @@ function queryRecord(url: URL): Record<string, string> {
   return out
 }
 
-async function readJsonBody(init?: RequestInit): Promise<Record<string, unknown>> {
-  if (!init?.body) return {}
+async function readJsonBody(input: RequestInfo | URL, init?: RequestInit): Promise<Record<string, unknown>> {
+  const source = input instanceof Request ? input.clone() : input
+  const request = new Request(source, init)
+  if (!request.body) return {}
   try {
-    return JSON.parse(String(init.body)) as Record<string, unknown>
+    return await request.json() as Record<string, unknown>
   } catch {
     return {}
   }
@@ -57,7 +59,7 @@ export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetc
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase()
     try {
       if (method === "POST" && url.pathname === "/api/control/sessions") {
-        const body = await readJsonBody(init)
+        const body = await readJsonBody(input, init)
         return jsonResponse(await runOp("session.create", body))
       }
 
@@ -91,7 +93,7 @@ export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetc
       )
       if (projection && method === "POST") {
         const action = projection[3] as "register" | "checkpoint" | "repair"
-        const body = await readJsonBody(init)
+        const body = await readJsonBody(input, init)
         const opName = (
           action === "register"
             ? "session.projection.register"
