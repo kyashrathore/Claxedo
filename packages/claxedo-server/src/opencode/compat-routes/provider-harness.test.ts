@@ -24,18 +24,10 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
-const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 const { ProviderAuthRoutes } = await import("@claxedo/local-server/credentials/routes/provider-auth")
 
-const ENGINE = "http://127.0.0.1:65500"
-
-const ENGINE_CONFIG_PROVIDERS = {
-  providers: [{ id: "anthropic", name: "Anthropic", models: { "claude-sonnet-5": { id: "claude-sonnet-5" } } }],
-  default: { anthropic: "claude-sonnet-5" },
-}
-const ENGINE_PROVIDER_AUTH = {
-  anthropic: [{ type: "oauth", label: "Claude Pro/Max" }, { type: "api", label: "API Key" }],
-  "github-copilot": [{ type: "oauth", label: "GitHub" }],
+const MODELS_DEV_CATALOG = {
+  anthropic: { id: "anthropic", name: "Anthropic", models: { "claude-sonnet-5": { id: "claude-sonnet-5" } } },
 }
 
 const app = new Hono()
@@ -44,18 +36,11 @@ app.route("/", OpenCodeCompatRoutes())
 const originalFetch = globalThis.fetch
 
 beforeEach(() => {
-  configureOpenCodeEngine({ url: ENGINE })
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-    if (url.pathname === "/config/providers") return Response.json(ENGINE_CONFIG_PROVIDERS)
-    if (url.pathname === "/provider/auth") return Response.json(ENGINE_PROVIDER_AUTH)
-    return new Response("not found", { status: 404 })
-  }) as typeof globalThis.fetch
+  globalThis.fetch = (async () => Response.json(MODELS_DEV_CATALOG)) as unknown as typeof globalThis.fetch
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {
@@ -65,11 +50,14 @@ afterAll(async () => {
 })
 
 describe("opencode compat provider routes resolve the harness before comparing it", () => {
-  test("/config/providers serves the engine catalog with and without ?harness=", async () => {
+  test("/config/providers serves the Claxedo-owned catalog with and without ?harness=", async () => {
     for (const query of ["", "?harness=opencode", "?runner=opencode"]) {
       const res = await app.request(`/config/providers${query}`)
       expect(res.status, query).toBe(200)
-      await expect(res.json(), query).resolves.toEqual(ENGINE_CONFIG_PROVIDERS)
+      await expect(res.json(), query).resolves.toMatchObject({
+        providers: [expect.objectContaining({ id: "anthropic" })],
+        default: { anthropic: "claude-sonnet-5" },
+      })
     }
   })
 
@@ -79,14 +67,11 @@ describe("opencode compat provider routes resolve the harness before comparing i
     await expect(res.json()).resolves.toEqual({ providers: [], default: {} })
   })
 
-  test("/provider/auth overlays the engine methods with and without ?harness=", async () => {
+  test("/provider/auth uses the control-plane authority with and without ?harness=", async () => {
     for (const query of ["", "?harness=opencode"]) {
       const res = await app.request(`/provider/auth${query}`)
       expect(res.status, query).toBe(200)
       const body = await res.json() as Record<string, unknown>
-      expect(body, query).toMatchObject(ENGINE_PROVIDER_AUTH)
-      // The control plane's own methods survive the overlay — the engine adds
-      // to them rather than replacing them.
       expect(body["codex-acp"], query).toBeDefined()
     }
   })

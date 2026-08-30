@@ -29,7 +29,6 @@ import {
   ClaudeHarnessAdapter,
   CodexHarnessAdapter,
   CursorHarnessAdapter,
-  OpenCodeHarnessAdapter,
   PiHarnessAdapter,
   claudeAuthEnv,
   createStreamableHttpACPTransportFactory,
@@ -40,16 +39,15 @@ import {
   type AgentMessagePage,
   type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
-  type HttpProxyAdapter,
-  type OpenCodeRequestFn,
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
   defaultAcpBinary,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import { OpenCodeSdkHarnessAdapter, authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
-import type { Context, Hono } from "hono"
+import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
@@ -146,36 +144,8 @@ export type WorkspaceHostOptions = {
   runtimeEventAuthorization?: RuntimeEventAuthorization
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
   transcripts?: WorkspaceTranscriptRoutesOptions
-  opencodeUrl?: string
-  /**
-   * Injected in-process engine transport — a peer of `opencodeUrl`. When set,
-   * the OpenCode adapter and the compat proxy routes dispatch every request
-   * through this handler instead of a URL, and nothing spawns. The transport
-   * seam (URL vs injected handler vs spawn) is kit MECHANISM; WHICH transport a
-   * composition uses is a HOST decision — the kit never constructs an engine
-   * and takes no ambient env into account. If both are given, the injected
-   * handler wins.
-   */
-  opencodeRequest?: OpenCodeRequestFn
-  opencodeHeaders?: HeadersInit
-  /**
-   * OpenCode compatibility control. Two independent things are gated: the
-   * OpenCode adapter's own **mechanism** (its upstream `listSessions` /
-   * `getStatusSnapshot` proxying, which is how the adapter actually functions),
-   * and the root **compat route surface** (`/mcp`, `/provider`, `/vcs`,
-   * `/session/status` proxying to the upstream). Three states:
-   *
-   * - `undefined` (default): adapter mechanism **on**, route surface **off**.
-   *   The OpenCode adapter works (lists/statuses proxy upstream) but the
-   *   product-facing compat routes return local fallbacks — a HOST decision.
-   * - `true`: both on. Full OpenCode-compat, including the proxy route surface.
-   * - `false`: both off. Full kill switch — the adapter returns empty/local
-   *   results and never touches the upstream.
-   *
-   * HOST decision — the kit default is `undefined`; Claxedo decodes its compat
-   * env flags into `true`/`false`.
-   */
-  opencodeCompat?: boolean
+  /** Sole native OpenCode rail: the process-owned public embedded SDK. */
+  opencodeRuntime?: OpenCodeRuntime
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Host-owned credential/model resolver for concrete Pi model turns. */
@@ -839,17 +809,15 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
     },
     {
       match: (runner) => runner.id === "opencode",
-      create: ({ options }) => new OpenCodeHarnessAdapter(options.opencodeUrl, {
-        ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
-        ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
-        eventHub: options.eventHub,
-        ...(options.subagentAdmission ? { subagents: options.subagentAdmission } : {}),
-        ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
-        // Adapter mechanism (upstream list/status proxying) stays on unless the
-        // host explicitly opts out. The root compat ROUTE surface is separately
-        // gated by `!== true` below. See WorkspaceHostOptions.opencodeCompat.
-        compat: options.opencodeCompat !== false,
-      }),
+      create: ({ options }) => {
+        if (!options.opencodeRuntime) {
+          throw new Error("Native OpenCode requires the process-owned public embedded SDK runtime")
+        }
+        return new OpenCodeSdkHarnessAdapter({
+          runtime: options.opencodeRuntime,
+          workspaceID: options.target?.workspaceId ?? "workspace-runtime",
+        })
+      },
     },
   ]
 }
@@ -903,166 +871,6 @@ function createAdapter(
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
   return entry.create({ runner: harness, options })
-}
-
-function closedSse() {
-  return new Response(new ReadableStream<Uint8Array>({
-    start(ctrl) {
-      ctrl.close()
-    },
-  }), {
-    headers: sseHeaders(),
-  })
-}
-
-function opencodeProxyHeaders(headers: HeadersInit, base?: HeadersInit) {
-  const next = new Headers(headers)
-  next.delete("host")
-  next.delete("connection")
-  // This is an in-process/internal transport boundary, not the browser's HTTP
-  // hop. Forwarding the browser's compression negotiation lets the embedded
-  // engine return compressed bytes to routes such as /provider that must read
-  // and validate the JSON before replying. A Response constructed around
-  // those bytes does not perform fetch-style decompression, so `.json()` sees
-  // gzip data and the canonical provider catalogue is reported as missing.
-  // The outer server owns response compression for the actual client hop.
-  next.delete("accept-encoding")
-  next.delete("authorization")
-  next.delete("Authorization")
-  next.delete("x-workspace-id")
-  next.delete("x-forwarded-by")
-  if (base) {
-    new Headers(base).forEach((value, key) => next.set(key, value))
-  }
-  return next
-}
-
-// Synthetic origin for proxy Requests. The adapter's RequestFn rewrites this to
-// the real server URL (URL/spawn mode) or routes on path only (injected mode).
-const OPENCODE_INTERNAL_BASE = "http://opencode.internal"
-
-async function proxyOpenCode(
-  c: any,
-  adapter: AgentHarnessAdapter,
-  baseHeaders?: HeadersInit,
-  queryPatch?: Record<string, string>,
-) {
-  if (!hasAdapterCapability(adapter, "http-proxy")) return
-  const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
-  const reqUrl = new URL(c.req.url)
-  const target = new URL(reqUrl.pathname + reqUrl.search, OPENCODE_INTERNAL_BASE)
-  Object.entries(queryPatch ?? {}).forEach(([key, value]) => target.searchParams.set(key, value))
-  const headers = opencodeProxyHeaders(c.req.raw.headers, baseHeaders)
-  const directory = c.req.query("directory") || c.req.header("x-opencode-directory")
-  if (directory) headers.set("x-opencode-directory", assertTarget(directory))
-  const req = new Request(target.toString(), {
-    method: c.req.method,
-    headers,
-    body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body,
-    // @ts-ignore
-    duplex: "half",
-  })
-  const res = await request(req)
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: res.headers,
-  })
-}
-
-/**
- * Whether an adapter's EMPTY session list was an answer rather than a swallowed
- * failure.
- *
- * `AgentHarnessAdapter.listSessions` returns `AgentSessionRow[]`, so the only
- * failure it can report is a throw — and the OpenCode adapter does not throw:
- * it returns `[]` for ANY non-2xx. A transient 5xx from a server that has just
- * restarted is therefore byte-identical to a fresh install, and the one-time
- * inventory import would record itself as done on it, hiding every existing
- * session from generic listing forever with no retry and no error.
- *
- * The status is recoverable one layer down, on the proxy transport the adapter
- * itself uses, so an empty list from a proxy adapter is confirmed by asking the
- * same question with the status visible. Two gates keep this from costing
- * anything it should not:
- *
- *  - It runs only for an EMPTY list during the once-per-directory import, so
- *    the common path pays nothing and the confirmation never repeats.
- *  - It never starts a harness. `transportLive()` false means the adapter's own
- *    listing did not reach a transport either (compat off, nothing spawned), so
- *    there is nothing to confirm and the empty stands.
- */
-async function emptyListIsAnAnswer(
-  adapter: AgentHarnessAdapter,
-  directory: string,
-  options: { opencodeCompat?: boolean; opencodeHeaders?: HeadersInit },
-) {
-  if (!hasAdapterCapability(adapter, "http-proxy")) return true
-  // Mirrors how `defaultWorkspaceHarnessRegistry` maps the three-state host
-  // option onto the adapter's own `compat` flag: with the mechanism off the
-  // adapter answers `[]` locally without ever asking upstream, and confirming
-  // it against upstream would block the marker on a server the host has said
-  // not to consult.
-  if (options.opencodeCompat === false) return true
-  if ((adapter as HttpProxyAdapter).transportLive?.() !== true) return true
-  try {
-    const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
-    const headers = new Headers(options.opencodeHeaders)
-    headers.set("x-opencode-directory", directory)
-    const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session`, { headers }))
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-async function proxyOpenCodeOrJson(c: any, adapter: AgentHarnessAdapter, fallback: () => Promise<unknown> | unknown, baseHeaders?: HeadersInit) {
-  try {
-    const res = await proxyOpenCode(c, adapter, baseHeaders)
-    if (res?.ok) return res
-  } catch {}
-  return c.json(await fallback())
-}
-
-function providerListHasModels(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return false
-  const all = (input as { all?: unknown }).all
-  if (!Array.isArray(all)) return false
-  return all.some((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return false
-    const models = (item as { models?: unknown }).models
-    return !!models && typeof models === "object" && !Array.isArray(models) && Object.keys(models).length > 0
-  })
-}
-
-function providerCatalogView(input: { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> }, providerId?: string) {
-  const connected = Array.isArray(input.connected)
-    ? input.connected.filter((item): item is string => typeof item === "string")
-    : []
-  const defaults = input.default && typeof input.default === "object" ? input.default : {}
-  return {
-    all: (input.all ?? []).flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return []
-      const provider = item as Record<string, unknown>
-      if (typeof provider.id !== "string" || typeof provider.name !== "string") return []
-      if (providerId && provider.id !== providerId) return []
-      const models = provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-        ? provider.models as Record<string, unknown>
-        : {}
-      if (providerId) return [{ ...provider, models }]
-      const configuredDefault = defaults[provider.id]
-      const defaultModel = typeof configuredDefault === "string" ? configuredDefault : undefined
-      return [{
-        id: provider.id,
-        name: provider.name,
-        models: connected.includes(provider.id) && defaultModel && models[defaultModel]
-          ? { [defaultModel]: models[defaultModel] }
-          : {},
-      }]
-    }),
-    connected,
-    default: defaults,
-  }
 }
 
 function providerUnavailable(harness: RuntimeRunner | string, message?: string) {
@@ -1232,6 +1040,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     callbackUrl: string
     tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
   }>()
+  const opencodeToolSessions = new Set<string>()
 
   function adapterKey(next: RuntimeRunner) {
     const process = processConnection(next)
@@ -1435,27 +1244,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       //
       // "This adapter has no sessions" and "this adapter could not be asked"
       // are different facts that both arrive as an empty array — the OpenCode
-      // adapter returns `[]` for any non-2xx, so a transient 5xx from a
-      // just-spawned server looks exactly like a fresh install. Writing the
-      // durable marker on that would hide a user's existing sessions from
-      // generic listing forever, with no retry and no error.
-      //
-      // A failed adapter still lets the healthy ones contribute; the directory
-      // simply stays unimported and tries again on the next list.
+      // Typed adapters throw when their authoritative list is unavailable, so
+      // an empty list is a real answer. A failed adapter still lets healthy
+      // adapters contribute while leaving the directory retryable.
       let complete = true
       const rows = await Promise.all((await sessionListAdapters()).map(async (item) => {
         try {
           const listed = await listSessionsForAdapter(item.adapter, item.runner, directory)
-          // A throw is not the only way an adapter fails to answer. An empty
-          // array from a proxy adapter has to be confirmed as an ANSWER before
-          // it counts toward completeness — see `emptyListIsAnAnswer`.
-          if (!listed.length && !await emptyListIsAnAnswer(item.adapter, directory, hostOptions)) {
-            complete = false
-            sessionInventoryLog.warn("session inventory import could not confirm an empty adapter listing", {
-              directory,
-              harness: item.runner.id,
-            })
-          }
           return listed
         } catch (error) {
           complete = false
@@ -1967,168 +1762,77 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
       app.get("/session/status", async (c) => {
         const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
-          const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
-          return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
+        return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
       })
 
       app.get("/mcp", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json({})
-        return proxyOpenCodeOrJson(c, adapter, () => mcpStatus(currentMcp), hostOptions.opencodeHeaders)
+        if (runner.id !== "opencode" || !hostOptions.opencodeRuntime) return c.json(mcpStatus(currentMcp))
+        const directory = requestDirectory(c)
+        return c.json(await hostOptions.opencodeRuntime.configuration.mcpStatus(
+          authorizeWorkspace({ workspaceID: directory, directory }),
+        ))
       })
 
       app.post("/mcp/:name/connect", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(true)
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        if (runner.id !== "opencode" || !hostOptions.opencodeRuntime) return c.json(true)
+        const directory = requestDirectory(c)
+        return c.json(await hostOptions.opencodeRuntime.configuration.connectMcp(
+          authorizeWorkspace({ workspaceID: directory, directory }),
+          c.req.param("name"),
+        ))
       })
 
       app.post("/mcp/:name/disconnect", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(true)
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        if (runner.id !== "opencode" || !hostOptions.opencodeRuntime) return c.json(true)
+        const directory = requestDirectory(c)
+        return c.json(await hostOptions.opencodeRuntime.configuration.disconnectMcp(
+          authorizeWorkspace({ workspaceID: directory, directory }),
+          c.req.param("name"),
+        ))
       })
 
-      app.get("/lsp", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json([])
-        return proxyOpenCodeOrJson(c, adapter, () => [], hostOptions.opencodeHeaders)
-      })
+      app.get("/lsp", (c) => c.json([]))
 
       // Cloud control plane proxies /provider through here so the session
       // sidebar can list model metadata for both OpenCode and ACP runners.
       app.get("/provider", async (c) => {
         const requestedHarness = c.req.query("harness") || c.req.query("runner")
         if (runner.id !== "opencode" && requestedHarness !== "opencode") return c.json(providerUnavailable(runner), 502)
-        if (hostOptions.opencodeCompat !== true) {
-          return c.json(
-            providerUnavailable(
-              "opencode",
-              "opencode provider metadata is unavailable because compatibility proxying is disabled",
-            ),
-            502,
-          )
-        }
-        const adapter = runner.id === "opencode"
-          ? await ensureSessionAdapter(runner)
-          : await ensureSessionAdapter({ id: "opencode", access: "native" })
+        if (!hostOptions.opencodeRuntime) return c.json(providerUnavailable("opencode"), 502)
         try {
+          const directory = requestDirectory(c)
           const detail = c.req.query("provider")
-          const res = await proxyOpenCode(
-            c,
-            adapter,
-            hostOptions.opencodeHeaders,
-            detail ? undefined : { view: "index" },
+          const models = await hostOptions.opencodeRuntime.catalog.models(
+            authorizeWorkspace({ workspaceID: directory, directory }),
           )
-          if (!res) {
-            return c.json(providerUnavailable("opencode", "opencode provider metadata proxy is unavailable"), 502)
-          }
-          if (!res.ok) {
-            return c.json(
-              providerUnavailable("opencode", `opencode provider metadata request failed with status ${res.status}`),
-              502,
-            )
-          }
-          const body = (await res.json().catch(() => undefined)) as
-            { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> } | undefined
-          if (!body) {
-            return c.json(providerUnavailable("opencode", "opencode provider metadata returned invalid JSON"), 502)
-          }
-          if (providerListHasModels(body) || (!detail && Array.isArray(body.all))) {
-            return c.json(providerCatalogView(body, detail))
-          }
-          return c.json(
-            providerUnavailable("opencode", "opencode provider metadata did not include live model data"),
-            502,
-          )
+          const providers = Object.values(Object.groupBy(models, (model) => model.providerID)).flatMap((rows) => {
+            if (!rows?.length || (detail && rows[0]!.providerID !== detail)) return []
+            return [{
+              id: rows[0]!.providerID,
+              name: rows[0]!.providerID,
+              models: Object.fromEntries(rows.map((model) => [model.id, {
+                id: model.id,
+                name: model.name ?? model.id,
+                status: "active",
+              }])),
+            }]
+          })
+          return c.json({
+            all: providers,
+            connected: providers.map((provider) => provider.id),
+            default: {},
+          })
         } catch (cause) {
           return c.json(providerUnavailable("opencode", errorMessage(cause)), 502)
         }
       })
 
-      app.get("/experimental/tool/ids", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
-          return c.json({
-            ok: false,
-            error: {
-              code: "tool_catalog_unavailable",
-              harness: runner.id,
-              message: `${runner.id} does not expose a live Tool catalog`,
-            },
-          }, 502)
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-      })
+      app.get("/experimental/tool/ids", (c) => c.json(runner.id === "opencode" ? ["terminal"] : []))
 
-      app.get("/vcs", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        const fallback = () => localVcsInfo(requestDirectory(c))
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(await fallback())
-        return proxyOpenCodeOrJson(c, adapter, fallback, hostOptions.opencodeHeaders)
-      })
+      app.get("/vcs", async (c) => c.json(await localVcsInfo(requestDirectory(c))))
 
       app.get("/global/event", async (c) => {
-        // Two changes meet here and BOTH are load-bearing.
-        //
-        // The shell opens this stream on every launch. Proxying it to OpenCode
-        // used to START OpenCode, so an idle desktop paid for a harness it was
-        // never asked to run. The compat proxy attaches only to a transport
-        // that is ALREADY live, and holds an activity lease for the stream's
-        // life so the idle reaper cannot cut it mid-delivery. When nothing is
-        // running the runtime's own hub answers — it is the authoritative
-        // producer of canonical events, and the adapter republishes upstream
-        // events into it once real work starts.
-        //
-        // Resolution goes through `ensureSessionAdapter` rather than `ensure()`
-        // so a session pinned to a non-default harness gets ITS adapter. That
-        // helper only creates and configures; it does not spawn, so it does not
-        // reintroduce the start this gate exists to prevent.
-        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true
-          ? await ensureSessionAdapter(runner)
-          : undefined
-        const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
-          ? proxy as AgentHarnessAdapter & HttpProxyAdapter
-          : undefined
-        if (adapter && (adapter.transportLive?.() ?? true)) {
-          let lease: { release(): void } | undefined
-          try {
-            const acquired = await adapter.acquireRequestFn?.()
-            lease = acquired?.lease
-            const request = acquired?.request ?? await adapter.getRequestFn()
-            const headers = new Headers(hostOptions.opencodeHeaders)
-            headers.set("Accept", "text/event-stream")
-            const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/event`, {
-              headers,
-              signal: c.req.raw.signal,
-            }))
-            if (!res.ok || !res.body) {
-              lease?.release()
-              return closedSse()
-            }
-            // Released on BOTH ends of the stream's life. Wiring only the
-            // client's abort leaks the lease whenever the upstream ends first —
-            // an OpenCode restart on config change, or the child exiting — and
-            // a held lease stops the idle countdown from ever starting again,
-            // so the harness this change exists to reap could never be reaped.
-            // `ActivityLease.release` is idempotent, so both firing is fine.
-            // `flush` covers a clean end; a client-side cancel propagates back
-            // as an abort on the request signal, which the listener catches.
-            const release = () => lease?.release()
-            c.req.raw.signal.addEventListener("abort", release, { once: true })
-            return new Response(
-              res.body.pipeThrough(new TransformStream({ flush: release })),
-              { status: res.status, headers: res.headers },
-            )
-          } catch {
-            lease?.release()
-            return closedSse()
-          }
-        }
-
         let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null
         const body = new ReadableStream<Uint8Array>({
           start(next) {
@@ -2156,20 +1860,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
         return new Response(body, { headers: sseHeaders() })
       })
-
-      // Session V2 and its model catalog are the durable agent-control
-      // contracts used by hosted WorkGraph. Keep them on the authenticated
-      // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
-      const proxySessionV2 = async (c: Context) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
-          return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-      }
-      app.all("/api/model", proxySessionV2)
-      app.all("/api/session", proxySessionV2)
-      app.all("/api/session/*", proxySessionV2)
 
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
@@ -2260,9 +1950,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             parts: [...(body.parts ?? []), { type: "text", text: scopedToolPrompt(sessionId, registration) }],
           }
         },
-        // An empty message projection is never authoritative: proxy-driven
-        // sessions (OpenCode Session V2) keep their messages in the engine and
-        // are bound into the store message-less by session discovery, so an
+        // An empty message projection is never authoritative: adapter-owned
+        // sessions can be bound into the store message-less by discovery, so an
         // empty projection must fall through to the adapter instead of
         // shadowing the engine transcript.
         getMessages: async ({ sessionId }) => {
@@ -2338,7 +2027,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           store().deleteSession(sessionId)
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },
-        ...(hostOptions.opencodeHeaders ? { opencodeHeaders: hostOptions.opencodeHeaders } : {}),
       }))
       app.route("/", OpenCodeCompatRoutes())
     },
@@ -2397,44 +2085,23 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       return workspaceCapabilities(enabled)
     },
     async registerSessionTools(input) {
-      const directory = options.target?.directory ?? workspaceDir()
-      const harness = normalizeHarnessIdentity(input.harness)
-      const next = await adapterForSession({
-        sessionId: input.sessionId,
-        directory,
-        ...(harness ? { harness } : {}),
-      })
-      if (!hasAdapterCapability(next, "http-proxy")) {
-        sessionToolPrompts.set(input.sessionId, input)
+      const harness = normalizeHarnessIdentity(input.harness) ?? normalizeHarnessIdentity(runner)
+      if (harness?.id === "opencode") {
+        if (!hostOptions.opencodeRuntime) throw new Error("OpenCode SDK runtime is required for Session tool registration")
+        sessionToolPrompts.delete(input.sessionId)
+        await hostOptions.opencodeRuntime.tools.registerSession({
+          sessionID: input.sessionId,
+          callbackUrl: input.callbackUrl,
+          tools: input.tools,
+        })
+        opencodeToolSessions.add(input.sessionId)
         return
       }
-      sessionToolPrompts.delete(input.sessionId)
-      const response = await next.getRequestFn().then((request) => request(new Request(
-        `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(input.sessionId)}/tool`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-opencode-directory": directory },
-          body: JSON.stringify({ callbackUrl: input.callbackUrl, tools: input.tools }),
-          // @ts-ignore Node fetch requires duplex for request bodies.
-          duplex: "half",
-        },
-      )))
-      if (!response.ok) throw new Error(`Core Session tool registration failed: ${response.status} ${await response.text()}`)
+      sessionToolPrompts.set(input.sessionId, input)
     },
     async unregisterSessionTools(sessionId) {
-      const registration = sessionToolPrompts.get(sessionId)
       sessionToolPrompts.delete(sessionId)
-      const directory = options.target?.directory ?? workspaceDir()
-      const harness = normalizeHarnessIdentity(registration?.harness)
-      const next = await adapterForSession({ sessionId, directory, ...(harness ? { harness } : {}) })
-      if (!hasAdapterCapability(next, "http-proxy")) return
-      const response = await next.getRequestFn().then((request) => request(new Request(
-        `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(sessionId)}/tool`,
-        { method: "DELETE", headers: { "x-opencode-directory": directory } },
-      )))
-      if (!response.ok && response.status !== 404) {
-        throw new Error(`Core Session tool cleanup failed: ${response.status} ${await response.text()}`)
-      }
+      if (opencodeToolSessions.delete(sessionId)) await hostOptions.opencodeRuntime?.tools.unregisterSession(sessionId)
     },
     checkpoint: {
       detail: checkpointDetail,
@@ -2500,6 +2167,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       sessionAdapters.clear()
       sessionRuntimes.clear()
       sessionToolPrompts.clear()
+      opencodeToolSessions.clear()
       sessionConfigStore?.close?.()
       sessionConfigStore = undefined
     },

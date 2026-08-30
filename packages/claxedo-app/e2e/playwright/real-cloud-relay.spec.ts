@@ -342,9 +342,6 @@ async function fixtureJson<T>(pathname: string, method: "GET" | "POST" = "GET"):
 const cloudRuntimeStats = () => fixtureJson<{ forwarded: number; paused: boolean }>("/__fixture/cloud-runtime/stats")
 const pauseCloudRuntime = () => fixtureJson<{ paused: boolean }>("/__fixture/cloud-runtime/pause", "POST")
 const resumeCloudRuntime = () => fixtureJson<{ resumed: boolean }>("/__fixture/cloud-runtime/resume", "POST")
-const forbiddenOpencodeRequests = async () =>
-  (await fixtureJson<{ requests: string[] }>("/__fixture/opencode-requests")).requests
-
 /**
  * Seeds the browser so the workspace id resolves as a real relay-backed cloud
  * target. `sandboxes: [workspaceId]` is what `sessionWorkspaceRuntimeRef` reads;
@@ -563,12 +560,7 @@ test.describe("real cloud relay @core @tier-real", () => {
       `expected the scripted endpoint to carry both turns from behind the relay, saw ${JSON.stringify(counts)}`,
     ).toBeGreaterThanOrEqual(markers.length)
 
-    // Behavior 5: the forbidden legacy stub is untouched and nothing addressed a
-    // bare runtime path at the backend origin.
-    expect(
-      await forbiddenOpencodeRequests(),
-      "the fixture's forbidden legacy opencode stub received traffic — something routed around the relay",
-    ).toEqual([])
+    // Behavior 5: nothing addressed a bare runtime path at the backend origin.
     expect(
       bypassing,
       "requests addressed a bare runtime path at the backend origin instead of /workspaces/:id/... — relay bypass",

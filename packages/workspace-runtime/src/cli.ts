@@ -16,6 +16,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText } from "./env"
+import { createWorkspaceOpenCodeRuntime } from "./opencode-runtime"
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
 
@@ -37,8 +38,10 @@ const identity = rawRunner === "acp"
   ? { id: "claude" as const, access: "acp" as const }
   : normalizeHarnessIdentity(rawRunner ?? "opencode") ?? { id: "opencode" as const, access: "native" as const }
 const acpBinary = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_ACP_BINARY")
+const directory = workspaceDir(process.env)
+const opencodeRuntime = identity.id === "opencode" ? createWorkspaceOpenCodeRuntime(directory) : undefined
 const server = startServer(port, {
-  target: { workspaceId: workspaceId(process.env), directory: workspaceDir(process.env) },
+  target: { workspaceId: workspaceId(process.env), directory },
   ...relay,
   exposure: relay.relayHostAuth
     ? relayWorkspaceRuntimeExposure(relay.relayHostAuth)
@@ -52,14 +55,11 @@ const server = startServer(port, {
     access: identity.access,
     ...(acpBinary ? { connection: { kind: "process" as const, binary: acpBinary } } : {}),
   },
-  ...(runtimeEnvText(process.env, "OPENCODE_URL")
-    ? { opencodeUrl: runtimeEnvText(process.env, "OPENCODE_URL") }
-    : {}),
+  ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
   // The kit CLI mounts NO route contributions. WorkGraph's tool brokers are a
   // hosted capability supplied by a host launcher
   // (`claxedoWorkspaceRuntimeBootFromEnv`), not something a generic runtime
   // process turns on from an environment variable.
-  opencodeCompat: runtimeEnvText(process.env, "WORKSPACE_RUNTIME_OPENCODE_COMPAT") !== "0",
 }, { signals: true })
 
 console.log(

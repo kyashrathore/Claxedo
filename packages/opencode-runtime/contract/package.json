@@ -3,7 +3,7 @@
   "name": "@claxedo/opencode-sdk-contract",
   "private": true,
   "type": "module",
-  "description": "Executable contract probes for the pinned public OpenCode embedded SDK. Deliberately NOT a workspace member: `packages/*` matches one level, so nesting under `packages/opencode-runtime/` keeps this install isolated from the repo's legacy @opencode-ai/* workspace packages.",
+  "description": "Executable contract probes for the pinned public OpenCode embedded SDK. Deliberately not a workspace member so the probe has an isolated dependency graph.",
   "scripts": {
     "probe": "bun run probe.mjs",
     "probe:node": "bun run build-node-bundle.ts && node probe-node.mjs",

@@ -31,9 +31,6 @@ parent?.listen((message) => void transport?.onMessage(message))
 
 const server = startLocalServer({
   port: startup.port,
-  ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
-  opencodePassword: startup.opencodePassword,
-  ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })
 void server.ready.then(() => {

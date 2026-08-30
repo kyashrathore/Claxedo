@@ -333,7 +333,6 @@ type RunningFixture = {
   log: () => string
   close: () => Promise<void>
   mintRole: (role: "viewer" | "editor" | "owner" | "admin") => Promise<{ runtimeAccessToken: string; relayUrl: string }>
-  opencodeRequests: () => Promise<string[]>
   pauseTunnel: () => Promise<void>
   resumeTunnel: () => Promise<void>
 }
@@ -479,12 +478,6 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
     return (await res.json()) as { runtimeAccessToken: string; relayUrl: string }
   }
 
-  const opencodeRequests = async () => {
-    const res = await fetch(`${info.backendUrl}/__fixture/opencode-requests`)
-    if (!res.ok) throw new Error(`GATING: /__fixture/opencode-requests failed: ${res.status}`)
-    return ((await res.json()) as { requests: string[] }).requests
-  }
-
   const pauseTunnel = async () => {
     const res = await fetch(`${info.backendUrl}/__fixture/tunnel/pause`, { method: "POST" })
     if (!res.ok) throw new Error(`GATING: /__fixture/tunnel/pause failed: ${res.status} ${await res.text()}`)
@@ -495,7 +488,7 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
     if (!res.ok) throw new Error(`GATING: /__fixture/tunnel/resume failed: ${res.status} ${await res.text()}`)
   }
 
-  return { info, log: () => log, close, mintRole, opencodeRequests, pauseTunnel, resumeTunnel }
+  return { info, log: () => log, close, mintRole, pauseTunnel, resumeTunnel }
 }
 
 /**

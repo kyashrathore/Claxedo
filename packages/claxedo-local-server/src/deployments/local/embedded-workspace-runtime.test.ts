@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -12,7 +12,7 @@ import {
 } from "./embedded-workspace-runtime"
 import type { OpencodeEvent } from "../../opencode/events"
 import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
-import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
+import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -75,8 +75,15 @@ const previous = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_AGENT_TYPE: process.env.CLAXEDO_AGENT_TYPE,
   CURSOR_DATA_DIR: process.env.CURSOR_DATA_DIR,
-  OPENCODE_URL: process.env.OPENCODE_URL,
 }
+
+const unusedOpenCodeRuntime = {
+  close: async () => {},
+} as unknown as OpenCodeRuntime
+
+beforeEach(() => {
+  configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
+})
 
 function shutdownTestRuntimes() {
   shutdownEmbeddedWorkspaceRuntimes()
@@ -98,8 +105,6 @@ afterEach(async () => {
   else process.env.CLAXEDO_AGENT_TYPE = previous.CLAXEDO_AGENT_TYPE
   if (previous.CURSOR_DATA_DIR === undefined) delete process.env.CURSOR_DATA_DIR
   else process.env.CURSOR_DATA_DIR = previous.CURSOR_DATA_DIR
-  if (previous.OPENCODE_URL === undefined) delete process.env.OPENCODE_URL
-  else process.env.OPENCODE_URL = previous.OPENCODE_URL
 })
 
 describe("embedded workspace runtime", () => {
@@ -111,8 +116,7 @@ describe("embedded workspace runtime", () => {
     await fs.writeFile(path.join(extension, "SKILL.md"), "---\nname: review\n---\n\n# Review\n")
 
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.CLAXEDO_AGENT_TYPE = "pi"
 
     const workspace: Workspace = {
       id: "ws_embedded_extensions",
@@ -169,8 +173,7 @@ describe("embedded workspace runtime", () => {
   test("caches one runtime per workspace id and recreates when the directory changes", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-cache-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.CLAXEDO_AGENT_TYPE = "pi"
 
     try {
       const ws = workspace("ws_cache", project)
@@ -195,8 +198,7 @@ describe("embedded workspace runtime", () => {
     const skip = await makeWorkspaceRoot("claxedo-embedded-skip-")
     const sync = await makeWorkspaceRoot("claxedo-embedded-sync-")
     process.env.CLAXEDO_DATA_DIR = path.join(skip.root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.CLAXEDO_AGENT_TYPE = "pi"
 
     try {
       await ensureEmbeddedWorkspaceRuntime(workspace("ws_skip", skip.project), { config: "skip" })
@@ -220,8 +222,7 @@ describe("embedded workspace runtime", () => {
   test("configureEmbeddedWorkspaceRuntime does not retroactively recreate a cached runtime", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-configure-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.CLAXEDO_AGENT_TYPE = "pi"
 
     try {
       const ws = workspace("ws_configure", project)
@@ -229,7 +230,7 @@ describe("embedded workspace runtime", () => {
 
       // Reconfiguring the module-level opencode target only affects NEW
       // creations; an already-cached runtime is not recreated.
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       const afterConfigure = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(afterConfigure).toBe(first)
 
@@ -243,7 +244,7 @@ describe("embedded workspace runtime", () => {
     } finally {
       // Restore the default target so we do not leak the reconfigured URL into
       // other tests in this file.
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
@@ -253,8 +254,7 @@ describe("embedded workspace runtime", () => {
   test("shutdownEmbeddedWorkspaceRuntimes clears the cache", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-shutdown-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
+    process.env.CLAXEDO_AGENT_TYPE = "pi"
 
     try {
       const ws = workspace("ws_shutdown", project)
@@ -334,7 +334,7 @@ describe("embedded workspace runtime", () => {
     try {
       const resolved: unknown[] = []
       configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async () => new Response(null, { status: 404 }),
+        opencodeRuntime: unusedOpenCodeRuntime,
         piModelBackend: (input) => {
           resolved.push(input)
           return undefined
@@ -370,7 +370,7 @@ describe("embedded workspace runtime", () => {
         model: { providerID: "openai-codex", modelID: "gpt-5.5" },
       }])
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -383,7 +383,7 @@ describe("embedded workspace runtime", () => {
 
     try {
       configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async () => new Response(null, { status: 404 }),
+        opencodeRuntime: unusedOpenCodeRuntime,
         // No host contributions at all — the shape a desktop-local build has.
         routeContributions: [],
       })
@@ -405,132 +405,46 @@ describe("embedded workspace runtime", () => {
         expect(response.status, path).toBe(404)
       }
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
 
-  // ── Regression: a harness session's async auto-title (e.g. an ACP
-  //    harness's post-turn `maybeEmitTitle`, or opencode's own LLM-driven
-  //    rename) is published ONLY as an SSE event on this runtime's own
-  //    `/global/event` stream (`RuntimeEventHub.publishGlobal`), never an
-  //    HTTP `PATCH /session/:id`. Before this fix nothing tapped that
-  //    per-workspace stream, so `services.projectionStore` never learned the
-  //    title and it reverted to "Untitled" after a restart. This proves the
-  //    tap itself: a `session.updated` event on `/global/event` reaches the
-  //    `onSessionMetaEvent` callback claxedo-server wires to
-  //    `projectLocalSessionMetaFromEvent` (see `session-meta-bridge.test.ts`
-  //    for that write path proven against the real SQLite projection store).
-  test("starts the metadata tap on the first engine mutation and propagates SSE-only title events", async () => {
-    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
-    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-
-    try {
-      const events: OpencodeEvent[] = []
-      const requests: string[] = []
-      let resolveSeen: (() => void) | undefined
-      const seen = new Promise<void>((resolve) => {
-        resolveSeen = resolve
-      })
-
-      // Stands in for the real opencode process: claxedo-server rides this
-      // injected transport in embedded mode (see `configureEmbeddedWorkspaceRuntime`
-      // in `server.ts`), so the workspace runtime's `/global/event` route
-      // proxies straight through it — exactly as it would a real opencode
-      // subprocess's own SSE stream.
-      const fakeOpencodeRequest: OpenCodeRequestFn = async (req) => {
-        const url = new URL(req.url)
-        requests.push(`${req.method} ${url.pathname}`)
-        if (url.pathname !== "/global/event") return Response.json({ id: "s_mutation", directory: project })
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            const envelope = {
-              directory: project,
-              payload: {
-                id: "session.updated:s_auto_title",
-                type: "session.updated",
-                properties: {
-                  sessionID: "s_auto_title",
-                  info: { id: "s_auto_title", title: "Auto-generated title", directory: project },
-                },
-              },
-            }
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(envelope)}\n\n`))
-            // Deliberately never closed: closing would trigger the SSE
-            // client's reconnect-with-backoff loop, which would otherwise
-            // keep firing after this test's assertions complete.
-          },
-        })
-        return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
-      }
-
-      configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: fakeOpencodeRequest,
-        onSessionMetaEvent: (event) => {
-          events.push(event)
-          resolveSeen?.()
-        },
-      })
-
-      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
-      expect(requests).not.toContain("GET /global/event")
-      await runtime.app.request(`http://localhost/session?directory=${encodeURIComponent(project)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
-      })
-      await seen
-
-      expect(requests.indexOf("GET /global/event")).toBeLessThan(requests.indexOf("POST /session"))
-
-      expect(events).toHaveLength(1)
-      const [event] = events
-      expect(event?.payload.type).toBe("session.updated")
-      const info = event?.payload.properties?.info as { id?: string; title?: string } | undefined
-      expect(info?.id).toBe("s_auto_title")
-      expect(info?.title).toBe("Auto-generated title")
-    } finally {
-      // Reset the module singleton so later tests in this file don't inherit
-      // this test's callback or fake transport.
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownTestRuntimes()
-      await removeWorkspaceRoot(root)
-    }
-  })
-
-  test("reconciles persisted runtime titles when rebuilding a workspace after restart", async () => {
+  test("reconciles persisted SDK runtime titles when rebuilding a workspace after restart", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-reconcile-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
 
     try {
       const snapshots: unknown[][] = []
-      configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async (req: Request) => {
-          const url = new URL(req.url)
-          if (url.pathname === "/session") {
-            return Response.json([{
+      const opencodeRuntime = {
+        sessions: {
+          list: async () => ({
+            sessions: [{
               id: "s_existing_title",
               title: "Title generated before restart",
               directory: project,
-              time: { created: 1, updated: 2 },
-            }])
-          }
-          if (url.pathname === "/global/event") {
-            return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
-              headers: { "content-type": "text/event-stream" },
-            })
-          }
-          return new Response(null, { status: 404 })
+              createdAt: 1,
+              updatedAt: 2,
+            }],
+          }),
         },
+        events: {
+          start() {},
+          ready: async () => {},
+          subscribe: () => () => {},
+          checkpoint: () => undefined,
+        },
+        host: { status: () => ({ lifecycle: "ready", events: "healthy" }) },
+        close: async () => {},
+      } as unknown as OpenCodeRuntime
+      configureEmbeddedWorkspaceRuntime({
+        opencodeRuntime,
         onSessionMetaSnapshot: (_workspace: Workspace, sessions: unknown[]) => {
           snapshots.push(sessions)
         },
-      } as never)
+      })
 
       await ensureEmbeddedWorkspaceRuntime(workspace("ws_title_reconcile", project), { config: "skip" })
 
@@ -541,7 +455,7 @@ describe("embedded workspace runtime", () => {
         }),
       ]])
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }

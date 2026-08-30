@@ -10,6 +10,7 @@ import { EXECUTION_CAPABILITY_CATALOG_MAX_AGE_MS, type WorkGraphContext } from "
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
+import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import { createExecutionCapabilitiesPort } from "./execution-capabilities"
 import { createHostedExecutionCapabilities } from "./hosted/execution-capabilities"
 import { createLocalExecutionCapabilities } from "./local/execution-capabilities"
@@ -42,6 +43,31 @@ const runtime = {
     ],
   },
   tools: ["terminal", "read"],
+}
+
+function embeddedOpenCodeRuntime(options: {
+  ready?: boolean
+  requested?: string[]
+} = {}) {
+  return {
+    host: {
+      status: () => ({
+        lifecycle: options.ready === false ? "cold" : "ready",
+        events: "healthy",
+      }),
+    },
+    catalog: {
+      agents: async () => {
+        options.requested?.push("agents")
+        return runtime.agents
+      },
+      models: async () => {
+        options.requested?.push("models")
+        return [{ providerID: "openai", id: "gpt-5", name: "GPT-5" }]
+      },
+    },
+    close: async () => {},
+  } as unknown as OpenCodeRuntime
 }
 
 describe("WorkGraph execution capability composition", () => {
@@ -243,22 +269,12 @@ describe("WorkGraph execution capability composition", () => {
       const capabilities = createLocalExecutionCapabilities({
         resolveRepositoryDirectory: (requestedDirectory) => (requestedDirectory === directory ? directory : undefined),
         harness: async () => "opencode",
-        engineLoaded: () => true,
         now: () => 456,
-        opencodeRequest: async (request) => {
-          requested.push(new URL(request.url).pathname)
-          const value =
-            new URL(request.url).pathname === "/agent"
-              ? runtime.agents
-              : new URL(request.url).pathname === "/api/model"
-                ? runtime.providers
-                : runtime.tools
-          return Response.json(value)
-        },
+        opencodeRuntime: embeddedOpenCodeRuntime({ requested }),
       })
 
       const result = await capabilities.read(context, { directory })
-      expect(requested).toEqual(["/agent", "/api/model", "/experimental/tool/ids"])
+      expect(requested).toEqual(["agents", "models"])
       expect(result.repository.baseRevisions).toContain("HEAD")
       expect(result.repository.baseRevisions).toContain("main")
       expect(result.harnesses).toEqual([
@@ -290,22 +306,18 @@ describe("WorkGraph execution capability composition", () => {
     }
   })
 
-  test("serves a static opencode catalog entry without any engine request while the engine is cold", async () => {
+  test("serves a static OpenCode catalog entry without warming the SDK host", async () => {
     const directory = await gitRepository()
     try {
       const capabilities = createLocalExecutionCapabilities({
         resolveRepositoryDirectory: (requestedDirectory) => (requestedDirectory === directory ? directory : undefined),
         harness: async () => "opencode",
-        engineLoaded: () => false,
-        opencodeRequest: async () => {
-          throw new Error("A cold engine must never be booted for a composer catalog read")
-        },
+        opencodeRuntime: embeddedOpenCodeRuntime({ ready: false }),
       })
 
       const result = await capabilities.read(context, { directory })
       // The opencode entry is still listed, with the static (empty) catalog —
-      // the live agents/models/tools arrive once an OpenCode surface actually
-      // boots the engine and the catalog is refreshed.
+      // live agents and models arrive after a real SDK operation warms the host.
       expect(result.harnesses).toEqual(expect.arrayContaining([{ id: "opencode" }]))
       expect(result.models.some((model) => model.harnessId === "opencode")).toBe(false)
       expect(result.models.some((model) => model.harnessId === "claude-sdk")).toBe(true)
@@ -320,18 +332,12 @@ describe("WorkGraph execution capability composition", () => {
       const capabilities = createLocalExecutionCapabilities({
         resolveRepositoryDirectory: (requestedDirectory) => requestedDirectory === directory ? directory : undefined,
         harness: async () => "codex-acp",
-        engineLoaded: () => true,
+        opencodeRuntime: embeddedOpenCodeRuntime(),
         harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "codex-acp" ? [{
           id: "model",
           currentValue: "gpt-5.6-sol",
           options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
         }] : [],
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
-        },
       })
 
       const result = await capabilities.read(context, { directory })
@@ -351,9 +357,7 @@ describe("WorkGraph execution capability composition", () => {
     const partitions: unknown[] = []
     const capabilities = createLocalExecutionCapabilities({
       harness: async () => "opencode",
-      opencodeRequest: async () => {
-        throw new Error("Unscoped capabilities must not inspect a repository runtime")
-      },
+      opencodeRuntime: embeddedOpenCodeRuntime(),
       connections: {
         list: async (partition: unknown) => {
           partitions.push(partition)
@@ -978,16 +982,11 @@ describe("WorkGraph execution capability composition", () => {
     try {
       const capabilities = createLocalExecutionCapabilities({
         harness: async () => "opencode",
+        opencodeRuntime: embeddedOpenCodeRuntime(),
         // Only the second repository is a "known project"; everything else is unknown.
         resolveRepositoryDirectory: (directory) => {
           validated.push(directory)
           return directory === otherRepo ? otherRepo : undefined
-        },
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
         },
       })
 
@@ -1008,17 +1007,12 @@ describe("WorkGraph execution capability composition", () => {
     const validated: string[] = []
     const capabilities = createLocalExecutionCapabilities({
       harness: async () => "opencode",
+      opencodeRuntime: embeddedOpenCodeRuntime(),
       // Unknown project directory: the validator returns nothing, so git must
       // never be invoked against the caller-supplied path.
       resolveRepositoryDirectory: (directory) => {
         validated.push(directory)
         return undefined
-      },
-      opencodeRequest: async (request) => {
-        const pathname = new URL(request.url).pathname
-        return Response.json(
-          pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-        )
       },
     })
 
@@ -1042,13 +1036,8 @@ describe("WorkGraph execution capability composition", () => {
     const missing = path.join(os.tmpdir(), "workgraph-capabilities-missing-does-not-exist")
     const capabilities = createLocalExecutionCapabilities({
       harness: async () => "opencode",
+      opencodeRuntime: embeddedOpenCodeRuntime(),
       resolveRepositoryDirectory: () => missing,
-      opencodeRequest: async (request) => {
-        const pathname = new URL(request.url).pathname
-        return Response.json(
-          pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-        )
-      },
     })
 
     await expect(capabilities.read(context, { directory: missing })).rejects.toMatchObject({
@@ -1063,13 +1052,8 @@ describe("WorkGraph execution capability composition", () => {
     try {
       const capabilities = createLocalExecutionCapabilities({
         harness: async () => "opencode",
+        opencodeRuntime: embeddedOpenCodeRuntime(),
         resolveRepositoryDirectory: (requested) => (requested === directory ? directory : undefined),
-        opencodeRequest: async (request) => {
-          const pathname = new URL(request.url).pathname
-          return Response.json(
-            pathname === "/agent" ? runtime.agents : pathname === "/api/model" ? runtime.providers : runtime.tools,
-          )
-        },
       })
 
       const result = await capabilities.read(context, { directory })
@@ -1084,11 +1068,9 @@ describe("WorkGraph execution capability composition", () => {
   test("does not inspect any Git or runtime repository on an unscoped capability read", async () => {
     const capabilities = createLocalExecutionCapabilities({
       harness: async () => "opencode",
+      opencodeRuntime: embeddedOpenCodeRuntime(),
       resolveRepositoryDirectory: () => {
         throw new Error("Unscoped capabilities must not resolve a repository")
-      },
-      opencodeRequest: async () => {
-        throw new Error("Unscoped capabilities must not inspect a repository runtime")
       },
     })
 

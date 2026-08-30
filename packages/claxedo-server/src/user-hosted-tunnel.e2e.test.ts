@@ -3,7 +3,6 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
-import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { promisify } from "node:util"
 import { serve } from "@hono/node-server"
@@ -14,7 +13,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace/supervisor"
 import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
-import { configureOpenCodeEngine, opencodeRequest } from "@claxedo/server-core/opencode/engine"
+import { createOpenCodeRuntime } from "@claxedo/opencode-runtime"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
@@ -39,29 +38,6 @@ async function closeServer(server: { close(callback?: (err?: Error) => void): un
     }),
     new Promise<void>((resolve) => setTimeout(resolve, 1_000)),
   ])
-}
-
-async function forbiddenOpencodeServer() {
-  const requests: string[] = []
-  const server = createServer((req, res) => {
-    requests.push(`${req.method ?? "GET"} ${req.url ?? "/"}`)
-    res.writeHead(599, { "content-type": "application/json" })
-    res.end(JSON.stringify({ error: "old opencode path should not be used" }))
-  })
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject)
-      resolve()
-    })
-  })
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error("Forbidden OpenCode server did not bind")
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    requests,
-    close: () => closeServer(server),
-  }
 }
 
 async function until<T>(fn: () => Promise<T | undefined>, ms = 20_000, step = 50): Promise<T> {
@@ -237,7 +213,6 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
   test("connects a host tunnel to the embedded local workspace-runtime and serves user-hosted relay traffic", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
-    const opencode = await forbiddenOpencodeServer()
     process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK = JSON.stringify(await exportJWK(relayHost.publicKey))
 
     const workspaceDir = path.join(root, "workspace")
@@ -253,8 +228,11 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
     })
     expect(ws?.id).toBe("ws_user_hosted_e2e")
 
-    configureOpenCodeEngine({ url: opencode.url })
-    configureEmbeddedWorkspaceRuntime({ opencodeRequest })
+    const opencodeRuntime = createOpenCodeRuntime({
+      databasePath: path.join(root, "opencode-runtime.db"),
+      persistEvents: true,
+    })
+    configureEmbeddedWorkspaceRuntime({ opencodeRuntime })
     const centralStore = createSqliteCentralStore({ mode: () => "central_canonical" })
     const built = createSelfHostedApp(createControlPlaneServices({
       projectionStore: centralStore.projectionStore,
@@ -368,13 +346,12 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
       )
       expect(removePty.status).toBe(200)
 
-      expect(opencode.requests).toEqual([])
     } finally {
       socket?.close()
       stopAllUserHostedWorkspaceTunnels()
       await relay.close()
       await closeServer(controlPlane)
-      await opencode.close()
+      await opencodeRuntime.close()
     }
   }, 30_000)
 })

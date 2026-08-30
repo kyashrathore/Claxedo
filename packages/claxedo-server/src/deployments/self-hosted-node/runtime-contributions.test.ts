@@ -18,7 +18,10 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
 } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import { selfHostedCapabilities } from "./capabilities"
+
+const unusedOpenCodeRuntime = { close: async () => {} } as unknown as OpenCodeRuntime
 
 const previousDataDir = process.env.CLAXEDO_DATA_DIR
 const previousAgentType = process.env.CLAXEDO_AGENT_TYPE
@@ -56,7 +59,7 @@ describe("self-hosted runtime contributions", () => {
 
     try {
       configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async () => new Response(null, { status: 404 }),
+        opencodeRuntime: unusedOpenCodeRuntime,
         routeContributions: selfHostedCapabilities({
           workGraphRunBroker: async () => {
             throw new Error("not invoked while binding")
@@ -93,7 +96,7 @@ describe("self-hosted runtime contributions", () => {
       })
       expect(bound.status, await bound.clone().text()).toBe(200)
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       shutdownEmbeddedWorkspaceRuntimes()
       await fs.rm(root, { recursive: true, force: true })
     }

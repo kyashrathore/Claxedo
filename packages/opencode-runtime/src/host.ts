@@ -17,7 +17,7 @@
  * Failure is explicit: a boot failure leaves the owner `unavailable` with a
  * reason and never selects another transport. There is no fallback runtime.
  */
-import { OpenCode } from "@opencode-ai/sdk"
+import type * as OpenCodeSdk from "@opencode-ai/sdk"
 import {
   canTransition,
   isTerminal,
@@ -27,7 +27,7 @@ import {
 } from "./lifecycle"
 
 /** The public SDK's client interface. Only this module may hold one. */
-export type OpenCodeClient = Awaited<ReturnType<typeof OpenCode.create>>
+export type OpenCodeClient = Awaited<ReturnType<typeof OpenCodeSdk.OpenCode.create>>
 
 export type OpenCodeHostOptions = Readonly<{
   /**
@@ -85,6 +85,11 @@ export function createOpenCodeHost(options: OpenCodeHostOptions): OpenCodeHost {
   async function boot(): Promise<OpenCodeClient> {
     moveTo("migrating")
     try {
+      // Keep the SDK's native module graph behind first use so generic
+      // Session/WorkGraph imports stay runtime-neutral and a cold host remains
+      // genuinely cold. The desktop process remains a Node/Electron runtime;
+      // this boundary must not introduce a Bun sidecar.
+      const { OpenCode } = await import("@opencode-ai/sdk")
       const created = await OpenCode.create({
         database: { path: options.databasePath },
         events: { persist: options.persistEvents ?? true },

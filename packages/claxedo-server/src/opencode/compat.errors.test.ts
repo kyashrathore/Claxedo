@@ -14,7 +14,6 @@ process.env.CLAXEDO_DATA_DIR = root
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
-const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 const { configureAgentConfig, saveCommand } = await import("@claxedo/server-core/agent-config/index")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
@@ -25,7 +24,6 @@ const originalFetch = globalThis.fetch
 
 afterEach(async () => {
   globalThis.fetch = originalFetch
-  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {
@@ -154,50 +152,6 @@ describe("opencode compat error model", () => {
     expect(
       Object.keys(body.all.find((provider: { id: string }) => provider.id === "anthropic").models).length,
     ).toBeGreaterThan(0)
-  })
-
-  test("provider endpoints fall back when central opencode is down", async () => {
-    configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
-
-    const provider = await app.request("/provider?runner=opencode")
-    const providerAuth = await app.request("/provider/auth?runner=opencode")
-    const config = await app.request("/config?runner=opencode")
-    const globalConfig = await app.request("/global/config?runner=opencode")
-    const configProviders = await app.request("/config/providers?runner=opencode")
-
-    expect([provider.status, providerAuth.status, config.status, globalConfig.status, configProviders.status]).toEqual([
-      200, 200, 200, 200, 200,
-    ])
-    await expect(provider.json()).resolves.toEqual({ all: [], default: {}, connected: [] })
-    // Provider auth degrades to the control plane's OWN methods rather than to
-    // an empty map: those are serviced by the credential registry and stay
-    // usable while the engine is down. Only the engine's provider catalog
-    // (anthropic OAuth, github-copilot, …) is lost with it.
-    await expect(providerAuth.json()).resolves.toMatchObject({
-      "claude-acp": [expect.objectContaining({ type: "api" })],
-      "codex-acp": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
-    })
-    await expect(config.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
-    await expect(globalConfig.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
-    await expect(configProviders.json()).resolves.toEqual({ providers: [], default: {} })
-  })
-
-  test("passive compat reads do not access central opencode", async () => {
-    configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
-    const touch = vi.fn()
-    const passive = new Hono()
-    passive.route("/", OpenCodeCompatRoutes({ onOpencodeAccess: touch }))
-
-    const provider = await passive.request("/provider")
-    const status = await passive.request("/session/status")
-    const mcp = await passive.request("/mcp")
-    const question = await passive.request("/question")
-    const agent = await passive.request("/agent")
-
-    expect([provider.status, status.status, mcp.status, question.status, agent.status]).toEqual([
-      200, 200, 200, 200, 200,
-    ])
-    expect(touch).not.toHaveBeenCalled()
   })
 
   test("agent list uses SandboxManager when composed", async () => {

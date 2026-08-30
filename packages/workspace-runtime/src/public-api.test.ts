@@ -45,7 +45,7 @@ describe("workspace-runtime public API manifest", () => {
   })
 
   // The kit stays decision-free: hosts construct the OpenCode engine and
-  // inject its handler via WorkspaceHostOptions.opencodeRequest. A direct
+  // inject its owner via WorkspaceHostOptions.opencodeRuntime. A direct
   // engine import here would hard-couple every host to the embedded engine.
   test("kit sources never import the opencode engine package", () => {
     const violations: string[] = []

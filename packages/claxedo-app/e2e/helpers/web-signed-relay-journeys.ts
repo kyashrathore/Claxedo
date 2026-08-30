@@ -540,9 +540,3 @@ export function watchForbiddenDirectRequests(page: Page, backendOrigin: string, 
   })
   return hits
 }
-
-export async function fixtureOpencodeRequests(backendUrl: string): Promise<string[]> {
-  const res = await fetch(`${backendUrl}/__fixture/opencode-requests`)
-  if (!res.ok) throw new Error(`GATING: /__fixture/opencode-requests failed: ${res.status}`)
-  return ((await res.json()) as { requests: string[] }).requests
-}

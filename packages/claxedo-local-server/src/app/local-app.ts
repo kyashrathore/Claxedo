@@ -83,7 +83,6 @@ export type LocalAppOptions = {
   runtimeProxyOptions?: RuntimeProxyOptions
   /** Answers `/workspaces/:workspaceId`; registered ahead of the runtime proxy. */
   workspaceRelayProxy?: MiddlewareHandler
-  onOpencodeAccess?: () => void
   onError?: Parameters<Hono["onError"]>[0]
   updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
   invalidateCentralSession?: (sessionId: string) => void
@@ -234,7 +233,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     services,
     env,
     ...authRouteOptions(services),
-    ...(options.onOpencodeAccess ? { onOpencodeAccess: options.onOpencodeAccess } : {}),
   }))
   app.route("/api/claxedo/agent-config", AgentConfigRoutes({
     services,

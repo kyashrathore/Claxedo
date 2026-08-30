@@ -4,31 +4,21 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { BootstrapRoutes } from "./bootstrap"
-import { configureOpenCodeEngine } from "@claxedo/server-core/opencode/engine"
-
-// External-URL mode so the injected opencode transport routes to the test's
-// fake upstream (intercepted via globalThis.fetch below). Bootstrap no longer
-// takes an opencodeUrl option — it rides the shared engine transport.
-configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
 
 const root = path.join(os.tmpdir(), `claxedo-bootstrap-route-${Date.now()}-${Math.random().toString(16).slice(2)}`)
 const previous = {
   ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
-  CLAXEDO_DISABLE_OPENCODE_COMPAT: process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT,
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
 }
 
 process.env.ANTHROPIC_API_KEY = "sk-ambient-should-not-count"
-process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT = "1"
 process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 
 afterAll(async () => {
   if (previous.ANTHROPIC_API_KEY === undefined) delete process.env.ANTHROPIC_API_KEY
   else process.env.ANTHROPIC_API_KEY = previous.ANTHROPIC_API_KEY
-  if (previous.CLAXEDO_DISABLE_OPENCODE_COMPAT === undefined) delete process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT
-  else process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT = previous.CLAXEDO_DISABLE_OPENCODE_COMPAT
   if (previous.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
   if (previous.CLAXEDO_STATE_DIR === undefined) delete process.env.CLAXEDO_STATE_DIR
@@ -67,7 +57,7 @@ describe("BootstrapRoutes", () => {
     expect(configuredBody.provider.all.find((item: { id: string }) => item.id === "claude-acp")?.source).toBe("env")
   })
 
-  test("uses injected env for OpenCode compatibility disable flag instead of ambient process env", async () => {
+  test("uses the injected OpenCode credential environment for the embedded SDK catalog", async () => {
     const previousFetch = globalThis.fetch
     let calls = 0
     const fakeFetch = Object.assign(async (input: URL | RequestInfo) => {
@@ -129,25 +119,6 @@ describe("BootstrapRoutes", () => {
       }])
       expect(calls).toBeGreaterThan(0)
 
-      calls = 0
-      const injectedDisabled = await BootstrapRoutes({
-        env: {
-          CLAXEDO_DISABLE_OPENCODE_COMPAT: "1",
-          CLAXEDO_OPENCODE_CATALOG_CACHE: `${catalogCacheDir}/disabled.json`,
-        },
-      }).request("/api/claxedo/bootstrap?runner=opencode")
-      expect(injectedDisabled.status).toBe(200)
-      const injectedDisabledBody = await injectedDisabled.json()
-      expect(injectedDisabledBody.provider).toEqual({ all: [], default: {}, connected: [] })
-      expect(injectedDisabledBody.provider_auth["codex-acp"]).toEqual([
-        { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
-        { type: "api", label: "API Key" },
-      ])
-      expect(injectedDisabledBody.provider_auth["claude-acp"]).toEqual([{ type: "api", label: "API Key" }])
-      expect(injectedDisabledBody.provider_auth["claude-sdk"]).toEqual([{ type: "api", label: "API Key" }])
-      expect(injectedDisabledBody.provider_auth["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
-      expect(injectedDisabledBody.config_providers).toEqual({ providers: [], default: {} })
-      expect(calls).toBe(0)
     } finally {
       globalThis.fetch = previousFetch
     }
@@ -187,7 +158,7 @@ describe("BootstrapRoutes", () => {
   test("allows loopback browser bootstrap even when bearer auth is attached", async () => {
     const res = await BootstrapRoutes({
       authConfig: { enabled: false, mode: "local-only", reason: "local test" },
-      env: { CLAXEDO_DISABLE_OPENCODE_COMPAT: "1" },
+      env: {},
     }).request("http://127.0.0.1/api/claxedo/bootstrap?runner=opencode", {
       headers: {
         Authorization: "Bearer local-test-token",

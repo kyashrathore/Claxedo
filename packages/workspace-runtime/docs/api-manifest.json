@@ -23,6 +23,7 @@
     "createProcessObserver",
     "createTranscriptResolver",
     "createWorkspaceHost",
+    "createWorkspaceOpenCodeRuntime",
     "createWorkspaceRuntimeApp",
     "createWorkspaceRuntimeJwtManagementAuth",
     "defaultWorkspaceHarnessRegistry",

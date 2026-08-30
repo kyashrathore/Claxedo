@@ -342,7 +342,6 @@ prepare_e2e_tier_real() {
   install_app_server_native_dependencies
   install_harness_clis
   build_dist_packages
-  (cd packages/opencode && bun run build:node)
   install_chromium
 }
 

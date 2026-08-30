@@ -7,11 +7,8 @@ assertion names the doc section it defends.
 
 The repo's `packages/*` workspace glob matches one level, so
 `packages/opencode-runtime/contract/` is deliberately **outside** the workspace.
-That matters: the repo still ships local packages named `@opencode-ai/sdk`,
-`core`, `server`, `plugin`, `schema`, `codemode` and `protocol`, all of which
-collide with the pinned public dependency closure. Inside the workspace those
-would shadow the published package and the probes would characterize the fork
-instead of the release under test.
+That keeps the probe's installation and lockfile independent, ensuring it
+characterizes the exact published SDK rather than any repository dependency.
 
 Install and run it on its own:
 
@@ -22,29 +19,36 @@ bun run probe.mjs        # full contract probe
 node node-loadability.mjs # §2 Node import gate
 ```
 
-## Running it on Node — the §2 path
+## Node/Electron status — the §2 gate
 
-`@opencode-ai/sdk@0.0.0-beta-18684` ships extensionless relative ESM specifiers
-(`export * as OpenCode from "./opencode"`) that Node ESM cannot resolve, so
-`probe.mjs` imports the package directly and therefore needs Bun.
+`@opencode-ai/sdk@0.0.0-beta-18684` is not currently runnable in Claxedo's
+Node/Electron process. It ships extensionless relative ESM specifiers
+(`export * as OpenCode from "./opencode"`) that strict Node ESM cannot resolve.
+Bundling gets past that packaging defect, but the Node-conditioned core graph
+then imports `node:ffi`, which Node/Electron does not provide.
 
-Every shipped Claxedo deployment is Node, so that had to be solved, and it is:
+These probes separate the two failures:
 
 ```sh
-bun run build-node-bundle.ts   # Bun.build, target node, jsonc-parser ESM plugin
-node probe-node.mjs            # same 31 assertions, on Node
+bun run build-node-bundle.ts   # gets past extensionless ESM packaging
+node probe-node.mjs            # exposes the remaining Node runtime failure
 ```
 
-The only non-obvious ingredient is the `jsonc-parser` resolve plugin, lifted
-from `claxedo-desktop/scripts/bundle-claxedo-server.ts:37`. jsonc-parser's
+The non-obvious bundling ingredient is the `jsonc-parser` resolve plugin, lifted
+from `claxedo-desktop/scripts/bundle-claxedo-server.ts`. jsonc-parser's
 default entry is UMD and hides its relative requires inside a factory closure,
 so they survive bundling as a runtime `require("./impl/format")` that resolves
-nowhere. Pointing the bundler at the ESM entry inlines it cleanly. The repo
-already hit this; we reuse the fix rather than inventing one.
+nowhere. Pointing the bundler at the ESM entry inlines it cleanly.
 
-Also note the SDK uses **`node:sqlite`** on the Node condition, not
-`better-sqlite3` — no native SQLite module is required, but `node:sqlite` is
-experimental in Node 22, so packaged Electron needs verifying per target.
+This bundle is a diagnostic probe, not a production workaround. Claxedo does
+not package Bun, spawn a Bun sidecar, deep-import private SDK internals, or fall
+back to the removed engine. Desktop enablement remains gated on an upstream SDK
+release whose public Node entry loads under Electron and supplies its required
+PTY implementation.
+
+The SDK uses **`node:sqlite`** on the Node condition, not `better-sqlite3`; once
+the load blocker is fixed, packaged Electron still needs target-by-target
+verification of that condition and the SDK's PTY path.
 
 `node-loadability.mjs` still tracks whether _direct_ Node import works. It exits
 0 either way by design — reporting a known blocker today and a resolved one if

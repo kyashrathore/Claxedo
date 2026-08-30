@@ -11,8 +11,8 @@ import { createRemoteJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
+import { createWorkspaceOpenCodeRuntime } from "../../workspace-runtime/src/opencode-runtime.ts"
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
-import { opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
@@ -59,7 +59,6 @@ const tokenTtlSeconds = Number(process.env.CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_S
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-signed-browser-relay-"))
 const dataDir = path.join(root, "data")
 const workspaceDir = path.join(root, "workspace")
-const opencodeRequests = []
 const desktopRefreshToken = "desktop_refresh_0"
 let currentDesktopRefreshToken = desktopRefreshToken
 let desktopRefreshes = 0
@@ -103,63 +102,6 @@ async function serverPort(server, label) {
   return address.port
 }
 
-async function forbiddenOpencodeServer() {
-  const server = createServer((req, res) => {
-    opencodeRequests.push(`${req.method || "GET"} ${req.url || "/"}`)
-    const url = new URL(req.url || "/", "http://opencode.fixture")
-    const session = {
-      id: "signed-browser-relay-session",
-      title: access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session",
-      directory: workspaceDir,
-      time: { created: 1, updated: 2 },
-    }
-    const messages = [
-      {
-        info: {
-          id: "msg_signed_browser_relay",
-          sessionID: "signed-browser-relay-session",
-          role: "user",
-          time: { created: 1 },
-        },
-        parts: [
-          {
-            id: "part_signed_browser_relay",
-            sessionID: "signed-browser-relay-session",
-            messageID: "msg_signed_browser_relay",
-            type: "text",
-            text: access === "cloud" ? "Signed cloud relay replay message" : "Signed browser relay replay message",
-          },
-        ],
-      },
-    ]
-    const json = (status, body) => {
-      res.writeHead(status, { "content-type": "application/json" })
-      res.end(JSON.stringify(body))
-    }
-    if (req.method === "GET" && url.pathname === "/session") return json(200, [session])
-    if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session") return json(200, session)
-    if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session/message")
-      return json(200, messages)
-    if (req.method === "GET" && url.pathname === "/session/signed-browser-relay-session/todo") return json(200, [])
-    if (req.method === "GET" && url.pathname === "/permission") return json(200, [])
-    if (req.method === "GET" && url.pathname === "/question") return json(200, [])
-    json(599, { error: "old opencode path should not be used", path: url.pathname })
-  })
-  await new Promise((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject)
-      resolve()
-    })
-  })
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error("Forbidden OpenCode server did not bind")
-  return {
-    url: `http://127.0.0.1:${address.port}`,
-    close: () => closeHttp(server),
-  }
-}
-
 async function startCloudRuntime(input) {
   const relayHostAuth = {
     key: input.relayHostPublicKey,
@@ -177,6 +119,7 @@ async function startCloudRuntime(input) {
     // since it is host-agnostic — which is exactly why this hid).
     hostId: workspaceId,
   }
+  const opencodeRuntime = createWorkspaceOpenCodeRuntime(workspaceDir)
   let runtime
   runtime = createWorkspaceRuntimeApp({
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
@@ -186,15 +129,7 @@ async function startCloudRuntime(input) {
     },
     relayHostAuth,
     configToken: runtimeConfigToken,
-    // The REAL in-process engine transport, same one `startOwnedControlPlaneStack`
-    // hands the embedded runtime. Pointing this at `forbiddenOpencodeServer()`
-    // instead (as it was) makes every real session route 599 by design — that
-    // stub exists to prove the OLD external-URL path is dead, not to serve
-    // traffic. `opencodeCompat` must be explicitly true or the Session V2
-    // routes (`/api/session*`, `/api/model`) answer 503 `session_v2_unavailable`
-    // (`workspace/runtime.ts:1733`).
-    opencodeRequest,
-    opencodeCompat: true,
+    opencodeRuntime,
     runtimeEventAuthorization: {
       authorizeParent: (_context, parentSessionId) => runtime.host.hasSession(parentSessionId),
       resolveParentSessionId: (event) => runtime.host.parentSessionIdFor(event.sessionId),
@@ -239,7 +174,11 @@ async function startCloudRuntime(input) {
   return {
     url,
     stats,
-    close: () => closeHttp(server),
+    close: async () => {
+      await closeHttp(server)
+      runtime.dispose()
+      await opencodeRuntime.close()
+    },
   }
 }
 
@@ -347,8 +286,6 @@ const relay = await startRelayFixture({
 })
 const relayUrl = relay.url
 const backendUrl = `http://127.0.0.1:${backendPort || 0}`
-const opencode = await forbiddenOpencodeServer()
-
 configureWorkspaceSupervisor({
   server_url: backendUrl,
 })
@@ -770,7 +707,6 @@ const desktopHostedRoutes = new Hono().route(
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
   }),
 )
-built.app.get("/__fixture/opencode-requests", (c) => c.json({ requests: opencodeRequests }))
 built.app.post("/__fixture/oauth/token", async (c) => {
   const form = new URLSearchParams(await c.req.text())
   if (form.get("grant_type") !== "refresh_token" || form.get("refresh_token") !== currentDesktopRefreshToken) {
@@ -981,7 +917,6 @@ function shutdown() {
     stopAllUserHostedWorkspaceTunnels()
     await cloudRuntime?.close()
     await shutdownWorkspaceSupervisor()
-    await opencode.close()
     await jwksIssuer.close()
     await fs.rm(root, { recursive: true, force: true }).catch(() => undefined)
   })()

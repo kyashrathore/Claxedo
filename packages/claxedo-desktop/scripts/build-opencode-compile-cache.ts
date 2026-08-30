@@ -1,7 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Generate the V8 compile caches that ship beside the embedded engine and
- * beside the server bundle.
+ * Generate the V8 compile cache that ships beside the server bundle.
  *
  * The cache is produced by the SAME Electron binary that will consume it,
  * running the SAME V8 flags the server child runs, because both the V8 version
@@ -9,17 +8,10 @@
  * `src/shared/opencode-compile-cache.ts` for the five ways this can silently
  * produce a cache the runtime ignores.
  *
- * Only the entries whose source file lives INSIDE the artifact's own root
- * directory are shipped. Everything else the generator compiles (the generator
- * stub, and `@lydell/node-pty`, which resolves into the workspace store at
- * build time but into `opencode-engine/node_modules/` when packaged) has no
- * stable root-relative name, so its runtime key cannot be derived and it is
- * dropped rather than guessed at. Measured, that costs nothing: the engine ESM
- * blob is 2,831,468 bytes and carries the entire ~155 ms win, while the seven
- * node-pty CommonJS entries total ~16 KB.
+ * Only entries whose source file lives inside the bundle root are shipped;
+ * everything else has no stable root-relative runtime key and is dropped.
  *
- * HOW THE SERVER BUNDLE IS CACHED WITHOUT STARTING A SERVER. The engine is an
- * inert library: importing it is enough. The server bundle is not — evaluating
+ * HOW THE SERVER BUNDLE IS CACHED WITHOUT STARTING A SERVER. Evaluating it
  * it binds a port and opens a database, which a build must never do. It does
  * not have to. A module graph is COMPILED DURING INSTANTIATION, before any body
  * evaluates, and node persists an entry for every module it compiled even when
@@ -41,7 +33,6 @@ import { fileURLToPath } from "node:url"
 import { claxedoServerExecArgv } from "../src/main/server-runtime-policy"
 import { claxedoServerStartup } from "./claxedo-server-startup"
 import {
-  OPENCODE_COMPILE_CACHE_DIR_NAME,
   OPENCODE_COMPILE_CACHE_MANIFEST_NAME,
   compileCacheEntryName,
   compileCacheSourceName,
@@ -324,16 +315,6 @@ export function resolveElectronBinary(fromDir: string): string {
   return require("electron") as string
 }
 
-/** The embedded engine artifact: an inert library, so importing it is enough. */
-export function buildOpenCodeCompileCache(input: {
-  enginePath: string
-  outputDir: string
-  electronPath: string
-  log?: (message: string) => void
-}) {
-  return buildCompileCache({ entryPath: input.enginePath, ...input })
-}
-
 /**
  * The message `claxedoServerStartup` refuses an empty environment with, taken
  * from the producer rather than copied.
@@ -383,22 +364,4 @@ export function buildClaxedoServerCompileCache(input: {
     expectRefusal: serverStartupRefusal(),
     ...(input.log ? { log: input.log } : {}),
   })
-}
-
-if (import.meta.main) {
-  const packageDir = path.resolve(import.meta.dir, "..")
-  const enginePath = path.resolve(packageDir, "../opencode/dist/node/node.js")
-  const outputDir = path.resolve(packageDir, "resources", OPENCODE_COMPILE_CACHE_DIR_NAME)
-  const { manifest, dropped } = await buildOpenCodeCompileCache({
-    enginePath,
-    outputDir,
-    electronPath: resolveElectronBinary(packageDir),
-    log: (message) => console.log(`[compile-cache] ${message}`),
-  })
-  for (const entry of manifest.entries) {
-    console.log(`[compile-cache] shipping ${entry.file} (${entry.type}, ${entry.bytes} bytes)`)
-  }
-  if (dropped.length > 0) {
-    console.log(`[compile-cache] skipped ${dropped.length} entr(ies) outside ${path.dirname(enginePath)}`)
-  }
 }

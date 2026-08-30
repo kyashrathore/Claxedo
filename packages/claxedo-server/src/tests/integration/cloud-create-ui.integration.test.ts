@@ -253,7 +253,7 @@ describe("cloud create UI integration", () => {
         return json({ error: "not found" }, 404)
       },
     })
-    server = serverMod.startServer(serverPort, `http://127.0.0.1:${upstreamPort}`)
+    server = serverMod.startServer(serverPort)
   })
 
   beforeEach(async () => {

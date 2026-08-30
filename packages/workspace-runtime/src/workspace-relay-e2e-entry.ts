@@ -29,7 +29,6 @@ const server = startServer(port, {
       ? loopbackWorkspaceRuntimeExposure()
       : privateNetworkDevUnsafeWorkspaceRuntimeExposure("relay e2e fixture"),
   harness: { id: "opencode", access: "native" },
-  opencodeCompat: true,
 }, { signals: true })
 
 console.log(

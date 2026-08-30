@@ -8,88 +8,43 @@ import {
   replyText,
   tokenLifetimeShortfallMs,
 } from "./smoke-interactive-session"
-
-const ended = (text: string) => ({
-  type: "session.next.text.ended",
-  data: { text, assistantMessageID: "msg_1", textID: "txt_1" },
-  durable: { seq: 2 },
-})
-const stepEnded = { type: "session.next.step.ended", data: { finish: "stop" }, durable: { seq: 3 } }
-const prompted = { type: "session.next.prompted", data: {}, durable: { seq: 1 } }
-
 describe("interactive hosted Session smoke", () => {
-  test("uses a session id past the router's 100-char parameter ceiling", () => {
-    // A short id passes against a router that silently 404s long parameters —
-    // exactly how that bug reached staging. See router-config.ts.
+  test("uses a production-shaped long session id", () => {
     expect(productionLengthSessionId("abc123").length).toBeGreaterThan(100)
     expect(productionLengthSessionId("abc123").startsWith("ses_")).toBe(true)
   })
 
-  test("treats a prompted turn with no terminal step as still running while the harness drains it", () => {
-    // `session.next.prompted` fires at ADMISSION; the first step ends seconds
-    // later. History alone must never read as settled here.
-    const active = { data: { ses_x: { type: "running" } } }
-    expect(classifyTurn([prompted], active, "ses_x")).toMatchObject({ state: "running" })
+  test("keeps an active projected turn running", () => {
+    expect(classifyTurn({ status: "busy" })).toMatchObject({ state: "running" })
+    expect(classifyTurn({ status: "idle" })).toMatchObject({ state: "running" })
   })
 
-  test("treats a terminal step as still running while the harness owns the drain", () => {
-    const active = { data: { ses_x: { type: "running" } } }
-    expect(classifyTurn([prompted, stepEnded], active, "ses_x")).toMatchObject({ state: "running" })
+  test("settles only from the persisted completed outcome", () => {
+    expect(classifyTurn({
+      status: "idle",
+      lastTurn: { status: "completed", completedAt: 3, assistantMessageId: "msg_1" },
+    })).toMatchObject({ state: "settled" })
   })
 
-  test("settles only on a terminal step AND an idle harness", () => {
-    expect(classifyTurn([prompted, ended("hi"), stepEnded], { data: {} }, "ses_x")).toMatchObject({
-      state: "settled",
-    })
-  })
-
-  test("fails toward still-active on a malformed active envelope", () => {
-    // The safe direction: never declare live work finished because a probe
-    // returned something unrecognizable.
-    for (const malformed of [undefined, null, [], "nope", { data: [] }, { data: null }]) {
-      expect(classifyTurn([stepEnded], malformed, "ses_x")).toMatchObject({ state: "running" })
-    }
-  })
-
-  test("fails fast when the harness stops after admitting the prompt without settling", () => {
-    // The opposite failure from the four-day outage: not "parked too eagerly"
-    // but "prompt accepted, harness went away". Polling this out to the
-    // deadline reports an undiagnosable timeout instead of the real defect.
-    expect(classifyTurn([prompted], { data: {} }, "ses_x")).toMatchObject({
-      state: "failed",
-      reason: "the harness stopped after admitting the prompt without settling a step",
-    })
-  })
-
-  test("does not judge a turn before the prompt is admitted", () => {
-    // An empty history with an idle harness is the gap between session create
-    // and prompt admission — not a failure.
-    expect(classifyTurn([], { data: {} }, "ses_x")).toMatchObject({ state: "running" })
+  test("surfaces persisted failed and cancelled outcomes", () => {
+    expect(classifyTurn({ lastTurn: { status: "failed", completedAt: 3, error: "provider unavailable" } }))
+      .toEqual({ state: "failed", reason: "provider unavailable" })
+    expect(classifyTurn({ lastTurn: { status: "cancelled", completedAt: 3, reason: "owner stopped" } }))
+      .toEqual({ state: "failed", reason: "owner stopped" })
   })
 
   test("warns only when the token expires before the deadline", () => {
     const now = 1_000_000
-    // Signer floor is 15 minutes, deadline is 6 — the normal case is silent.
     expect(tokenLifetimeShortfallMs(now + 15 * 60_000, now + 6 * 60_000, now)).toBeUndefined()
     expect(tokenLifetimeShortfallMs(now + 60_000, now + 6 * 60_000, now)).toBe(5 * 60_000)
-    // Absent or non-numeric expiry is not something to warn about.
     expect(tokenLifetimeShortfallMs(undefined, now + 6 * 60_000, now)).toBeUndefined()
   })
 
-  test("surfaces a failed step rather than waiting out the deadline", () => {
-    const failed = {
-      type: "session.next.step.failed",
-      data: { error: { message: "Couldn't reach Anthropic — Not Found" } },
-      durable: { seq: 3 },
-    }
-    expect(classifyTurn([prompted, failed], { data: {} }, "ses_x")).toMatchObject({
-      state: "failed",
-      reason: "Couldn't reach Anthropic — Not Found",
-    })
-  })
-
-  test("reassembles the reply from replayable text boundaries", () => {
-    expect(replyText([prompted, ended("SMOKE-abc"), stepEnded])).toBe("SMOKE-abc")
+  test("reassembles the reply from the canonical assistant message", () => {
+    expect(replyText([
+      { info: { id: "user", role: "user" }, parts: [{ type: "text", text: "prompt" }] },
+      { info: { id: "assistant", role: "assistant" }, parts: [{ type: "text", text: "SMOKE-abc" }] },
+    ])).toBe("SMOKE-abc")
   })
 
   test("provisions, prompts through the relay, asserts the marker, and cleans up", async () => {
@@ -106,15 +61,13 @@ describe("interactive hosted Session smoke", () => {
     expect(harness.createdSessionId!.length).toBeGreaterThan(100)
     expect(harness.createdSessionProfile).toEqual({
       agent: "build",
-      model: { providerID: "opencode", id: "mimo-v2.5-free", variant: "default" },
-      tools: [],
+      model: { providerID: "opencode", modelID: "mimo-v2.5-free" },
+      variant: "default",
     })
     expect(harness.promptText).toContain(markerToken(harness.runId!))
-    // Both probes were consulted before declaring the turn settled.
-    expect(harness.calls.some((call) => call.url.endsWith("/api/session/active"))).toBe(true)
-    expect(harness.calls.some((call) => call.url.includes("/history?"))).toBe(true)
+    expect(harness.calls.some((call) => call.url.includes("/message?snapshot=1"))).toBe(true)
     // Cleanup released everything the smoke created. The session is reclaimed
-    // with the workspace — Session V2 has no DELETE, only interrupt. BOTH
+    // with the workspace. BOTH
     // teardown layers must run: lifecycle/destroy reclaims the sandbox VM, and
     // the row DELETE removes the Convex workspace row — without it every
     // deploy left one "Interactive session smoke …" corpse in the app's
@@ -131,16 +84,6 @@ describe("interactive hosted Session smoke", () => {
     expect(harness.destroyedWorkspace).toBe(true)
     expect(harness.deletedWorkspaceRow).toBe(true)
     expect(harness.revokedClerkSession).toBe(true)
-  })
-
-  test("names the engine router when a bodyless 404 refuses the long session id", async () => {
-    // The discriminator that cost a staging incident: a bare 404 with no
-    // content-type is the router refusing the parameter, not an absent session.
-    const harness = fakeStaging({ routerRefusesLongIds: true })
-    await expect(interactiveSessionSmoke(harness.env, harness.request)).rejects.toThrow(
-      /engine router refused the path parameter/,
-    )
-    expect(harness.destroyedWorkspace).toBe(true)
   })
 
   test("waits out sandbox provisioning before opening the session", async () => {
@@ -210,7 +153,6 @@ function fakeStaging(
     provisioningPolls?: number
     unavailablePolls?: number
     connectionFailure?: { status: number; code: string }
-    routerRefusesLongIds?: boolean
     rewriteSessionId?: boolean
     runningPolls?: number
   } = {},
@@ -226,7 +168,6 @@ function fakeStaging(
       WORKGRAPH_SMOKE_PROVIDER_ID: "opencode",
       WORKGRAPH_SMOKE_MODEL_ID: "mimo-v2.5-free",
       WORKGRAPH_SMOKE_EFFORT: "default",
-      WORKGRAPH_SMOKE_TOOLS_JSON: "[]",
       WORKGRAPH_SMOKE_RETRY_DELAY_MS: "1",
     } as Record<string, string>,
     calls: [] as Array<{ url: string; method: string; headers: Headers }>,
@@ -235,7 +176,7 @@ function fakeStaging(
     turnPolls: 0,
     createdSessionId: undefined as string | undefined,
     createdSessionProfile: undefined as
-      | { agent: string; model: { providerID: string; id: string; variant: string }; tools: string[] }
+      | { agent: string; model: { providerID: string; modelID: string }; variant: string }
       | undefined,
     promptText: "",
     runId: undefined as string | undefined,
@@ -307,49 +248,52 @@ function fakeStaging(
     const relayPrefix = "/workspaces/ws_1"
     if (url.pathname.startsWith(relayPrefix)) {
       const path = url.pathname.slice(relayPrefix.length)
-      if (path === "/api/session" && method === "POST") {
+      if (path === "/session" && method === "POST") {
         const body = JSON.parse(String(init?.body)) as {
           id: string
           agent: string
-          model: { providerID: string; id: string; variant: string }
-          tools: string[]
-        }
-        if (options.routerRefusesLongIds && body.id.length > 100) {
-          // The exact router-level refusal shape: no body, no content-type.
-          return new Response(null, { status: 404 })
+          model: { providerID: string; modelID: string }
+          variant: string
         }
         state.createdSessionId = body.id
-        state.createdSessionProfile = { agent: body.agent, model: body.model, tools: body.tools }
+        state.createdSessionProfile = { agent: body.agent, model: body.model, variant: body.variant }
         return Response.json({ id: options.rewriteSessionId ? "ses_rewritten" : body.id }, { status: 201 })
       }
-      const sessionSegment = `/api/session/${encodeURIComponent(state.createdSessionId ?? "")}`
-      if (path === `${sessionSegment}/prompt` && method === "POST") {
-        const body = JSON.parse(String(init?.body)) as { prompt: { text: string } }
-        state.promptText = body.prompt.text
+      const sessionSegment = `/session/${encodeURIComponent(state.createdSessionId ?? "")}`
+      if (path === `${sessionSegment}/prompt_async` && method === "POST") {
+        const body = JSON.parse(String(init?.body)) as { parts: Array<{ type: string; text?: string }> }
+        state.promptText = body.parts.find((part) => part.type === "text")?.text ?? ""
         state.prompted = true
-        return Response.json({ ok: true })
+        return Response.json({ accepted: true })
       }
-      if (path === `${sessionSegment}/interrupt` && method === "POST") {
+      if (path === `${sessionSegment}/abort` && method === "POST") {
         state.interrupted = true
-        return Response.json({ ok: true })
+        return Response.json({ aborted: true })
       }
-      if (path.startsWith(`${sessionSegment}/history`)) {
+      if (path === sessionSegment && method === "GET") {
         state.turnPolls += 1
-        if (!state.prompted) return Response.json({ data: [], hasMore: false })
-        if (state.turnPolls <= runningPolls) return Response.json({ data: [prompted], hasMore: false })
+        if (!state.prompted || state.turnPolls <= runningPolls) {
+          return Response.json({ id: state.createdSessionId, status: "busy" })
+        }
         return Response.json({
-          data: [prompted, ended(options.reply ?? markerToken(state.runId ?? "")), stepEnded],
-          hasMore: false,
+          id: state.createdSessionId,
+          status: "idle",
+          lastTurn: { status: "completed", completedAt: 3, assistantMessageId: "msg_assistant" },
         })
       }
-      if (path === "/api/session/active") {
-        // Mirrors the real contract: the harness reports the drain it owns
-        // while running, and an empty map once it lets go.
-        return Response.json(
-          state.turnPolls <= runningPolls && state.createdSessionId
-            ? { data: { [state.createdSessionId]: { type: "running" } } }
-            : { data: {} },
-        )
+      if (path === `${sessionSegment}/message` && method === "GET") {
+        const messages = !state.prompted
+          ? []
+          : [
+              { info: { id: "msg_user", role: "user" }, parts: [{ type: "text", text: state.promptText }] },
+              ...(state.turnPolls <= runningPolls
+                ? []
+                : [{
+                    info: { id: "msg_assistant", role: "assistant" },
+                    parts: [{ type: "text", text: options.reply ?? markerToken(state.runId ?? "") }],
+                  }]),
+            ]
+        return Response.json({ messages, maxEventOrdinal: state.turnPolls })
       }
     }
 

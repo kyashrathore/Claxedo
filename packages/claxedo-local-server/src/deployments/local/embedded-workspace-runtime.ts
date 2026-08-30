@@ -12,7 +12,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
-import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
+import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
@@ -24,7 +24,7 @@ import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/expo
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { resolveClaxedoWorkspaceRuntimeTarget } from "../../hosts/workspace-runtime/target"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "../../opencode/events"
+import type { OpencodeEvent } from "../../opencode/events"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import type { AgentTurnOutcome } from "@claxedo/agent-sdk-runtime"
 
@@ -44,13 +44,7 @@ type PtySocket = {
 }
 
 const hosts = new Map<string, EmbeddedRuntime>()
-// The embedded workspace-runtime host rides one injected opencode transport
-// (peer of the old opencodeUrl), threaded from the composition root. Defaults to
-// the shared engine transport (embedded engine unless a composition root selects
-// external-URL mode). In embedded mode this is the in-process engine handler; in
-// external-URL mode it rewrites onto the configured URL.
-let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
-let configuredOpencodeCompat = true
+let configuredOpenCodeRuntime: OpenCodeRuntime | undefined
 let configuredPiModelBackend: PiModelBackendResolver | undefined
 /**
  * Host-supplied route groups for every embedded runtime this process creates.
@@ -66,45 +60,19 @@ let configuredProcessObserver: ProcessObserver | undefined
 // session.created/session.updated event). A harness session's title is
 // re-emitted asynchronously — e.g. a post-turn ACP auto-title
 // (`maybeEmitTitle` in `packages/agent-sdk-runtime/src/runtime.ts`) or
-// opencode's own LLM-driven rename — and that update is published ONLY as an
-// compatibility event from THIS runtime's own event hub, never as an HTTP
-// `PATCH /session/:id`. Nothing else in claxedo-server observes that hub, so
+// OpenCode's own LLM-driven rename — and that update is published through
+// THIS runtime's harness-neutral event hub. Nothing else in claxedo-server
+// observes that hub, so
 // without this sink a harness session's title reverts to "Untitled" after a
 // server restart (the control plane's `services.projectionStore` never
 // learns the new title).
 let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
-/**
- * Process-global tap on the ENGINE's own `/global/event` SSE stream (via the
- * configured opencode transport, one engine per process), forwarding ONLY the
- * engine's async session-meta events (`session.created`/`session.updated` —
- * e.g. its LLM-driven rename) to `configuredOnSessionMetaEvent`. Everything
- * else the sink needs arrives through each workspace host's `onCompatEvent`
- * hub subscription (see `options()`): the harness-neutral session service
- * publishes ACP/native-adapter turn events ONLY into the hub, and the
- * opencode compat adapter REPUBLISHES engine turn events into the hub once
- * real work starts — so the hub alone is the complete, exactly-once turn
- * stream for the control plane's turn meter. The engine's async rename is
- * the one event class that never reaches the hub, which is all this tap
- * carries.
- *
- * MEASURED, both failure modes: the pre-split bridge tapped the runtime's
- * multiplexing `/global/event` route, which with the always-live embedded
- * engine latched onto the engine stream even for an ACP-default workspace —
- * ACP turns then bypassed the meter entirely (tier-real claude-acp: three
- * visible turns, ZERO usage facts). Forwarding the engine tap unfiltered
- * alongside the hub double-counts opencode turns instead (tier-real
- * opencode: three turns, SIX facts — raw engine ids plus hub-republished
- * aliased ids). It starts lazily before the first engine mutation so read-only
- * shell hydration does not boot or pin the engine.
- */
-let engineSessionEvents: OpencodeEventsHandle | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
 
 export function configureEmbeddedWorkspaceRuntime(input: {
-  opencodeRequest: OpenCodeRequestFn
-  opencodeCompat?: boolean
+  opencodeRuntime: OpenCodeRuntime
   piModelBackend?: PiModelBackendResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
@@ -113,12 +81,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
 }) {
-  if (configuredOpencodeRequest !== input.opencodeRequest) {
-    engineSessionEvents?.close()
-    engineSessionEvents = undefined
-  }
-  configuredOpencodeRequest = input.opencodeRequest
-  configuredOpencodeCompat = input.opencodeCompat ?? true
+  configuredOpenCodeRuntime = input.opencodeRuntime
   configuredPiModelBackend = input.piModelBackend
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
@@ -126,23 +89,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
   configuredOnTurnOutcome = input.onTurnOutcome
-}
-
-function startEngineSessionEvents() {
-  if (engineSessionEvents || !configuredOpencodeCompat || !configuredOnSessionMetaEvent) return
-  const events = createOpencodeEvents(configuredOpencodeRequest, { autoStart: false })
-  events.on((event) => {
-    const type = event.payload.type
-    if (type !== "session.created" && type !== "session.updated") return
-    configuredOnSessionMetaEvent?.(event)
-  })
-  engineSessionEvents = events
-  events.start()
-}
-
-const runtimeOpencodeRequest: OpenCodeRequestFn = (request) => {
-  if (request.method !== "GET" && request.method !== "HEAD") startEngineSessionEvents()
-  return configuredOpencodeRequest(request)
 }
 
 function storeRoot(ws: Workspace) {
@@ -169,29 +115,21 @@ function extensionStateRoot(ws: Workspace) {
 const embeddedRuntimeGuard = () => true
 
 /**
- * Bridge one embedded runtime's compat-hub envelope onto `globalBus` — the bus
+ * Bridge one embedded runtime's harness event envelope onto `globalBus` — the bus
  * behind the central `/global/event` + `/api/wr/events` stream, which is a
  * LOCAL workspace's ONLY live channel into claxedo-app (the app opens
  * workspace-scoped streams only for cloud/user-hosted kinds; see
  * `compat-routes/events.ts`).
  *
- * The engine's own stream is already bridged (`upstreamEvents.on` in each
- * deployment), but that carries ONLY engine-native sessions: an ACP harness
- * turn (claude/codex) publishes its `message.part.delta` / `message.updated` /
- * `session.error` compat events exclusively through this hub. Before this
+ * Every harness publishes `message.part.delta` / `message.updated` /
+ * `session.error` events through this one hub. Before this
  * bridge those events reached only the per-directory dispatched stream that
  * nothing subscribes to, so a live ACP turn rendered in an open timeline only
  * after a manual refresh — the send-POST's own response stream was the
  * timeline's ONLY live input.
  *
- * No double-apply with the engine bridge: for a native-engine workspace the
- * runtime's `/global/event` route PROXIES the engine's stream precisely
- * because native traffic is NOT on this hub (see the "Observe the hub itself"
- * note in `workspace-runtime/src/workspace/runtime.ts`), so the two producers
- * cover disjoint session populations.
- *
- * The payload is stripped to `{type, properties}` to match the engine bridge's
- * proven wire shape — `normalizeGlobalEvent` mints per-frame ids downstream,
+ * The payload is stripped to `{type, properties}` because
+ * `normalizeGlobalEvent` mints per-frame ids downstream,
  * and compat payload ids must not reach the wire (a part's deltas share one
  * payload id, which would defeat SSE resume ordering if used as the frame id).
  */
@@ -210,7 +148,6 @@ export function bridgeCompatEventToGlobalBus(event: {
 
 function options(
   ws: Workspace,
-  opencodeRequest: OpenCodeRequestFn,
   sessionAccess: {
     exists(sessionId: string): boolean
     parentSessionIdFor(sessionId: string): string | undefined
@@ -219,17 +156,13 @@ function options(
   exposure: WorkspaceRuntimeExposure
 } {
   return {
-    opencodeRequest,
+    ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
-    // Hub-side compat events: the complete, exactly-once turn stream — the
-    // harness-neutral session service publishes ACP/native-adapter turns
-    // here, and the opencode compat adapter republishes engine turns here
-    // once real work starts. Forwarded to the same host sink the (session-
-    // meta-only) engine tap feeds; see `engineSessionEvents` for why the
-    // split is exactly this way.
+    // The typed SDK adapter publishes through the same harness-neutral hub as
+    // every other adapter. No raw engine event stream exists beside it.
     onCompatEvent: (event) => {
       bridgeCompatEventToGlobalBus(event)
       configuredOnSessionMetaEvent?.(event)
@@ -259,7 +192,6 @@ function options(
     corsOrigin: claxedoCorsOrigin,
     // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
     // from the composition root (this module stays ambient-env-free).
-    opencodeCompat: configuredOpencodeCompat,
     // `createSessionRoutes` awaits this before publishing `session.lifecycle`
     // "created", so the control-plane list can never be invalidated before
     // its canonical projection row exists.
@@ -341,7 +273,7 @@ export async function ensureEmbeddedWorkspaceRuntime(
   }
 
   let activeHost: EmbeddedRuntime["host"] | undefined
-  const created = createWorkspaceRuntimeApp(options(ws, runtimeOpencodeRequest, {
+  const created = createWorkspaceRuntimeApp(options(ws, {
     exists: (sessionId) => activeHost?.hasSession(sessionId) ?? false,
     parentSessionIdFor: (sessionId) => activeHost?.parentSessionIdFor(sessionId),
   }))

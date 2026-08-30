@@ -4,13 +4,10 @@
 # reaches sibling workspace packages):
 #   docker build -f packages/claxedo-server/Dockerfile -t claxedo-control-plane .
 #
-# The embedded OpenCode engine is built inside the image (needs network at
-# build time: the engine build fetches models.dev; override via
-# MODELS_DEV_API_JSON / OPENCODE_MODELS_URL for air-gapped builds).
 
 FROM node:22-bookworm-slim AS build
 
-# Bun drives workspace install + the engine build; Node runs the server.
+# Bun drives workspace installation and builds; Node runs the server.
 COPY --from=oven/bun:1.3.14 /usr/local/bin/bun /usr/local/bin/bun
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -53,11 +50,6 @@ RUN for pkg in agent-event-runtime agent-sdk-runtime workspace-runtime sandbox-m
       (cd "packages/$pkg" && bun run build); \
     done
 
-# Build the embedded engine artifact (opencode/node-embed -> dist/node/node.js).
-# OPENCODE_CHANNEL/OPENCODE_VERSION bypass the build script's git-metadata
-# lookups (.git is deliberately excluded from the build context).
-RUN cd packages/opencode && OPENCODE_CHANNEL=selfhost OPENCODE_VERSION=0.0.0-selfhost bun run build:node
-
 # Web UI bundle (W2): served by the control plane itself (CLAXEDO_APP_DIST_DIR
 # below). Empty VITE_* URLs → the app calls its own origin, so one process
 # serves both the UI and the API on any host name.
@@ -90,11 +82,6 @@ ENV CLAXEDO_SERVER_HOST=0.0.0.0
 ENV CLAXEDO_SERVER_PORT=3001
 # Serve the in-image web UI bundle from the control plane (W2 parity).
 ENV CLAXEDO_APP_DIST_DIR=/app/packages/claxedo-app/dist-selfhost
-# The embedded engine runs in a worker thread. Worker threads get a small
-# default V8 heap in a container (unlike the main thread, which auto-sizes to
-# machine RAM), so the engine OOM-crash-loops without an explicit cap. This
-# propagates to the worker; keep it well under the machine memory. Verified:
-# /provider loads fine at 1536MB locally.
 ENV NODE_OPTIONS=--max-old-space-size=2048
 # Persistent state (SQLite central store + authority + runtime data). Mount a
 # volume here.

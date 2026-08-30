@@ -5,7 +5,6 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "@claxedo/sandbox-manager"
 import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
-  OPENCODE_BINARY_FILENAME,
   WORKSPACE_RUNTIME_VERSION_FILENAME,
   hostBundleDependencies,
   sandboxImageBuildArgs,
@@ -67,12 +66,20 @@ describe("build-sandbox-image", () => {
           "@agentclientprotocol/claude-agent-acp": "0.60.0",
           "@agentclientprotocol/codex-acp": "0.10.0",
           "@claxedo/agent-sdk-runtime": "0.5.1",
+          "@claxedo/opencode-runtime": "workspace:*",
           hono: "4.12.12",
         },
       },
       "agent-sdk-runtime": {
         name: "@claxedo/agent-sdk-runtime",
         dependencies: { hono: "4.10.7", "just-bash": "3.0.1" },
+      },
+      "opencode-runtime": {
+        name: "@claxedo/opencode-runtime",
+        dependencies: {
+          "@opencode-ai/plugin": "0.0.0-beta-18684",
+          "@opencode-ai/sdk": "0.0.0-beta-18684",
+        },
       },
     }
     const deps = hostBundleDependencies((dir) => {
@@ -87,6 +94,8 @@ describe("build-sandbox-image", () => {
       "@agentclientprotocol/codex-acp": "0.10.0",
       hono: "4.12.12",
       "just-bash": "3.0.1",
+      "@opencode-ai/plugin": "0.0.0-beta-18684",
+      "@opencode-ai/sdk": "0.0.0-beta-18684",
     })
   })
 
@@ -106,13 +115,15 @@ describe("build-sandbox-image", () => {
     expect(deps["@agentclientprotocol/claude-agent-acp"]).toBe("0.63.0")
     expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.220")
     expect(deps.zod).toBe("4.4.3")
+    expect(deps["@opencode-ai/sdk"]).toBe("0.0.0-beta-18684")
   })
 
   test("production image starts the checkout-built workspace-runtime host", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("setsid env WORKSPACE_RUNTIME_PORT=2593"))).toBe(true)
-    expect(dockerfiles.every((dockerfile) => dockerfile.includes("OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes("WORKSPACE_RUNTIME_RUNNER=opencode"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => !dockerfile.includes("OPENCODE_URL="))).toBe(true)
     expect(dockerfiles.every((dockerfile) =>
       dockerfile.includes(`ln -sf /opt/workspace-runtime/${HOST_BUNDLE_FILENAME} /usr/local/bin/workspace-runtime`)
     )).toBe(true)
@@ -129,19 +140,17 @@ describe("build-sandbox-image", () => {
     expect(fs.readFileSync(versionFile, "utf8")).toMatch(/^\d+\.\d+\.\d+\n$/)
   })
 
-  test("production images install and smoke the checkout's Session V2 OpenCode binary", () => {
+  test("production images smoke the public embedded SDK through the one Session rail", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     for (const dockerfile of dockerfiles) {
-      expect(dockerfile).toContain(`test -x /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME}`)
-      expect(dockerfile).toContain(`install -m 0755 /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME} /usr/local/bin/opencode`)
-      expect(dockerfile).toContain("http://127.0.0.1:2593/api/session")
-      expect(dockerfile).toContain("Session V2 create did not adopt the requested id")
-      expect(dockerfile).toContain("Session V2 history was truncated across workspace-runtime")
+      expect(dockerfile).toContain("http://127.0.0.1:2593/session?harness=opencode")
+      expect(dockerfile).toContain("Embedded Session did not adopt the requested id")
+      expect(dockerfile).toContain("Embedded Session snapshot was invalid")
       expect(dockerfile).toContain("ses_workgraph_image_failure")
-      expect(dockerfile).toContain("session.next.step.failed")
+      expect(dockerfile).toContain("lastTurn?.status!=='failed'")
       expect(dockerfile).toContain("accept-encoding: gzip")
-      expect(dockerfile).toContain("setsid env OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true opencode serve")
+      expect(dockerfile).not.toContain("opencode serve")
       expect(dockerfile).toContain("os.killpg")
     }
     expect(dockerfiles.every((dockerfile) => !dockerfile.includes("opencode-ai@"))).toBe(true)

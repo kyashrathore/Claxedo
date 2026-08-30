@@ -64,14 +64,8 @@ Host decision seams (all default to decision-free kit behavior):
 `storeFactory` (store implementation; default SQLite `RuntimeStore`),
 `harnesses` (adapter registry; default `defaultWorkspaceHarnessRegistry()`),
 `corsOrigin` (origin policy; kit default = loopback dev origins only, no
-product domains), `opencodeCompat` (three-state OpenCode compatibility:
-`undefined` default keeps the OpenCode **adapter mechanism** on — upstream
-list/status proxying — while the root compat **route surface** (`/mcp`,
-`/provider`, `/vcs`, `/session/status`) stays off; `true` enables both;
-`false` is a full kill switch), `opencodeRequest` (OpenCode engine transport:
-inject an in-process `(request: Request) => Promise<Response>` handler and the
-adapter/compat routes/`/global/event` proxying all ride it — no socket, no
-child process; when set it wins over `opencodeUrl`), and `startServer`'s third argument
+product domains), `opencodeRuntime` (the process-owned public embedded SDK
+runtime used by the native OpenCode adapter), and `startServer`'s third argument
 `{ signals: true }` (process
 signal/exit handling; kit default makes no process-global claims). Claxedo
 supplies all of these from `claxedo-server` (`runtime-boot.ts`, embedded
@@ -109,7 +103,8 @@ Root runtime value exports:
 `WorkspaceRuntimeRouteManifest`, `WorkspaceRuntimeRoutes`,
 `WorkspaceWorktreeManager`, `createMemoryTranscriptHandleStore`,
 `createPersistentTranscriptHandleStore`, `createProcessObserver`,
-`createTranscriptResolver`, `createWorkspaceHost`, `createWorkspaceRuntimeApp`,
+`createTranscriptResolver`, `createWorkspaceHost`, `createWorkspaceOpenCodeRuntime`,
+`createWorkspaceRuntimeApp`,
 `createWorkspaceRuntimeJwtManagementAuth`, `defaultWorkspaceHarnessRegistry`,
 `embeddedWorkspaceRuntimeExposure`, `flushRuntimeDocument`,
 `forgetRuntimeDocuments`, `isLoopbackHostname`,
@@ -511,7 +506,6 @@ contract.
 | `WORKSPACE_RUNTIME_DIRECTORY`, `WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID` | Runtime target identity. |
 | `WORKSPACE_RUNTIME_RUNNER`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |
-| `WORKSPACE_RUNTIME_OPENCODE_COMPAT` | Set to `0` by the host to disable the OpenCode compatibility adapter and routes. The executable translates this process-boundary setting into the `opencodeCompat` host option. |
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
 | `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |
 | `WORKSPACE_RUNTIME_DATA_DIR`, `WORKSPACE_RUNTIME_STATE_DIR`, `WORKSPACE_RUNTIME_STORE_DIR`, `WORKSPACE_RUNTIME_PTY_HISTORY_DIR` | Neutral runtime-owned storage locations. Defaults are under `~/.workspace-runtime`. |

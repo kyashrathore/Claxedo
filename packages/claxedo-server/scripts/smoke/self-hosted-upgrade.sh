@@ -144,7 +144,7 @@ MJS
 
 # CLAXEDO_EMBEDDED_AUTH=1 is what puts real users and sessions in the data root:
 # without it the box runs unsigned-local and there is no identity to carry
-# across. CLAXEDO_DISABLE_OPENCODE_COMPAT=1 keeps boot to a few seconds.
+# across.
 healthy() { curl -fsS "http://127.0.0.1:$PORT/api/claxedo/health" >/dev/null 2>&1; }
 
 boot() {
@@ -158,7 +158,7 @@ boot() {
   # while the health check kept passing against the PREVIOUS build.
   ( cd "$dir/packages/claxedo-server" \
     && CLAXEDO_DATA_DIR="$DATA_DIR" CLAXEDO_SERVER_PORT="$PORT" \
-       CLAXEDO_EMBEDDED_AUTH=1 CLAXEDO_DISABLE_OPENCODE_COMPAT=1 \
+       CLAXEDO_EMBEDDED_AUTH=1 \
        exec node --conditions=development \
          --import ../workspace-runtime/src/text-imports.mjs \
          --import tsx \

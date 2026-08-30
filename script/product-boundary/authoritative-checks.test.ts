@@ -47,7 +47,6 @@ describe("product boundary authoritative checks", () => {
       "hosted Node built entry smoke",
       "hosted workerd production build",
       "hosted workerd built entry smoke",
-      "self-hosted OpenCode resource build",
       "self-hosted production build",
       "self-hosted built process smoke",
       "cloud and self-hosted deployment closures",

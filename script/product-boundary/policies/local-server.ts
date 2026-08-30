@@ -67,11 +67,11 @@ export const localServer: Policy = {
     requiredPackages: ["@claxedo/workspace-runtime", "hono"],
   },
 
-  // Measured 2026-08-09 with `runtimeOnly`. The eight added modules are the
-  // complete local usage pipeline (route, durable ports, scanner, pricing
-  // port, outbox, host identity, and composition). Shared implementation lives
-  // in server-core, so the desktop still reaches no hosted capability package.
-  ceilings: { modules: 56, packages: 21 },
+  // Measured 2026-08-30 with `runtimeOnly`. The package count includes
+  // `@claxedo/opencode-runtime`, the reviewed owner of the public embedded SDK
+  // used by this desktop entry. It replaces the vendored/spawned engine path;
+  // no hosted capability package enters the unsigned desktop closure.
+  ceilings: { modules: 56, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

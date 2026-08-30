@@ -25,7 +25,7 @@ import {
   workGraphWorkspaceId,
 } from "./runtime"
 import type { ControlPlaneServices } from "../../../authority/services"
-import { StreamReplacementResetSchema, WorkGraphRunToolNames } from "@claxedo/workgraph/contracts"
+import { StreamReplacementResetSchema } from "@claxedo/workgraph/contracts"
 
 const querySingleTenant = async (_fn: unknown, args: Record<string, unknown>) =>
   "before" in args ? [] : [{ organizationId: "org-a", ownerUserId: "user-a" }]
@@ -103,9 +103,10 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         fetch: async (input, init) => {
           const url = new URL(String(input))
-          if (url.pathname.endsWith("/api/session")) {
+          if (url.pathname.endsWith("/session") && init?.method === "POST") {
             expect(JSON.parse(String(init?.body))).toMatchObject({
-              tools: ["bash", "workgraph_update_stream_notes", "workgraph_notify_owner"],
+              id: "ses_master_stream-a",
+              model: { providerID: "openai", modelID: "gpt-5" },
             })
             return Response.json({ id: "ses_master_stream-a" })
           }
@@ -117,20 +118,26 @@ describe("hosted WorkGraph runtime outbox", () => {
             return Response.json({ bound: true })
           }
           if (url.pathname.includes("/api/workgraph/run-binding/")) return Response.json({ unbound: true })
-          if (url.pathname.endsWith("/prompt")) {
-            expect(JSON.parse(String(init?.body))).toMatchObject({ id: "msg_master_turn_1", delivery: "steer", resume: true })
+          if (url.pathname.endsWith("/prompt_async")) {
+            expect(JSON.parse(String(init?.body))).toMatchObject({ messageID: "msg_master_turn_1" })
             prompted = true
             return Response.json({ admitted: true })
           }
-          if (url.pathname.endsWith("/history")) {
-            if (!prompted) return Response.json({ data: [{ type: "session.next.step.ended", durable: { seq: 4 }, data: {} }], hasMore: false })
-            return Response.json({
-              data: [
-                { type: "session.next.text.ended", durable: { seq: 5 }, data: { text: "Rebased and validated the landing." } },
-                { type: "session.next.step.ended", durable: { seq: 6 }, data: {} },
-              ],
-              hasMore: false,
-            })
+          if (url.pathname.endsWith("/ses_master_stream-a")) {
+            return Response.json(prompted
+              ? { id: "ses_master_stream-a", status: "idle", lastTurn: { status: "completed", completedAt: 6, assistantMessageId: "msg_master_assistant" } }
+              : { id: "ses_master_stream-a", status: "idle" })
+          }
+          if (url.pathname.endsWith("/ses_master_stream-a/message")) {
+            return Response.json(prompted
+              ? {
+                  messages: [
+                    { info: { id: "msg_master_turn_1", role: "user" }, parts: [{ type: "text", text: "master" }] },
+                    { info: { id: "msg_master_assistant", role: "assistant" }, parts: [{ type: "text", text: "Rebased and validated the landing." }] },
+                  ],
+                  maxEventOrdinal: 6,
+                }
+              : { messages: [], maxEventOrdinal: 4 })
           }
           throw new Error(`Unexpected master runtime request ${url.pathname}`)
         },
@@ -772,7 +779,7 @@ describe("hosted WorkGraph runtime outbox", () => {
           },
         },
         fetch: async (input) => {
-          if (new URL(String(input)).pathname.endsWith("/api/session")) return Response.json({ id: "session-a" })
+          if (new URL(String(input)).pathname.endsWith("/session")) return Response.json({ id: "session-a" })
           return Response.json({})
         },
       },
@@ -898,7 +905,7 @@ describe("hosted WorkGraph runtime outbox", () => {
           },
         },
         fetch: async (input) => {
-          if (new URL(String(input)).pathname.endsWith("/api/session")) return Response.json({ id: "session-b" })
+          if (new URL(String(input)).pathname.endsWith("/session")) return Response.json({ id: "session-b" })
           return Response.json({})
         },
       },
@@ -1705,7 +1712,7 @@ describe("hosted WorkGraph runtime outbox", () => {
 
 
 
-  test("reconciles hosted source planning whose terminal event is on the second history page", async () => {
+  test("reconciles hosted source planning from the persisted terminal turn", async () => {
     const mutations: Record<string, unknown>[] = []
     const prompts: Array<Record<string, unknown>> = []
     const runtime = createHostedWorkGraphRuntime(
@@ -1785,55 +1792,27 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         fetch: async (input, init) => {
           const url = new URL(String(input))
-          if (url.pathname.endsWith("/api/session")) {
-            expect(JSON.parse(String(init?.body))).toMatchObject({ id: "ses_workgraph_source-plan-job_1", tools: [] })
+          if (url.pathname.endsWith("/session") && init?.method === "POST") {
+            expect(JSON.parse(String(init?.body))).toMatchObject({ id: "ses_workgraph_source-plan-job_1" })
             return Response.json({ id: "ses_workgraph_source-plan-job_1" })
           }
-          if (url.pathname.endsWith("/prompt")) {
+          if (url.pathname.endsWith("/prompt_async")) {
             prompts.push(JSON.parse(String(init?.body)))
             return Response.json({ data: { admitted: true } })
           }
-          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "0")
+          if (url.pathname.endsWith("/ses_workgraph_source-plan-job_1"))
             return Response.json({
-              data: [
-                {
-                  type: "session.next.text.ended",
-                  durable: { seq: 1 },
-                  data: {
-                    text: JSON.stringify({
-                      source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
-                      suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" },
-                      placementMatches: [],
-                      proposedOutcomes: [
-                        { key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} },
-                      ],
-                      proposedWorkItems: [
-                        {
-                          key: "deploy",
-                          outcomeKey: "ship",
-                          title: "Deploy",
-                          dependencyKeys: [],
-                          execution: {},
-                          completionContract: {
-                            version: 1,
-                            mode: "all",
-                            requirements: [
-                              { id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" },
-                            ],
-                          },
-                        },
-                      ],
-                      duplicateMatches: [],
-                    }),
-                  },
-                },
-              ],
-              hasMore: true,
+              id: "ses_workgraph_source-plan-job_1",
+              status: "idle",
+              lastTurn: { status: "completed", completedAt: 2, assistantMessageId: "msg_source_assistant" },
             })
-          if (url.pathname.endsWith("/history") && url.searchParams.get("after") === "1")
+          if (url.pathname.endsWith("/ses_workgraph_source-plan-job_1/message"))
             return Response.json({
-              data: [{ type: "session.next.step.ended", durable: { seq: 2 }, data: {} }],
-              hasMore: false,
+              messages: [
+                { info: { id: "msg_workgraph_source-plan-job", role: "user" }, parts: [] },
+                { info: { id: "msg_source_assistant", role: "assistant" }, parts: [{ type: "text", text: sourcePlanResultText() }] },
+              ],
+              maxEventOrdinal: 2,
             })
           return Response.json({ data: {} })
         },
@@ -1845,9 +1824,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     })
     expect(prompts).toEqual([
       expect.objectContaining({
-        id: "msg_workgraph_source-plan-job",
-        delivery: "steer",
-        resume: true,
+        messageID: "msg_workgraph_source-plan-job",
       }),
     ])
     expect(mutations).toContainEqual(
@@ -1938,52 +1915,29 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         fetch: async (input, init) => {
           const url = new URL(String(input))
-          if (url.pathname.endsWith("/api/session")) {
+          if (url.pathname.endsWith("/session") && init?.method === "POST") {
             const body = JSON.parse(String(init?.body))
             sessionBodies.push(body)
             return Response.json({ id: body.id })
           }
-          if (url.pathname.endsWith("/prompt")) {
+          if (url.pathname.endsWith("/prompt_async")) {
             promptBodies.push(JSON.parse(String(init?.body)))
             if (promptBodies.length === 1) throw new Error("response lost after durable prompt admission")
             return Response.json({ data: { admitted: true } })
           }
-          if (url.pathname.endsWith("/history"))
+          if (url.pathname.endsWith("/ses_workgraph_source-plan-lost_1"))
             return Response.json({
-              data: [
-                {
-                  type: "session.next.text.ended",
-                  data: {
-                    text: JSON.stringify({
-                      source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
-                      suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" },
-                      placementMatches: [],
-                      proposedOutcomes: [
-                        { key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} },
-                      ],
-                      proposedWorkItems: [
-                        {
-                          key: "deploy",
-                          outcomeKey: "ship",
-                          title: "Deploy",
-                          dependencyKeys: [],
-                          execution: {},
-                          completionContract: {
-                            version: 1,
-                            mode: "all",
-                            requirements: [
-                              { id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" },
-                            ],
-                          },
-                        },
-                      ],
-                      duplicateMatches: [],
-                    }),
-                  },
-                },
-                { type: "session.next.step.ended", data: {} },
+              id: "ses_workgraph_source-plan-lost_1",
+              status: "idle",
+              lastTurn: { status: "completed", completedAt: 2, assistantMessageId: "msg_source_assistant" },
+            })
+          if (url.pathname.endsWith("/ses_workgraph_source-plan-lost_1/message"))
+            return Response.json({
+              messages: [
+                { info: { id: "msg_workgraph_source-plan-lost", role: "user" }, parts: [] },
+                { info: { id: "msg_source_assistant", role: "assistant" }, parts: [{ type: "text", text: sourcePlanResultText() }] },
               ],
-              hasMore: false,
+              maxEventOrdinal: 2,
             })
           return Response.json({ data: {} })
         },
@@ -2001,8 +1955,8 @@ describe("hosted WorkGraph runtime outbox", () => {
       expect.objectContaining({ id: "ses_workgraph_source-plan-lost_1" }),
     ])
     expect(promptBodies).toEqual([
-      expect.objectContaining({ id: "msg_workgraph_source-plan-lost" }),
-      expect.objectContaining({ id: "msg_workgraph_source-plan-lost" }),
+      expect.objectContaining({ messageID: "msg_workgraph_source-plan-lost" }),
+      expect.objectContaining({ messageID: "msg_workgraph_source-plan-lost" }),
     ])
     expect(mutations.filter((mutation) => "plan" in mutation)).toHaveLength(1)
   })
@@ -2190,13 +2144,13 @@ describe("hosted WorkGraph runtime outbox", () => {
         fetch: async (input, init) => {
           const url = new URL(String(input))
           expect(init?.headers).toBeDefined()
-          if (url.pathname.endsWith("/api/session")) {
+          if (url.pathname.endsWith("/session") && init?.method === "POST") {
             expect(JSON.parse(String(init?.body))).toEqual({
               id: "ses_wgrun_run-a",
+              title: "No-op",
               agent: "build",
-              model: { providerID: "openai", id: "gpt-5", variant: "high" },
-              tools: ["connection_work_source_list", ...WorkGraphRunToolNames],
-              location: { directory: "/workspace" },
+              model: { providerID: "openai", modelID: "gpt-5" },
+              variant: "high",
             })
             return Response.json({ id: "session-a" }, { status: 201 })
           }
@@ -2229,25 +2183,26 @@ describe("hosted WorkGraph runtime outbox", () => {
             })
             return Response.json({ bound: true })
           }
-          if (url.pathname.endsWith("/prompt")) {
+          if (url.pathname.endsWith("/prompt_async")) {
             const body = JSON.parse(String(init?.body))
             promptBodies.push(body)
             return Response.json({ data: { admitted: true } })
           }
-          if (url.pathname.endsWith("/history"))
+          if (url.pathname.endsWith("/session-a"))
             return Response.json({
-              data: [
-                { type: "session.next.text.ended", durable: { seq: 1 }, data: { text: "done" } },
-                { type: "session.next.step.ended", durable: { seq: 2 }, data: { files: ["result.txt"] } },
-              ],
-              hasMore: false,
+              id: "session-a",
+              status: "idle",
+              lastTurn: { status: "completed", completedAt: 2, assistantMessageId: "msg_assistant" },
             })
           if (url.pathname.endsWith("/message")) {
             expect(url.searchParams.get("snapshot")).toBe("1")
-            return Response.json([
-              { info: { id: "msg_user", role: "user" }, parts: [{ type: "text", text: "Return done" }] },
-              { info: { id: "msg_assistant", role: "assistant" }, parts: [{ type: "text", text: "done" }] },
-            ])
+            return Response.json({
+              messages: [
+                { info: { id: "msg_workgraph_run-a", role: "user" }, parts: [{ type: "text", text: "Return done" }] },
+                { info: { id: "msg_assistant", role: "assistant" }, parts: [{ type: "text", text: "done" }] },
+              ],
+              maxEventOrdinal: 2,
+            })
           }
           return Response.json({ data: { admitted: true } })
         },
@@ -2286,18 +2241,16 @@ describe("hosted WorkGraph runtime outbox", () => {
     })
     expect(promptBodies).toEqual([
       expect.objectContaining({
-        id: "msg_workgraph_run-a",
-        prompt: {
-          text: expect.stringContaining("A text response without this tool call does not complete the Run"),
-        },
+        messageID: "msg_workgraph_run-a",
+        parts: [expect.objectContaining({ text: expect.stringContaining("A text response without this tool call does not complete the Run") })],
       }),
       expect.objectContaining({
-        id: "msg_workgraph_completion_run-a",
-        prompt: { text: expect.stringContaining("Call workgraph_complete_task now") },
+        messageID: "msg_workgraph_completion_run-a",
+        parts: [expect.objectContaining({ text: expect.stringContaining("Call workgraph_complete_task now") })],
       }),
     ])
     expect(promptBodies[0]).toMatchObject({
-      prompt: { text: expect.stringContaining('"evidence":{"kind":"test_result"') },
+      parts: [expect.objectContaining({ text: expect.stringContaining('"evidence":{"kind":"test_result"') })],
     })
     expect(mutations).not.toContainEqual(expect.objectContaining({ summary: "done", artifacts: ["file:result.txt"] }))
     expect(publishedLaunches).toEqual([
@@ -2314,7 +2267,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       expect.objectContaining({
         sessionId: "session-a",
         messages: [
-          expect.objectContaining({ info: expect.objectContaining({ id: "msg_user" }) }),
+          expect.objectContaining({ info: expect.objectContaining({ id: "msg_workgraph_run-a" }) }),
           expect.objectContaining({ info: expect.objectContaining({ id: "msg_assistant" }) }),
         ],
       }),
@@ -2356,7 +2309,7 @@ describe("hosted WorkGraph runtime outbox", () => {
         },
         fetch: async (input) => {
           const url = new URL(String(input))
-          if (url.pathname.endsWith("/history")) return Response.json({ data: [], hasMore: false })
+          if (url.pathname.endsWith("/session-a")) return Response.json({ id: "session-a", status: "busy" })
           if (url.pathname.endsWith("/message")) return Response.json({ messages: [], maxEventOrdinal: 0 })
           throw new Error(`Unexpected hosted runtime request ${url.pathname}`)
         },
@@ -2468,81 +2421,30 @@ describe("hosted WorkGraph runtime outbox", () => {
   })
 
   test("requests one explicit completion retry instead of fabricating hosted success", async () => {
-    for (const data of [
-      [{ type: "session.next.step.ended", durable: { seq: 1 }, data: { files: [] } }],
-      [
-        { type: "session.next.text.ended", durable: { seq: 1 }, data: { text: "   " } },
-        { type: "session.next.step.ended", durable: { seq: 2 }, data: { files: [] } },
-      ],
-    ]) {
-      const { mutations, result } = await reconcileRunHistory({ data, hasMore: false })
-      expect(result).toMatchObject({ results: [{ settled: false, state: "retrying_explicit_completion" }] })
-      expect(mutations[2]).toMatchObject({
-        session_id: "session-a",
-        terminal_seq: data.at(-1)!.durable.seq,
-      })
-      expect(mutations[2]).not.toHaveProperty("summary")
-    }
+    const { mutations, result } = await reconcileRunSnapshot(
+      { id: "session-a", status: "idle", lastTurn: { status: "completed", completedAt: 2, assistantMessageId: "assistant-a" } },
+      sessionMessages("assistant-a", "done", 2),
+    )
+    expect(result).toMatchObject({ results: [{ settled: false, state: "retrying_explicit_completion" }] })
+    expect(mutations[2]).toMatchObject({ session_id: "session-a", terminal_seq: 2 })
+    expect(mutations[2]).not.toHaveProperty("summary")
   })
 
-  test("parks hosted work when an admitted prompt stops before provider settlement", async () => {
-    const { mutations, result } = await reconcileRunHistory({
-      data: [{ type: "session.next.prompted", durable: { seq: 1 }, data: {} }],
-      hasMore: false,
-    })
-    expect(result).toMatchObject({ results: [{ settled: true }] })
-    expect(mutations[2]).toMatchObject({
-      run_id: "run-a",
-      session_id: "session-a",
-      lease_epoch: 2,
-      reason: "Session stopped before the provider step settled",
-    })
-  })
-
-  test("leaves an admitted prompt running while the harness still owns its drain", async () => {
-    // `session.next.prompted` lands on admission and the first step ends whole
-    // seconds later, so history alone cannot tell a stopped Session from one
-    // mid-turn. Parking on history alone parked every Run reconciled inside
-    // that window -- the staging smoke parked 12s after admission.
-    for (const active of [
-      { data: { "session-a": { type: "running" } } },
-      // Unrecognizable envelopes must fail toward "still active": the other
-      // direction parks live work on a malformed response.
-      { data: null },
-      "not-an-object",
-    ]) {
-      const { mutations, result } = await reconcileRunHistory(
-        { data: [{ type: "session.next.prompted", durable: { seq: 1 }, data: {} }], hasMore: false },
-        undefined,
-        active,
+  test("leaves the Run active while the persisted Session owns the turn", async () => {
+    for (const status of ["busy", "recovering", "retry"] as const) {
+      const { mutations, result } = await reconcileRunSnapshot(
+        { id: "session-a", status },
+        { messages: [], maxEventOrdinal: 1 },
       )
       expect(result).toMatchObject({ results: [{ settled: false, state: "running" }] })
       expect(mutations[2]).toBeUndefined()
     }
   })
 
-  test("parks an admitted prompt once the harness reports another session's drain but not this one", async () => {
-    const { mutations, result } = await reconcileRunHistory(
-      { data: [{ type: "session.next.prompted", durable: { seq: 1 }, data: {} }], hasMore: false },
-      undefined,
-      { data: { "session-b": { type: "running" } } },
-    )
-    expect(result).toMatchObject({ results: [{ settled: true }] })
-    expect(mutations[2]).toMatchObject({
-      session_id: "session-a",
-      reason: "Session stopped before the provider step settled",
-    })
-  })
-
   test("records a truthful failure when the completion-only retry also ends without completion", async () => {
-    const { mutations, result } = await reconcileRunHistory(
-      {
-        data: [
-          { type: "session.next.text.ended", durable: { seq: 3 }, data: { text: "Still done" } },
-          { type: "session.next.step.ended", durable: { seq: 4 }, data: { files: [] } },
-        ],
-        hasMore: false,
-      },
+    const { mutations, result } = await reconcileRunSnapshot(
+      { id: "session-a", status: "idle", lastTurn: { status: "completed", completedAt: 4, assistantMessageId: "assistant-a" } },
+      sessionMessages("assistant-a", "Still done", 4),
       { terminalSeq: 2, requestedAt: 100 },
     )
     expect(result).toMatchObject({ results: [{ settled: true }] })
@@ -2552,17 +2454,17 @@ describe("hosted WorkGraph runtime outbox", () => {
     })
   })
 
-  test("records session_history_invalid for malformed or missing hosted history data", async () => {
-    for (const history of [
-      { hasMore: false },
-      { data: [], hasMore: "false" },
-      { data: [{ type: "session.next.step.ended", data: null }], hasMore: false },
+  test("fails closed for malformed or mismatched hosted Session snapshots", async () => {
+    for (const [session, messages] of [
+      [{ id: "different-session", status: "idle" }, { messages: [], maxEventOrdinal: 0 }],
+      [{ id: "session-a", status: "idle" }, { maxEventOrdinal: 0 }],
+      [{ id: "session-a", status: "idle" }, { messages: [], maxEventOrdinal: -1 }],
     ]) {
-      const { mutations, result } = await reconcileRunHistory(history)
+      const { mutations, result } = await reconcileRunSnapshot(session, messages)
       expect(result).toMatchObject({ results: [{ settled: true }] })
       expect(mutations[2]).toMatchObject({
         session_id: "session-a",
-        reason: "session_history_invalid",
+        reason: expect.stringContaining("Hosted Session"),
       })
     }
   })
@@ -2640,7 +2542,7 @@ describe("hosted WorkGraph runtime outbox", () => {
           },
         },
         fetch: async (url) =>
-          String(url).endsWith("/api/session") ? Response.json({ id: "session-race" }) : Response.json({}),
+          String(url).includes("/session?") ? Response.json({ id: "session-race" }) : Response.json({}),
       },
     )
     await runtime?.reconcile()
@@ -2717,7 +2619,7 @@ describe("hosted WorkGraph runtime outbox", () => {
           },
         },
         fetch: async (url) =>
-          String(url).endsWith("/api/session") ? Response.json({ id: "session-indeterminate" }) : Response.json({}),
+          String(url).includes("/session?") ? Response.json({ id: "session-indeterminate" }) : Response.json({}),
       },
     )
 
@@ -3429,10 +3331,42 @@ function transcriptServices() {
   } as unknown as ControlPlaneServices
 }
 
-async function reconcileRunHistory(
-  history: unknown,
+function sourcePlanResultText() {
+  return JSON.stringify({
+    source: { workSourceId: "source-a", revisionId: "revision-a", contentHash: "a".repeat(64) },
+    suggestedPlacement: { mode: "new_stream", streamTitle: "Ship cloud" },
+    placementMatches: [],
+    proposedOutcomes: [{ key: "ship", title: "Cloud shipped", successCriteria: ["Healthy"], execution: {} }],
+    proposedWorkItems: [{
+      key: "deploy",
+      outcomeKey: "ship",
+      title: "Deploy",
+      dependencyKeys: [],
+      execution: {},
+      completionContract: {
+        version: 1,
+        mode: "all",
+        requirements: [{ id: "healthy", kind: "owner_confirmation", description: "Owner verifies health" }],
+      },
+    }],
+    duplicateMatches: [],
+  })
+}
+
+function sessionMessages(assistantMessageId: string, text: string, maxEventOrdinal: number) {
+  return {
+    messages: [
+      { info: { id: "msg_workgraph_run-a", role: "user" }, parts: [{ type: "text", text: "run" }] },
+      { info: { id: assistantMessageId, role: "assistant" }, parts: [{ type: "text", text }] },
+    ],
+    maxEventOrdinal,
+  }
+}
+
+async function reconcileRunSnapshot(
+  session: unknown,
+  messages: unknown,
   completionRetry?: { terminalSeq: number; requestedAt: number },
-  active?: unknown,
 ) {
   const mutations: Record<string, unknown>[] = []
   const runtime = createHostedWorkGraphRuntime(
@@ -3486,14 +3420,12 @@ async function reconcileRunHistory(
       },
       fetch: async (input) => {
         const url = new URL(String(input))
-        if (url.pathname.endsWith("/history")) return Response.json(history)
-        // Defaults to no owned drains, so the settlement paths under test read
-        // an idle harness unless a case says otherwise.
-        if (url.pathname.endsWith("/api/session/active")) return Response.json(active ?? { data: {} })
+        if (url.pathname.endsWith("/session-a")) return Response.json(session)
+        if (url.pathname.endsWith("/session-a/message")) return Response.json(messages)
         if (url.pathname.includes("/connection-binding/") || url.pathname.includes("/run-binding/")) {
           return new Response(null, { status: 204 })
         }
-        if (url.pathname.endsWith("/prompt")) return Response.json({ data: { admitted: true } })
+        if (url.pathname.endsWith("/prompt_async")) return Response.json({ data: { admitted: true } })
         throw new Error(`Unexpected hosted runtime request ${url.pathname}`)
       },
     },

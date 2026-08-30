@@ -10,7 +10,6 @@ import { defaultAcpBinary as resolveAcpBinary } from "./acp/default-binaries"
 import { ClaudeHarnessAdapter } from "./claude"
 import { CodexHarnessAdapter } from "./codex"
 import { CursorHarnessAdapter } from "./cursor"
-import { OpenCodeHarnessAdapter } from "./opencode"
 import { PiHarnessAdapter } from "./pi"
 import type { AgentProcessObserver } from "../process-observer"
 
@@ -34,10 +33,6 @@ type AcpFactoryOptions = ProcessObservedFactoryOptions & {
 type ClaudeFactoryOptions = NativeFactoryOptions | AcpFactoryOptions
 type CodexFactoryOptions = NativeFactoryOptions | AcpFactoryOptions
 type CursorFactoryOptions = NativeFactoryOptions | AcpFactoryOptions
-type OpenCodeFactoryOptions = NativeFactoryOptions & {
-  url?: string
-  headers?: HeadersInit
-}
 type PiSessionPlacement = Omit<SessionEnvFactoryInput, "sessionId">
 type PiFactoryOptions = ProcessObservedFactoryOptions & {
   access?: "native"
@@ -86,14 +81,6 @@ export function cursor(options: CursorFactoryOptions = {}): AgentHarnessFactory 
       ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     })
   })
-}
-
-export function opencode(options: OpenCodeFactoryOptions = {}): AgentHarnessFactory {
-  return factory("opencode", "native", (context) => new OpenCodeHarnessAdapter(options.url, {
-    eventHub: context.eventHub,
-    ...(options.headers ? { headers: options.headers } : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-  }))
 }
 
 export function pi(options: PiFactoryOptions = {}): AgentHarnessFactory {

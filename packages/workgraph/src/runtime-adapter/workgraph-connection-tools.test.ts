@@ -21,12 +21,14 @@ describe("WorkGraph Connection tools", () => {
       routeContributions: workGraphRuntimeRouteContributions({
         connection: { broker: async () => ({ type: "update", ok: true }) },
       }),
-      opencodeRequest: async (request) => {
-        if (new URL(request.url).pathname.endsWith("/tool") && request.method === "POST") {
-          callbackUrl = String((await request.json() as { callbackUrl?: string }).callbackUrl)
-        }
-        return new Response(null, { status: 204 })
-      },
+      opencodeRuntime: {
+        tools: {
+          registerSession: async (registration: { callbackUrl: string }) => {
+            callbackUrl = registration.callbackUrl
+          },
+          unregisterSession: async () => {},
+        },
+      } as never,
     })
     try {
       const response = await runtime.app.request("/api/workgraph/connection-binding", {

@@ -2,10 +2,10 @@ import { isSessionListPath } from "./contracts/session-list"
 import { isWorkspaceResolvePath } from "./contracts/workspace-resolve"
 import fs from "node:fs"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { Hono } from "hono"
 import { createRequire } from "node:module"
 import os from "node:os"
 import path from "node:path"
-import { pathToFileURL } from "node:url"
 import { spawn, spawnSync } from "node:child_process"
 import {
   createAttempts,
@@ -37,7 +37,16 @@ import {
 } from "../../../claxedo-server/src/hosts/workgraph/composition/server-workgraph"
 import { createExecutionCapabilitiesPort } from "../../../claxedo-server/src/hosts/workgraph/execution-capabilities"
 import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../../claxedo-server/src/hosts/workgraph/local/execution"
-import { createSessionV2WorkGraphGateway } from "../../../claxedo-server/src/hosts/workgraph/composition/session-gateway"
+import {
+  createHarnessWorkGraphGateway,
+  createLocalWorkGraphConnectionBroker,
+  type WorkGraphConnectionRunBinding,
+} from "../../../claxedo-server/src/hosts/workgraph/composition/session-gateway"
+import { createOpenCodeRuntime } from "../../../opencode-runtime/src/index"
+import { createWorkspaceRuntimeApp } from "../../../workspace-runtime/src/server"
+import { loopbackWorkspaceRuntimeExposure } from "../../../workspace-runtime/src/exposure"
+import type { WorkspaceRuntimeRouteContribution } from "../../../workspace-runtime/src/route-contribution"
+import { workGraphRuntimeRouteContributions } from "../../../workgraph/src/runtime-adapter"
 import { createSqlitePullRequestEffects } from "../../../claxedo-server/src/hosts/workgraph/sqlite-pull-request-effects"
 import { buildSessionListResponse, parseSessionListQuery } from "../../../claxedo-server/src/session/list"
 import {
@@ -46,7 +55,12 @@ import {
   localSessionExecution,
   localSessionOwnerDirected,
 } from "../../../claxedo-server/src/hosts/workgraph/composition/agent-tools"
-import type { OpenCodeApplicationToolRegistration } from "../../../claxedo-server-core/src/opencode/engine"
+
+type ApplicationTool = Readonly<{
+  description: string
+  inputSchema: Record<string, unknown>
+  execute(input: unknown, context: Readonly<{ sessionID: string; toolCallID: string }>): Promise<unknown>
+}>
 
 const repository = path.resolve(import.meta.dirname, "../../../..")
 type WorkGraphDatabase = Parameters<typeof createLocalEmbeddedWorkGraph>[0]["database"]
@@ -260,26 +274,65 @@ export async function createRealWorkGraphHarness(input: Readonly<{
     | undefined
   diagMark("before createRealSessionRuntime")
   const realSessions = input.realSessions
-    ? await createRealSessionRuntime(directory, `http://127.0.0.1:${input.port}`, (forward) => createSessionV2WorkGraphGateway(forward, {
-        executeRun: (context, request, signal) => {
+    ? await createRealSessionRuntime(directory, `http://127.0.0.1:${input.port}`, (forward, registries) => {
+        const runBroker = async (operation: WorkGraphRunOperationRequest, signal: AbortSignal) => {
+          const binding = registries.runContexts.get(operation.identity.sessionId)
+          if (!binding || binding.identity.runId !== operation.identity.runId) {
+            throw new Error("WorkGraph Run operation is not bound to this Session")
+          }
           if (signal.aborted) throw signal.reason
           if (!executeRun) throw new Error("WorkGraph Run command broker is not ready")
-          return executeRun(context, request)
-        },
-        connections,
-        connectors: Object.fromEntries(sourceIssueConnectors.map((connector) => [connector.provider, connector])),
-        codeHostConnectors,
-        resolveTeamOwner: (context) => `org:${context.organizationId}`,
-        recordPullRequest: (context, input) => {
-          if (!recordPullRequest) throw new Error("WorkGraph pull request receipt broker is not ready")
-          return recordPullRequest(context, input)
-        },
-        authorizePullRequest: (context, input) => {
-          if (!authorizePullRequest) throw new Error("WorkGraph pull request authorization broker is not ready")
-          return authorizePullRequest(context, input)
-        },
-        pullRequestEffects,
-      }))
+          return executeRun(binding.context, operation)
+        }
+        const connectionBroker = createLocalWorkGraphConnectionBroker({
+          connections,
+          connectors: Object.fromEntries(sourceIssueConnectors.map((connector) => [connector.provider, connector])),
+          codeHostConnectors,
+          resolveTeamOwner: (context) => `org:${context.organizationId}`,
+          resolveBinding: async (sessionId) => registries.connectionBindings.get(sessionId),
+          recordPullRequest: (context, value) => {
+            if (!recordPullRequest) throw new Error("WorkGraph pull request receipt broker is not ready")
+            return recordPullRequest(context, value)
+          },
+          authorizePullRequest: (context, value) => {
+            if (!authorizePullRequest) throw new Error("WorkGraph pull request authorization broker is not ready")
+            return authorizePullRequest(context, value)
+          },
+          pullRequestEffects,
+        })
+        const gateway = createHarnessWorkGraphGateway({
+          executeRun: (_context, operation, signal) => runBroker(operation, signal),
+          runContexts: {
+            bind: async (binding) => { registries.runContexts.set(binding.identity.sessionId, binding) },
+            release: async (sessionId) => { registries.runContexts.delete(sessionId) },
+          },
+          connections,
+          connectors: Object.fromEntries(sourceIssueConnectors.map((connector) => [connector.provider, connector])),
+          codeHostConnectors,
+          resolveTeamOwner: (context) => `org:${context.organizationId}`,
+          connectionBindings: {
+            bind: async (binding) => { registries.connectionBindings.set(binding.sessionId, binding) },
+            release: async (sessionId) => { registries.connectionBindings.delete(sessionId) },
+          },
+          recordPullRequest: (context, value) => {
+            if (!recordPullRequest) throw new Error("WorkGraph pull request receipt broker is not ready")
+            return recordPullRequest(context, value)
+          },
+          authorizePullRequest: (context, value) => {
+            if (!authorizePullRequest) throw new Error("WorkGraph pull request authorization broker is not ready")
+            return authorizePullRequest(context, value)
+          },
+          pullRequestEffects,
+          sessionRequest: async (_directory, request) => forward(request),
+        })
+        return {
+          gateway,
+          routeContributions: workGraphRuntimeRouteContributions({
+            run: { broker: runBroker },
+            connection: { broker: connectionBroker },
+          }),
+        }
+      })
     : undefined
   diagMark("after createRealSessionRuntime (provider mock server listening)")
   const execution = createLocalWorkspaceExecution({
@@ -968,7 +1021,7 @@ type RealSessionRuntime = Readonly<{
   gateway: WorkGraphSessionGateway
   records: Map<string, RealSessionRecord>
   fetch: (request: Request) => Promise<Response>
-  configureApplicationTools: (tools: Readonly<Record<string, OpenCodeApplicationToolRegistration>>) => Promise<void>
+  configureApplicationTools: (tools: Readonly<Record<string, ApplicationTool>>) => Promise<void>
   invokeApplicationTool: (input: unknown) => Promise<unknown>
   diagnostics: () => Readonly<{
     providerRequests: number
@@ -980,14 +1033,26 @@ type RealSessionRuntime = Readonly<{
   close: () => Promise<void>
 }>
 
+type RealSessionRegistries = Readonly<{
+  runContexts: Map<string, Readonly<{ identity: WorkGraphRunOperationRequest["identity"]; context: WorkGraphContext }>>
+  connectionBindings: Map<string, WorkGraphConnectionRunBinding>
+}>
+
+type RealSessionComposition = Readonly<{
+  gateway: WorkGraphSessionGateway
+  routeContributions: readonly WorkspaceRuntimeRouteContribution[]
+}>
+
 async function createRealSessionRuntime(
   directory: string,
   claxedoServerUrl: string,
-  createGateway: (request: Parameters<typeof createSessionV2WorkGraphGateway>[0]) => WorkGraphSessionGateway,
+  compose: (
+    request: (request: Request) => Promise<Response>,
+    registries: RealSessionRegistries,
+  ) => RealSessionComposition,
 ): Promise<RealSessionRuntime> {
   const records = new Map<string, RealSessionRecord>()
-  const sessionConfigs = new Map<string, Record<string, unknown>>()
-  let applicationTools: Readonly<Record<string, OpenCodeApplicationToolRegistration>> = {}
+  let applicationTools: Readonly<Record<string, ApplicationTool>> = {}
   const providerRequests: unknown[] = []
   const proxyErrors: unknown[] = []
   const provider = createServer(async (incoming, outgoing) => {
@@ -1291,7 +1356,7 @@ async function createRealSessionRuntime(
             requirementId: "real-session-proof",
             evidence: {
               kind: "test_result",
-              summary: "The real Session V2 transcript and scoped completion tool both succeeded",
+              summary: "The real embedded Session transcript and scoped completion tool both succeeded",
               passed: true,
               command: "workgraph real-session e2e",
             },
@@ -1311,92 +1376,107 @@ async function createRealSessionRuntime(
     sendProviderText(outgoing, "Completed the WorkGraph Task in the real project Session.")
   })
   const providerPort = await listen(provider, 0)
-  const opencodePort = await availablePort()
-  const applicationToolPlugin = path.join(directory, "workgraph-application-tools.mjs")
-  const config = providerConfig(
-    `http://127.0.0.1:${providerPort}/v1`,
-    claxedoServerUrl,
-    pathToFileURL(applicationToolPlugin).href,
-  )
+  const config = providerConfig(`http://127.0.0.1:${providerPort}/v1`, claxedoServerUrl)
   const logs: string[] = []
   const proxyRequests: unknown[] = []
-  let opencode: ReturnType<typeof spawn> | undefined
+  const registries: RealSessionRegistries = {
+    runContexts: new Map(),
+    connectionBindings: new Map(),
+  }
+  const runtimes = new Map<string, ReturnType<typeof createWorkspaceRuntimeApp>>()
+  let opencodeRuntime: ReturnType<typeof createOpenCodeRuntime> | undefined
+  let composition: RealSessionComposition
+
+  const ensureRuntime = (targetDirectory: string) => {
+    const existing = runtimes.get(targetDirectory)
+    if (existing) return existing
+    if (!opencodeRuntime) throw new Error("OpenCode embedded runtime is not configured")
+    let registerApplicationTools:
+      | ((registration: {
+          sessionId: string
+          harness?: string
+          callbackUrl: string
+          tools: Array<{ name: string; description: string; inputSchema: Record<string, unknown> }>
+        }) => Promise<void>)
+      | undefined
+    const applicationContribution: WorkspaceRuntimeRouteContribution = {
+      id: "workgraph.e2e-application-tools",
+      mount(context) {
+        registerApplicationTools = context.registerSessionTools("application")
+        return { path: "/", routes: new Hono(), dispose() {} }
+      },
+    }
+    const runtime = createWorkspaceRuntimeApp({
+      target: { workspaceId: targetDirectory, directory: targetDirectory },
+      storeRoot: path.join(directory, "runtime-stores", encode(targetDirectory)),
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      harness: { id: "opencode", access: "native" },
+      opencodeRuntime,
+      routeContributions: [...composition.routeContributions, applicationContribution],
+      afterCreateSession: async ({ session }) => {
+        const sessionId = typeof object(session)?.id === "string" ? object(session)!.id as string : undefined
+        if (!sessionId || !registerApplicationTools) return
+        await registerApplicationTools({
+          sessionId,
+          harness: "opencode",
+          callbackUrl: `${claxedoServerUrl}/api/workgraph/application-tool`,
+          tools: Object.entries(applicationTools).map(([name, tool]) => ({
+            name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+          })),
+        })
+      },
+    })
+    runtimes.set(targetDirectory, runtime)
+    return runtime
+  }
+
   const forward = async (request: Request) => {
-    if (!opencode) throw new Error("OpenCode runtime is not configured")
     const url = new URL(request.url)
-    const headers = new Headers(request.headers)
+    const targetDirectory = url.searchParams.get("directory")
+      ?? request.headers.get("x-opencode-directory")
+      ?? directory
     const body = ["GET", "HEAD"].includes(request.method) ? undefined : await request.text()
     proxyRequests.push({ method: request.method, path: `${url.pathname}${url.search}`, body })
-    const configMatch = url.pathname.match(/^\/(?:api\/)?session\/([^/]+)\/config$/)
-    if (configMatch && request.method === "GET") return Response.json(sessionConfigs.get(configMatch[1]!) ?? {})
-    if (configMatch && request.method === "PATCH") {
-      const update = object(JSON.parse(body || "{}")) ?? {}
-      const harness = object(update.harness)
-      const harnessId = typeof harness?.id === "string"
-        ? harness.id
-        : typeof harness?.type === "string"
-          ? harness.type
-          : undefined
-      const next = {
-        ...(sessionConfigs.get(configMatch[1]!) ?? {}),
-        ...(harnessId ? { harness: { id: harnessId, access: "native" } } : {}),
-        ...(object(update.model) || update.model === null ? { model: update.model } : {}),
-        ...(typeof update.variant === "string" || update.variant === null ? { variant: update.variant } : {}),
-        ...(typeof update.agent === "string" || update.agent === null ? { agent: update.agent } : {}),
-      }
-      sessionConfigs.set(configMatch[1]!, next)
-      return Response.json(next)
-    }
-    headers.set("x-opencode-directory", url.searchParams.get("directory") ?? headers.get("x-opencode-directory") ?? repository)
-    return fetch(`http://127.0.0.1:${opencodePort}${url.pathname}${url.search}`, {
+    const headers = new Headers(request.headers)
+    headers.set("x-opencode-directory", targetDirectory)
+    const response = await ensureRuntime(targetDirectory).app.fetch(new Request(url, {
       method: request.method,
       headers,
       ...(body === undefined ? {} : { body }),
-    }).then(async (response) => {
-      if (!response.ok) proxyErrors.push({
-        method: request.method,
-        path: `${url.pathname}${url.search}`,
-        status: response.status,
-        body: await response.clone().text(),
-      })
-      if (response.ok && request.method === "POST" && (url.pathname === "/session" || url.pathname === "/api/session")) {
-        const responseBody = object(await response.clone().json())
-        const session = object(responseBody?.data) ?? responseBody
-        const sessionId = typeof session?.id === "string" ? session.id : undefined
-        const location = object(session?.location)
-        const sessionDirectory = typeof session?.directory === "string" && session.directory.trim()
-          ? session.directory
-          : typeof location?.directory === "string" && location.directory.trim()
-            ? location.directory
-            : headers.get("x-opencode-directory")
-        if (!sessionId || !sessionDirectory) throw new Error("OpenCode Session creation omitted its identity or project directory")
-        const create = object(JSON.parse(body || "{}")) ?? {}
-        const model = object(create.model)
-        const providerID = typeof model?.providerID === "string" ? model.providerID : undefined
-        const modelID = typeof model?.id === "string" ? model.id : undefined
-        sessionConfigs.set(sessionId, {
-          harness: { id: "opencode", access: "native" },
-          ...(typeof create.agent === "string" ? { agent: create.agent } : {}),
-          ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
-          ...(typeof model?.variant === "string" ? { variant: model.variant } : {}),
-        })
-        const timestamp = Date.now()
-        records.set(sessionId, {
-          sessionId,
-          directory: sessionDirectory,
-          title: typeof session?.title === "string" && session.title.trim() ? session.title : "New session",
-          createdAt: records.get(sessionId)?.createdAt ?? timestamp,
-          updatedAt: timestamp,
-        })
-      }
-      return response
+    }))
+    if (!response.ok) proxyErrors.push({
+      method: request.method,
+      path: `${url.pathname}${url.search}`,
+      status: response.status,
+      body: await response.clone().text(),
     })
+    if (response.ok && request.method === "POST" && url.pathname === "/session") {
+      const session = object(await response.clone().json())
+      const sessionId = typeof session?.id === "string" ? session.id : undefined
+      if (!sessionId) throw new Error("Embedded OpenCode Session creation omitted its identity")
+      const create = object(JSON.parse(body || "{}")) ?? {}
+      const model = object(create.model)
+      const providerID = typeof model?.providerID === "string" ? model.providerID : undefined
+      const modelID = typeof model?.modelID === "string" ? model.modelID : undefined
+      if (!providerID || !modelID) throw new Error("Embedded OpenCode Session creation omitted its model")
+      const timestamp = Date.now()
+      records.set(sessionId, {
+        sessionId,
+        directory: targetDirectory,
+        title: typeof session?.title === "string" && session.title.trim() ? session.title : "New session",
+        createdAt: records.get(sessionId)?.createdAt ?? timestamp,
+        updatedAt: timestamp,
+      })
+    }
+    return response
   }
-  const sessionGateway = createGateway(forward)
+  composition = compose(forward, registries)
+  const sessionGateway = composition.gateway
   const gateway: WorkGraphSessionGateway = {
     ...sessionGateway,
     admit: async (input) => {
-      fs.writeFileSync(path.join(input.directory, "opencode.json"), JSON.stringify(config))
       const sessionId = await sessionGateway.admit(input)
       const timestamp = Date.now()
       records.set(sessionId, {
@@ -1415,58 +1495,15 @@ async function createRealSessionRuntime(
     fetch: forward,
     configureApplicationTools: async (tools) => {
       const diagT0 = Date.now()
-      process.stderr.write(`[harness-diag] configureApplicationTools start +0ms\n`)
+      process.stderr.write(`[harness-diag] configure embedded OpenCode start +0ms\n`)
       applicationTools = tools
-      fs.writeFileSync(
-        applicationToolPlugin,
-        applicationToolPluginSource(tools, `${claxedoServerUrl}/api/workgraph/application-tool`),
-      )
-      process.stderr.write(`[harness-diag] plugin written, spawning bun +${Date.now() - diagT0}ms\n`)
-      opencode = spawn(
-        "bun",
-        ["run", "--conditions=browser", "./src/index.ts", "serve", "--hostname", "127.0.0.1", "--port", String(opencodePort)],
-        {
-          cwd: path.join(repository, "packages/opencode"),
-          env: {
-            ...process.env,
-            OPENCODE_CONFIG_CONTENT: JSON.stringify(config),
-            WORKGRAPH_E2E_API_KEY: "test-key",
-            XDG_CACHE_HOME: path.join(directory, "xdg-cache"),
-            XDG_CONFIG_HOME: path.join(directory, "xdg-config"),
-            XDG_DATA_HOME: path.join(directory, "xdg-data"),
-            OPENCODE_DISABLE_AUTOSHARE: "true",
-            OPENCODE_DISABLE_DEFAULT_PLUGINS: "true",
-            // Keep the engine off models.dev. Running from source there is no baked
-            // OPENCODE_MODELS_DEV snapshot, and the fresh XDG_CACHE_HOME above makes
-            // every boot cold, so the engine fetches https://models.dev at startup
-            // AND (behind the same flock) inside the first Location's catalog
-            // materialize. Catalog state commits atomically only after that batch
-            // (core/src/state.ts State.batch), while the plugin boot is a
-            // fire-and-forget fork (core/src/plugin/internal.ts forkScoped) that
-            // nothing in the drain path waits for — so for the entire duration of a
-            // slow or rate-limited fetch the catalog is EMPTY and the first prompt's
-            // drain dies with "Model unavailable: workgraph-e2e/workgraph-model"
-            // (core/src/session/runner/model.ts), the Session never answers, and the
-            // test times out. With the fetch disabled, populate returns {} instantly
-            // and the catalog holds exactly the config-defined fake provider, which
-            // is all this hermetic lane may depend on anyway.
-            OPENCODE_DISABLE_MODELS_FETCH: "true",
-          },
-          stdio: ["ignore", "pipe", "pipe"],
-        },
-      )
-      process.stderr.write(`[harness-diag] bun spawned pid=${opencode.pid}, waiting for health +${Date.now() - diagT0}ms\n`)
-      // `stdio: ["ignore", "pipe", "pipe"]` above guarantees both are streams, but
-      // Node types them nullable for the general case. Assert rather than `!`: if the
-      // spawn options ever change, losing the log tail silently would gut every
-      // harness failure message that quotes `logs`.
-      if (!opencode.stdout || !opencode.stderr) {
-        throw new Error("opencode was spawned without piped stdout/stderr; harness diagnostics need both")
-      }
-      opencode.stdout.on("data", (chunk) => logs.push(String(chunk)))
-      opencode.stderr.on("data", (chunk) => logs.push(String(chunk)))
-      await waitForOpenCode(opencodePort, opencode, logs)
-      process.stderr.write(`[harness-diag] opencode healthy +${Date.now() - diagT0}ms\n`)
+      opencodeRuntime = createOpenCodeRuntime({
+        databasePath: path.join(directory, "opencode-embedded.db"),
+        configContent: JSON.stringify(config),
+        persistEvents: true,
+      })
+      await opencodeRuntime.host.client()
+      process.stderr.write(`[harness-diag] embedded OpenCode ready +${Date.now() - diagT0}ms\n`)
     },
     invokeApplicationTool: async (input) => {
       const invocation = object(input)
@@ -1480,8 +1517,6 @@ async function createRealSessionRuntime(
       if (!tool) throw new Error(`Application tool callback referenced unknown tool ${name}`)
       return tool.execute(invocation.input, {
         sessionID,
-        agent: "build",
-        assistantMessageID: "e2e-application-tool",
         toolCallID,
       })
     },
@@ -1498,24 +1533,9 @@ async function createRealSessionRuntime(
     }),
     close: async () => {
       await closeServer(provider)
-      // Captured into a const: `opencode` is a mutable outer binding, so the `if
-      // (!opencode) return` guard below does not survive into the Promise/timeout
-      // callbacks (TS re-widens it, and at runtime a concurrent reassignment really
-      // could swap the process out from under the SIGKILL).
-      const child = opencode
-      if (!child) return
-      if (child.exitCode === null) child.kill("SIGTERM")
-      await new Promise<void>((resolve) => {
-        if (child.exitCode !== null) return resolve()
-        const timeout = setTimeout(() => {
-          if (child.exitCode === null) child.kill("SIGKILL")
-          resolve()
-        }, 5_000)
-        child.once("exit", () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-      })
+      for (const runtime of runtimes.values()) runtime.dispose()
+      runtimes.clear()
+      await opencodeRuntime?.close()
     },
   }
 }
@@ -1586,12 +1606,11 @@ function commandResultId(result: Record<string, unknown> | undefined, key: strin
   return value
 }
 
-function providerConfig(baseUrl: string, claxedoServerUrl: string, applicationToolPlugin: string) {
+function providerConfig(baseUrl: string, claxedoServerUrl: string) {
   return {
     formatter: false,
     lsp: false,
     model: "workgraph-e2e/workgraph-model",
-    plugin: [applicationToolPlugin],
     mcp: {
       claxedo: {
         type: "local",
@@ -1629,42 +1648,6 @@ function providerConfig(baseUrl: string, claxedoServerUrl: string, applicationTo
   }
 }
 
-function applicationToolPluginSource(
-  tools: Readonly<Record<string, OpenCodeApplicationToolRegistration>>,
-  callbackUrl: string,
-) {
-  const definitions = Object.fromEntries(Object.entries(tools).map(([name, registration]) => {
-    const properties = object(registration.inputSchema.properties) ?? {}
-    const required = Array.isArray(registration.inputSchema.required)
-      ? registration.inputSchema.required.filter((key): key is string => typeof key === "string")
-      : []
-    return [name, {
-      description: registration.description,
-      args: Object.fromEntries(required.flatMap((key) => key in properties ? [[key, properties[key]]] : [])),
-    }]
-  }))
-  return [
-    `const callbackUrl = ${JSON.stringify(callbackUrl)}`,
-    `const definitions = ${JSON.stringify(definitions)}`,
-    "export default async () => ({",
-    "  tool: Object.fromEntries(Object.entries(definitions).map(([name, definition]) => [name, {",
-    "    description: definition.description,",
-    "    args: definition.args,",
-    "    execute: async (input, context) => {",
-    "      const response = await fetch(callbackUrl, {",
-    "        method: 'POST',",
-    "        headers: { 'content-type': 'application/json' },",
-    "        body: JSON.stringify({ sessionID: context.sessionID, name, input, toolCallID: context.callID }),",
-    "      })",
-    "      if (!response.ok) throw new Error(`Application tool callback failed: ${response.status} ${await response.text()}`)",
-    "      return JSON.stringify(await response.json())",
-    "    },",
-    "  }]))",
-    "})",
-    "",
-  ].join("\n")
-}
-
 function sendProviderText(outgoing: ServerResponse, text: string) {
   sendProviderEvents(outgoing, [
     { choices: [{ delta: { role: "assistant" } }] },
@@ -1694,53 +1677,6 @@ function sendProviderEvents(outgoing: ServerResponse, events: unknown[]) {
 
 function providerUsage() {
   return { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
-}
-
-async function availablePort() {
-  const server = createServer()
-  const port = await listen(server, 0)
-  await closeServer(server)
-  return port
-}
-
-async function waitForOpenCode(port: number, process: ReturnType<typeof spawn>, logs: string[]) {
-  const diagT0 = Date.now()
-  // Budget the whole boot rather than a fixed run count, and bound every
-  // probe with an AbortSignal timeout. On a cold CI runner the engine's first
-  // `bun run ./src/index.ts serve` transpiles the entire Effect server tree on
-  // demand: `NodeHttpServer.layer` binds the listen socket early in that layer
-  // build, but the request handler is only wired once the (slow, cold) route
-  // layer finishes building. In that window the socket accepts the TCP
-  // connection yet never answers — and an *untimed* fetch sends its request into
-  // that void and hangs forever, because Node's HTTP parser consumes the request
-  // before any `request` listener exists and never replays it once the handler
-  // attaches. That is exactly the observed ~240s silent hook timeout (no throw,
-  // no per-run log). Timing out each probe lets the loop keep retrying with
-  // fresh connections until the handler is live, and the total deadline turns a
-  // genuinely stuck boot into a fast failure that carries the engine's own logs.
-  const deadlineMs = 120_000
-  let run = 0
-  while (Date.now() - diagT0 < deadlineMs) {
-    run++
-    if (process.exitCode !== null) throw new Error(`OpenCode exited before readiness:\n${logs.join("")}`)
-    const fetchT0 = Date.now()
-    const ready = await fetch(`http://127.0.0.1:${port}/global/health`, {
-      signal: AbortSignal.timeout(2_000),
-    }).then((response) => response.ok, () => false)
-    const fetchMs = Date.now() - fetchT0
-    // Unconditional (throttled) per-run checkpoint so CI shows the probe loop
-    // is progressing and pinpoints where a boot stalls instead of going silent.
-    if (run <= 3 || run % 10 === 0 || fetchMs > 500)
-      console.error(
-        `[harness-diag] waitForOpenCode run ${run} ready=${ready} fetch=${fetchMs}ms (total +${Date.now() - diagT0}ms)`,
-      )
-    if (ready) {
-      console.error(`[harness-diag] waitForOpenCode ready at run ${run}, total +${Date.now() - diagT0}ms`)
-      return
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100))
-  }
-  throw new Error(`OpenCode did not become ready within ${deadlineMs}ms:\n${logs.join("")}`)
 }
 
 function object(input: unknown) {

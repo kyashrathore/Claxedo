@@ -60,7 +60,6 @@ import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
 import {
   CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
-  OPENCODE_COMPILE_CACHE_DIR_NAME,
 } from "../shared/opencode-compile-cache"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
@@ -165,11 +164,11 @@ const scanSessionMemory = createSessionMemoryScanner({
   paths: {
     databases: [
       ...(["prod", "beta", "dev"] as const).map((channel) => ({
-        path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-engine", "opencode.db"),
+        path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-runtime", "opencode.db"),
         profile: channel,
       })),
       ...(process.env.CLAXEDO_DATA_DIR
-        ? [{ path: join(process.env.CLAXEDO_DATA_DIR, "opencode-engine", "opencode.db"), profile: "configured" }]
+        ? [{ path: join(process.env.CLAXEDO_DATA_DIR, "opencode-runtime", "opencode.db"), profile: "configured" }]
         : []),
     ].filter((database, index, all) => all.findIndex((candidate) => candidate.path === database.path) === index),
   },
@@ -271,30 +270,6 @@ function getClaxedoServerPath(): string {
     : join(MAIN_DIR, "../../resources/claxedo-server/index.js")
 }
 
-// The claxedo-server bundle externalizes `opencode/node-embed` (see
-// scripts/bundle-claxedo-server.ts), and the bundled chunk cannot resolve the
-// bare "opencode" specifier from its resources/ location — no node_modules up
-// that tree is guaranteed to contain it. Hand the artifact location to the
-// utility process explicitly.
-function getOpenCodeEmbedPath(): string {
-  return IS_PACKAGED
-    ? join(process.resourcesPath, "opencode-engine", "node.js")
-    : join(MAIN_DIR, "../../../opencode/dist/node/node.js")
-}
-
-// The prebuilt V8 compile cache for that artifact, generated at build time by
-// scripts/build-opencode-compile-cache.ts and shipped as an extraResources
-// sibling of the engine. The utility process seeds it into the running user's
-// own cache directory before the first engine import; see
-// src/shared/opencode-compile-cache.ts for why it cannot simply be copied.
-// Absent (a build that skipped generation) is not an error: the engine compiles
-// as it always did.
-function getOpenCodeCompileCachePath(): string {
-  return IS_PACKAGED
-    ? join(process.resourcesPath, OPENCODE_COMPILE_CACHE_DIR_NAME)
-    : join(MAIN_DIR, "../../resources", OPENCODE_COMPILE_CACHE_DIR_NAME)
-}
-
 // The same, for the server bundle's OWN 9.11 MB static closure. It is a second
 // shipped set rather than more entries in the engine's, because the two are
 // generated from different artifacts and their manifests are relative to
@@ -308,31 +283,12 @@ function getClaxedoServerCompileCachePath(): string {
 async function startClaxedoServer(): Promise<{ url: string }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
-  const openCodeEmbedPath = getOpenCodeEmbedPath()
-  const openCodeCompileCachePath = getOpenCodeCompileCachePath()
   const claxedoServerCompileCachePath = getClaxedoServerCompileCachePath()
-  // No worker path: the desktop runs the engine IN-PROCESS in the server child,
-  // deliberately. Splitting it into a forked worker was implemented and
-  // measured — six runs against a v5 control — and it regressed three gates:
-  // cold ready 1,875 -> 2,004 ms, peak family RSS ~1,930 -> 2,060 MiB, and
-  // quiescent CPU failed its 5% budget in two of six runs. The engine did move
-  // as designed (server child 374.6 -> ~190 MiB) but the worker costs 310 MiB,
-  // so one process became two for +125 MiB net. And the idle-exit that was
-  // supposed to repay it never fires: the worker was alive in all 18 process
-  // snapshots of a run, including the quiescent window. `peak_process_family_
-  // rss_mib` is a PEAK, so a process that exits later cannot reduce it even in
-  // principle. The worker transport itself is correct and stays — self-hosted
-  // uses it (`deployments/self-hosted-node/app.ts` calls
-  // `configureOpenCodeWorkerPath`). This product opts out.
-  logger.log("starting claxedo-server with in-process OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
+  logger.log("starting claxedo-server with embedded OpenCode SDK", { serverPath, claxedoPort })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
   }
-  if (!existsSync(openCodeEmbedPath)) {
-    throw new Error(`OpenCode engine artifact was not found at ${openCodeEmbedPath}. Rebuild the desktop app and try again.`)
-  }
-
   const acpDir = IS_PACKAGED
     ? join(process.resourcesPath, "acp")
     : join(MAIN_DIR, "../../resources/acp")
@@ -383,10 +339,6 @@ async function startClaxedoServer(): Promise<{ url: string }> {
         CLAXEDO_CHILD_PORT: String(claxedoPort),
         CLAXEDO_DATA_DIR: serverDataDir,
         CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
-        CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
-        ...(existsSync(openCodeCompileCachePath)
-          ? { CLAXEDO_CHILD_OPENCODE_COMPILE_CACHE_DIR: openCodeCompileCachePath }
-          : {}),
         ...(existsSync(claxedoServerCompileCachePath)
           ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
           : {}),
@@ -1025,7 +977,7 @@ function sqliteFileExists() {
     home: app.getPath("home"),
     configured: process.env.CLAXEDO_DATA_DIR,
   })
-  return existsSync(join(base, "opencode-engine", "opencode.db"))
+  return existsSync(join(base, "opencode-runtime", "opencode.db"))
 }
 
 function setupAutoUpdater() {

@@ -72,3 +72,17 @@ export {
   type PermissionReply,
   type PermissionRequest,
 } from "./interaction-port"
+export {
+  createToolPort,
+  type OpenCodeToolPort,
+  type SessionTool,
+  type SessionToolRegistration,
+} from "./tool-port"
+export { createOpenCodeRuntime, type OpenCodeRuntime } from "./runtime"
+export {
+  createConfigurationPort,
+  type IntegrationConnection,
+  type IntegrationEntry,
+  type OpenCodeConfigurationPort,
+} from "./configuration-port"
+export { OpenCodeSdkHarnessAdapter } from "./harness-adapter"

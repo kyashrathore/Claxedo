@@ -1,17 +1,19 @@
 /**
- * OpenCode-surface code: these application tools and Session-context helpers
- * are injected into the embedded OpenCode ENGINE
- * (`configureOpenCodeApplicationTools`) and reached only from engine sessions.
- * The engine transport (`OpenCodeRequestFn` / `OPENCODE_INTERNAL_BASE`) is
- * sanctioned here and in other `opencode/`-owned modules — never in
- * harness-neutral code, which goes through the workspace runtime instead.
+ * Application tools and Session-context helpers used by the embedded SDK
+ * composition. Session reads go through Claxedo's harness-neutral runtime.
  */
 import { z } from "zod"
 import type { EmbeddedWorkGraphTransport, WorkGraphCreationContext } from "@claxedo/mcp/workgraph-tools"
 import { masterSessionId } from "@claxedo/workgraph/contracts"
 import type { ExecutionProfileDefaults, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import type { LocalEmbeddedWorkGraph } from "./server-workgraph"
-import { OPENCODE_INTERNAL_BASE, type OpenCodeApplicationToolRegistration, type OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
+const SESSION_RUNTIME_BASE = "http://session-runtime.internal"
+type SessionRequestFn = (request: Request) => Promise<Response>
+type OpenCodeApplicationToolRegistration = Readonly<{
+  description: string
+  inputSchema: Record<string, unknown>
+  execute(input: unknown, invocation: Readonly<{ sessionID: string; toolCallID: string }>): Promise<unknown>
+}>
 
 export function createLocalEmbeddedWorkGraphTransport(
   embedded: LocalEmbeddedWorkGraph,
@@ -397,10 +399,10 @@ const sessionToolNames = new Set([
 ])
 
 export async function localSessionExecution(
-  request: OpenCodeRequestFn,
+  request: SessionRequestFn,
   sessionId: string,
 ): Promise<ExecutionProfileDefaults | undefined> {
-  const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, {
+  const response = await request(new Request(`${SESSION_RUNTIME_BASE}/session/${encodeURIComponent(sessionId)}`, {
     headers: { Accept: "application/json" },
     signal: AbortSignal.timeout(5_000),
   }))
@@ -422,11 +424,11 @@ export async function localSessionExecution(
  *  Session speaks for the owner. Subagent children carry `parentID`, and any
  *  lookup failure fails closed to agent authority. */
 export async function localSessionOwnerDirected(
-  request: OpenCodeRequestFn,
+  request: SessionRequestFn,
   sessionId: string,
 ): Promise<boolean> {
   try {
-    const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, {
+    const response = await request(new Request(`${SESSION_RUNTIME_BASE}/session/${encodeURIComponent(sessionId)}`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(5_000),
     }))
@@ -439,15 +441,15 @@ export async function localSessionOwnerDirected(
 }
 
 export async function localSessionContext(
-  request: OpenCodeRequestFn,
+  request: SessionRequestFn,
   sessionId: string,
 ): Promise<WorkGraphCreationContext["session"] | undefined> {
   const [sessionResponse, configResponse] = await Promise.all([
-    request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, {
+    request(new Request(`${SESSION_RUNTIME_BASE}/session/${encodeURIComponent(sessionId)}`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(5_000),
     })),
-    request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}/config`, {
+    request(new Request(`${SESSION_RUNTIME_BASE}/session/${encodeURIComponent(sessionId)}/config`, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(5_000),
     })),

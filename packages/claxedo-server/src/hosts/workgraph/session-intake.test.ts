@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import BetterSqlite3 from "better-sqlite3"
 import { createSqliteSessionIntakePort } from "@claxedo/workgraph"
-import { engineIdleSessionReader, readIdleSession, runtimeIdleSessionReader, subscribeSessionIntake } from "./session-intake"
+import { runtimeIdleSessionReader, subscribeSessionIntake } from "./session-intake"
 
 describe("WorkGraph Session intake host", () => {
   it("projects a meaningful idle Session once into durable unorganized intake", async () => {
@@ -16,7 +16,7 @@ describe("WorkGraph Session intake host", () => {
         : Response.json({ id: "session-1", title: "Launch planning" })
       const unsubscribe = subscribeSessionIntake({
         events: { subscribe: (listener) => (listeners.push(listener), () => undefined) },
-        readSession: engineIdleSessionReader(request),
+        readSession: runtimeIdleSessionReader((_directory, input) => request(input)),
         port: createSqliteSessionIntakePort(database),
         directory: "/repo",
         resolveContext: () => context(),
@@ -42,7 +42,7 @@ describe("WorkGraph Session intake host", () => {
     let reads = 0
     subscribeSessionIntake({
       events: { subscribe: (listener) => (listeners.push(listener), () => undefined) },
-      readSession: engineIdleSessionReader(async () => (reads++, Response.json({}))),
+      readSession: runtimeIdleSessionReader(async () => (reads++, Response.json({}))),
       port: { createUnorganized: async () => "created" },
       directory: "/repo",
       resolveContext: () => context(),
@@ -52,15 +52,15 @@ describe("WorkGraph Session intake host", () => {
   })
 
   it("reads real Session and message response shapes", async () => {
-    const session = await readIdleSession(async (input) => input.url.includes("/message")
+    const session = await runtimeIdleSessionReader(async (_directory, input) => input.url.includes("/message")
       ? Response.json([{ info: { role: "user" }, parts: [{ type: "text", text: "Question" }] }, { info: { role: "assistant" }, parts: [{ type: "text", text: "Answer" }] }])
-      : Response.json({ title: "Title" }), "session", "/repo")
+      : Response.json({ title: "Title" }))("session", "/repo")
     expect(session).toMatchObject({ sessionId: "session", title: "Title", summary: "Answer", meaningful: true })
   })
 
   it("rejects a missing Session directory before reading Session APIs", async () => {
     let reads = 0
-    await expect(readIdleSession(async () => (reads++, Response.json({})), "session", " "))
+    await expect(runtimeIdleSessionReader(async () => (reads++, Response.json({})))("session", " "))
       .rejects.toMatchObject({ code: "session_intake_directory_required", retryable: false })
     expect(reads).toBe(0)
   })
@@ -106,7 +106,7 @@ describe("WorkGraph Session intake host", () => {
     }
   })
 
-  it("projects a Session surfacing on both the engine bus and the runtime tap once", async () => {
+  it("projects duplicate runtime idle events once", async () => {
     const database = new BetterSqlite3(":memory:")
     const engineListeners: Array<(event: any) => unknown> = []
     const runtimeListeners: Array<(event: any) => unknown> = []
@@ -119,7 +119,7 @@ describe("WorkGraph Session intake host", () => {
       ])
       subscribeSessionIntake({
         events: { subscribe: (listener) => (engineListeners.push(listener), () => undefined) },
-        readSession: engineIdleSessionReader(async (input) =>
+        readSession: runtimeIdleSessionReader(async (_directory, input) =>
           input.url.includes("/message") ? messagesBody() : sessionBody()),
         port,
         resolveContext: () => context(),
@@ -151,7 +151,7 @@ describe("WorkGraph Session intake host", () => {
     let reads = 0
     subscribeSessionIntake({
       events: { subscribe: (listener) => (listeners.push(listener), () => undefined) },
-      readSession: engineIdleSessionReader(async () => (reads++, Response.json({}))),
+      readSession: runtimeIdleSessionReader(async () => (reads++, Response.json({}))),
       port: { createUnorganized: async () => "created" },
       resolveContext: () => context(),
       onError: (error) => errors.push(error),

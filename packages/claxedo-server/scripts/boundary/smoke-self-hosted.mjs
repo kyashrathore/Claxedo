@@ -16,9 +16,6 @@ async function availablePort() {
   return address.port
 }
 
-const engine = await import("opencode/node-embed")
-if (typeof engine.Server?.Default !== "function") throw new Error("built OpenCode node resource has no Server.Default")
-
 const port = await availablePort()
 const childEnv = { ...process.env }
 for (const name of [
@@ -35,9 +32,6 @@ const child = spawn(process.execPath, [path.join(ROOT, "dist-boundary/self-hoste
     CLAXEDO_DEPLOYMENT_MODE: "local",
     CLAXEDO_SERVER_HOST: "127.0.0.1",
     CLAXEDO_SERVER_PORT: String(port),
-    // Health must not start an agent engine. The separate import above proves
-    // that the independently built embedded resource is present and loadable.
-    OPENCODE_URL: "http://127.0.0.1:1",
   },
   stdio: ["ignore", "pipe", "pipe"],
 })
@@ -61,7 +55,7 @@ try {
   if (body.ok !== true || body.localExecution !== true) {
     throw new Error(`built self-hosted health returned ${JSON.stringify(body)}`)
   }
-  console.log("[server-self-hosted] built Node process and embedded engine resource passed")
+  console.log("[server-self-hosted] built Node process health passed")
 } finally {
   child.kill("SIGTERM")
   await Promise.race([

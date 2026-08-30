@@ -6,7 +6,7 @@ import { resolveLocalServerMigrationJournal } from "./local-server"
 
 // Native modules cannot be bundled — they ship as the app's only node_modules
 // content (see electron-builder.config.ts). Everything else is inlined.
-const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "opencode/node-embed"]
+const EXTERNAL = ["@lydell/node-pty", "better-sqlite3"]
 
 const require = createRequire(import.meta.url)
 
@@ -121,22 +121,4 @@ export function resolveDeferredServerEntry(entry: string) {
   const resolved = path.resolve(path.dirname(entry), specifiers[0]!)
   if (!fs.existsSync(resolved)) throw new Error(`deferred server entry ${specifiers[0]} does not exist at ${resolved}`)
   return resolved
-}
-
-export async function bundleClaxedoEngineWorker(source: string, destination: string) {
-  const result = await Bun.build({
-    entrypoints: [source],
-    outdir: destination,
-    target: "node",
-    format: "esm",
-    naming: "index.[ext]",
-    // Same shape as the server bundle above, identifiers off for the same
-    // reason.
-    minify: {
-      syntax: true,
-      whitespace: true,
-    },
-  })
-  if (!result.success) throw new AggregateError(result.logs, "Failed to bundle claxedo engine worker")
-  return path.join(destination, "index.js")
 }

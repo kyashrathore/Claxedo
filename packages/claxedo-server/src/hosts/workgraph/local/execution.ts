@@ -6,7 +6,7 @@ import { resolvedPlacement, runSessionId, type ResolvedGenerationProfile, type W
 import type { ExecutionResult, ExecutionSessionID, StreamEnvelopeID, WorkspaceExecutionPort } from "@claxedo/workgraph"
 import { evaluateLandingIntegrity } from "@claxedo/workgraph/domain"
 
-/** A gateway to durable Session V2 admission, interruption, and semantic result projection. */
+/** A gateway to harness-neutral Session admission, interruption, and semantic result projection. */
 export type WorkGraphSessionGateway = Readonly<{
   supportsConnections?: boolean
   classifyAdmissionError?: (error: unknown) => "unavailable" | "rejected" | "indeterminate"

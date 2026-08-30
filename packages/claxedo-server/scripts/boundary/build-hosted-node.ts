@@ -50,7 +50,6 @@ const result = await build({
     // loader. Hosted Node supplies hosted services and never selects it; keep
     // that import lazy instead of folding the local OpenCode/PTY runtime into
     // the cloud process at build time.
-    "opencode/node-embed",
   ],
 })
 

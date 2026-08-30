@@ -35,18 +35,12 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
-import {
-  configureOpenCodeEngine,
-  configureOpenCodeEmbedPath,
-  opencodeRequest,
-} from "@claxedo/server-core/opencode/engine"
-import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
+import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
 import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
-import { configureOpencodeMcpSync } from "../opencode/mcp-sync"
-import { createOpencodeEvents, type OpencodeEvent } from "../opencode/events"
+import type { OpencodeEvent } from "../opencode/events"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
@@ -58,6 +52,7 @@ import { createUsageOutboxSync } from "../usage/outbox-sync"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
+import { configureOpencodeMcpSync } from "../opencode/mcp-sync"
 
 const log = Log.create({ service: "local-server" })
 
@@ -65,10 +60,6 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   services?: LocalAppOptions["services"]
   port?: number
   hostname?: string
-  /** An explicit URL opts out of the embedded engine. */
-  opencodeUrl?: string
-  opencodePassword?: string | null
-  opencodeEmbedPath?: string
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
@@ -116,25 +107,16 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services ?? createLocalControlPlaneServices()
-  const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
-
-  configureOpenCodeAuth(options.opencodePassword ?? null)
-  if (options.opencodeEmbedPath) configureOpenCodeEmbedPath(options.opencodeEmbedPath)
-  if (options.opencodeUrl) {
-    configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
-  } else {
-    configureOpenCodeEngine({ embedded: true })
-  }
+  const opencodeRuntime = openCodeSdkRuntime()
+  configureOpencodeMcpSync({ runtime: opencodeRuntime })
 
   let consumeRuntimeEvent = (event: OpencodeEvent) => {
     if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }
   }
-  configureOpencodeMcpSync({ enabled: opencodeCompat })
   configureEmbeddedWorkspaceRuntime({
-    opencodeRequest,
-    opencodeCompat,
+    opencodeRuntime,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: WorkGraph is a hosted capability, and its absence
     // from an unsigned desktop is this line rather than a runtime flag.
@@ -273,8 +255,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   }
   const workspaceRelayProxy = options.workspaceRelayProxy ?? createLocalWorkspaceRelayProxy()
   const { app, injectWebSocket } = createLocalApp({ ...options, services, usage, workspaceRelayProxy })
-  const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
-
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")
   // The listening event resolves `ready` for callers that must not announce
   // the URL before the socket accepts connections (the desktop child sends
@@ -292,12 +272,12 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     if (stopOperation) return stopOperation
     stopOperation = (async () => {
       try {
-        upstreamEvents?.close()
         shutdownEmbeddedWorkspaceRuntimes()
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
         await new Promise<void>((resolve) => server.close(() => resolve()))
         disposeAgentConfig()
+        await drainOpenCodeSdkRuntime()
         ClaxedoDB.close()
         process.off("exit", release)
         release()
@@ -309,8 +289,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   log.info("local server listening", {
     port,
     hostname,
-    opencode: options.opencodeUrl ? "external" : "embedded",
-    compat: opencodeCompat,
+    opencode: "embedded-sdk",
     // Stated at boot: a supervisor here would mean cloud provisioning, which
     // this product does not do.
     supervisor: workspaceSupervisorInstalled(),

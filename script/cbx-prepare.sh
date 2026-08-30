@@ -100,36 +100,7 @@ for box in "${BOXES[@]}"; do
         --filter=@claxedo/workspace-runtime
       (cd packages/claxedo-local-server && bun run build)
 
-      # ---- 5. OPENCODE CLI + EMBEDDED ENGINE ----------------------------------
-      # A separate Tier-R process-lifecycle spec launches the real
-      # `opencode serve` command through workspace-runtime. A workspace install
-      # does not expose this private package as a root node_modules/.bin entry,
-      # so build the current-platform CLI and install that exact repository
-      # binary on PATH. The build clears dist/, therefore build the node embed
-      # immediately afterwards.
-      (cd packages/opencode && \
-        OPENCODE_CHANNEL=selfhost OPENCODE_VERSION=0.0.0-selfhost \
-        bun run build --single --skip-install)
-      sudo -n install -m 0755 packages/opencode/dist/opencode-linux-x64/bin/opencode /usr/local/bin/opencode
-      opencode --version
-
-      # `packages/opencode/dist/node/node.js` is a BUILT, gitignored artifact
-      # that no `--filter` above produces (turbo.json deliberately keeps
-      # `opencode#build` out of the generic graph). claxedo-server loads it via
-      # `opencode/node-embed` -> packages/claxedo-server-core/node_modules/
-      # opencode (a symlink to packages/opencode), so without it Tier R boots a
-      # server whose engine surface never comes up and every scenario fails with
-      # "The SDK-next embedded OpenCode engine failed to load."
-      # `build:node`, never bare `build`: the full target deletes dist/node and
-      # strips node-pty from package.json as a side effect.
-      # The channel/version pins mirror packages/claxedo-server/Dockerfile: they
-      # make the build hermetic, since @opencode-ai/script otherwise derives the
-      # channel from `git branch --show-current` and the version from a live
-      # registry.npmjs.org fetch. Both defines are inert in the node bundle.
-      (cd packages/opencode && OPENCODE_CHANNEL=selfhost OPENCODE_VERSION=0.0.0-selfhost bun run build:node)
-      test -s packages/claxedo-server-core/node_modules/opencode/dist/node/node.js
-
-      # ---- 6. PLAYWRIGHT BROWSERS ---------------------------------------------
+      # ---- 5. PLAYWRIGHT BROWSERS ---------------------------------------------
       # Browsers come from the base image; only install when they are actually
       # missing. Re-running the installer OVER a populated cache has produced a
       # ZERO-BYTE chrome-headless-shell -- the file is there and executable, it

@@ -133,7 +133,7 @@ type BackgroundClaim = {
   streamId: string
   sessionId?: string
   prompt: string
-  profile: { agent: string; model: { providerId: string; modelId: string }; effort: string; tools: string[] }
+  profile: { harness: string; agent: string; model: { providerId: string; modelId: string }; effort: string; tools: string[] }
 }
 type RunningBackgroundSession = {
   ownerUserId: string
@@ -157,7 +157,7 @@ export type HostedMasterIntent = SettlementTenant &
     trigger: "mailbox" | "task_settled" | "schedule"
   }>
 
-/** Durable Worker dispatcher over SandboxManager → authenticated relay → Session V2. */
+/** Durable Worker dispatcher over SandboxManager → authenticated relay → the shared harness Session API. */
 export function createHostedWorkGraphRuntime(
   env: HostedWorkerEnv,
   controlPlaneServices: ControlPlaneServices,
@@ -403,23 +403,22 @@ export function createHostedWorkGraphRuntime(
                 await client.mutation(api.workgraphRuntime.settleRejectedProvision, mutationArgs(claim, serviceToken, workerId, { now: now() }))
                 return { settled: false, state: "cancelled" }
               }
-              const created = await runtime("/api/session", {
+              const created = await runtime(`/session?harness=${encodeURIComponent(claim.profile.harness)}`, {
                 method: "POST",
                 body: JSON.stringify({
                   id: runSessionId(claim.runId),
+                  title: claim.title,
                   agent: claim.profile.agent,
                   model: {
                     providerID: claim.profile.model.providerId,
-                    id: claim.profile.model.modelId,
-                    variant: claim.profile.effort,
+                    modelID: claim.profile.model.modelId,
                   },
-                  tools: [...new Set([...claim.profile.tools, ...WorkGraphRunToolNames])],
-                  location: { directory: "/workspace" },
+                  variant: claim.profile.effort,
                 }),
               })
-              const createdBody = (await created.json()) as { id?: string; data?: { id?: string } }
-              const sessionId = createdBody.id ?? createdBody.data?.id
-              if (!sessionId) throw new Error("Hosted Session V2 create response did not include a Session ID")
+              const createdBody = (await created.json()) as { id?: string }
+              const sessionId = createdBody.id
+              if (!sessionId) throw new Error("Hosted Session create response did not include a Session ID")
               compensationTarget = { sessionId, workspaceId }
               const running = (await client.mutation(
                 api.workgraphRuntime.markRunning,
@@ -491,13 +490,17 @@ export function createHostedWorkGraphRuntime(
                   }),
                 })
               }
-              await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+              await runtime(`/session/${encodeURIComponent(sessionId)}/prompt_async?harness=${encodeURIComponent(claim.profile.harness)}`, {
                 method: "POST",
                 body: JSON.stringify({
-                  id: `msg_workgraph_${claim.runId}`,
-                  prompt: { text: managedRunPrompt(claim.prompt) },
-                  delivery: "steer",
-                  resume: true,
+                  messageID: `msg_workgraph_${claim.runId}`,
+                  parts: [{ type: "text", text: managedRunPrompt(claim.prompt) }],
+                  agent: claim.profile.agent,
+                  model: {
+                    providerID: claim.profile.model.providerId,
+                    modelID: claim.profile.model.modelId,
+                  },
+                  variant: claim.profile.effort,
                 }),
               })
               return { settled: true, state: "running" }
@@ -550,88 +553,33 @@ export function createHostedWorkGraphRuntime(
                 ttlMs: 10 * 60_000,
               })
               const relay = await provider.getRelayEndpoint(run.workspaceId, placement.homeRegion as never)
-              const events: SessionEvent[] = []
-              let after = 0
-              for (;;) {
-                const history = await request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/session/${encodeURIComponent(run.sessionId)}/history?limit=100&after=${after}`,
-                  {
-                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
-                  },
-                )
-                if (!history.ok) {
-                  throw new HostedSessionRequestError(history.status, await history.text(), { method: "GET", path: `/api/session/${run.sessionId}/history` })
+              const runtime = runtimeRequest(request, relay, run.workspaceId, token.token)
+              const snapshot = await hostedSessionSnapshot(runtime, run.sessionId)
+              if (sessionPublisher && snapshot.messages.length > 0) {
+                const snapshotInput = {
+                  organizationId: run.orgId,
+                  ownerUserId: run.ownerUserId,
+                  workspaceId: run.workspaceId,
+                  sessionId: run.sessionId,
+                  messages: snapshot.messages,
+                  now: now(),
                 }
-                const page = hostedSessionHistoryPage(await history.json())
-                events.push(...page.data)
-                if (!page.hasMore) break
-                const next = page.data.at(-1)?.durable?.seq
-                if (next === undefined || next <= after) throw new SessionHistoryResponseError()
-                after = next
+                await (budget ? budget.run(() => sessionPublisher.snapshot(snapshotInput)) : sessionPublisher.snapshot(snapshotInput))
               }
-              const terminal = events.findLast((event) => event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"))
-              if (sessionPublisher) {
-                const snapshot = await request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/session/${encodeURIComponent(run.sessionId)}/message?snapshot=1`,
-                  {
-                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
-                  },
-                )
-                if (!snapshot.ok) {
-                  throw new HostedSessionRequestError(snapshot.status, await snapshot.text(), { method: "GET", path: `/session/${run.sessionId}/message?snapshot=1` })
-                }
-                const messages = hostedSessionMessages(await snapshot.json())
-                // An empty pull is never authoritative: the launch sync already
-                // recorded the empty transcript, and overwriting a previously
-                // retained transcript with [] would drop durable messages.
-                if (messages.length > 0) {
-                  const snapshotInput = {
-                    organizationId: run.orgId,
-                    ownerUserId: run.ownerUserId,
-                    workspaceId: run.workspaceId,
-                    sessionId: run.sessionId,
-                    messages,
-                    now: now(),
-                  }
-                  await (budget ? budget.run(() => sessionPublisher.snapshot(snapshotInput)) : sessionPublisher.snapshot(snapshotInput))
-                }
+              const status = sessionString(snapshot.session.status)
+              if (status === "busy" || status === "recovering" || status === "retry") {
+                return { settled: false, state: "running" }
               }
-              if (!terminal) {
-                if (!events.some((event) => event.type.startsWith("session.next.prompted"))) {
-                  return { settled: false, state: "running" }
-                }
-                // A prompted Session with no settled step is only stopped if the
-                // harness is no longer draining it. History alone cannot say
-                // that: `session.next.prompted` lands the moment the prompt is
-                // admitted, and the first step ends whole seconds later, so
-                // parking on history alone parked every Run that happened to be
-                // reconciled mid-turn -- which is what the staging smoke hit,
-                // 12s after admission. `/api/session/active` is the process's
-                // own answer about which drains it owns, and it is what the
-                // local gateway has always consulted at this same point.
-                const active = await request(
-                  `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/session/active`,
-                  {
-                    headers: { authorization: `Bearer ${token.token}`, "x-opencode-directory": "/workspace" },
-                  },
-                )
-                if (!active.ok) {
-                  throw new HostedSessionRequestError(active.status, await active.text(), { method: "GET", path: "/api/session/active" })
-                }
-                if (hostedSessionActive(await active.json(), run.sessionId)) {
-                  return { settled: false, state: "running" }
-                }
-                return await client.mutation(
-                  api.workgraphRuntime.parkRunning,
-                  resultArgs(run, serviceToken, {
-                    reason: "Session stopped before the provider step settled",
-                    now: now(),
-                  }),
-                )
+              const lastTurn = record(snapshot.session.lastTurn)
+              const outcome = sessionString(lastTurn?.status)
+              if (outcome !== "completed" && outcome !== "failed" && outcome !== "cancelled") {
+                return { settled: false, state: "running" }
               }
-              if (terminal.type.startsWith("session.next.step.ended")) {
-                const terminalSeq = terminal.durable?.seq
-                if (terminalSeq === undefined) throw new SessionHistoryResponseError()
+              if (outcome === "completed") {
+                const terminalSeq = lastTurn?.completedAt
+                if (typeof terminalSeq !== "number" || !Number.isSafeInteger(terminalSeq) || terminalSeq < 0) {
+                  throw new HostedSessionSnapshotError("Hosted Session completed without a durable completion timestamp")
+                }
                 const retry = run.completionRetry
                   ? { accepted: true as const, ...run.completionRetry }
                   : ((await client.mutation(
@@ -643,36 +591,23 @@ export function createHostedWorkGraphRuntime(
                     )) as { accepted?: boolean; terminalSeq?: number; requestedAt?: number })
                 if (!retry.accepted) return { settled: false, state: "already_settled" }
                 if (terminalSeq <= Number(retry.terminalSeq)) {
-                  let admitted: Response
                   try {
-                    admitted = await request(
-                      `${relay.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(run.workspaceId)}/api/session/${encodeURIComponent(run.sessionId)}/prompt`,
-                      {
-                        method: "POST",
-                        headers: {
-                          authorization: `Bearer ${token.token}`,
-                          "content-type": "application/json",
-                          "x-opencode-directory": "/workspace",
-                        },
-                        body: JSON.stringify({
-                          id: `msg_workgraph_completion_${run.runId}`,
-                          prompt: {
-                            text: [
-                              "Your previous turn ended without completing the active WorkGraph Run.",
-                              "Call workgraph_complete_task now with a concise summary and evidence for every completion requirement.",
-                              "Each evidence entry must use the exact requirementId from the Task. Do not finish with another text-only response.",
-                            ].join("\n"),
-                          },
-                          delivery: "steer",
-                          resume: true,
-                        }),
-                      },
-                    )
+                    await runtime(`/session/${encodeURIComponent(run.sessionId)}/prompt_async`, {
+                      method: "POST",
+                      body: JSON.stringify({
+                        messageID: `msg_workgraph_completion_${run.runId}`,
+                        parts: [{
+                          type: "text",
+                          text: [
+                            "Your previous turn ended without completing the active WorkGraph Run.",
+                            "Call workgraph_complete_task now with a concise summary and evidence for every completion requirement.",
+                            "Each evidence entry must use the exact requirementId from the Task. Do not finish with another text-only response.",
+                          ].join("\n"),
+                        }],
+                      }),
+                    })
                   } catch {
                     return { settled: false, state: "retrying_explicit_completion" }
-                  }
-                  if (!admitted.ok) {
-                    throw new Error(`Hosted completion retry failed: ${admitted.status} ${await admitted.text()}`)
                   }
                   return { settled: false, state: "retrying_explicit_completion" }
                 }
@@ -693,11 +628,11 @@ export function createHostedWorkGraphRuntime(
               if (!runCleanup.ok) {
                 throw new HostedSessionRequestError(runCleanup.status, await runCleanup.text(), { method: "DELETE", path: `/api/workgraph/run-binding/${run.sessionId}` })
               }
-              if (terminal.type.startsWith("session.next.step.failed")) {
+              if (outcome === "failed") {
                 return await client.mutation(
                   api.workgraphRuntime.recordFailure,
                   resultArgs(run, serviceToken, {
-                    reason: sessionError(terminal.data.error),
+                    reason: sessionString(lastTurn?.error) ?? "Hosted Session failed",
                     now: now(),
                   }),
                 )
@@ -705,7 +640,9 @@ export function createHostedWorkGraphRuntime(
               return await client.mutation(
                 api.workgraphRuntime.recordFailure,
                 resultArgs(run, serviceToken, {
-                  reason: "Hosted Session ended without workgraph_complete_task after one completion retry",
+                  reason: outcome === "cancelled"
+                    ? (sessionString(lastTurn?.reason) ?? "Hosted Session was cancelled")
+                    : "Hosted Session ended without workgraph_complete_task after one completion retry",
                   now: now(),
                 }),
               )
@@ -863,19 +800,18 @@ async function reconcileHostedMaster(
     const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
     const runtime = runtimeRequest(input.request, relay, workspaceId, token.token)
     if (claim.state === "launch") {
-      const created = await runtime("/api/session", {
+      const created = await runtime(`/session?harness=${encodeURIComponent(profile.harness)}`, {
         method: "POST",
         body: JSON.stringify({
           id: claim.sessionId,
           title: `Master · ${claim.stream.title}`,
           agent: profile.agent,
-          model: { providerID: profile.model.providerId, id: profile.model.modelId, variant: profile.effort },
-          tools: [...new Set([...profile.tools.filter((tool) => !tool.includes("approve")), ...WorkGraphMasterToolNames])],
-          location: { directory: "/workspace" },
+          model: { providerID: profile.model.providerId, modelID: profile.model.modelId },
+          variant: profile.effort,
         }),
       })
-      const body = (await created.json()) as { id?: string; data?: { id?: string } }
-      if ((body.id ?? body.data?.id) !== claim.sessionId) {
+      const body = (await created.json()) as { id?: string }
+      if (body.id !== claim.sessionId) {
         throw new Error("Hosted master Session did not adopt its durable identity")
       }
       const runId = `master_${claim.stream.id}`
@@ -912,7 +848,7 @@ async function reconcileHostedMaster(
           }),
         })
       }
-      const historyAfter = claim.historyAfter ?? latestHistorySequence(await hostedSessionHistory(runtime, claim.sessionId))
+      const historyAfter = claim.historyAfter ?? (await hostedSessionSnapshot(runtime, claim.sessionId)).maxEventOrdinal
       if (claim.historyAfter === undefined) {
         const reserved = (await input.client.mutation(api.workgraphRuntime.reserveMasterAdmission, {
           service_token: input.serviceToken,
@@ -925,13 +861,14 @@ async function reconcileHostedMaster(
         })) as { accepted?: boolean }
         if (!reserved.accepted) return { settled: true, state: "superseded" }
       }
-      await runtime(`/api/session/${encodeURIComponent(claim.sessionId)}/prompt`, {
+      await runtime(`/session/${encodeURIComponent(claim.sessionId)}/prompt_async?harness=${encodeURIComponent(profile.harness)}`, {
         method: "POST",
         body: JSON.stringify({
-          id: `msg_${claim.turnId}`,
-          prompt: { text: await hostedMasterPrompt(claim, profile.connectionIds) },
-          delivery: "steer",
-          resume: true,
+          messageID: `msg_${claim.turnId}`,
+          parts: [{ type: "text", text: await hostedMasterPrompt(claim, profile.connectionIds) }],
+          agent: profile.agent,
+          model: { providerID: profile.model.providerId, modelID: profile.model.modelId },
+          variant: profile.effort,
         }),
       })
       const confirmed = (await input.client.mutation(api.workgraphRuntime.confirmMasterAdmission, {
@@ -945,14 +882,15 @@ async function reconcileHostedMaster(
       if (!confirmed.accepted) return { settled: true, state: "superseded" }
       return { settled: false, state: "running", retryAfterMs: 1_000 }
     }
-    const events = await hostedSessionHistory(runtime, claim.sessionId, claim.historyAfter ?? 0)
-    const terminal = events.findLast((event) => event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"))
-    if (!terminal) return { settled: false, state: "running", retryAfterMs: 1_000 }
+    const snapshot = await hostedSessionSnapshot(runtime, claim.sessionId)
+    const turn = hostedSessionTurn(snapshot, `msg_${claim.turnId}`, claim.historyAfter ?? -1)
+    if (!turn.settled) return { settled: false, state: "running", retryAfterMs: 1_000 }
     if (profile.connectionIds.length > 0) {
       await runtime(`/api/workgraph/connection-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
     }
     await runtime(`/api/workgraph/run-binding/${encodeURIComponent(claim.sessionId)}`, { method: "DELETE" })
-    if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
+    if (turn.outcome === "failed") throw new Error(turn.error ?? "Hosted master Session failed")
+    if (turn.outcome === "cancelled") throw new Error(turn.error ?? "Hosted master Session was cancelled")
     const charter = await hostedMasterCharter(claim.stream.charter)
     return await input.client.mutation(api.workgraphRuntime.completeMasterTurn, {
       service_token: input.serviceToken,
@@ -964,8 +902,8 @@ async function reconcileHostedMaster(
       charter_hash: charter.hash,
       cited_charter_clause: charter.clause,
       model_version: `${profile.model.providerId}/${profile.model.modelId}`,
-      reasoning_summary: masterReasoningSummary(events),
-      tool_calls: masterToolCalls(events),
+      reasoning_summary: turn.summary ?? "Completed the serialized master turn.",
+      tool_calls: turn.toolCalls,
       resulting_diffs: claim.artifactRefs ?? [],
       evidence_ids: claim.evidenceIds ?? [],
       outcome: "completed",
@@ -1025,26 +963,6 @@ async function hostedMasterCharter(charter: { text: string; hash: string } | und
     hash: Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join(""),
     clause: DEFAULT_STREAM_CHARTER_HINTS[0]!,
   }
-}
-
-function latestHistorySequence(events: readonly SessionEvent[]) {
-  return events.reduce((latest, event) => Math.max(latest, event.durable?.seq ?? 0), 0)
-}
-
-function masterReasoningSummary(events: readonly SessionEvent[]) {
-  const text = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
-  return typeof text === "string" && text.trim() ? text.trim().slice(0, 10_000) : "Completed the serialized master turn."
-}
-
-function masterToolCalls(events: readonly SessionEvent[]) {
-  return [
-    ...new Set(
-      events.flatMap((event) => {
-        const tool = typeof event.data.tool === "string" ? event.data.tool : typeof event.data.name === "string" ? event.data.name : undefined
-        return tool && event.type.includes("tool") ? [tool] : []
-      }),
-    ),
-  ].slice(0, 100)
 }
 
 function managedRunPrompt(prompt: string) {
@@ -1125,7 +1043,7 @@ async function drainControlEffects(
           const relay = await provider.getRelayEndpoint(workspaceId, placement.homeRegion as never)
           const runtime = runtimeRequest(request, relay, workspaceId, token.token)
           const sessions = control.effectType === "interrupt_run" ? (control.payload.sessionId ? [control.payload.sessionId] : []) : (control.payload.sessions ?? [])
-          await Promise.all(sessions.map((sessionId) => runtime(`/api/session/${encodeURIComponent(sessionId)}/interrupt`, { method: "POST" })))
+          await Promise.all(sessions.map((sessionId) => runtime(`/session/${encodeURIComponent(sessionId)}/abort`, { method: "POST" })))
         }
         if (control.payload.finalize === "replace") {
           const destroyed = await manager.destroy(workspaceId)
@@ -1268,32 +1186,34 @@ async function reconcileSourcePlanning(
           now: now(),
         })) as { settled?: boolean }
         if (!reserved.settled) return { settled: false }
-        const created = await runtime("/api/session", {
+        const created = await runtime(`/session?harness=${encodeURIComponent(claim.profile.harness)}`, {
           method: "POST",
           body: JSON.stringify({
             id: requestedSessionId,
             agent: claim.profile.agent,
             model: {
               providerID: claim.profile.model.providerId,
-              id: claim.profile.model.modelId,
-              variant: claim.profile.effort,
+              modelID: claim.profile.model.modelId,
             },
-            tools: claim.profile.tools,
-            location: { directory: "/workspace" },
+            variant: claim.profile.effort,
           }),
         })
-        const body = (await created.json()) as { id?: string; data?: { id?: string } }
-        const adoptedId = body.id ?? body.data?.id
+        const body = (await created.json()) as { id?: string }
+        const adoptedId = body.id
         if (!adoptedId) throw new Error("Hosted source planning Session create response did not include a Session ID")
         if (adoptedId !== requestedSessionId) throw new Error("Hosted source planning Session did not adopt its caller-owned durable identity")
         try {
-          await runtime(`/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+          await runtime(`/session/${encodeURIComponent(sessionId)}/prompt_async?harness=${encodeURIComponent(claim.profile.harness)}`, {
             method: "POST",
             body: JSON.stringify({
-              id: `msg_workgraph_${claim.jobId}`,
-              prompt: { text: claim.prompt },
-              delivery: "steer",
-              resume: true,
+              messageID: `msg_workgraph_${claim.jobId}`,
+              parts: [{ type: "text", text: claim.prompt }],
+              agent: claim.profile.agent,
+              model: {
+                providerID: claim.profile.model.providerId,
+                modelID: claim.profile.model.modelId,
+              },
+              variant: claim.profile.effort,
             }),
           })
         } catch (error) {
@@ -1358,13 +1278,13 @@ async function reconcileSourcePlanning(
           ttlMs: 10 * 60_000,
         })
         const relay = await provider.getRelayEndpoint(plan.workspaceId, placement.homeRegion as never)
-        const events = await hostedSessionHistory(runtimeRequest(request, relay, plan.workspaceId, token.token), plan.sessionId)
-        const terminal = events.findLast((event) => event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"))
-        if (!terminal) return { settled: false, state: "running" }
-        if (terminal.type.startsWith("session.next.step.failed")) throw new Error(sessionError(terminal.data.error))
-        const text = events.findLast((event) => event.type.startsWith("session.next.text.ended"))?.data.text
-        if (typeof text !== "string") throw new Error("Source planning Session returned no structured result")
-        const parsed = AdmissionAgentPlanSchema.parse(JSON.parse(text))
+        const snapshot = await hostedSessionSnapshot(runtimeRequest(request, relay, plan.workspaceId, token.token), plan.sessionId)
+        const turn = hostedSessionTurn(snapshot, `msg_workgraph_${plan.jobId}`)
+        if (!turn.settled) return { settled: false, state: "running" }
+        if (turn.outcome === "failed") throw new Error(turn.error ?? "Source planning Session failed")
+        if (turn.outcome === "cancelled") throw new Error(turn.error ?? "Source planning Session was cancelled")
+        if (!turn.summary) throw new Error("Source planning Session returned no structured result")
+        const parsed = AdmissionAgentPlanSchema.parse(JSON.parse(turn.summary))
         return await client.mutation(api.workgraphBackground.completeSourcePlan, {
           organization_id: plan.orgId,
           service_token: serviceToken,
@@ -1427,7 +1347,7 @@ class HostedSessionRequestError extends Error {
     body: string,
     route?: { method: string; path: string },
   ) {
-    super(`Hosted Session V2 request failed: ${route ? `${route.method} ${route.path} → ` : ""}${status} ${body}`)
+    super(`Hosted Session request failed: ${route ? `${route.method} ${route.path} → ` : ""}${status} ${body}`)
   }
 }
 
@@ -1445,7 +1365,6 @@ export function hostedSettlementFailureDisposition(error: unknown): "park" | "fa
   return "fail"
 }
 
-type SessionEvent = { type: string; durable?: { seq: number }; data: Record<string, unknown> }
 type RunningRun = {
   ownerUserId: string
   orgId: string
@@ -1646,56 +1565,112 @@ export async function workGraphWorkspaceId(organizationId: string, ownerUserId: 
   return `wg-${Array.from(new Uint8Array(digest).slice(0, 12), (byte) => byte.toString(16).padStart(2, "0")).join("")}`
 }
 
-function sessionError(error: unknown) {
-  if (typeof error === "string") return error
-  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message
-  return JSON.stringify(error ?? "Session failed")
-}
+class HostedSessionSnapshotError extends Error {
+  readonly code = "session_snapshot_invalid"
 
-class SessionHistoryResponseError extends Error {
-  readonly code = "session_history_invalid"
-
-  constructor() {
-    super("session_history_invalid")
+  constructor(message = "Hosted Session snapshot was invalid") {
+    super(message)
   }
 }
 
-function hostedSessionHistoryPage(value: unknown): Readonly<{ data: SessionEvent[]; hasMore: boolean }> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new SessionHistoryResponseError()
-  const page = value as Record<string, unknown>
-  if (!Array.isArray(page.data) || typeof page.hasMore !== "boolean") throw new SessionHistoryResponseError()
-  const data = page.data.map((value) => {
-    if (!value || typeof value !== "object" || Array.isArray(value)) throw new SessionHistoryResponseError()
-    const event = value as Record<string, unknown>
-    if (typeof event.type !== "string" || !event.data || typeof event.data !== "object" || Array.isArray(event.data)) {
-      throw new SessionHistoryResponseError()
-    }
-    if (event.durable !== undefined) {
-      if (!event.durable || typeof event.durable !== "object" || Array.isArray(event.durable)) {
-        throw new SessionHistoryResponseError()
-      }
-      const durable = event.durable as Record<string, unknown>
-      if (typeof durable.seq !== "number" || !Number.isSafeInteger(durable.seq) || durable.seq < 1) {
-        throw new SessionHistoryResponseError()
-      }
-    }
-    return event as SessionEvent
-  })
-  return { data, hasMore: page.hasMore }
+function sessionString(value: unknown) {
+  return typeof value === "string" ? clean(value) : undefined
 }
 
-/**
- * `/api/session/active` answers with the drains the harness process owns:
- * `{ data: { [sessionID]: { type: "running" } } }`, and Sessions absent from it
- * are inactive. A malformed envelope must not read as "idle" -- that is the
- * direction that parks live work -- so anything unrecognizable is treated as
- * still active and the Run is reconciled again on the next cycle.
- */
-function hostedSessionActive(value: unknown, sessionId: string) {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return true
-  const data = (value as Record<string, unknown>).data
-  if (!data || typeof data !== "object" || Array.isArray(data)) return true
-  return sessionId in (data as Record<string, unknown>)
+type HostedSessionSnapshot = Readonly<{
+  session: Record<string, unknown>
+  messages: unknown[]
+  maxEventOrdinal: number
+}>
+
+async function hostedSessionSnapshot(
+  runtime: (path: string, init?: RequestInit) => Promise<Response>,
+  sessionId: string,
+): Promise<HostedSessionSnapshot> {
+  const encoded = encodeURIComponent(sessionId)
+  const [sessionResponse, messageResponse] = await Promise.all([
+    runtime(`/session/${encoded}`),
+    runtime(`/session/${encoded}/message?snapshot=1`),
+  ])
+  const session = record(await sessionResponse.json())
+  if (!session || sessionString(session.id) !== sessionId) {
+    throw new HostedSessionSnapshotError("Hosted Session response did not match the requested Session")
+  }
+  const envelope = record(await messageResponse.json())
+  const messages = envelope?.messages
+  const maxEventOrdinal = envelope?.maxEventOrdinal
+  if (
+    !Array.isArray(messages)
+    || typeof maxEventOrdinal !== "number"
+    || !Number.isSafeInteger(maxEventOrdinal)
+    || maxEventOrdinal < 0
+  ) {
+    throw new HostedSessionSnapshotError()
+  }
+  return { session, messages, maxEventOrdinal }
+}
+
+function hostedSessionTurn(
+  snapshot: HostedSessionSnapshot,
+  userMessageId: string,
+  afterOrdinal = -1,
+):
+  | Readonly<{ settled: false }>
+  | Readonly<{
+      settled: true
+      outcome: "completed" | "failed" | "cancelled"
+      summary?: string
+      error?: string
+      toolCalls: string[]
+    }> {
+  if (snapshot.maxEventOrdinal <= afterOrdinal) return { settled: false }
+  const status = sessionString(snapshot.session.status)
+  if (status === "busy" || status === "recovering" || status === "retry") return { settled: false }
+  const lastTurn = record(snapshot.session.lastTurn)
+  const outcome = sessionString(lastTurn?.status)
+  if (outcome !== "completed" && outcome !== "failed" && outcome !== "cancelled") return { settled: false }
+  const userIndex = snapshot.messages.findIndex((message) => sessionString(record(record(message)?.info)?.id) === userMessageId)
+  const assistantMessageId = sessionString(lastTurn?.assistantMessageId)
+  if (userIndex < 0 || !assistantMessageId) return { settled: false }
+  const assistantIndex = snapshot.messages.findIndex(
+    (message, index) =>
+      index > userIndex
+      && sessionString(record(record(message)?.info)?.id) === assistantMessageId
+      && sessionString(record(record(message)?.info)?.role) === "assistant",
+  )
+  if (assistantIndex < 0) return { settled: false }
+  const turnMessages = snapshot.messages.slice(userIndex + 1, assistantIndex + 1)
+  const summary = turnMessages.flatMap((message) => {
+    const parts = record(message)?.parts
+    if (!Array.isArray(parts)) return []
+    return parts.flatMap((part) => {
+      const value = record(part)
+      return value?.type === "text" && sessionString(value.text) ? [sessionString(value.text)!] : []
+    })
+  }).join("\n").trim().slice(0, 10_000) || undefined
+  const toolCalls = [...new Set(turnMessages.flatMap((message) => {
+    const parts = record(message)?.parts
+    if (!Array.isArray(parts)) return []
+    return parts.flatMap((part) => {
+      const value = record(part)
+      const type = sessionString(value?.type)
+      const name = sessionString(value?.tool) ?? sessionString(value?.name) ?? sessionString(value?.toolName)
+      return type?.includes("tool") && name ? [name] : []
+    })
+  }))].slice(0, 100)
+  return {
+    settled: true,
+    outcome,
+    ...(summary ? { summary } : {}),
+    ...(
+      outcome === "failed"
+        ? { error: sessionString(lastTurn?.error) ?? "Hosted Session failed" }
+        : outcome === "cancelled"
+          ? { error: sessionString(lastTurn?.reason) ?? "Hosted Session was cancelled" }
+          : {}
+    ),
+    toolCalls,
+  }
 }
 
 function hostedSessionMessages(value: unknown) {
@@ -1704,20 +1679,6 @@ function hostedSessionMessages(value: unknown) {
   const messages = (value as Record<string, unknown>).messages
   if (!Array.isArray(messages)) throw new Error("Hosted Session transcript was invalid")
   return messages
-}
-
-async function hostedSessionHistory(runtime: (path: string, init?: RequestInit) => Promise<Response>, sessionId: string, initialAfter = 0) {
-  const events: SessionEvent[] = []
-  let after = initialAfter
-  for (;;) {
-    const history = await runtime(`/api/session/${encodeURIComponent(sessionId)}/history?limit=100&after=${after}`)
-    const page = hostedSessionHistoryPage(await history.json())
-    events.push(...page.data)
-    if (!page.hasMore) return events
-    const next = page.data.at(-1)?.durable?.seq
-    if (next === undefined || next <= after) throw new SessionHistoryResponseError()
-    after = next
-  }
 }
 
 export class HostedTranscriptRetentionError extends Error {

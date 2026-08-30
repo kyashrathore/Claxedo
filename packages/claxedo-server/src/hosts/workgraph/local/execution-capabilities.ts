@@ -3,11 +3,10 @@ import { stat } from "node:fs/promises"
 import path from "node:path"
 import { promisify } from "node:util"
 import { isAgentHarnessId, normalizeHarnessIdentity, sdkModelOptions } from "@claxedo/agent-sdk-runtime"
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
+import { authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import type { ConnectionsService } from "@claxedo/connections"
 import { WorkGraphConnectionToolNames, type WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { ExecutionCapabilitiesUnavailableError } from "@claxedo/workgraph/ports"
-import { OPENCODE_INTERNAL_BASE, opencodeEngineLoaded } from "@claxedo/server-core/opencode/engine"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { createExecutionCapabilitiesPort } from "../execution-capabilities"
 
@@ -21,13 +20,7 @@ const SESSION_COMPOSER_HARNESSES = [
 ] as const
 
 export function createLocalExecutionCapabilities(input: Readonly<{
-  opencodeRequest: OpenCodeRequestFn
-  /**
-   * Whether an OpenCode engine is already running (or externally configured).
-   * Injected beside `opencodeRequest` so tests stubbing the transport can
-   * model engine state; defaults to the real engine's own predicate.
-   */
-  engineLoaded?: () => boolean
+  opencodeRuntime: OpenCodeRuntime
   harness(): Promise<string>
   connections?: ConnectionsService
   resolveTeamOwner?: (context: WorkGraphContext) => string | undefined
@@ -64,23 +57,41 @@ export function createLocalExecutionCapabilities(input: Readonly<{
         input.harness(),
         directory.then(async (selectedDirectory) => {
           if (!selectedDirectory) return [[], { connected: [], all: [] }, ["terminal"]] as const
-          // Cold-engine read: browsing the composer catalog must never be the
-          // reason the embedded engine boots. Until an OpenCode surface starts
-          // the engine, the opencode entry serves the same static shape the
-          // unscoped read serves; a refresh after first OpenCode use restores
-          // the live agents/models/tools.
-          if (!(input.engineLoaded ?? opencodeEngineLoaded)()) return [[], { connected: [], all: [] }, ["terminal"]] as const
-          return Promise.all([
-            runtimeJson(input, selectedDirectory, "/agent"),
-            runtimeJson(input, selectedDirectory, "/api/model"),
-            runtimeJson(input, selectedDirectory, "/experimental/tool/ids"),
+          // A composer catalog read must not warm the embedded SDK host. Until
+          // a real OpenCode operation starts it, serve the static entry; a
+          // refresh after first use restores live agents and models.
+          if (input.opencodeRuntime.host.status().lifecycle !== "ready") {
+            return [defaultAgent("opencode"), { connected: [], all: [] }, ["terminal"]] as const
+          }
+          const scope = authorizeWorkspace({ workspaceID: selectedDirectory, directory: selectedDirectory })
+          const [agents, models] = await Promise.all([
+            input.opencodeRuntime.catalog.agents(scope),
+            input.opencodeRuntime.catalog.models(scope),
           ])
+          return [
+            agents,
+            {
+              connected: [...new Set(models.map((model) => model.providerID))],
+              all: Object.values(Object.groupBy(models, (model) => model.providerID)).flatMap((providerModels) => {
+                if (!providerModels?.length) return []
+                return [{
+                  id: providerModels[0]!.providerID,
+                  models: Object.fromEntries(providerModels.map((model) => [model.id, {
+                    id: model.id,
+                    name: model.name ?? model.id,
+                    status: "active",
+                  }])),
+                }]
+              }),
+            },
+            ["terminal"],
+          ] as const
         }),
       ])
       // Connection tools are advertised for every harness: Connection-bound
       // Runs execute through the harness-neutral runtime contribution
       // (`workGraphRuntimeRouteContributions`) on non-OpenCode harnesses and
-      // through the engine's Session V2 bridge on OpenCode.
+      // through the shared Session gateway on every harness, including embedded OpenCode.
       const harnesses = [
         ...(await Promise.all(SESSION_COMPOSER_HARNESSES.map(async (harness) => ({
           harness: { harness },
@@ -261,23 +272,4 @@ function withDefaultEffort(catalog: ReturnType<typeof piProviderCatalog>) {
       }])),
     })),
   }
-}
-
-/**
- * OpenCode-surface read: describes the OpenCode harness's OWN catalog entry
- * (agents, models, tool ids) over the engine transport. Re-homing this behind
- * the OpenCode adapter — so a cold engine serves a static entry instead of
- * booting — is owned by plan 2026-08-19-003 (U4); do not "fix" it here.
- */
-async function runtimeJson(
-  input: Readonly<{ opencodeRequest: OpenCodeRequestFn }>,
-  directory: string,
-  pathname: string,
-) {
-  const response = await input.opencodeRequest(new Request(new URL(pathname, OPENCODE_INTERNAL_BASE), {
-    headers: { "x-opencode-directory": directory },
-    signal: AbortSignal.timeout(5_000),
-  }))
-  if (!response.ok) throw new Error(`Execution runtime catalog ${pathname} failed with ${response.status}`)
-  return response.json()
 }

@@ -38,15 +38,6 @@ import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
 import { configureOpencodeMcpSync } from "@claxedo/local-server/self-hosted-execution"
-import {
-  configureOpenCodeApplicationTools,
-  configureOpenCodeEmbedPath,
-  configureOpenCodeWorkerPath,
-  configureOpenCodeEngine,
-  drainOpenCodeEngine,
-  opencodeEngineMode,
-  opencodeRequest,
-} from "@claxedo/server-core/opencode/engine"
 import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "@claxedo/local-server/self-hosted-execution"
 import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import {
@@ -60,7 +51,7 @@ import {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "@claxedo/local-server/self-hosted-execution"
-import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
+import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
 import { migrateCredentials, projectLocalSessionMetaFromEvent } from "@claxedo/local-server/self-hosted-execution"
@@ -135,7 +126,6 @@ import { noSelfHostedCapabilities, type SelfHostedCapabilities } from "./capabil
 import type { WorkGraphConnectionOperationBroker, WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
 import type { WorkGraphConnectionRunBinding } from "../../hosts/workgraph/composition/session-gateway"
 import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
-import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
 import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "@claxedo/local-server/self-hosted-execution"
 import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
 import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
@@ -463,7 +453,6 @@ export function localSecurityHeaders(): MiddlewareHandler {
 export function createSelfHostedApp(
   services: ControlPlaneServices,
   options: {
-    onOpencodeAccess?: () => void
     beforeLocalSessionList?: () => Promise<void>
     /**
      * The deployment posture to validate before composing.
@@ -757,7 +746,6 @@ export function createSelfHostedApp(
         services,
         env: process.env,
         ...authRouteOptions(services),
-        onOpencodeAccess: options.onOpencodeAccess,
       }),
     )
 
@@ -963,10 +951,6 @@ export function createSelfHostedApp(
 export type ControlPlaneStackOptions = {
   services: ControlPlaneServices
   port?: number
-  opencodeUrl?: string
-  opencodePassword?: string | null
-  opencodeEmbedPath?: string
-  opencodeWorkerPath?: string
   processObserver?: ProcessObserver
   /**
    * Hosted capabilities this deployment contributes.
@@ -1134,7 +1118,7 @@ function localRelayFromEnv(
 
 export async function shutdownControlPlaneRuntime() {
   shutdownEmbeddedWorkspaceRuntimes()
-  await drainOpenCodeEngine()
+  await drainOpenCodeSdkRuntime()
   await shutdownWorkspaceSupervisor()
   await shutdownPostHog()
 }
@@ -1160,10 +1144,7 @@ export function startControlPlaneStack(options: ControlPlaneStackOptions) {
 
 function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseDataDirOwner: () => void) {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
-  // No external opencodeUrl configured => use the embedded engine (in-process
-  // for generic hosts, on-demand worker when desktop supplies one). An explicit
-  // opencodeUrl is the external-URL opt-in. NOTHING listens on :4096.
-  const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
+  const opencodeRuntime = openCodeSdkRuntime()
   const services = options.services
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
@@ -1313,24 +1294,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       reportError(error, { tags: { source: "workgraph_llm_usage" } })
     })
   }
-  configureOpenCodeAuth(options.opencodePassword)
-  configureOpenCodeEmbedPath(options.opencodeEmbedPath)
-  configureOpenCodeWorkerPath(options.opencodeWorkerPath)
-  if (options.opencodeUrl) {
-    configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
-  } else {
-    configureOpenCodeEngine({ embedded: true })
-    // Stored AI credentials live in Claxedo's registry; the engine resolves
-    // auth from its own store. Arm the bridge's boot hook so every embedded
-    // engine boot reconciles the registry into the engine — an already-stored
-    // key powers the first embedded turn — WITHOUT booting the engine at
-    // server start just to deliver auth (see opencode/engine-auth-bridge.ts).
-    // Mutations after this keep the two in step through the same gate.
-    void import("@claxedo/server-core/opencode/engine-auth-bridge")
-      .then((bridge) => bridge.armEngineAuthSyncOnBoot())
-      .catch(() => {})
-  }
-  configureOpenCodeApplicationTools(undefined)
   // Compat events from EVERY embedded-runtime harness session (Claude, Codex,
   // Cursor, Pi, and adapter-hosted OpenCode alike), fanned out from the
   // `onSessionMetaEvent` tap below. The engine's own bus (`globalBus`) only
@@ -1356,10 +1319,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
   mirrorProcessEvents()
-  configureOpencodeMcpSync({ enabled: opencodeCompat })
+  configureOpencodeMcpSync({ runtime: opencodeRuntime })
   configureEmbeddedWorkspaceRuntime({
-    opencodeRequest,
-    opencodeCompat,
+    opencodeRuntime,
     piModelBackend: centralModelBackend().modelBackend,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     routeContributions: capabilities.runtimeRouteContributions,
@@ -1420,24 +1382,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // converge on the central bus. Workspace-runtime host events stream directly
   // from each sandbox.
   services.durableSessionLog.subscribe_message_replay(globalBus)
-  captureControlPlaneStartupTelemetry(services, { port, engineMode: opencodeEngineMode() })
+  captureControlPlaneStartupTelemetry(services, { port, engineMode: "embedded" })
 
   const opencodeEvents = globalBusOpencodeEvents()
-  const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
-
-  upstreamEvents?.on((event) => {
-    if (!event.payload.type) return
-    if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
-      void projectLocalSessionMetaFromEvent(services.projectionStore, event)
-    }
-    globalBus.publish({
-      directory: event.directory ?? "global",
-      payload: {
-        type: event.payload.type,
-        properties: event.payload.properties,
-      },
-    })
-  })
 
   let localSessionProjectionReady: Promise<void> | undefined
   const built = createSelfHostedApp(services, {
@@ -1447,7 +1394,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     usageOutbox,
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
-    onOpencodeAccess: () => upstreamEvents?.start(),
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return
       localSessionProjectionReady = new Promise((resolve) => {
@@ -1521,7 +1467,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       pullRequestEffects: workgraphPullRequestEffects,
       resolveBinding: async (sessionId) => localWorkGraphConnections.get(sessionId),
     })
-    return gateway.createHarnessWorkGraphGateway(opencodeRequest, {
+    return gateway.createHarnessWorkGraphGateway({
       connections: built.connections,
       resolveTeamOwner: workgraphResolveTeamOwner,
       executeRun: async (context, request, signal) => {
@@ -1630,7 +1576,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     },
     execution: workgraphExecution,
     executionCapabilities: createLocalExecutionCapabilities({
-      opencodeRequest,
+      opencodeRuntime: openCodeSdkRuntime(),
       harness: async () => meteringHarnessId(defaultHarness(await loadUserConfig())),
       connections: built.connections,
       resolveTeamOwner: () => undefined,
@@ -1823,20 +1769,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       return false
     }
   })
-  if (!services.auth.config.enabled && services.auth.config.mode === "local-only" && !options.opencodeUrl) {
-    configureOpenCodeApplicationTools(() =>
-      workgraph.then((embedded) =>
-        createLocalWorkGraphAgentTools(embedded, {
-          organizationId: "local",
-          ownerUserId: "local",
-          sessionExecution: (sessionId) => localSessionExecution(opencodeRequest, sessionId),
-          sessionContext: (sessionId) => localSessionContext(opencodeRequest, sessionId),
-          sessionOwnerDirected: (sessionId) => localSessionOwnerDirected(opencodeRequest, sessionId),
-          notifyOwner: (input) => built.channels.notifyOwner({ ownerUserId: "local", ...input }),
-        }),
-      ),
-    )
-  }
   let unsubscribeWorkGraphSessionIntake = () => {}
   if (!services.auth.config.enabled && services.auth.config.mode === "local-only") {
     void Promise.all([workgraph, import("../../hosts/workgraph/session-intake")]).then(([embedded, intake]) => {
@@ -1849,18 +1781,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       })
       const onIntakeError = (error: unknown) =>
         console.error("[claxedo-server] WARN WorkGraph Session intake failed:", error)
-      // Two source/reader pairs, no fallback between them: the engine bus reads
-      // back over the engine transport, the embedded-runtime tap reads back
-      // through the Session's own workspace runtime. An OpenCode session that
-      // surfaces on both projects once — the intake port's idempotency key is
-      // the session id.
-      const unsubscribeEngineIntake = intake.subscribeSessionIntake({
-        events: globalBus,
-        readSession: intake.engineIdleSessionReader(opencodeRequest),
-        port: embedded.sessionIntake,
-        resolveContext: intakeContext,
-        onError: onIntakeError,
-      })
       const unsubscribeRuntimeIntake = intake.subscribeSessionIntake({
         events: {
           subscribe: (listener) =>
@@ -1888,7 +1808,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         onError: onIntakeError,
       })
       unsubscribeWorkGraphSessionIntake = () => {
-        unsubscribeEngineIntake()
         unsubscribeRuntimeIntake()
       }
     })
@@ -1950,7 +1869,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   built.injectWebSocket(server)
   const stopServer = async () => {
     opencodeEvents.close()
-    upstreamEvents?.close()
     await shutdownControlPlaneRuntime()
     server.close()
     process.exit(0)
@@ -1964,7 +1882,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     unsubscribeWorkGraphSessionIntake()
     if (workgraphDatabase.open) workgraphDatabase.close()
     services.close?.()
-    void drainOpenCodeEngine()
+    void drainOpenCodeSdkRuntime()
   })
 
   // Initialize agent hooks (wrapper scripts, shell integration)
@@ -1980,12 +1898,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
 
 export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
-  opencodeUrl?: string,
-  opencodePassword?: string | null,
   options: {
     processObserver?: ProcessObserver
-    opencodeEmbedPath?: string
-    opencodeWorkerPath?: string
     /**
      * Hosted capabilities for this process.
      *
@@ -1998,15 +1912,9 @@ export function startServer(
     capabilities?: SelfHostedCapabilitiesFactory
   } = {},
 ) {
-  // `undefined` opencodeUrl => embedded engine (the default local composition).
-  // An explicit URL is the external-URL opt-in.
   return startControlPlaneStack({
     services: createDefaultLocalControlPlaneServices(),
     port,
-    ...(opencodeUrl ? { opencodeUrl } : {}),
-    opencodePassword,
-    ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
-    ...(options.opencodeWorkerPath ? { opencodeWorkerPath: options.opencodeWorkerPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.capabilities ? { capabilities: options.capabilities } : {}),
   })

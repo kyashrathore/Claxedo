@@ -203,13 +203,14 @@ describe("@claxedo/local-server closure", () => {
     // local usage route, durable ledger and provenance ports, scanner, pricing
     // port, outbox, stable ledger identity, and their desktop composition.
     // Shared implementations live in server-core, so no hosted product edge is
-    // introduced; the package count falls back to 21 after that ownership move.
-    // A further rise means the desktop product
+    // introduced. The package count is 22 after adding the deliberately narrow
+    // `@claxedo/opencode-runtime` owner of the public embedded SDK. A further
+    // rise means the desktop product
     // gained surface, and a fall should lower the ceiling with it. The package
     // number is the reach that matters — a rise is a new dependency the
     // unsigned desktop now carries and is worth reading before it is bumped.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(56)
-    expect(packages.size).toBeLessThanOrEqual(21)
+    expect(packages.size).toBeLessThanOrEqual(22)
   })
 })

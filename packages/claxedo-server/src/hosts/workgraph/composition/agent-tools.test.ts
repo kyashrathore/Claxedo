@@ -27,8 +27,6 @@ describe("embedded WorkGraph agent tools", () => {
         },
         {
           sessionID: "session-1",
-          agent: "build",
-          assistantMessageID: "message-1",
           toolCallID: "call-1",
         },
       ),
@@ -68,8 +66,6 @@ describe("embedded WorkGraph agent tools", () => {
         },
         {
           sessionID: "session-1",
-          agent: "build",
-          assistantMessageID: "message-1",
           toolCallID: "call-2",
         },
       ),
@@ -90,7 +86,7 @@ describe("embedded WorkGraph agent tools", () => {
     expect(schema.properties).toMatchObject({ action: {}, stream_id: {}, summary: {}, evidence: {} })
     await expect(tools.workgraph_ledger!.execute(
       { action: "mark_done", operation_id: "operation-3" },
-      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-3" },
+      { sessionID: "session-1", toolCallID: "call-3" },
     )).rejects.toThrow()
   })
 
@@ -120,8 +116,6 @@ describe("embedded WorkGraph agent tools", () => {
       completion_contract: completion("proof"),
     }, {
       sessionID,
-      agent: "build",
-      assistantMessageID: "message-1",
       toolCallID: `call-${action}-${sessionID}`,
     })
 
@@ -159,7 +153,7 @@ describe("embedded WorkGraph agent tools", () => {
 
     await expect(tools.call_master!.execute(
       { message: "Rebase and land the completed task." },
-      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-master" },
+      { sessionID: "session-1", toolCallID: "call-master" },
     )).resolves.toEqual({ streamId: "stream-1", mailboxMessageId: "message-1" })
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actor: { type: "agent", id: "session-1" } }), {
       operationId: expect.stringMatching(/^call_master_call-master_/),
@@ -202,8 +196,6 @@ describe("embedded WorkGraph agent tools", () => {
       },
       {
         sessionID: "ses_master_stream-1",
-        agent: "build",
-        assistantMessageID: "message-1",
         toolCallID: "land-1",
       },
     )).resolves.toMatchObject({ ok: true })
@@ -240,7 +232,7 @@ describe("embedded WorkGraph agent tools", () => {
     } as never, { organizationId: "organization-a", ownerUserId: "owner-a" })
     await expect(tools.workgraph_update_stream_notes!.execute(
       { status: ["Ready"], learnings: [], external_references: [] },
-      { sessionID: "ses_master_stream-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notes-1" },
+      { sessionID: "ses_master_stream-1", toolCallID: "notes-1" },
     )).resolves.toEqual({ streamId: "stream-1" })
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actor: { type: "agent", id: "ses_master_stream-1" } }), {
       operationId: expect.stringMatching(/^update_stream_notes_notes-1_/),
@@ -256,7 +248,7 @@ describe("embedded WorkGraph agent tools", () => {
     })
     await expect(tools.workgraph_update_stream_notes!.execute(
       { status: [], learnings: [], external_references: [] },
-      { sessionID: "worker-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notes-2" },
+      { sessionID: "worker-1", toolCallID: "notes-2" },
     )).rejects.toThrow("restricted to the bound Stream master")
   })
 
@@ -281,7 +273,7 @@ describe("embedded WorkGraph agent tools", () => {
 
     await expect(tools.workgraph_notify_owner!.execute(
       { message: "Stream is ready" },
-      { sessionID: "ses_master_stream-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notify-1" },
+      { sessionID: "ses_master_stream-1", toolCallID: "notify-1" },
     )).resolves.toMatchObject({ receipt: { evidenceId: "evidence-notify" } })
     expect(notifyOwner).toHaveBeenCalledWith({ idempotencyKey: "notify_owner_notify-1", text: "Stream is ready" })
     expect(execute).toHaveBeenCalledWith(expect.objectContaining({ actor: { type: "agent", id: "ses_master_stream-1" } }), {
@@ -300,7 +292,7 @@ describe("embedded WorkGraph agent tools", () => {
     })
     await expect(tools.workgraph_notify_owner!.execute(
       { message: "No" },
-      { sessionID: "worker-1", agent: "build", assistantMessageID: "message-1", toolCallID: "notify-2" },
+      { sessionID: "worker-1", toolCallID: "notify-2" },
     )).rejects.toThrow("restricted to the bound Stream master")
   })
 
@@ -322,7 +314,7 @@ describe("embedded WorkGraph agent tools", () => {
 
     await tools.workgraph_create_stream!.execute(
       { operation_id: "operation-session", title: "Session-owned Stream" },
-      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-session" },
+      { sessionID: "session-1", toolCallID: "call-session" },
     )
 
     expect(execute).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -411,7 +403,7 @@ describe("embedded WorkGraph agent tools", () => {
 
     await tools.workgraph_bind_session!.execute(
       { operation_id: "operation-bind", stream_id: "stream-1" },
-      { sessionID: "session-1", agent: "build", assistantMessageID: "message-1", toolCallID: "call-bind" },
+      { sessionID: "session-1", toolCallID: "call-bind" },
     )
     expect(bind).toHaveBeenCalledWith(expect.objectContaining({
       organizationId: "organization-a",
@@ -484,8 +476,6 @@ describe("embedded WorkGraph agent tools", () => {
       const invoke = (name: keyof typeof tools, input: Record<string, unknown>) =>
         tools[name]!.execute(input, {
           sessionID: session.sessionId,
-          agent: "build",
-          assistantMessageID: "message-ledger",
           toolCallID: `${String(name)}-${String(input.operation_id ?? "read")}`,
         })
       const streamId = resultId(await invoke("workgraph_create_stream", {

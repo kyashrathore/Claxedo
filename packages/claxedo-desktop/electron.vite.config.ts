@@ -76,7 +76,7 @@ export default defineConfig(({ mode }) => {
           name: "copy-claxedo-server",
           closeBundle() {
             if (mode === "development") return
-            for (const name of ["claxedo-server", "claxedo-engine-worker"]) {
+            for (const name of ["claxedo-server"]) {
               const src = path.join(desktopDir, "resources", name)
               const dest = path.join(desktopDir, "out/main", name)
               if (!existsSync(src)) continue

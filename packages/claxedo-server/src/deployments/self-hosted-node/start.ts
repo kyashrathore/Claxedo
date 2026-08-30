@@ -32,8 +32,6 @@ import { assertSelfHostedPosture } from "./posture"
 
 export type SelfHostedStartOptions = {
   port: number
-  /** An explicit URL opts out of the embedded engine. */
-  opencodeUrl?: string
   env?: NodeJS.ProcessEnv
 }
 
@@ -109,5 +107,5 @@ export function startSelfHostedServer(options: SelfHostedStartOptions) {
   // where a refusal costs nothing. The one inside the composition catches a
   // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
-  return startServer(options.port, options.opencodeUrl, undefined, { capabilities: selfHostedCapabilities })
+  return startServer(options.port, { capabilities: selfHostedCapabilities })
 }

@@ -7,7 +7,8 @@ import { Pty } from "./pty/index"
 import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
-import type { OpenCodeRequestFn, PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
+import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
+import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
@@ -78,16 +79,12 @@ export type WorkspaceRuntimeServerOptions = {
   configToken?: string
   managementAuth?: WorkspaceRuntimeManagementAuth
   managementTarget?: WorkspaceRuntimeManagementTarget
-  opencodeUrl?: string
-  opencodeHeaders?: HeadersInit
-  /**
-   * Injected opencode transport (peer of `opencodeUrl`). When supplied, the host
-   * rides this handler instead of building a URL — used by embedded compositions.
-   */
-  opencodeRequest?: OpenCodeRequestFn
+  /** The process-owned public embedded-SDK runtime. */
+  opencodeRuntime?: OpenCodeRuntime
+  /** Standalone hosts close their injected SDK owner during process drain. */
+  ownsOpenCodeRuntime?: boolean
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
-  opencodeCompat?: boolean
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   target?: WorkspaceTarget
@@ -285,6 +282,7 @@ type WorkspaceRuntimeDrainOptions = {
   hostTunnel?: { close(): unknown }
   processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
+  openCodeDispose?: () => Promise<void>
 }
 
 type WorkspaceRuntimeShutdownReason = NodeJS.Signals | "unhandledRejection" | "uncaughtException"
@@ -309,6 +307,7 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
         await drainStep(errors, () => (options.processDispose ?? ProcessManager.dispose)(options.directory))
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
+        await drainStep(errors, () => options.openCodeDispose?.())
         if (errors.length) {
           throw new AggregateError(errors, "Workspace runtime drain failed")
         }
@@ -415,12 +414,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   })
   if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
   const host = createWorkspaceHost({
-    ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
-    ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
-    ...(options.opencodeRequest ? { opencodeRequest: options.opencodeRequest } : {}),
+    ...(options.opencodeRuntime ? { opencodeRuntime: options.opencodeRuntime } : {}),
     ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
-    ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
@@ -667,6 +663,9 @@ export function startServer(
         directory: options.target?.directory ?? workspaceDir(),
         drainTimeoutMs,
         ...(hostTunnel ? { hostTunnel } : {}),
+        ...(options.ownsOpenCodeRuntime && options.opencodeRuntime
+          ? { openCodeDispose: () => options.opencodeRuntime!.close() }
+          : {}),
       }),
     exit: (code) => process.exit(code),
   })

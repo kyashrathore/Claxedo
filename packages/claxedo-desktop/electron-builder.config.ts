@@ -9,7 +9,6 @@ import {
 } from "./scripts/package-structure"
 import {
   CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
-  OPENCODE_COMPILE_CACHE_DIR_NAME,
 } from "./src/shared/opencode-compile-cache"
 import { resolveTargetOsArch } from "./scripts/target-platform"
 
@@ -193,64 +192,12 @@ const getBase = (): Configuration => ({
       ...HOST_CONNECTOR_EXTRA_RESOURCE,
     },
     {
-      // The claxedo-server bundle externalizes `opencode/node-embed`; the
-      // desktop main process points the utility process at this explicit
-      // artifact path (CLAXEDO_CHILD_OPENCODE_EMBED_PATH). Source maps stay
-      // out of the installer.
-      from: "../opencode/dist/node/",
-      to: "opencode-engine/",
-      filter: ["**/*", "!**/*.map"],
-    },
-    {
-      // The prebuilt V8 compile cache for that artifact. It ships as its own
-      // sibling rather than inside opencode-engine/ because that directory is
-      // a verbatim copy of the engine's dist output, and because the utility
-      // process must be able to tell "no cache was generated" from "the engine
-      // is missing". The cache is only ever READ from here — it is copied into
-      // the running user's own cache directory, never written in place.
-      from: `resources/${OPENCODE_COMPILE_CACHE_DIR_NAME}/`,
-      to: `${OPENCODE_COMPILE_CACHE_DIR_NAME}/`,
-      filter: ["**/*"],
-    },
-    {
       // The same, for the server bundle's own static closure. Kept OUT of
       // resources/claxedo-server/ deliberately: that directory is rebuilt from
       // scratch by `bundleClaxedoServer`, which would delete a cache generated
       // into it, and it is copied into the asar as the server bundle itself.
       from: `resources/${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
       to: `${CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME}/`,
-      filter: ["**/*"],
-    },
-    {
-      // The engine keeps ONE external (`@lydell/node-pty` — a native module
-      // that cannot be bundled), imported bare at the top level of node.js.
-      // Node resolves a bare import by walking UP from the importing file, and
-      // the engine lives at Resources/opencode-engine/ — a SIBLING of
-      // Resources/app.asar.unpacked/node_modules, never an ancestor. So the
-      // unpacked natives are invisible to it and the import throws
-      // ERR_MODULE_NOT_FOUND, taking the whole engine module down with it.
-      //
-      // A top-level import failing means EVERY engine-backed route degrades to
-      // its empty fallback: `/config/providers` answers `{providers: []}` and
-      // the model picker shows "No model results" with no error anywhere the
-      // user or the logs can see. Shipping node_modules directly beside the
-      // engine puts the package on its own resolution path.
-      // Package-local path, not the workspace root: bun stores the real
-      // directory under a version-pinned `node_modules/.bun/@lydell+node-pty@<v>/`
-      // path that changes on every upgrade, while this symlink is stable.
-      from: "node_modules/@lydell/node-pty/",
-      to: "opencode-engine/node_modules/@lydell/node-pty/",
-      filter: ["**/*"],
-    },
-    {
-      // ...and the platform-specific binary it `require()`s by computed name
-      // (`@lydell/node-pty-${process.platform}-${process.arch}`). Shipping the
-      // wrapper alone is not enough — it throws "could not find the
-      // platform-specific package" and takes the engine down exactly as a
-      // missing wrapper would. bun leaves this optionalDependency unlinked at
-      // every level a normal resolve reaches, so the path is located on disk.
-      from: PTY_PLATFORM_PACKAGE_DIR,
-      to: `opencode-engine/node_modules/@lydell/node-pty-${targetOsArch}/`,
       filter: ["**/*"],
     },
   ],

@@ -142,7 +142,6 @@ const supervisor = await import("../../workspace/supervisor")
 const store = await import("@claxedo/server-core/workspace/store/index")
 const agent = await import("@claxedo/server-core/agent-config/index")
 const embedded = await import("@claxedo/local-server/deployments/local/embedded-workspace-runtime")
-const opauth = await import("@claxedo/server-core/opencode/auth")
 
 const upstreamProvider = {
   all: [
@@ -333,7 +332,7 @@ describe("control plane integration", () => {
       },
     })
 
-    server = serverMod.startServer(serverPort, `http://127.0.0.1:${upstreamPort}`)
+    server = serverMod.startServer(serverPort)
   })
 
   beforeEach(async () => {
@@ -344,7 +343,6 @@ describe("control plane integration", () => {
     statusAuth = null
     statusDir = null
     statusWs = null
-    opauth.configureOpenCodeAuth(null)
     await agent.saveUserConfig({
       mcp: {},
       auth: {},
@@ -722,7 +720,6 @@ describe("control plane integration", () => {
 
   test("cloud status forwarding uses shared opencode auth headers", async () => {
     const ws = await workspace("cloud-status-auth", "cloud")
-    opauth.configureOpenCodeAuth("desk-secret")
 
     const status = await fetch(
       `${base()}/session/status?workspaceId=${encodeURIComponent(ws.id)}&directory=${encodeURIComponent(ws.directory)}`,

@@ -139,8 +139,10 @@
  *   for the tier's own reason to exist. Never soften them to make a lane green.
  *
  * HARNESS NOTES —
- *   - VERIFIED INJECTION TABLE. Each row was proven against the real binary by
- *     `e2e/helpers/scripted-model-server.probe.ts` (3/3 passing), not inferred:
+ *   - VERIFIED INJECTION TABLE. The external-process rows were proven against
+ *     the real binaries by `e2e/helpers/scripted-model-server.probe.ts` (2/2
+ *     passing). OpenCode is now covered at its embedded SDK owner instead of
+ *     by spawning the removed engine:
  *
  *     | harness | mechanism | dialect |
  *     |---|---|---|

@@ -3,16 +3,21 @@ import path from "path"
 import { defaultHarness, listCommands, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { putCredential, deleteCredentialsByProvider } from "@claxedo/server-core/credentials/registry"
 import { fanOutConfig } from "../../agent-config/fanout"
-import { syncOpencodeMcpConfig } from "../../opencode/mcp-sync"
+import {
+  connectOpencodeMcp,
+  disconnectOpencodeMcp,
+  opencodeMcpStatus,
+  syncOpencodeMcpConfig,
+} from "../../opencode/mcp-sync"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { listProjects, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { controlPlaneRouteAuth } from "../../platform/http/control-plane-route-auth"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { bootPath, queryHarnessId, requestHarnessId, runner, workspaceInput } from "./context"
+import { bootPath, queryHarnessId, requestHarnessId, workspaceInput } from "./context"
 import { streamGlobalEvents } from "./events"
 import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, findFilesBody, findTextBody } from "./file-browser"
 import { configBody, configProvidersBody, globalConfigBody, providerAuthBody, providerBody, resolveHarnessId } from "./provider-config"
-import { maybeProxy, opencodeCompatDisabled, proxyUpstream, type OpenCodeCompatRouteOptions } from "./proxy"
+import type { OpenCodeCompatRouteOptions } from "./proxy"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
 import { PI_LAUNCH_PROVIDERS } from "@claxedo/server-core/credentials/pi-credentials"
 
@@ -127,44 +132,41 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       }
     })
     .get("/session/status", async (c) => {
-      const res = await maybeProxy(c, "/session/status", options)
-      if (res) return res
       return c.json({})
     })
     .get("/mcp", async (c) => {
-      if (requestHarnessId(c) === "opencode" && !opencodeCompatDisabled(options)) {
-        const res = await proxyUpstream(c, "/mcp", options)
-        if (!res.ok) return res
-        const text = await res.text()
-        const current = text.trim() ? JSON.parse(text) as unknown : {}
-        const synced = syncResultStatus(await syncOpencodeMcpConfig())
-        return c.json({ ...rec(current), ...synced })
-      }
-      return c.json({})
+      if (requestHarnessId(c) !== "opencode") return c.json({})
+      const input = workspaceInput(c)
+      if (!input.directory) return c.json({})
+      const target = { directory: input.directory, ...(input.workspaceId ? { workspaceID: input.workspaceId } : {}) }
+      const synced = syncResultStatus(await syncOpencodeMcpConfig(target))
+      return c.json({ ...await opencodeMcpStatus(target), ...synced })
     })
     .get("/question", async (c) => {
-      const res = await maybeProxy(c, "/question", options)
-      if (res) return res
       return c.json([])
     })
     .post("/mcp/:name/connect", async (c) => {
-      const res = await maybeProxy(c, `/mcp/${encodeURIComponent(c.req.param("name"))}/connect`, options)
-      if (res) return res
-      return c.json(true)
+      const input = workspaceInput(c)
+      if (!input.directory) return c.json(errorBody("workspace_required", "workspace directory is required"), 400)
+      return c.json(await connectOpencodeMcp({
+        directory: input.directory,
+        ...(input.workspaceId ? { workspaceID: input.workspaceId } : {}),
+        name: c.req.param("name"),
+      }))
     })
     .post("/mcp/:name/disconnect", async (c) => {
-      const res = await maybeProxy(c, `/mcp/${encodeURIComponent(c.req.param("name"))}/disconnect`, options)
-      if (res) return res
-      return c.json(true)
+      const input = workspaceInput(c)
+      if (!input.directory) return c.json(errorBody("workspace_required", "workspace directory is required"), 400)
+      return c.json(await disconnectOpencodeMcp({
+        directory: input.directory,
+        ...(input.workspaceId ? { workspaceID: input.workspaceId } : {}),
+        name: c.req.param("name"),
+      }))
     })
     .get("/lsp", async (c) => {
-      const res = await maybeProxy(c, "/lsp", options)
-      if (res) return res
       return c.json([])
     })
     .get("/vcs", async (c) => {
-      const res = await maybeProxy(c, "/vcs", options)
-      if (res) return res
       return c.json({})
     })
     .get("/provider/auth", async (c) => {
@@ -176,13 +178,6 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
           502,
         )
       }
-    })
-    .post("/provider/:providerID/oauth/:step", async (c) => {
-      const harnessId = await resolveHarnessId(requestHarnessId(c))
-      if (harnessId !== "opencode") {
-        return c.json(errorBody("opencode_oauth_unsupported", "oauth unsupported for ACP runners"), 404)
-      }
-      return proxyUpstream(c, `/provider/${encodeURIComponent(c.req.param("providerID"))}/oauth/${encodeURIComponent(c.req.param("step"))}`, options)
     })
     .get("/config/providers", async (c) => {
       try {
@@ -206,11 +201,15 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       const body = await c.req.json<{ auth?: { key?: string } }>().catch(() => null)
       const key = body?.auth?.key
       if (!key) return c.json(errorBody("opencode_auth_key_required", "auth.key is required"), 400)
-      const user = await loadUserConfig()
-      const runner = defaultHarness(user)
-      if (harnessId === "opencode" && runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
-      // Store through the credential registry instead of plaintext config
-      try {
+      if (options.services) {
+        await options.services.credentials.putCredential({
+          provider_id: id,
+          kind: "api_key",
+          source: "managed",
+          label: `API key for ${id}`,
+          secret: key,
+        })
+      } else {
         await putCredential({
           provider_id: id,
           kind: "api_key",
@@ -218,13 +217,6 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
           label: `API key for ${id}`,
           secret: key,
         })
-      } catch (cause) {
-        if (harnessId === "pi") {
-          return c.json(errorBody("pi_credential_store_unavailable", cause instanceof Error ? cause.message : String(cause)), 503)
-        }
-        // Fallback to legacy config if backend is unavailable
-        user.auth = { ...user.auth, [id]: key }
-        await saveUserConfig(user)
       }
       await fanOutConfig().catch(() => {})
       return c.json({})
@@ -235,17 +227,8 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
       if (harnessId === "pi" && !PI_LAUNCH_PROVIDERS.includes(id as (typeof PI_LAUNCH_PROVIDERS)[number])) {
         return c.json(errorBody("pi_provider_unsupported", `${id} is not a supported Pi provider`), 400)
       }
-      const user = await loadUserConfig()
-      const runner = defaultHarness(user)
-      if (harnessId === "opencode" && runner.id === "opencode" && !id.endsWith("-acp")) return proxyUpstream(c, `/auth/${encodeURIComponent(id)}`, options)
-      // Delete from credential registry
-      await deleteCredentialsByProvider(id).catch(() => {})
-      // Also clean up legacy config if present
-      if (user.auth?.[id]) {
-        user.auth = { ...user.auth }
-        delete user.auth[id]
-        await saveUserConfig(user)
-      }
+      if (options.services) await options.services.credentials.deleteCredentialsByProvider(id)
+      else await deleteCredentialsByProvider(id)
       await fanOutConfig().catch(() => {})
       return c.json({})
     })
@@ -257,7 +240,6 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     })
     .patch("/config", async (c) => {
       const user = await loadUserConfig()
-      if (defaultHarness(user).id === "opencode") return proxyUpstream(c, "/config", options)
       const body = await c.req.json().catch(() => null) as Record<string, unknown> | null
       if (body) {
         await saveUserConfig({
@@ -284,7 +266,6 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     })
     .patch("/global/config", async (c) => {
       const user = await loadUserConfig()
-      if (defaultHarness(user).id === "opencode") return proxyUpstream(c, "/global/config", options)
       const body = await c.req.json().catch(() => null) as { config?: Record<string, unknown> } | null
       if (body?.config) {
         await saveUserConfig({
@@ -298,11 +279,6 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     .get("/agent", async (c) => {
       const user = await loadUserConfig()
       const explicitHarness = requestHarnessId(c)
-      const hit = runner(c, explicitHarness ? defaultHarness(user) : { id: "claude", access: "acp" })
-      if (explicitHarness && hit.id === "opencode") {
-        const res = await proxyUpstream(c, "/agent", options)
-        return res
-      }
       const input = workspaceInput(c)
       const ws = await resolveWorkspace({
         workspaceId: input.workspaceId,

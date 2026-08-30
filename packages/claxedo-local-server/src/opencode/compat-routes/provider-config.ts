@@ -1,6 +1,5 @@
 import { defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
-import { OPENCODE_INTERNAL_BASE, opencodeRequest } from "@claxedo/server-core/opencode/engine"
-import { opencodeCompatDisabled, type OpenCodeCompatRouteOptions } from "./proxy"
+import type { OpenCodeCompatRouteOptions } from "./proxy"
 import { opencodeProviderCatalog } from "@claxedo/server-core/credentials/opencode-provider-catalog"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
@@ -31,7 +30,7 @@ export function emptyConfigProviders() {
 export async function providerBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions, providerId?: string) {
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId === "pi") return piProviderCatalog(options.env ?? process.env)
-  if (harnessId !== "opencode" || opencodeCompatDisabled(options)) return localProviderCatalog(harnessId, options)
+  if (harnessId !== "opencode") return localProviderCatalog(harnessId, options)
   // Claxedo owns this catalog now. R7 requires it to work "without raw engine
   // control routes", and OpenCode was the last harness still reaching for the
   // engine here — which made a missing engine artifact empty the model picker,
@@ -70,12 +69,7 @@ export async function providerAuthBody(harnessOverride?: string) {
   // codex-acp's OAuth method down to an API key).
   const base = providerAuthMethods() as Record<string, unknown>
   if (harnessId !== "opencode") return base
-  // The control plane and engine each own real methods, so compose them on a
-  // successful engine read. An unavailable engine is not equivalent to “only
-  // the base methods exist” and must remain an explicit failure.
-  const res = await opencodeRequest(new Request(new URL("/provider/auth", OPENCODE_INTERNAL_BASE)))
-  if (!res.ok) throw new Error(`provider auth fetch failed: ${res.status}`)
-  return { ...base, ...await res.json() as Record<string, unknown> }
+  return base
 }
 
 export async function configProvidersBody(harnessOverride: string | undefined, options: OpenCodeCompatRouteOptions) {
@@ -86,7 +80,6 @@ export async function configProvidersBody(harnessOverride: string | undefined, o
   // TUI model dialog among them — had nothing to list.
   const harnessId = await resolveHarnessId(harnessOverride)
   if (harnessId !== "opencode") return emptyConfigProviders()
-  if (opencodeCompatDisabled(options)) return emptyConfigProviders()
   // Same Claxedo-owned catalog as `providerBody`. Serving these two from one
   // source is the point: they used to be separate engine round-trips that could
   // disagree, and the model dialog reads this one.

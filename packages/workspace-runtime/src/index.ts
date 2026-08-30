@@ -54,6 +54,7 @@ export type { WorkspaceRuntimeExposure, WorkspaceRuntimeRequestGuard }
  * does — instead of re-implementing the trim/blank rules.
  */
 export { runtimeEnvText } from "./env"
+export { createWorkspaceOpenCodeRuntime } from "./opencode-runtime"
 export { createWorkspaceHost } from "./workspace"
 export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
 export { Pty } from "./pty/index"

@@ -58,17 +58,7 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.target).toEqual({ workspaceId: "ws-env", directory: process.cwd() })
     expect(boot.options.relayHostAuth).toBeUndefined()
     expect(boot.options.hostTunnel).toBeUndefined()
-    // Claxedo keeps OpenCode compat ON by default (kit default is off).
-    expect(boot.options.opencodeCompat).toBe(true)
-  })
-
-  test("compat env flag decodes to opencodeCompat=false", async () => {
-    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
-      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
-      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
-      WORKSPACE_RUNTIME_OPENCODE_COMPAT: "0",
-    })
-    expect(boot.options.opencodeCompat).toBe(false)
+    expect(boot.options.opencodeRuntime).toBeDefined()
   })
 
   test("wires the trusted WorkGraph broker origin from host composition", async () => {

@@ -11,7 +11,7 @@
  *   1. mint a signed Clerk session for smoke user A (same fixture flow),
  *   2. create a CLOUD workspace and poll its connection until a sandbox is
  *      ready (this is the app's own `/connection` provisioning loop),
- *   3. open a Session V2 session on the workspace runtime THROUGH THE RELAY,
+ *   3. open a harness-neutral Session on the workspace runtime THROUGH THE RELAY,
  *      at the relay URL and with the runtime access token the control plane
  *      minted — the exact transport the app uses
  *      (`platform/runtime/agent/workspace-relay-connection.ts:352`),
@@ -23,29 +23,11 @@
  *
  * A deploy that cannot complete an interactive turn now fails here.
  *
- * ## The settled signal
- *
- * `session.next.prompted` fires the moment a prompt is ADMITTED; the first
- * `session.next.step.ended` lands whole seconds later, so Session history
- * ALONE cannot distinguish "stopped" from "mid-turn". That mistake parked
- * every hosted Run reconciled inside that window and kept this workflow red
- * for four days (`hosted-runtime.ts:600-626` carries the fix and the story).
- *
- * So settlement here is the same two-source conjunction the product uses:
- *
- *   - history holds a terminal step (`session.next.step.ended` /
- *     `session.next.step.failed`), AND
- *   - `GET /api/session/active` no longer lists the session. That route is the
- *     harness process's own answer about which drains it owns
- *     (`{ data: { [sessionID]: { type: "running" } } }` —
- *     `packages/protocol/src/groups/session.ts:159`); a session absent from it
- *     is inactive. A malformed envelope reads as STILL ACTIVE, never as idle,
- *     because that is the direction that does not declare live work finished.
- *
- * The same two sources also catch the OPPOSITE failure: a prompt admitted, no
- * terminal step, and no active drain means the harness took the work and
- * stopped. That fails immediately rather than polling out the budget, because
- * a six-minute timeout says nothing about why. See `classifyTurn`.
+ * Settlement comes from the shared Session projection itself: `status` says
+ * whether a harness owns an active turn and `lastTurn` is the persisted,
+ * harness-neutral terminal outcome. The transcript is read from the same
+ * runtime's message snapshot. No engine-specific history or active probe is
+ * part of this path.
  *
  * ## Production-length session id
  *
@@ -69,8 +51,6 @@ type Connection = Readonly<{
   workspaceId: string
   tokenExpiresAt?: number
 }>
-
-type SessionEvent = Readonly<{ type: string; data: Record<string, unknown>; durable?: { seq?: number } }>
 
 /** Overall budget for provisioning + the turn. The CI step allows 10 minutes. */
 const SMOKE_DEADLINE_MS = 6 * 60_000
@@ -112,58 +92,24 @@ export function productionLengthSessionId(runId: string) {
   return id
 }
 
-/**
- * Settlement is a CONJUNCTION of history and the active probe, never history
- * alone. Both directions matter, and they are NOT symmetric:
- *
- *   - a terminal step while the harness still owns the drain is mid-turn, not
- *     done (the four-day staging outage: parking on history alone parked every
- *     Run reconciled inside that window);
- *   - a `prompted` with no terminal step and NO active drain is the opposite
- *     failure — the harness took the prompt and stopped without settling. That
- *     is a real deploy defect, so it fails immediately rather than polling out
- *     the six-minute budget and reporting an undiagnosable timeout.
- *
- * The mirror of that logic is `hosted-runtime.ts:598-628`, which parks a Run in
- * exactly this state.
- */
-export function classifyTurn(events: readonly SessionEvent[], active: unknown, sessionId: string) {
-  const terminal = events.findLast(
-    (event) => event.type.startsWith("session.next.step.ended") || event.type.startsWith("session.next.step.failed"),
-  )
-  if (terminal?.type.startsWith("session.next.step.failed")) {
-    return { state: "failed" as const, reason: stepFailureReason(terminal) }
+/** Classify the shared runtime's persisted, harness-neutral Session state. */
+export function classifyTurn(session: unknown) {
+  const value = record(session)
+  const status = value?.status
+  if (status === "busy" || status === "recovering" || status === "retry") {
+    return { state: "running" as const, reason: `session status is ${status}` }
   }
-  if (terminal) {
-    if (sessionActive(active, sessionId)) {
-      return { state: "running" as const, reason: "harness still owns the drain" }
-    }
-    return { state: "settled" as const, reason: "terminal step and no active drain" }
+  const lastTurn = record(value?.lastTurn)
+  if (lastTurn?.status === "failed") {
+    return { state: "failed" as const, reason: typeof lastTurn.error === "string" ? lastTurn.error : "Session failed" }
   }
-  // No terminal step. Before the prompt is admitted there is nothing to judge;
-  // after it, an idle harness means the turn died silently.
-  if (!events.some((event) => event.type.startsWith("session.next.prompted"))) {
-    return { state: "running" as const, reason: "prompt not admitted yet" }
+  if (lastTurn?.status === "cancelled") {
+    return { state: "failed" as const, reason: typeof lastTurn.reason === "string" ? lastTurn.reason : "Session was cancelled" }
   }
-  if (sessionActive(active, sessionId)) {
-    return { state: "running" as const, reason: "prompted, harness still draining" }
+  if (lastTurn?.status === "completed") {
+    return { state: "settled" as const, reason: "persisted terminal turn" }
   }
-  return {
-    state: "failed" as const,
-    reason: "the harness stopped after admitting the prompt without settling a step",
-  }
-}
-
-/**
- * `/api/session/active` answers `{ data: { [sessionID]: ... } }`. Anything
- * unrecognizable is treated as STILL ACTIVE — the safe direction, matching
- * `hostedSessionActive` (hosted-runtime.ts:1694).
- */
-function sessionActive(value: unknown, sessionId: string) {
-  const data = record(value)?.data
-  const map = record(data)
-  if (!map) return true
-  return sessionId in map
+  return { state: "running" as const, reason: "no persisted terminal turn yet" }
 }
 
 /**
@@ -200,12 +146,15 @@ function numberOrUndefined(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
 }
 
-/** The assistant's reply text, reassembled from replayable text boundaries. */
-export function replyText(events: readonly SessionEvent[]) {
-  return events
-    .filter((event) => event.type.startsWith("session.next.text.ended"))
-    .map((event) => (typeof event.data.text === "string" ? event.data.text : ""))
-    .join("\n")
+/** The assistant's reply text, reassembled from the canonical transcript. */
+export function replyText(messages: readonly unknown[]) {
+  const assistant = messages.findLast((message) => record(record(message)?.info)?.role === "assistant")
+  const parts = record(assistant)?.parts
+  if (!Array.isArray(parts)) return ""
+  return parts.flatMap((part) => {
+    const value = record(part)
+    return value?.type === "text" && typeof value.text === "string" ? [value.text] : []
+  }).join("\n")
 }
 
 export async function interactiveSessionSmoke(env: SmokeEnvironment = process.env, request: typeof fetch = fetch) {
@@ -222,10 +171,6 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
   const providerID = required(env.WORKGRAPH_SMOKE_PROVIDER_ID, "WORKGRAPH_SMOKE_PROVIDER_ID")
   const modelID = required(env.WORKGRAPH_SMOKE_MODEL_ID, "WORKGRAPH_SMOKE_MODEL_ID")
   const variant = required(env.WORKGRAPH_SMOKE_EFFORT, "WORKGRAPH_SMOKE_EFFORT")
-  const tools = stringArray(
-    required(env.WORKGRAPH_SMOKE_TOOLS_JSON, "WORKGRAPH_SMOKE_TOOLS_JSON"),
-    "WORKGRAPH_SMOKE_TOOLS_JSON",
-  )
   const retryDelayMs = positiveInteger(env.WORKGRAPH_SMOKE_RETRY_DELAY_MS ?? "2000", "WORKGRAPH_SMOKE_RETRY_DELAY_MS")
 
   const runId = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`
@@ -278,19 +223,17 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
 
     const runtime = runtimeRequest(request, connection)
     const createdSession = record(
-      await runtimeJson(runtime, "/api/session", {
+      await runtimeJson(runtime, "/session?harness=opencode", {
         method: "POST",
         body: JSON.stringify({
           id: sessionId,
           agent,
-          model: { providerID, id: modelID, variant },
-          tools,
-          location: { directory: "/workspace" },
+          model: { providerID, modelID },
+          variant,
         }),
       }),
     )
-    const adoptedId =
-      typeof createdSession?.id === "string" ? createdSession.id : record(createdSession?.data)?.id
+    const adoptedId = createdSession?.id
     if (adoptedId !== sessionId) {
       // A bare bodyless 404 or an id the runtime rewrote both land here. The
       // first is the router's parameter-length refusal (see the header note).
@@ -300,24 +243,27 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
     }
 
     progress(`created Session; prompting for marker ${marker}`)
-    await runtimeJson(runtime, `/api/session/${encodeURIComponent(sessionId)}/prompt`, {
+    await runtimeJson(runtime, `/session/${encodeURIComponent(sessionId)}/prompt_async?harness=opencode`, {
       method: "POST",
       body: JSON.stringify({
-        id: `msg_interactive_smoke_${runId}`,
-        prompt: {
+        messageID: `msg_interactive_smoke_${runId}`,
+        parts: [{
+          type: "text",
           text: [
             `Reply with exactly this one token and nothing else: ${marker}`,
             "Do not use any tools. Do not edit files. Do not explain.",
           ].join("\n"),
-        },
-        resume: true,
+        }],
+        agent,
+        model: { providerID, modelID },
+        variant,
       }),
     })
 
-    const events = await waitForSettledTurn(runtime, sessionId, deadline, retryDelayMs, progress)
-    const reply = replyText(events)
+    const messages = await waitForSettledTurn(runtime, sessionId, deadline, retryDelayMs, progress)
+    const reply = replyText(messages)
     if (!reply.includes(marker)) {
-      printHistoryTail(events, progress)
+      printTranscriptTail(messages, progress)
       throw new Error(
         `Interactive hosted turn settled without the marker ${marker} in the reply; reply was ${JSON.stringify(reply.slice(0, 400))}`,
       )
@@ -329,14 +275,12 @@ export async function interactiveSessionSmoke(env: SmokeEnvironment = process.en
     // by the GC sweep, and throwing from here would replace the assertion the
     // deploy actually gates on with a cleanup error.
     if (connection) {
-      // Interrupt, not delete: the Session V2 contract this lane proxies to has
-      // no DELETE (packages/protocol/src/groups/session.ts lists every
-      // endpoint), and interrupting is what stops a session still draining when
+      // Abort, not delete: aborting is what stops a Session still draining when
       // an assertion failed mid-turn. The workspace destroy below is what
       // actually reclaims the session along with its VM. Idle interruption is a
       // documented no-op, so this is safe on the passing path too.
       try {
-        await runtimeRequest(request, connection)(`/api/session/${encodeURIComponent(sessionId)}/interrupt`, {
+        await runtimeRequest(request, connection)(`/session/${encodeURIComponent(sessionId)}/abort`, {
           method: "POST",
         })
       } catch (error) {
@@ -424,8 +368,8 @@ async function waitForReadyConnection(
 }
 
 /**
- * Poll history + the active probe until the turn settles. Both probes are
- * bounded per request; the loop is bounded by the caller's deadline.
+ * Poll the shared Session projection until its persisted turn outcome settles.
+ * The transcript snapshot is returned from the same journal boundary.
  */
 async function waitForSettledTurn(
   runtime: RuntimeRequest,
@@ -438,18 +382,24 @@ async function waitForSettledTurn(
   let lastReason = "not polled"
   while (Date.now() < deadline) {
     cycle += 1
-    const events = await sessionHistory(runtime, sessionId, deadline)
-    const active = await runtimeJson(runtime, "/api/session/active", {
-      signal: AbortSignal.timeout(boundedTimeout(deadline)),
-    })
-    const verdict = classifyTurn(events, active, sessionId)
+    const encoded = encodeURIComponent(sessionId)
+    const [session, snapshot] = await Promise.all([
+      runtimeJson(runtime, `/session/${encoded}`, {
+        signal: AbortSignal.timeout(boundedTimeout(deadline)),
+      }),
+      runtimeJson(runtime, `/session/${encoded}/message?snapshot=1`, {
+        signal: AbortSignal.timeout(boundedTimeout(deadline)),
+      }),
+    ])
+    const messages = transcriptMessages(snapshot)
+    const verdict = classifyTurn(session)
     lastReason = verdict.reason
     if (verdict.state === "settled") {
       progress(`turn settled after ${cycle} polls (${verdict.reason})`)
-      return events
+      return messages
     }
     if (verdict.state === "failed") {
-      printHistoryTail(events, progress)
+      printTranscriptTail(messages, progress)
       throw new Error(`Interactive hosted turn failed: ${verdict.reason}`)
     }
     if (cycle % 5 === 1) progress(`turn still running (poll ${cycle}: ${verdict.reason})`)
@@ -460,51 +410,17 @@ async function waitForSettledTurn(
   )
 }
 
-/** Paged Session V2 history, same contract the hosted reconciler reads. */
-async function sessionHistory(runtime: RuntimeRequest, sessionId: string, deadline: number) {
-  const events: SessionEvent[] = []
-  let after = 0
-  for (;;) {
-    const page = historyPage(
-      await runtimeJson(runtime, `/api/session/${encodeURIComponent(sessionId)}/history?limit=100&after=${after}`, {
-        signal: AbortSignal.timeout(boundedTimeout(deadline)),
-      }),
-    )
-    events.push(...page.data)
-    if (!page.hasMore) return events
-    const next = page.data.at(-1)?.durable?.seq
-    if (next === undefined || next <= after) throw new Error("Session history paging did not advance")
-    after = next
-  }
+function transcriptMessages(value: unknown) {
+  const messages = record(value)?.messages
+  if (!Array.isArray(messages)) throw new Error("Session transcript snapshot returned an invalid envelope")
+  return messages
 }
 
-function historyPage(value: unknown): Readonly<{ data: SessionEvent[]; hasMore: boolean }> {
-  const page = record(value)
-  if (!page || !Array.isArray(page.data) || typeof page.hasMore !== "boolean") {
-    throw new Error("Session history returned an invalid page envelope")
-  }
-  const data = page.data.map((item) => {
-    const event = record(item)
-    if (typeof event?.type !== "string" || !record(event.data)) {
-      throw new Error("Session history returned an invalid event")
-    }
-    return event as unknown as SessionEvent
-  })
-  return { data, hasMore: page.hasMore }
-}
-
-function stepFailureReason(event: SessionEvent) {
-  const error = event.data.error
-  if (typeof error === "string") return error
-  const message = record(error)?.message
-  return typeof message === "string" ? message : JSON.stringify(error ?? "step failed")
-}
-
-/** On failure, the last events are the only diagnosable thing the log carries. */
-function printHistoryTail(events: readonly SessionEvent[], progress: (message: string) => void) {
-  progress(`session history tail (${events.length} events total):`)
-  for (const event of events.slice(-15)) {
-    console.log(`  ${event.type} ${JSON.stringify(event.data).slice(0, 300)}`)
+/** On failure, the last messages are the only diagnosable thing the log carries. */
+function printTranscriptTail(messages: readonly unknown[], progress: (message: string) => void) {
+  progress(`session transcript tail (${messages.length} messages total):`)
+  for (const message of messages.slice(-10)) {
+    console.log(`  ${JSON.stringify(message).slice(0, 500)}`)
   }
 }
 
@@ -532,14 +448,7 @@ function runtimeRequest(request: typeof fetch, connection: Connection): RuntimeR
     })
     if (response.ok) return response
     const body = await response.text()
-    // A bodyless 404 with no content-type is the engine router refusing the
-    // path parameter, NOT an absent session. Naming it here saves the next
-    // operator the bisect that cost us a staging incident.
-    const routerRefusal =
-      response.status === 404 && !body.trim() && !response.headers.get("content-type")
-        ? " (bodyless 404 with no content-type — the engine router refused the path parameter; see router-config.ts)"
-        : ""
-    throw new Error(`Interactive Session request failed: ${init?.method ?? "GET"} ${path} → ${response.status} ${body}${routerRefusal}`)
+    throw new Error(`Interactive Session request failed: ${init?.method ?? "GET"} ${path} → ${response.status} ${body}`)
   }
 }
 
@@ -644,14 +553,6 @@ function positiveInteger(value: string, name: string) {
   const parsed = Number(value)
   if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`)
   return parsed
-}
-
-function stringArray(input: string, name: string) {
-  const value = parseJson(input, name)
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) {
-    throw new Error(`${name} must be a JSON array of non-empty tool IDs`)
-  }
-  return value
 }
 
 function authorization(token: string) {

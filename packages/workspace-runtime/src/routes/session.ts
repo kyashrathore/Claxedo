@@ -15,9 +15,7 @@ import {
 import {
   type AgentMessagePage,
   type AgentMessagePageInput,
-  hasAdapterCapability,
   type AgentHarnessAdapter,
-  type HttpProxyAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { workspaceRuntimeBus } from "../bus"
 import { withDir } from "../compat-events"
@@ -183,7 +181,6 @@ export function SessionRoutes(
       sessionId: string
       updates: { title?: string; time?: { archived?: number } }
     }) => Promise<void> | void
-    opencodeHeaders?: HeadersInit
   },
 ) {
   const eventHub = options?.eventHub ?? createRuntimeEventHub()
@@ -279,18 +276,7 @@ export function SessionRoutes(
       : undefined,
     getStatus: async (_c, directory, adapter) => {
       const target = requiredDirectory(directory)
-      if (!hasAdapterCapability(adapter, "http-proxy")) return sessionStatusSnapshot(await adapter.listSessions(target))
-      const url = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getServerUrl()
-      const headers = new Headers(options?.opencodeHeaders)
-      headers.set("x-opencode-directory", target)
-      const res = await fetch(`${url}/session/status`, {
-        headers,
-      })
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: res.headers,
-      })
+      return sessionStatusSnapshot(await adapter.listSessions(target))
     },
     sessionBus: workspaceRuntimeBus,
     publishGlobal: (event) => {

@@ -5,8 +5,8 @@
  *
  * Steps:
  *   1. esbuild: bundle public entrypoints from src/*.ts → dist/*.mjs
- *      - Workspace deps (@opencode-ai/sdk) are bundled in
- *      - Native modules and npm dependencies are externalized
+ *      - Pure workspace dependencies are bundled in
+ *      - The embedded SDK owner and native modules stay install-time dependencies
  *   2. tsc: emit declaration files → dist/
  *
  * Usage: npx tsx scripts/build.ts
@@ -26,6 +26,8 @@ type PublicEntry = typeof PUBLIC_ENTRIES[number]
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
+  "@claxedo/opencode-runtime",
+  "@claxedo/opencode-runtime/*",
   "@claxedo/agent-extensions",
   "@claxedo/agent-extensions/*",
   "@claxedo/agent-sdk-runtime",

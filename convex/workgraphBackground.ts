@@ -241,7 +241,7 @@ export const claimSourcePlans = serviceMutation({
             )
             .unique()
           const defaults = root?.defaults as
-            | { model?: { providerId?: string; modelId?: string }; effort?: string; agent?: string }
+            | { harness?: string; model?: { providerId?: string; modelId?: string }; effort?: string; agent?: string }
             | undefined
           const profileError = generationProfileError("Source planning", defaults)
           if (profileError) {
@@ -291,6 +291,7 @@ export const claimSourcePlans = serviceMutation({
               : {}),
             title: `Plan: ${source.workSource.title}`,
             profile: {
+              harness: defaults!.harness!,
               agent: defaults!.agent!,
               model: defaults!.model!,
               effort: defaults!.effort!,
@@ -831,8 +832,10 @@ async function settleSourcePlanFailure(
 
 function generationProfileError(
   purpose: "Source planning",
-  profile: { agent?: string; model?: { providerId?: string; modelId?: string }; effort?: string } | undefined,
+  profile: { harness?: string; agent?: string; model?: { providerId?: string; modelId?: string }; effort?: string } | undefined,
 ) {
+  if (typeof profile?.harness !== "string" || !profile.harness.trim())
+    return `${purpose} requires explicit valid harness configuration`
   if (typeof profile?.agent !== "string" || !profile.agent.trim())
     return `${purpose} requires explicit valid agent configuration`
   if (

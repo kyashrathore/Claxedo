@@ -216,7 +216,6 @@ export const serverSelfHosted: Policy = {
   },
 
   isolation: {
-    additionalPackageDirs: ["packages/opencode"],
     additionalFiles: [".github/TEAM_MEMBERS"],
     buildPackages: [
       { packageDir: "packages/agent-event-runtime" },
@@ -231,17 +230,7 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
       { packageDir: "packages/workgraph" },
-      { packageDir: "packages/claxedo-mcp" },
       { packageDir: "packages/claxedo-local-server" },
-      {
-        packageDir: "packages/opencode",
-        script: "build:node",
-        inputOnly: true,
-        environment: {
-          OPENCODE_CHANNEL: "selfhost-boundary",
-          OPENCODE_VERSION: "0.0.0-boundary",
-        },
-      },
     ],
     packageExports: [{
       packageDir: "packages/claxedo-local-server",

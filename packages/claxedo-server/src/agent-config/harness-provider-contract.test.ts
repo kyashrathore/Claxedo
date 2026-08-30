@@ -8,8 +8,8 @@
  * shipped because nothing pinned that — a session's connect dialog served pi's
  * three providers to a non-pi session and no test noticed.
  *
- * The engine fetch is stubbed, so the "full catalog" case is exercised without
- * a live models.dev.
+ * The Claxedo-owned models.dev fetch is stubbed, so the full catalog case is
+ * deterministic.
  */
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "vitest"
 import { mkdirSync, realpathSync } from "fs"
@@ -30,9 +30,11 @@ const root = path.join(realpathSync(os.tmpdir()), `harness-provider-contract-${r
 const previous = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_STATE_DIR: process.env.CLAXEDO_STATE_DIR,
+  CLAXEDO_OPENCODE_CATALOG_CACHE: process.env.CLAXEDO_OPENCODE_CATALOG_CACHE,
 }
 process.env.CLAXEDO_DATA_DIR = root
 process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
+process.env.CLAXEDO_OPENCODE_CATALOG_CACHE = path.join(root, "catalog.json")
 // The pi catalog reads the credential registry out of the claxedo DB, which
 // cannot open into a directory that does not exist yet (the route answers 502
 // `provider_models_unavailable` if it is missing).
@@ -40,11 +42,8 @@ mkdirSync(process.env.CLAXEDO_STATE_DIR, { recursive: true })
 
 const { Hono } = await import("hono")
 const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
-const { configureOpenCodeEngine } = await import("@claxedo/server-core/opencode/engine")
 const { configureAgentConfig } = await import("@claxedo/server-core/agent-config/index")
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
-
-const ENGINE = "http://127.0.0.1:65501"
 
 /**
  * A models.dev-shaped catalog: big, and carrying the provider ids the contract
@@ -60,15 +59,12 @@ const ENGINE_PROVIDERS = [
   "openrouter",
   ...Array.from({ length: 80 }, (_, i) => `models-dev-provider-${i}`),
 ]
-const ENGINE_PROVIDER_CATALOG = {
-  all: ENGINE_PROVIDERS.map((id) => ({
-    id,
-    name: id,
-    models: { [`${id}-model`]: { id: `${id}-model`, name: `${id} model` } },
-  })),
-  connected: ["anthropic"],
-  default: { anthropic: "anthropic-model" },
-}
+const MODELS_DEV_CATALOG = Object.fromEntries(ENGINE_PROVIDERS.map((id) => [id, {
+  id,
+  name: id,
+  env: [],
+  models: { [`${id}-model`]: { id: `${id}-model`, name: `${id} model` } },
+}]))
 
 const app = new Hono()
 app.route("/", OpenCodeCompatRoutes())
@@ -76,17 +72,11 @@ app.route("/", OpenCodeCompatRoutes())
 const originalFetch = globalThis.fetch
 
 beforeEach(() => {
-  configureOpenCodeEngine({ url: ENGINE })
-  globalThis.fetch = (async (input: RequestInfo | URL) => {
-    const url = new URL(typeof input === "string" ? input : input instanceof URL ? input.href : input.url)
-    if (url.pathname === "/provider") return Response.json(ENGINE_PROVIDER_CATALOG)
-    return new Response("not found", { status: 404 })
-  }) as typeof globalThis.fetch
+  globalThis.fetch = (async () => Response.json(MODELS_DEV_CATALOG)) as unknown as typeof globalThis.fetch
 })
 
 afterEach(() => {
   globalThis.fetch = originalFetch
-  configureOpenCodeEngine({ url: "http://127.0.0.1:4096" })
 })
 
 afterAll(async () => {
@@ -157,9 +147,12 @@ describe("harness → provider catalog contract", () => {
 
   // Degrading to the five harness bindings would put `claude-acp` in a picker
   // that is supposed to list models.dev providers.
-  test("an unreachable engine degrades opencode to an EMPTY catalog, never the harness bindings", async () => {
+  test("an unavailable models.dev catalog fails explicitly rather than fabricating an empty catalog", async () => {
+    await fs.rm(process.env.CLAXEDO_OPENCODE_CATALOG_CACHE!, { force: true })
     globalThis.fetch = (async () => new Response("nope", { status: 503 })) as unknown as typeof globalThis.fetch
-    expect(await providerIds("?harness=opencode")).toEqual([])
+    const response = await app.request("/provider?harness=opencode")
+    expect(response.status).toBe(502)
+    await expect(response.json()).resolves.toMatchObject({ code: "provider_models_unavailable" })
   })
 
   /**

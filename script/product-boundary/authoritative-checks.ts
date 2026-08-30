@@ -111,15 +111,6 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
       command: ["bun", "run", "smoke:workerd-boundary"],
     },
     {
-      label: "self-hosted OpenCode resource build",
-      cwd: "packages/opencode",
-      command: ["bun", "run", "build:node"],
-      env: {
-        OPENCODE_CHANNEL: "selfhost-boundary",
-        OPENCODE_VERSION: "0.0.0-boundary",
-      },
-    },
-    {
       label: "self-hosted production build",
       cwd: "packages/claxedo-server",
       command: ["bun", "run", "build:self-hosted-boundary"],

@@ -39,9 +39,7 @@ describe("Connection-bound Runs on harness Sessions", () => {
     const calls: Array<{ method: string; path: string; body?: unknown }> = []
     const bound: WorkGraphConnectionRunBinding[] = []
     const released: string[] = []
-    const gateway = createHarnessWorkGraphGateway(async () => {
-      throw new Error("non-OpenCode harnesses must not use Session V2")
-    }, {
+    const gateway = createHarnessWorkGraphGateway({
       connections: connectionsStub,
       resolveTeamOwner: (owner) => `org:${owner.organizationId}`,
       connectionBindings: {
@@ -118,20 +116,18 @@ describe("Connection-bound Runs on harness Sessions", () => {
     expect(released).toEqual([runtimeSessionId])
   })
 
-  it("keeps routing Connection-bound OpenCode Runs through the Session V2 engine rail", async () => {
-    const enginePaths: string[] = []
-    const gateway = createHarnessWorkGraphGateway(async (request) => {
-      enginePaths.push(new URL(request.url).pathname)
-      return new Response("engine unavailable in this test", { status: 503 })
-    }, {
+  it("routes Connection-bound OpenCode Runs through the same Session rail", async () => {
+    const sessionPaths: string[] = []
+    const gateway = createHarnessWorkGraphGateway({
       connections: connectionsStub,
       resolveTeamOwner: (owner) => `org:${owner.organizationId}`,
       connectionBindings: {
         bind: async () => undefined,
         release: async () => undefined,
       },
-      sessionRequest: async () => {
-        throw new Error("OpenCode Runs must not use the harness session rail")
+      sessionRequest: async (_directory, request) => {
+        sessionPaths.push(new URL(request.url).pathname)
+        return new Response("runtime unavailable in this test", { status: 503 })
       },
     })
 
@@ -142,14 +138,12 @@ describe("Connection-bound Runs on harness Sessions", () => {
       prompt: "Comment on the issue",
       profile: { ...profile, harness: "opencode" },
       context,
-    })).rejects.toThrow("Session V2 request failed")
-    expect(enginePaths).toEqual(["/api/session"])
+    })).rejects.toThrow("Harness Session request failed")
+    expect(sessionPaths).toEqual(["/session"])
   })
 
   it("refuses Connection-bound harness Runs when no Connection binding registry is composed", async () => {
-    const gateway = createHarnessWorkGraphGateway(async () => {
-      throw new Error("unused")
-    }, {
+    const gateway = createHarnessWorkGraphGateway({
       connections: connectionsStub,
       resolveTeamOwner: (owner) => `org:${owner.organizationId}`,
       sessionRequest: async () => {

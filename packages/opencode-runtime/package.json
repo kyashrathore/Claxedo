@@ -18,6 +18,8 @@
     "test": "mkdir -p .artifacts/unit && node ../../scripts/test-deadline.mjs bun test src --reporter=junit --reporter-outfile=.artifacts/unit/junit.xml"
   },
   "dependencies": {
+    "@claxedo/agent-sdk-runtime": "workspace:*",
+    "@opencode-ai/plugin": "0.0.0-beta-18684",
     "@opencode-ai/sdk": "0.0.0-beta-18684"
   },
   "devDependencies": {

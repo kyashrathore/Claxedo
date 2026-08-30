@@ -20,7 +20,6 @@ const IMAGE_REQUIRED_DEPENDENCIES = [
 ]
 
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"
-export const OPENCODE_BINARY_FILENAME = "opencode"
 export const WORKSPACE_RUNTIME_VERSION_FILENAME = "workspace-runtime-version"
 
 function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
@@ -35,9 +34,6 @@ function packagesRoot() {
   return path.resolve(workspaceRuntimeRoot(), "..")
 }
 
-function opencodeRoot() {
-  return path.join(packagesRoot(), "opencode")
-}
 
 /**
  * Merge the external (non-@claxedo) runtime dependencies of workspace-runtime
@@ -171,41 +167,6 @@ export function writeWorkspaceRuntimeVersion(outDir: string) {
   return versionFile
 }
 
-/**
- * Build the exact OpenCode server used by hosted workspaces.
- *
- * WorkGraph depends on the checkout's durable Session V2 `/api/session`
- * contract. The public `opencode-ai` package in the image is useful as a
- * terminal CLI, but it can lag that contract and fall through to its HTML app
- * shell. Shipping this checkout's compiled server binary keeps the workspace
- * runtime and its proxied Session API on one content-addressed build.
- *
- * This build used to pass `--skip-embed-web-ui`. That flag did more than keep
- * the binary off an app shell: the embed path it skipped pointed at upstream's
- * `packages/app`, which the hard fork removed, so any build without the flag
- * died on ENOENT. The fork no longer embeds a web UI at all, so the flag is
- * gone from packages/opencode/script/build.ts and the binary is UI-less by
- * default.
- */
-export function buildSandboxOpenCodeBinary(outDir: string, exec: Exec = defaultExec) {
-  if (process.platform !== "linux" || process.arch !== "x64") {
-    throw new Error("sandbox OpenCode binary builds require a linux/x64 builder")
-  }
-  exec("bun", ["run", "build", "--", "--single", "--skip-install"], {
-    cwd: opencodeRoot(),
-    env: {
-      ...process.env,
-      OPENCODE_VERSION: `0.0.0-claxedo-${process.env.GITHUB_SHA?.slice(0, 12) ?? "sandbox"}`,
-    },
-  })
-  const source = path.join(opencodeRoot(), "dist", "opencode-linux-x64", "bin", "opencode")
-  if (!fs.existsSync(source)) throw new Error(`sandbox OpenCode build did not emit ${source}`)
-  const target = path.join(outDir, OPENCODE_BINARY_FILENAME)
-  fs.copyFileSync(source, target)
-  fs.chmodSync(target, 0o755)
-  return target
-}
-
 // Bundle only @claxedo workspace code; every npm dependency stays external and
 // is installed in the image from the generated package.json. (Several runtime
 // SDK deps — e.g. webpack-bundled @cursor/sdk — cannot be re-bundled.)
@@ -258,7 +219,6 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // one. workspace-runtime is the last package built.
   buildClaxedoWorkspacePackages(exec)
   const versionFile = writeWorkspaceRuntimeVersion(outDir)
-  const opencodeBinary = buildSandboxOpenCodeBinary(outDir, exec)
   await esbuildBuild(esbuildHostBundleOptions({
     entry: claxedoWorkspaceRuntimeEntry(),
     outfile: path.join(outDir, HOST_BUNDLE_FILENAME),
@@ -279,7 +239,6 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   const buildId = createHash("sha256")
     .update(fs.readFileSync(bundlePath))
     .update(fs.readFileSync(versionFile))
-    .update(fs.readFileSync(opencodeBinary))
     .update(packageJson)
     .digest("hex")
     .slice(0, 10)
@@ -287,7 +246,6 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
     bundle: bundlePath,
     packageJson: packageJsonPath,
     versionFile,
-    opencodeBinary,
     buildId,
   }
 }

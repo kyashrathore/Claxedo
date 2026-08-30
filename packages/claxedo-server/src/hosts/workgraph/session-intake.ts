@@ -1,8 +1,6 @@
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
-import { createSessionIntakeService, type SessionIntakePort } from "@claxedo/workgraph"
+import { createSessionIntakeService, type IdleSession, type SessionIntakePort } from "@claxedo/workgraph"
 import { isMasterSessionId } from "@claxedo/workgraph/contracts"
 import type { WorkGraphContext } from "@claxedo/workgraph/contracts"
-import { OPENCODE_INTERNAL_BASE } from "@claxedo/server-core/opencode/engine"
 
 type SessionEvent = Readonly<{
   directory?: string
@@ -27,7 +25,7 @@ export class SessionIntakeDirectoryRequiredError extends Error {
 export type IdleSessionReader = (
   sessionId: string,
   directory: string,
-) => Promise<Awaited<ReturnType<typeof readIdleSession>>>
+) => Promise<IdleSession>
 
 export function subscribeSessionIntake(input: Readonly<{
   events: EventSource
@@ -56,17 +54,9 @@ export function subscribeSessionIntake(input: Readonly<{
   })
 }
 
-/** The engine-paired reader: projects an idle OpenCode ENGINE Session over the
- * injected engine transport. Pair it with the engine's own event bus. */
-export function engineIdleSessionReader(request: OpenCodeRequestFn): IdleSessionReader {
-  return (sessionId, directory) => readIdleSession(request, sessionId, directory)
-}
-
 /**
- * The harness-paired reader: projects an idle Session hosted by an embedded
- * workspace runtime — whatever its harness — through the same two compat reads
- * the engine reader issues, addressed to the runtime app for the Session's
- * directory. Pair it with the embedded-runtime compat event tap.
+ * Projects an idle Session through its authoritative workspace runtime,
+ * regardless of which harness owns it.
  */
 export function runtimeIdleSessionReader(
   sessionRequest: (directory: string, request: Request) => Promise<Response>,
@@ -85,21 +75,6 @@ export function runtimeIdleSessionReader(
     ])
     return projectIdleSession(sessionId, exactDirectory, sessionResponse, messagesResponse)
   }
-}
-
-export async function readIdleSession(
-  request: OpenCodeRequestFn,
-  sessionId: string,
-  directory: string,
-) {
-  const exactDirectory = directory.trim()
-  if (!exactDirectory) throw new SessionIntakeDirectoryRequiredError()
-  const headers = { "x-opencode-directory": exactDirectory }
-  const [sessionResponse, messagesResponse] = await Promise.all([
-    request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}`, { headers })),
-    request(new Request(`${OPENCODE_INTERNAL_BASE}/session/${encodeURIComponent(sessionId)}/message?limit=100`, { headers })),
-  ])
-  return projectIdleSession(sessionId, exactDirectory, sessionResponse, messagesResponse)
 }
 
 async function projectIdleSession(

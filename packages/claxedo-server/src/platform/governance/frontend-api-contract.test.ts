@@ -107,18 +107,12 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   listProjects: vi.fn(async () => []),
 }))
 
-vi.mock("@claxedo/server-core/opencode/auth", () => ({
-  configureOpenCodeAuth: vi.fn(),
-  opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
-}))
-
-const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = await Promise.all([
+const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod] = await Promise.all([
   import("../../deployments/self-hosted-node/app"),
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
   import("@claxedo/local-server/opencode/compat-routes/index"),
   import("@claxedo/server-core/agent-config/index"),
-  import("@claxedo/server-core/opencode/engine"),
 ])
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/db")
 
@@ -192,7 +186,6 @@ describe("frontend API contract", () => {
     runtimeFetches.length = 0
     ensureSupervisorSandbox.mockClear()
     sandboxEnsure.mockClear()
-    engineMod.configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
     seedSyntheticCloudWorkspace()
     globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
       const req = input instanceof Request ? input : new Request(String(input))

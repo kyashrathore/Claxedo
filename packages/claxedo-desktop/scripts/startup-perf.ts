@@ -290,7 +290,6 @@ function processTree(rows: Row[], rootPid: number) {
 }
 
 function role(row: Row) {
-  if (row.command.includes("resources/opencode-cli")) return "sidecar"
   if (row.command.includes("resources/claxedo-server/") || row.command.includes("out/main/claxedo-server/")) {
     return "claxedo-server"
   }

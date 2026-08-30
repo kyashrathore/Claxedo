@@ -9,20 +9,16 @@ import * as path from "node:path"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
-// Boot-level coverage for the desktop server composition. Unit tests run from
-// packages that carry their own node_modules/opencode link, so they can never
-// see the bundled server's module-resolution reality: the bundle externalizes
-// `opencode/node-embed` and loads the engine from the explicit artifact path
-// the desktop main hands over (CLAXEDO_CHILD_OPENCODE_EMBED_PATH). These tests
-// exercise that path with the real bundle, the real artifact, and a hermetic
-// data dir.
+// Boot-level coverage for the desktop server composition. This enters the real
+// Electron Node utility process and exercises the public embedded SDK through
+// the bundled local-server entry, with no legacy engine artifact or external
+// OpenCode server available as a fallback.
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
 // The same resolver `prebuild`, `predev`, and `build` use, so the smoke test
 // cannot pass against a different artifact than the one that ships.
 const SERVER_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
-const ENGINE_ARTIFACT = path.resolve(PACKAGE_DIR, "../opencode/dist/node/node.js")
 
 const require = createRequire(import.meta.url)
 
@@ -75,27 +71,9 @@ test("requireLocalServerBundle names the artifact and the command that builds it
   }
 })
 
-test("embedded OpenCode engine artifact exists at the desktop-resolved path", () => {
-  // The desktop main points CLAXEDO_CHILD_OPENCODE_EMBED_PATH at this exact
-  // location in dev. If the artifact moves or the dist layout changes, the
-  // embedded engine silently dies in the app — fail here instead. CI's unit
-  // job runs without predev, so an entirely absent dist is a skip (same
-  // convention as the boot test below); a PRESENT dist with the wrong layout
-  // still fails.
-  if (!fs.existsSync(path.resolve(PACKAGE_DIR, "../opencode/dist"))) {
-    console.warn("[skip] opencode dist missing — run `bun run predev` first")
-    return
-  }
-  expect(fs.existsSync(ENGINE_ARTIFACT)).toBe(true)
-})
-
-test("bundled claxedo-server boots the embedded engine and serves engine-backed routes", async () => {
+test("bundled claxedo-server boots the public embedded SDK and serves its routes", async () => {
   if (!fs.existsSync(SERVER_BUNDLE)) {
     console.warn("[skip] claxedo-server bundle missing — run `bun run predev` first")
-    return
-  }
-  if (!fs.existsSync(ENGINE_ARTIFACT)) {
-    console.warn("[skip] embedded engine artifact missing — run `bun run predev` first")
     return
   }
 
@@ -123,7 +101,6 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
       CLAXEDO_DESKTOP_PARENT_PID: String(process.pid),
       // First launch hands the server a profile path that does not exist yet.
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-      CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
       CLAXEDO_DIAGNOSTICS_LAUNCH_ID: launchId,
       CLAXEDO_DIAGNOSTICS_GENERATION: generation,
     }),

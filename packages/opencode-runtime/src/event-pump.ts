@@ -63,6 +63,11 @@ export type EventPumpOptions = Readonly<{
 export type EventPump = Readonly<{
   /** Begin consuming. Safe to call once; later calls are no-ops. */
   start(): void
+  /**
+   * Resolves once the subscription has an outstanding read. Mutations that
+   * must not race their own first event await this before calling the SDK.
+   */
+  ready(): Promise<void>
   /** Highest committed seq for an aggregate, or undefined if never seen. */
   checkpoint(aggregateID: string): number | undefined
   /** Stop consuming and release the iterator. Safe to call repeatedly. */
@@ -89,6 +94,10 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
   let stopped = false
   let abort: AbortController | undefined
   let loop: Promise<void> | undefined
+  let markReady: (() => void) | undefined
+  const ready = new Promise<void>((resolve) => {
+    markReady = resolve
+  })
 
   function project(raw: Record<string, unknown>): ProjectedEvent {
     const durableRaw = raw.durable as { aggregateID?: string; seq?: number } | undefined
@@ -112,7 +121,15 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
       try {
         const client = await host.client()
         abort = new AbortController()
-        for await (const raw of client.events.subscribe({ signal: abort.signal })) {
+        const iterator = client.events.subscribe({ signal: abort.signal })[Symbol.asyncIterator]()
+        let next = iterator.next()
+        markReady?.()
+        markReady = undefined
+        while (true) {
+          const item = await next
+          if (item.done) break
+          const raw = item.value
+          next = iterator.next()
           if (stopped) break
           // A healthy delivery resets the backoff ladder.
           attempt = 0
@@ -151,6 +168,9 @@ export function createEventPump(host: OpenCodeHost, options: EventPumpOptions): 
       if (running) return
       running = true
       loop = consume()
+    },
+    ready() {
+      return ready
     },
     checkpoint(aggregateID) {
       return checkpoints.get(aggregateID)

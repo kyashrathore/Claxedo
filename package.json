@@ -6,7 +6,7 @@
   "type": "module",
   "packageManager": "bun@1.3.14",
   "scripts": {
-    "dev": "bun run --cwd packages/opencode --conditions=browser src/index.ts",
+    "dev": "bun run dev:desktop",
     "dev:desktop": "bun --cwd packages/claxedo-desktop dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
@@ -17,7 +17,6 @@
     "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=opencode --no-browser",
     "test": "echo 'do not run tests from root' && exit 1",
-    "web:dev:local": "bun ./script/web-dev-local.ts",
     "docs:check-links": "bun ./script/check-doc-links.ts",
     "examples:verify": "bun ./script/verify-examples.ts",
     "examples:smoke:hosted-team": "bun ./script/smoke-hosted-team-example.ts",
