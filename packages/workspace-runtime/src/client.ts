@@ -2,6 +2,7 @@ import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER } from "./management-auth"
 import { WorkspaceRuntimeRoutes } from "./routes/manifest"
 import type { WorkspaceCapabilities } from "./capabilities"
 import type { AppliedRuntimeSnapshot, RuntimeSnapshot } from "./routes/config"
+import type { AgentFileContent } from "@claxedo/agent-runtime-contract"
 
 export type WorkspaceRuntimeClientOptions = {
   baseUrl: string | URL
@@ -16,6 +17,31 @@ export type WorkspaceRuntimeConfigApplyOptions = {
 
 export type WorkspaceRuntimeRequestOptions = {
   headers?: HeadersInit
+  signal?: AbortSignal
+}
+
+export type WorkspaceFileNode = {
+  name: string
+  path: string
+  absolute: string
+  type: "file" | "directory"
+  ignored: boolean
+}
+
+export type WorkspaceFileContent = AgentFileContent
+
+export type WorkspaceFileStatus = {
+  path: string
+  added: number
+  removed: number
+  status: "added" | "deleted" | "modified"
+}
+
+export type WorkspaceFileSearchQuery = {
+  query: string
+  dirs?: "true" | "false"
+  type?: "file" | "directory"
+  limit?: number
 }
 
 export type WorkspaceRuntimeHealth = {
@@ -41,9 +67,11 @@ export type WorkspaceRuntimeClient = {
   eventsUrl: () => URL
   files: {
     raw: (path: string, options?: WorkspaceRuntimeRequestOptions) => Promise<Response>
-    metadata: (path: string, options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
-    list: (path?: string, options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
-    search: (query: string, options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
+    tree: (path: string, options?: WorkspaceRuntimeRequestOptions) => Promise<WorkspaceFileNode[]>
+    content: (path: string, options?: WorkspaceRuntimeRequestOptions) => Promise<WorkspaceFileContent>
+    status: (options?: WorkspaceRuntimeRequestOptions) => Promise<WorkspaceFileStatus[]>
+    list: (path?: string, options?: WorkspaceRuntimeRequestOptions) => Promise<{ paths: string[] }>
+    search: (query: WorkspaceFileSearchQuery, options?: WorkspaceRuntimeRequestOptions) => Promise<string[]>
   }
   diff: {
     targets: (options?: WorkspaceRuntimeRequestOptions) => Promise<unknown>
@@ -96,38 +124,45 @@ export function createWorkspaceRuntimeClient(options: WorkspaceRuntimeClientOpti
     runtimeEventsUrl: () => new URL(WorkspaceRuntimeRoutes.runtimeEvents, baseUrl),
     eventsUrl: () => new URL(WorkspaceRuntimeRoutes.events, baseUrl),
     files: {
-      raw: (filePath, input = {}) => request(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file + "/raw", { path: filePath }), requestOptions(options.headers, input.headers)),
-      metadata: (filePath, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file, { path: filePath }), requestOptions(options.headers, input.headers)),
-      list: (filePath, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file + "/all", filePath ? { path: filePath } : {}), requestOptions(options.headers, input.headers)),
-      search: (query, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.fileSearch, { query }), requestOptions(options.headers, input.headers)),
+      raw: (filePath, input = {}) => request(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file + "/raw", { path: filePath }), requestOptions(options.headers, input)),
+      tree: (filePath, input = {}) => jsonRequest<WorkspaceFileNode[]>(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file, { path: filePath }), requestOptions(options.headers, input)),
+      content: (filePath, input = {}) => jsonRequest<WorkspaceFileContent>(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file + "/content", { path: filePath }), requestOptions(options.headers, input)),
+      status: (input = {}) => jsonRequest<WorkspaceFileStatus[]>(doFetch, baseUrl, WorkspaceRuntimeRoutes.file + "/status", requestOptions(options.headers, input)),
+      list: (filePath, input = {}) => jsonRequest<{ paths: string[] }>(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.file + "/all", filePath ? { path: filePath } : {}), requestOptions(options.headers, input)),
+      search: (query, input = {}) => jsonRequest<string[]>(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.fileSearch, {
+        query: query.query,
+        dirs: query.dirs,
+        type: query.type,
+        limit: query.limit === undefined ? undefined : String(query.limit),
+      }), requestOptions(options.headers, input)),
     },
     diff: {
-      targets: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.diff + "/targets", requestOptions(options.headers, input.headers)),
-      vcs: (query = {}, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.diff + "/vcs", query), requestOptions(options.headers, input.headers)),
-      file: (file, query = {}, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.diff + "/vcs/file", { ...query, file }), requestOptions(options.headers, input.headers)),
-      refs: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.diff + "/refs", requestOptions(options.headers, input.headers)),
+      targets: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.diff + "/targets", requestOptions(options.headers, input)),
+      vcs: (query = {}, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.diff + "/vcs", query), requestOptions(options.headers, input)),
+      file: (file, query = {}, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.diff + "/vcs/file", { ...query, file }), requestOptions(options.headers, input)),
+      refs: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.diff + "/refs", requestOptions(options.headers, input)),
     },
     git: {
-      snapshot: (sourcePath, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.git + "/snapshot", { path: sourcePath }), requestOptions(options.headers, input.headers)),
-      commit: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/commit", jsonOptions(options.headers, input.headers, body)),
+      snapshot: (sourcePath, input = {}) => jsonRequest(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.git + "/snapshot", { path: sourcePath }), requestOptions(options.headers, input)),
+      commit: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.git + "/commit", jsonOptions(options.headers, input, body)),
     },
     pty: {
-      list: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.pty, requestOptions(options.headers, input.headers)),
-      create: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.pty, jsonOptions(options.headers, input.headers, body)),
-      get: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.pty, id), requestOptions(options.headers, input.headers)),
-      update: (id, body, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.pty, id), { ...jsonOptions(options.headers, input.headers, body), method: "PUT" }),
-      remove: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.pty, id), { ...requestOptions(options.headers, input.headers), method: "DELETE" }),
+      list: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.pty, requestOptions(options.headers, input)),
+      create: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.pty, jsonOptions(options.headers, input, body)),
+      get: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.pty, id), requestOptions(options.headers, input)),
+      update: (id, body, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.pty, id), { ...jsonOptions(options.headers, input, body), method: "PUT" }),
+      remove: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.pty, id), { ...requestOptions(options.headers, input), method: "DELETE" }),
       connectUrl: (id, cursor) => new URL(withQuery(pathJoin(WorkspaceRuntimeRoutes.pty, id, "connect"), cursor === undefined ? {} : { cursor: String(cursor) }), baseUrl),
     },
     process: {
-      list: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.process, requestOptions(options.headers, input.headers)),
-      create: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.process, jsonOptions(options.headers, input.headers, body)),
-      update: (id, body, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id), { ...jsonOptions(options.headers, input.headers, body), method: "PUT" }),
-      remove: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id), { ...requestOptions(options.headers, input.headers), method: "DELETE" }),
-      start: (id, body, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id, "start"), jsonOptions(options.headers, input.headers, body ?? {})),
-      stop: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id, "stop"), { ...requestOptions(options.headers, input.headers), method: "POST" }),
-      restart: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id, "restart"), { ...requestOptions(options.headers, input.headers), method: "POST" }),
-      logs: async (query = {}, input = {}) => await request(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.process + "/logs", query), requestOptions(options.headers, input.headers)).then((response) => response.text()),
+      list: (input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.process, requestOptions(options.headers, input)),
+      create: (body, input = {}) => jsonRequest(doFetch, baseUrl, WorkspaceRuntimeRoutes.process, jsonOptions(options.headers, input, body)),
+      update: (id, body, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id), { ...jsonOptions(options.headers, input, body), method: "PUT" }),
+      remove: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id), { ...requestOptions(options.headers, input), method: "DELETE" }),
+      start: (id, body, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id, "start"), jsonOptions(options.headers, input, body ?? {})),
+      stop: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id, "stop"), { ...requestOptions(options.headers, input), method: "POST" }),
+      restart: (id, input = {}) => jsonRequest(doFetch, baseUrl, pathJoin(WorkspaceRuntimeRoutes.process, id, "restart"), { ...requestOptions(options.headers, input), method: "POST" }),
+      logs: async (query = {}, input = {}) => await request(doFetch, baseUrl, withQuery(WorkspaceRuntimeRoutes.process + "/logs", query), requestOptions(options.headers, input)).then((response) => response.text()),
     },
   }
 }
@@ -161,24 +196,26 @@ function headersRecord(input: HeadersInit | undefined): Record<string, string> {
   return input
 }
 
-function requestOptions(baseHeaders: HeadersInit | undefined, inputHeaders: HeadersInit | undefined): RequestInit {
+function requestOptions(baseHeaders: HeadersInit | undefined, input: WorkspaceRuntimeRequestOptions): RequestInit {
   return {
     headers: {
       ...headersRecord(baseHeaders),
-      ...headersRecord(inputHeaders),
+      ...headersRecord(input.headers),
     },
+    signal: input.signal,
   }
 }
 
-function jsonOptions(baseHeaders: HeadersInit | undefined, inputHeaders: HeadersInit | undefined, body: unknown): RequestInit {
+function jsonOptions(baseHeaders: HeadersInit | undefined, input: WorkspaceRuntimeRequestOptions, body: unknown): RequestInit {
   return {
     method: "POST",
     headers: {
       ...headersRecord(baseHeaders),
-      ...headersRecord(inputHeaders),
+      ...headersRecord(input.headers),
       "content-type": "application/json",
     },
     body: JSON.stringify(body),
+    signal: input.signal,
   }
 }
 

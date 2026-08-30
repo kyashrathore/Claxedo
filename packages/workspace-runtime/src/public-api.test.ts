@@ -75,9 +75,9 @@ describe("workspace-runtime public API manifest", () => {
       }),
     })
 
-    await client.files.metadata("src/index.ts")
+    await client.files.tree("src/index.ts")
     await client.files.list()
-    await client.files.search("index")
+    await client.files.search({ query: "index" })
 
     expect(seen.map((item) => new URL(item).pathname)).toEqual([
       "/api/wr/file",
