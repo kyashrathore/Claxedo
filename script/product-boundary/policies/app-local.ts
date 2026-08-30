@@ -125,8 +125,9 @@ export const appLocal: Policy = {
   // Control-plane AccountPort fetch adapter: 920 + 1 = 921.
   // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
   // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
-  // modules, still no package edge.
-  ceilings: { modules: 923, packages: 41 },
+  // modules. Provider-settings translations are split into one lazy feature
+  // dictionary per non-English locale: 923 + 16 = 939, still no package edge.
+  ceilings: { modules: 939, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

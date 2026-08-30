@@ -1,4 +1,4 @@
-import { preloadMarkdown } from "@/ui/session-kit"
+import { preloadMarkdown } from "@/ui/session-kit-loaders"
 import { SESSION_PREFETCH_FIRST_FOLD_MESSAGE_COUNT } from "@/platform/sync/session-prefetch"
 
 type MarkdownTextPart = {

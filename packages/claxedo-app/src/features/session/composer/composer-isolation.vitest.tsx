@@ -144,6 +144,7 @@ vi.mock("@/features/session/providers/session-selection", () => ({
       ready: () => true,
       set: vi.fn(),
       restorePending: () => false,
+      selectionCatalogPending: () => false,
       variant: {
         current: () => undefined,
         selected: () => undefined,

@@ -509,12 +509,18 @@ describe("RailSidebar disclosure controls", () => {
     ))
 
     railRuntimeMocks.failingDirectories.add("/repo/secondary")
-    const callsBeforeEvent = railRuntimeMocks.createClient.mock.calls.length
+    const callsForDirectory = (directory: string) =>
+      railRuntimeMocks.createClient.mock.calls.filter(([input]) => input.directory === directory).length
+    const mainCallsBeforeEvent = callsForDirectory("/repo/main")
+    const secondaryCallsBeforeEvent = callsForDirectory("/repo/secondary")
 
     dispatchSessionStatusEvent({
       event: { type: "session.status", source: "server", sessionID: "duplicate", status: { type: "idle" } },
     })
-    await waitFor(() => expect(railRuntimeMocks.createClient.mock.calls.length).toBe(callsBeforeEvent + 2))
+    await waitFor(() => {
+      expect(callsForDirectory("/repo/main")).toBeGreaterThan(mainCallsBeforeEvent)
+      expect(callsForDirectory("/repo/secondary")).toBeGreaterThan(secondaryCallsBeforeEvent)
+    })
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     // The successful placement remains busy and the failed placement retains

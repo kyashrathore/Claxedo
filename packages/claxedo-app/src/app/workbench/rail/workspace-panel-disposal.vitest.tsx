@@ -200,24 +200,21 @@ const substantialWorkingSet: ReviewWorkspaceWorkingSetSnapshot = {
   },
 }
 
-// A session in a SECOND workspace, reachable in the same pane. Clicking it is
-// the cross-workspace switch: the pane retargets first and the panel follows.
+// A terminal in a SECOND workspace, reachable in the same pane. Selecting it
+// is the cross-workspace switch: the pane retargets first and the panel
+// follows. This intentionally is not another session: session surfaces own
+// remembered panel-open state, so a first visit correctly does not inherit
+// the previous session's open panel.
 const otherWorkspaceSurface: ContentMeta = {
   id: "surface-other-workspace",
-  type: "session",
+  type: "terminal",
   scope: "directory",
   directory: "/repo/other",
-  sessionId: "ses_other_workspace",
+  terminalId: "pty_other_workspace",
   content: {
-    type: "session",
+    type: "terminal",
     directory: "/repo/other",
-    sessionId: "ses_other_workspace",
-    sessionRef: {
-      sessionId: "ses_other_workspace",
-      host: "workspace",
-      cwd: "/repo/other",
-      toolSandbox: { kind: "local", cwd: "/repo/other" },
-    },
+    terminalId: "pty_other_workspace",
   },
 }
 
@@ -419,7 +416,7 @@ describe("closed workspace disposal and reconstruction", () => {
     expect(mounts()).toHaveLength(1)
     const scopesBefore = paneScopeMounts.count
 
-    // The pane moves to the other workspace's session; the panel retargets from
+    // The pane moves to the other workspace's surface; the panel retargets from
     // the effect that follows and rebuilds its body for /repo/other.
     state().wb.navigation.show(otherWorkspaceSurface.id)
 
@@ -470,14 +467,14 @@ describe("closed workspace disposal and reconstruction", () => {
     )
     expect(inactiveHost!.querySelector("[data-testid='workspace-processes-navigator']")).toBeNull()
 
-    // Returning displays the same retained body and lets it catch up from the
-    // authoritative navigator slice; freezing it while inert does not make it
-    // stale once it becomes the user's surface again.
+    // Returning displays the same retained body and restores the session's
+    // remembered navigator. The processes navigator belongs to the other
+    // workspace surface; it must neither leak into this session nor disappear
+    // from the now-inactive retained body that owns it.
     state().wb.navigation.show(surface.id)
     await waitFor(() => expect(inactiveHost).not.toHaveAttribute("data-panel-body-inert"), { timeout: 10_000 })
-    await waitFor(() =>
-      expect(inactiveHost!.querySelector("[data-testid='workspace-processes-navigator']")).not.toBeNull()
-    )
+    expect(inactiveHost!.querySelector("[data-testid='workspace-processes-navigator']")).toBeNull()
+    expect(displayedHost!.querySelector("[data-testid='workspace-processes-navigator']")).not.toBeNull()
   }, 20_000)
 
   test("keeps the panel body mounted through a reopen inside the close grace", async () => {

@@ -10,7 +10,6 @@ import {
   migrateSessionEnvironmentCardPersist,
   MAX_SESSION_ENVIRONMENT_CARD_SNAPSHOTS,
 } from "./session-environment-card-state"
-import { setPersisted } from "@/platform/persistence/persist"
 import { configurePersistencePlatform } from "@/platform/persistence/persist"
 
 describe("migrateSessionEnvironmentCardPersist", () => {
@@ -59,11 +58,7 @@ describe("sessionEnvironmentCardCollapsed", () => {
 
 describe("withSessionEnvironmentCardCollapsed", () => {
   test("keeps each session's collapse independent", () => {
-    const first = withSessionEnvironmentCardCollapsed(
-      { collapsedBySessionId: {}, recency: [] },
-      "ses_a",
-      false,
-    )
+    const first = withSessionEnvironmentCardCollapsed({ collapsedBySessionId: {}, recency: [] }, "ses_a", false)
     const second = withSessionEnvironmentCardCollapsed(first, "ses_b", true)
     expect(sessionEnvironmentCardCollapsed(second, "ses_a")).toBe(false)
     expect(sessionEnvironmentCardCollapsed(second, "ses_b")).toBe(true)
@@ -99,16 +94,33 @@ describe("createSessionEnvironmentCardState", () => {
 })
 
 describe("sessionEnvironmentCardState", () => {
-  test("reads a persisted expanded preference for that session from the process-wide store", () => {
+  test("reads a persisted expanded preference for that session from the process-wide store", async () => {
     resetSessionEnvironmentCardStateForTests()
-    configurePersistencePlatform({ platform: "web" })
-    localStorage.clear()
-    setPersisted(sessionEnvironmentCardCollapsePersist, {
-      collapsedBySessionId: { ses_a: false },
-      recency: ["ses_a"],
+    const values = new Map<string, string>([
+      [
+        `${sessionEnvironmentCardCollapsePersist.storage}:${sessionEnvironmentCardCollapsePersist.key}`,
+        JSON.stringify({ collapsedBySessionId: { ses_a: false }, recency: ["ses_a"] }),
+      ],
+    ])
+    configurePersistencePlatform({
+      platform: "desktop",
+      storage: (name = "default.dat") => ({
+        getItem: async (key) => values.get(`${name}:${key}`) ?? null,
+        setItem: async (key, value) => void values.set(`${name}:${key}`, value),
+        removeItem: async (key) => void values.delete(`${name}:${key}`),
+      }),
     })
-    expect(sessionEnvironmentCardState().collapsed("ses_a")).toBe(false)
-    expect(sessionEnvironmentCardState().collapsed("ses_b")).toBe(true)
-    resetSessionEnvironmentCardStateForTests()
+    try {
+      const state = sessionEnvironmentCardState()
+      for (let attempt = 0; attempt < 20 && !state.ready(); attempt += 1) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 0))
+      }
+      expect(state.ready()).toBe(true)
+      expect(state.collapsed("ses_a")).toBe(false)
+      expect(state.collapsed("ses_b")).toBe(true)
+    } finally {
+      resetSessionEnvironmentCardStateForTests()
+      configurePersistencePlatform({ platform: "web" })
+    }
   })
 })

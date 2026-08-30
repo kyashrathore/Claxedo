@@ -212,8 +212,9 @@ export const desktopRendererUnsigned: Policy = {
   // Cloud workspace create / AccountPort bridge / adapters follow app-local:
   // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
   // documents/WorkGraph) + 1 (control-plane fetch) + 1 (SSE stream) + 1
-  // (agent-config extensions) = 1007 modules, still no package edge.
-  ceilings: { modules: 1007, packages: 62 },
+  // (agent-config extensions) = 1007. The 16 lazy provider-settings locale
+  // dictionaries shared with app-local bring this to 1023, with no package edge.
+  ceilings: { modules: 1023, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -271,8 +272,9 @@ export const desktopHostedContribution: Policy = {
   // Control-plane AccountPort fetch adapter:
   // 304 + 1 = 305 modules, still no package edge.
   // AccountPort SSE stream adapter for central `session.events`:
-  // 305 + 1 = 306 modules, still no package edge.
-  ceilings: { modules: 306, packages: 40 },
+  // 305 + 1 = 306. The 16 lazy provider-settings locale dictionaries shared
+  // with app-local bring this to 322, still no package edge.
+  ceilings: { modules: 322, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,
