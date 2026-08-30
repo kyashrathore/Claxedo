@@ -37,6 +37,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createTransport } from "@/platform/runtime/transport"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
   HEARTBEAT_TIMEOUT_MS,
   failureEscalation,
@@ -293,7 +294,7 @@ export function claxedoEventStreamTargets(input: {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
   const central: ClaxedoEventStreamTarget = {
     kind: "central",
-    url: new URL("/api/wr/events", serverUrl),
+    url: controlPlaneEventsUrl({ baseUrl: serverUrl }),
   }
   const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
   const workspace = routeWorkspace

@@ -1156,7 +1156,10 @@ describe("workspace runtime route audit", () => {
       globalSyncContext,
       "features/session/data/sync/directory-session-cache.ts",
       "app/integrations/sync/global-bootstrap.ts",
-      "app/integrations/sync/global-readiness.ts",
+      "app/integrations/sync/global-sync-boundary.ts",
+      // Reviewed shell adapter: binds GlobalSync's channel to the dedicated
+      // session-access revocation contract without exposing GlobalSync to UI.
+      "app/integrations/sync/session-access-revocations.ts",
       "features/session/data/sync/session-inventory.ts",
     ])
     const offenders: string[] = []

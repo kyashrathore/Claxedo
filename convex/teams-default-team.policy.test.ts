@@ -290,7 +290,7 @@ describe("default-team provisioning", () => {
     })
   })
 
-  test("the ledger backfill reactivates one canonical row without ambiguous active identities", async () => {
+  test("the ledger backfill preserves an explicit project revocation while canonicalizing org shares", async () => {
     const t = convexTest(schema, modules)
     const fixture = await t.run(async (ctx) => {
       const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner", kind: "human" }) as never)
@@ -377,8 +377,7 @@ describe("default-team provisioning", () => {
         .withIndex("by_team_project", (q) => q.eq("team_id", fixture.teamId).eq("project_id", "prj_legacy"))
         .collect()
       expect(grants).toHaveLength(1)
-      expect(grants[0]).toMatchObject({ role: "editor" })
-      expect(grants[0]).not.toHaveProperty("revoked_at")
+      expect(grants[0]).toMatchObject({ role: "viewer", revoked_at: 2 })
 
       const workspaceShares = await ctx.db
         .query("workspace_share_grants")

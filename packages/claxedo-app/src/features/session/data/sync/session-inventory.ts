@@ -13,6 +13,11 @@ export function inventoryText(input: unknown) {
   return typeof input === "string" ? input : undefined
 }
 
+export function inventorySessionId(input: unknown) {
+  const row = inventoryRecord(input)
+  return inventoryText(row?.session_id)
+}
+
 export function inventorySessionAttachments(input: unknown) {
   if (!Array.isArray(input)) return []
   return input.flatMap((item) => {

@@ -25,7 +25,48 @@ import type {
   SessionTitleProjectionApi,
   SessionTitleTarget,
 } from "@/features/session/store/session-title-projection"
-import { revokeRegisteredSessionConversation } from "@/features/session/conversation/conversation-registry"
+import { prepareRegisteredSessionRevocation } from "@/features/session/conversation/conversation-registry"
+import { allowPersistedSessionConversations } from "@/features/session/conversation/conversation-persistence"
+
+export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
+
+export type SessionAccessRevocationSource = {
+  onSessionAccessRevoked: (listener: (event: SessionAccessRevokedEvent) => void) => () => void
+}
+
+export function createSessionAccessRevocationChannel() {
+  const listeners = new Set<(event: SessionAccessRevokedEvent) => void>()
+  return {
+    publish(event: SessionAccessRevokedEvent) {
+      for (const listener of listeners) listener(event)
+    },
+    subscribe(listener: (event: SessionAccessRevokedEvent) => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
+export function createSessionAuthorityRevision() {
+  let revision = 0
+  return {
+    capture(scopeIsCurrent: () => boolean) {
+      const captured = revision
+      return () => scopeIsCurrent() && captured === revision
+    },
+    invalidate() {
+      revision++
+    },
+  }
+}
+
+/** Canonical successful inventory is also grant authority when doorbells miss. */
+export function reconcileAuthorizedSessionPersistence(
+  sessions: Iterable<{ id: string }>,
+  scope: string,
+) {
+  for (const session of sessions) allowPersistedSessionConversations(session.id, scope)
+}
 
 type GlobalEventSource = {
   listen: (handler: (event: { name: string; details: RoutableEvent }) => void) => () => void
@@ -48,21 +89,6 @@ type ClaxedoEventSource = {
     type: T,
     handler: (event: Extract<ClaxedoEvent, { type: T }>) => void,
   ) => (() => void) | undefined
-}
-
-export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
-
-export function createSessionAccessRevocationChannel() {
-  const listeners = new Set<(event: SessionAccessRevokedEvent) => void>()
-  return {
-    publish(event: SessionAccessRevokedEvent) {
-      for (const listener of listeners) listener(event)
-    },
-    subscribe(listener: (event: SessionAccessRevokedEvent) => void) {
-      listeners.add(listener)
-      return () => listeners.delete(listener)
-    },
-  }
 }
 
 type DirectoryChildren = {
@@ -89,8 +115,35 @@ type EventIngressInput = {
   draftWasRolledBack: (draftId: string) => boolean
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
+  sessionAccessRetained: (event: SessionAccessRevokedEvent) => Promise<boolean>
+  revocationScope: () => string
+  onSessionAuthorityChanged?: () => void
   onSessionAccessRevoked?: (event: SessionAccessRevokedEvent) => void
-  flushNavigationPersistence?: () => Promise<void>
+  flushNavigationPersistence: () => Promise<void>
+  revocationRetryDelays?: readonly number[]
+}
+
+const DEFAULT_REVOCATION_RETRY_DELAYS = [50, 250, 1_000, 5_000] as const
+
+async function retrySessionRevocationOperation<T>(
+  operation: () => Promise<T>,
+  shouldContinue: () => boolean,
+  retryDelays: readonly number[] = DEFAULT_REVOCATION_RETRY_DELAYS,
+): Promise<{ completed: true; value: T } | { completed: false }> {
+  const delays = retryDelays.length > 0 ? retryDelays : DEFAULT_REVOCATION_RETRY_DELAYS
+  for (let attempt = 0; shouldContinue(); attempt++) {
+    try {
+      return { completed: true, value: await operation() }
+    } catch (error) {
+      if (!shouldContinue()) return { completed: false }
+      const delay = delays[Math.min(attempt, delays.length - 1)]!
+      if (attempt === 0 || (attempt + 1) % 12 === 0) {
+        console.error("Retrying revoked session reconciliation", error)
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+  return { completed: false }
 }
 
 const claxedoDirectoryEventTypes = [
@@ -125,6 +178,8 @@ export function normalizeClaxedoSessionLifecycleEvent(
 }
 
 export function createGlobalSyncEventIngress(input: EventIngressInput) {
+  let disposed = false
+  const revocationTokens = new Map<string, object>()
   const unsubscribeGlobal = input.globalEvents.listen((entry) => {
     const directory = entry.name
     const event = entry.details
@@ -219,30 +274,28 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     // so revocation must first evict the now-forbidden row. The subsequent
     // authoritative refetch reconciles every remaining field and can restore
     // the row if another independent grant still permits access.
+    input.onSessionAuthorityChanged?.()
+    const scope = input.revocationScope()
+    const key = `${scope}\0${event.workspaceId}\0${event.sessionId}`
     if (event.phase === "revoked") {
-      removeSessionListQueryData({
-        sessionId: event.sessionId,
-        workspaceId: event.workspaceId,
+      const revoked = { sessionId: event.sessionId, workspaceId: event.workspaceId }
+      const token = {}
+      revocationTokens.set(key, token)
+      void handleSessionShareRevoked(
+        input,
+        revoked,
+        scope,
+        () => !disposed && input.revocationScope() === scope && revocationTokens.get(key) === token,
+      ).finally(() => {
+        if (revocationTokens.get(key) === token) revocationTokens.delete(key)
       })
-      removeSessionInventoryQueryData<SessionInventoryRow>({
-        session: { id: event.sessionId, workspaceId: event.workspaceId },
-      })
-      // Memory and query state disappear synchronously above. Persist the
-      // navigation eviction and delete every IndexedDB conversation alias
-      // before closing the active surface, so an immediate reload cannot
-      // restore either the revoked row or its transcript.
-      void Promise.all([
-        revokeRegisteredSessionConversation(event.sessionId).catch(() => undefined),
-        input.flushNavigationPersistence?.().catch(() => undefined) ?? Promise.resolve(),
-      ])
-        .then(() => input.onSessionAccessRevoked?.({
-          sessionId: event.sessionId,
-          workspaceId: event.workspaceId,
-        }))
-        .finally(() => invalidateSessionShareQueries())
-        .catch(() => undefined)
       return
     }
+    // A newer grant supersedes any in-flight revoke, including one waiting for
+    // durable storage recovery. Its token can no longer publish a stale access
+    // loss or redirect the now-authorized principal.
+    revocationTokens.delete(key)
+    reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
     void invalidateSessionShareQueries().catch(() => undefined)
   })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
@@ -253,11 +306,115 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
   const detachProjectionSelfHeal = installSessionProjectionSelfHeal()
 
   return () => {
+    disposed = true
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
     unsubscribeClaxedoShareChanged?.()
     unsubscribeClaxedoDirectoryEvents.forEach((cleanup) => cleanup())
     detachProjectionSelfHeal()
+  }
+}
+
+async function handleSessionShareRevoked(
+  input: EventIngressInput,
+  event: SessionAccessRevokedEvent,
+  scope: string,
+  isActive: () => boolean,
+) {
+  try {
+    // A share doorbell names one changed grant. Effective access is the union
+    // of owner/participant/direct/org/team grants, so only a fresh authority
+    // read can prove that the user lost the session.
+    const access = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!access.completed) return
+    if (access.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+
+    // The authority read is asynchronous. If identity changed while it was in
+    // flight, this event belongs to the old principal and must not touch the
+    // new principal's memory, navigation, or durable transcript.
+    if (!isActive()) return
+
+    removeSessionListQueryData(event)
+    removeSessionInventoryQueryData<SessionInventoryRow>({
+      session: { id: event.sessionId, workspaceId: event.workspaceId },
+    })
+    // First prove the shared query persister is writable. A storage outage can
+    // last long enough for access to be regranted; do not destroy conversation
+    // state while waiting for that outage to recover.
+    const persistenceReady = await retrySessionRevocationOperation(
+      input.flushNavigationPersistence,
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!persistenceReady.completed) return
+
+    const accessBeforePurge = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!accessBeforePurge.completed) return
+    if (accessBeforePurge.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+
+    const purgeConversation = prepareRegisteredSessionRevocation(event.sessionId, scope)
+    const durablePurge = await retrySessionRevocationOperation(
+      purgeConversation.purgePersisted,
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!durablePurge.completed) return
+
+    // Recipient fanout is fail-soft, so a regrant doorbell may be missed. The
+    // canonical authority read closes that gap before any in-memory state is
+    // destroyed, while the token closes the normal delivered-doorbell race.
+    const accessAfterDurablePurge = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!accessAfterDurablePurge.completed) return
+    if (accessAfterDurablePurge.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+
+    purgeConversation.purgeMemory()
+    const persisted = await retrySessionRevocationOperation(
+      input.flushNavigationPersistence,
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!persisted.completed) return
+
+    const finalAccess = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!finalAccess.completed) return
+    if (finalAccess.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+    if (isActive()) input.onSessionAccessRevoked?.(event)
+  } catch (error) {
+    // Defensive guard for programmer errors outside the retryable authority and
+    // persistence operations. Never redirect after incomplete durable cleanup.
+    console.error("Failed to reconcile revoked session access", error)
+  } finally {
+    await invalidateSessionShareQueries().catch((error) => {
+      console.error("Failed to refresh session shares after access change", error)
+    })
   }
 }
 

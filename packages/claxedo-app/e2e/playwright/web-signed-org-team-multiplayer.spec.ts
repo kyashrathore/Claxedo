@@ -21,7 +21,7 @@
  *
  * Replaces `web-signed-two-user.spec.ts` (participant-only was a subset of this path).
  */
-import { expect, test } from "@playwright/test"
+import { expect, test, type Page, type Route } from "@playwright/test"
 import { mkdirSync } from "node:fs"
 import path from "node:path"
 import {
@@ -85,6 +85,28 @@ let webApp: RunningWebApp | undefined
 let bob: Teammate | undefined
 let casey: Teammate | undefined
 
+async function conversationPersistenceKeys(page: Page) {
+  return await page.evaluate(async () => await new Promise<string[]>((resolve, reject) => {
+    const request = indexedDB.open("claxedo-conversations")
+    request.onerror = () => reject(request.error ?? new Error("Unable to open conversation persistence"))
+    request.onsuccess = () => {
+      const db = request.result
+      if (!db.objectStoreNames.contains("messages")) {
+        db.close()
+        resolve([])
+        return
+      }
+      const transaction = db.transaction("messages", "readonly")
+      const keysRequest = transaction.objectStore("messages").getAllKeys()
+      keysRequest.onerror = () => reject(keysRequest.error ?? new Error("Unable to read conversation persistence"))
+      keysRequest.onsuccess = () => {
+        db.close()
+        resolve(keysRequest.result.filter((key): key is string => typeof key === "string"))
+      }
+    }
+  }))
+}
+
 test.describe("web signed org-team multiplayer @core @tier-real @surface-web", () => {
   test.skip(
     !TIER_REAL,
@@ -116,9 +138,9 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
     bob = await mintTeammate(fixture, "user_bob", "editor", {
       name: BOB_NAME,
       joinOrg: true,
-      // Team membership unlocks the session share; workspace share mirrors a
-      // teammate who already has workspace authority via team project grants.
-      grantWorkspaceShare: true,
+      // Bob's workspace authority must come only from default-team project
+      // access so this proof cannot accidentally pass through a direct share.
+      grantWorkspaceShare: false,
     })
     casey = await mintTeammate(fixture, "user_casey", "editor", {
       name: CASEY_NAME,
@@ -272,6 +294,9 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
         timeout: 60_000,
       })
       await expectAuthorVisible(bobCtx.page, BOB_NAME)
+      await expect.poll(async () =>
+        (await conversationPersistenceKeys(bobCtx.page)).some((key) => key.endsWith(`\0${sessionId}`)),
+      { timeout: 20_000, message: "Bob's shared transcript must be durable before revoke" }).toBe(true)
       await bobCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "bob-drive.png"), fullPage: true })
 
       await aliceCtx.page.reload({ waitUntil: "domcontentloaded" })
@@ -304,6 +329,9 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       // revalidate its canonical session inventory. No identity reset or
       // `openAs` is allowed here: that would prove only cold bootstrap denial.
       await expect(bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId))).toHaveCount(0, { timeout: 30_000 })
+      await expect.poll(async () =>
+        (await conversationPersistenceKeys(bobCtx.page)).some((key) => key.endsWith(`\0${sessionId}`)),
+      { timeout: 20_000, message: "Revocation must delete Bob's durable transcript" }).toBe(false)
       await expect(bobCtx.page.getByText(new RegExp(`${marker}_(?:ALICE|BOB)`))).toHaveCount(0, { timeout: 30_000 })
       await expect(bobCtx.page).toHaveURL(new RegExp(`/w/${fixture!.info.workspaceId}(?:[?#].*)?$`))
 
@@ -311,20 +339,32 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       // observe the request made by the application itself. The canonical
       // navigation producer and durable conversation owner must both remain
       // empty after a cold application read.
-      const reloadedSessionList = bobCtx.page.waitForResponse(
-        (response) => {
-          const url = new URL(response.url())
-          return response.request().method() === "GET"
-            && url.pathname === "/api/claxedo/session-list"
-            && url.searchParams.get("scope") === "project"
-            && response.status() === 200
-        },
-        { timeout: 20_000 },
-      )
-      await bobCtx.page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 })
-      const reloadedList = await (await reloadedSessionList).json() as {
+      type ReloadedList = {
         items?: Array<{ sessionId?: string }>
         groups?: Array<{ items?: Array<{ sessionId?: string }> }>
+      }
+      let resolveReloadedList: ((value: ReloadedList) => void) | undefined
+      const reloadedSessionList = new Promise<ReloadedList>((resolve) => {
+        resolveReloadedList = resolve
+      })
+      const inspectReloadedList = async (route: Route) => {
+        const url = new URL(route.request().url())
+        if (route.request().method() !== "GET" || url.searchParams.get("scope") !== "project") {
+          await route.continue()
+          return
+        }
+        const response = await route.fetch()
+        const raw = await response.text()
+        resolveReloadedList?.(JSON.parse(raw) as ReloadedList)
+        await route.fulfill({ response, body: raw })
+      }
+      await bobCtx.page.route("**/api/claxedo/session-list?**", inspectReloadedList)
+      let reloadedList: ReloadedList
+      try {
+        await bobCtx.page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 })
+        reloadedList = await reloadedSessionList
+      } finally {
+        await bobCtx.page.unroute("**/api/claxedo/session-list?**", inspectReloadedList)
       }
       expect([
         ...(reloadedList.items ?? []),
@@ -335,6 +375,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       await expect(bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId))).toHaveCount(0)
       await expect(bobCtx.page.getByText(new RegExp(`${marker}_(?:ALICE|BOB)`))).toHaveCount(0)
       await expect(bobCtx.page).toHaveURL(new RegExp(`/w/${fixture!.info.workspaceId}(?:[?#].*)?$`))
+      expect((await conversationPersistenceKeys(bobCtx.page)).some((key) => key.endsWith(`\0${sessionId}`))).toBe(false)
       expect(bobRevokePageErrors).toEqual([])
       expect(
         bobRevokeConsoleErrors.filter((message) => !message.startsWith("Failed to load resource:")),

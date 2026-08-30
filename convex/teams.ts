@@ -116,7 +116,6 @@ export async function ensureDefaultTeamProjectGrant(
     projectId: string
     creatorUserId: unknown
     now: number
-    reactivateRevoked?: boolean
   },
 ) {
   const org = await ctx.db.get(input.orgId)
@@ -132,7 +131,7 @@ export async function ensureDefaultTeamProjectGrant(
     role: "editor",
     creatorUserId: input.creatorUserId,
     now: input.now,
-    reactivateRevoked: input.reactivateRevoked ?? false,
+    reactivateRevoked: false,
   })
   return team
 }
@@ -374,8 +373,10 @@ export const grantProject = authedMutation({
       .withIndex("by_public_id", (q: any) => q.eq("public_id", args.team_id))
       .unique()
     if (!team || team.deleted_at) throw new Error("Team not found")
-    const actor = await requireOrgAdmin(ctx, team.org_id)
-    const project = await projectByPublicId(ctx.db, args.project_id, team.org_id)
+    const [actor, project] = await Promise.all([
+      requireOrgAdmin(ctx, team.org_id),
+      projectByPublicId(ctx.db, args.project_id, team.org_id),
+    ])
     if (!project || project.deleted_at) throw new Error("Project not found")
     const now = Date.now()
     const grantId = await upsertTeamProjectGrant(ctx, {

@@ -31,7 +31,7 @@ import {
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
-import { useSessionAccessRevocations } from "@/app/integrations/sync/global-readiness"
+import { useGlobalSessionAccessRevocations } from "@/app/integrations/sync/global-sync-boundary"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
@@ -51,7 +51,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     params,
     pathname: () => location.pathname,
   })
-  useSessionAccessRevocations((event) => {
+  useGlobalSessionAccessRevocations((event) => {
     applySessionAccessRevocation({
       ...event,
       activeSurfaceId: shell.state.wb.selectors.focusedContent,

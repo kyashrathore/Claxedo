@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { globalShellReady } from "./global-readiness"
+import { globalShellReady } from "./global-sync-boundary"
 
 describe("global readiness shell-data boundary", () => {
   test("reads readiness from the global sync source", () => {

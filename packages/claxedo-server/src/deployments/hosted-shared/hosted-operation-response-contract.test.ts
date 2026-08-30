@@ -259,7 +259,7 @@ function contractAuthority(): WorkspaceAuthority {
     revokeTeamProject: vi.fn(async () => ({ revoked: true })),
     ensureDefaultTeam: vi.fn(async () => ({ team_id: "team_1" })),
     listSessions: vi.fn(async () => [{
-      id: "ses_1",
+      session_id: "ses_1",
       workspace_id: WORKSPACE_ID,
       project_id: "proj_1",
       title: "Contract session",

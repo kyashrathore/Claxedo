@@ -310,7 +310,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/sessions/session-1/gateway",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -342,7 +341,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/sessions/session-1/gateway",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -738,7 +736,7 @@ describe("control plane session routes", () => {
     }
   })
 
-  test("serves signed session inventory and replay through the control plane", async () => {
+  test("routes loopback bearer inventory and replay through signed authority without browser-only headers", async () => {
     const svc = services()
     const convex = {
       listSessions: vi.fn(async () => [
@@ -760,6 +758,9 @@ describe("control plane session routes", () => {
       authorizeSessionRead: vi.fn(async () => {}),
     }
     svc.authority = convex as never
+    svc.projectionStore.list_session_metas = vi.fn(async () => {
+      throw new Error("signed inventory must not read the unfiltered local projection")
+    })
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 7)
     const app = ControlPlaneSessionRoutes(svc, {
       authConfig: {
@@ -777,10 +778,10 @@ describe("control plane session routes", () => {
       }),
     })
 
-    const list = await app.request("https://control.example.test/sessions?workspaceId=ws_1", {
+    const list = await app.request("http://127.0.0.1/sessions?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
-    const messages = await app.request("https://control.example.test/sessions/session-1/messages?workspaceId=ws_1", {
+    const messages = await app.request("http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
     const capabilities = await app.request(
@@ -925,7 +926,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&limit=10&activeSessionId=ses_route_only",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -978,7 +978,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&limit=1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1013,7 +1012,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=planner&limit=1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1027,7 +1025,6 @@ describe("control plane session routes", () => {
       `http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=planner&limit=1&cursor=${first.nextCursor}`,
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1049,7 +1046,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=planner&limit=1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1060,7 +1056,6 @@ describe("control plane session routes", () => {
       `http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=review&limit=1&cursor=${body.nextCursor}`,
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1086,7 +1081,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&groupBy=workspace&archived=all&limit=10",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1592,7 +1586,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },

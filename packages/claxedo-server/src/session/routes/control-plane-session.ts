@@ -139,12 +139,6 @@ function projectedMessagePage(
   return read(sessionId, page)
 }
 
-function isSignedHostedBrowserRequest(req: Request) {
-  return hasBearerToken(req) &&
-    !!req.headers.get("origin") &&
-    !!req.headers.get("x-opencode-directory")
-}
-
 async function authorizeCentralSessionRead(
   services: ControlPlaneServices,
   auth: Awaited<ReturnType<typeof signedAuth>>,
@@ -296,7 +290,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     .get("/session-list", async (c) => {
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           await options.beforeLocalList?.()
           const canUseBoundedProjection = query.groupBy === "none" &&
             query.environment.length === 0 &&
@@ -442,7 +436,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         // or the full local inventory when neither is given — with no remote
         // authority, no signed bearer token, and no dependence on the opencode
         // server being queried.
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           const directory = c.req.query("directory")
           const workspaceId = c.req.query("workspaceId")
           return c.json(sessionInventoryResponse(
@@ -464,7 +458,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     })
     .get("/sessions/:sessionId/gateway", async (c) => {
       try {
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           const meta = await services.projectionStore.session_meta(c.req.param("sessionId"))
           return c.json({
             gatewayUrl: null,
@@ -485,35 +479,12 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const sessionId = c.req.param("sessionId")
         const page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
         const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
-          const workspaceId = c.req.query("workspaceId")
-          // A bearer-scoped workspace read belongs to the workspace authority
-          // for the entire cursor chain. An unsigned local read belongs to the
-          // local projection. Never switch producers after the first page.
-          if (page && workspaceId && hasBearerToken(c.req.raw)) {
-            const auth = await signedAuth(c.req.raw, options)
-            const body = await requireAuthority(services).readSessionMessages(auth, {
-              sessionId,
-              workspaceId,
-              ...page,
-            })
-            return messagePageJson(c, body, authorityMessages(body), maxEventOrdinal)
-          }
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           if (page) {
             const projected = projectedMessagePage(services, sessionId, page)
             return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
           }
           const replayMessages = services.projectionStore.read_session_messages(sessionId)
-          if (replayMessages.length === 0 && workspaceId && hasBearerToken(c.req.raw)) {
-            const auth = await signedAuth(c.req.raw, options)
-            const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
-            const messages = authorityReadAllowed(body) ? authorityMessages(body) : []
-            return c.json({
-              ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-              messages,
-              maxEventOrdinal,
-            })
-          }
           return c.json({
             messages: replayMessages,
             maxEventOrdinal,

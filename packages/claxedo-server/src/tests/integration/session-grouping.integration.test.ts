@@ -186,7 +186,6 @@ function seed(
 function request(url: string) {
   return app.request(url, {
     headers: {
-      Authorization: "Bearer local-test-token",
       Origin: new URL(url).origin,
     },
   })

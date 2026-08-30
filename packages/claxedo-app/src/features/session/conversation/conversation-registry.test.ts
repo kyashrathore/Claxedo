@@ -14,7 +14,7 @@ import {
   registeredConversationUserMessages as scopedConversationUserMessages,
   registerSessionConversationChat as registerScopedConversationChat,
   removeRegisteredConversationMessage as removeScopedConversationMessage,
-  revokeRegisteredSessionConversation,
+  prepareRegisteredSessionRevocation,
   warmConversationMemorySnapshot,
 } from "./conversation-registry"
 
@@ -385,7 +385,9 @@ describe("conversation chat registry", () => {
       parts: {},
     })
 
-    await revokeRegisteredSessionConversation("ses_revoked")
+    const revoke = prepareRegisteredSessionRevocation("ses_revoked")
+    await revoke.purgePersisted()
+    revoke.purgeMemory()
 
     expect(scopedConversationSnapshot("/repo/a", "ses_revoked").messages).toEqual([])
     expect(scopedConversationSnapshot("/repo/b", "ses_revoked").messages).toEqual([])

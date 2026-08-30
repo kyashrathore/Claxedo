@@ -9,7 +9,11 @@ import {
 } from "@/features/session/data/sync/inventory-writers"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import { emptySessionInventory } from "@/features/session/data/sync/queries"
-import { createGlobalSyncEventIngress } from "./event-ingress"
+import {
+  createGlobalSyncEventIngress,
+  createSessionAuthorityRevision,
+  reconcileAuthorizedSessionPersistence,
+} from "./event-ingress"
 import type { RoutableEvent } from "./event-router"
 import type { ClaxedoEvent } from "../claxedo-events"
 import type { SessionTitleProjectionApi } from "@/features/session/store/session-title-projection"
@@ -25,14 +29,66 @@ import {
   queryPersisterKey,
   resetQueryPersisterForTest,
 } from "@/platform/query/persister"
+import {
+  conversationPersistence,
+  conversationPersistenceKey,
+  preparePersistedSessionRevocation,
+  setConversationPersistencePrincipal,
+  setConversationPersistenceStorageForTest,
+} from "@/features/session/conversation/conversation-persistence"
 
 const noopSessionTitles: Pick<SessionTitleProjectionApi, "publishCanonical" | "remove"> = {
   publishCanonical: () => undefined,
   remove: () => undefined,
 }
 
+const revocationDefaults = {
+  sessionAccessRetained: async () => false,
+  revocationScope: () => "signed:user_bob",
+  flushNavigationPersistence: async () => undefined,
+}
+
 afterEach(() => {
   resetQueryPersisterForTest()
+  setConversationPersistencePrincipal(undefined)
+  setConversationPersistenceStorageForTest(undefined)
+})
+
+test("authority changes invalidate already-issued inventory responses", async () => {
+  const authority = createSessionAuthorityRevision()
+  const responseIsCurrent = authority.capture(() => true)
+  let complete: (() => void) | undefined
+  const response = new Promise<void>((resolve) => {
+    complete = resolve
+  })
+
+  authority.invalidate()
+  complete?.()
+  await response
+
+  expect(responseIsCurrent()).toBe(false)
+  expect(authority.capture(() => true)()).toBe(true)
+})
+
+test("canonical inventory reopens durable conversation writes after a missed regrant doorbell", async () => {
+  const values = new Map<IDBValidKey, unknown>()
+  setConversationPersistenceStorageForTest({
+    get: async (key) => values.get(key) as never,
+    set: async (key, value) => { values.set(key, value) },
+    delete: async (key) => { values.delete(key) },
+    keys: async () => [...values.keys()],
+  })
+  setConversationPersistencePrincipal("signed:user_bob")
+  const key = conversationPersistenceKey("/repo\0ses_shared")
+  const revoke = preparePersistedSessionRevocation("ses_shared", "signed:user_bob")
+  await revoke.purge()
+
+  await Promise.resolve(conversationPersistence.setItem(key, []))
+  expect(values.has(key)).toBe(false)
+
+  reconcileAuthorizedSessionPersistence([{ id: "ses_shared" }], "signed:user_bob")
+  await Promise.resolve(conversationPersistence.setItem(key, []))
+  expect(values.has(key)).toBe(true)
 })
 
 function titleWriter() {
@@ -99,6 +155,7 @@ describe("global sync event ingress", () => {
       totalKnown: 0,
     })
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
       projects: () => [],
@@ -166,6 +223,7 @@ describe("global sync event ingress", () => {
     const sessionTitles = titleWriter()
     const inventoryEvents: string[] = []
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
       projects: () => [],
@@ -262,6 +320,7 @@ describe("global sync event ingress", () => {
     const claxedoEvents = claxedoEventSource()
     const sessionTitles = titleWriter()
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
       projects: () => [],
@@ -335,6 +394,7 @@ describe("global sync event ingress", () => {
     const key = ["shell", "default", "sessionList", { directory: "/repo" }] as const
     queryClient.setQueryData(key, { session: [], total: 0 })
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: undefined,
       projects: () => [],
@@ -369,6 +429,7 @@ describe("global sync event ingress", () => {
     queryClient.clear()
     const globalEvents = eventSource()
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: undefined,
       projects: () => [],
@@ -412,6 +473,7 @@ describe("global sync event ingress", () => {
     const globalEvents = eventSource()
     const claxedoEvents = claxedoEventSource()
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
       projects: () => [],
@@ -448,7 +510,7 @@ describe("global sync event ingress", () => {
     dispose()
   })
 
-  test("share grant invalidates without eviction while revoke evicts before refetch", async () => {
+  test("share revoke preserves retained access, then durably evicts confirmed loss with retry", async () => {
     queryClient.clear()
     const persisted = new Map<string, string>()
     await installQueryPersister({
@@ -524,7 +586,12 @@ describe("global sync event ingress", () => {
       parts: {},
     })
     const revoked: Array<{ sessionId: string; workspaceId: string }> = []
+    let retainsAccess = true
+    let accessFailures = 3
+    let accessAttempts = 0
+    let flushAttempts = 0
     const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
       projects: () => [],
@@ -544,8 +611,18 @@ describe("global sync event ingress", () => {
       draftWasRolledBack: () => false,
       cacheSessions: () => undefined,
       sessionCacheLimit: (_directory, fallback) => fallback,
+      sessionAccessRetained: async () => {
+        accessAttempts++
+        if (!retainsAccess && accessFailures-- > 0) throw new Error("transient authority failure")
+        return retainsAccess
+      },
       onSessionAccessRevoked: (event) => revoked.push(event),
-      flushNavigationPersistence: flushQueryPersistence,
+      flushNavigationPersistence: async () => {
+        flushAttempts++
+        if (flushAttempts <= 4) throw new Error("transient IndexedDB failure")
+        await flushQueryPersistence()
+      },
+      revocationRetryDelays: [0],
     })
 
     claxedoEvents.emit({
@@ -576,11 +653,35 @@ describe("global sync event ingress", () => {
       ts: 2,
     })
 
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items?.map((row) => row.sessionId)).toEqual([
+      "ses_shared",
+    ])
+    expect(readSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test.local",
+    }).sessions.map((row) => row.id)).toEqual(["ses_shared"])
+    expect(conversationEntryIdsForTest().sort()).toEqual([
+      "/repo\0ses_keep",
+      "/repo\0ses_shared",
+      "/repo-alias\0ses_shared",
+    ])
+    expect(revoked).toEqual([])
+
+    retainsAccess = false
+    claxedoEvents.emit({
+      type: "session.share.changed",
+      phase: "revoked",
+      ownerUserId: "user_bob",
+      sessionId: "ses_shared",
+      workspaceId: "ws_1",
+      ts: 3,
+    })
+
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
-    for (let attempt = 0; attempt < 20 && revoked.length === 0; attempt++) {
+    for (let attempt = 0; attempt < 50 && revoked.length === 0; attempt++) {
       await new Promise((resolve) => setTimeout(resolve, 0))
     }
 
@@ -592,7 +693,155 @@ describe("global sync event ingress", () => {
     expect(queryClient.getQueryData(conversationSnapshotKey({ directory: "/repo-alias", sessionID: "ses_shared" }))).toBeUndefined()
     expect(conversationEntryIdsForTest()).toEqual(["/repo\0ses_keep"])
     expect(revoked).toEqual([{ sessionId: "ses_shared", workspaceId: "ws_1" }])
+    expect(accessAttempts).toBe(8)
+    expect(flushAttempts).toBe(6)
     expect(persisted.get(queryPersisterKey)).not.toContain("ses_shared")
+    dispose()
+    clearConversationChatRegistryForTest()
+  })
+
+  test("a newer grant cancels a revoke waiting for durable cleanup", async () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const revoked: Array<{ sessionId: string; workspaceId: string }> = []
+    let rejectFlush: ((error: Error) => void) | undefined
+    let flushStarted: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      flushStarted = resolve
+    })
+    const blockedFlush = new Promise<void>((_resolve, reject) => {
+      rejectFlush = reject
+    })
+    let flushAttempts = 0
+    const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+      onSessionAccessRevoked: (event) => revoked.push(event),
+      flushNavigationPersistence: async () => {
+        flushAttempts++
+        if (flushAttempts === 1) {
+          flushStarted?.()
+          await blockedFlush
+        }
+      },
+      revocationRetryDelays: [0],
+    })
+
+    const changed = {
+      type: "session.share.changed" as const,
+      ownerUserId: "user_bob",
+      sessionId: "ses_shared",
+      workspaceId: "ws_1",
+      ts: 1,
+    }
+    claxedoEvents.emit({ ...changed, phase: "revoked" })
+    await started
+    claxedoEvents.emit({ ...changed, phase: "granted", ts: 2 })
+    rejectFlush?.(new Error("transient IndexedDB failure"))
+    await new Promise((resolve) => setTimeout(resolve, 5))
+
+    expect(flushAttempts).toBe(1)
+    expect(revoked).toEqual([])
+    dispose()
+  })
+
+  test("an authority recheck catches a regrant whose doorbell was missed", async () => {
+    queryClient.clear()
+    clearConversationChatRegistryForTest()
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo",
+      sessionID: "ses_shared",
+      messages: [],
+      parts: {},
+    })
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const revoked: Array<{ sessionId: string; workspaceId: string }> = []
+    let retainsAccess = false
+    let accessAttempts = 0
+    let flushAttempts = 0
+    let rejectFirstFlush: ((error: Error) => void) | undefined
+    let markFlushStarted: (() => void) | undefined
+    const flushStarted = new Promise<void>((resolve) => {
+      markFlushStarted = resolve
+    })
+    const firstFlush = new Promise<void>((_resolve, reject) => {
+      rejectFirstFlush = reject
+    })
+    const dispose = createGlobalSyncEventIngress({
+      ...revocationDefaults,
+      globalEvents: globalEvents.source,
+      claxedoEvents: claxedoEvents.source,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [],
+        has: () => false,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+      sessionAccessRetained: async () => {
+        accessAttempts++
+        return retainsAccess
+      },
+      onSessionAccessRevoked: (event) => revoked.push(event),
+      flushNavigationPersistence: async () => {
+        flushAttempts++
+        if (flushAttempts === 1) {
+          markFlushStarted?.()
+          await firstFlush
+        }
+      },
+      revocationRetryDelays: [0],
+    })
+
+    claxedoEvents.emit({
+      type: "session.share.changed",
+      phase: "revoked",
+      ownerUserId: "user_bob",
+      sessionId: "ses_shared",
+      workspaceId: "ws_1",
+      ts: 1,
+    })
+    await flushStarted
+    retainsAccess = true
+    rejectFirstFlush?.(new Error("transient IndexedDB failure"))
+    for (let attempt = 0; attempt < 20 && accessAttempts < 2; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
+
+    expect(flushAttempts).toBe(2)
+    expect(accessAttempts).toBe(2)
+    expect(revoked).toEqual([])
+    expect(conversationEntryIdsForTest()).toEqual(["/repo\0ses_shared"])
     dispose()
     clearConversationChatRegistryForTest()
   })

@@ -28,7 +28,7 @@ describe("claxedoEventStreamTargets", () => {
         },
       }],
     })).toEqual([
-      { kind: "central", url: new URL("https://control.example.test/api/wr/events") },
+      { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
       {
         kind: "workspace",
         serverUrl: "https://control.example.test",
@@ -56,7 +56,7 @@ describe("claxedoEventStreamTargets", () => {
     // The central stream is fetched directly from the control plane…
     expect(targets[0]).toEqual({
       kind: "central",
-      url: new URL("https://control.example.test/api/wr/events"),
+      url: new URL("https://control.example.test/api/claxedo/events"),
     })
     // …while the per-workspace stream is a relay target (NOT a central
     // /workspaces/:id URL): the events provider opens it through the relay
@@ -79,7 +79,7 @@ describe("claxedoEventStreamTargets", () => {
     })
     expect(targets[0]).toEqual({
       kind: "central",
-      url: new URL("https://control.example.test/api/wr/events"),
+      url: new URL("https://control.example.test/api/claxedo/events"),
     })
     expect(targets[1]).toMatchObject({
       kind: "workspace",
@@ -105,7 +105,7 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "http://127.0.0.1:3001",
       directory: "ws_cloud",
     })
-    expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/wr/events") })
+    expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") })
     expect(targets[1]).toMatchObject({
       kind: "workspace",
       serverUrl: "http://127.0.0.1:3001",
@@ -118,7 +118,7 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "http://127.0.0.1:3001",
       directory: "workspace:ws_cloud",
     })
-    expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/wr/events") })
+    expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") })
     expect(targets[1]).toMatchObject({
       kind: "workspace",
       serverUrl: "http://127.0.0.1:3001",
@@ -174,11 +174,11 @@ describe("eventStreamFetch", () => {
     })
 
     await eventStreamFetch(
-      { kind: "central", url: new URL("https://control.example.test/api/wr/events") },
+      { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
       {},
       { request },
     )
-    expect(hit).toBe("https://control.example.test/api/wr/events")
+    expect(hit).toBe("https://control.example.test/api/claxedo/events")
   })
 
   test("keeps loopback local workspace streams on the directory-scoped runtime", async () => {

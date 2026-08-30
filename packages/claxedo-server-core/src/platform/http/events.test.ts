@@ -448,12 +448,34 @@ function mountSignedAs(bus: ReturnType<typeof createBus<ClaxedoEvent>>, subject:
     "/api/claxedo/events",
     eventsHandler({
       bus,
+      allowLoopbackLocal: true,
       authConfig: baseConfig,
       verifier: async () => ({
         mode: "signed",
         user: {
           subject,
           tokenIdentifier: `https://example.clerk.dev|${subject}`,
+          issuer: "https://example.clerk.dev",
+        },
+      }),
+    }),
+  )
+  return app
+}
+
+function mountSignedByBearer(bus: ReturnType<typeof createBus<ClaxedoEvent>>) {
+  const app = new Hono()
+  app.get(
+    "/api/claxedo/events",
+    eventsHandler({
+      bus,
+      allowLoopbackLocal: true,
+      authConfig: baseConfig,
+      verifier: async (token) => ({
+        mode: "signed",
+        user: {
+          subject: token,
+          tokenIdentifier: `https://example.clerk.dev|${token}`,
           issuer: "https://example.clerk.dev",
         },
       }),
@@ -470,6 +492,29 @@ const lifecycle = (tabId: string): ClaxedoEvent => ({
 })
 
 describe("eventsHandler — /api/claxedo/events replay", () => {
+  test("keeps two loopback bearer subscribers isolated by signed principal", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountSignedByBearer(bus)
+    const alice = await connect(app, { bearer: "user_alice" })
+    const bob = await connect(app, { bearer: "user_bob" })
+    await Promise.all([
+      alice.until((seen) => seen.includes("heartbeat"), "Alice did not connect"),
+      bob.until((seen) => seen.includes("heartbeat"), "Bob did not connect"),
+    ])
+
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_alice", ts: 1 })
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_bob", ts: 2 })
+    const [aliceText, bobText] = await Promise.all([
+      alice.until((seen) => seen.includes("user_alice"), "Alice did not receive her frame"),
+      bob.until((seen) => seen.includes("user_bob"), "Bob did not receive his frame"),
+    ])
+    alice.close()
+    bob.close()
+
+    expect(aliceText).not.toContain("user_bob")
+    expect(bobText).not.toContain("user_alice")
+  })
+
   test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
     const bus = createBus<ClaxedoEvent>()
     const app = mountLocal(bus)

@@ -24,7 +24,7 @@ import { setProjectIcon, upsertProjectMeta } from "../../features/workspaces/dat
 import type { ProjectMeta } from "../../features/session/data/query/types"
 import { useDirectorySessionCacheActions } from "../../features/session/data/sync/directory-session-cache"
 import { useSessionInventoryActions } from "../../features/session/data/sync/session-inventory"
-import { useGlobalShellReady } from "../integrations/sync/global-readiness"
+import { useGlobalShellReady } from "../integrations/sync/global-sync-boundary"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const

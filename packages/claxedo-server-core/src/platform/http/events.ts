@@ -67,8 +67,9 @@ export type EventsHandlerOptions = {
   bus?: ClaxedoEventBus
 }
 
-// Loopback requests bypass bearer auth (single-user desktop mode); model them
-// as unsigned-local so the visibility predicate passes everything through.
+// Unsigned loopback requests bypass bearer auth (single-user desktop mode);
+// bearer-bearing loopback requests are still signed clients and must retain
+// tenant filtering.
 const LOOPBACK_PRINCIPAL: EventScopePrincipal = { mode: "unsigned-local" }
 
 function samePrincipal(left: EventScopePrincipal, right: EventScopePrincipal) {
@@ -209,7 +210,11 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
     // rejected before this handler runs); the loopback check below stays as
     // defense-in-depth for compositions that mount this handler directly.
     try {
-      if (options.allowLoopbackLocal && isLoopbackLocalRequest(c.req.raw)) {
+      if (
+        options.allowLoopbackLocal &&
+        isLoopbackLocalRequest(c.req.raw) &&
+        !c.req.header("authorization")
+      ) {
         const scope = scopeFor(LOOPBACK_PRINCIPAL)
         scope.connections += 1
         return streamClaxedoEvents(c, LOOPBACK_PRINCIPAL, bus, scope.replay, () => release(scope), scope.unknownSequence)

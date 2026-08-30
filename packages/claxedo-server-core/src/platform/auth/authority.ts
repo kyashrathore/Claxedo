@@ -43,6 +43,13 @@ export type WorkspaceVisibility = {
   updatedAt?: number
 }
 
+/** Canonical identity contract returned by authority-backed session inventory. */
+export type AuthoritySessionInventoryRow = {
+  session_id: string
+  workspace_id?: string
+  [field: string]: unknown
+}
+
 export type RuntimeActorIdentity = {
   actorId: string
   actorKind: "human" | "agent"
@@ -357,7 +364,10 @@ export type WorkspaceAuthority = {
     args: { teamId: string; projectId: string },
   ) => Promise<unknown>
   ensureDefaultTeam?: (auth: SignedControlPlaneAuth, args: { orgId: string }) => Promise<unknown>
-  listSessions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
+  listSessions: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<AuthoritySessionInventoryRow[]>
   resolveSession?: (auth: SignedControlPlaneAuth, args: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
