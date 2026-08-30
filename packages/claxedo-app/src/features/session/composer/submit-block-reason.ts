@@ -54,7 +54,7 @@ export type SubmitBlockInput = {
 
 const COPY = {
   "viewer-role": "Read-only workspace (viewer)",
-  "harness-degraded": "The agent stopped responding",
+  "harness-degraded": "The selected agent is unavailable",
   "harness-error": "The agent isn't running",
   "harness-polling": "Checking the agent…",
   "no-model": "Choose a model to continue",

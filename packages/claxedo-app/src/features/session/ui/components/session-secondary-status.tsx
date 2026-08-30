@@ -37,6 +37,7 @@ export function DeferredSessionSecondaryStatus(props: {
         active={props.active}
         directory={props.directory}
         sessionId={props.sessionId}
+        turnActive={props.turnActive}
       />
       <SessionConnectionLine workspaceId={props.eventWorkspaceId} />
     </Show>

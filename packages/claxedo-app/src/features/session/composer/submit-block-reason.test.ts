@@ -88,7 +88,7 @@ describe("submitBlockReason", () => {
     test("degraded is actionable", () => {
       expect(submitBlockReason(input({ harnessMode: true, harnessReadiness: "degraded" }))).toEqual({
         reason: "harness-degraded",
-        copy: "The agent stopped responding",
+        copy: "The selected agent is unavailable",
         actionable: true,
       })
     })

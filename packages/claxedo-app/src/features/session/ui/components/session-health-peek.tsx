@@ -31,6 +31,8 @@ export const HARNESS_HEALTH_POLL_INTERVAL_MS = 20_000
 export function SessionHealthPeek(props: {
   directory: Accessor<string | undefined>
   sessionId: Accessor<string | undefined>
+  /** True only while this exact session owns an active turn. */
+  turnActive: Accessor<boolean>
   /** Whether this retained session pane is the one currently painted. */
   active: Accessor<boolean>
   /** Test seam: override the standing poll cadence. */
@@ -44,7 +46,7 @@ export function SessionHealthPeek(props: {
   )
 
   const readiness = createMemo(() => selection?.read(scope()).readiness ?? "ready")
-  const degraded = createMemo(() => readiness() === "degraded")
+  const degraded = createMemo(() => props.turnActive() && readiness() === "degraded")
 
   const probe = () => {
     const directory = props.directory()
@@ -75,6 +77,11 @@ export function SessionHealthPeek(props: {
     scope()
     props.directory()
     probe()
+    // Idle and historical sessions receive the catch-up probe above so stale
+    // availability is cleared, but they never own a standing liveness poll.
+    // A process-loss diagnosis is meaningful only while this exact session has
+    // an active turn to correlate it with.
+    if (!props.turnActive()) return
     const tick = () => {
       if (document.visibilityState !== "visible") return
       probe()

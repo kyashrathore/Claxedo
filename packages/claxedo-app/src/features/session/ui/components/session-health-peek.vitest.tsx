@@ -45,12 +45,14 @@ describe("SessionHealthPeek observer ownership", () => {
       <>
         <SessionHealthPeek
           active={() => true}
+          turnActive={() => true}
           directory={() => "/active"}
           sessionId={() => "ses_active"}
           intervalMs={1_000}
         />
         <SessionHealthPeek
           active={() => false}
+          turnActive={() => true}
           directory={() => "/retained"}
           sessionId={() => "ses_retained"}
           intervalMs={1_000}
@@ -73,12 +75,14 @@ describe("SessionHealthPeek observer ownership", () => {
       <>
         <SessionHealthPeek
           active={() => true}
+          turnActive={() => true}
           directory={() => "/active"}
           sessionId={() => "ses_active"}
           intervalMs={1_000}
         />
         <SessionHealthPeek
           active={() => false}
+          turnActive={() => true}
           directory={() => "/retained"}
           sessionId={() => "ses_retained"}
           intervalMs={1_000}
@@ -107,6 +111,7 @@ describe("SessionHealthPeek observer ownership", () => {
     render(() => (
       <SessionHealthPeek
         active={active}
+        turnActive={() => true}
         directory={directory}
         sessionId={sessionId}
         intervalMs={1_000}
@@ -138,5 +143,22 @@ describe("SessionHealthPeek observer ownership", () => {
     setActive(true)
     await Promise.resolve()
     expect(harness.probeHealth).toHaveBeenCalledTimes(3)
+  })
+
+  test("an idle historical session reconciles once but never owns a liveness poll", async () => {
+    render(() => (
+      <SessionHealthPeek
+        active={() => true}
+        turnActive={() => false}
+        directory={() => "/work"}
+        sessionId={() => "ses_three_days_old"}
+        intervalMs={1_000}
+      />
+    ))
+    await Promise.resolve()
+
+    expect(harness.probeHealth).toHaveBeenCalledOnce()
+    await vi.advanceTimersByTimeAsync(3_000)
+    expect(harness.probeHealth).toHaveBeenCalledOnce()
   })
 })

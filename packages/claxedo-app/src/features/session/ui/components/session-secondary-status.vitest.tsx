@@ -37,6 +37,7 @@ describe("DeferredSessionSecondaryStatus", () => {
     render(() => (
       <DeferredSessionSecondaryStatus
         active={active}
+        turnActive={() => false}
         firstFoldReady={firstFoldReady}
         directory={() => "/work/repo"}
         sessionId={() => "ses_1"}
