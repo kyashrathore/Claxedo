@@ -57,8 +57,7 @@ export function modelOptionsUnavailableMessage(input: {
 }
 
 export function shouldFetchConfigOptionsForScope(type: HarnessType, failed: boolean, input?: HarnessScopeInput) {
-  const existingSession = !!input?.sessionId && input.sessionId !== "new"
-  return harnessHasConfigOptions(type) && !failed && !existingSession
+  return harnessHasConfigOptions(type) && !failed && shouldRefreshDirectoryAfterHarnessStatus(input)
 }
 
 export function shouldRefreshDirectoryAfterHarnessStatus(input?: HarnessScopeInput) {
