@@ -13,12 +13,14 @@ import {
   setSessionInventoryQueryData,
 } from "../data/sync/inventory-writers"
 import type { SessionListResponse } from "../data/query/session-list"
+import { composerFocus } from "../composer/ui/composer-focus"
 
 const activeSelectionScope = {
   sessionID: "ses_active",
   directory: "/workspace/main",
   serverUrl: "http://127.0.0.1:3001",
 }
+const realComposerFocusSchedule = composerFocus.schedule
 
 beforeEach(() => configureAppPortsForTest())
 
@@ -146,6 +148,8 @@ describe("createSessionActions", () => {
   afterEach(() => {
     resetLocalSelectionHandoffForTest()
     queryClient.clear()
+    composerFocus.schedule = realComposerFocusSchedule
+    document.body.innerHTML = ""
   })
 
   test("new session creation navigates by typed workspace draft route", async () => {
@@ -176,6 +180,23 @@ describe("createSessionActions", () => {
         details: { workspaceDir: "/workspace/main" },
       },
     ])
+  })
+
+  test("new session creation hands activation focus to the composer", async () => {
+    const { props, nav } = makeProps()
+    const queue: Array<() => void> = []
+    composerFocus.schedule = (run) => queue.push(run)
+    const origin = document.createElement("button")
+    const editor = document.createElement("div")
+    editor.setAttribute("data-component", "prompt-input")
+    editor.setAttribute("contenteditable", "true")
+    document.body.append(origin, editor)
+    origin.focus()
+
+    await createSessionActions(props, nav).handleNewSession("/workspace/main")
+    while (queue.length > 0) queue.shift()?.()
+
+    expect(document.activeElement).toBe(editor)
   })
 
   test("selected workspace identity is used without rediscovering it from an ambiguous directory", async () => {

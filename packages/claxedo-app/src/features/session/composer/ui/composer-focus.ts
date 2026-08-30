@@ -49,13 +49,17 @@ export function focusComposerWhenReady(options?: {
   attempts?: number
   fallback?: () => void
   doc?: Document
+  origin?: Element | null
 }): void {
   const doc = options?.doc ?? document
   const maxAttempts = options?.attempts ?? 150 // ~2.5s at 60fps — draft mount can be slow
   let tries = 0
   const tick = () => {
     const active = doc.activeElement
-    const userMovedFocus = !!active && active !== doc.body && active.getAttribute("data-component") !== "prompt-input"
+    const userMovedFocus = !!active &&
+      active !== doc.body &&
+      active !== options?.origin &&
+      active.getAttribute("data-component") !== "prompt-input"
     if (userMovedFocus) return
     if (focusComposerSurface(doc)) return
     tries += 1
