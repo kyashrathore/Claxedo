@@ -464,6 +464,38 @@ describe("session list query cache", () => {
       .toEqual(["ses_1", "ses_2", "ses_3"])
   })
 
+  test("base refetch discards an unprovable cached tail when the authoritative total shrinks", async () => {
+    const query = {
+      scope: "project" as const,
+      projectId: "project_1",
+      limit: 2,
+    }
+    const key = queryKeys.shell.sessionList("http://test.local", query)
+    queryClient.setQueryData<SessionListResponse>(key, {
+      ...response(),
+      view: { ...response().view, scope: "project" },
+      items: [row("ses_still_visible", 6), row("ses_revoked", 5), row("ses_tail", 4)],
+      nextCursor: "cursor_after_tail",
+      totalKnown: 3,
+    })
+
+    const result = await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "http://test.local",
+      query,
+      request: async () => new Response(JSON.stringify({
+        ...response(),
+        view: { ...response().view, scope: "project" },
+        items: [row("ses_still_visible", 6), row("ses_tail", 4)],
+        nextCursor: undefined,
+        totalKnown: 2,
+      })),
+    }))
+
+    expect(result.items?.map((item) => item.sessionId)).toEqual(["ses_still_visible", "ses_tail"])
+    expect(result.nextCursor).toBeUndefined()
+    expect(result.totalKnown).toBe(2)
+  })
+
   test("base refetch keeps a newer lifecycle row ahead of a stale authoritative page", async () => {
     const query = {
       scope: "workspace" as const,

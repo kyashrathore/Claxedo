@@ -29,8 +29,13 @@ describe("app/entry/app.tsx route spine guard", () => {
 
   test("flags a runtime-providers module that dropped GlobalSyncProvider", () => {
     expect(runtimeProvidersSpineViolations("<LayoutProvider />")).toEqual([
-      { file: APP_RUNTIME_PROVIDERS_FILE, line: 1, match: "missing route-spine marker: <GlobalSyncProvider>" },
+      { file: APP_RUNTIME_PROVIDERS_FILE, line: 1, match: "missing route-spine marker: <GlobalSyncProvider" },
     ])
+  })
+
+  test("accepts a configured GlobalSyncProvider opening tag", () => {
+    expect(runtimeProvidersSpineViolations("<GlobalSyncProvider flushNavigationPersistence={flush}>"))
+      .toEqual([])
   })
 
   const healthy = [

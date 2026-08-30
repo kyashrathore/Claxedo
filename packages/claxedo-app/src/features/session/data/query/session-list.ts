@@ -60,9 +60,20 @@ function mergeSessionListResponses(input: {
   append: boolean
 }) {
   if (!input.current?.items || !input.page.items) return input.page
-  const merged = input.append
-    ? mergeSessionListItems(input.current.items, input.page.items)
-    : mergeSessionListItems(input.page.items, input.current.items)
+  // A lower authoritative total means at least one cached row no longer
+  // belongs in this view (archive, deletion, or access revocation). Which tail
+  // row disappeared cannot be proven from page one, so discard the cached tail
+  // and let pagination repopulate it. Keeping it would let a revoked row survive
+  // a successful control-plane refetch after a cold cache restore.
+  const authoritativeShrink = !input.append
+    && input.page.totalKnown !== undefined
+    && input.current.totalKnown !== undefined
+    && input.page.totalKnown < input.current.totalKnown
+  const merged = authoritativeShrink
+    ? input.page.items
+    : input.append
+      ? mergeSessionListItems(input.current.items, input.page.items)
+      : mergeSessionListItems(input.page.items, input.current.items)
   const items = reorder(
     merged,
     !input.append && input.page.view.sort === "updated_desc",
@@ -79,10 +90,14 @@ function mergeSessionListResponses(input: {
     // `current` when the merge kept an already-loaded tail beyond what this
     // fresh page covers, so refetching page one doesn't collapse pagination
     // state the user already scrolled past.
-    nextCursor: input.append
+    nextCursor: authoritativeShrink
+      ? input.page.nextCursor
+      : input.append
       ? input.page.nextCursor
       : items.length > input.page.items.length ? input.current.nextCursor : input.page.nextCursor,
-    totalKnown: Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
+    totalKnown: authoritativeShrink
+      ? input.page.totalKnown
+      : Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
   }
 }
 

@@ -79,7 +79,7 @@ const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const PAGE = GLOBAL_SESSION_PAGE_SIZE
 
-function createGlobalSync() {
+function createGlobalSync(input: { flushNavigationPersistence?: () => Promise<void> } = {}) {
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
   const language = useLanguage()
@@ -711,6 +711,7 @@ function createGlobalSync() {
     cacheSessions,
     sessionCacheLimit,
     onSessionAccessRevoked: sessionAccessRevocations.publish,
+    flushNavigationPersistence: input.flushNavigationPersistence,
   }))
   onCleanup(() => {
     queue.dispose()
@@ -776,8 +777,8 @@ function createGlobalSync() {
 
 const GlobalSyncContext = createContext<ReturnType<typeof createGlobalSync>>()
 
-export function GlobalSyncProvider(props: ParentProps) {
-  const value = createGlobalSync()
+export function GlobalSyncProvider(props: ParentProps<{ flushNavigationPersistence?: () => Promise<void> }>) {
+  const value = createGlobalSync({ flushNavigationPersistence: props.flushNavigationPersistence })
   return (
     <Switch>
       <Match when={value.ready}>

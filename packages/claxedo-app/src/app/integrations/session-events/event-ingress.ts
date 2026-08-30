@@ -90,6 +90,7 @@ type EventIngressInput = {
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
   onSessionAccessRevoked?: (event: SessionAccessRevokedEvent) => void
+  flushNavigationPersistence?: () => Promise<void>
 }
 
 const claxedoDirectoryEventTypes = [
@@ -226,11 +227,14 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       removeSessionInventoryQueryData<SessionInventoryRow>({
         session: { id: event.sessionId, workspaceId: event.workspaceId },
       })
-      // Memory and query state disappear synchronously inside this call. Wait
-      // for IndexedDB deletion before closing the active surface so a reload
-      // started by navigation cannot race durable transcript cleanup.
-      void revokeRegisteredSessionConversation(event.sessionId)
-        .catch(() => undefined)
+      // Memory and query state disappear synchronously above. Persist the
+      // navigation eviction and delete every IndexedDB conversation alias
+      // before closing the active surface, so an immediate reload cannot
+      // restore either the revoked row or its transcript.
+      void Promise.all([
+        revokeRegisteredSessionConversation(event.sessionId).catch(() => undefined),
+        input.flushNavigationPersistence?.().catch(() => undefined) ?? Promise.resolve(),
+      ])
         .then(() => input.onSessionAccessRevoked?.({
           sessionId: event.sessionId,
           workspaceId: event.workspaceId,

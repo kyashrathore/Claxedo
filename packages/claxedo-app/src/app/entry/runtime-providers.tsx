@@ -12,6 +12,7 @@ import { HighlightsProvider } from "@/features/review/providers/highlights"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
 import { installConversationPrincipalIsolation } from "@/features/session/conversation/conversation-registry"
 import { usePrincipal } from "@/platform/auth/identity-provider"
+import { flushQueryPersistence } from "@/platform/query/persister"
 
 trace("runtime.providersModuleEvaluated", 0)
 
@@ -66,7 +67,7 @@ export function RuntimeProviders(props: ParentProps) {
   const providers = (
     <GlobalSDKProvider>
       <SessionTitleProjectionProvider>
-        <GlobalSyncProvider>
+        <GlobalSyncProvider flushNavigationPersistence={flushQueryPersistence}>
           <SettingsProvider>
             <PermissionProvider>
               <LayoutProvider>

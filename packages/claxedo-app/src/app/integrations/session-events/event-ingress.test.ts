@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -19,11 +19,21 @@ import {
   hydrateRegisteredConversationSnapshot,
 } from "@/features/session/conversation/conversation-registry"
 import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
+import {
+  flushQueryPersistence,
+  installQueryPersister,
+  queryPersisterKey,
+  resetQueryPersisterForTest,
+} from "@/platform/query/persister"
 
 const noopSessionTitles: Pick<SessionTitleProjectionApi, "publishCanonical" | "remove"> = {
   publishCanonical: () => undefined,
   remove: () => undefined,
 }
+
+afterEach(() => {
+  resetQueryPersisterForTest()
+})
 
 function titleWriter() {
   const canonical: Array<Parameters<SessionTitleProjectionApi["publishCanonical"]>[0]> = []
@@ -440,6 +450,16 @@ describe("global sync event ingress", () => {
 
   test("share grant invalidates without eviction while revoke evicts before refetch", async () => {
     queryClient.clear()
+    const persisted = new Map<string, string>()
+    await installQueryPersister({
+      storage: {
+        getItem: (key) => persisted.get(key) ?? null,
+        setItem: (key, value) => persisted.set(key, value),
+        removeItem: (key) => persisted.delete(key),
+      },
+      buster: "event-ingress-test",
+      throttleTime: 60_000,
+    })?.restore
     const globalEvents = eventSource()
     const claxedoEvents = claxedoEventSource()
     const listKey = queryKeys.shell.sessionList("http://test.local", {
@@ -489,6 +509,8 @@ describe("global sync event ingress", () => {
       messages: [],
       parts: {},
     })
+    await flushQueryPersistence()
+    expect(persisted.get(queryPersisterKey)).toContain("ses_shared")
     hydrateRegisteredConversationSnapshot({
       directory: "/repo-alias",
       sessionID: "ses_shared",
@@ -523,6 +545,7 @@ describe("global sync event ingress", () => {
       cacheSessions: () => undefined,
       sessionCacheLimit: (_directory, fallback) => fallback,
       onSessionAccessRevoked: (event) => revoked.push(event),
+      flushNavigationPersistence: flushQueryPersistence,
     })
 
     claxedoEvents.emit({
@@ -557,6 +580,9 @@ describe("global sync event ingress", () => {
     await Promise.resolve()
     await Promise.resolve()
     await Promise.resolve()
+    for (let attempt = 0; attempt < 20 && revoked.length === 0; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    }
 
     expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items).toEqual([])
     expect(readSessionInventoryQueryData<SessionInventoryRow>({
@@ -566,6 +592,7 @@ describe("global sync event ingress", () => {
     expect(queryClient.getQueryData(conversationSnapshotKey({ directory: "/repo-alias", sessionID: "ses_shared" }))).toBeUndefined()
     expect(conversationEntryIdsForTest()).toEqual(["/repo\0ses_keep"])
     expect(revoked).toEqual([{ sessionId: "ses_shared", workspaceId: "ws_1" }])
+    expect(persisted.get(queryPersisterKey)).not.toContain("ses_shared")
     dispose()
     clearConversationChatRegistryForTest()
   })
