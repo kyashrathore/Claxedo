@@ -1,20 +1,40 @@
 # Single-Tenant to Multiplayer-Ready Branch Status
 
-Status: **REVIEW FINDINGS CLOSED — REAL HARNESS PASSED; 2 COMPOSER UNIT FAILURES REMAIN**
+Status: **TAKEOVER REVIEW CLOSED - LOCAL GATES PASS; REMOTE RECONCILIATION REQUIRED**
 
-Last updated: 2026-08-28
+Last updated: 2026-08-30
 
 Branch: `codex/single-tenant-multiplayer-ready`
 
-Authority closure head: `2adbe6ca4c22cf24252581e498e037782c9fcec5`
+Takeover-reviewed code head: `4caaf0698356e2310c04d71708f7094071e0b0a0`
 
-Post-review implementation: `430fa0bc1dfd7cfb0db39f742e786c2c880a7ca9`
+Review base: `07599f40265170bbc426f1b0b7d4701ad7cc060d`
 
-Browser-test follow-up: `9bf5849c418597ba10f222e3ce990dd39c508445`
+Tracking divergence at verification: origin is 12 commits ahead; local is 55 commits ahead.
 
-Base: `dev` at `834307041e8b01eef532833b8deb3703f03dc647`
+Reviewed implementation diff: 560 files, 37,003 insertions, 4,437 deletions.
 
-Implementation diff through `9bf5849c41`: 300 files, 19,038 insertions, 1,469 deletions
+## Takeover result
+
+The 2026-08-30 adversarial takeover reviewed correctness, API contracts,
+security, migration/data integrity, reliability, frontend races, performance,
+maintainability, testing, project standards, deployment, and agent-native
+parity. All nine concrete reviewer candidates were fixed and independently
+checked against the current code. No actionable code finding remains.
+
+The fixes include signed runtime/session authority, canonical people and
+account contracts, race-free desktop streams, correlated and bounded PTY
+recovery, live revocation proof, canonical account identities, provider
+translations, release-pinned runtime builds, and bounded ledger-backed default
+team reconciliation. The full app command now passes 5,887 Bun tests plus
+1,099 Vitest tests. Server, Convex, affected typechecks, build, lint, and all
+ten architecture ratchets pass on the reviewed local head.
+
+The branch is not ready to push or merge unchanged because its tracking branch
+contains 12 commits that are not in this worktree. Reconcile those commits,
+review the resulting diff, and rerun the canonical gates before merge.
+
+## Historical implementation record
 
 ## Executive summary
 
@@ -39,17 +59,17 @@ test skipped. The complete two-mode core browser matrix had one strict-locator
 failure after every product assertion passed; `9bf5849c41` makes the locator
 unambiguous and the exact failed journey passes in both auth modes.
 
-The branch is still not marked merge-ready because the full app unit command
-has two existing composer contract failures, unchanged by this follow-up:
-runtime-to-UI follow-up:
+The earlier 2026-08-28 checkpoint was not merge-ready because the full app unit
+command had two composer contract failures:
 
 - persisted harness variant is replaced by the generic provider/model on an
   existing-session follow-up;
 - unchanged existing-session config sends a second PATCH instead of hitting the
   dedupe.
 
-Live-provider, packaged desktop, public-web, and credentialed deployment lanes
-remain environment-limited as recorded in `verification-and-rollout.md`.
+Those two failures are closed in the takeover head. Live-provider, packaged
+desktop, and credentialed deployment lanes remain environment-limited as
+recorded in `verification-and-rollout.md`.
 
 ## Documents
 
@@ -80,7 +100,7 @@ remain environment-limited as recorded in `verification-and-rollout.md`.
 | Two-user proof | Closed locally | signed transport, runtime transport, and product acceptance tests |
 | Complete real-provider browser lane | Passed locally | 14 passed, 1 recording-only skip |
 | Runtime-to-UI central continuity | Closed | `430fa0bc1d` and focused unit/real-harness evidence |
-| Full app unit command | Follow-up required | 5,695 passed, 2 composer contract failures |
+| Full app unit command | Closed | 5,887 Bun + 1,099 Vitest passed, 0 failed |
 
 ## Readiness rule
 

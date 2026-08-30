@@ -1,6 +1,30 @@
 # Validated Review Findings
 
-## Review scope
+## 2026-08-30 takeover review
+
+Scope: `07599f40265170bbc426f1b0b7d4701ad7cc060d` to takeover-reviewed
+code head `4caaf0698356e2310c04d71708f7094071e0b0a0` (560 files).
+
+Review run: `20260830-162822-30a7b5df` with correctness, API contract,
+security, data migration, deployment, frontend race, maintainability,
+performance, project standards, reliability, testing, and agent-native lenses.
+The external cross-model peer could not run because its provider returned a
+subscription 403; local reviewer artifacts and independent code/test
+validation were completed.
+
+Verdict: **NO ACTIONABLE CODE FINDINGS REMAIN ON THE REVIEWED LOCAL HEAD.**
+
+The takeover closed nine concrete candidates: Request-body preservation,
+same-SHA runtime release pinning, bounded default-team migrations, live-stream
+revocation proof, bounded desktop identity enrichment, canonical SQLite team
+member identities, shared-owner read caching, bounded PTY-create recovery, and
+stale dossier evidence.
+
+Remaining non-code gates: reconcile the 12 tracking-branch-only commits, rerun
+the canonical gates after conflict resolution, and complete credentialed
+staging/live-provider/packaged-desktop release exercises.
+
+## Historical 2026-08-28 review scope
 
 Reviewed implementation commit: `593dd1f94f047c9269a56b2afea75cce2cb6419e`
 
@@ -103,7 +127,6 @@ tenant/session authorization rules.
 - The core auth matrix's only failure was an ambiguous WorkGraph locator; the
   corrected exact journey passed in both auth modes.
 
-Two existing composer unit contracts still fail in the otherwise 5,695-pass app
-unit command. They are not review findings and do not invalidate the authority
-closure, but they remain a merge gate. Exact failures and commands are tracked
-in `verification-and-rollout.md` and `continuation.md`.
+At this historical checkpoint, two composer unit contracts failed in the
+otherwise 5,695-pass app unit command. Both pass on the 2026-08-30 takeover
+head as part of the 5,887-Bun / 1,099-Vitest canonical app run.

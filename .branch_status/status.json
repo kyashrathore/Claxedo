@@ -1,9 +1,11 @@
 {
   "schema_version": 2,
-  "updated_at": "2026-08-28",
-  "status": "review_findings_closed_real_harness_passed_unit_follow_up_required",
-  "verdict": "All validated review and post-review real-harness findings are closed; merge awaits two existing composer unit contracts",
+  "updated_at": "2026-08-30",
+  "status": "takeover_review_closed_local_verification_passed_remote_reconciliation_required",
+  "verdict": "All validated takeover findings are closed and canonical local suites pass; reconcile the tracking branch and rerun the post-reconciliation gates before merge",
   "branch": "codex/single-tenant-multiplayer-ready",
+  "takeover_code_commit": "4caaf0698356e2310c04d71708f7094071e0b0a0",
+  "takeover_code_tree": "629d5bfd78c6219c77dfd6e1d6034b5d88bbf081",
   "authority_closure_commit": "2adbe6ca4c22cf24252581e498e037782c9fcec5",
   "implementation_commit": "430fa0bc1dfd7cfb0db39f742e786c2c880a7ca9",
   "implementation_tree": "4dedcb9a90058320e947f0fcbc0ec78397c2f401",
@@ -11,12 +13,20 @@
   "test_follow_up_tree": "d95a905f5d6193ca9c8505b1199c9b2f23156dee",
   "base": {
     "branch": "dev",
-    "commit": "834307041e8b01eef532833b8deb3703f03dc647"
+    "commit": "07599f40265170bbc426f1b0b7d4701ad7cc060d"
   },
   "change_size": {
-    "files": 300,
-    "insertions": 19038,
-    "deletions": 1469
+    "files": 560,
+    "insertions": 37003,
+    "deletions": 4437
+  },
+  "takeover_review": {
+    "run_id": "20260830-162822-30a7b5df",
+    "reviewers": 12,
+    "reviewer_candidates_resolved": 9,
+    "remaining_findings": 0,
+    "cross_model_peer": "failed: provider subscription returned 403",
+    "review_base": "07599f40265170bbc426f1b0b7d4701ad7cc060d"
   },
   "review": {
     "validated_p1": 15,
@@ -33,8 +43,8 @@
   },
   "stable_finding_ids": [2, 3, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15, 16, 18, 21, 23, 24, 28],
   "verification": {
-    "server": "3068 passed, 14 skipped",
-    "convex": "397 passed",
+    "server": "3169 passed, 14 skipped",
+    "convex": "407 passed",
     "server_core": "484 passed",
     "local_server": "227 passed",
     "agent_sdk_runtime": "492 passed",
@@ -47,19 +57,18 @@
     "acp_follow_up": "42 passed",
     "workspace_event_follow_up": "6 passed",
     "session_ui_follow_up": "14 passed",
-    "app_full_units": "5695 passed, 2 failed",
+    "app_full_units": "5887 Bun + 1099 Vitest passed, 0 failed",
     "real_harness_browser": "14 passed, 1 recording-only skipped",
     "core_browser_auth_matrix": "all product assertions passed; one strict locator failure fixed and the exact journey passed in both auth modes",
     "workgraph_browser_e2e": "20 passed in each auth mode",
     "mobile_browser_e2e": "5 passed in each auth mode",
-    "affected_package_typechecks": "passed",
-    "root_lint": "passed with 17185 warnings and 0 errors",
-    "root_typecheck": "environment-blocked by parent-checkout dist symlinks loading duplicate Hono/Zod declarations"
+    "affected_package_typechecks": "passed, including full app and server commands",
+    "architecture_ratchets": "10 of 10 passed at exact reviewed ceilings",
+    "root_lint": "passed with 17595 warnings and 0 errors"
   },
   "remaining_merge_gates": [
-    "Preserve the persisted harness model and variant on an existing-session follow-up",
-    "Deduplicate unchanged existing-session config so a second submit does not PATCH again",
-    "Rerun packages/claxedo-app bun run test with zero failures"
+    "Reconcile the 12 commits currently present only on origin/codex/single-tenant-multiplayer-ready",
+    "Review conflict resolutions and rerun the canonical app, server, typecheck, and architecture gates on the reconciled head"
   ],
   "remaining_deploy_gates": [
     "Run the credentialed staging migration rehearsal and legacy-session smoke",

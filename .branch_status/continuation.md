@@ -1,15 +1,16 @@
 ---
 artifact_contract: "ce-handoff/v1"
 created_at: "2026-08-28T06:27:18Z"
+updated_at: "2026-08-30T12:10:00Z"
 title: "Tenant-aware multiplayer branch continuation"
-summary: "All authority and real-harness findings are closed; two existing composer unit contracts remain before merge."
+summary: "The takeover review closed all actionable code findings and canonical local gates pass; reconcile the tracking branch before merge."
 keywords: ["multitenant", "multiplayer", "session-authority", "central-routing", "subagent-lifecycle", "composer"]
 cwd: "/Users/yashvardhansingh/test/opencode/.worktrees/codex/single-tenant-multiplayer-ready"
-resume_focus: "Resolve the two composer unit contract failures, rerun the app unit command, and prepare merge/deploy evidence without reopening closed authority findings."
+resume_focus: "Reconcile the 12 tracking-branch-only commits, review conflicts, and rerun canonical local and credentialed release gates."
 repository: "Claxedo"
 repo_root_sha: "728cedf2a29e2f9da901c8c36620ce5efc09e6b2"
 branch: "codex/single-tenant-multiplayer-ready"
-head: "9bf5849c418597ba10f222e3ce990dd39c508445"
+head: "4caaf0698356e2310c04d71708f7094071e0b0a0"
 worktree_path: "/Users/yashvardhansingh/test/opencode/.worktrees/codex/single-tenant-multiplayer-ready"
 ---
 
@@ -17,9 +18,9 @@ worktree_path: "/Users/yashvardhansingh/test/opencode/.worktrees/codex/single-te
 
 ## User intent
 
-The user asked for every review/architecture document to be current, for the
-branch changes to be pushed, and for a fresh agent to be able to continue from
-the report without this conversation history.
+The current user asked to take over this worktree, review it adversarially, and
+fix all surfaced issues. No push or tracking-branch reconciliation was
+authorized in this takeover.
 
 The user explicitly challenged a prior tendency to chase only newly written
 E2E assertions. Continue from the canonical producer and real runtime/UI flow;
@@ -44,6 +45,22 @@ Read these in order:
    status and reproducible diff scope.
 
 ## Completed work
+
+### 2026-08-30 takeover closure
+
+The takeover review covered 560 changed files with 12 local reviewer lenses.
+Nine concrete candidates were fixed, including request-body preservation,
+runtime release pinning, bounded default-team migrations, live-stream
+revocation, desktop sign-in timeouts, SQLite identity contracts, shared-owner
+read caching, bounded PTY recovery, and stale dossier evidence.
+
+Canonical app tests now pass 5,887 Bun plus 1,099 Vitest tests. Server,
+Convex, affected typechecks/builds, lint, and all ten architecture ratchets pass
+on the reviewed local head. The external adversarial peer was unavailable due
+to a provider subscription 403; its absence is recorded in the review artifact.
+
+Do not push this local history as-is. The tracking branch has 12 commits absent
+locally. Reconcile them first, inspect conflicts, then rerun the full gates.
 
 ### Tenant-aware multiplayer authority
 
@@ -112,10 +129,10 @@ accessible buttons. No product assertion failed. The exact failed journey
 passed in both modes after the helper selected
 `/^Needs you — \d+ waiting on you$/`.
 
-## Remaining local merge gate
+## Historical local merge gate - closed
 
-`packages/claxedo-app: bun run test` currently reports 5,695 passed and 2
-failed:
+At the 2026-08-28 checkpoint, `packages/claxedo-app: bun run test` reported
+5,695 passed and 2 failed:
 
 1. `src/features/session/composer/ui/submit.harness-dispatch.test.ts`
    — “existing harness follow-up preserves its persisted harness variant”.
@@ -125,10 +142,9 @@ failed:
    — “second submit with unchanged config does NOT re-PATCH”.
    Expected one config PATCH after two identical submits; observed two.
 
-Neither failing test file changed in `430fa0bc1d` or `9bf5849c41`. Treat the
-failures as real contracts, not as permission failures and not as permission to
-change expectations. Inspect the existing submit/config owner and restore the
-canonical persisted model/variant and dedupe key at their producer.
+Both failures are fixed on the takeover head and the canonical app command is
+green. Preserve those contracts during tracking-branch reconciliation; do not
+weaken the tests if conflicts reintroduce them.
 
 After fixing them, run:
 

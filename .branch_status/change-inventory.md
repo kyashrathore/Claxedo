@@ -2,10 +2,10 @@
 
 ## Scope
 
-Compared with `dev` at `834307041e`, implementation/test head `9bf5849c41`
-changes 300 files with 19,038 insertions and 1,469 deletions. The post-review
-runtime-to-UI implementation is `430fa0bc1d`; `9bf5849c41` is its deterministic
-browser-test follow-up.
+Compared with review base `07599f4026`, takeover-reviewed code head
+`4caaf06983` changes 560 files with 37,003 insertions and 4,437 deletions.
+The older `430fa0bc1d` / `9bf5849c41` scope below is retained as historical
+context; it is not the current branch boundary.
 
 ## Files by major area
 
@@ -117,7 +117,7 @@ Post-review acceptance findings: A1-A5 in `review-findings.md`.
 The exact path list remains reproducible from Git:
 
 ```bash
-git diff --name-status 834307041e8b01eef532833b8deb3703f03dc647..9bf5849c418597ba10f222e3ce990dd39c508445
+git diff --name-status 07599f40265170bbc426f1b0b7d4701ad7cc060d..4caaf0698356e2310c04d71708f7094071e0b0a0
 ```
 
 The implementation/test tree is `d95a905f5d6193ca9c8505b1199c9b2f23156dee`.

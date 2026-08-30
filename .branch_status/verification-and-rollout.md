@@ -1,6 +1,32 @@
 # Verification and Rollout Plan
 
-## Current verification result — 2026-08-28
+## Current verification result - 2026-08-30
+
+Takeover-reviewed code head: `4caaf0698356e2310c04d71708f7094071e0b0a0`.
+
+Passed on the exact local code head:
+
+- App canonical test: 5,887 Bun + 1,099 Vitest, zero failures.
+- App typecheck, 269 architecture checks, E2E typecheck, 23 Bun performance
+  tests, 38 Vitest performance tests, and local build passed.
+- Server typecheck passed, including the Convex test project.
+- Server canonical test: 3,169 passed, 14 skipped; full Convex: 407 passed.
+- Server core: 490 passed. Desktop broad: 700 passed, 7 skipped.
+- Workspace runtime and relay suites passed, including 59 real PTY/storage
+  tests and zero relay JUnit failures.
+- Root lint reported zero errors and 17,595 existing warnings.
+- All ten source architecture ratchets passed at exact reviewed ceilings.
+- `git diff --check` passed.
+
+Environment/process gates still open:
+
+- Reconcile the 12 tracking-branch-only commits, review conflicts, and rerun
+  the canonical app/server/typecheck/ratchet matrix.
+- Run the credentialed staging migration rehearsal and legacy-session smoke.
+- Run live-provider tests with production credentials.
+- Run packaged Electron E2E.
+
+## Historical verification result - 2026-08-28
 
 All 18 validated review findings are closed. The implementation is based on
 `dev` at `834307041e8b01eef532833b8deb3703f03dc647`. The authority review
@@ -43,7 +69,7 @@ Post-review follow-up verification:
   `local-unsigned` modes.
 - `git diff --check` passed after all implementation and documentation edits.
 
-Current non-environment test failures:
+Historical non-environment test failures (closed on the takeover head):
 
 - `packages/claxedo-app: bun run test`: 5,695 passed, 2 failed.
 - `submit.harness-dispatch.test.ts` — “existing harness follow-up preserves its
@@ -52,8 +78,8 @@ Current non-environment test failures:
 - `submit.session-config.test.ts` — “second submit with unchanged config does
   NOT re-PATCH”: expected one config PATCH, observed two.
 
-Those files were not changed by `430fa0bc1d` or `9bf5849c41`. They remain real
-suite failures and are the only known local merge gate.
+Those failures were real at the historical checkpoint. Both pass in the
+canonical 2026-08-30 app run.
 
 Environment-limited lanes:
 
@@ -73,8 +99,8 @@ The branch may merge only when:
 5. The local Org→Team multiplayer production-like smoke passes (see below). **Required.**
 6. The Pi and Codex ACP real-harness lifecycle failures are resolved. **Passed.**
 7. The complete real-harness lane is rerun. **Passed: 14 passed, 1 recording-only skip.**
-8. The complete app unit command passes, or the two composer failures receive
-   an explicit owner waiver. **Open: 5,695 passed, 2 failed.**
+8. The complete app unit command passes. **Passed: 5,887 Bun + 1,099 Vitest,
+   zero failures.**
 
 ## Focused verification matrix
 
