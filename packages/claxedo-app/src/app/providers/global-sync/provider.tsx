@@ -646,7 +646,7 @@ function createGlobalSync() {
     initialRouteDirectory,
     hasSignedAccess,
     workspaceDirectoryRef,
-    workspaceRuntimeRef: (directory) => sessionWorkspaceRuntimeRef({ directory }),
+    workspaceRuntimeRef: (directory) => sessionWorkspaceRuntimeRef({ directory, projects: projects() }),
     signedWorkspaceInfo,
     signedInventorySource,
     sessionInventory: () => sessionInventory(),

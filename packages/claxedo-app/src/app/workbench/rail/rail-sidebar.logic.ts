@@ -94,6 +94,10 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
     )
   const kind = input.environmentKind ?? workspace?.kind
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
+  // Current project inventory is authoritative for placement. In particular,
+  // a retained workspace-shaped ref must not override an explicit local kind
+  // and send the local project UUID to the relay connection endpoint.
+  if (kind === "local") return
   if (kind === "cloud" || kind === "user-hosted") {
     return workspaceId ? { workspaceId, kind } : undefined
   }

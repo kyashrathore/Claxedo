@@ -1,7 +1,10 @@
 import { resolveWorkspaceRef } from "@/platform/identity/resolve-workspace-ref"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import {
+  localWorkspaceInProjects,
+  signedWorkspaceFromProjects,
+} from "@/platform/runtime/agent/signed-workspace"
 
 // The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
 // every relay-backed workspace). Threaded in so the resolver can read the kind
@@ -48,6 +51,14 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     if (!byDirectory) return undefined
     return { workspaceId: byDirectory.workspaceId, kind: byDirectory.kind }
   }
+  // UUID-shaped workspace route ids are shared by local and relay-backed
+  // workspaces. The project inventory is the authority for that distinction:
+  // once it identifies this id as local, a workspace-shaped route must not
+  // turn it into a relay target and mint `/api/workspace/:id/connection`.
+  if (
+    localWorkspaceInProjects(input.projects ?? [], input.directory) ||
+    localWorkspaceInProjects(input.projects ?? [], workspaceId)
+  ) return undefined
   // Read the REAL kind from the signed inventory. Match by directory AND by the
   // workspace id (`signedWorkspaceFromProjects` matches both forms), so a
   // `workspace:<id>` directory-ref or a raw filesystem path both resolve.

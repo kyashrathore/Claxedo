@@ -161,7 +161,6 @@ export default function SessionPage() {
   )
   const sessionID = createMemo(() => sessionIdentity().id)
   const routeDirectory = createMemo(() => sessionParams.directory())
-  const routeSessionWorkspaceId = createMemo(() => signedRouteSessionWorkspaceId(paneLocation().pathname))
   const terminalHandoffKey = createMemo(() => terminalScopeKey(routeDirectory()))
   const sessionTitleTarget = createMemo(() => {
     const sessionId = sessionID()
@@ -188,6 +187,7 @@ export default function SessionPage() {
   const dir = routeDirectory
   const cacheProjection = createSessionScreenCacheProjection({ active: paneActive, directory: dir })
   const projects = cacheProjection.projects
+  const routeSessionWorkspaceId = createMemo(() => signedRouteSessionWorkspaceId(paneLocation().pathname, projects()))
   const directorySessions = cacheProjection.sessions
   const directorySession = (sessionID: string | undefined) =>
     sessionID ? directorySessions().find((session) => session.id === sessionID) : undefined
