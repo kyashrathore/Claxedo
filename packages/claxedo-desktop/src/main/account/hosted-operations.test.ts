@@ -103,6 +103,18 @@ describe("HOSTED_OPERATIONS", () => {
 })
 
 describe("resolveHostedOperation", () => {
+  test("forwards the declared session-list sort without opening the query allowlist", () => {
+    expect(resolveHostedOperation("session.navigationList", {
+      scope: "workspace",
+      limit: 25,
+      sort: "created_desc",
+      unreviewed: "must-not-reach-the-server",
+    })).toEqual({
+      method: "GET",
+      path: "/api/control/session-list?scope=workspace&limit=25&sort=created_desc",
+    })
+  })
+
   test("appends only declared query keys from input", () => {
     expect(resolveHostedOperation("session.shares.list", {
       sessionId: "ses_1",

@@ -167,6 +167,7 @@ export const HOSTED_OPERATIONS = {
       "environment",
       "git",
       "search",
+      "sort",
       "cursor",
     ],
   },
