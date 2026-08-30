@@ -112,5 +112,5 @@ export function createComposerAutoAccept(input: {
     void deliverNative(id, enabling)
   }
 
-  return { active, toggle }
+  return { active, toggle, currentlyActive }
 }

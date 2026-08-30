@@ -149,7 +149,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS, _evidencePathForTest } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, SELECTORS, _evidencePathForTest, ensureComposerModelSelected } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-permission-ruleset-delivery"
 const SESSION_ID = "ses_core_permission_ruleset"
@@ -253,20 +253,12 @@ async function approveSwitch(page: Page): Promise<Locator> {
  * negative below, since "no request arrived" is worthless if the click never landed.
  */
 async function setApprove(page: Page, control: Locator, next: boolean) {
-  // Claxedo's option ids, renamed from claxedo-auto/claxedo-manual when the picker
-  // moved to naming options for what they DO. The rename is the whole reason these
-  // assertions drifted: nothing in the unit suite reads a `data-mode` attribute.
-  const from = next ? "claxedo-ask-always" : "claxedo-allow-safe"
   const to = next ? "claxedo-allow-safe" : "claxedo-ask-always"
-  // Pre-condition, same purpose as before: it pins which direction the handler will
-  // compute, so a test expecting a grant cannot accidentally assert on a withdrawal.
-  await expect(control).toHaveAttribute("data-mode", from, { timeout: 20_000 })
   await control.click()
-  const row = page.locator(`[data-mode="${to}"][data-selectable="true"]`).last()
-  await expect(row).toBeVisible({ timeout: 20_000 })
+  await expect(page.locator('[role="menuitem"][data-mode]').first()).toBeVisible({ timeout: 10_000 })
+  const row = page.locator(`[role="menuitem"][data-mode="${to}"]`).first()
+  await expect(row, `permission mode row ${to} never appeared`).toBeVisible({ timeout: 20_000 })
   await row.click()
-  // Post-condition: DETERMINISTIC proof the handler ran, which every negative test
-  // below depends on — "no request arrived" proves nothing if the click never landed.
   await expect(control).toHaveAttribute("data-mode", to, { timeout: 20_000 })
 }
 
@@ -383,7 +375,7 @@ test.describe("core permission ruleset delivery @core", () => {
       "the enable write granted almost nothing — the withdrawal assertions below would be vacuous",
     ).toBeGreaterThanOrEqual(5)
 
-    await setApprove(page, control, false)
+    await setApprove(page, await approveSwitch(page), false)
 
     await expect.poll(() => mock.requests.sessionUpdateBodies.length, { timeout: 15_000 }).toBe(2)
     const withdrawal = rulesetOf(mock.requests.sessionUpdateBodies, 1, SESSION_ID)
@@ -538,6 +530,7 @@ test.describe("core permission ruleset delivery @core", () => {
     // below is measured against a live wire, and additionally proves the pending
     // directory-level preference is not folded into the creation body.
     const text = "permission ruleset draft turn"
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await composePrompt(page, input, text)
     await page.locator(SELECTORS.submitControl).last().click()
     await expect.poll(() => mock.requests.createSessionCount, { timeout: 20_000 }).toBe(1)

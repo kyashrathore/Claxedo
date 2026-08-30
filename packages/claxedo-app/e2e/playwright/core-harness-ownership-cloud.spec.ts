@@ -163,7 +163,7 @@
  * The shared runtime models the cloud session lane, so every behavior below executes.
  */
 import { expect, test, type Page } from "@playwright/test"
-import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
 
 const DIR = "/tmp/e2e-core-harness-ownership-cloud"
@@ -550,13 +550,13 @@ test.describe("core harness ownership (cloud) @core", () => {
     // one is last.
     const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).filter({ visible: true })
     await expect(cloudInput).toHaveCount(1, { timeout: 20_000 })
-    // The unified OpenCode control is present before its model label resolves. The cloud
-    // workspace's provider/model catalog is a fresh relay request on this first visit.
-    await expect(page.locator('[data-action="prompt-harness-model"]:visible')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    // Cloud draft keeps OpenCode as harness (asserted above) but does not invent a
+    // catalog model default — pick Big Pickle the same way a user would before send.
     const text = "core harness cloud own-default turn"
     await cloudInput.click()
     await cloudInput.fill(text)
     await expect(cloudInput).toContainText(text, { timeout: 10_000 })
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await page.locator(`${SELECTORS.submitControl}:visible`).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)

@@ -1,5 +1,6 @@
 import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { isFilesystemDirectory, localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import { workspaceStartup } from "@/platform/runtime/workspace-startup"
@@ -63,7 +64,7 @@ export type SubmitDirectoryProvisionInput = {
 }
 
 export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvisionInput) {
-  return await resolveSubmitDirectory({
+  const resolved = await resolveSubmitDirectory({
     isNewSession: input.isNewSession,
     defaultDirectory: input.defaultDirectory,
     worktreeSelection: input.worktreeSelection,
@@ -97,6 +98,21 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
     ...(input.draftId === undefined ? {} : { draftId: input.draftId }),
     ...(input.projectDirectory === undefined ? {} : { projectDirectory: input.projectDirectory }),
     ...(input.fallbackDirectory === undefined ? {} : { fallbackDirectory: input.fallbackDirectory }),
+  })
+  if (!resolved) return
+  // Local OpenCode create needs an on-disk cwd. Opaque `/w/:uuid` route keys
+  // sometimes leak in as sdk.directory before the project catalog remaps them.
+  // Only refuse unresolved association UUIDs — every other opaque key keeps the
+  // historical pass-through (matches origin/dev submit behavior).
+  if (input.workspaceKind === "cloud" || input.workspaceKind === "user-hosted") return resolved
+  if (!localWorkspaceAssociationId(resolved.directory)) return resolved
+  const filesystemDirectory = workspaceRouteIdentity(input.projects, resolved.directory)?.directory
+  if (filesystemDirectory && isFilesystemDirectory(filesystemDirectory)) {
+    return { directory: filesystemDirectory }
+  }
+  input.showToast({
+    title: input.text.missingWorkspaceTitle,
+    description: input.text.attachWorkspaceBeforePrompt,
   })
 }
 
@@ -175,6 +191,9 @@ function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisi
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
 }) {
   if (input.workspaceKind !== "cloud" && input.workspaceKind !== "user-hosted") return undefined
+  // Explicit "create new cloud sandbox" must provision — never reuse an existing
+  // remote directory from the project catalog (see core-composer-hosted-chips e2e).
+  if (input.worktreeSelection === "create") return undefined
 
   const remoteDirectory = (directory: SubmitDirectory | undefined) => {
     if (!directory) return undefined
@@ -208,9 +227,11 @@ function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisi
     selectedProject.worktree,
     ...(selectedProject.sandboxes ?? []),
     ...Object.keys(selectedProject.workspaces ?? {}),
-    ...Object.values(selectedProject.workspaces ?? {}).map((workspace) => workspace.directory),
+    ...Object.values(selectedProject.workspaces ?? {})
+      .map((workspace) => workspace.directory)
+      .filter((directory): directory is string => typeof directory === "string" && directory.length > 0),
   ]) {
-    const resolved = remoteDirectory(directory)
+    const resolved = remoteDirectory(directory ?? undefined)
     if (resolved) return resolved
   }
 

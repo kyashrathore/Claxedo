@@ -285,6 +285,77 @@ describe("resolvePreparedSubmitDirectory", () => {
     expect(result).toEqual({ directory: "ws_selected" })
     expect(prepared).toEqual(["ws_selected"])
   })
+
+  test("create cloud sandbox selection provisions even when the project already has a cloud workspace", async () => {
+    const createdProjects: string[] = []
+    const existingWorkspaceId = "ws_existing"
+    const result = await resolveDirectory({
+      workspaceKind: "cloud",
+      worktreeSelection: "create",
+      projectDirectory: "/repo/main",
+      defaultDirectory: existingWorkspaceId,
+      projects: [{
+        id: "project-1",
+        worktree: "/repo/main",
+        sandboxes: [existingWorkspaceId],
+        workspaces: {
+          [existingWorkspaceId]: { kind: "cloud", workspaceId: existingWorkspaceId, workspace_name: "main" },
+        },
+      }],
+      runtimeWorkspaceRef: (directory) =>
+        directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "cloud" } : undefined,
+      workspaceForDirectory: (directory) =>
+        directory === existingWorkspaceId ? { workspaceId: existingWorkspaceId, kind: "cloud" } : undefined,
+      createCloudWorkspace: async (projectId) => {
+        createdProjects.push(projectId)
+        return { workspaceId: "ws_new" }
+      },
+      prepareWorkspaceRuntime: async () => ({
+        ok: true,
+        startup: true,
+        workspace: { kind: "cloud", workspaceId: "ws_new", status: "ready" },
+      }),
+    })
+
+    expect(result).toEqual({ directory: "ws_new" })
+    expect(createdProjects).toEqual(["project-1"])
+  })
+
+  test("remaps a local association UUID directory to the project worktree before create", async () => {
+    const associationId = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
+    const result = await resolveDirectory({
+      workspaceKind: "local",
+      defaultDirectory: associationId,
+      projects: [{
+        id: "project-1",
+        worktree: "/Users/me/repo",
+        workspaces: {
+          "/Users/me/repo": {
+            id: associationId,
+            directory: "/Users/me/repo",
+            kind: "local",
+          },
+        },
+      }],
+    })
+    expect(result).toEqual({ directory: "/Users/me/repo" })
+  })
+
+  test("blocks local create when an association UUID cannot be remapped to a path", async () => {
+    const toasts: SubmitToast[] = []
+    const associationId = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
+    const result = await resolveDirectory({
+      workspaceKind: "local",
+      defaultDirectory: associationId,
+      projects: [],
+      showToast: (toast) => toasts.push(toast),
+    })
+    expect(result).toBeUndefined()
+    expect(toasts).toEqual([{
+      title: "prompt.toast.sessionCreateFailed.title",
+      description: "Attach a workspace before sending a prompt.",
+    }])
+  })
 })
 
 type ResolveDirectoryInput = Parameters<typeof resolvePreparedSubmitDirectory>[0]

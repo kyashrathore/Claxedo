@@ -46,7 +46,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-composer-hosted-chips"
 const PROJECT_ID = "proj_core_composer_hosted"
@@ -229,6 +229,7 @@ test.describe("core composer hosted chips @core", () => {
     const prompt = "create from the selected hosted branch"
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await input.fill(prompt)
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await page.locator(SELECTORS.submitControl).last().click()
     await expect.poll(() => mock.requests.workspaceCreateBodies, { timeout: 20_000 }).toEqual([{
       projectId: `proj_cloud_${WORKSPACE_ID}`,

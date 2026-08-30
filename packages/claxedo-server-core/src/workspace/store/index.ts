@@ -566,6 +566,10 @@ export async function resolveWorkspace(input: { workspaceId?: string; directory?
   if (id && byId.has(id)) return byId.get(id)
   const dir = input.directory?.trim()
   if (!dir) return undefined
+  // Clients sometimes pass a local association UUID as `directory` when the
+  // `/w/:id` route has not yet remapped to the on-disk worktree. Prefer the id
+  // index over treating the UUID as a filesystem path.
+  if (byId.has(dir)) return byId.get(dir)
   const directory = directoryKey(dir)
   if (isRejectedDir(directory)) return undefined
   if (!input.create) return getWorkspaceByDirectory(dir)

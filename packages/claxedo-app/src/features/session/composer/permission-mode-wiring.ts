@@ -270,21 +270,33 @@ export function createComposerPermissionModeWiring(input: {
     // auto-accept onto Claxedo rows — Codex drafts hydrating beside an opencode
     // default would flash `claxedo-ask-always` (tier-real behavior 13).
     if (harness === "opencode" && (!current || !Array.isArray(current.modes) || current.modes.length === 0)) {
-      return pending()
+      const inFlight = pending()
+      if (inFlight) return inFlight
+      // A live session must mirror the auto-accept store. Returning only
+      // `pending()` here left the trigger stuck on `defaultPermissionSelection`
+      // ("Auto") even after the user chose Ask for everything.
+      if (input.sessionId()) {
+        return { kind: "claxedo", modeId: autoAcceptActive ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID }
+      }
+      return undefined
     }
     return { kind: "claxedo", modeId: autoAcceptActive ? CLAXEDO_ALLOW_SAFE_ID : CLAXEDO_ASK_ALWAYS_ID }
   }
 
   /** Route a new choice to whichever store owns it. */
-  const onSelectionChange = (next: PermissionSelection, autoAccept: { active(): boolean; toggle(): void }) => {
+  const onSelectionChange = (
+    next: PermissionSelection,
+    autoAccept: { currentlyActive(): boolean; toggle(): void },
+  ) => {
     if (next.kind === "harness") {
       setPending(next)
       return
     }
     const wantAllow = next.modeId === CLAXEDO_ALLOW_SAFE_ID
-    // Selecting the option already in effect must not flip the switch to its
-    // opposite.
-    if (wantAllow === autoAccept.active()) return
+    // Read the store directly, not the `active` memo — same race `toggle` avoids.
+    // After a Claxedo pick the memo can still read the pre-flip value for a frame,
+    // which made "Ask for everything" a no-op while the trigger still read Auto.
+    if (wantAllow === autoAccept.currentlyActive()) return
     autoAccept.toggle()
   }
 

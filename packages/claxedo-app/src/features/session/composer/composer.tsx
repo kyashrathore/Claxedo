@@ -567,7 +567,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // Selection routing lives in the wiring: which store owns a choice depends on
     // whether the harness has modes of its own.
     selection: () => permissionModeWiring.selection(autoAccept.active()),
-    onSelectionChange: (next) => permissionModeWiring.onSelectionChange(next, autoAccept),
+    onSelectionChange: (next) =>
+      permissionModeWiring.onSelectionChange(next, {
+        currentlyActive: autoAccept.currentlyActive,
+        toggle: autoAccept.toggle,
+      }),
     // HARNESS deliveries only: `autoAccept.toggle` below already writes Claxedo's
     // own options, so delivering them here too issues two PATCHes per selection.
     deliver: async ({ option, sessionID }) =>

@@ -1042,12 +1042,23 @@ export default function SessionPage() {
 
   const resumeScroll = () => {
     setStore("messageId", undefined)
+    // Clear the hash BEFORE scrolling. `shouldAnchorBottom` is gated on
+    // `!paneLocation().hash`; leaving the hash up until after `scrollToEnd`
+    // meant late virtualizer size corrections (history just expanded) would not
+    // re-anchor, and the jump control stayed visible even though the user asked
+    // to return to the bottom.
+    clearMessageHash()
     autoScroll.resume()
     scrollToEnd()
-    clearMessageHash()
 
     const el = scroller
     if (el) scheduleScrollState(el)
+    // One more frame after layout: revealing older turns can grow scrollHeight
+    // after the first scrollToEnd, leaving the viewport short of the true bottom.
+    requestAnimationFrame(() => {
+      scrollToEnd()
+      if (el) scheduleScrollState(el)
+    })
   }
 
   // When the user returns to the bottom, treat the active message as "latest".

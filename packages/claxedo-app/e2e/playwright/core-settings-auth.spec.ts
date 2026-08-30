@@ -405,6 +405,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
+import { ensureComposerModelSelected } from "../helpers/turn-oracle"
 import { stampTestAuth } from "../playwright-global-setup"
 
 const DIR = "/tmp/e2e-core-settings-auth"
@@ -670,11 +671,14 @@ function notificationInstanceCount(page: Page) {
 async function driveOneTurn(page: Page, promptText: string) {
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 10_000 })
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill(promptText)
   await expect(input).toContainText(promptText, { timeout: 5_000 })
 
   const submit = page.locator('[data-action="prompt-submit"]').last()
+  const userBubble = page.getByText(promptText, { exact: true }).last()
+  const bubbleCountBefore = await page.getByText(promptText, { exact: true }).count()
   await submit.click()
   // Turn START gets the same budget as turn completion below. Three CI runs
   // (354, 361, 365 — the last with a 15s budget) saw the same stall: the
@@ -682,18 +686,27 @@ async function driveOneTurn(page: Page, promptText: string) {
   // sitting disabled+"send" with the empty-composer label the whole window.
   // That is a dropped send, not a slow one, so re-submit once — the first
   // click provably started no turn, so a second cannot double-send. A turn
-  // that DID start (icon "stop") is never retried.
+  // that DID start (icon "stop", or the user bubble landed) is never retried.
+  //
+  // Fast mock turns can finish before Playwright samples data-icon="stop";
+  // treat a new exact user bubble as proof the send landed.
+  const turnStarted = async () => {
+    if ((await submit.getAttribute("data-icon")) === "stop") return true
+    return (await page.getByText(promptText, { exact: true }).count()) > bubbleCountBefore
+  }
   try {
-    await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    await expect.poll(turnStarted, { timeout: 15_000 }).toBe(true)
   } catch (error) {
     if ((await submit.getAttribute("data-icon")) !== "send") throw error
+    if ((await page.getByText(promptText, { exact: true }).count()) > bubbleCountBefore) throw error
     await input.click()
     await input.fill(promptText)
     await expect(input).toContainText(promptText, { timeout: 5_000 })
     await submit.click()
-    await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+    await expect.poll(turnStarted, { timeout: 15_000 }).toBe(true)
   }
   await expect(submit).not.toHaveAttribute("data-icon", "stop", { timeout: 15_000 })
+  await expect(userBubble).toBeVisible({ timeout: 15_000 })
 }
 
 function tabTrigger(page: Page, value: string) {
@@ -728,17 +741,36 @@ type ProviderFixture = {
 async function mockProviderCatalog(page: Page, input: { connected: ProviderFixture[]; popular: ProviderFixture[] }) {
   const all = [...input.connected, ...input.popular]
   const fullCatalog = {
-    all: all.map((p) => ({
-      id: p.id,
-      name: p.name,
-      source: p.source,
-      env: [],
-      models: p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } },
-    })),
-    default: Object.fromEntries(input.connected.map((p) => [p.id, "m-1"])),
+    all: all.map((p) => {
+      const models = p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } }
+      return {
+        id: p.id,
+        name: p.name,
+        source: p.source,
+        env: [],
+        models,
+      }
+    }),
+    default: Object.fromEntries(
+      all.map((p) => {
+        const models = p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } }
+        return [p.id, Object.keys(models)[0]!]
+      }),
+    ),
     connected: input.connected.map((p) => p.id),
   }
+  // Index-shaped list (one default model per connected provider) so Models can
+  // still exercise detail hydration. Keep `source` so Providers disconnect tags
+  // work without a hydrate race against mock-runtime's `/provider` stub.
   const indexCatalog = providerCatalogIndex(fullCatalog)
+  const listBody = {
+    all: indexCatalog.all.map((provider) => {
+      const full = fullCatalog.all.find((item) => item.id === provider.id)
+      return full?.source ? { ...provider, source: full.source } : provider
+    }),
+    connected: indexCatalog.connected,
+    default: indexCatalog.default,
+  }
   // Bootstrap owns the initial provider index. Install this route after the shared
   // runtime so the settings page starts from the same canonical catalog that a real
   // control plane supplies. The /provider route below supplies detail metadata after
@@ -748,12 +780,11 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
     version: "1.0.0-test",
     path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
     project: [{ id: "proj_mock_runtime", worktree: DIR, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
-    provider: indexCatalog,
+    provider: listBody,
     provider_auth: {},
     config: {},
   }))
-  await page.route("**/provider*", (route) => {
-    if (new URL(route.request().url()).pathname !== "/provider") return route.continue()
+  const fulfillProvider = (route: Parameters<Parameters<Page["route"]>[1]>[0]) => {
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
       return route.continue()
     }
@@ -765,8 +796,12 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
         ? { all: [provider], connected: fullCatalog.connected, default: fullCatalog.default }
         : { all: [], connected: fullCatalog.connected, default: fullCatalog.default })
     }
-    return json(route, indexCatalog)
-  })
+    return json(route, listBody)
+  }
+  // Register both shapes last so they beat mock-runtime's `/provider` stubs
+  // (Playwright tries the most recently registered matching route first).
+  await page.route("**/provider", fulfillProvider)
+  await page.route("**/provider?**", fulfillProvider)
 }
 
 async function mockAuthAndGlobalConfigRoutes(page: Page, hits: { authDelete: string[]; configPatch: unknown[] }) {
@@ -775,10 +810,16 @@ async function mockAuthAndGlobalConfigRoutes(page: Page, hits: { authDelete: str
     hits.authDelete.push(new URL(route.request().url()).pathname)
     return json(route, true)
   })
-  await page.route("**/global/config", (route) => {
-    if (route.request().method() !== "PATCH") return route.continue()
-    hits.configPatch.push(route.request().postDataJSON())
-    return json(route, { disabled_providers: route.request().postDataJSON()?.config?.disabled_providers ?? [] })
+  await page.route("**/global/config**", (route) => {
+    const method = route.request().method()
+    if (method === "PATCH") {
+      hits.configPatch.push(route.request().postDataJSON())
+      return json(route, { disabled_providers: route.request().postDataJSON()?.config?.disabled_providers ?? [] })
+    }
+    if (method === "GET") {
+      return json(route, { provider: {}, disabled_providers: [] })
+    }
+    return route.continue()
   })
 }
 
@@ -1440,12 +1481,12 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "providers")
 
       const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
-      const envRow = openCodeSection.locator("div.flex-wrap").filter({ hasText: "Anthropic" })
+      const envRow = openCodeSection.locator('[data-provider="anthropic"]')
       await expect(envRow).toHaveCount(1)
       await expect(envRow.getByText("Environment", { exact: true })).toBeVisible()
       await expect(envRow.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
 
-      const apiRow = openCodeSection.locator("div.flex-wrap").filter({ hasText: "OpenAI" })
+      const apiRow = openCodeSection.locator('[data-provider="openai"]')
       await expect(apiRow).toHaveCount(1)
       await expect(apiRow.getByText("API key", { exact: true })).toBeVisible()
       await apiRow.getByRole("button", { name: "Disconnect" }).click()
@@ -1468,24 +1509,31 @@ test.describe("core settings + auth @core", () => {
       await mockCredentialRoutes(page, credHits)
       const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
       await mockAuthAndGlobalConfigRoutes(page, authHits)
-      await page.route("**/global/config", (route) => {
-        if (route.request().method() !== "GET") return route.continue()
-        return json(route, {
-          provider: {
-            "clinepass-2": {
-              name: "Cline pass 2",
-              npm: "@ai-sdk/openai-compatible",
-              models: { "cline-pass/kimi-k3": { name: "Kimi K3" } },
+      await page.route("**/global/config**", (route) => {
+        const method = route.request().method()
+        if (method === "GET") {
+          return json(route, {
+            provider: {
+              "clinepass-2": {
+                name: "Cline pass 2",
+                npm: "@ai-sdk/openai-compatible",
+                models: { "cline-pass/kimi-k3": { name: "Kimi K3" } },
+              },
             },
-          },
-          disabled_providers: [],
-        })
+            disabled_providers: [],
+          })
+        }
+        if (method === "PATCH") {
+          authHits.configPatch.push(route.request().postDataJSON())
+          return json(route, { disabled_providers: route.request().postDataJSON()?.config?.disabled_providers ?? [] })
+        }
+        return route.continue()
       })
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const row = page.locator('[data-component="opencode-providers-section"]').locator("div.flex-wrap").filter({ hasText: "Cline pass 2" })
+      const row = page.locator('[data-component="opencode-providers-section"]').locator('[data-provider="clinepass-2"]')
       await row.getByRole("button", { name: "Disconnect" }).click()
 
       await expect.poll(() => authHits.configPatch.length, { timeout: 10_000 }).toBe(1)
@@ -1544,8 +1592,10 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "models")
 
-      await expect(page.getByText("Big Pickle")).toBeVisible({ timeout: 10_000 })
-      await expect(page.getByText("Second Model")).toBeVisible({ timeout: 10_000 })
+      const modelsPanel = page.locator('[data-slot="tabs-content"]:not([hidden])')
+      await expect(modelsPanel.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })
+      await expect(modelsPanel.getByRole("switch", { name: "Big Pickle" })).toBeVisible({ timeout: 15_000 })
+      await expect(modelsPanel.getByRole("switch", { name: "Second Model" })).toBeVisible({ timeout: 15_000 })
     })
   })
 

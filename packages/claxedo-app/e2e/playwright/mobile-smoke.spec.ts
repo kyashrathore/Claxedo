@@ -111,7 +111,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-mobile-smoke"
 const SESSION_ID = "ses_mobile_smoke"
@@ -182,6 +182,7 @@ async function openWorkspacePanel(page: Page) {
 }
 
 async function sendTurn(page: Page, promptText: string, turn: number) {
+  await ensureComposerModelSelected(page)
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await input.click()
   await input.fill(promptText)

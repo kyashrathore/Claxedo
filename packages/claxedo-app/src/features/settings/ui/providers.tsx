@@ -314,7 +314,10 @@ export const SettingsProviders: Component = () => {
                       />
                     )}
                   >
-                    <div class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none">
+                    <div
+                      class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none"
+                      data-provider={item.id}
+                    >
                       <div class="flex min-w-0 items-center gap-3">
                         <ProviderIcon id={item.id} class="size-5 shrink-0 icon-strong-base" />
                         <div class="flex min-w-0 flex-col gap-0.5">

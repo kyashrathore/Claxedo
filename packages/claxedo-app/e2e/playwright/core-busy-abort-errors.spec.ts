@@ -189,7 +189,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-busy-abort-errors"
 const SESSION_ID = "ses_core_busy_abort_errors"
@@ -333,6 +333,7 @@ function sessionUrlPattern(sessionId: string) {
 }
 
 async function sendPrompt(page: Page, input: Locator, text: string) {
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill(text)
   await expect(input).toContainText(text, { timeout: 10_000 })
@@ -644,7 +645,12 @@ test.describe("core busy / abort / errors @core", () => {
       // banner inside the pre-assistant-row stretch keeps the injected status and the
       // mocked server's state consistent with each other; `delta` is then short so the
       // turn still settles well inside the oracle's own 20s window.
-      timingsMs: { busy: 60, pending: 5_000, delta: 2_000, completed: 300, idle: 150 },
+      //
+      // 10s (not 5s): suite-load cold reconnect often spends ~2s on the events reconnect
+      // floor plus ~2s on the draft→session quiet window before the first retry emit can
+      // stick. Under that latency a 5s pending window expires before the banner poll sees
+      // a rendered row, even though the same scenario is green in isolation.
+      timingsMs: { busy: 60, pending: 10_000, delta: 2_000, completed: 300, idle: 150 },
     })
     // See neutralizeStatusPoll's doc comment.
     await neutralizeStatusPoll(page)
@@ -826,12 +832,9 @@ test.describe("core busy / abort / errors @core", () => {
 
       await seedOneProject(page, DIR)
       const input = await openDraftPrompt(page, DIR)
-      await input.click()
-      await input.fill("is anyone still there")
-      await page.locator(SELECTORS.submitControl).last().click()
-      await expect(page, "URL never moved onto the created session's route").toHaveURL(sessionUrlPattern(SESSION_ID), {
-        timeout: 20_000,
-      })
+      // Same explicit model pick as `sendPrompt` — drafts do not invent a catalog
+      // default, so an inline fill+click without this stays on the draft URL.
+      await sendPrompt(page, input, "is anyone still there")
 
       // Busy is entered optimistically and never confirmed — Thinking renders and
       // stays, matching behavior 1's mechanism under total silence.

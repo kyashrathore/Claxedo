@@ -38,6 +38,7 @@ import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
 import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
+import { resolveWorkspaceRouteDirectory } from "./route-workspace-directory"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import {
   createRouteIntentAdapter,
@@ -243,8 +244,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())
   )
   const routeId = createMemo(() => routeIdentity()?.routeId ?? opaqueWorkspaceRouteId(routeWorkspaceKey()))
-  const routeDirectory = createMemo(
-    () => routeIdentity()?.directory ?? routeWorkspaceKey(),
+  const routeDirectory = createMemo(() =>
+    resolveWorkspaceRouteDirectory({
+      routeKey: routeWorkspaceKey(),
+      projects: projectsQuery.data ?? [],
+    }),
   )
   createEffect(() => {
     const target = settledWorkspaceSessionRedirect({

@@ -1,6 +1,6 @@
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -89,7 +89,9 @@ export type WorkspaceRecordScope = {
 export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
   // Custom request (tests) keeps the HTTP path. Desktop AccountPort otherwise.
   if (!input.request) {
-    const workspaceId = input.workspaceId ?? workspaceIdFromRef(input.directory)
+    const workspaceId = input.workspaceId
+      ?? workspaceIdFromRef(input.directory)
+      ?? localWorkspaceAssociationId(input.directory)
     const params: Record<string, unknown> = {}
     // Mirror workspaceResolveUrl: directory only when not identified by id.
     if (input.directory && !workspaceId) params.directory = input.directory

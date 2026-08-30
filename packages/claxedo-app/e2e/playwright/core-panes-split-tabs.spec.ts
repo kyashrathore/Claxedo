@@ -353,7 +353,7 @@
 import { workspaceResolveRoute } from "../helpers/contracts/workspace-resolve"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-panes-split-tabs"
 const SESSION_ID = "ses_core_panes_split_tabs"
@@ -542,6 +542,7 @@ async function establishBackgroundedSession(page: Page, beforeUnpin?: (page: Pag
 
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill("establish session")
   await page.locator(SELECTORS.submitControl).last().click()

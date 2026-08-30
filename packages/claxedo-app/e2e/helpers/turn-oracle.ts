@@ -96,6 +96,64 @@ async function submitControlReady(page: Page) {
 }
 
 /**
+ * Explicit model pick through the real harness/model control.
+ *
+ * Product rule: drafts do not invent a catalog default. Specs that send a first
+ * prompt must drive the same picker a user would (same shape as
+ * `selectScriptedModel`). No-ops when a concrete model is already selected.
+ *
+ * Defaults to GPT-5 when present; otherwise picks the first visible model option
+ * so harness-specific catalogs (codex-acp, etc.) still work.
+ */
+export async function ensureComposerModelSelected(
+  page: Page,
+  options?: { readonly modelName?: RegExp; readonly search?: string },
+) {
+  const preferredName = options?.modelName ?? /^GPT-5$/i
+  const searchText = options?.search ?? "GPT-5"
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(control, "the composer's harness+model control never appeared").toBeVisible({ timeout: 30_000 })
+  await expect(control, "the harness+model control stayed disabled while the catalog loaded").toBeEnabled({
+    timeout: 45_000,
+  })
+  const label = (await control.innerText()).trim()
+  const ready = (await control.getAttribute("data-ready-for-submit")) === "true"
+  const modelAttr = (await control.getAttribute("data-model"))?.trim() ?? ""
+  if (label && !/Loading models|Select model|^$/i.test(label) && ready && modelAttr) return
+
+  await control.click()
+  const popover = page.locator('[data-component="harness-model-picker"]')
+  await expect(popover, "the harness/model picker popover never opened").toBeVisible({ timeout: 15_000 })
+  const search = page.getByRole("textbox", { name: /Search models/i }).last()
+  await expect(search, "the harness/model picker's search box never appeared").toBeVisible({ timeout: 20_000 })
+  await search.fill(searchText)
+  // Model rows are List items (`data-slot="list-item"`). Never click the first
+  // popover button — Harness/Model section headers are also buttons and leave
+  // the trigger stuck on "Select model".
+  const modelRows = popover.locator('[data-slot="list-item"]')
+  const preferred = modelRows.filter({ hasText: preferredName }).first()
+  if ((await preferred.count()) > 0) {
+    await expect(preferred, `model ${searchText} missing from the picker`).toBeVisible({ timeout: 20_000 })
+    await preferred.click()
+  } else {
+    await search.fill("")
+    const option = modelRows.first()
+    await expect(option, "no selectable model appeared in the picker").toBeVisible({ timeout: 20_000 })
+    await option.click()
+  }
+  if (await popover.isVisible().catch(() => false)) {
+    await page.keyboard.press("Escape")
+  }
+  await expect(popover, "the harness/model picker stayed open after model selection").toBeHidden({
+    timeout: 10_000,
+  })
+  await expect(control, "harness+model control never adopted a selected model").not.toContainText(
+    /Loading models|Select model|^$/i,
+    { timeout: 20_000 },
+  )
+}
+
+/**
  * Layer (b): geometric truth. Scrolls the element into view, asserts a non-zero
  * bounding box inside the viewport, then hit-tests document.elementFromPoint at the
  * element's center and asserts the hit resolves *inside* an assistant-content slot.
