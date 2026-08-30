@@ -327,7 +327,13 @@ describe("global sdk event fetch", () => {
 
     const response = await fetch("https://control.test/session?directory=%2Frepo%2Funresolved")
 
-    expect(await response.json()).toEqual([])
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: {
+        code: "workspace_unresolved",
+        message: "No authoritative workspace placement exists for /repo/unresolved",
+      },
+    })
     expect(calls).toEqual([])
   })
 

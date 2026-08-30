@@ -43,7 +43,14 @@ export function createGlobalSdkFetch(input: {
           isFilesystemDirectory(directory) &&
           url.pathname === "/session" &&
           url.searchParams.has("directory")
-        ) return Response.json([])
+        ) {
+          return Response.json({
+            error: {
+              code: "workspace_unresolved",
+              message: `No authoritative workspace placement exists for ${directory}`,
+            },
+          }, { status: 409 })
+        }
       }
     }
     return request(requestInput, init)
