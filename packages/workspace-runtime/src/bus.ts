@@ -44,6 +44,7 @@ export function createBus<T>(options: BusOptions<T> = {}) {
 export type PtyInfo = {
   id: string
   sessionId?: string
+  createRequestId?: string
   title: string
   command: string
   args: string[]

@@ -182,6 +182,7 @@ describe("terminal relay lifecycle", () => {
       if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/pty" && req.method === "POST") {
         return Response.json({
           id: "pty_1",
+          createRequestId: "request-client-a",
           title: "Claude",
           cwd: "/workspace",
         })
@@ -192,6 +193,7 @@ describe("terminal relay lifecycle", () => {
 
     const { session, dispose } = createSession({ request })
     const ptyId = await session.new({
+      createRequestId: "request-client-a",
       initialCommand: `"/Users/yashvardhansingh/.claxedo/bin/claude" --dangerously-skip-permissions`,
       title: "Claude",
     })
@@ -201,6 +203,8 @@ describe("terminal relay lifecycle", () => {
     expect(create?.body?.command).toBe("/Users/yashvardhansingh/.claxedo/bin/claude")
     expect(create?.body?.args).toEqual(["--dangerously-skip-permissions"])
     expect(create?.body?.initialCommand).toBeUndefined()
+    expect(create?.body?.createRequestId).toBe("request-client-a")
+    expect(session.all()[0]?.createRequestId).toBe("request-client-a")
 
     dispose()
   })

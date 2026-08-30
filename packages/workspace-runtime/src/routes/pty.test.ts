@@ -86,6 +86,47 @@ describe("PtyRoutes", () => {
     expect(Pty.CreateInput.safeParse({ title: "Claude", initialCommand: "claude" }).success).toBe(true)
   })
 
+  test("carries the opaque create request id through create and list DTOs", async () => {
+    const info = {
+      id: "pty_correlated",
+      sessionId: "session_a",
+      createRequestId: "request-client-a",
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/tmp",
+      status: "running" as const,
+      pid: 123,
+    } satisfies Pty.Info
+    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      ...info,
+      createRequestId: input.createRequestId,
+    }))
+    const commit = spyOn(Pty, "commit").mockReturnValue(info)
+    const list = spyOn(Pty, "list").mockReturnValue([info])
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp"
+    try {
+      const created = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-opencode-directory": "/tmp" },
+        body: JSON.stringify({
+          sessionId: "session_a",
+          createRequestId: "request-client-a",
+          title: "Terminal",
+        }),
+      })
+
+      expect(created.status).toBe(200)
+      await expect(created.json()).resolves.toMatchObject({ createRequestId: "request-client-a" })
+      expect(create.mock.calls[0]?.[0]).toMatchObject({ createRequestId: "request-client-a" })
+      await expect((await PtyRoutes(upgradeWebSocket).request("http://localhost/")).json()).resolves.toEqual([info])
+    } finally {
+      create.mockRestore()
+      commit.mockRestore()
+      list.mockRestore()
+    }
+  })
+
   test("commits a PTY only after the public create path succeeds", async () => {
     const info = {
       id: "pty_committed",

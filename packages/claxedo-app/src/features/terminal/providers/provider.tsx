@@ -31,6 +31,7 @@ type NewTerminalInput = {
   title?: string
   previousPtyId?: string
   sessionId?: string
+  createRequestId?: string
 }
 
 type TerminalCacheEntry = {
@@ -105,11 +106,13 @@ function pty(value: unknown): LocalPTY | undefined {
   const cursor = num(value.cursor)
   const initialCommand = str(value.initialCommand)
   const sessionId = str(value.sessionId)
+  const createRequestId = str(value.createRequestId)
   const direct = num(value.titleNumber)
 
   return {
     id,
     ...(sessionId !== undefined ? { sessionId } : {}),
+    ...(createRequestId !== undefined ? { createRequestId } : {}),
     title,
     titleNumber: direct && direct > 0 ? direct : (titleNumber(title) ?? 0),
     ...(cwd !== undefined ? { cwd } : {}),
@@ -282,12 +285,13 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
   })
   onCleanup(unsub)
 
-  const unsubCreated = ptyEvent("pty.created", ({ info }: { info: { id: string; sessionId?: string; title?: string; cwd?: string } }) => {
+  const unsubCreated = ptyEvent("pty.created", ({ info }: { info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string } }) => {
     if (!info?.id) return
     setStore("all", (all) => {
       return mergeCreatedTerminal(all, {
         id: info.id,
         sessionId: info.sessionId,
+        createRequestId: info.createRequestId,
         title: info.title,
         cwd: info.cwd,
       })
@@ -413,6 +417,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
           title: input.title ?? existing.title,
           cwd: input.cwd ?? existing.cwd,
           sessionId: input.sessionId ?? existing.sessionId,
+          createRequestId: input.createRequestId ?? existing.createRequestId,
           initialCommand: existing.initialCommand ?? input.initialCommand,
         }))
         return
@@ -420,6 +425,8 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
       setStore("all", (all) => {
         const merged = mergeCreatedTerminal(all, {
           id: input.id,
+          sessionId: input.sessionId,
+          createRequestId: input.createRequestId,
           title: input.title,
           cwd: input.cwd,
         })
@@ -451,6 +458,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
 
       const ptyBody = {
         ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.createRequestId ? { createRequestId: input.createRequestId } : {}),
         title: terminalTitle,
         ...(workspaceId ? {} : { cwd: workspaceRelativeCwd(decodedDir, sdk.directory) }),
         ...(launch ? launch : input.initialCommand ? { initialCommand: input.initialCommand } : {}),
@@ -471,7 +479,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
         method: "POST",
         body: JSON.stringify(ptyBody),
       })
-        .then((res) => ptyResponse<{ id: string; sessionId?: string; title: string; cwd?: string }>(res))
+        .then((res) => ptyResponse<{ id: string; sessionId?: string; createRequestId?: string; title: string; cwd?: string }>(res))
         .then((pty) => {
           const id = pty.id
           if (!id) return undefined
@@ -479,6 +487,7 @@ export function createTerminalSession(sdk: ReturnType<typeof useSDK>, dir: strin
             const merged = mergeCreatedTerminal(all, {
               id,
               sessionId: pty.sessionId ?? input.sessionId,
+              createRequestId: pty.createRequestId,
               title: terminalTitle,
               cwd: pty.cwd,
             })

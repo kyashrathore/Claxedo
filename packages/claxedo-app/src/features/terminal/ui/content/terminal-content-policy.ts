@@ -7,23 +7,39 @@ export function shouldMountTerminalPane(input: { visible: boolean; ptyReady: boo
   return input.ptyReady && input.activated
 }
 
-/**
- * Bind a pending creator to a server PTY without cross-adopting a sibling create.
- * Prefer an exact sessionId match; otherwise only adopt when exactly one new
- * unclaimed `pty_*` appeared since create started.
- */
-export function pickAdoptedPty<T extends { id: string; sessionId?: string }>(
+/** Bind a pending creator only to the PTY carrying its opaque request id. */
+export function pickAdoptedPty<T extends { id: string; createRequestId?: string }>(
   rows: readonly T[],
-  before: Set<string>,
-  sessionId: string | undefined,
-  claimedIds?: ReadonlySet<string>,
+  createRequestId: string | undefined,
 ) {
-  const candidates = rows.filter(
-    (row) => row.id.startsWith("pty_") && !before.has(row.id) && !claimedIds?.has(row.id),
-  )
-  if (sessionId) {
-    const matched = candidates.filter((row) => row.sessionId === sessionId)
-    return matched.length === 1 ? matched[0] : undefined
+  if (!createRequestId) return undefined
+  const matched = rows.filter((row) => row.createRequestId === createRequestId)
+  return matched.length === 1 ? matched[0] : undefined
+}
+
+/**
+ * Run one poll at a time. The next timeout is armed only after the current
+ * async read settles, and stop() prevents both future runs and re-arming.
+ */
+export function startSingleFlightPoll(run: () => Promise<void>, intervalMs: number) {
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+
+  const cycle = async () => {
+    if (stopped) return
+    try {
+      await run()
+    } catch {}
+    if (stopped) return
+    timer = setTimeout(() => void cycle(), intervalMs)
   }
-  return candidates.length === 1 ? candidates[0] : undefined
+
+  void cycle()
+  return {
+    stop() {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      timer = undefined
+    },
+  }
 }

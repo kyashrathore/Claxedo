@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { shouldMountTerminalPane, pickAdoptedPty } from "./terminal-content-policy"
+import { shouldMountTerminalPane, pickAdoptedPty, startSingleFlightPoll } from "./terminal-content-policy"
 
 describe("terminal content mount policy", () => {
   test("keeps never-activated hidden terminal panes from reconnecting on reload", () => {
@@ -18,61 +18,73 @@ describe("terminal content mount policy", () => {
 })
 
 describe("pickAdoptedPty", () => {
-  const before = new Set(["pty_old"])
-
-  test("adopts the sole session-matched new pty", () => {
+  test("adopts only the pty carrying the originating create request id", () => {
     expect(pickAdoptedPty(
       [
-        { id: "pty_old", sessionId: "ses_a" },
-        { id: "pty_a", sessionId: "ses_a" },
-        { id: "pty_b", sessionId: "ses_b" },
+        { id: "pty_a", sessionId: "ses_a", createRequestId: "request-a" },
+        { id: "pty_b", sessionId: "ses_a", createRequestId: "request-b" },
       ],
-      before,
-      "ses_a",
+      "request-a",
     )?.id).toBe("pty_a")
   })
 
-  test("refuses ambiguous session matches and unscoped first-candidate steal", () => {
+  test("refuses duplicate correlations instead of guessing", () => {
     expect(pickAdoptedPty(
       [
-        { id: "pty_a", sessionId: "ses_a" },
-        { id: "pty_b", sessionId: "ses_a" },
+        { id: "pty_a", createRequestId: "request-a" },
+        { id: "pty_b", createRequestId: "request-a" },
       ],
-      before,
-      "ses_a",
-    )).toBeUndefined()
-    expect(pickAdoptedPty(
-      [{ id: "pty_a" }, { id: "pty_b" }],
-      before,
-      undefined,
+      "request-a",
     )).toBeUndefined()
   })
 
-  test("adopts the sole unclaimed new pty when sessionId is unknown", () => {
+  test("never adopts a sole new pty without an exact correlation", () => {
     expect(pickAdoptedPty(
-      [{ id: "pty_old" }, { id: "pty_a" }],
-      before,
-      undefined,
-      new Set(["pty_claimed"]),
-    )?.id).toBe("pty_a")
-    expect(pickAdoptedPty(
-      [{ id: "pty_a" }],
-      before,
-      undefined,
-      new Set(["pty_a"]),
+      [{ id: "pty_a", sessionId: "ses_a" }],
+      "request-a",
     )).toBeUndefined()
   })
 
-  test("does not fall back to an unmatched pty when sessionId is set", () => {
+  test("keeps two clients in one session bound to their own create", () => {
     expect(pickAdoptedPty(
-      [{ id: "pty_a", sessionId: "ses_other" }],
-      before,
-      "ses_a",
-    )).toBeUndefined()
-    expect(pickAdoptedPty(
-      [{ id: "pty_a" }],
-      before,
-      "ses_a",
-    )).toBeUndefined()
+      [
+        { id: "pty_client_a", sessionId: "ses_shared", createRequestId: "request-a" },
+        { id: "pty_client_b", sessionId: "ses_shared", createRequestId: "request-b" },
+      ],
+      "request-b",
+    )?.id).toBe("pty_client_b")
+  })
+})
+
+describe("startSingleFlightPoll", () => {
+  test("does not overlap polls and stops scheduling after disposal", async () => {
+    let calls = 0
+    let active = 0
+    let maximumActive = 0
+    let releaseFirst!: () => void
+    const first = new Promise<void>((resolve) => {
+      releaseFirst = resolve
+    })
+    const poller = startSingleFlightPoll(async () => {
+      calls += 1
+      active += 1
+      maximumActive = Math.max(maximumActive, active)
+      if (calls === 1) await first
+      active -= 1
+    }, 1)
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(calls).toBe(1)
+    expect(maximumActive).toBe(1)
+
+    releaseFirst()
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(calls).toBeGreaterThan(1)
+    expect(maximumActive).toBe(1)
+
+    poller.stop()
+    const stoppedAt = calls
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(calls).toBe(stoppedAt)
   })
 })

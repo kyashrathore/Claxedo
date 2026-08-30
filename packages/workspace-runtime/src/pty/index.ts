@@ -240,6 +240,7 @@ export namespace Pty {
   export const Info = z.object({
     id: z.string(),
     sessionId: z.string().optional(),
+    createRequestId: z.string().min(1).max(128).optional(),
     title: z.string(),
     command: z.string(),
     args: z.array(z.string()),
@@ -252,6 +253,7 @@ export namespace Pty {
 
   export const CreateInput = z.object({
     sessionId: z.string().optional(),
+    createRequestId: z.string().min(1).max(128).optional(),
     command: z.string().optional(),
     args: z.array(z.string()).optional(),
     cwd: z.string().optional(),
@@ -645,6 +647,7 @@ export namespace Pty {
     const info = {
       id,
       ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+      ...(input.createRequestId ? { createRequestId: input.createRequestId } : {}),
       title: input.title || `Terminal ${id.slice(-4)}`,
       command,
       args,

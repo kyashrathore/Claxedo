@@ -2,6 +2,7 @@ import { batch } from "solid-js"
 import { recoverMissingWorkspace, type ActionProps, type Nav } from "@/features/terminal/app-ports"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
+import { terminalSessionIdForWorkspace } from "@/features/terminal/core/terminal-session-context"
 
 export function createTerminalActions(props: ActionProps, nav: Nav) {
   const openTerminal = (
@@ -14,7 +15,11 @@ export function createTerminalActions(props: ActionProps, nav: Nav) {
     const pendingId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const tabTitle = title || "Terminal"
     const focusedContentId = props.state.wb.selectors.focusedContent()
-    const sessionId = focusedContentId ? props.state.meta.get(focusedContentId)?.sessionId : undefined
+    const focused = focusedContentId ? props.state.meta.get(focusedContentId) : undefined
+    const sessionId = terminalSessionIdForWorkspace(focused, {
+      directory: workspaceDir,
+      workspaceRouteId,
+    })
     let contentId: string | undefined
     batch(() => {
       if (paneId) props.state.wb.split.focus(paneId)

@@ -79,6 +79,19 @@ afterEach(async () => {
 })
 
 describe("Pty lifecycle cleanup", () => {
+  test("persists the opaque create request id in the authoritative PTY inventory", async () => {
+    const { Pty } = await import("./index")
+    const info = await Pty.create({
+      cwd: tmpDir,
+      title: "correlated",
+      createRequestId: "request-client-a",
+    })
+
+    expect(info.createRequestId).toBe("request-client-a")
+    expect(Pty.get(info.id)?.createRequestId).toBe("request-client-a")
+    expect(Pty.list().find((row) => row.id === info.id)?.createRequestId).toBe("request-client-a")
+  })
+
   test("an unavailable native pid does not block observation or native PTY cleanup", async () => {
     const { Pty } = await import("./index")
     const events: ProcessObserverEvent[] = []

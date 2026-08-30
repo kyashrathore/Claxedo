@@ -45,6 +45,7 @@ import { GlobalNavigation } from "./global-navigation"
 import { useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
 import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
+import { terminalSessionIdForWorkspace } from "@/features/terminal/core/terminal-session-context"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -1532,9 +1533,14 @@ export function RailSidebar(props: RailSidebarProps) {
     const openTerminalCreator = () => {
       const focusedId = claxedoState.wb.selectors.focusedContent()
       const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
+      const routeId = selectedRouteId()
+      const sessionId = terminalSessionIdForWorkspace(focused, {
+        directory: input.workspaceDir,
+        workspaceRouteId: routeId,
+      })
       claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal", {
-        workspaceRouteId: selectedRouteId(),
-        ...(focused?.sessionId ? { sessionId: focused.sessionId } : {}),
+        workspaceRouteId: routeId,
+        ...(sessionId ? { sessionId } : {}),
       })
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree

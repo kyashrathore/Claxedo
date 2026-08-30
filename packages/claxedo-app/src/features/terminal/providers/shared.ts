@@ -1,6 +1,8 @@
 export type LocalPTY = {
   id: string
   sessionId?: string
+  /** Opaque create correlation only; never an authorization credential. */
+  createRequestId?: string
   title: string
   titleNumber: number
   cwd?: string
@@ -51,7 +53,7 @@ function nextNum(all: LocalPTY[]) {
 
 export function mergeCreatedTerminal(
   all: LocalPTY[],
-  info: { id: string; sessionId?: string; title?: string; cwd?: string },
+  info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string },
 ) {
   const existing = all.find((pty) => pty.id === info.id)
   if (existing) return all
@@ -61,6 +63,7 @@ export function mergeCreatedTerminal(
   return [...all, {
     id: info.id,
     ...(info.sessionId ? { sessionId: info.sessionId } : {}),
+    ...(info.createRequestId ? { createRequestId: info.createRequestId } : {}),
     title,
     titleNumber,
     cwd: info.cwd,

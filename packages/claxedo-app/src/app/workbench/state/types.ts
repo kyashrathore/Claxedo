@@ -149,6 +149,8 @@ export type ContentMeta = {
   draftProjectId?: string
   sessionId?: string
   terminalId?: string
+  /** Opaque PTY create correlation. It is never an authorization credential. */
+  terminalCreateRequestId?: string
   filePath?: string
   pageId?: string
   /** For `extension-view` content: the fully qualified user-extension view id. */

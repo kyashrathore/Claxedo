@@ -21,10 +21,11 @@ import {
   type PaneCtx,
 } from "@/features/terminal/app-ports"
 import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-surface-id"
-import { shouldMountTerminalPane, pickAdoptedPty } from "./terminal-content-policy"
+import { shouldMountTerminalPane, pickAdoptedPty, startSingleFlightPoll } from "./terminal-content-policy"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 import { terminalAgentStatusFromEventType } from "../../core/terminal-agent-status"
+import { urlRoutingEnabled } from "@/lib/runtime-mode"
 
 /** See the note on the same alias in `app/workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
@@ -99,21 +100,16 @@ function TerminalNewSurface(props: {
   const launch = (input: { directory: WorkspaceDirectoryRef; workspaceId: string; command?: string; title?: string }) => {
     const pendingId = `${PENDING_TERMINAL_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const title = input.title || "Terminal"
-    // Managed (signed) PTY create requires sessionId. Opening the New Terminal
-    // surface steals focus from the session that owned the Shell click, so read
-    // any open session in this workspace rather than the now-focused creator.
+    // A creator may carry the exact session that opened it. Never guess from
+    // another open surface: collaborators can have several sessions in one
+    // workspace and directory equality is not an ownership contract.
     const sessionId = props.meta.sessionId
-      ?? state.meta.all().find((meta) => {
-        if (!meta.sessionId) return false
-        if (meta.content?.type === "terminal") return false
-        const routeId = meta.content?.workspaceRouteId
-        if (routeId && routeId === input.workspaceId) return true
-        return (meta.directory ?? meta.content?.directory) === input.directory
-      })?.sessionId
+    const createRequestId = crypto.randomUUID()
     batch(() => {
       state.meta.patch(props.meta.id, {
         directory: input.directory,
         terminalId: pendingId,
+        terminalCreateRequestId: createRequestId,
         ...(sessionId ? { sessionId } : {}),
         content: {
           ...props.meta.content,
@@ -175,6 +171,7 @@ function TerminalContentInner(props: {
     // Solid Router navigation remounts the pane and drops the live PTY stream;
     // a quiet history replace keeps the URL aligned without tearing down xterm.
     if (oldId.startsWith("pending-")) {
+      if (!urlRoutingEnabled()) return
       window.history.replaceState(window.history.state, "", next)
       return
     }
@@ -217,15 +214,13 @@ function TerminalContentInner(props: {
   let activationTimer: ReturnType<typeof setTimeout> | undefined
   let createStarted = false
   let pendingCreateSettled = false
-  let ptyIdsBeforeCreate: Set<string> | undefined
-  let pendingPollTimer: ReturnType<typeof setInterval> | undefined
+  let pendingCreateRequestId = props.meta.terminalCreateRequestId
+  let pendingPoll: ReturnType<typeof startSingleFlightPoll> | undefined
   let disposed = false
 
   const stopPendingPoll = () => {
-    if (pendingPollTimer) {
-      clearInterval(pendingPollTimer)
-      pendingPollTimer = undefined
-    }
+    pendingPoll?.stop()
+    pendingPoll = undefined
   }
 
   const resolvePollWorkspaceId = async (dir: string) => {
@@ -239,62 +234,46 @@ function TerminalContentInner(props: {
     return workspace?.kind === "local" ? undefined : workspace?.workspaceId
   }
 
-  const claimedPtyIds = () => {
-    const claimed = new Set<string>()
-    for (const meta of state.meta.all()) {
-      if (meta.type !== "terminal" || meta.id === props.meta.id) continue
-      for (const id of state.terminal.ownedIds(meta.id)) claimed.add(id)
-      const tid = meta.terminalId ?? meta.content?.terminalId
-      if (tid?.startsWith("pty_")) claimed.add(tid)
-    }
-    return claimed
-  }
-
   const pollPendingCreateFromServer = (pendingId: string, dir: string, nextTitle: string, nextCommand?: string) => {
-    const pollOnce = () => {
+    const pollOnce = async () => {
       if (pendingCreateSettled || disposed) return
-      void (async () => {
-        const sessionId = props.meta.sessionId
-        const before = ptyIdsBeforeCreate
-        if (!before) return
-        const workspaceId = await resolvePollWorkspaceId(dir)
-        if (!workspaceId) return
-        const transport = createTransport({
-          placement: {
-            workspaceId,
-            hosting: "workspace",
-            transport: centralTransportForServer(claxedoServerUrl) !== "loopback" ? "workspace-relay" : "loopback",
-          },
-          serverUrl: claxedoServerUrl,
-          directory: workspaceId ? undefined : dir,
-          request: authFetch,
-          resolveWorkspaceRuntime: async ({ directory }) => {
-            const resolved = await resolveWorkspaceRuntime({
-              baseUrl: claxedoServerUrl,
-              request: authFetch,
-              directory,
-            })
-            if (!resolved?.kind) return null
-            return { kind: resolved.kind, workspaceId: resolved.workspaceId }
-          },
-        })
-        // List endpoint is `/api/wr/pty` (no trailing slash). A trailing `/`
-        // is routed as an empty pty id and 404s on the signed relay path.
-        const res = await transport.fetch(
-          terminalPtyApiPath(workspaceId ? { workspaceId } : { directory: dir }),
-        )
-        if (!res.ok) return
-        const body = await res.json()
-        const rows = Array.isArray(body) ? body : []
-        const adopted = pickAdoptedPty(rows, before, sessionId, claimedPtyIds())
-        if (!adopted) return
-        completePendingCreate(pendingId, adopted.id, dir, nextTitle, nextCommand)
-      })().catch(() => undefined)
+      const workspaceId = await resolvePollWorkspaceId(dir)
+      if (!workspaceId || disposed || pendingCreateSettled) return
+      const transport = createTransport({
+        placement: {
+          workspaceId,
+          hosting: "workspace",
+          transport: centralTransportForServer(claxedoServerUrl) !== "loopback" ? "workspace-relay" : "loopback",
+        },
+        serverUrl: claxedoServerUrl,
+        directory: workspaceId ? undefined : dir,
+        request: authFetch,
+        resolveWorkspaceRuntime: async ({ directory }) => {
+          const resolved = await resolveWorkspaceRuntime({
+            baseUrl: claxedoServerUrl,
+            request: authFetch,
+            directory,
+          })
+          if (!resolved?.kind) return null
+          return { kind: resolved.kind, workspaceId: resolved.workspaceId }
+        },
+      })
+      // List endpoint is `/api/wr/pty` (no trailing slash). A trailing `/`
+      // is routed as an empty pty id and 404s on the signed relay path.
+      const res = await transport.fetch(
+        terminalPtyApiPath(workspaceId ? { workspaceId } : { directory: dir }),
+      )
+      if (!res.ok || disposed || pendingCreateSettled) return
+      const body = await res.json()
+      if (disposed || pendingCreateSettled) return
+      const rows = Array.isArray(body) ? body : []
+      const adopted = pickAdoptedPty(rows, pendingCreateRequestId)
+      if (!adopted) return
+      completePendingCreate(pendingId, adopted.id, dir, nextTitle, nextCommand)
     }
 
     stopPendingPoll()
-    pollOnce()
-    pendingPollTimer = setInterval(pollOnce, 400)
+    pendingPoll = startSingleFlightPoll(pollOnce, 400)
   }
 
   const completePendingCreate = (
@@ -304,13 +283,14 @@ function TerminalContentInner(props: {
     nextTitle: string,
     nextCommand?: string,
   ) => {
-    if (pendingCreateSettled) return
+    if (pendingCreateSettled || disposed) return
     pendingCreateSettled = true
     stopPendingPoll()
     setCreateError(undefined)
     terminal.ensure({
       id: createdId,
       ...(props.meta.sessionId ? { sessionId: props.meta.sessionId } : {}),
+      ...(pendingCreateRequestId ? { createRequestId: pendingCreateRequestId } : {}),
       title: nextTitle || "Terminal",
       cwd: dir,
       ...(nextCommand ? { initialCommand: nextCommand } : {}),
@@ -318,6 +298,7 @@ function TerminalContentInner(props: {
     state.terminal.own(props.meta.id, createdId)
     batch(() => {
       state.meta.patch(props.meta.id, {
+        terminalCreateRequestId: undefined,
         terminalId: createdId,
         content: {
           ...props.meta.content,
@@ -387,11 +368,22 @@ function TerminalContentInner(props: {
 
     createStarted = true
     pendingCreateSettled = false
-    ptyIdsBeforeCreate = new Set(terminal.all().map((p) => p.id))
     const consumed = queued ? state.terminal.consumeCreateForContent(props.meta.id) : undefined
     const nextCommand = consumed?.command ?? command()
     const nextTitle = consumed?.title ?? title()
     const previousPtyId = consumed?.previousPtyId
+    if (!pendingCreateRequestId) {
+      pendingCreateRequestId = crypto.randomUUID()
+      state.meta.patch(props.meta.id, {
+        terminalCreateRequestId: pendingCreateRequestId,
+        content: {
+          ...props.meta.content,
+          type: "terminal",
+          directory: dir,
+          terminalId: tid,
+        },
+      })
+    }
 
     setCreateError(undefined)
     const created = terminal.new({
@@ -399,6 +391,7 @@ function TerminalContentInner(props: {
       title: nextTitle,
       previousPtyId,
       sessionId: props.meta.sessionId,
+      createRequestId: pendingCreateRequestId,
     })
     if (!created) {
       createStarted = false
@@ -410,6 +403,7 @@ function TerminalContentInner(props: {
 
     void created
       .then((createdId) => {
+        if (disposed) return
         if (!createdId) {
           createStarted = false
           pendingCreateSettled = false
@@ -420,7 +414,7 @@ function TerminalContentInner(props: {
         completePendingCreate(tid, createdId, dir, nextTitle || "Terminal", nextCommand)
       })
       .catch((error) => {
-        if (pendingCreateSettled) return
+        if (pendingCreateSettled || disposed) return
         setCreateError(error instanceof Error ? error.message : "Terminal failed to start.")
       })
   })
@@ -429,9 +423,7 @@ function TerminalContentInner(props: {
     const tid = terminalId()
     const dir = directory()
     if (!tid?.startsWith("pending-") || !dir || !createStarted || pendingCreateSettled) return
-    const before = ptyIdsBeforeCreate
-    if (!before) return
-    const adopted = pickAdoptedPty(terminal.all(), before, props.meta.sessionId, claimedPtyIds())
+    const adopted = pickAdoptedPty(terminal.all(), pendingCreateRequestId)
     if (!adopted) return
     stopPendingPoll()
     completePendingCreate(tid, adopted.id, dir, title(), command())
