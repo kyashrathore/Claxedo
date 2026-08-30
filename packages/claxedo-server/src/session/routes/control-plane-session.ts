@@ -156,9 +156,9 @@ async function authorizeCentralSessionRead(
   await requireAuthority(services).authorizeSessionRead(auth, { sessionId, workspaceId })
 }
 
-function workspaceTransportCapabilities() {
+function workspaceTransportCapabilities(transport: string) {
   return {
-    transport: "claude-acp",
+    transport,
     abort: true,
     reconnect: false,
     replay: true,
@@ -260,7 +260,7 @@ function promptModel(input: unknown) {
 
 /**
  * Harnesses dispatchable on the central hybrid route today. `pi` is the
- * model-backed central harness; codex-acp/opencode sandbox harnesses join
+ * model-backed central harness; sandbox-backed harnesses join
  * when sandbox-session dispatch lands.
  */
 const HYBRID_HARNESSES = new Set(["pi"])
@@ -555,7 +555,8 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           sessionId,
           workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
         })
-        return c.json(workspaceTransportCapabilities())
+        const transport = meta?.tags.find((tag) => tag.startsWith("harness:"))?.slice("harness:".length) || "opencode"
+        return c.json(workspaceTransportCapabilities(transport))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err

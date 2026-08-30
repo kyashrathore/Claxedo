@@ -13,7 +13,7 @@ import readline from "node:readline/promises"
  * (--yes skips only the final prompt, not the summary).
  *
  * v1 scope: the Codex subscription bundle (~/.codex/auth.json, chatgpt mode)
- * → provider `codex-acp` on the remote credential registry. Claude/Gemini
+ * → provider `codex-app-server` on the remote credential registry. Claude/Gemini
  * discovery lands later.
  */
 
@@ -95,7 +95,7 @@ export async function creds(args: string[]) {
   }
 
   console.log("Found local credentials:")
-  console.log(`  provider:  codex-acp (Codex / ChatGPT subscription)`)
+  console.log(`  provider:  codex-app-server (Codex / ChatGPT subscription)`)
   console.log(`  account:   ${bundle.tokens.account_id}`)
   console.log(`  refreshed: ${bundle.last_refresh}`)
   console.log("")
@@ -109,7 +109,7 @@ export async function creds(args: string[]) {
 
   if (!options.yes) {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
-    const answer = (await rl.question("Sync codex-acp to this instance? [y/N] ")).trim().toLowerCase()
+    const answer = (await rl.question("Sync codex-app-server to this instance? [y/N] ")).trim().toLowerCase()
     rl.close()
     if (answer !== "y" && answer !== "yes") {
       console.log("Aborted; nothing sent.")
@@ -125,7 +125,7 @@ export async function creds(args: string[]) {
       ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
     },
     body: JSON.stringify({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "managed",
       label: "Codex subscription (claxedo creds sync)",
@@ -152,5 +152,5 @@ export async function creds(args: string[]) {
     throw new Error(`Sync failed: ${response.status} ${body.slice(0, 300)}`)
   }
   const result = await response.json().catch(() => undefined) as { credential?: { id?: string; provider_id?: string } } | undefined
-  console.log(`Synced codex-acp → ${remote} (credential ${result?.credential?.id ?? "stored"}).`)
+  console.log(`Synced codex-app-server → ${remote} (credential ${result?.credential?.id ?? "stored"}).`)
 }

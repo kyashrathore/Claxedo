@@ -9,7 +9,6 @@ import { randomUUID } from "crypto"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
-const prevAcpDir = process.env.CLAXEDO_ACP_DIR
 const prevDeploymentMode = process.env.CLAXEDO_DEPLOYMENT_MODE
 const prevWorkspaceAuthorityUrl = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
 const prevControlPlaneServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
@@ -63,7 +62,6 @@ describe("agent config", () => {
     closeSqliteHandles()
     mod.configureAgentConfig({})
     await fs.rm(root, { recursive: true, force: true })
-    delete process.env.CLAXEDO_ACP_DIR
   })
 
   afterAll(async () => {
@@ -71,8 +69,6 @@ describe("agent config", () => {
     mod.configureAgentConfig({})
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = prev
-    if (prevAcpDir === undefined) delete process.env.CLAXEDO_ACP_DIR
-    else process.env.CLAXEDO_ACP_DIR = prevAcpDir
     if (prevDeploymentMode === undefined) delete process.env.CLAXEDO_DEPLOYMENT_MODE
     else process.env.CLAXEDO_DEPLOYMENT_MODE = prevDeploymentMode
     if (prevWorkspaceAuthorityUrl === undefined) delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
@@ -88,98 +84,18 @@ describe("agent config", () => {
     expect(mod.defaultHarness({ mcp: {}, auth: {} })).toEqual({ id: "opencode", access: "native" })
   })
 
-  test("infers the codex binary when codex-acp is selected without an explicit path", () => {
+  test("preserves an operator ACP connection's explicit binary path", () => {
     const runner = mod.defaultHarness({
       mcp: {},
       auth: {},
-      runner: { type: "codex-acp" },
+      harness: {
+        id: "openclaw",
+        access: "acp",
+        connection: { kind: "process", binary: "/custom/openclaw", args: ["acp"] },
+      },
     })
-    expect(runner).toMatchObject({ id: "codex", access: "acp" })
-    expect(processBinary(runner)).toContain("codex-acp")
-  })
-
-  test("uses injected ACP directory instead of ambient CLAXEDO_ACP_DIR", async () => {
-    const ambient = path.join(root, "ambient-acp")
-    const injected = path.join(root, "injected-acp")
-    await fs.mkdir(ambient, { recursive: true })
-    await fs.mkdir(injected, { recursive: true })
-    await fs.writeFile(path.join(ambient, "codex-acp"), "")
-    await fs.writeFile(path.join(injected, "codex-acp"), "")
-    process.env.CLAXEDO_ACP_DIR = ambient
-
-    expect(
-      processBinary(mod.defaultHarness({
-        mcp: {},
-        auth: {},
-        runner: { type: "codex-acp" },
-      })),
-    ).not.toBe(path.join(ambient, "codex-acp"))
-
-    expect(
-      processBinary(mod.defaultHarness(
-        {
-          mcp: {},
-          auth: {},
-          runner: { type: "codex-acp" },
-        },
-        { acpDir: injected },
-      )),
-    ).toBe(path.join(injected, "codex-acp"))
-
-    mod.configureAgentConfig({ acpDir: injected })
-    expect(
-      processBinary(mod.defaultHarness({
-        mcp: {},
-        auth: {},
-        runner: { type: "codex-acp" },
-      })),
-    ).toBe(path.join(injected, "codex-acp"))
-  })
-
-  test("resolves the packaged Codex ACP executable name on Windows", async () => {
-    const injected = path.join(root, "windows-acp")
-    await fs.mkdir(injected, { recursive: true })
-    await fs.writeFile(path.join(injected, "codex-acp.exe"), "")
-
-    expect(
-      processBinary(mod.defaultHarness(
-        {
-          mcp: {},
-          auth: {},
-          runner: { type: "codex-acp" },
-        },
-        { acpDir: injected, platform: "win32" },
-      )),
-    ).toBe(path.join(injected, "codex-acp.exe"))
-  })
-
-  test("infers a cursor binary when cursor-acp is selected without an explicit path", () => {
-    const runner = mod.defaultHarness({
-      mcp: {},
-      auth: {},
-      runner: { type: "cursor-acp" },
-    })
-    expect(runner).toMatchObject({ id: "cursor", access: "acp" })
-    expect(processBinary(runner)).toBeTruthy()
-  })
-
-  test("infers claude-agent-acp binary for claude-acp type", () => {
-    const runner = mod.defaultHarness({
-      mcp: {},
-      auth: {},
-      runner: { type: "claude-acp" },
-    })
-    expect(runner).toMatchObject({ id: "claude", access: "acp" })
-    expect(processBinary(runner)).toContain("claude-agent-acp")
-  })
-
-  test("preserves explicit binary path", () => {
-    const runner = mod.defaultHarness({
-      mcp: {},
-      auth: {},
-      runner: { type: "codex-acp", binary: "/custom/codex" },
-    })
-    expect(processBinary(runner)).toBe("/custom/codex")
+    expect(runner).toMatchObject({ id: "openclaw", access: "acp" })
+    expect(processBinary(runner)).toBe("/custom/openclaw")
   })
 
   test("native runners do not inherit ACP binary defaults", () => {
@@ -195,16 +111,18 @@ describe("agent config", () => {
     })).toEqual({ id: "codex", access: "native" })
   })
 
-  test("migrates legacy runner model to top-level config model", async () => {
+  test("loads a canonical operator ACP harness and model", async () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({
       mcp: {},
       auth: {},
-      runner: { type: "claude-acp", model: "claude-opus-4-6" },
+      harness: { id: "openclaw", access: "acp" },
+      model: "operator-default",
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
     }))
     const config = await mod.loadUserConfig()
-    expect(config.harness).toMatchObject({ id: "claude", access: "acp" })
-    expect(config.model).toBe("claude-opus-4-6")
+    expect(config.harness).toEqual({ id: "openclaw", access: "acp" })
+    expect(config.model).toBe("operator-default")
   })
 
   test("opencode runner has no binary or model", () => {
@@ -267,9 +185,10 @@ describe("agent config", () => {
           env: { PORT: "3000" },
         },
       },
-      harness: { id: "claude" as const, access: "acp" as const },
-      model: "claude-opus-4-6",
-      auth: { "claude-acp": "sk-ant-test" },
+      harness: { id: "openclaw" as const, access: "acp" as const },
+      model: "operator-default",
+      auth: { "claude-sdk": "sk-ant-test" },
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       sandbox_driver: { default_driver: "daytona" as const },
     }
     await mod.saveUserConfig(original)
@@ -348,44 +267,35 @@ describe("agent config", () => {
   test("snapshot includes version, mcp, harnesses, auth, and no command side channel", async () => {
     await mod.saveUserConfig({
       mcp: { "test-mcp": { type: "remote", url: "http://localhost:9000" } },
-      runner: { type: "codex-acp" },
-      auth: { "codex-acp": "sk-test" },
+      harness: { id: "openclaw", access: "acp" },
+      acp: { openclaw: { label: "OpenClaw", command: ["/opt/openclaw", "acp"] } },
+      auth: { "codex-app-server": "sk-test" },
     })
     await mod.saveCommand("triage", "Triage $ARGUMENTS")
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.version).toBe(2)
     expect(snap.mcp["test-mcp"]).toBeDefined()
-    expect(snap.harnesses[0]).toMatchObject({ id: "codex", access: "acp" })
-    expect(snap.auth["codex-acp"]).toBe("sk-test")
+    expect(snap.harnesses[0]).toMatchObject({ id: "openclaw", access: "acp" })
+    expect(snap.auth["codex-app-server"]).toBe("sk-test")
     expect("commands" in snap).toBe(false)
     expect(await mod.listCommands()).toContainEqual({ name: "triage", content: "Triage $ARGUMENTS" })
   })
 
-  test("snapshot aliases OpenAI auth into codex-acp for runtime consumers", async () => {
+  test("snapshot does not alias native provider auth into operator ACP identities", async () => {
     await mod.saveUserConfig({
       mcp: {},
-      runner: { type: "codex-acp" },
+      harness: { id: "openclaw", access: "acp" },
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       auth: {
         openai: "sk-openai-managed",
       },
     })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.auth.openai).toBe("sk-openai-managed")
-    expect(snap.auth["codex-acp"]).toBe("sk-openai-managed")
+    expect(snap.auth["acp:openclaw"]).toBeUndefined()
   })
 
-  test("snapshot aliases cursor-acp auth into cursor-sdk for runtime consumers", async () => {
-    await mod.saveUserConfig({
-      mcp: {},
-      runner: { type: "cursor-acp" },
-      auth: { "cursor-acp": "key_test" },
-    })
-    const snap = await mod.getRuntimeConfigSnapshot()
-    expect(snap.auth["cursor-acp"]).toBe("key_test")
-    expect(snap.auth["cursor-sdk"]).toBe("key_test")
-  })
-
-  test("snapshot does not alias plain OpenCode oauth auth into codex-acp", async () => {
+  test("snapshot preserves plain OpenCode OAuth without ACP aliases", async () => {
     await mod.saveUserConfig({
       mcp: {},
       runner: { type: "opencode" },
@@ -407,7 +317,7 @@ describe("agent config", () => {
         expires: 1_790_000_000_000,
       }),
     )
-    expect(snap.auth["codex-acp"]).toBeUndefined()
+    expect(Object.keys(snap.auth).some((key) => key.startsWith("acp:"))).toBe(false)
   })
 
   test("snapshot defaults harness to opencode when no harness configured", async () => {
@@ -474,7 +384,8 @@ describe("agent config", () => {
   test("snapshot is accepted by the current workspace runtime validator", async () => {
     await mod.saveUserConfig({
       mcp: {},
-      runner: { type: "claude-acp" },
+      harness: { id: "openclaw", access: "acp" },
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       auth: {},
     })
     const snap = await mod.getRuntimeConfigSnapshot()
@@ -486,7 +397,8 @@ describe("agent config", () => {
     await fs.mkdir(project, { recursive: true })
     await mod.saveUserConfig({
       mcp: {},
-      runner: { type: "claude-acp" },
+      harness: { id: "openclaw", access: "acp" },
+      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       auth: {},
     })
     const snap = await mod.getRuntimeConfigSnapshot(undefined, {

@@ -36,6 +36,7 @@ export type {
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData, FIRST_TURN_ERROR_CLASSES } from "./first-turn-error"
 export type { FirstTurnErrorClass } from "./first-turn-error"
+export { defaultSessionModel, resolveSessionModel } from "./session-model"
 export {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
@@ -56,7 +57,6 @@ export {
   harnessDefinition,
   harnessKey,
   isAcpConnectionId,
-  isAcpHarnessId,
   isAgentHarnessAccess,
   isAgentHarnessId,
   normalizeAgentHarnessTransport,
@@ -73,9 +73,7 @@ export {
 export type { SdkModelCatalog, SdkModelEntry, SdkModelId } from "./sdk-model-catalog"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
-export { bundledAcpBinary } from "./harnesses/acp/default-binaries"
 export type {
-  AcpHarnessId,
   AgentHarnessAccess,
   AgentHarnessDefinition,
   AgentHarnessId,

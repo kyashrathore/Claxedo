@@ -31,8 +31,6 @@ import {
 } from "@claxedo/agent-event-runtime"
 import {
   createAcpEventTranslator,
-  classifyAcpSubagentUpdate,
-  type AcpSubagentObservation,
   translateStopReason,
 } from "@claxedo/agent-event-runtime/harnesses/acp"
 import {
@@ -63,6 +61,7 @@ import type {
   AbortResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
+  AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
   AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
@@ -77,13 +76,8 @@ import { ACP_RECOVER } from "./recovery"
 import { recovering } from "../../status"
 import { toAcpMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { createTurnEventProjector } from "../shared/turn-projection"
-import { createChildEventRouter, type ChildProjectionTarget } from "../shared/child-event-routing"
+import { createChildEventRouter } from "../shared/child-event-routing"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
-import {
-  createMemorySubagentAdmissionStore,
-  createSubagentAdmissionBoundary,
-  type SubagentAdmissionStore,
-} from "../../subagent-admission"
 import { requireWorkspaceDirectory } from "../../target"
 import {
   createStdioACPTransport,
@@ -93,9 +87,7 @@ import {
 import { ACPProcess, type SessionUpdate } from "./process"
 import {
   envFromConfig,
-  errorCode,
   errorMessage,
-  JSON_RPC_INTERNAL_ERROR,
   initializeTimeoutMs,
   mergeAcpEnv,
   messageUsage,
@@ -108,7 +100,6 @@ import {
   sameAcpMcp,
 } from "./helpers"
 import { maybeAutoTitle } from "./title"
-import { codexAcpLaunch } from "./codex-config"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import {
   observeAgentProcess,
@@ -122,7 +113,7 @@ export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
 export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   binary: string
-  harness?: string
+  harness: string
   args?: string[]
   env?: ACPTransportEnv
   /**
@@ -136,14 +127,6 @@ export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createStore?: (storeRoot?: string) => AcpRuntimeStore
   eventHub?: RuntimeEventHub
   createTransport?: ACPTransportFactory
-  subagentAdmissionStore?: SubagentAdmissionStore
-  materializeSubagent?: (input: {
-    parentSessionId: string
-    parentAgentSessionId: string
-    directory: string
-    event: import("@claxedo/agent-event-runtime").SubagentUpdatedEvent
-    prompt: Pick<PromptInput, "userMessageId" | "agent" | "model" | "variant">
-  }) => Promise<ChildProjectionTarget | undefined> | ChildProjectionTarget | undefined
 }
 
 export {
@@ -238,19 +221,8 @@ function executableBasename(input: string) {
   return input.split(/[\\/]/).at(-1) || "agent"
 }
 
-function unrestorable(harness: string, err: unknown) {
-  if (missing(err)) return true
-  // Codex ACP reports a generic internal error when a session created by a
-  // disposed process cannot be resumed. This happens safely before prompt
-  // submission, so replace the agent-side session and preserve the durable
-  // Claxedo Session identity.
-  //
-  // Matched on the JSON-RPC code, NOT on the rendered message: codex-acp routes
-  // its failures through `RequestError.internalError(details)`, so the message
-  // carries whatever detail text it had and an equality test against
-  // "Internal error" stops matching precisely when a detail is present.
-  if (harness === "codex" && errorCode(err) === JSON_RPC_INTERNAL_ERROR) return true
-  return harness === "cursor" && errorMessage(err).includes("Invalid params")
+function unrestorable(err: unknown) {
+  return missing(err)
 }
 
 // ── AcpHarnessAdapter ────────────────────────────────────────────────────────────────
@@ -271,7 +243,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   private permissionOwners = new Map<string, ACPProcess>()
   private probe: ProbeEntry | null = null
   private configRestartPending = false
-  private subagentAdmissions?: SubagentAdmissionStore
 
   constructor(private readonly options: AcpHarnessAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
@@ -280,20 +251,12 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   }
 
   private harnessId(): string {
-    return this.options?.harness ?? "claude"
-  }
-
-  private acpClient() {
-    return `${this.harnessId()}-acp`
+    return this.options.harness
   }
 
   private lifecycle(): SessionTurnLifecycle<ActiveAcpTurn> {
     this.turnLifecycle ??= createSessionTurnLifecycle<ActiveAcpTurn>()
     return this.turnLifecycle
-  }
-
-  private subagentAdmissionStore() {
-    return this.options.subagentAdmissionStore ?? (this.subagentAdmissions ??= createMemorySubagentAdmissionStore())
   }
 
   private processMap() {
@@ -452,9 +415,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   }
 
   private make(directory: string, role: "harness" | "probe", dead: () => void = () => {}) {
-    const launch = this.harnessId() === "codex"
-      ? codexAcpLaunch(this.commandArgs(), this.currentEnv)
-      : { args: this.commandArgs(), env: this.currentEnv }
+    const launch = { args: this.options.args ?? [], env: this.currentEnv }
     const ownerId = `acp-${role}:${randomUUID()}`
     const launchId = randomUUID()
     return new ACPProcess(
@@ -532,28 +493,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         handles.forEach((handle) => handle.exit(event))
       },
     }
-  }
-
-  /**
-   * `cursor` prepends its `acp` SUBCOMMAND, which is not optional and not a
-   * caller's choice.
-   *
-   * Claude and Codex ship dedicated adapter binaries that speak ACP the moment
-   * they start. Cursor does not: `cursor-agent` is a general CLI whose default
-   * behaviour is an interactive TUI, and `cursor-agent acp` is the hidden
-   * subcommand that turns it into an ACP server. Spawning it without the
-   * subcommand gets a TUI on a pipe, which hangs the handshake rather than
-   * failing — so this leads `options.args` instead of being merged with them,
-   * and a caller passing args cannot displace it.
-   */
-  private commandArgs() {
-    const supplied = this.options.args ?? []
-    // Skipped when the caller already leads with it, so a config or host that
-    // still supplies `acp` explicitly gets one subcommand rather than two.
-    const subcommand = this.harnessId() === "cursor" && supplied[0] !== "acp" ? ["acp"] : []
-    const args = [...subcommand, ...supplied]
-    if (this.harnessId() !== "codex" || !this.currentModel || this.currentModel === "default") return args
-    return [...args, "-c", `model="${this.currentModel}"`]
   }
 
   private async getOrSpawnProcessForKey(key: ACPProcessKey, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
@@ -749,13 +688,13 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       replay: true,
       permissions: true,
       questions: false,
-      todos: true,
+      todos: false,
       commands: false,
       fork: this.supportsFork(context?.sessionId),
       revert: false,
       unrevert: false,
       configOptions: true,
-      subagents: true,
+      subagents: false,
     })
   }
 
@@ -788,7 +727,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       harness: {
         id: this.harnessId(),
         access: "acp",
-        connection: { kind: "process", binary: this.options.binary },
       },
       ...(this.currentModel ? { model: this.cfg() } : {}),
       variant: null,
@@ -817,7 +755,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       harness: {
         id: this.harnessId(),
         access: "acp",
-        connection: { kind: "process", binary: this.options.binary },
       },
       ...(this.currentModel ? { model: this.cfg() } : {}),
       variant: null,
@@ -1014,7 +951,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const eventRuntime = createAgentEventRuntime({
       harness: this.harnessId(),
       threadId: agentSessionId,
-      adapter: createAcpEventTranslator({ client: this.acpClient() }),
+      adapter: createAcpEventTranslator({ client: this.harnessId() }),
     })
 
     const push = (event: CompatEvent) => {
@@ -1063,156 +1000,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         payload,
       }),
     })
-    const admissionStore = this.store.admit && this.store.markPublished
-      ? {
-          admit: (input: Parameters<NonNullable<AcpRuntimeStore["admit"]>>[0]) => this.store.admit!(input),
-          markPublished: (parentSessionId: string, observationId: string) => this.store.markPublished!(parentSessionId, observationId),
-        }
-      : this.subagentAdmissionStore()
-    const subagentAdmission = createSubagentAdmissionBoundary({
-      store: admissionStore,
-      publish: (_parentSessionId, event) => router.project(event, {
-        dir: "in",
-        method: "sessionUpdate.subagent",
-        frame: event,
-      }),
-    })
-    const pendingSubagentUpdates = new Set<Promise<void>>()
-    const subagentByToolCall = new Map<string, AcpSubagentObservation>()
-    const childByToolCall = new Map<string, {
-      sessionId: string
-      agentSessionId: string
-      target: ChildProjectionTarget
-      started: boolean
-      finished: boolean
-    }>()
-    const childFor = (observation: AcpSubagentObservation) => {
-      if (observation.transcript.kind === "none" || this.options.materializeSubagent) return
-      const existing = childByToolCall.get(observation.toolCallId)
-      if (existing) return existing
-      const sessionId = randomUUID()
-      const agentSessionId = `unbound:${sessionId}`
-      const target = {
-        sessionId,
-        getAgentSessionId: () => agentSessionId,
-        assistantMessageId: randomUUID(),
-        created: Date.now(),
-        input: {
-          userMessageId: randomUUID(),
-          agent: input.agent,
-          model: input.model,
-          ...(input.variant ? { variant: input.variant } : {}),
-        },
-      } satisfies ChildProjectionTarget
-      const child = { sessionId, agentSessionId, target, started: false, finished: false }
-      childByToolCall.set(observation.toolCallId, child)
-      return child
-    }
-    const materializeChild = (
-      child: NonNullable<ReturnType<typeof childFor>>,
-      observation: AcpSubagentObservation,
-      correlationKey: string,
-    ) => {
-      if (!child.started) {
-        child.started = true
-        this.store.bindSession({
-          sessionId: child.sessionId,
-          parentSessionId: id,
-          directory,
-          title: observation.description ?? observation.label ?? "Subagent",
-          agentSessionId: child.agentSessionId,
-        })
-        const parentConfig = this.store.getSessionConfig(id)
-        if (parentConfig) this.store.updateSessionConfig(child.sessionId, parentConfig)
-        this.store.startTurn({
-          sessionId: child.sessionId,
-          agentSessionId: child.agentSessionId,
-          userMessageId: child.target.input.userMessageId,
-          assistantMessageId: child.target.assistantMessageId,
-          agent: child.target.input.agent,
-          model: child.target.input.model,
-          parts: observation.description ? [{ type: "text", text: observation.description }] : [],
-          ...(child.target.input.variant ? { variant: child.target.input.variant } : {}),
-        })
-      }
-      router.associate(correlationKey, child.target)
-      if (child.finished || !["completed", "failed", "killed", "interrupted"].includes(observation.status ?? "")) return
-      child.finished = true
-      this.store.finishTurn?.({
-        sessionId: child.sessionId,
-        assistantMessageId: child.target.assistantMessageId,
-        outcome: observation.status === "failed"
-          ? { status: "failed", completedAt: Date.now(), error: observation.label ?? "Subagent failed" }
-          : observation.status === "completed"
-            ? { status: "completed", completedAt: Date.now() }
-            : { status: "cancelled", completedAt: Date.now(), reason: observation.status ?? "interrupted" },
-      })
-    }
-    const admitSubagent = (
-      observation: AcpSubagentObservation,
-      correlationKey: string,
-      frame: unknown,
-    ) => {
-      const child = childFor(observation)
-      const admitted = {
-        ...observation,
-        harnessExecutionId: agentSessionId,
-        ...(child ? { childSessionId: child.sessionId } : {}),
-      }
-      subagentByToolCall.set(observation.toolCallId, observation)
-      return subagentAdmission.admit(id, admitted).then(async (event) => {
-        if (child) {
-          materializeChild(child, observation, correlationKey)
-          return
-        }
-        if (event.transcript?.kind === "none") return
-        const target = await this.options.materializeSubagent?.({
-          parentSessionId: id,
-          parentAgentSessionId: agentSessionId,
-          directory,
-          event,
-          prompt: input,
-        })
-        if (target) router.associate(correlationKey, target)
-      }).catch((err) => router.project({
-        type: "diagnostic",
-        diagnostic: {
-          code: "acp_subagent_admission_failed",
-          message: errorMessage(err),
-          severity: "warn",
-          source: "acp-adapter",
-        },
-      }, {
-        dir: "in",
-        method: "sessionUpdate.subagent.error",
-        frame,
-      }))
-    }
-    const scheduleSubagentUpdate = (update: SessionUpdate) => {
-      const toolCallId = "toolCallId" in update ? update.toolCallId : undefined
-      const classified = classifyAcpSubagentUpdate(
-        this.acpClient(),
-        update,
-        toolCallId ? subagentByToolCall.get(toolCallId) : undefined,
-      )
-      if (!classified || classified.kind === "child") return classified
-      const task = admitSubagent(classified.observation, classified.correlationKey, update)
-      pendingSubagentUpdates.add(task)
-      void task.finally(() => pendingSubagentUpdates.delete(task))
-      return classified
-    }
-    const completeForegroundSubagents = () => Promise.all([...subagentByToolCall.values()].flatMap((observation) => {
-      if (observation.mode === "background") return []
-      if (["completed", "failed", "killed", "interrupted"].includes(observation.status ?? "")) return []
-      const completed = {
-        ...observation,
-        observationId: `${observation.toolCallId}:prompt:completed`,
-        status: "completed" as const,
-      }
-      subagentByToolCall.set(observation.toolCallId, completed)
-      return [admitSubagent(completed, observation.toolCallId, completed)]
-    }))
-
     const wait = () =>
       new Promise<void>((resolve) => {
         if (queue.length > 0 || promptDone) resolve()
@@ -1258,7 +1045,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         try {
           await bound("ACP resume", proc.resumeSession(agentSessionId, directory))
         } catch (err) {
-          if (!unrestorable(this.harnessId(), err)) throw err
+          if (!unrestorable(err)) throw err
           await replace()
         }
       }
@@ -1271,7 +1058,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       try {
         await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
       } catch (err) {
-        if (!unrestorable(this.harnessId(), err)) throw err
+        if (!unrestorable(err)) throw err
         await replace()
         await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
       }
@@ -1285,7 +1072,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
     if (!promptError) {
       const forward = (update: SessionUpdate) => {
-        const subagent = scheduleSubagentUpdate(update)
         const result = eventRuntime.ingest({
           source: "acp.jsonrpc",
           method: "session/update",
@@ -1296,10 +1082,8 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
-          }, subagent?.kind === "child"
-            ? { kind: "child", correlationKey: subagent.correlationKey }
-            : { kind: "parent" })
-          if (subagent?.kind === "child" || runtimeEvent.type !== "step-start") continue
+          }, { kind: "parent" })
+          if (runtimeEvent.type !== "step-start") continue
           assistantMsgId = router.assistantMessageId()
           created = router.created()
         }
@@ -1341,14 +1125,12 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           // The PROMPT turn runs for as long as the model thinks/streams — it
           // must use the prompt timeout (5 min default), NOT the 10s
           // new-session handshake timeout, which cancelled every turn slower
-          // than 10s (codex with reasoning models never survived it).
+          // than 10s.
           const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
           // Prompt-result usage is the ONLY meterable usage on this rail:
           // mid-turn `usage_update` notifications carry a context meter, not
-          // token categories. Semantics verified against the pinned agents:
-          // claude-agent-acp returns per-turn usage (its accumulator resets on
-          // turn activation); codex-acp returns only the LAST API request's
-          // usage, so its multi-request turns undercount until fixed upstream.
+          // token categories. The ACP agent is authoritative for the final
+          // per-turn usage payload.
           const usableUsage = result.usage && (
             result.usage.totalTokens > 0 ||
             result.usage.inputTokens > 0 ||
@@ -1407,7 +1189,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
             })
             push(event)
           }
-          await completeForegroundSubagents()
           stop(result.stopReason)
         } catch (err) {
           proc.permissionPushers.delete(agentSessionId)
@@ -1462,7 +1243,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       }
     } finally {
       await promptPromise
-      await Promise.allSettled([...pendingSubagentUpdates])
       router.dispose()
       this.lifecycle().delete(id, turn)
     }
@@ -1889,13 +1669,24 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  readRuntimeHealth(directory: string): AgentHarnessAdapterHealth {
+  readRuntimeHealth(directory: string, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth {
     directory = requireWorkspaceDirectory(directory)
     const recovering = (this.store.listSessions(directory) as Array<{
       id: string
       status?: string | null
       recovery_error?: string | null
-    }>).filter((session) => session.status === "recovering")
+      config?: { harness?: SessionConfig["harness"] }
+    }>).filter((session) => {
+      if (context?.sessionId && session.id !== context.sessionId) return false
+      if (session.status !== "recovering") return false
+      // RuntimeStore is shared by every harness in a workspace. Health belongs
+      // to this adapter only: an old native recovery (or another ACP
+      // connection) must not degrade the active operator ACP. Persistent
+      // stores project config on the list row; the config lookup keeps the same
+      // contract for in-memory/custom stores without inventing ownership.
+      const harness = session.config?.harness ?? this.store.getSessionConfig(session.id)?.harness
+      return harness?.id === this.harnessId() && harness.access === "acp"
+    })
     if (recovering.length > 0) {
       return {
         status: "degraded",

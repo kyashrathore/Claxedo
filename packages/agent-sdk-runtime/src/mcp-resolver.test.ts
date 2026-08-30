@@ -64,12 +64,10 @@ describe("mcp resolver", () => {
   })
 
   test("maps harness identities to MCP agents through harness metadata", () => {
-    expect(harnessAgent("claude-acp")).toBe("claude")
     expect(harnessAgent("claude")).toBe("claude")
-    expect(harnessAgent("codex-acp")).toBe("codex")
     expect(harnessAgent("codex")).toBe("codex")
-    expect(harnessAgent("cursor-acp")).toBe("cursor")
     expect(harnessAgent("cursor")).toBe("cursor")
     expect(harnessAgent("opencode")).toBe("opencode")
+    expect(harnessAgent("acp:openclaw")).toBeNull()
   })
 })

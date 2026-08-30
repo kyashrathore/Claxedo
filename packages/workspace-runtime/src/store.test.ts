@@ -384,7 +384,7 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("migrates legacy runner columns into harness session config fields", () => {
+  it("does not reinterpret removed first-party ACP runner identities", () => {
     const store = new RuntimeStore(tmp())
     db(store).exec("ALTER TABLE session ADD COLUMN runner_type TEXT")
     db(store).exec("ALTER TABLE session ADD COLUMN runner_binary TEXT")
@@ -407,22 +407,7 @@ describe("RuntimeStore", () => {
 
     ;(store as unknown as { migrateLegacyRunnerColumns(): void }).migrateLegacyRunnerColumns()
 
-    assert.deepEqual(store.getSessionConfig("legacy"), {
-      harness: {
-        id: "claude",
-        access: "acp",
-        connection: {
-          kind: "process",
-          binary: "/bin/claude-agent-acp",
-        },
-      },
-      model: {
-        providerID: "claude-acp",
-        modelID: "sonnet",
-      },
-      variant: null,
-      agent: null,
-    })
+    assert.equal(store.getSessionConfig("legacy"), null)
   })
 
   it("journals before projecting so replay recovers when projection fails", () => {
@@ -2072,18 +2057,18 @@ describe("RuntimeStore", () => {
       createdAt: 1,
     })
     first.updateSessionConfig("s1", {
-      runner: {
-        type: "claude-acp",
-        binary: "/tmp/claude-agent-acp",
-        model: "sonnet",
-        transport: "streamable-http",
-        url: "http://127.0.0.1:7331/acp",
-        headers: {
-          Authorization: "Bearer test-token",
+      harness: {
+        id: "openclaw",
+        access: "acp",
+        connection: {
+          kind: "remote",
+          transport: "streamable-http",
+          url: "http://127.0.0.1:7331/acp",
+          headers: { Authorization: "Bearer test-token" },
         },
       },
       model: {
-        providerID: "claude-acp",
+        providerID: "acp:openclaw",
         modelID: "sonnet",
       },
       variant: "max",
@@ -2092,7 +2077,7 @@ describe("RuntimeStore", () => {
 
     const expectedConfig = {
       harness: {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "remote",
@@ -2104,7 +2089,7 @@ describe("RuntimeStore", () => {
         },
       },
       model: {
-        providerID: "claude-acp",
+        providerID: "acp:openclaw",
         modelID: "sonnet",
       },
       variant: "max",
@@ -2151,16 +2136,20 @@ describe("RuntimeStore", () => {
       createdAt: 1,
     })
     first.updateSessionConfig("s1", {
-      runner: {
-        type: "claude-acp",
-        transport: "http",
-        url: "http://127.0.0.1:7331/acp",
+      harness: {
+        id: "openclaw",
+        access: "acp",
+        connection: {
+          kind: "remote",
+          transport: "http",
+          url: "http://127.0.0.1:7331/acp",
+        },
       },
     } as unknown as Parameters<RuntimeStore["updateSessionConfig"]>[1])
 
     assert.deepEqual(first.getSessionConfig("s1"), {
       harness: {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "remote",
@@ -2175,7 +2164,7 @@ describe("RuntimeStore", () => {
     const next = new RuntimeStore(root)
     assert.deepEqual(next.getSessionConfig("s1"), {
       harness: {
-        id: "claude",
+        id: "openclaw",
         access: "acp",
         connection: {
           kind: "remote",
@@ -2230,32 +2219,29 @@ describe("RuntimeStore", () => {
       createdAt: 1,
     })
     store.updateSessionConfig("s1", {
-      runner: {
-        type: "claude-acp",
-        binary: "/tmp/claude-agent-acp",
-        model: "sonnet",
+      harness: {
+        id: "openclaw",
+        access: "acp",
+        connection: { kind: "process", binary: "/tmp/openclaw-acp" },
       },
       model: {
-        providerID: "claude-acp",
+        providerID: "acp:openclaw",
         modelID: "sonnet",
       },
     })
 
     store.updateSessionConfig("s1", {
-      runner: {
-        type: "codex-acp",
-        model: "gpt-5.5",
-      },
+      harness: { id: "otherclaw", access: "acp" },
       model: {
-        providerID: "codex-acp",
+        providerID: "acp:otherclaw",
         modelID: "gpt-5.5",
       },
     })
 
     assert.deepEqual(store.getSessionConfig("s1"), {
-      harness: { id: "codex", access: "acp" },
+      harness: { id: "otherclaw", access: "acp" },
       model: {
-        providerID: "codex-acp",
+        providerID: "acp:otherclaw",
         modelID: "gpt-5.5",
       },
       variant: null,

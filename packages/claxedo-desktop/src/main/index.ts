@@ -351,20 +351,8 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
     throw new Error(`OpenCode engine artifact was not found at ${openCodeEmbedPath}. Rebuild the desktop app and try again.`)
   }
 
-  const acpDir = IS_PACKAGED
-    ? join(process.resourcesPath, "acp")
-    : join(MAIN_DIR, "../../resources/acp")
-
-  // Development resolves the workspace's live ACP package dependencies. Only
-  // packaged builds need the copied, self-contained adapter resources.
-  if (IS_PACKAGED && existsSync(acpDir)) {
-    process.env.CLAXEDO_ACP_DIR = acpDir
-  }
-
-  // Both Claude paths spawn the user's installed Claude Code CLI, never a
-  // bundled binary: the native SDK harness via pathToClaudeCodeExecutable and
-  // the ACP adapter via CLAUDE_CODE_EXECUTABLE. Resolve it once here so a
-  // GUI-trimmed PATH still finds a standard install.
+  // The native SDK harness spawns the user's installed Claude Code CLI. Resolve
+  // it once here so a GUI-trimmed PATH still finds a standard install.
   if (!process.env.CLAUDE_CODE_EXECUTABLE) {
     const claude = resolveSystemClaude()
     if (claude) process.env.CLAUDE_CODE_EXECUTABLE = claude

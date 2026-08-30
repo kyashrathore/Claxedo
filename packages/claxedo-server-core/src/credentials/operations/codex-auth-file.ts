@@ -22,7 +22,7 @@ const log = Log.create({ service: "credentials-codex-auth-file" })
  * successful verification into an error.
  */
 
-const mirroredProviders = ["codex-acp", "codex-app-server"]
+const mirroredProviders = ["codex-app-server"]
 
 type JsonRecord = Record<string, unknown>
 

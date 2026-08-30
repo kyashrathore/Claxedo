@@ -70,6 +70,13 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
   if (state.harness === "opencode") return undefined
   const raw = state.selectedModel ?? ""
   if (!raw) return undefined
+  if (harnessUsesManagedDefaultModel(state)) {
+    return {
+      providerID: state.harness,
+      modelID: DEFAULT_HARNESS_MODEL.id,
+      ...(state.selectedThoughtLevel ? { variant: state.selectedThoughtLevel } : {}),
+    }
+  }
   if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
   const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
   if (!match) return undefined
@@ -84,6 +91,18 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
     // process — which is why this needed no new transport.
     ...(state.selectedThoughtLevel ? { variant: state.selectedThoughtLevel } : {}),
   }
+}
+
+/**
+ * A live operator ACP can expose useful config while leaving model selection to
+ * the agent itself. This exact state is distinct from unresolved (`null`),
+ * loading, and failed option discovery, so it never masks a broken connection.
+ */
+export function harnessUsesManagedDefaultModel(state: HarnessSelectionState) {
+  return state.harness.startsWith("acp:") &&
+    state.selectedModel === DEFAULT_HARNESS_MODEL.id &&
+    Array.isArray(state.dynamicModels) && state.dynamicModels.length === 0 &&
+    !state.optionsLoading && !state.configError
 }
 
 export function harnessModelNameForSubmit(state: HarnessSelectionState) {

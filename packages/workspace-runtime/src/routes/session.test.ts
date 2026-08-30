@@ -225,13 +225,13 @@ describe("session prompt route", () => {
 
     // A name it does recognise still resolves, and an absent one still means
     // "no preference" rather than an error.
-    const known = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}&harness=codex-acp`)
+    const known = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}&harness=acp:openclaw`)
     expect(known.status).toBe(200)
-    expect(seen).toEqual(["codex:acp"])
+    expect(seen).toEqual(["openclaw:acp"])
 
     const unqualified = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}`)
     expect(unqualified.status).toBe(200)
-    expect(seen).toEqual(["codex:acp", undefined])
+    expect(seen).toEqual(["openclaw:acp", undefined])
   })
 
   it("excludes archived sessions by default and includes them with ?archived=true", async () => {
@@ -432,7 +432,7 @@ describe("session prompt route", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: "Created",
-        model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+        model: { providerID: "acp:example", modelID: "gpt-5.5" },
       }),
     })
 
@@ -1013,7 +1013,7 @@ describe("session prompt route", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: { providerID: "claude-acp", modelID: "sonnet" },
+        model: { providerID: "acp:example", modelID: "sonnet" },
         variant: "max",
         agent: "build",
       }),
@@ -1022,7 +1022,7 @@ describe("session prompt route", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       harness: { id: "opencode", access: "native" },
-      model: { providerID: "claude-acp", modelID: "sonnet" },
+      model: { providerID: "acp:example", modelID: "sonnet" },
       variant: "max",
       agent: "build",
     })
@@ -1170,8 +1170,8 @@ describe("session prompt route", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        harness: { id: "claude", access: "acp", connection: { kind: "process", binary: "/tmp/claude-agent-acp" } },
-        model: { providerID: "claude-acp", modelID: "sonnet" },
+        harness: { id: "example", access: "acp", connection: { kind: "process", binary: "/tmp/example-acp" } },
+        model: { providerID: "acp:example", modelID: "sonnet" },
       }),
     })
 

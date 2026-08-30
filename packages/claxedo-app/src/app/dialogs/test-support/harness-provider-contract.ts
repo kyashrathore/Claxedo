@@ -11,17 +11,14 @@
  */
 
 /**
- * The five harness-BINDING provider ids served for every non-pi, non-opencode
+ * The native harness-BINDING provider ids served for every non-pi, non-opencode
  * harness. Derived server-side from `localProviderCatalog`'s credential-env map,
- * which is why `cursor-sdk` (no binding) is absent from this list even though it
- * is a selectable harness.
+ * and selectable native harness.
  */
 export const HARNESS_BINDING_PROVIDER_IDS = [
-  "claude-acp",
   "claude-sdk",
-  "codex-acp",
   "codex-app-server",
-  "cursor-acp",
+  "cursor-sdk",
 ] as const
 
 /** Pi serves only its launch providers. */
@@ -31,11 +28,8 @@ export const PI_PROVIDER_IDS = ["anthropic", "openai", "openai-codex"] as const
  * catalog has ~179 entries and moves with models.dev, so only these are pinned. */
 export const OPENCODE_SAMPLE_PROVIDER_IDS = ["anthropic", "openai", "google", "opencode"] as const
 
-/** Harness ids that resolve to the five harness-binding providers. */
+/** Harness ids that resolve to the native harness-binding providers. */
 export const HARNESS_BINDING_HARNESS_IDS = [
-  "claude-acp",
-  "codex-acp",
-  "cursor-acp",
   "claude-sdk",
   "codex-app-server",
   "cursor-sdk",

@@ -40,13 +40,12 @@ const log = Log.create({ service: "acp-adapter" })
 
 export type SessionUpdate = SessionNotification["update"]
 
-export function acpClientCapabilities(): ClientCapabilities & { _meta: { "subagent-transcript": true } } {
+export function acpClientCapabilities(): ClientCapabilities {
   return {
     auth: { terminal: false },
     fs: { readTextFile: true, writeTextFile: true },
     plan: {},
     terminal: true,
-    _meta: { "subagent-transcript": true },
   }
 }
 /**

@@ -134,11 +134,8 @@ const PROVIDER_NAMES: Record<string, string> = {
   groq: "Groq",
   mistral: "Mistral",
   xai: "xAI",
-  "claude-acp": "Claude",
   "claude-sdk": "Claude",
-  "codex-acp": "Codex",
   "codex-app-server": "Codex",
-  "cursor-acp": "Cursor",
   "cursor-sdk": "Cursor",
 }
 

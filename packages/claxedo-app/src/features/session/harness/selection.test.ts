@@ -82,6 +82,24 @@ describe("harness selection", () => {
     })).toBeUndefined()
   })
 
+  test("submits an operator ACP through its managed default without fabricating a model row", () => {
+    const state = {
+      ...base,
+      harness: "acp:openclaw",
+      selectedModel: "default",
+      dynamicModels: [],
+      selectedThoughtLevel: "adaptive",
+    } satisfies HarnessSelectionState
+
+    expect(harnessModels(state)).toEqual([])
+    expect(harnessModelKeyForSubmit(state)).toEqual({
+      providerID: "acp:openclaw",
+      modelID: "default",
+      variant: "adaptive",
+    })
+    expect(harnessReadyForSubmit(state)).toBe(true)
+  })
+
   test("does not fabricate a default row after option discovery fails", () => {
     expect(harnessModels({
       ...base,

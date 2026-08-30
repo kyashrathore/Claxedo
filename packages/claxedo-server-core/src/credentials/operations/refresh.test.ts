@@ -12,7 +12,7 @@ const NOW = 1_700_000_000_000
 function credential(input: Partial<CredentialMetadata> = {}): CredentialMetadata {
   return {
     id: "cred_1",
-    provider_id: "codex-acp",
+    provider_id: "codex-app-server",
     kind: "oauth_token",
     source: "local_only",
     status: "available",
@@ -60,14 +60,14 @@ function tokenResponse(body: unknown, init: { ok?: boolean; status?: number } = 
 
 describe("isRefreshableCredential", () => {
   test("accepts OAuth logins for providers that mint renewable tokens", () => {
-    expect(isRefreshableCredential(credential({ provider_id: "codex-acp" }))).toBe(true)
+    expect(isRefreshableCredential(credential({ provider_id: "codex-app-server" }))).toBe(true)
     expect(isRefreshableCredential(credential({ provider_id: "codex-app-server" }))).toBe(true)
     expect(isRefreshableCredential(credential({ provider_id: "openai" }))).toBe(true)
   })
 
   test("rejects API keys and providers with no refresh grant", () => {
     expect(isRefreshableCredential(credential({ kind: "api_key" }))).toBe(false)
-    expect(isRefreshableCredential(credential({ provider_id: "claude-acp" }))).toBe(false)
+    expect(isRefreshableCredential(credential({ provider_id: "claude-sdk" }))).toBe(false)
   })
 })
 
@@ -176,7 +176,7 @@ describe("refreshCredentialSecret", () => {
     const { stub, calls } = tokenResponse({ access_token: "a" })
 
     await expect(
-      refreshCredentialSecret(credential({ provider_id: "claude-acp" }), codexSecret(), { fetch: stub }),
+      refreshCredentialSecret(credential({ provider_id: "claude-sdk" }), codexSecret(), { fetch: stub }),
     ).rejects.toBeInstanceOf(CredentialRefreshError)
     expect(calls).toHaveLength(0)
   })

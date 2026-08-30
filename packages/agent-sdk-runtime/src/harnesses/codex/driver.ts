@@ -235,7 +235,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   async applyConfig(config: Record<string, unknown>) {
     const previous = this.authSignature()
     const auth = record(config.auth) as Record<string, string> | undefined
-    const source = auth?.["codex-app-server"] ?? auth?.["codex-acp"] ?? auth?.openai
+    const source = auth?.["codex-app-server"] ?? auth?.openai
     this.codexAuth = sourceCodexAuthValue(source)
     this.auth = {
       openai: sourceAuthValue(source),

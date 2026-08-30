@@ -3,10 +3,9 @@ import type {
   AgentHarnessFactory,
 } from "../runtime"
 import type { RuntimeEventHub } from "../runtime-event-hub"
-import type { AcpHarnessId, AgentHarnessAccess, AgentHarnessId } from "../harness-types"
+import { isAcpConnectionId, type AgentHarnessAccess, type SessionHarnessId } from "../harness-types"
 import type { AgentRuntimeStoreWithRecovery } from "./shared/runtime-store"
 import { AcpHarnessAdapter } from "./acp"
-import { defaultAcpBinary as resolveAcpBinary } from "./acp/default-binaries"
 import { ClaudeHarnessAdapter } from "./claude"
 import { CodexHarnessAdapter } from "./codex"
 import { CursorHarnessAdapter } from "./cursor"
@@ -24,16 +23,15 @@ type NativeFactoryOptions = ProcessObservedFactoryOptions & {
 }
 
 type AcpFactoryOptions = ProcessObservedFactoryOptions & {
-  access: "acp"
-  binary?: string
+  binary: string
   args?: string[]
   env?: Record<string, string | undefined>
   createTransport?: unknown
 }
 
-type ClaudeFactoryOptions = NativeFactoryOptions | AcpFactoryOptions
-type CodexFactoryOptions = NativeFactoryOptions | AcpFactoryOptions
-type CursorFactoryOptions = NativeFactoryOptions | AcpFactoryOptions
+type ClaudeFactoryOptions = NativeFactoryOptions
+type CodexFactoryOptions = NativeFactoryOptions
+type CursorFactoryOptions = NativeFactoryOptions
 type OpenCodeFactoryOptions = NativeFactoryOptions & {
   url?: string
   headers?: HeadersInit
@@ -53,39 +51,44 @@ type AgentHarnessFactoryContext = {
 }
 
 export function claude(options: ClaudeFactoryOptions = {}): AgentHarnessFactory {
-  return factory("claude", options.access ?? "native", (context) => {
-    if (options.access === "acp") return acp("claude", options, context)
-    return new ClaudeHarnessAdapter({
+  return factory("claude", "native", (context) => new ClaudeHarnessAdapter({
       store: context.store,
       eventHub: context.eventHub,
       ...(options.binary ? { binary: options.binary } : {}),
       ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    })
-  })
+    }))
 }
 
 export function codex(options: CodexFactoryOptions = {}): AgentHarnessFactory {
-  return factory("codex", options.access ?? "native", (context) => {
-    if (options.access === "acp") return acp("codex", options, context)
-    return new CodexHarnessAdapter({
+  return factory("codex", "native", (context) => new CodexHarnessAdapter({
       store: context.store,
       eventHub: context.eventHub,
       ...(options.binary ? { binary: options.binary } : {}),
       ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    })
-  })
+    }))
 }
 
 export function cursor(options: CursorFactoryOptions = {}): AgentHarnessFactory {
-  return factory("cursor", options.access ?? "native", (context) => {
-    if (options.access === "acp") return acp("cursor", options, context)
-    return new CursorHarnessAdapter({
+  return factory("cursor", "native", (context) => new CursorHarnessAdapter({
       store: context.store,
       eventHub: context.eventHub,
       ...(options.binary ? { binary: options.binary } : {}),
       ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    })
-  })
+    }))
+}
+
+export function acp(id: string, options: AcpFactoryOptions): AgentHarnessFactory {
+  if (!isAcpConnectionId(id)) throw new Error(`Invalid ACP connection id: ${id}`)
+  return factory(id, "acp", (context) => new AcpHarnessAdapter({
+    binary: options.binary,
+    harness: id,
+    store: context.store,
+    eventHub: context.eventHub,
+    ...(options.args ? { args: options.args } : {}),
+    ...(options.env ? { env: options.env } : {}),
+    ...(options.createTransport ? { createTransport: options.createTransport as ConstructorParameters<typeof AcpHarnessAdapter>[0]["createTransport"] } : {}),
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
+  }))
 }
 
 export function opencode(options: OpenCodeFactoryOptions = {}): AgentHarnessFactory {
@@ -103,46 +106,8 @@ export function pi(options: PiFactoryOptions = {}): AgentHarnessFactory {
   }))
 }
 
-function factory(id: AgentHarnessId, access: AgentHarnessAccess, create: (context: AgentHarnessFactoryContext) => unknown): AgentHarnessFactory {
+function factory(id: SessionHarnessId, access: AgentHarnessAccess, create: (context: AgentHarnessFactoryContext) => unknown): AgentHarnessFactory {
   return { id, access, create } as unknown as AgentHarnessFactory
-}
-
-function acp(id: AcpHarnessId, options: AcpFactoryOptions, context: AgentHarnessFactoryContext) {
-  return new AcpHarnessAdapter({
-    binary: options.binary ?? defaultAcpBinary(id),
-    harness: id,
-    store: context.store,
-    eventHub: context.eventHub,
-    ...(options.args ? { args: options.args } : {}),
-    ...(options.env ? { env: options.env } : {}),
-    ...(options.createTransport ? { createTransport: options.createTransport as ConstructorParameters<typeof AcpHarnessAdapter>[0]["createTransport"] } : {}),
-    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-  })
-}
-
-// The ACP bin NAME for a harness id. `resolveAcpBinary` turns the name into an
-// absolute path to the shipped dependency (with a bare-name PATH fallback), so
-// factory-composed ACP harnesses resolve the same binary as the kit registry
-// path — no PATH symlink required.
-const ACP_BIN_NAMES: Record<AcpHarnessId, string> = {
-  claude: "claude-agent-acp",
-  codex: "codex-acp",
-  /**
-   * `cursor-agent`, not `cursor-agent-acp` — no such binary has ever shipped.
-   * Cursor does not publish a dedicated ACP adapter the way Claude and Codex
-   * do; its CLI hosts the ACP server itself, behind the `acp` subcommand that
-   * `AcpHarnessAdapter.commandArgs` supplies.
-   *
-   * Note the CLI's own help calls it `agent`, and following that would be a
-   * mistake: `agent` is a common enough name to be shadowed on a real PATH (it
-   * is taken by grok's CLI on this machine), so spawning `agent` can silently
-   * start a different vendor's tool. `cursor-agent` is the installed name.
-   */
-  cursor: "cursor-agent",
-}
-
-function defaultAcpBinary(id: AcpHarnessId) {
-  return resolveAcpBinary(ACP_BIN_NAMES[id])
 }
 
 /**

@@ -30,15 +30,15 @@ type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[num
 type HarnessCheckId = ReturnType<typeof localHarnessChecks>[number]["id"]
 
 const AGENT_CONNECT: Record<HarnessCheckId, string> = {
-  claude: "claude-acp",
-  codex: "codex-acp",
-  cursor: "cursor-acp",
+  claude: "claude-sdk",
+  codex: "codex-app-server",
+  cursor: "cursor-sdk",
 }
 
 const AGENT_ICON: Record<HarnessCheckId, string> = {
-  claude: "claude-acp",
-  codex: "codex-acp",
-  cursor: "cursor-acp",
+  claude: "anthropic",
+  codex: "openai",
+  cursor: "cursor",
 }
 
 const PI_PROVIDER_IDS = ["anthropic", "openai", "openai-codex"] as const

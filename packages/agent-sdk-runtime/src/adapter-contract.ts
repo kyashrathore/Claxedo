@@ -33,6 +33,11 @@ export type AgentHarnessAdapterHealth = {
   }>
 }
 
+export type AgentHarnessAdapterHealthContext = {
+  /** Restrict health to the session being observed instead of workspace history. */
+  sessionId?: string
+}
+
 export type PermissionDecision = "allow_once" | "allow_always" | "deny" | "reject_always"
 
 export type AgentHarnessAdapterProcessOptions = {
@@ -80,7 +85,7 @@ export interface AgentHarnessAdapterCore {
   getMessages(id: string, directory: RuntimeDirectory): Promise<AgentMessage[]>
 
   listCommands?(directory: RuntimeDirectory): Promise<AgentCommand[]>
-  readRuntimeHealth?(directory: RuntimeDirectory): AgentHarnessAdapterHealth
+  readRuntimeHealth?(directory: RuntimeDirectory, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth
 
   dispose(): void
 }
@@ -163,10 +168,8 @@ export type AgentPermissionMode = {
 export type AgentPermissionModeState = {
   modes: AgentPermissionMode[]
   /**
-   * Read back from the harness, never assumed from the last write. ACP agents
-   * can clamp this to something other than what was set (claude-agent-acp
-   * returns to `default` when a model change shrinks the available set), so a
-   * client that echoes its own request will drift from reality.
+   * Read back from the harness, never assumed from the last write. An ACP agent
+   * may clamp this to a different mode when its available set changes.
    */
   currentModeId?: string
   /**

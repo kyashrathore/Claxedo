@@ -61,18 +61,16 @@ function services(input: ControlPlaneCredentials) {
 }
 
 describe("control-plane provider auth", () => {
-  test("exposes ACP auth methods without an upstream proxy", async () => {
+  test("exposes native harness auth methods without an upstream proxy", async () => {
     const c = credentials()
     const app = ProviderAuthRoutes(services(c.registry))
     const res = await app.request("/provider/auth")
 
     expect(res.status).toBe(200)
     const body = await res.json() as Record<string, Array<{ type: string; label: string }>>
-    expect(body["claude-acp"]).toEqual([{ type: "api", label: "API Key" }])
     expect(body["claude-sdk"]).toEqual([{ type: "api", label: "API Key" }])
-    expect(body["codex-acp"].map((item) => item.type)).toEqual(["oauth", "api"])
-    expect(body["codex-app-server"]).toEqual([{ type: "api", label: "API Key" }])
-    expect(body["cursor-acp"]).toEqual([{ type: "api", label: "API Key" }])
+    expect(body["codex-app-server"].map((item) => item.type)).toEqual(["oauth", "api"])
+    expect(body["cursor-sdk"]).toEqual([{ type: "api", label: "API Key" }])
   })
 
   test("stores codex oauth callbacks as managed oauth_token credentials", async () => {
@@ -104,7 +102,7 @@ describe("control-plane provider auth", () => {
     })
     const app = ProviderAuthRoutes(services(c.registry), { service })
 
-    const authorize = await app.request("/provider/codex-acp/oauth/authorize", {
+    const authorize = await app.request("/provider/codex-app-server/oauth/authorize", {
       method: "POST",
       body: JSON.stringify({ method: 0 }),
       headers: { "Content-Type": "application/json" },
@@ -116,17 +114,17 @@ describe("control-plane provider auth", () => {
       method: "auto",
     })
 
-    const callback = await app.request("/provider/codex-acp/oauth/callback", {
+    const callback = await app.request("/provider/codex-app-server/oauth/callback", {
       method: "POST",
       body: JSON.stringify({ method: 0 }),
       headers: { "Content-Type": "application/json" },
     })
     expect(callback.status).toBe(200)
     expect(await callback.json()).toBe(true)
-    expect(c.deleted).toEqual(["codex-acp"])
+    expect(c.deleted).toEqual(["codex-app-server"])
     expect(c.writes).toHaveLength(1)
     expect(c.writes[0]).toMatchObject({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "managed",
       account_id: "acct_123",
@@ -155,7 +153,7 @@ describe("control-plane provider auth", () => {
   test("rejects oauth callback when authorization has not started", async () => {
     const c = credentials()
     const app = ProviderAuthRoutes(services(c.registry))
-    const res = await app.request("/provider/codex-acp/oauth/callback", {
+    const res = await app.request("/provider/codex-app-server/oauth/callback", {
       method: "POST",
       body: JSON.stringify({ method: 0 }),
       headers: { "Content-Type": "application/json" },

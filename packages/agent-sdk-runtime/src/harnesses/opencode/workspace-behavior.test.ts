@@ -210,9 +210,9 @@ describe("opencode adapter", () => {
     }))
   })
 
-  test("builds OpenCode auth content from codex auth bundles", () => {
+  test("builds OpenCode auth content from Codex bundles in the canonical OpenAI slot", () => {
     expect(opencodeAuthContent({
-      "codex-acp": JSON.stringify({
+      openai: JSON.stringify({
         type: "codex_auth",
         oauth: {
           refresh: "refresh-openai",

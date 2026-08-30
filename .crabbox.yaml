@@ -302,15 +302,9 @@ jobs:
   pr-e2e-tier-real-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real
-  focus-e2e-tier-real-claude-acp-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 2,6,8,9"
   focus-e2e-tier-real-claude-native-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 3,6,8,9"
-  focus-e2e-tier-real-codex-acp-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 4,6,8,9"
   focus-e2e-tier-real-codex-native-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real-scenario "behaviors 5,6,8,9"

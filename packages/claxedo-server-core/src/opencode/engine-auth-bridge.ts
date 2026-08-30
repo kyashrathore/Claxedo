@@ -61,11 +61,11 @@ const log = Log.create({ service: "credentials-engine-bridge" })
  * engine provider id that consumes them.
  *
  * Deliberately an ALLOWLIST, matching the fanout allowlist in registry.ts. The
- * engine runs neither cursor nor the ACP runners, and sandbox/integration/
+ * engine runs neither cursor nor external ACP processes, and sandbox/integration/
  * channel credentials must never be handed to a model provider. A new registry
  * id therefore reaches the engine only when someone adds it here on purpose.
  *
- * `claude-sdk`/`claude-acp` and `codex-acp` are the ids the harness credential
+ * `claude-sdk` and `codex-app-server` are the ids the native harness credential
  * flows write for what is, to the engine, plain `anthropic`/`openai` auth; they
  * map onto the engine provider so a key connected through those surfaces still
  * powers embedded turns. A bare `anthropic`/`openai` row always wins over an
@@ -74,9 +74,8 @@ const log = Log.create({ service: "credentials-engine-bridge" })
 const ENGINE_PROVIDER_BY_REGISTRY_ID: Readonly<Record<string, string>> = {
   anthropic: "anthropic",
   "claude-sdk": "anthropic",
-  "claude-acp": "anthropic",
   openai: "openai",
-  "codex-acp": "openai",
+  "codex-app-server": "openai",
   openrouter: "openrouter",
   google: "google",
   groq: "groq",

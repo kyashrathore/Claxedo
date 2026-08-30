@@ -145,7 +145,7 @@ describe("credential registry", () => {
     })
     updateCredentialStatus(stale.id, "expired")
     await putCredential({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "managed",
       secret: "valid-oauth",
@@ -157,13 +157,12 @@ describe("credential registry", () => {
       secret: "valid-api-key",
     })
 
-    expect(piCredentialProviderIDs("openai-codex")).toEqual(["codex-app-server", "codex-acp"])
-    expect(piRegistryCredentialProvider("openai-codex")).toBe("codex-acp")
+    expect(piCredentialProviderIDs("openai-codex")).toEqual(["codex-app-server"])
+    expect(piRegistryCredentialProvider("openai-codex")).toBe("codex-app-server")
     expect(piRegistryCredentialProvider("anthropic")).toBe("anthropic")
     expect(piRegistryProviderConnected("openai-codex")).toBe(true)
     expect(piRegistryProviderConnected("unknown")).toBe(false)
     await deleteCredentialsByProvider("codex-app-server")
-    await deleteCredentialsByProvider("codex-acp")
     await deleteCredentialsByProvider("anthropic")
   })
 
@@ -379,7 +378,7 @@ describe("credential registry", () => {
     const { listPolicies } = await import("../sandbox/network/policy")
 
     await putCredential({
-      provider_id: "claude-acp",
+      provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
       secret: "sk-ant-auto-test",
@@ -397,7 +396,7 @@ describe("credential registry", () => {
     const { listPolicies } = await import("../sandbox/network/policy")
 
     await putCredential({
-      provider_id: "claude-acp",
+      provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
       secret: "sk-ant-auto-test-2",
@@ -415,7 +414,7 @@ describe("credential registry", () => {
     const { listPolicies } = await import("../sandbox/network/policy")
 
     const cred = await putCredential({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "api_key",
       source: "managed",
       secret: "sk-openai-delete-test",

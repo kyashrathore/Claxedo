@@ -519,7 +519,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       title: language.t("command.permissions.autoaccept.enable"),
       keybind: "mod+shift+a",
       // Gate on capabilities.permissions so ACP runners
-      // that don't expose a permission docking surface (e.g. codex-acp)
+      // that don't expose a permission docking surface
       // disable the auto-accept toggle in the command registration.
       disabled: !supports("permissions"),
       onSelect: () => {

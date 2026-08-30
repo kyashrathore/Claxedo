@@ -59,16 +59,12 @@ describe("claudeAuthEnv", () => {
 })
 
 describe("claudeAuthValue", () => {
-  test("prefers the agent SDK binding, then the ACP one, over a bare provider id", () => {
-    expect(claudeAuthValue({ "claude-sdk": "sdk", "claude-acp": "acp", anthropic: "bare" })).toBe("sdk")
-    expect(claudeAuthValue({ "claude-acp": "acp", anthropic: "bare" })).toBe("acp")
+  test("prefers the native SDK binding over a bare provider id", () => {
+    expect(claudeAuthValue({ "claude-sdk": "sdk", anthropic: "bare" })).toBe("sdk")
     expect(claudeAuthValue({ anthropic: "bare" })).toBe("bare")
   })
 
-  test("both harness bindings of one login resolve, so neither harness is stranded", () => {
-    // Onboarding writes both `claude-acp` and `claude-sdk` from one row; each
-    // harness resolves auth by its own provider id.
-    expect(claudeAuthValue({ "claude-acp": "token" })).toBe("token")
+  test("the native harness binding resolves independently", () => {
     expect(claudeAuthValue({ "claude-sdk": "token" })).toBe("token")
     expect(claudeAuthValue({})).toBeUndefined()
   })

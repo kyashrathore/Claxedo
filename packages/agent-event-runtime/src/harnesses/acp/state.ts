@@ -1,10 +1,12 @@
 import type { ToolCallContent, ToolKind } from "./types"
 import type { AgentRuntimeEvent, RuntimeToolStatus, ToolDisplay } from "../../contracts/agent-runtime-event"
-import { acpClient, findAcpRule, type AcpClient, type AcpIntent } from "./registry"
+import type { ToolIntent } from "../../contracts/agent-runtime-event"
 import { diagnoseTranslation, shape, type AcpDiagnostics } from "./diagnostics"
 
 type Spot = { path: string; line?: number | null }
 type ToolStatus = RuntimeToolStatus
+type AcpClient = string
+type AcpIntent = ToolIntent
 
 type ToolState = {
   id: string
@@ -67,15 +69,9 @@ function parsed(raw: unknown) {
   return value.map(object).filter((item): item is Record<string, unknown> => !!item)
 }
 
-function nestedMeta(value: unknown, key: string) {
-  const item = object(value)
-  return object(item?.[key])
-}
-
 function metaName(meta: unknown) {
   const item = object(meta)
-  const claude = nestedMeta(item, "claudeCode")
-  return str(item?.tool_name) ?? str(item?.toolName) ?? str(claude?.toolName) ?? str(claude?.tool_name)
+  return str(item?.tool_name) ?? str(item?.toolName)
 }
 
 function name(raw: unknown, meta?: unknown) {
@@ -208,76 +204,6 @@ function url(value: unknown) {
   }
 }
 
-function session(raw: unknown) {
-  const item = object(raw)
-  return (
-    str(item?.childSessionId) ??
-    str(item?.child_session_id) ??
-    str(item?.sessionId) ??
-    str(item?.session_id) ??
-    str(item?.sessionID)
-  )
-}
-
-function providerSession(raw: unknown, meta: unknown) {
-  const item = object(raw)
-  const codex = nestedMeta(meta, "codex")
-  const subagent = nestedMeta(codex, "subagent")
-  return str(item?.agentThreadId) ?? str(subagent?.threadId)
-}
-
-function parentToolUse(meta: unknown) {
-  const claude = nestedMeta(meta, "claudeCode")
-  return str(claude?.parentToolUseId) ?? str(claude?.parent_tool_use_id)
-}
-
-function subagentType(raw: unknown, diagnostics: AcpDiagnostics) {
-  const item = object(raw)
-  const value = item?.subagentType ?? item?.subagent_type
-  if (typeof value === "string") return value
-  const custom = object(value)?.custom
-  if (typeof custom === "string") return { custom }
-  if (value !== undefined) {
-    diagnoseTranslation(diagnostics, "acp.nested_session_unrepresented", {
-      reason: "invalid_subagent_type",
-      shape: shape(value),
-    })
-  }
-}
-
-function todoMode(raw: unknown, diagnostics: AcpDiagnostics) {
-  const item = object(raw)
-  if (typeof item?.merge !== "boolean") return
-  if (item.merge) {
-    diagnoseTranslation(diagnostics, "acp.todo_merge_unrepresented", {
-      reason: "public_todo_event_has_no_merge_mode",
-      shape: shape(raw),
-    })
-  }
-  return item.merge ? "merge" : "replace"
-}
-
-function questionInfo(raw: unknown) {
-  const item = object(raw)
-  const questions = Array.isArray(item?.questions) ? item.questions.map(object).filter((row): row is Record<string, unknown> => !!row) : []
-  if (questions.length === 0) return {}
-  return {
-    questionIds: questions.map((row, i) => str(row.id) ?? String(i)),
-    allowMultiple: questions.some((row) => row.allowMultiple === true),
-  }
-}
-
-function planInfo(raw: unknown, output: unknown) {
-  const item = object(raw)
-  const result = object(output)
-  return {
-    ...(str(item?.plan) ? { plan: str(item?.plan) } : {}),
-    ...(Array.isArray(item?.phases) ? { phases: item.phases } : {}),
-    ...(typeof item?.isProject === "boolean" ? { isProject: item.isProject } : {}),
-    ...(str(result?.planUri) ? { planUri: str(result?.planUri) } : {}),
-  }
-}
-
 function toolLocations(locations: Spot[]) {
   return locations.map((item) => ({ path: item.path, ...(item.line != null ? { line: item.line } : {}) }))
 }
@@ -382,11 +308,7 @@ function first(value: unknown) {
   return value.find((item): item is string => typeof item === "string" && !!item)
 }
 
-function intent(kind: ToolKind | undefined, title?: string, call?: string): AcpIntent {
-  if (title?.trim().toLowerCase() === "read lints") return "lint"
-  if (call?.toLowerCase() === "updatetodos" || call?.toLowerCase() === "todowrite") return "todos"
-  if (call?.toLowerCase() === "task" || call?.toLowerCase() === "agent") return "task"
-  if (call?.toLowerCase() === "exitplanmode") return "reasoning"
+function intent(kind: ToolKind | undefined, title?: string): AcpIntent {
   if (kind === "execute") return "shell"
   if (kind === "read") return "read"
   if (kind === "edit") return "edit"
@@ -402,10 +324,9 @@ function intent(kind: ToolKind | undefined, title?: string, call?: string): AcpI
   return "generic"
 }
 
-function pick(state: ToolState, diagnostics: AcpDiagnostics) {
+function pick(state: ToolState) {
   const title = state.title ?? state.firstTitle ?? "Tool"
   const kind = state.kind ?? state.firstKind
-  const rule = findAcpRule(state.client, title, state.name, kind)
   const base = parseTitle(title, kind)
   const raw = state.rawInput
   const body = textBody(state.rawOutput)
@@ -415,7 +336,7 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
   const spot = firstPath(state.locations)
   const diff = diffPath(state.content)
   const call = state.name?.toLowerCase()
-  let nextIntent = rule?.intent ?? intent(kind, title, call)
+  let nextIntent = intent(kind, title)
   const query = str(raw?.query) ?? str(raw?.q) ?? str(raw?.pattern) ?? str(object(raw?.action)?.query) ?? first(raw?.queries)
   const search = items.find((item) => item.type === "search")
   const list = items.find((item) => item.type === "list_files" || item.type === "glob")
@@ -430,20 +351,11 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
       call === "read_mcp_resource"
     )
   ) nextIntent = "mcp"
-  if (nextIntent === "search" && call === "find") nextIntent = "list"
-  if (nextIntent === "generic" && call === "find") nextIntent = "list"
-  if (nextIntent === "generic" && call === "codesearch") nextIntent = "search"
-  if (nextIntent === "generic" && call === "websearch") nextIntent = "search"
-  if (nextIntent === "generic" && call === "openpage") nextIntent = "fetch"
   // Upgrade search → list when parsed command proves it's a file listing
   // but only when no search command also exists (search wins over list)
   if (nextIntent === "search" && list && !search) nextIntent = "list"
   const nextMode =
-    rule?.mode ??
     mode(title) ??
-    ((call === "codesearch" && nextIntent === "search") ? "codebase" : undefined) ??
-    ((call === "websearch" && nextIntent === "search") ? "web" : undefined) ??
-    ((call === "find" && nextIntent === "list") ? "files" : undefined) ??
     (nextIntent === "list" && list ? (str(list.pattern) ? "glob" : "files") : undefined)
   const cmd = shell(raw) ?? str(base.input?.command)
   const urlValue = url(raw?.url) ?? url(base.input?.url) ?? url(raw?.uri)
@@ -454,18 +366,6 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
   const filePath = str(raw?.filePath) ?? str(search?.path) ?? file ?? diff ?? str(base.input?.filePath)
   const stats = object(state.rawOutput)
   const hasDiff = state.content.some((item) => item.type === "diff")
-  const child = session(raw) ?? session(state.rawOutput) ?? providerSession(raw, state.meta)
-  const parentToolCallId = parentToolUse(state.meta)
-  const childSubagentType = subagentType(raw, diagnostics)
-  const childAgentId = str(raw?.agentId) ?? str(object(state.rawOutput)?.agentId)
-  const childDurationMs = typeof raw?.durationMs === "number"
-    ? raw.durationMs
-    : typeof object(state.rawOutput)?.durationMs === "number"
-      ? object(state.rawOutput)!.durationMs as number
-      : undefined
-  const todosMode = todoMode(raw, diagnostics)
-  const questions = questionInfo(raw)
-  const plan = planInfo(raw, state.rawOutput)
   const diffValue = filediff(state.content)
   const patchValue = patch(state.content)
   const shellMode = nextIntent === "shell" &&
@@ -481,19 +381,13 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
 
   if (nextIntent === "fetch" && query && !urlValue) nextIntent = "search"
 
-  let short = rule?.short ?? base.short
+  let short = base.short
   const modeValue =
     nextMode ??
     shellMode ??
     ((nextIntent === "fetch" || nextIntent === "search") && urlValue ? "web" : undefined) ??
     (nextIntent === "search" && query ? "web" : undefined)
-  const description = call === "task"
-    ? (title.match(/^task:?\s*(.*)$/i)?.[1] || undefined)
-    : undefined
-
   if (nextIntent === "shell") short = "bash"
-  if (nextIntent === "task" && short !== "plan") short = "task"
-  if (nextIntent === "todos") short = "todowrite"
   if (nextIntent === "search" && nextMode === "web" && query) short = "websearch"
   if (nextIntent === "search" && nextMode === "codebase" && query) short = "codesearch"
   if (nextIntent === "search" && pattern && path) short = "grep"
@@ -509,7 +403,6 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
     intent: nextIntent,
     ...(modeValue ? { mode: modeValue } : {}),
     ...(cmd ? { command: cmd, description: cmd } : {}),
-    ...(description ? { description } : {}),
     ...(query ? { query } : {}),
     ...(pattern ? { pattern } : {}),
     ...(urlValue ? { url: urlValue } : {}),
@@ -517,13 +410,7 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
     ...(filePath ? { filePath } : {}),
     ...(sourcePath && nextIntent === "move" ? { sourcePath, filePath: sourcePath } : {}),
     ...(targetPath ? { targetPath } : {}),
-      ...(child && nextIntent === "task" ? { sessionId: child } : {}),
-      ...(childAgentId && nextIntent === "task" ? { agentId: childAgentId } : {}),
-      ...(childSubagentType && nextIntent === "task" ? { subagentType: childSubagentType } : {}),
-      ...(diffValue && nextIntent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
-    ...(nextIntent === "edit" && modeValue === "write"
-      ? { content: diffValue?.after ?? str(raw?.content) ?? str(raw?.newString) ?? "" }
-      : {}),
+    ...(diffValue && nextIntent === "edit" ? { oldString: diffValue.before, newString: diffValue.after } : {}),
     ...(all.length ? { files: all } : {}),
   })
   const display = {
@@ -532,7 +419,6 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
     summary: title,
     ...(modeValue ? { mode: modeValue } : {}),
     ...(cmd ? { command: cmd, description: cmd } : {}),
-    ...(description ? { description } : {}),
     ...(query ? { query } : {}),
     ...(pattern ? { pattern } : {}),
     ...(urlValue ? { url: urlValue } : {}),
@@ -540,18 +426,12 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
     ...(filePath ? { filePath } : {}),
     ...(sourcePath ? { sourcePath } : {}),
     ...(targetPath ? { targetPath } : {}),
-    ...(child ? { sessionId: child } : {}),
-    ...(childAgentId ? { agentId: childAgentId } : {}),
-    ...(childSubagentType ? { subagentType: childSubagentType } : {}),
-    ...(childDurationMs !== undefined ? { durationMs: childDurationMs } : {}),
     ...(all.length ? { files: all } : {}),
     ...(state.locations.length ? { locations: toolLocations(state.locations) } : {}),
     ...(raw !== undefined ? { input: raw } : {}),
   } satisfies ToolDisplay
   const metadata = {
-      ...(child && nextIntent === "task" ? { sessionId: child } : {}),
-      ...(parentToolCallId ? { parentToolCallId } : {}),
-      ...(diffValue ? { filediff: diffValue } : {}),
+    ...(diffValue ? { filediff: diffValue } : {}),
     ...(patchValue.length > 0 ? { files: patchValue } : {}),
     acp: {
       client: state.client,
@@ -562,7 +442,6 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
       summary: title,
       ...(modeValue ? { mode: modeValue } : {}),
       ...(cmd ? { command: cmd } : {}),
-      ...(description ? { description } : {}),
       ...(query ? { query } : {}),
       ...(pattern ? { pattern } : {}),
       ...(urlValue ? { url: urlValue } : {}),
@@ -570,7 +449,6 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
       ...(filePath ? { filePath } : {}),
       ...(sourcePath ? { sourcePath } : {}),
       ...(targetPath ? { targetPath } : {}),
-      ...(child ? { childSessionId: child } : {}),
       ...(all.length ? { files: all } : {}),
       ...(state.locations.length ? { locations: toolLocations(state.locations) } : {}),
       ...(state.terminalId ? { terminalId: state.terminalId } : {}),
@@ -584,15 +462,7 @@ function pick(state: ToolState, diagnostics: AcpDiagnostics) {
       ...(body ? { body } : {}),
       ...(stats ? { stats } : {}),
       ...(state.name ? { rawToolName: state.name } : {}),
-      ...(rule ? { extractor: rule.extractor } : {}),
       toolCallId: state.id,
-      ...(parentToolCallId ? { parentToolCallId } : {}),
-      ...(childSubagentType ? { subagentType: childSubagentType } : {}),
-      ...(childAgentId ? { agentId: childAgentId } : {}),
-      ...(childDurationMs !== undefined ? { durationMs: childDurationMs } : {}),
-      ...(todosMode ? { todoMode: todosMode } : {}),
-      ...questions,
-      ...plan,
     },
   }
   return { toolName: short || state.id, input, display, metadata } satisfies ToolView
@@ -614,7 +484,7 @@ function newTool(id: string, client: AcpClient): ToolState {
 
 export function createAcpTranslatorState(client?: string): SessionState {
   return {
-    client: acpClient(client),
+    client: client?.trim() || "acp",
     lastMessageId: null,
     assistantTextByMessageId: {},
     assistantThinkingByMessageId: {},
@@ -682,8 +552,8 @@ export function reduceTool(
   return next
 }
 
-export function viewToolWithDiagnostics(state: ToolState, diagnostics: AcpDiagnostics) {
-  return pick(state, diagnostics)
+export function viewToolWithDiagnostics(state: ToolState, _diagnostics: AcpDiagnostics) {
+  return pick(state)
 }
 
 export function drainContent(state: ToolState, content: ToolCallContent[] | null | undefined, diagnostics: AcpDiagnostics): AgentRuntimeEvent[] {

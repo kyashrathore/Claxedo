@@ -662,17 +662,15 @@ jobs:
       # configuration every scenario was verified under, and it means one red
       # scenario names itself instead of poisoning the run.
       #
-      # ALL SIX SCENARIOS ARE ON THE GATE. There is no known-red list any more:
+      # All built-in scenarios are on the gate. Operator ACP connections are
+      # exercised by the generic runtime integration suite because their
+      # executable and credentials belong to operator configuration.
       # every defect the tier surfaced has been fixed and its scenario
       # graduated, which was always the point — a blocking job that is red on
       # every PR for known reasons trains people to ignore it, so a defect
       # graduating to the gate is the definition of fixed.
       #
       # What the tier caught, in the order the scenarios graduated:
-      #   codex-acp    — the scripted endpoint now streams the full output_text
-      #                  delta sequence, the only shape that makes `codex
-      #                  app-server` emit the `item/agentMessage/delta` the ACP
-      #                  wrapper converts to assistant text.
       #   opencode     — a reply arriving under two ids rendered as two
       #                  messages (client store, `assistantTurnIndex`), and the
       #                  scenario had been silently running on the anthropic
@@ -697,7 +695,7 @@ jobs:
           set -euo pipefail
           # The step above builds once. Each isolated Playwright invocation
           # starts a preview of that same verified artifact without rebuilding.
-          for scenario in "behaviors 1,6,9" "behaviors 2,6,8,9" "behaviors 3,6,8,9" "behaviors 4,6,8,9" "behaviors 5,6,8,9" "behavior 7"; do
+          for scenario in "behaviors 1,6,9" "behaviors 3,6,8,9" "behaviors 5,6,8,9" "behavior 7"; do
             echo "=== Tier R gate scenario: ${scenario} ==="
             bun run test:e2e:real -- --grep "${scenario}"
           done

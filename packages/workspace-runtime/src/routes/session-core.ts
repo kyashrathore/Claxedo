@@ -1189,8 +1189,7 @@ export function createSessionRoutes(opts: Opts) {
         // Every adapter rejects an unknown id by throwing (that rejection is
         // deliberate — silently accepting one would store a mode the harness
         // will never honour), and without this the throw surfaced as a 500,
-        // which reads as "the runtime broke" and would send someone debugging
-        // the wrong layer. Verified live against claude-agent-acp.
+        // which reads as "the runtime broke" and sends debugging to the wrong layer.
         const message = error instanceof Error ? error.message : String(error)
         if (/does not offer|unknown permission mode/i.test(message)) {
           return c.json({ error: { code: "unknown_permission_mode", message } }, 400)

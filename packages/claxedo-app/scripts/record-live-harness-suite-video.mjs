@@ -16,12 +16,9 @@ mkdirSync(rawDir, { recursive: true })
 
 const allHarnesses = [
   { key: "opencode", type: "opencode", label: "OpenCode", option: /^OpenCode$/, index: 0, proofPrefix: "O" },
-  { key: "claude-acp", type: "claude-acp", label: "Claude ACP", option: /^Claude$/, index: 0, proofPrefix: "A" },
-  { key: "claude-sdk", type: "claude-sdk", label: "Claude Native SDK", option: /^Claude$/, index: 1, proofPrefix: "B" },
-  { key: "codex-acp", type: "codex-acp", label: "Codex ACP", option: /^Codex$/, index: 0, proofPrefix: "C" },
-  { key: "codex-sdk", type: "codex-app-server", label: "Codex Native SDK", option: /^Codex$/, index: 1, proofPrefix: "D" },
-  { key: "cursor-acp", type: "cursor-acp", label: "Cursor ACP", option: /^Cursor$/, index: 0, proofPrefix: "E" },
-  { key: "cursor-sdk", type: "cursor-sdk", label: "Cursor Native SDK", option: /^Cursor$/, index: 1, proofPrefix: "F" },
+  { key: "claude-sdk", type: "claude-sdk", label: "Claude Native SDK", option: /^Claude$/, index: 0, proofPrefix: "A" },
+  { key: "codex-sdk", type: "codex-app-server", label: "Codex Native SDK", option: /^Codex$/, index: 0, proofPrefix: "B" },
+  { key: "cursor-sdk", type: "cursor-sdk", label: "Cursor Native SDK", option: /^Cursor$/, index: 0, proofPrefix: "C" },
 ]
 const harnessFilter = process.env.HARNESS_FILTER?.trim().toLowerCase()
 const harnesses = harnessFilter

@@ -49,9 +49,9 @@ for the other four exposure/deployment options, and
 This package ships the runtime **primitives** (host wiring, adapters,
 PTY/process/file/git/event surfaces, config apply behavior, exposure/relay
 contracts). It deliberately ships **no bin**: runnable hosts are composed by
-downstream packages. The ACP adapter binaries
-(`@agentclientprotocol/claude-agent-acp` and `@agentclientprotocol/codex-acp`)
-live with the code that spawns them (`@claxedo/agent-sdk-runtime`), not here.
+downstream packages. ACP binaries are not shipped by Claxedo. The operator
+installs them and names their command, arguments, and environment in the
+applied runtime descriptor.
 
 The kit ships env **parsers** (`workspaceRelayRuntimeOptionsFromEnv`,
 `relayHostAuthFromEnv`, `managementAuthFromEnv`, `hostTunnelFromEnv`,
@@ -396,15 +396,15 @@ adapters.
 Strict type-based dispatch happens once, at host construction
 ([`workspace/runtime.ts`](src/workspace/runtime.ts)). After that, the rest
 of the codebase calls into the `AgentHarnessAdapter` interface only — there are
-no `if (runner.type === "claude-acp")` branches in the call paths.
+no connection-id-specific branches in the call paths.
 
 The four model-fallback sites (`bootstrap.ts`, `opencode-compat.ts`)
 are *model defaulting* decisions, not adapter-selection branches.
 
 ### Operator-configured ACP connections
 
-Beyond the built-in runner ids, a v2 runtime snapshot's `harnesses` list may
-carry operator-configured ACP rows — `{ id: "<slug>", access: "acp",
+Alongside the finite native harness ids, a v2 runtime snapshot's `harnesses`
+list may carry operator-configured ACP rows — `{ id: "<slug>", access: "acp",
 connection: { kind: "process", binary, args?, env? } }` where `<slug>` matches
 `^[a-z][a-z0-9-]{0,63}$` and is none of the built-in ids. `host.apply`
 normalizes and retains these as the **applied registry**; session requests may

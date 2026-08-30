@@ -1,8 +1,6 @@
 import { runtimeDiagnostic, type RuntimeDiagnostic } from "../../contracts/diagnostics"
 
 export type AcpTranslationDiagnostic =
-  | "acp.registry_miss"
-  | "acp.generic_fallback"
   | "acp.malformed_raw_input"
   | "acp.malformed_raw_output"
   | "acp.malformed_content"
@@ -13,8 +11,6 @@ export type AcpTranslationDiagnostic =
   | "acp.dropped_content"
   | "acp.empty_error_extraction"
   | "acp.impossible_state_transition"
-  | "acp.nested_session_unrepresented"
-  | "acp.todo_merge_unrepresented"
 
 export type AcpDiagnosticContext = {
   agent?: string
@@ -52,8 +48,6 @@ export function diagnoseTranslation(
   ctx: AcpDiagnosticContext,
 ): void {
   const level =
-    event === "acp.registry_miss" ||
-    event === "acp.generic_fallback" ||
     event === "acp.dropped_content"
       ? "info"
       : "warn"

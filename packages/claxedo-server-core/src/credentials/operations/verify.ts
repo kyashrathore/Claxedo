@@ -71,9 +71,9 @@ export async function verifyCredential(
     return { health: await verifySandboxDriverCredential(credential.provider_id, material, options) }
   }
 
-  const anthropic = ["anthropic", "claude-acp", "claude-sdk"].includes(credential.provider_id)
-  const openai = ["openai", "codex-acp", "codex-app-server"].includes(credential.provider_id)
-  const cursor = ["cursor", "cursor-acp"].includes(credential.provider_id)
+  const anthropic = ["anthropic", "claude-sdk"].includes(credential.provider_id)
+  const openai = ["openai", "codex-app-server"].includes(credential.provider_id)
+  const cursor = ["cursor", "cursor-sdk"].includes(credential.provider_id)
   if (!anthropic && !openai && !cursor) {
     throw new CredentialVerificationError("Credential provider does not support verification")
   }

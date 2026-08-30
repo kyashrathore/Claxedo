@@ -37,7 +37,7 @@ export type ProviderAuthorization = {
 }
 
 type CodexPending = {
-  providerId: "codex-acp" | "openai"
+  providerId: "codex-app-server" | "openai"
   org: string
   deviceAuthId: string
   userCode: string
@@ -106,14 +106,12 @@ const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
 export function providerAuthMethods(): ProviderAuthMethods {
   return {
-    "claude-acp": [{ type: "api", label: "API Key" }],
     "claude-sdk": [{ type: "api", label: "API Key" }],
-    "codex-acp": [
+    "codex-app-server": [
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },
     ],
-    "codex-app-server": [{ type: "api", label: "API Key" }],
-    "cursor-acp": [{ type: "api", label: "API Key" }],
+    "cursor-sdk": [{ type: "api", label: "API Key" }],
     openai: [
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
       { type: "api", label: "API Key" },
@@ -129,7 +127,7 @@ export function createProviderAuthService(
    * In-flight device authorizations, keyed by TENANT + provider.
    *
    * Keying by `providerId` alone made this a cross-tenant hole on any
-   * multi-org box: org A starting a `codex-acp` login and org B posting the
+   * multi-org box: org A starting a Codex login and org B posting the
    * callback let org B consume org A's in-flight authorization and have the
    * resulting ChatGPT/OpenAI token written into org B's credential store.
    *
@@ -231,10 +229,10 @@ export function createProviderAuthService(
       provider_id: input.providerId,
       kind: "oauth_token",
       source: "managed",
-      label: input.providerId === "codex-acp" ? "ChatGPT OAuth" : "OpenAI OAuth",
+      label: input.providerId === "codex-app-server" ? "ChatGPT OAuth" : "OpenAI OAuth",
       ...(accountId ? { account_id: accountId } : {}),
       expires_at: expires,
-      secret: input.providerId === "codex-acp"
+      secret: input.providerId === "codex-app-server"
         ? JSON.stringify(codexSecret(tokens, expires, accountId))
         : JSON.stringify(openaiSecret(tokens, expires, accountId)),
     }, org)
@@ -256,8 +254,8 @@ function requireMethod(methods: ProviderAuthMethods, providerId: string, index: 
   return method
 }
 
-function isCodexProvider(providerId: string): providerId is "codex-acp" | "openai" {
-  return providerId === "codex-acp" || providerId === "openai"
+function isCodexProvider(providerId: string): providerId is "codex-app-server" | "openai" {
+  return providerId === "codex-app-server" || providerId === "openai"
 }
 
 async function exchangeDeviceTokens(

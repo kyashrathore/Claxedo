@@ -152,7 +152,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     },
   })
   configureAgentConfig({
-    ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
     // Reuse the local product's canonical SQLite authority. Ambient hosted
     // configuration cannot replace a product-owned authority choice.
     ...(services.authority ? { workspaceAuthority: services.authority } : {}),

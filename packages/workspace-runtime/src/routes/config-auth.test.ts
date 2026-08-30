@@ -15,7 +15,7 @@ const audience = "workspace-runtime-management"
 const validSnapshot: RuntimeSnapshot = {
   version: 1,
   mcp: {},
-  runner: { type: "claude-acp", binary: "/bin/agent" },
+  harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "/bin/agent" } },
   auth: {},
 }
 

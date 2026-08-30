@@ -76,18 +76,18 @@ describe("OAuth pending state is keyed by tenant", () => {
     const c = credentials()
     const auth = service(c.registry)
 
-    await auth.authorize({ providerId: "codex-acp", org: "org-a" })
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
 
     // Same provider, different tenant: as far as org B is concerned nothing
     // was ever started — it cannot take delivery of org A's login.
-    await expect(auth.callback({ providerId: "codex-acp", org: "org-b" })).rejects.toMatchObject({
+    await expect(auth.callback({ providerId: "codex-app-server", org: "org-b" })).rejects.toMatchObject({
       code: "provider_auth_missing_pending",
     })
     expect(c.writes).toEqual([])
     expect(c.deletes).toEqual([])
 
     // Org A's authorization is untouched and still completes.
-    expect(await auth.callback({ providerId: "codex-acp", org: "org-a" })).toBe(true)
+    expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
     expect(c.writes).toHaveLength(1)
     expect(c.writes[0]!.org).toBe("org-a")
   })
@@ -121,12 +121,12 @@ describe("OAuth pending state is keyed by tenant", () => {
       }) as typeof fetch,
     })
 
-    await auth.authorize({ providerId: "codex-acp", org: "org-a" })
-    await auth.authorize({ providerId: "codex-acp", org: "org-b" })
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.authorize({ providerId: "codex-app-server", org: "org-b" })
 
     // Each tenant completes ITS OWN device authorization, not the other's.
-    await auth.callback({ providerId: "codex-acp", org: "org-a" })
-    await auth.callback({ providerId: "codex-acp", org: "org-b" })
+    await auth.callback({ providerId: "codex-app-server", org: "org-a" })
+    await auth.callback({ providerId: "codex-app-server", org: "org-b" })
     expect(exchanged).toEqual(["dev-1", "dev-2"])
     expect(c.writes.map((write) => write.org)).toEqual(["org-a", "org-b"])
   })
@@ -134,12 +134,12 @@ describe("OAuth pending state is keyed by tenant", () => {
   test("the callback's destructive write is scoped to the caller's org", async () => {
     const c = credentials()
     const auth = service(c.registry)
-    await auth.authorize({ providerId: "codex-acp", org: "org-a" })
-    await auth.callback({ providerId: "codex-acp", org: "org-a" })
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
+    await auth.callback({ providerId: "codex-app-server", org: "org-a" })
 
     // deleteCredentialsByProvider wipes every credential for the provider; run
     // unscoped it would wipe every OTHER tenant's login for that provider too.
-    expect(c.deletes).toEqual([{ providerId: "codex-acp", org: "org-a" }])
+    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: "org-a" }])
     expect(c.writes[0]!.org).toBe("org-a")
   })
 
@@ -147,15 +147,15 @@ describe("OAuth pending state is keyed by tenant", () => {
     const c = credentials()
     const auth = service(c.registry)
 
-    const authorization = await auth.authorize({ providerId: "codex-acp" })
+    const authorization = await auth.authorize({ providerId: "codex-app-server" })
     expect(authorization).toMatchObject({ instructions: "Enter code: ABCD-EFGH", method: "auto" })
-    expect(await auth.callback({ providerId: "codex-acp" })).toBe(true)
+    expect(await auth.callback({ providerId: "codex-app-server" })).toBe(true)
 
     // A blank org is NOT a wildcard: it collapses to the named single-tenant
     // partition, the same one the credential router resolves unsigned to.
-    expect(c.deletes).toEqual([{ providerId: "codex-acp", org: SINGLE_TENANT_ORG }])
+    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
     expect(c.writes[0]!.org).toBe(SINGLE_TENANT_ORG)
-    expect(c.writes[0]!.input).toMatchObject({ provider_id: "codex-acp", kind: "oauth_token" })
+    expect(c.writes[0]!.input).toMatchObject({ provider_id: "codex-app-server", kind: "oauth_token" })
   })
 
   test("an unclaimed authorization expires instead of lingering forever", async () => {
@@ -169,9 +169,9 @@ describe("OAuth pending state is keyed by tenant", () => {
       fetch: upstream({ userCode: "ABCD-EFGH", accessToken: "access_token" }),
     })
 
-    await auth.authorize({ providerId: "codex-acp", org: "org-a" })
+    await auth.authorize({ providerId: "codex-app-server", org: "org-a" })
     now += 60_001
-    await expect(auth.callback({ providerId: "codex-acp", org: "org-a" })).rejects.toBeInstanceOf(
+    await expect(auth.callback({ providerId: "codex-app-server", org: "org-a" })).rejects.toBeInstanceOf(
       ProviderAuthError,
     )
     expect(c.writes).toEqual([])
@@ -198,16 +198,16 @@ describe("provider-auth routes resolve the tenant the same way credential routes
     let org = "org-a"
     const routes = app(c.registry, () => org)
 
-    expect((await routes.request("/provider/codex-acp/oauth/authorize", post())).status).toBe(200)
+    expect((await routes.request("/provider/codex-app-server/oauth/authorize", post())).status).toBe(200)
 
     org = "org-b"
-    const stolen = await routes.request("/provider/codex-acp/oauth/callback", post())
+    const stolen = await routes.request("/provider/codex-app-server/oauth/callback", post())
     expect(stolen.status).toBe(400)
     expect(await stolen.json()).toMatchObject({ error: { code: "provider_auth_missing_pending" } })
     expect(c.writes).toEqual([])
 
     org = "org-a"
-    const rightful = await routes.request("/provider/codex-acp/oauth/callback", post())
+    const rightful = await routes.request("/provider/codex-app-server/oauth/callback", post())
     expect(rightful.status).toBe(200)
     expect(c.writes[0]!.org).toBe("org-a")
   })
@@ -220,11 +220,11 @@ describe("provider-auth routes resolve the tenant the same way credential routes
       authConfig: { enabled: false, mode: "local-only", reason: "test" },
     })
 
-    expect((await routes.request("/provider/codex-acp/oauth/authorize", post())).status).toBe(200)
-    const done = await routes.request("/provider/codex-acp/oauth/callback", post())
+    expect((await routes.request("/provider/codex-app-server/oauth/authorize", post())).status).toBe(200)
+    const done = await routes.request("/provider/codex-app-server/oauth/callback", post())
     expect(done.status).toBe(200)
     expect(await done.json()).toBe(true)
     expect(c.writes[0]!.org).toBe(SINGLE_TENANT_ORG)
-    expect(c.deletes).toEqual([{ providerId: "codex-acp", org: SINGLE_TENANT_ORG }])
+    expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
   })
 })

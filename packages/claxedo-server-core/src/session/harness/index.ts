@@ -4,6 +4,7 @@ import {
   type SessionConfig as AgentSessionConfig,
   type SessionConfigUpdate as AgentSessionConfigUpdate,
   type SessionHarness as AgentSessionHarness,
+  harnessKey,
   normalizeHarnessIdentity,
 } from "@claxedo/agent-sdk-runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -14,11 +15,9 @@ export type SessionConfig = AgentSessionConfig
 export type SessionConfigUpdate = AgentSessionConfigUpdate
 
 export function meteringHarnessId(harness: SessionHarness) {
-  if (harness.access === "acp") return `${harness.id}-acp`
-  if (harness.id === "claude") return "claude-sdk"
-  if (harness.id === "codex") return "codex-app-server"
-  if (harness.id === "cursor") return "cursor-sdk"
-  return harness.id
+  const key = harnessKey(harness)
+  if (!key) throw new Error(`Unsupported harness identity: ${harness.access}:${harness.id}`)
+  return key
 }
 
 type Row = {

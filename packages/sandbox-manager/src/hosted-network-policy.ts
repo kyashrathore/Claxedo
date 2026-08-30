@@ -41,8 +41,8 @@ import type { SandboxNetworkPolicy, SandboxSource } from "."
 
 /**
  * Model-provider endpoints. Derived from the harness→provider groups in
- * claxedo-server `network/types.ts` (`PROVIDER_TO_GROUP`): claude-acp and
- * claude-sdk → anthropic, codex-acp/codex-app-server/cursor-acp → openai,
+ * claxedo-server `network/types.ts` (`PROVIDER_TO_GROUP`): claude-sdk →
+ * anthropic, codex-app-server/cursor-sdk → openai,
  * google → google_ai; plus the aggregator and catalog endpoints the engine
  * itself fetches at startup.
  */

@@ -30,14 +30,14 @@ const REQUIRED_KEYS: ReadonlyArray<keyof HarnessCapabilities> = [
 ]
 
 type AcpBaseInternals = {
-  options: { binary: string; harness: "claude" | "codex" | "cursor" }
+  options: { binary: string; harness: string }
   sessions: Map<string, unknown>
   probe: null
 }
 
 /** `Extra` names the extra internals a given test drives; see acp/workspace-behavior.test.ts. */
 function acpAdapterWithHarness<Extra extends object = Record<never, never>>(
-  harness: "claude" | "codex" | "cursor",
+  harness: string,
 ) {
   const adapter = Object.create(AcpHarnessAdapter.prototype) as WithInternals<
     AcpHarnessAdapter,
@@ -82,21 +82,9 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     assertCompleteShape(caps)
   })
 
-  test("Claude ACP adapter reports a complete capability manifest", () => {
-    const caps = acpAdapterWithHarness("claude").readHarnessCapabilities()
-    expect(caps.harness).toBe("claude")
-    assertCompleteShape(caps)
-  })
-
-  test("Codex ACP adapter reports a complete capability manifest", () => {
-    const caps = acpAdapterWithHarness("codex").readHarnessCapabilities()
-    expect(caps.harness).toBe("codex")
-    assertCompleteShape(caps)
-  })
-
-  test("Cursor ACP adapter reports a complete capability manifest", () => {
-    const caps = acpAdapterWithHarness("cursor").readHarnessCapabilities()
-    expect(caps.harness).toBe("cursor")
+  test("an operator ACP adapter reports a complete capability manifest", () => {
+    const caps = acpAdapterWithHarness("openclaw").readHarnessCapabilities()
+    expect(caps.harness).toBe("openclaw")
     assertCompleteShape(caps)
   })
 
@@ -111,15 +99,13 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     }
   })
 
-  test("supported coding harnesses advertise subagents", () => {
+  test("native coding harnesses advertise subagents without assuming ACP extensions", () => {
     const adapters = [
       new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities(),
-      acpAdapterWithHarness("claude").readHarnessCapabilities(),
-      acpAdapterWithHarness("codex").readHarnessCapabilities(),
-      acpAdapterWithHarness("cursor").readHarnessCapabilities(),
       ...(["claude", "codex", "cursor"] as const).map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities()),
     ]
     expect(adapters.every((caps) => caps.subagents)).toBe(true)
+    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().subagents).toBe(false)
   })
 
   test("bare and virtual-only Pi adapters do not advertise subagents", async () => {
@@ -160,9 +146,7 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     // through the harness contract.
     const opencode = new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities()
     expect(opencode.configOptions).toBe(false)
-    for (const t of ["claude", "codex", "cursor"] as const) {
-      expect(acpAdapterWithHarness(t).readHarnessCapabilities().configOptions).toBe(true)
-    }
+    expect(acpAdapterWithHarness("openclaw").readHarnessCapabilities().configOptions).toBe(true)
   })
 
   test("revert/unrevert/commands are opencode-only today and ACP harnesses must declare that", () => {
@@ -170,35 +154,28 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     expect(opencode.revert).toBe(true)
     expect(opencode.unrevert).toBe(true)
     expect(opencode.commands).toBe(true)
-    for (const t of ["claude", "codex", "cursor"] as const) {
-      const caps = acpAdapterWithHarness(t).readHarnessCapabilities()
-      expect(caps.revert).toBe(false)
-      expect(caps.unrevert).toBe(false)
-      expect(caps.commands).toBe(false)
-    }
+    const caps = acpAdapterWithHarness("openclaw").readHarnessCapabilities()
+    expect(caps.revert).toBe(false)
+    expect(caps.unrevert).toBe(false)
+    expect(caps.commands).toBe(false)
   })
 
   test("OpenCode and ACP harnesses support baseline replay but do not advertise live reconnect", () => {
-    const sharedTrue: Array<keyof HarnessCapabilities> = ["abort", "replay", "permissions", "todos"]
-    const adapters: HarnessCapabilities[] = [
-      new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities(),
-      acpAdapterWithHarness("claude").readHarnessCapabilities(),
-      acpAdapterWithHarness("codex").readHarnessCapabilities(),
-      acpAdapterWithHarness("cursor").readHarnessCapabilities(),
-    ]
-    for (const caps of adapters) {
-      for (const key of sharedTrue) {
-        expect(caps[key], `${caps.harness} must report ${key}=true`).toBe(true)
-      }
-      expect(caps.reconnect, `${caps.harness} must not claim live in-flight turn reattach`).toBe(false)
+    const opencode = new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities()
+    const acp = acpAdapterWithHarness("openclaw").readHarnessCapabilities()
+    for (const caps of [opencode, acp]) {
+      for (const key of ["abort", "replay", "permissions"] as const) expect(caps[key]).toBe(true)
+      expect(caps.reconnect).toBe(false)
     }
+    expect(opencode.todos).toBe(true)
+    expect(acp.todos).toBe(false)
   })
 
   test("ACP fork is reported only for a live process that advertises session fork", () => {
     const adapter = acpAdapterWithHarness<{
       sessions: Map<string, unknown>
       store: { getAgentSessionId: (sessionId: string) => string | null }
-    }>("claude")
+    }>("openclaw")
     adapter.store = { getAgentSessionId: () => "agent_1" }
     adapter.sessions.set("s1", {
       proc: {

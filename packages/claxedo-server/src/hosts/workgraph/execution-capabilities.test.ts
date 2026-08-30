@@ -263,18 +263,12 @@ describe("WorkGraph execution capability composition", () => {
       expect(result.repository.baseRevisions).toContain("main")
       expect(result.harnesses).toEqual([
         { id: "opencode" },
-        { id: "claude-acp" },
-        { id: "codex-acp" },
-        { id: "cursor-acp" },
         { id: "claude-sdk" },
         { id: "codex-app-server" },
         { id: "cursor-sdk" },
         { id: "pi" },
       ])
       expect(result.models).toEqual(expect.arrayContaining([
-        expect.objectContaining({ harnessId: "claude-acp" }),
-        expect.objectContaining({ harnessId: "codex-acp" }),
-        expect.objectContaining({ harnessId: "cursor-acp" }),
         expect.objectContaining({ harnessId: "claude-sdk" }),
         expect.objectContaining({ harnessId: "codex-app-server" }),
         expect.objectContaining({ harnessId: "cursor-sdk" }),
@@ -314,14 +308,14 @@ describe("WorkGraph execution capability composition", () => {
     }
   })
 
-  test("uses live Codex ACP model options for execution capabilities", async () => {
+  test("uses live operator ACP model options for execution capabilities", async () => {
     const directory = await gitRepository()
     try {
       const capabilities = createLocalExecutionCapabilities({
         resolveRepositoryDirectory: (requestedDirectory) => requestedDirectory === directory ? directory : undefined,
-        harness: async () => "codex-acp",
+        harness: async () => "acp:openclaw",
         engineLoaded: () => true,
-        harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "codex-acp" ? [{
+        harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "acp:openclaw" ? [{
           id: "model",
           currentValue: "gpt-5.6-sol",
           options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
@@ -335,9 +329,9 @@ describe("WorkGraph execution capability composition", () => {
       })
 
       const result = await capabilities.read(context, { directory })
-      expect(result.models.filter((model) => model.harnessId === "codex-acp")).toEqual([{
-        harnessId: "codex-acp",
-        providerId: "codex-acp",
+      expect(result.models.filter((model) => model.harnessId === "acp:openclaw")).toEqual([{
+        harnessId: "acp:openclaw",
+        providerId: "acp:openclaw",
         modelId: "gpt-5.6-sol",
         label: "GPT-5.6-Sol",
         efforts: ["low", "medium", "high"],
@@ -412,11 +406,8 @@ describe("WorkGraph execution capability composition", () => {
       .map((tool) => tool.harnessId)
       .sort()
     expect(connectionToolHarnesses).toEqual([
-      "claude-acp",
       "claude-sdk",
-      "codex-acp",
       "codex-app-server",
-      "cursor-acp",
       "cursor-sdk",
       "opencode",
       "pi",

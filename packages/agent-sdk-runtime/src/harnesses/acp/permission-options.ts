@@ -6,8 +6,8 @@ export type AcpPermissionDecision = "allow_once" | "allow_always" | "deny" | "re
 /**
  * Which ACP option kinds satisfy a decision, best first.
  *
- * An agent only has to advertise the option kinds IT supports, so the exact kind
- * we want is often absent — Codex, for instance, may offer no `allow_always`.
+ * An agent only has to advertise the option kinds it supports, so the exact kind
+ * we want may be absent.
  * Matching one kind and giving up meant answering `cancelled`, which kills the
  * tool call: choosing "always allow" against such an agent cancelled the call
  * instead of allowing it.

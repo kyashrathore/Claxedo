@@ -74,7 +74,7 @@ describe("opencode compat provider routes resolve the harness before comparing i
   })
 
   test("/config/providers still serves an empty catalog for a non-opencode harness", async () => {
-    const res = await app.request("/config/providers?harness=claude-acp")
+    const res = await app.request("/config/providers?harness=claude-sdk")
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ providers: [], default: {} })
   })
@@ -87,7 +87,7 @@ describe("opencode compat provider routes resolve the harness before comparing i
       expect(body, query).toMatchObject(ENGINE_PROVIDER_AUTH)
       // The control plane's own methods survive the overlay — the engine adds
       // to them rather than replacing them.
-      expect(body["codex-acp"], query).toBeDefined()
+      expect(body["codex-app-server"], query).toBeDefined()
     }
   })
 
@@ -101,12 +101,12 @@ describe("opencode compat provider routes resolve the harness before comparing i
   })
 
   test("/provider/auth serves only the control-plane methods for a non-opencode harness", async () => {
-    const res = await app.request("/provider/auth?harness=claude-acp")
+    const res = await app.request("/provider/auth?harness=claude-sdk")
     expect(res.status).toBe(200)
     const body = await res.json() as Record<string, unknown>
     expect(body.anthropic).toBeUndefined()
     expect(Object.keys(body).sort()).toEqual(
-      ["claude-acp", "claude-sdk", "codex-acp", "codex-app-server", "cursor-acp", "openai"],
+      ["claude-sdk", "codex-app-server", "cursor-sdk", "openai"],
     )
   })
 })
@@ -121,7 +121,7 @@ describe("opencode compat provider routes resolve the harness before comparing i
  * harness's credential flow with it.
  */
 describe("control-plane provider auth defers opencode to the compat route", () => {
-  const registryMethods = { "claude-acp": [{ type: "api", label: "API Key" }] }
+  const registryMethods = { "claude-sdk": [{ type: "api", label: "API Key" }] }
   const services = () => ({ credentials: {} }) as never
   const service = { methods: () => registryMethods } as never
 
@@ -154,9 +154,9 @@ describe("control-plane provider auth defers opencode to the compat route", () =
     await expect((await host.request("/provider/auth?runner=opencode")).json())
       .resolves.toEqual({ servedBy: "later-route" })
     // A harness it does not defer still gets the registry's answer.
-    await expect((await host.request("/provider/auth?harness=claude-acp")).json())
+    await expect((await host.request("/provider/auth?harness=claude-sdk")).json())
       .resolves.toEqual(registryMethods)
 
-    expect(seen).toEqual(["opencode", "opencode", "claude-acp"])
+    expect(seen).toEqual(["opencode", "opencode", "claude-sdk"])
   })
 })

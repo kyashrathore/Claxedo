@@ -114,7 +114,7 @@ describe("model catalog is populated on every surface", () => {
   test("a non-opencode harness serves an empty catalog WITHOUT recording a degradation", async () => {
     // Empty here is correct, not a failure: these harnesses carry no opencode
     // catalog. The distinction matters — health must not report degraded.
-    const res = await app.request("/config/providers?harness=claude-acp")
+    const res = await app.request("/config/providers?harness=claude-sdk")
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ providers: [], default: {} })
   })

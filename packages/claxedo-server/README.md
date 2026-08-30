@@ -28,9 +28,9 @@ claxedo-server also owns the **sandbox image** (`scripts/sandbox`). Delivery is
 bundle-first: `scripts/sandbox/build-sandbox-image.ts` esbuilds the host
 entrypoint into a single artifact under `.build/`, both Dockerfiles `COPY
 .build/` and symlink the bundle to `/usr/local/bin/workspace-runtime` (so the
-sandbox-manager drivers' `ensureHost` command is unchanged), and ACP bins are
-installed directly from `@agentclientprotocol/claude-agent-acp` and
-`@agentclientprotocol/codex-acp`. An `npm publish` of
+sandbox-manager drivers' `ensureHost` command is unchanged). ACP executables
+are operator dependencies: an image or VM installs the command named by its
+runtime `harnesses` descriptor. An `npm publish` of
 `@claxedo/workspace-runtime` no longer gates image builds; image/snapshot
 versioning keys off the bundle build plus `SNAPSHOT_SCHEMA_VERSION`
 (`packages/sandbox-manager/src/image.ts`).

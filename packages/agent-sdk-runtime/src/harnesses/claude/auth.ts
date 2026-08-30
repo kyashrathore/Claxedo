@@ -32,7 +32,7 @@ export function claudeAuthEnv(input: string | undefined): ClaudeAuthEnv {
 }
 
 export function claudeAuthValue(auth: Record<string, string> | undefined) {
-  return auth?.["claude-sdk"] ?? auth?.["claude-acp"] ?? auth?.anthropic ?? auth?.claude
+  return auth?.["claude-sdk"] ?? auth?.anthropic ?? auth?.claude
 }
 
 function clean(input: unknown) {

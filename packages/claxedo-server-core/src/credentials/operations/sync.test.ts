@@ -58,10 +58,10 @@ describe("syncLocalCredentials", () => {
     delete process.env.CURSOR_API_KEY
     delete process.env.XDG_DATA_HOME
     await Promise.all([
-      deleteCredentialsByProvider("claude-acp"),
       deleteCredentialsByProvider("claude-sdk"),
-      deleteCredentialsByProvider("codex-acp"),
-      deleteCredentialsByProvider("cursor-acp"),
+      deleteCredentialsByProvider("claude-sdk"),
+      deleteCredentialsByProvider("codex-app-server"),
+      deleteCredentialsByProvider("cursor-sdk"),
       deleteCredentialsByProvider("openai"),
       deleteCredentialsByProvider("daytona"),
       deleteCredentialsByProvider("modal"),
@@ -96,7 +96,7 @@ describe("syncLocalCredentials", () => {
 
     await saveUserConfig({
       mcp: {},
-      auth: { "claude-acp": "sk-ant-config" },
+      auth: { "claude-sdk": "sk-ant-config" },
       sandbox_driver: {
         auth: {
           modal: {
@@ -107,41 +107,38 @@ describe("syncLocalCredentials", () => {
       },
     })
 
-    const result = await syncLocalCredentials(["claude-acp", "modal"])
+    const result = await syncLocalCredentials(["claude-sdk", "modal"])
 
-    expect(result.synced).toEqual(["claude-acp", "modal"])
+    expect(result.synced).toEqual(["claude-sdk", "modal"])
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("claude-acp")).toBe("sk-ant-env")
+    expect(await resolveSecret("claude-sdk")).toBe("sk-ant-env")
     expect(await resolveSecret("modal")).toBe(JSON.stringify({
       token_id: "modal-id",
       token_secret: "modal-secret",
     }))
   })
 
-  test("syncs Claude Code OAuth env credentials for ACP and SDK harnesses", async () => {
+  test("syncs Claude Code OAuth env credentials for the native SDK harness", async () => {
     process.env.CLAUDE_CODE_OAUTH_TOKEN = JSON.stringify({
       claudeAiOauth: {
         accessToken: "sk-ant-oauth-env",
       },
     })
 
-    const result = await syncLocalCredentials(["claude-acp", "claude-sdk"])
-    const acp = JSON.parse(await resolveSecret("claude-acp") ?? "{}") as Record<string, any>
+    const result = await syncLocalCredentials(["claude-sdk"])
     const sdk = JSON.parse(await resolveSecret("claude-sdk") ?? "{}") as Record<string, any>
 
-    expect(result.synced).toEqual(["claude-acp", "claude-sdk"])
+    expect(result.synced).toEqual(["claude-sdk"])
     expect(result.existing).toEqual([])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect((await getCredentialByProvider("claude-acp"))?.source).toBe("managed")
     expect((await getCredentialByProvider("claude-sdk"))?.source).toBe("managed")
-    expect(acp).toEqual({
+    expect(sdk).toEqual({
       type: "claude_code_oauth",
       claudeAiOauth: { accessToken: "sk-ant-oauth-env" },
     })
-    expect(sdk).toEqual(acp)
   })
 
   test("falls back to Claude Code credentials file when env and keychain are unavailable", async () => {
@@ -155,22 +152,16 @@ describe("syncLocalCredentials", () => {
       },
     }))
 
-    const result = await syncLocalCredentials(["claude-acp", "claude-sdk"])
-    const acp = JSON.parse(await resolveSecret("claude-acp") ?? "{}") as Record<string, any>
+    const result = await syncLocalCredentials(["claude-sdk"])
+    const sdk = JSON.parse(await resolveSecret("claude-sdk") ?? "{}") as Record<string, any>
 
-    expect(result.synced).toEqual(["claude-acp", "claude-sdk"])
+    expect(result.synced).toEqual(["claude-sdk"])
     expect(result.missing).toEqual([])
     expect(result.failed).toEqual([])
-    expect(acp).toEqual({
+    expect(sdk).toEqual({
       type: "claude_code_oauth",
       claudeAiOauth: { accessToken: "sk-ant-oauth-file" },
     })
-    expect(await resolveSecret("claude-sdk")).toBe(await resolveSecret("claude-acp"))
-    // `claude-acp` and `claude-sdk` are two bindings of ONE credential, so the
-    // label has to name the binding — two rows reading "Synced from local Claude
-    // Code login" asked the user to choose between things they couldn't tell
-    // apart.
-    expect((await getCredentialByProvider("claude-acp"))?.label).toBe("Claude Code login · ACP adapter")
     expect((await getCredentialByProvider("claude-sdk"))?.label).toBe("Claude Code login · agent SDK")
   })
 
@@ -207,37 +198,37 @@ describe("syncLocalCredentials", () => {
 
   test("reports existing managed credentials when no local source is present", async () => {
     await putCredential({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "api_key",
       source: "managed",
       secret: "sk-openai-managed",
     })
 
-    const result = await syncLocalCredentials(["codex-acp", "cursor-acp"])
+    const result = await syncLocalCredentials(["codex-app-server", "cursor-sdk"])
 
     expect(result.synced).toEqual([])
-    expect(result.existing).toEqual(["codex-acp"])
-    expect(result.missing).toEqual(["cursor-acp"])
+    expect(result.existing).toEqual(["codex-app-server"])
+    expect(result.missing).toEqual(["cursor-sdk"])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("codex-acp")).toBe("sk-openai-managed")
+    expect(await resolveSecret("codex-app-server")).toBe("sk-openai-managed")
   })
 
   test("does not overwrite managed credentials with local or env sources", async () => {
     process.env.ANTHROPIC_API_KEY = "sk-ant-env"
 
     await putCredential({
-      provider_id: "claude-acp",
+      provider_id: "claude-sdk",
       kind: "api_key",
       source: "managed",
       secret: "sk-ant-managed",
     })
 
-    const result = await syncLocalCredentials(["claude-acp"])
+    const result = await syncLocalCredentials(["claude-sdk"])
 
     expect(result.synced).toEqual([])
-    expect(result.existing).toEqual(["claude-acp"])
+    expect(result.existing).toEqual(["claude-sdk"])
     expect(result.failed).toEqual([])
-    expect(await resolveSecret("claude-acp")).toBe("sk-ant-managed")
+    expect(await resolveSecret("claude-sdk")).toBe("sk-ant-managed")
   })
 
   test("syncs local Codex auth into managed storage", async () => {
@@ -255,11 +246,11 @@ describe("syncLocalCredentials", () => {
       last_refresh: "2026-04-11T00:00:00.000Z",
     }, null, 2))
 
-    const result = await syncLocalCredentials(["codex-acp"])
-    const raw = await resolveSecret("codex-acp")
+    const result = await syncLocalCredentials(["codex-app-server"])
+    const raw = await resolveSecret("codex-app-server")
     const secret = raw ? JSON.parse(raw) as Record<string, any> : undefined
 
-    expect(result.synced).toEqual(["codex-acp"])
+    expect(result.synced).toEqual(["codex-app-server"])
     expect(secret?.type).toBe("codex_auth")
     expect(secret?.tokens?.id_token).toBe("id-token")
     expect(secret?.oauth?.account_id).toBe("acct-123")
@@ -335,12 +326,12 @@ describe("syncLocalCredentials", () => {
   test("syncs Cursor credentials from the CURSOR_API_KEY env var", async () => {
     process.env.CURSOR_API_KEY = "cursor-env-key"
 
-    const result = await syncLocalCredentials(["cursor-acp"])
+    const result = await syncLocalCredentials(["cursor-sdk"])
 
-    expect(result.synced).toEqual(["cursor-acp"])
+    expect(result.synced).toEqual(["cursor-sdk"])
     expect(result.missing).toEqual([])
-    expect(await resolveSecret("cursor-acp")).toBe("cursor-env-key")
-    expect((await getCredentialByProvider("cursor-acp"))?.source).toBe("env")
+    expect(await resolveSecret("cursor-sdk")).toBe("cursor-env-key")
+    expect((await getCredentialByProvider("cursor-sdk"))?.source).toBe("env")
   })
 
   test("does not discover Cursor credentials from local Cursor state", async () => {
@@ -359,11 +350,11 @@ describe("syncLocalCredentials", () => {
       authInfo: { authId: "auth0|user_123" },
     }))
 
-    const result = await syncLocalCredentials(["cursor-acp"])
+    const result = await syncLocalCredentials(["cursor-sdk"])
 
     expect(result.synced).toEqual([])
-    expect(result.missing).toEqual(["cursor-acp"])
-    expect(await resolveSecret("cursor-acp")).toBeNull()
+    expect(result.missing).toEqual(["cursor-sdk"])
+    expect(await resolveSecret("cursor-sdk")).toBeNull()
   })
 
   test("prefers freshest codex account auth over stale top-level auth", async () => {
@@ -392,11 +383,11 @@ describe("syncLocalCredentials", () => {
       last_refresh: "2026-04-22T00:00:00.000Z",
     }, null, 2))
 
-    const result = await syncLocalCredentials(["codex-acp"])
-    const raw = await resolveSecret("codex-acp")
+    const result = await syncLocalCredentials(["codex-app-server"])
+    const raw = await resolveSecret("codex-app-server")
     const secret = raw ? JSON.parse(raw) as Record<string, any> : undefined
 
-    expect(result.synced).toEqual(["codex-acp"])
+    expect(result.synced).toEqual(["codex-app-server"])
     expect(secret?.tokens?.account_id).toBe("fresh-account")
     expect(secret?.tokens?.id_token).toBe("fresh-id")
   })
@@ -429,7 +420,7 @@ describe("syncLocalCredentials", () => {
     }))
 
     const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-acp")
+      .filter((item) => item.provider_id === "codex-app-server")
 
     expect(discovered).toHaveLength(1)
     expect(discovered[0]!.account_id).toBe("shared-account")
@@ -453,7 +444,7 @@ describe("syncLocalCredentials", () => {
     }))
 
     const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-acp")
+      .filter((item) => item.provider_id === "codex-app-server")
 
     expect(discovered.map((item) => item.account_id).sort()).toEqual(["other-account", "solo-account"])
   })
@@ -475,7 +466,7 @@ describe("syncLocalCredentials", () => {
     }))))
 
     const discovered = (await collectLocalCredentialItems())
-      .filter((item) => item.provider_id === "codex-acp")
+      .filter((item) => item.provider_id === "codex-app-server")
 
     expect(discovered.map((item) => item.account_id)).toEqual(["first-account", "second-account"])
     expect(discovered.map((item) => item.origin)).toEqual([
@@ -525,7 +516,7 @@ describe("syncLocalCredentials", () => {
         const discovered = await collectLocalCredentialItems({ allowKeychainPrompt: true, exec })
 
         const claude = discovered.filter((item) => item.provider_id.startsWith("claude-"))
-        expect(claude.map((item) => item.provider_id).sort()).toEqual(["claude-acp", "claude-sdk"])
+        expect(claude.map((item) => item.provider_id)).toEqual(["claude-sdk"])
         expect(JSON.parse(claude[0]!.secret)).toEqual({
           type: "claude_code_oauth",
           claudeAiOauth: { accessToken: "sk-ant-oat01-keychain" },
@@ -571,7 +562,7 @@ describe("syncLocalCredentials", () => {
       process.env.CLAUDE_CODE_OAUTH_TOKEN = "sk-ant-oat01-plain-env"
 
       const discovered = await collectLocalCredentialItems()
-      const claude = discovered.find((item) => item.provider_id === "claude-acp")
+      const claude = discovered.find((item) => item.provider_id === "claude-sdk")
 
       expect(JSON.parse(claude!.secret)).toEqual({
         type: "claude_code_oauth",
@@ -591,7 +582,7 @@ describe("syncLocalCredentials", () => {
         const discovered = await collectLocalCredentialItems({ exec })
 
         expect(exec).not.toHaveBeenCalled()
-        expect(JSON.parse(discovered.find((item) => item.provider_id === "claude-acp")!.secret)).toEqual({
+        expect(JSON.parse(discovered.find((item) => item.provider_id === "claude-sdk")!.secret)).toEqual({
           type: "claude_code_oauth",
           claudeAiOauth: { accessToken: "sk-ant-oauth-file" },
         })
@@ -604,7 +595,7 @@ describe("syncLocalCredentials", () => {
       const restore = darwin()
       const { exec } = keychain(KEYCHAIN_BLOB)
       try {
-        await syncLocalCredentials(["claude-acp"], undefined, { exec })
+        await syncLocalCredentials(["claude-sdk"], undefined, { exec })
 
         expect(exec).not.toHaveBeenCalled()
       } finally {
@@ -624,7 +615,7 @@ describe("syncLocalCredentials", () => {
       const { exec, calls } = keychain(KEYCHAIN_BLOB)
       try {
         await collectLocalCredentialItems({ allowKeychainPrompt: true, exec })
-        await syncLocalCredentials(["claude-acp"], undefined, { allowKeychainPrompt: true, exec })
+        await syncLocalCredentials(["claude-sdk"], undefined, { allowKeychainPrompt: true, exec })
 
         expect(calls().length).toBeGreaterThan(0)
         for (const [file, args] of calls()) {

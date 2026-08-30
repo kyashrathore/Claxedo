@@ -344,7 +344,7 @@ describe("credential routes", () => {
   test("verifies Anthropic credentials with a one-token Messages request", async () => {
     const row = {
       ...(await credentials().listCredentials())[0]!,
-      provider_id: "claude-acp",
+      provider_id: "claude-sdk",
       kind: "api_key" as const,
       health: null,
     }
@@ -369,7 +369,7 @@ describe("credential routes", () => {
   test("verifies Codex subscription credentials through the ChatGPT responses endpoint", async () => {
     const row = {
       ...(await credentials().listCredentials())[0]!,
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "oauth_token" as const,
       health: null,
     }
@@ -525,7 +525,7 @@ describe("credential routes", () => {
   test("every serialized credential carries its kind, on the list and by-provider routes", async () => {
     const row = {
       ...(await credentials().listCredentials())[0]!,
-      provider_id: "claude-acp",
+      provider_id: "claude-sdk",
       kind: "oauth_token" as const,
     }
     const registry = Object.assign(credentials(), {
@@ -535,13 +535,13 @@ describe("credential routes", () => {
     const app = CredentialRoutes(registry)
 
     const list = await app.request("http://localhost/")
-    const byProvider = await app.request("http://localhost/claude-acp")
+    const byProvider = await app.request("http://localhost/claude-sdk")
 
     await expect(list.json()).resolves.toMatchObject({
-      credentials: [{ provider_id: "claude-acp", kind: "oauth_token" }],
+      credentials: [{ provider_id: "claude-sdk", kind: "oauth_token" }],
     })
     await expect(byProvider.json()).resolves.toMatchObject({
-      credential: { provider_id: "claude-acp", kind: "oauth_token" },
+      credential: { provider_id: "claude-sdk", kind: "oauth_token" },
     })
   })
 

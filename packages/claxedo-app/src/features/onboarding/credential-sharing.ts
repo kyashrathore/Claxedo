@@ -13,7 +13,7 @@ export type CloudShareBlock = {
  * (or `CLAUDE_CODE_OAUTH_TOKEN`) login — see the server's `claudeOAuthItem`,
  * which is its only producer.
  */
-const claudeSubscriptionProviders = ["claude-acp", "claude-sdk", "anthropic"]
+const claudeSubscriptionProviders = ["claude-sdk", "anthropic"]
 
 /**
  * Whether a credential is model/agent auth at all.
@@ -78,7 +78,7 @@ export function cloudShareBlock(credential: OnboardingCredential): CloudShareBlo
  *
  * A row with no `kind` came from a server that predates the field. For the
  * Claude harness bindings that ambiguity resolves closed: discovery is the only
- * thing that writes `claude-acp`/`claude-sdk` rows without an explicit kind, and
+ * thing that writes `claude-sdk` rows without an explicit kind, and
  * offering the wrong one costs the user their local login.
  */
 function isClaudeSubscriptionLogin(credential: OnboardingCredential) {

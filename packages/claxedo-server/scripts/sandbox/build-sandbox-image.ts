@@ -10,13 +10,9 @@ import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeRoot, workspaceRuntimeVer
 
 type Exec = (cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) => void
 
-// Bins the image symlinks next to the host bundle; they must be present in the
-// collected dependency set (versions come from workspace package.jsons).
 const IMAGE_REQUIRED_DEPENDENCIES = [
   "better-sqlite3",
   "@lydell/node-pty",
-  "@agentclientprotocol/claude-agent-acp",
-  "@agentclientprotocol/codex-acp",
 ]
 
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"

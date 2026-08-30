@@ -91,7 +91,7 @@ let configuredOnSessionMetaEvent: ((event: OpencodeEvent) => void) | undefined
  * MEASURED, both failure modes: the pre-split bridge tapped the runtime's
  * multiplexing `/global/event` route, which with the always-live embedded
  * engine latched onto the engine stream even for an ACP-default workspace —
- * ACP turns then bypassed the meter entirely (tier-real claude-acp: three
+ * ACP turns then bypassed the meter entirely (a live ACP connection: three
  * visible turns, ZERO usage facts). Forwarding the engine tap unfiltered
  * alongside the hub double-counts opencode turns instead (tier-real
  * opencode: three turns, SIX facts — raw engine ids plus hub-republished

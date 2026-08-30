@@ -40,16 +40,16 @@ afterEach(async () => {
 
 describe("shouldMirrorCodexTokens", () => {
   test("mirrors only imported Codex OAuth logins", () => {
-    expect(shouldMirrorCodexTokens({ provider_id: "codex-acp", kind: "oauth_token", source: "local_only" })).toBe(true)
+    expect(shouldMirrorCodexTokens({ provider_id: "codex-app-server", kind: "oauth_token", source: "local_only" })).toBe(true)
     expect(shouldMirrorCodexTokens({ provider_id: "codex-app-server", kind: "oauth_token", source: "local_only" }))
       .toBe(true)
   })
 
   test("leaves credentials that own no file on disk alone", () => {
     // Created inside Claxedo, not imported — there is nothing to mirror.
-    expect(shouldMirrorCodexTokens({ provider_id: "codex-acp", kind: "oauth_token", source: "managed" })).toBe(false)
-    expect(shouldMirrorCodexTokens({ provider_id: "codex-acp", kind: "api_key", source: "local_only" })).toBe(false)
-    expect(shouldMirrorCodexTokens({ provider_id: "claude-acp", kind: "oauth_token", source: "local_only" }))
+    expect(shouldMirrorCodexTokens({ provider_id: "codex-app-server", kind: "oauth_token", source: "managed" })).toBe(false)
+    expect(shouldMirrorCodexTokens({ provider_id: "codex-app-server", kind: "api_key", source: "local_only" })).toBe(false)
+    expect(shouldMirrorCodexTokens({ provider_id: "claude-sdk", kind: "oauth_token", source: "local_only" }))
       .toBe(false)
   })
 })

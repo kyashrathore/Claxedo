@@ -112,8 +112,6 @@ export function spec(root = ROOT): Spec {
     "scripts/claxedo-engine-worker-entry.ts",
     "scripts/claxedo-engine-worker-policy.ts",
     "scripts/claxedo-server-startup.ts",
-    "scripts/codex-acp-entry.ts",
-    "scripts/codex-acp-target.ts",
     "scripts/copy-bundles.ts",
     "scripts/contract.ts",
     "scripts/finalize-latest-yml.ts",
@@ -198,8 +196,6 @@ export function spec(root = ROOT): Spec {
       "resources/icons/128x128@2x.png",
       "resources/icons/icon.icns",
       "resources/icons/icon.ico",
-      "resources/acp/claude-agent-acp",
-      "resources/acp/codex-acp",
     ],
     match: [
       ["out/main/claxedo-server/index.js", "resources/claxedo-server/index.js"],

@@ -78,7 +78,7 @@ await context.addInitScript((args: { workspaceId: string }) => {
   localStorage.setItem(
     "opencode.global.dat:model",
     JSON.stringify({
-      recent: [{ providerID: "claude-acp", modelID: "claude-sonnet-4-6" }],
+      recent: [{ providerID: "claude-sdk", modelID: "claude-sonnet-4-6" }],
       user: [],
       variant: {},
     }),
@@ -281,21 +281,21 @@ async function mockWorkspaceShell(page: Page) {
   }
   const provider = {
     all: [{
-      id: "claude-acp",
+      id: "claude-sdk",
       name: "Claude",
       models: {
         "claude-sonnet-4-6": {
           id: "claude-sonnet-4-6",
           name: "Sonnet 4.6",
-          providerID: "claude-acp",
+          providerID: "claude-sdk",
         },
       },
     }],
-    default: { "claude-acp": "claude-sonnet-4-6" },
+    default: { "claude-sdk": "claude-sonnet-4-6" },
     connected: [],
   }
   const config = {
-    provider: { id: "claude-acp", model: "claude-sonnet-4-6" },
+    provider: { id: "claude-sdk", model: "claude-sonnet-4-6" },
     agent: { id: "build" },
   }
   const json = async (route: Route, body: unknown) => {
@@ -341,7 +341,7 @@ async function mockWorkspaceShell(page: Page) {
         path: { state: "", config: "", worktree: WORKSPACE_ID, directory: WORKSPACE_ID, home: "" },
         project: [project],
         provider,
-        provider_auth: { "claude-acp": [{ type: "api", label: "API key" }] },
+        provider_auth: { "claude-sdk": [{ type: "api", label: "API key" }] },
         config,
       })
       return
@@ -510,11 +510,11 @@ async function mockWorkspaceShell(page: Page) {
       return
     }
     if (url.pathname === "/provider/auth") {
-      await json(route, { "claude-acp": [{ type: "api", label: "API key" }] })
+      await json(route, { "claude-sdk": [{ type: "api", label: "API key" }] })
       return
     }
     if (url.pathname === "/api/claxedo/agent-config/harness") {
-      await json(route, { type: "claude-acp", ok: true })
+      await json(route, { type: "claude-sdk", ok: true })
       return
     }
     if (url.pathname === "/api/claxedo/pty") {

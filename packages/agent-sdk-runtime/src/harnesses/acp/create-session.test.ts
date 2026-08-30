@@ -4,7 +4,14 @@ import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
 
 type BaseInternals = {
-  options: { binary: string; storeRoot?: string }
+  options: {
+    binary: string
+    storeRoot?: string
+    harness?: string
+    args?: string[]
+    env?: Record<string, string>
+    supportsMcpServers?: boolean
+  }
   currentModel: string
   dirs: Set<string>
   sessions: Map<string, unknown>
@@ -188,5 +195,46 @@ describe("AcpHarnessAdapter.createSession", () => {
     expect(bindings).toEqual([
       expect.objectContaining({ sessionId: "ses_wgrun_run_1", agentSessionId: "agent-session-1" }),
     ])
+  })
+
+  it("persists only the logical ACP identity, not its launch descriptor", async () => {
+    const configs: unknown[] = []
+    const out = adapter<{
+      getOrSpawnProcess: (id: string, directory: string) => Promise<{
+        proc: {
+          newSession: (directory: string, title?: string) => Promise<string>
+        }
+        isNew: boolean
+      }>
+      store: {
+        getSession: (id: string) => unknown
+        bindSession: (input: unknown) => void
+        updateSessionConfig: (id: string, cfg: unknown) => void
+      }
+    }>()
+    out.options = {
+      binary: "/opt/homebrew/bin/npx",
+      harness: "openclaw",
+      args: ["--yes", "openclaw@latest", "acp"],
+      env: { OPENCLAW_GATEWAY_PORT: "18789" },
+      supportsMcpServers: false,
+    }
+    out.store = {
+      getSession: () => undefined,
+      bindSession() {},
+      updateSessionConfig: (_id, cfg) => configs.push(cfg),
+    }
+    out.getOrSpawnProcess = async () => ({
+      isNew: true,
+      proc: { newSession: async () => "openclaw-session-1" },
+    })
+
+    await out.createSession(path.resolve("/work"), "OpenClaw", "ses_openclaw")
+
+    expect(configs).toEqual([{
+      harness: { id: "openclaw", access: "acp" },
+      variant: null,
+      agent: null,
+    }])
   })
 })

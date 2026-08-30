@@ -1270,9 +1270,9 @@ export class RuntimeStore {
         harness_id = COALESCE(
           harness_id,
           CASE
-            WHEN runner_type IN ('claude-acp', 'claude') THEN 'claude'
-            WHEN runner_type IN ('codex-app-server', 'codex-acp', 'codex') THEN 'codex'
-            WHEN runner_type IN ('cursor-acp', 'cursor') THEN 'cursor'
+            WHEN runner_type = 'claude' THEN 'claude'
+            WHEN runner_type IN ('codex-app-server', 'codex') THEN 'codex'
+            WHEN runner_type = 'cursor' THEN 'cursor'
             WHEN runner_type IN ('opencode-native', 'opencode') THEN 'opencode'
             WHEN runner_type = 'pi' THEN 'pi'
             ELSE NULL
@@ -1281,7 +1281,6 @@ export class RuntimeStore {
         harness_access = COALESCE(
           harness_access,
           CASE
-            WHEN runner_type IN ('claude-acp', 'codex-acp', 'cursor-acp') THEN 'acp'
             WHEN runner_type IN ('claude', 'codex-app-server', 'codex', 'cursor', 'opencode-native', 'opencode', 'pi') THEN 'native'
             ELSE NULL
           END
@@ -2621,7 +2620,7 @@ export class RuntimeStore {
     const events: CompatEvent[] = []
 
     if (input.outcome.status === "failed") {
-      const control = JSON.parse(active.payload_json) as Partial<Turn>
+      const control = JSON.parse(active.payload_json) as Turn
       const session = this.getSession(input.sessionId) as { directory?: string } | null
       events.push(this.appendEvent({
         sessionId: input.sessionId,
@@ -2632,7 +2631,7 @@ export class RuntimeStore {
             sessionID: input.sessionId,
             parentID: active.user_message_id ?? input.sessionId,
             agent: control.agent ?? "build",
-            model: control.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+            model: control.model,
             directory: session?.directory ?? "",
             created: active.created_at,
             completed: input.outcome.completedAt,

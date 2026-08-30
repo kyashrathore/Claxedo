@@ -61,9 +61,6 @@ export type AgentProcessAttributionScenario = {
 }
 
 const attributionScenarioByHarness = {
-  "claude-acp": { root: "direct-pid", probe: "direct-pid", mcp: "stdio-and-remote" },
-  "codex-acp": { root: "direct-pid", probe: "direct-pid", mcp: "stdio-and-remote" },
-  "cursor-acp": { root: "direct-pid", probe: "direct-pid", mcp: "stdio-and-remote" },
   claude: { root: "direct-pid", probe: "direct-pid", mcp: "stdio-and-remote" },
   codex: { root: "direct-pid", probe: "shared-process", mcp: "stdio-and-remote" },
   cursor: { root: "inferred-local", probe: "remote", mcp: "stdio-and-remote" },

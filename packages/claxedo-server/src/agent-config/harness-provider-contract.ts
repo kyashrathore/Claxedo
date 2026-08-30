@@ -16,9 +16,6 @@
 /** Every harness id the app can select. Mirrors `HARNESS_IDS` in the app's
  * `platform/identity/session-ref.ts`. */
 export const HARNESS_IDS = [
-  "claude-acp",
-  "codex-acp",
-  "cursor-acp",
   "claude-sdk",
   "codex-app-server",
   "cursor-sdk",
@@ -29,17 +26,14 @@ export const HARNESS_IDS = [
 export type ContractHarnessId = (typeof HARNESS_IDS)[number]
 
 /**
- * The five harness-BINDING provider ids. `localProviderCatalog` derives this
+ * The native harness-BINDING provider ids. `localProviderCatalog` derives this
  * list from the keys of its `envKeys` map, so it is the set of harnesses that
- * carry a credential slot — NOT the set of selectable harnesses (`cursor-sdk`
- * has no binding, which is why it is absent).
+ * carry a credential slot — NOT the set of selectable harnesses.
  */
 export const HARNESS_BINDING_PROVIDER_IDS = [
-  "claude-acp",
   "claude-sdk",
-  "codex-acp",
   "codex-app-server",
-  "cursor-acp",
+  "cursor-sdk",
 ] as const
 
 /** `piProviderCatalog` filters the model catalog to `PI_LAUNCH_PROVIDERS`. */
@@ -76,14 +70,10 @@ const harnessBindingContract: HarnessCatalogContract = {
 /**
  * What `/provider?harness=<id>` serves, per harness.
  *
- * `cursor-sdk` is selectable in the app but is not an id the server's
- * `localProviderCatalog` knows; it falls into the same non-opencode branch and
- * so gets the same five harness-binding providers as the rest.
+ * Operator-defined ACP connections are discovered dynamically and are not
+ * part of this finite built-in contract.
  */
 export const HARNESS_PROVIDER_CONTRACT: Record<ContractHarnessId, HarnessCatalogContract> = {
-  "claude-acp": harnessBindingContract,
-  "codex-acp": harnessBindingContract,
-  "cursor-acp": harnessBindingContract,
   "claude-sdk": harnessBindingContract,
   "codex-app-server": harnessBindingContract,
   "cursor-sdk": harnessBindingContract,

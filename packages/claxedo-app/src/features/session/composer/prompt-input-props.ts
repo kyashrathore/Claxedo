@@ -59,7 +59,7 @@ export interface PromptInputProps {
    * NOTE: every harness adapter shipped today reports `true` (acp/index.ts,
    * shared/sdk-runtime-adapter.ts, pi/index.ts, opencode/index.ts all declare
    * `permissions: true`) — an older comment in use-session-commands.tsx claiming
-   * codex-acp lacks a permission surface is stale. In practice this is false only
+   * an ACP agent lacks a permission surface is stale. In practice this is false only
    * for the pending-harness placeholder while readiness is still polling.
    */
   canPrompt?: () => boolean

@@ -10,8 +10,6 @@ import {
   type AgentRuntimeStore,
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
-  harnessDefinition,
-  isAgentHarnessId,
   type AgentHarnessId,
   type AgentSessionRow,
   type AgentSession,
@@ -31,7 +29,6 @@ import {
   CursorHarnessAdapter,
   OpenCodeHarnessAdapter,
   PiHarnessAdapter,
-  claudeAuthEnv,
   createStreamableHttpACPTransportFactory,
   createWebSocketACPTransportFactory,
   hasAdapterCapability,
@@ -44,7 +41,6 @@ import {
   type OpenCodeRequestFn,
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
-  defaultAcpBinary,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
@@ -274,36 +270,6 @@ const NATIVE_HARNESS_ADAPTERS = {
   cursor: CursorHarnessAdapter,
 } as const
 
-const HARNESS_BINARY_FALLBACKS: Partial<Record<string, () => string>> = {
-  "claude:acp": () => defaultAcpBinary("claude-agent-acp"),
-  "codex:acp": () => defaultAcpBinary("codex-acp"),
-  /**
-   * `cursor-agent`, NOT `agent`.
-   *
-   * Cursor's own help calls the command `agent`, and this used to follow it —
-   * which is unsafe on a real PATH, because `agent` is a generic enough name for
-   * another vendor to take. On a machine with grok's CLI installed it resolves
-   * to `~/.grok/bin/agent`, so this fallback silently spawned a different
-   * product and the ACP handshake failed with nothing pointing at the cause.
-   * `cursor-agent` is the name Cursor actually installs.
-   */
-  "cursor:acp": () => "cursor-agent",
-  "codex:native": () => "codex",
-}
-
-/**
- * Cursor's `acp` subcommand is deliberately NOT here.
- *
- * It used to be, alongside the binary name above — and a subcommand and the
- * binary it belongs to, maintained as two entries in two tables, is how they
- * drift. It now lives in `AcpHarnessAdapter.commandArgs`, next to the harness
- * id that decides it, so every caller that spawns the adapter gets it including
- * ones that never pass through this file.
- */
-const ACP_ARGS: Partial<Record<string, string[]>> = {
-  codex: ["-c", "service_tier=\"fast\""],
-}
-
 export const ACP_REMOTE_TRANSPORT_FLAG = "WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT"
 
 function acp(harness: RuntimeRunner) {
@@ -370,8 +336,7 @@ function harnessKey(harness: RuntimeRunner) {
 type LegacyRuntimeRunner = Omit<RuntimeRunner, "id" | "access"> & Partial<Pick<RuntimeRunner, "id" | "access">> & {
   /**
    * @deprecated Use `id` + `access`. `normalizeHarnessIdentity` still reads
-   * this, including the combined spellings (`"claude-acp"` → id `claude`,
-   * access `acp`), so a caller passing it is on a supported path.
+   * this, including access-qualified operator connection keys.
    */
   type?: string
   /** @deprecated Use `connection: { kind: "process", ... }`. */
@@ -426,32 +391,17 @@ export class WorkspaceHarnessUnavailableError extends Error {
 }
 
 function openAcpRunner(harness: RuntimeRunner) {
-  return harness.access === "acp" && !isAgentHarnessId(harness.id)
-}
-
-function fallback(harness: RuntimeRunner) {
-  // Binary inference exists for the BUILT-IN harnesses only. An operator
-  // -configured ACP connection with no applied process descriptor must fail
-  // closed — silently spawning a bundled first-party binary in its place
-  // would run a different agent than the one the operator configured.
-  if (openAcpRunner(harness)) throw new WorkspaceHarnessUnavailableError(harness)
-  return HARNESS_BINARY_FALLBACKS[harnessKey(harness) ?? ""]?.() ?? defaultAcpBinary("claude-agent-acp")
+  return harness.access === "acp"
 }
 
 function binary(harness: RuntimeRunner) {
   const raw = processConnection(harness)?.binary
-  if (!raw) return fallback(harness)
-  // An operator-configured ACP command runs exactly as configured: a missing
-  // executable surfaces as that process's spawn diagnostic, never as a
-  // silently substituted bundled binary.
-  if (openAcpRunner(harness)) return raw
-  if (!raw.includes(path.sep)) return raw
-  if (fs.existsSync(raw)) return raw
-  return fallback(harness)
+  if (!raw) throw new WorkspaceHarnessUnavailableError(harness)
+  return raw
 }
 
 function acpArgs(harness: RuntimeRunner) {
-  return [...(ACP_ARGS[harness.id] ?? []), ...(processConnection(harness)?.args ?? [])]
+  return processConnection(harness)?.args ?? []
 }
 
 export function acpRemoteTransportEnabled(env: NodeJS.ProcessEnv = process.env) {
@@ -474,20 +424,6 @@ export function acpTransportFactory(harness: LegacyRuntimeRunner, env: NodeJS.Pr
     serverUrl: remote.url,
     headers: remote.headers,
   })
-}
-
-function acpEnv(harness: RuntimeRunner, auth: Record<string, string>) {
-  const definition = harnessDefinition(harness)
-  if (definition?.access !== "acp" || !definition.authEnv || !definition.authSlot) return {}
-  if (definition.authSlot === "anthropic") {
-    return claudeAuthEnv(auth[definition.key] ?? auth[definition.authSlot])
-  }
-  const input = definition.authSlot === "openai"
-    ? codexAuthInput(auth)
-    : auth[definition.key] ?? auth[definition.authSlot]
-  const value = definition.authSlot === "openai" ? runtimeAuthKey(input) : input
-  if (!value) return {}
-  return { [definition.authEnv]: value }
 }
 
 function authSlotValue(auth: Record<string, string>, slot: AuthSlot) {
@@ -653,7 +589,7 @@ function runtimeConfigApplyError(input: unknown): RuntimeConfigApplyStatus["erro
 }
 
 function codexAuthInput(auth: Record<string, string>) {
-  return auth["codex-app-server"] ?? auth["codex-acp"] ?? auth["openai"]
+  return auth["codex-app-server"] ?? auth["openai"]
 }
 
 function codexAuthValue(input: string | undefined) {
@@ -792,9 +728,8 @@ export type WorkspaceHarnessRegistry = WorkspaceHarnessRegistryEntry[]
  * OpenCode entry matches the `opencode` runner ONLY — an unknown runner
  * surfaces `createAdapter`'s typed error instead of silently becoming an
  * OpenCode engine session, so a mistyped or unregistered harness id fails
- * loudly at dispatch rather than running a different product. The ACP binary
- * fallback (`defaultAcpBinary`) is applied through the shared
- * `binary()`/`acpArgs()` helpers.
+ * loudly at dispatch rather than running a different product. Operator ACP
+ * processes must provide an explicit connection binary.
  */
 export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
@@ -806,7 +741,7 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         const env = process?.env
         return new AcpHarnessAdapter({
           binary: binary(runner),
-          harness: runner.id === "opencode" || runner.id === "pi" ? "claude" : runner.id,
+          harness: runner.id,
           args: acpArgs(runner),
           ...(env ? { env } : {}),
           ...(typeof process?.supportsMcpServers === "boolean"
@@ -1444,14 +1379,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       adapterConfigStamps.set(next, `${adapterKey(nextRunner)}\n\n{}\n{}`)
       return
     }
-    const stamp = `${adapterKey(nextRunner)}\n${configuredModel ?? ""}\n${JSON.stringify(currentAuthRaw)}\n${JSON.stringify(currentMcp)}`
+    const adapterAuth = acp(nextRunner) ? {} : currentAuthRaw
+    const stamp = `${adapterKey(nextRunner)}\n${configuredModel ?? ""}\n${JSON.stringify(adapterAuth)}\n${JSON.stringify(currentMcp)}`
     if (adapterConfigStamps.get(next) === stamp) return
     const turns = acp(nextRunner) ? activeTurns.get(next) : undefined
     if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
     if (adapterConfigStamps.get(next) === stamp) return
     ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
       acp(nextRunner)
-        ? acpEnv(nextRunner, currentAuthRaw)
+        ? {}
         : runtimeAuthForAdapter(currentAuth),
     )
     if (configuredModel !== undefined) {
@@ -1461,7 +1397,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     }
     await next.applyConfig({
       mcp: currentMcp,
-      auth: currentAuthRaw,
+      auth: adapterAuth,
       harness: nextRunner,
       model: configuredModel,
     })
@@ -1474,14 +1410,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   // ACP identity by id only — the process command/env always resolves from
   // here, and an identity with no applied row fails closed before any adapter
   // is created.
-  let appliedAcpConnections = new Map<string, RuntimeRunner>()
+  let appliedAcpConnections = new Map<string, RuntimeRunner>(
+    openAcpRunner(runner) ? [[runner.id, runner]] : [],
+  )
 
   function resolveAppliedRunner(next: RuntimeRunner): RuntimeRunner {
     if (!openAcpRunner(next)) return next
-    // Trusted rows (the applied runner itself, stored session config from the
-    // apply path) already carry their descriptor; identity-only requests
-    // resolve the CURRENT applied descriptor.
-    if (processConnection(next)?.binary) return next
+    // Operational details always come from the CURRENT accepted registry.
+    // Stored sessions and request payloads are logical identities only; even a
+    // historical row that still contains a descriptor cannot override the
+    // authoritative command, arguments, environment, or compatibility flags.
     const applied = appliedAcpConnections.get(next.id)
     if (!applied) throw new WorkspaceHarnessUnavailableError(next)
     return applied
@@ -1874,6 +1812,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return adapter?.readRuntimeHealth?.(options.target?.directory ?? workspaceDir()) ?? { status: "ok" }
   }
 
+  async function sessionHarnessHealth(input: { sessionId: string; directory?: string }): Promise<AgentHarnessAdapterHealth> {
+    const directory = input.directory ?? options.target?.directory ?? workspaceDir()
+    const target = await adapterForSession({
+      sessionId: input.sessionId,
+      directory,
+    })
+    return target.readRuntimeHealth?.(directory, { sessionId: input.sessionId }) ?? { status: "ok" }
+  }
+
   function healthStatus(input: AgentHarnessAdapterHealth): "ok" | "degraded" | "unavailable" {
     if (state === "error") return "unavailable"
     if (state === "applying") return "degraded"
@@ -1920,7 +1867,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const nextAuth = runtimeAuth(next.auth)
     const effectiveModel = next.model ?? currentModel
     const configChangesActiveAcp = (replacing ? effectiveModel !== undefined : next.model !== undefined)
-      || !sameRuntimeAuth(currentAuth, nextAuth)
       || !sameRuntimeMcp(currentMcp, next.mcp)
 
     function assertSafeAcpTarget(target: AgentHarnessAdapter | undefined) {
@@ -2008,7 +1954,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config")) {
         ;(adapter as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
           acp(next.harness)
-            ? acpEnv(next.harness, next.auth)
+            ? {}
             : runtimeAuthForAdapter(nextAuth),
         )
       }
@@ -2017,7 +1963,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (!deferDefaultAdapterConfig && adapter?.applyConfig) {
         await adapter.applyConfig({
           mcp: next.mcp,
-          auth: next.auth,
+          auth: acp(next.harness) ? {} : next.auth,
           harness: next.harness,
           model: effectiveModel,
         })
@@ -2025,7 +1971,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (hasAdapterCapability(adapter, "runtime-config")) {
           adapterConfigStamps.set(
             adapter,
-            `${adapterKey(next.harness)}\n${effectiveModel ?? ""}\n${JSON.stringify(next.auth)}\n${JSON.stringify(next.mcp)}`,
+            `${adapterKey(next.harness)}\n${effectiveModel ?? ""}\n${JSON.stringify(acp(next.harness) ? {} : next.auth)}\n${JSON.stringify(next.mcp)}`,
           )
         }
       }
@@ -2608,7 +2554,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     async apply(next: RuntimeSnapshot) {
       const normalized = normalizeRuntimeSnapshot(next)
       if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
-      const nextAuth = runtimeAuth(normalized.auth)
       const target = adapterKey(normalized.harness) === adapterKey(runner)
         ? adapter
         : sessionAdapters.get(adapterKey(normalized.harness))
@@ -2619,7 +2564,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         && (activeTurns.get(target)?.size ?? 0) > 0
         && (
           normalized.model !== undefined
-          || !sameRuntimeAuth(currentAuth, nextAuth)
           || !sameRuntimeMcp(currentMcp, normalized.mcp)
         )
       ) {
@@ -2649,6 +2593,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         configApply,
       }
     },
+    readHarnessHealth: sessionHarnessHealth,
     capabilities() {
       return workspaceCapabilities(enabled)
     },

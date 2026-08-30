@@ -27,9 +27,9 @@ mistake that has actually bitten this repo.
 Each track moved a **minor** because at least one package on it added public
 API since the previous publish:
 
-- runtime — `agent-sdk-runtime` added `bundledAcpBinary` and the
-  `observeAgentProcess` surface, and dropped the `@openai/codex` /
-  `@zed-industries/claude-agent-acp` runtime dependencies; `workspace-runtime`
+- runtime — `agent-sdk-runtime` added the `observeAgentProcess` surface and
+  the operator-defined ACP connection API; ACP executables are no longer
+  runtime dependencies. `workspace-runtime`
   added `createProcessObserver`, `WorkspaceWorktreeManager`,
   `workspaceStorageRoot` and eleven types (`docs/api-manifest.json` moved with
   it); `sandbox-manager` added the `./checkpoint-manager` and `./drivers/exe`

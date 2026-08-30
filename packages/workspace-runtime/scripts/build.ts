@@ -40,8 +40,6 @@ const EXTERNALS = [
   "@claxedo/workspace-relay",
   "@claxedo/workspace-relay-protocol",
   "@agentclientprotocol/sdk",
-  "@agentclientprotocol/codex-acp",
-  "@agentclientprotocol/claude-agent-acp",
   "@hono/node-server",
   "@hono/node-ws",
   "@lydell/node-pty",

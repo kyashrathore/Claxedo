@@ -57,7 +57,7 @@ export type CloudflareSandboxDriverOptions = {
     managementJwksUrl?: string
     sessionAuthorityUrl?: string
   }
-  /** Default runner injected as WORKSPACE_RUNTIME_RUNNER, e.g. "opencode" | "claude-acp" | "codex-acp". */
+  /** Default runner injected as WORKSPACE_RUNTIME_RUNNER, for example "opencode". */
   runner?: string
   /** Dynamic runtime env that needs the sandbox id or current lease. */
   env?: (input: SandboxDriverEnsureInput, sandbox: { id: string }) => Record<string, string> | Promise<Record<string, string>>
