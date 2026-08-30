@@ -11,7 +11,7 @@ import {
   syncApiProjectsToSidebar,
 } from "./layout-projects"
 import { validProjectRef } from "@/platform/sync/worktree"
-import type { Project } from "@opencode-ai/sdk/v2"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 
 function project(input: Pick<Project, "id" | "worktree"> & Partial<Project>): Project {
   return {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { QueryObserver } from "@tanstack/solid-query"
-import type { PermissionRequest, Session, Todo } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentPresentationSession as Session, AgentTodo as Todo } from "@claxedo/agent-runtime-contract"
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { conversationEventTypes } from "../../../features/session/conversation/conversation-event"

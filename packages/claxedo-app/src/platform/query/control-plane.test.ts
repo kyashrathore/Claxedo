@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Model, Project, Provider, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoProviderModel as Model, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import {
   normalizeProjectList,
   projectCatalogMissingWorkspace,

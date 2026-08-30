@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Command } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
 import { commandListQuery, normalizeCommandList } from "./shell"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -101,7 +101,7 @@ describe("shell query helpers", () => {
         const url = new URL(req.url)
         if (url.toString() === "http://127.0.0.1:3001/workspaces/ws_1/command") {
           expect(req.headers.get("authorization")).toBeNull()
-          expect(req.headers.get("x-opencode-directory")).toBe("workspace:ws_1")
+          expect(req.headers.get("x-opencode-directory")).toBeNull()
           return new Response(JSON.stringify([{ name: "deploy" }]), { status: 200 })
         }
         throw new Error(`unexpected request: ${req.method} ${req.url}`)

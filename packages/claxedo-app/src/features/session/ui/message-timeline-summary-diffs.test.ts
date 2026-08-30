@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SnapshotFileDiff } from "@opencode-ai/sdk/v2"
+import type { AgentSnapshotFileDiff as SnapshotFileDiff } from "@claxedo/agent-runtime-contract"
 import { uniqueSummaryDiffs } from "./message-timeline.data"
 
 // Ported from upstream packages/app/src/pages/session/timeline/summary-diffs.test.ts (#37414).

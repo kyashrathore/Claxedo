@@ -6,7 +6,7 @@ import {
   dispatchSessionStatusEvent,
   promptSessionStatusStage,
 } from "../store/session-status-dispatcher"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import type { PromptDispatchInput, PromptDispatchPayload } from "./types"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"

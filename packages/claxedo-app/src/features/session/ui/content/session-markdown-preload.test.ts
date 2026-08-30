@@ -6,7 +6,7 @@ import {
   firstFoldMarkdownPreloadIdentity,
   sessionMarkdownTimelineGate,
 } from "./session-markdown-preload"
-import type { Part } from "@opencode-ai/sdk/v2/client"
+import type { AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 
 function textPart(id: string, text: string): Part {
   return { id, type: "text", text } as Part

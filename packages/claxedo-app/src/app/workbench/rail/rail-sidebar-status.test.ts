@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {

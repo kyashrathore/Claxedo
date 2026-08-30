@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
-import type { Command, Project, ProviderListResponse, Session } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoCommand as Command, ClaxedoProject as Project, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import {
   createHttpSessionBackend,
   createHttpWorkspaceRuntimeBackend,

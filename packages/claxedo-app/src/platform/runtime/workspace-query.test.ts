@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { VcsInfo } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoVcsInfo as VcsInfo } from "@/platform/api/claxedo-api-types"
 import { queryClient } from "@/platform/query/query-client"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 

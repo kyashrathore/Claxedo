@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { EventMessagePartUpdated, TextPart } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationEvent, AgentTextPart as TextPart } from "@claxedo/agent-runtime-contract"
+
+type EventMessagePartUpdated = Extract<AgentPresentationEvent, { type: "message.part.updated" }>
 import { mergeParts } from "../../features/session/store/message-page"
 
 function textPart(id: string, text = id): TextPart {

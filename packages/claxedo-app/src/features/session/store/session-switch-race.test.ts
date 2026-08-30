@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { queryClient } from "@/platform/query/query-client"
 import { FAST_SESSION_SWITCH_INTENT_MS, markFastSessionSwitch, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"

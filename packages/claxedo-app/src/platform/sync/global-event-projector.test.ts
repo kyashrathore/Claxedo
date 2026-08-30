@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Project } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { applyGlobalProjectEvent } from "./global-event-projector"
 
 const project = (id: string, title = id) => ({ id, title }) as Project

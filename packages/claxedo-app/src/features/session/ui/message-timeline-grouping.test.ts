@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Timeline } from "./message-timeline.data"
 import { TimelineRow } from "./timeline-row-model"
-import type { AssistantMessage, Part, UserMessage } from "@opencode-ai/sdk/v2"
+import type { AgentAssistantMessage as AssistantMessage, AgentContentPart as Part, AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
 
 /**
  * The timeline groups tool runs by tool NAME, and Claxedo drives more than one harness:

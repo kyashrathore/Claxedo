@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import {
   addRegisteredConversationMessage,
   clearConversationChatRegistryForTest,

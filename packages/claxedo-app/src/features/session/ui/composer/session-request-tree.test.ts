@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import { sessionVisiblePermissionRequest } from "./session-request-tree"
 
 const sessions = [

@@ -3746,7 +3746,7 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/directorySessions\(input\.directory\)\.find\(\(item\) => item\.id === input\.sessionID\)/)
     expect(text).toMatch(/input\.getSession\(\{[\s\S]*directory: input\.directory,[\s\S]*sessionID: input\.sessionID/)
     expect(text).toMatch(/upsertDirectorySession\(input\.directory, session\)/)
-    expect(text).toMatch(/getSession:\s*\(parameters\) => globalSDK\.client\.session\.get\(parameters\)/)
+    expect(text).toMatch(/getSession:\s*\(parameters\) => globalSDK\.createClient\(\{ directory \}\)\.session\.get\(parameters\)/)
     expect(text).toMatch(/if \(meta\.disposed \|\| !session \|\| session\.parentID\) return/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).not.toMatch(/globalSync\.child/)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import { extractPromptFromParts } from "./prompt"
 
 const text = (value: string, extra: Record<string, unknown> = {}) =>

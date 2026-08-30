@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { clearAllPromptSessionStatusTimeoutsForTest, dispatchSessionStatusEvent } from "../../store/session-status-dispatcher"
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"

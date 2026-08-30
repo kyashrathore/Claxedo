@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import type { ProjectMeta } from "../../features/session/data/query/types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

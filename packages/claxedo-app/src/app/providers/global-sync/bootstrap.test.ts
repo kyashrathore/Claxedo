@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import { bootstrapDirectory, bootstrapGlobal, type GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import type { Agent, Command, Config, Path, Project, Provider, ProviderListResponse, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoAgentProfile as Agent, ClaxedoCommand as Command, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoProvider as Provider, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { type NormalizedProviderListResponse, normalizeProviderList } from "@/platform/query/provider-list"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

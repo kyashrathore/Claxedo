@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import { lookupNotificationSession, notificationViewedByScope } from "@/app/providers/notification"
 import { directorySessions, upsertDirectorySession } from "../../features/session/data/sync/directory-session-cache"
 import { queryClient } from "@/platform/query/query-client"

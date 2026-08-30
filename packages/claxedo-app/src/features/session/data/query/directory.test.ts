@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoAgentProfile as Agent, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
   agentListQuery,
   configQuery,

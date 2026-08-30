@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { TextPart } from "@opencode-ai/sdk/v2/client"
+import type { AgentTextPart as TextPart } from "@claxedo/agent-runtime-contract"
 import { mergeParts } from "../../features/session/store/message-page"
 
 function textPart(id: string, text: string): TextPart {

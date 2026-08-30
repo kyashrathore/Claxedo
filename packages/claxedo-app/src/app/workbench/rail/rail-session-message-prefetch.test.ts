@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, mock, test } from "bun:test"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { getSessionPrefetch, getSessionPrefetchPromise } from "@/platform/sync/session-prefetch"
 import { markFastSessionSwitch } from "@/platform/runtime/session-switch"

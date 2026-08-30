@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test"
-import type { PermissionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentPresentationSession as Session, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import {
   applyClaxedoSessionLifecycleEvent,
   applyDirectorySessionCacheEvent,

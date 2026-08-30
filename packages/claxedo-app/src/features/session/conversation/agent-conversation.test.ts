@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
 import {
   applyAgentConversationEvent,

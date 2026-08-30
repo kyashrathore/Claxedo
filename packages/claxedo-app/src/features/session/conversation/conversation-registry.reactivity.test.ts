@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createMemo, createRoot, createSignal } from "solid-js"
-import type { Event, Message } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import {
   applyRegisteredConversationEvent as applyScopedConversationEvent,
   clearConversationChatRegistryForTest,

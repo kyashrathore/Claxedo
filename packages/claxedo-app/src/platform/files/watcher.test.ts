@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { FileContent } from "@opencode-ai/sdk/v2"
+import type { AgentFileContent as FileContent } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import {
   cachedFileReadRequest,

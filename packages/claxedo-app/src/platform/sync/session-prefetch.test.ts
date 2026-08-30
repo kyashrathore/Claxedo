@@ -13,7 +13,7 @@ import {
   splitSessionPrefetchPage,
   shouldSkipSessionPrefetch,
 } from "./session-prefetch"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationMessage as Message, AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "./keys"
 

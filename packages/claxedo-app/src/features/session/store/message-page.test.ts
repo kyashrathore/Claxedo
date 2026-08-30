@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Part } from "@opencode-ai/sdk/v2/client"
+import type { AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import { mergeParts, mergeStoredItems, reconcileStoredParts } from "./message-page"
 
 /**

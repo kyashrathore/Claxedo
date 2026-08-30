@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
+import type { AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
 import { createSessionHistoryWindow } from "./history-window"
 
 function userMessage(index: number): UserMessage {

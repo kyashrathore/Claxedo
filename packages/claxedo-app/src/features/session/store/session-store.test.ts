@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
 
 const idle: SessionStatus = { type: "idle" }

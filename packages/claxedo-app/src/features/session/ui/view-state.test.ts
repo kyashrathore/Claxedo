@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Session } from "@opencode-ai/sdk/v2"
+import type { AgentPresentationMessage as Message, AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import {
   applyTimelinePrependAnchor,
   captureTimelinePrependAnchor,

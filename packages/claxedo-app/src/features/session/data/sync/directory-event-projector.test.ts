@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentPresentationSession as Session, AgentSnapshotFileDiff as SnapshotFileDiff, AgentTodo as Todo } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { applyDirectoryEventToShellQueries } from "./directory-event-projector"
 import { shellDataKeys } from "@/platform/sync/keys"

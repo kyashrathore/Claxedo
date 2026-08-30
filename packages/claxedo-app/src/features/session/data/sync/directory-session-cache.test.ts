@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import {
   directorySessionCache,
   directorySessionCacheOwnsSession,

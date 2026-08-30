@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import path from "node:path"
-import type { VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import {
   cachedReviewVcsDiff,

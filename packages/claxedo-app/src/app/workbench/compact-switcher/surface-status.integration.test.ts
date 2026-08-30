@@ -20,7 +20,7 @@
 
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { reducers, selectors as pureSelectors, validate as validateWb } from "../workbench/index"
 import type { UseWorkbench, WorkbenchState } from "../workbench/index"
 import { emptyClaxedoState } from "../state/persistence"

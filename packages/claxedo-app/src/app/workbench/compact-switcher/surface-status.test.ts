@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest } from "@claxedo/agent-runtime-contract"
 import { nextUnseenDone, sessionSurfaceActive, sessionSurfaceStatus, terminalSurfaceStatus } from "./surface-status"
 
 const permission = (id: string, sessionID = "ses_1"): PermissionRequest => ({

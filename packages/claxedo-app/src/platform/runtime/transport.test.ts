@@ -62,7 +62,7 @@ describe("createTransport", () => {
       headers: { Authorization: "Bearer signed-browser-token" },
     })).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_local_proxy/provider  workspace:ws_local_proxy",
+      "GET http://127.0.0.1:3001/workspaces/ws_local_proxy/provider",
     ])
   })
 
@@ -100,7 +100,7 @@ describe("createTransport", () => {
     })).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
       "GET https://control.test/api/workspace/ws_relay/connection Bearer signed-browser-token",
-      "GET https://relay.test/workspaces/ws_relay/vcs Bearer rat_relay workspace:ws_relay",
+      "GET https://relay.test/workspaces/ws_relay/vcs Bearer rat_relay",
     ])
   })
 
@@ -122,7 +122,7 @@ describe("createTransport", () => {
       body: "hello",
     })).then((response) => response.json())).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
-      "POST http://127.0.0.1:3001/workspaces/ws_sdk/session/ses_1/prompt_async hello  workspace:ws_sdk",
+      "POST http://127.0.0.1:3001/workspaces/ws_sdk/session/ses_1/prompt_async hello",
     ])
   })
 

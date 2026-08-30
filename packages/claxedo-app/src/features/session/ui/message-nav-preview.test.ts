@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 
 const text = (

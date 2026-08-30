@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Timeline } from "./message-timeline.data"
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AgentAssistantMessage as AssistantMessage } from "@claxedo/agent-runtime-contract"
 
 function assistantMessage(overrides: Record<string, unknown> = {}): AssistantMessage {
   return {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Message, Part, PermissionRequest, QuestionRequest, Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationMessage as Message, AgentContentPart as Part, AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentPresentationSession as Session, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,

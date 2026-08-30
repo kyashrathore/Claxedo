@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { Event, Message } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import type { UIMessage } from "@tanstack/ai"
 import { queryClient } from "@/platform/query/query-client"
 import { conversationScopeKey, conversationSnapshotKey } from "./conversation-chat-client"
