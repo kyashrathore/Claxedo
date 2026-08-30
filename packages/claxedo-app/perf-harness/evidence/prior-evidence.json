@@ -2,7 +2,8 @@
   "schemaVersion": 1,
   "kind": "claxedo-prior-evidence-ledger",
   "sourcePlan": {
-    "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+    "path": "docs/perf/AGENTS.md",
+    "retiredPlan": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
     "commit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7",
     "sha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869"
   },
@@ -72,7 +73,7 @@
       "reportedContribution": "Retained idle-state foundation.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -87,7 +88,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| F1 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -108,7 +109,7 @@
       "reportedContribution": "Retained transport foundation.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -123,7 +124,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| F2 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -144,7 +145,7 @@
       "reportedContribution": "Retained provider foundation.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -159,7 +160,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| F3 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -180,7 +181,7 @@
       "reportedContribution": "Retained renderer foundation.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -195,7 +196,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| F4 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -216,7 +217,7 @@
       "reportedContribution": "Retained diagnostics foundation.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -231,7 +232,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| F5 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -252,7 +253,7 @@
       "reportedContribution": "Retained query-lifecycle foundation.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -267,7 +268,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| F6 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -289,7 +290,7 @@
       "reportedContribution": "Controlled benchmark baseline.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -306,7 +307,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 1 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -328,7 +329,7 @@
       "reportedContribution": "Renderer ownership reduction; hidden terminals retain their live attachment.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -345,7 +346,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 2 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -366,7 +367,7 @@
       "reportedContribution": "Reduces startup work and retained transport data.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -383,7 +384,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 3 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -404,7 +405,7 @@
       "reportedContribution": "Removes an idle helper process.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -421,7 +422,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 4 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -442,7 +443,7 @@
       "reportedContribution": "Reduces the long-lived local-server heap; server about 415 \u2192 262 MiB.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -459,7 +460,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 5 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -480,7 +481,7 @@
       "reportedContribution": "Reduces sidecar host overhead.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -497,7 +498,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 6 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -518,7 +519,7 @@
       "reportedContribution": "Removes cloud feature UI, routes, tools, databases, timers, and subscriptions. Feature-on proof measured 592 MiB.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -535,7 +536,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 7 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -556,7 +557,7 @@
       "reportedContribution": "Defines the strict, correctness-gated checkpoint; not a code saving.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -573,7 +574,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 8 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -595,7 +596,7 @@
       "reportedContribution": "Supports the package boundary that keeps remote sandbox code in hosted products.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -612,7 +613,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 9 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -633,7 +634,7 @@
       "reportedContribution": "Provides bundle-shape evidence; no memory credit.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -650,7 +651,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 10 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -672,7 +673,7 @@
       "reportedContribution": "Establishes process exit as the reliable unloading boundary for a harness module graph.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -689,7 +690,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 11 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -711,7 +712,7 @@
       "reportedContribution": "Demonstrates that an absent harness process can meet the cold-idle target.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -728,7 +729,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 12 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -749,7 +750,7 @@
       "reportedContribution": "Establishes that ownership placement has no material settled-idle effect once the harness exits. Workspace Runtime is selected for its multi-harness contract.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -766,7 +767,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 13 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -788,7 +789,7 @@
       "reportedContribution": "Establishes product-owned server closures and a measurable local renderer entry. The remaining renderer closure and packaged-resource gates are recorded below.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -805,7 +806,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| 14 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -827,7 +828,7 @@
       "reportedContribution": "Confirms the feature boundary on the current tree. Every candidate post-idle sample (447\u2013507 MiB) is below every baseline sample (553\u2013614 MiB).",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -843,7 +844,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V1 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -865,7 +866,7 @@
       "reportedContribution": "Places Documents (152.65 kB) and WorkGraph (262.46 kB) in demand-loaded chunks while retaining a feature-on build proof.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -881,7 +882,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V2 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -903,7 +904,7 @@
       "reportedContribution": "The browser lane measures semantic readiness, retains raw intervals, includes the first interaction interval, pools p95 from the interval population, matches Long Animation Frames to rAF gaps by timestamp, and states its synthetic-data and compositor boundaries.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -919,7 +920,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V3 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -941,7 +942,7 @@
       "reportedContribution": "Separates the material 30\u201358 ms rich-row stalls from the 16\u201317 ms cold SessionPage, first-fold projection, and shell lifecycle. The packaged test shows that changing visible rows from text previews to canonical Markdown is not an acceptable progressive boundary.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -957,7 +958,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V4 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -979,7 +980,7 @@
       "reportedContribution": "Keeps complete copyable source while reserving token-span highlighting for bounded code blocks. Large Mermaid diagrams expose an explicit render action; the measured action still waits for the sanitized SVG.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -995,7 +996,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V5 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1017,7 +1018,7 @@
       "reportedContribution": "Keeps the visible diff semantic endpoint while reducing shadow-DOM construction, style, layout, and heap allocation inside a virtualized timeline row.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1033,7 +1034,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V6 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1055,7 +1056,7 @@
       "reportedContribution": "Separates cold parser initialization, steady parsing, browser layout, virtual-row reconciliation, and diagram generation.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1071,7 +1072,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V7 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1093,7 +1094,7 @@
       "reportedContribution": "Establishes a desktop capability path that moves diagram parsing and layout outside Chromium. Mermaid.js remains the web and fidelity fallback.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1109,7 +1110,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V8 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1131,7 +1132,7 @@
       "reportedContribution": "Establishes the same desktop capability selection for Markdown while retaining Marked as the web, extension-fidelity, and failure fallback.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1147,7 +1148,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V9 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1169,7 +1170,7 @@
       "reportedContribution": "Narrows the remaining renderer work to cold module/Markdown initialization and session virtualizer measurement. Disabled controls fail the same three base-app gates, so diagnostics overhead is not the cause.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1185,7 +1186,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V10 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1207,7 +1208,7 @@
       "reportedContribution": "Moves Markdown parsing and Mermaid graph generation out of Chromium for desktop without adding a resident process. Web and native-failure paths retain lazy Marked and Mermaid.js.",
       "classification": "accepted-causal-result",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1223,7 +1224,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V11 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1245,7 +1246,7 @@
       "reportedContribution": "Establishes the latest valid interim memory checkpoint: ten restored entries, one mounted active draft, WorkGraph and Documents off, and no idle harness child. It does not qualify the restored interactive-profile cohort represented by the manual screenshot.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1261,7 +1262,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V12 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1283,7 +1284,7 @@
       "reportedContribution": "Moves the launch work away from timeline, Mermaid, and app-shell hypotheses and toward startup graph boundaries.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1299,7 +1300,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V13 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1321,7 +1322,7 @@
       "reportedContribution": "Shows that bundle-byte reduction alone does not identify the long evaluation task.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1337,7 +1338,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V14 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1359,7 +1360,7 @@
       "reportedContribution": "Shows that auth UI is above the actual shared local/remote event and workspace transport boundary. The deeper transport split must precede an effective auth split.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1375,7 +1376,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V15 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1397,7 +1398,7 @@
       "reportedContribution": "Demonstrates useful scheduling separation but does not yet pass launch. A concurrent-fetch refinement exists in the worktree and remains unmeasured.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1413,7 +1414,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V16 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1435,7 +1436,7 @@
       "reportedContribution": "This package combines viewport-dependent plain-text previews, staged rich rows, a 8 \u2192 50 interaction range expansion, and a custom offset observer that writes virtualizer offset state. It is retained only as regression evidence.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1451,7 +1452,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V17 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1473,7 +1474,7 @@
       "reportedContribution": "The package uses the canonical offset observer, rect notification deduplication, a 1 \u2192 8 staged range, and an unbounded range after interaction. Its failure establishes that the browser tests do not qualify the packaged transcript experience.",
       "classification": "reverted-or-failed",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1489,7 +1490,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V18 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1511,7 +1512,7 @@
       "reportedContribution": "A mounted virtual row now always renders `TimelineRowView` and the canonical `Message` component. Progressive state controls row admission only; the production bundle contains no `data-session-message-preview` branch.",
       "classification": "unresolved-and-unmeasured",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1527,7 +1528,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V19 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1549,7 +1550,7 @@
       "reportedContribution": "Cached history backfill now uses the timeline's stable row-key anchor across late virtual-row and Markdown measurements instead of a one-animation-frame `scrollHeight` delta.",
       "classification": "correctness-evidence",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1565,7 +1566,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V20 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1587,7 +1588,7 @@
       "reportedContribution": "Uses `@claxedo/local-server`, deployment closure guards, the local renderer entry, tokenless account ports, hosted contribution activation, and the Host Connector boundary as the new benchmark base.",
       "classification": "accepted-foundation",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1603,7 +1604,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V21 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },
@@ -1624,7 +1625,7 @@
       "reportedContribution": "Defines the safety and correctness constraints that travel with the independently cherry-pickable desktop and renderer buckets. The paired lane is not called passing until both control and candidate satisfy the absolute gate.",
       "classification": "correctness-evidence",
       "source": {
-        "path": "docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
+        "path": "docs/perf/AGENTS.md",
         "section": "Memory Action Table",
         "ledgerSha256": "1550ef722b81665fb042be70cad43811a336e5d23251cc255a95d53f92c2c869",
         "ledgerCommit": "64586341cc3430679ae83a3aaaf2b2d10347d2f7"
@@ -1640,7 +1641,7 @@
         ],
         "cohortContract": "Retains the exact cohort and metric wording from the source row; no normalization or cross-row delta is permitted.",
         "verification": {
-          "command": "python3 -c 'from pathlib import Path; assert \\\"| V22 |\\\" in Path(\\\"docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md\\\").read_text()'",
+          "command": "retired: git show 64586341cc3430679ae83a3aaaf2b2d10347d2f7:docs/plans/2026-08-07-003-refactor-claxedo-idle-memory-plan.md",
           "outcome": "source-record-present-on-this-branch"
         }
       },

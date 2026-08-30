@@ -29,5 +29,5 @@
     "resource.peak_process_family_rss_mib": 1402.75,
     "resource.quiescent_cpu_p95_pct": 12.05
   },
-  "source": "docs/plans/2026-08-09-001-five-times-faster-than-t3-plan.md#problem-frame"
+  "source": "docs/perf/README.md"
 }

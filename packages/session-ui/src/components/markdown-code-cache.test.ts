@@ -18,9 +18,9 @@ beforeEach(() => {
 })
 
 describe("highlightCodeThroughCache", () => {
-  // The remount scenario from docs/perf/HANDOFF.md: session switches remount
-  // <Markdown>, and `code()` in markdown.tsx runs this exact read-through per
-  // block. Two mounts of the same completed block must cost ONE worker trip.
+  // Session switches remount <Markdown>, and `code()` in markdown.tsx runs this
+  // exact read-through per block. Two mounts of the same completed block must
+  // cost ONE worker trip.
   test("second render of the same completed block hits the cache (highlight runs once)", async () => {
     const src = "const answer = 42"
     let calls = 0

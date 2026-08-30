@@ -100,6 +100,9 @@ Start here before making a nontrivial change in this package:
   in CONTRIBUTING.md, not in a standalone README).
 - `CONTRIBUTING.md` — the tests-as-specs merge bar, bun:test vs vitest
   runner convention, test-location/colocation standard, and PR checklist.
+- `docs/perf/AGENTS.md` — performance attempts that already failed, and the
+  conditions under which they would be worth retrying. Do not reconstruct the
+  retired experiment logs.
 - Per-directory `AGENTS.md` notes — several source directories carry their
   own scoped `AGENTS.md` with local rules (`src/architecture/`,
   `src/agent-runtime/`, `src/browser/`, `src/cloud/`, `src/demo/`,

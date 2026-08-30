@@ -1,7 +1,7 @@
 # Claxedo Docs
 
 Status: retained docs index
-Last updated: 2026-07-09
+Last updated: 2026-08-30
 
 This directory is intentionally small. A doc belongs here only when it is still
 used by current code, public docs, package READMEs, or an active architecture
@@ -20,6 +20,8 @@ it to an index.
 
 ## Retained Areas
 
+- [Making Claxedo lighter](./perf/README.md)
+  Postpartum notes on what actually made the app cheaper to download, start, and switch, plus [agent learnings](./perf/AGENTS.md) for attempts that already failed.
 - [Plans](./plans/README.md)
   Dated plans that are still referenced by live packages or source comments.
 - [Tech Docs](./tech-docs/)

@@ -4,11 +4,11 @@ import type { MarkdownToken } from "./markdown-worker-protocol"
 /**
  * Module-scope cache for COMPLETED code-block highlights.
  *
- * The worker round trip for highlighting costs ~50ms per session switch
- * (docs/perf/HANDOFF.md), and the old per-component `completedCode` map died
- * with every unmount, so switching back to a session re-paid the worker for
- * code the user had already seen. This cache outlives component instances and
- * is keyed by content, so a remount renders highlighted tokens synchronously.
+ * The worker round trip for highlighting costs ~50ms per session switch,
+ * and the old per-component `completedCode` map died with every unmount, so
+ * switching back to a session re-paid the worker for code the user had already
+ * seen. This cache outlives component instances and is keyed by content, so a
+ * remount renders highlighted tokens synchronously.
  *
  * Keying: (theme, language, src length, src checksum), verified against the
  * stored `src` on read — `checksum` is a 32-bit FNV-1a hash, so a collision
@@ -17,8 +17,8 @@ import type { MarkdownToken } from "./markdown-worker-protocol"
  * stale; today's only theme ("OpenCode") tokenizes into CSS-variable styles,
  * so light/dark switches restyle cached tokens without invalidation.
  *
- * Bounds: entry- AND byte-capped (the HANDOFF names an uncapped query cache
- * as a known memory hazard — this cache must not repeat that). Eviction is
+ * Bounds: entry- AND byte-capped (an uncapped query cache is a known memory
+ * hazard — this cache must not repeat that). Eviction is
  * LRU via Map insertion order: reads re-insert, overflow evicts the oldest.
  *
  * Streaming: callers must only cache completed blocks. `highlightCodeThroughCache`
