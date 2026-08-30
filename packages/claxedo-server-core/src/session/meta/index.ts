@@ -113,9 +113,11 @@ export async function putSessionMeta(
       : input.workspaceID
     const hostValue = input.host ?? host(prevByID?.host) ?? "workspace"
     const directory = input.directory ?? input.ws?.directory ?? prevByID?.directory ?? null
+    const workspaceKind = input.ws?.kind ?? (prevByID?.session_ref.startsWith("local:") ? "local" : undefined)
     const sessionRef = storedSessionRef({
       session_id: sessionID,
       workspace_id: workspaceID,
+      workspace_kind: workspaceKind,
       directory,
       host: hostValue,
     })
