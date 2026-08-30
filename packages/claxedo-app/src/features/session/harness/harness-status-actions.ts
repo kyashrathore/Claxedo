@@ -87,10 +87,10 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
       // models" behind the error state forever.
       //
       // Deliberately NOT an unconditional `else`: that also fires for
-      // `opencode` (no config options) and for existing sessions, both of which
-      // reach this line on ordinary hydrations while a legitimate load is in
-      // flight — clearing the flag there races the real fetch and flickers
-      // every harness through a false "no models" state.
+      // `opencode` (no config options), which reaches this line on ordinary
+      // hydrations while a legitimate load may be in flight — clearing the
+      // flag there races the real fetch and flickers the harness through a
+      // false "no models" state.
       input.applyPatch(scope, { optionsLoading: false })
     }
     if (params?.directory && shouldRefreshDirectoryAfterHarnessStatus(params)) {
