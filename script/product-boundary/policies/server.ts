@@ -129,7 +129,7 @@ export const serverWorkerd: Policy = {
   ],
 
   control: cloudControl(`${SRC}/deployments/hosted-workerd/worker.ts`),
-  // Usage, user-extension gating, runtime-target resolution, and authoritative
+  // Usage, runtime-target resolution, and authoritative
   // message paging remain Worker-safe shared owners with no package growth.
   ceilings: { modules: 112, packages: 13 },
 

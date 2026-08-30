@@ -6,7 +6,6 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
 import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
-import { scheduleUserExtensionLoad } from "@/platform/extensions/user-extensions"
 import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
 import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
@@ -729,9 +728,6 @@ function createGlobalSync() {
       ? bootstrapInitialShell({ baseUrl: globalSDK.url, request: globalThis.fetch, setGlobalState, fallback: bootstrap })
       : bootstrap())
     onCleanup(scheduleMarkdownPrewarm())
-    // Local product only — hosted deployments refuse the extension routes.
-    // Idle-scheduled like the markdown prewarm, off the boot critical path.
-    if (loopback) onCleanup(scheduleUserExtensionLoad(globalSDK.url))
   })
 
   function projectMeta(directory: string, patch: ProjectMeta) {

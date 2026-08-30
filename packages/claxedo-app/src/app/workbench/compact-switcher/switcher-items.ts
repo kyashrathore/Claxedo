@@ -50,9 +50,6 @@ export function mapKindFromMeta(type: ContentType): SwitcherKind {
     case "task-composer":
       return "session"
     case "context":
-    // Extension views ride the generic document-style tab; a dedicated kind
-    // would force a new icon/rendering branch for no behavioral difference.
-    case "extension-view":
       return "page"
     default: {
       const exhaustive: never = type
@@ -94,8 +91,6 @@ function titleFromMeta(meta: ContentMeta, options: SwitcherItemOptions): string 
       return "Project WorkGraph"
     case "task-composer":
       return "New task"
-    case "extension-view":
-      return "Extension"
     default: {
       const exhaustive: never = meta.type
       return exhaustive

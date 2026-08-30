@@ -1671,19 +1671,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   await page.route("**/health", (r) => (api(r) ? json(r, { healthy: true }) : r.continue()))
 
-  // GET /api/claxedo/extensions — the user-extension listing the renderer's
-  // extension loader fetches once at boot (src/platform/extensions/
-  // user-extensions.ts:150, served by claxedo-local-server's
-  // UserExtensionRoutes). CONTRACT: `{ extensions: [...], skipped: [...] }`;
-  // empty means "no user extensions installed", which is the truthful answer
-  // for a mock runtime. Without this the fetch escapes and every spec boots
-  // with a "[user-extensions] listing failed" warning riding on a dead request.
-  await page.route("**/api/claxedo/extensions", (r) => {
-    if (!api(r)) return r.continue()
-    if (new URL(r.request().url()).pathname !== "/api/claxedo/extensions") return r.fallback()
-    return json(r, { extensions: [], skipped: [] })
-  })
-
   // The icon sprite is fetch()ed (resourceType "fetch"), so without a handler
   // it lands in `requests.unhandled` and trips the tripwire specs — but it is
   // a same-origin STATIC ASSET served by vite/preview, not an API escape.

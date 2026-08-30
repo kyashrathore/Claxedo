@@ -1,6 +1,5 @@
-import { type JSX, lazy, Suspense } from "solid-js"
+import { lazy, Suspense } from "solid-js"
 import { SessionContent } from "../../features/session/ui/content/session-content"
-import { ExtensionViewContent } from "../workbench/content/extension-view-content"
 import { createContributionRegistry, type ContributionGateContext, type SurfaceContribution } from "./registry"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import type { ContentMeta } from "../workbench/state/index"
@@ -70,16 +69,6 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
         <ContextContent meta={context.meta} ctx={context.ctx} />
       </Suspense>
     ),
-  },
-  {
-    // The host for user-extension views. Eager because it is dependency-free
-    // (solid + the view registry) and must resolve for panes restored from
-    // persisted state before any extension has loaded.
-    id: "surface.content.extension-view",
-    tier: "claxedo-first-party",
-    surface: "extension-view",
-    slot: "workbench",
-    renderer: (context) => <ExtensionViewContent meta={context.meta} />,
   },
   {
     id: "surface.content.marketplace",

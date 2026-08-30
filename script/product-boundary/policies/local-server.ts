@@ -71,7 +71,7 @@ export const localServer: Policy = {
   // complete local usage pipeline (route, durable ports, scanner, pricing
   // port, outbox, host identity, and composition). Shared implementation lives
   // in server-core, so the desktop still reaches no hosted capability package.
-  ceilings: { modules: 56, packages: 21 },
+  ceilings: { modules: 55, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

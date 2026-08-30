@@ -562,26 +562,6 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).not.toContain(id)
   })
 
-  test("openExtensionView keeps one tab per view id and stores the view id on meta and payload", () => {
-    const { layout, meta, getState } = makeFixture()
-    const id = layout.openExtensionView("hello-clock.clock", "Clock")
-    const again = layout.openExtensionView("hello-clock.clock", "Clock")
-    const other = layout.openExtensionView("hello-clock.counter", "Counter")
-
-    expect(again).toBe(id)
-    expect(other).not.toBe(id)
-    expect(meta.get(id)).toMatchObject({
-      type: "extension-view",
-      scope: "global",
-      viewId: "hello-clock.clock",
-      content: { type: "extension-view", viewId: "hello-clock.clock", title: "Clock" },
-    })
-
-    layout.closeContent(id)
-    expect(meta.get(id)).toBeUndefined()
-    expect(getState().contentIds).not.toContain(id)
-  })
-
   test("openWorkGraph reuses one global content", () => {
     const { layout, meta } = makeFixture()
     const id = layout.openWorkGraph()
