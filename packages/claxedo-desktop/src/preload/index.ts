@@ -266,6 +266,8 @@ const api: ElectronAPI = {
       ipcRenderer.invoke(`claxedo.account.operation:${operation}`, input),
     streamOpen: (operation: string, input?: Record<string, unknown>) =>
       ipcRenderer.invoke("claxedo.account.stream.open", { operation, input }),
+    streamStart: (streamId: string) =>
+      ipcRenderer.invoke("claxedo.account.stream.start", { streamId }),
     streamClose: (streamId: string) =>
       ipcRenderer.invoke("claxedo.account.stream.close", { streamId }),
     onStreamChunk: (listener: (payload: { streamId: string; text: string }) => void) => {

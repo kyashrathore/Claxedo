@@ -11,6 +11,7 @@ import type { HostedOperationName } from "./account-port"
 
 type StreamBridge = {
   streamOpen: (operation: string, input?: Record<string, unknown>) => Promise<{ streamId: string }>
+  streamStart: (streamId: string) => Promise<void>
   streamClose: (streamId: string) => Promise<void>
   onStreamChunk: (
     listener: (payload: { streamId: string; text: string; seq?: number; sentAt?: number }) => void,
@@ -24,6 +25,7 @@ function streamBridge(): StreamBridge | undefined {
   if (!account) return undefined
   for (const member of [
     "streamOpen",
+    "streamStart",
     "streamClose",
     "onStreamChunk",
     "onStreamEnd",
@@ -31,7 +33,14 @@ function streamBridge(): StreamBridge | undefined {
   ] as const) {
     if (typeof account[member] !== "function") return undefined
   }
-  return account as unknown as StreamBridge
+  return {
+    streamOpen: account.streamOpen as StreamBridge["streamOpen"],
+    streamStart: account.streamStart as StreamBridge["streamStart"],
+    streamClose: account.streamClose as StreamBridge["streamClose"],
+    onStreamChunk: account.onStreamChunk as StreamBridge["onStreamChunk"],
+    onStreamEnd: account.onStreamEnd as StreamBridge["onStreamEnd"],
+    onStreamError: account.onStreamError as StreamBridge["onStreamError"],
+  }
 }
 
 /**
@@ -53,22 +62,35 @@ export async function openAccountStreamResponse(input: {
   const { streamId } = await bridge.streamOpen(input.operation, input.params ?? {})
   const openAt = performance.now()
   let firstChunk = true
-  let closed = false
-  const close = () => {
-    if (closed) return
-    closed = true
+  let remotelyClosed = false
+  const closeRemote = () => {
+    if (remotelyClosed) return
+    remotelyClosed = true
     void bridge.streamClose(streamId)
   }
-  input.signal?.addEventListener("abort", close, { once: true })
+  let cleanupListeners = () => {}
+  let streamController!: ReadableStreamDefaultController<Uint8Array>
+  let terminal = false
+
+  const terminate = (action: () => void) => {
+    if (terminal) return
+    terminal = true
+    cleanupListeners()
+    input.signal?.removeEventListener("abort", onAbort)
+    closeRemote()
+    action()
+  }
+  const onAbort = () =>
+    terminate(() => streamController.error(input.signal?.reason ?? new DOMException("Aborted", "AbortError")))
 
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
+      streamController = controller
       const encoder = new TextEncoder()
       let unsubs: Array<() => void> = []
-      const cleanup = () => {
+      cleanupListeners = () => {
         for (const unsub of unsubs) unsub()
         unsubs = []
-        close()
       }
       unsubs = [
         bridge.onStreamChunk((payload) => {
@@ -95,24 +117,32 @@ export async function openAccountStreamResponse(input: {
         }),
         bridge.onStreamEnd((payload) => {
           if (payload.streamId !== streamId) return
-          cleanup()
-          try {
-            controller.close()
-          } catch {
-            // already closed
-          }
+          terminate(() => controller.close())
         }),
         bridge.onStreamError((payload) => {
           if (payload.streamId !== streamId) return
-          cleanup()
-          controller.error(new Error(payload.message))
+          terminate(() => controller.error(new Error(payload.message)))
         }),
       ]
     },
     cancel() {
-      close()
+      terminate(() => {})
     },
   })
+
+  if (input.signal?.aborted) {
+    onAbort()
+    throw input.signal.reason ?? new DOMException("Aborted", "AbortError")
+  }
+  input.signal?.addEventListener("abort", onAbort, { once: true })
+  try {
+    // Main does not touch the hosted stream until every push listener above is
+    // armed. This is a protocol handshake, not an event-loop timing assumption.
+    await bridge.streamStart(streamId)
+  } catch (error) {
+    terminate(() => streamController.error(error))
+    throw error
+  }
 
   return new Response(body, {
     status: 200,
