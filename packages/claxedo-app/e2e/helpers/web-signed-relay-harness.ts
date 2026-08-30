@@ -506,52 +506,29 @@ export async function gateReachesReady(page: Page, timeoutMs = 60_000): Promise<
   return input
 }
 
-/**
- * Loopback web-signed harness often reaches `status: ready` while
- * `rolePlacement` stays `role-pending` (connection info role never lands).
- * Drive the same `markRole` seam production refresh uses so submit is not
- * stuck behind the viewer/role gate (`VITE_CLAXEDO_E2E=1` exposes it).
- */
-export async function ensureWorkspaceRole(
+/** Wait for the connection authority to project the role minted by the signed control plane. */
+export async function waitForWorkspaceRole(
   page: Page,
   workspaceId: string,
   role: "owner" | "editor" | "viewer" | "admin" = "owner",
 ) {
   await page.waitForFunction(
-    (id) => {
+    ({ id, expectedRole }) => {
       const scope = window as typeof window & {
         __claxedoConnections?: {
-          snapshot?: () => Record<string, { status?: string; rolePlacement?: { state?: string } }>
-          markRole?: (workspaceId: string, role: string) => void
+          snapshot?: () => Record<string, {
+            status?: string
+            rolePlacement?: { state?: string; role?: string }
+          }>
         }
       }
       const row = scope.__claxedoConnections?.snapshot?.()?.[id]
-      return row?.status === "ready" && typeof scope.__claxedoConnections?.markRole === "function"
+      return row?.status === "ready"
+        && row.rolePlacement?.state === "role-known"
+        && row.rolePlacement.role === expectedRole
     },
-    workspaceId,
+    { id: workspaceId, expectedRole: role },
     { timeout: 60_000 },
-  )
-  await page.evaluate(
-    ({ id, nextRole }) => {
-      const scope = window as typeof window & {
-        __claxedoConnections?: { markRole?: (workspaceId: string, role: string) => void }
-      }
-      scope.__claxedoConnections?.markRole?.(id, nextRole)
-    },
-    { id: workspaceId, nextRole: role },
-  )
-  await page.waitForFunction(
-    ({ id, nextRole }) => {
-      const scope = window as typeof window & {
-        __claxedoConnections?: {
-          snapshot?: () => Record<string, { rolePlacement?: { state?: string; role?: string } }>
-        }
-      }
-      const placement = scope.__claxedoConnections?.snapshot?.()?.[id]?.rolePlacement
-      return placement?.state === "role-known" && placement.role === nextRole
-    },
-    { id: workspaceId, nextRole: role },
-    { timeout: 10_000 },
   )
 }
 

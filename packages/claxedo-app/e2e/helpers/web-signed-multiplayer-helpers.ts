@@ -7,10 +7,10 @@ import { execFile } from "node:child_process"
 import path from "node:path"
 import { promisify } from "node:util"
 import {
-  ensureWorkspaceRole,
   gateReachesReady,
   seedWorkspace,
   sessionRoute,
+  waitForWorkspaceRole,
   type RelayFixtureInfo,
   type RunningRelayFixture,
   type RunningWebApp,
@@ -195,7 +195,7 @@ export async function openAs(
     timeout: 45_000,
   })
   await gateReachesReady(page)
-  await ensureWorkspaceRole(page, fixture.info.workspaceId, role)
+  await waitForWorkspaceRole(page, fixture.info.workspaceId, role)
   await waitForModelsReady(page)
 }
 
@@ -271,8 +271,8 @@ export async function grantSessionShareTeam(
 export async function shareSessionWithTeamViaPeopleUi(page: Page, teamId: string) {
   await expect(page.getByText("Reconnecting…")).toHaveCount(0, { timeout: 60_000 }).catch(() => undefined)
   // SessionHeader can remount across pane/layout updates, leaving more than one
-  // People trigger in the DOM; click the last visible one in the live header.
-  const people = page.getByRole("button", { name: /Session people/i }).filter({ visible: true }).last()
+  // share trigger in the DOM; click the last visible one in the live header.
+  const people = page.getByRole("button", { name: "Share session", exact: true }).filter({ visible: true }).last()
   await expect(people, "People control never appeared in the session header").toBeVisible({ timeout: 30_000 })
   await people.click()
   const select = page.locator("select").filter({ has: page.locator(`option[value="${teamId}"]`) }).first()

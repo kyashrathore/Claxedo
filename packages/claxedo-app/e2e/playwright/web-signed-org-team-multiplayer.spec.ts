@@ -28,12 +28,12 @@ import {
   buildAndServeWebApp,
   composeText,
   composerInput,
-  ensureWorkspaceRole,
   gateReachesReady,
   selectScriptedModel,
   sendSubsequentMessage,
   startSignedRelayFixture,
   submitDraft,
+  waitForWorkspaceRole,
   type RunningRelayFixture,
   type RunningWebApp,
   type SignedRelayAccess,
@@ -244,14 +244,14 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
         timeout: 45_000,
       })
       await gateReachesReady(bobCtx.page)
-      await ensureWorkspaceRole(bobCtx.page, fixture!.info.workspaceId, "editor")
+      await waitForWorkspaceRole(bobCtx.page, fixture!.info.workspaceId, "editor")
       await expect(bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId))).toBeVisible({ timeout: 30_000 })
       await expectSessionOwnerAvatar(bobCtx.page, sessionId, ALICE_NAME)
       await bobCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "bob-after-reopen-project.png"), fullPage: true })
 
       await bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId)).click()
       await waitForModelsReady(bobCtx.page)
-      await ensureWorkspaceRole(bobCtx.page, fixture!.info.workspaceId, "editor")
+      await waitForWorkspaceRole(bobCtx.page, fixture!.info.workspaceId, "editor")
       await expectAssistantReplyVisible(bobCtx.page, new RegExp(`${marker}_ALICE`), {
         spec: SPEC,
         scenario: "org-team-bob-sees-alice",
@@ -293,14 +293,37 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
         allowed: false,
         messages: [],
       })
-      await openAs(bobCtx.page, fixture!, webApp!, ACCESS, bob!.controlPlaneToken, {
-        id: "user_bob",
-        fullName: BOB_NAME,
-      }, "editor")
-      // Rail inventory can retain a previously opened row briefly; control-plane
-      // list/messages above are the authority proof for revoke denial.
-      // Follow-up: Bob starting a *new* session in this project still needs a
-      // local directory mapping (not covered by share fanout).
+      // The already-open Bob client must consume the scoped revoke doorbell and
+      // revalidate its canonical session inventory. No identity reset or
+      // `openAs` is allowed here: that would prove only cold bootstrap denial.
+      await expect(bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId))).toHaveCount(0, { timeout: 30_000 })
+
+      // Reload the currently open deep link as the same signed user and
+      // observe the request made by the application itself. The canonical
+      // navigation producer must remain empty after a cold application read;
+      // a route-active shell may still render its last transcript while that
+      // deep link is open, but it cannot restore Bob to the session inventory.
+      const reloadedSessionList = bobCtx.page.waitForResponse(
+        (response) => {
+          const url = new URL(response.url())
+          return response.request().method() === "GET"
+            && url.pathname === "/api/claxedo/session-list"
+            && url.searchParams.get("scope") === "project"
+            && response.status() === 200
+        },
+        { timeout: 20_000 },
+      )
+      await bobCtx.page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 })
+      const reloadedList = await (await reloadedSessionList).json() as {
+        items?: Array<{ sessionId?: string }>
+        groups?: Array<{ items?: Array<{ sessionId?: string }> }>
+      }
+      expect([
+        ...(reloadedList.items ?? []),
+        ...(reloadedList.groups ?? []).flatMap((group) => group.items ?? []),
+      ].map((item) => item.sessionId)).not.toContain(sessionId)
+      await gateReachesReady(bobCtx.page)
+      await waitForWorkspaceRole(bobCtx.page, fixture!.info.workspaceId, "editor")
       await bobCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "bob-after-revoke.png"), fullPage: true })
 
       await aliceCtx.page.waitForTimeout(2_000)

@@ -12,7 +12,11 @@ import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "../../workspace-runtime/src/remote-session-authority.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
-import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
+import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/self-hosted-execution"
+import {
+  createSelfHostedApp,
+  embeddedManagedPrivateSessionPolicy,
+} from "./deployments/self-hosted-node/app"
 import { opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
@@ -422,21 +426,6 @@ if (access === "cloud") {
     url: cloudRuntime.url,
   })
   injectRuntime(effectiveWorkspace, cloudRuntime.url)
-} else {
-  await startUserHostedWorkspaceTunnel({
-    workspaceId,
-    hostId,
-    relayUrl,
-    hostTunnelToken: await mintHostTunnelToken(
-      {
-        subject: "user_host",
-        hostId,
-        workspaceIds: [workspaceId],
-      },
-      runtime.privateKey,
-      "EdDSA",
-    ),
-  })
 }
 
 // --- REAL control-plane auth + authority (2026-08-06 plan Phase 3) ---------
@@ -854,6 +843,16 @@ await authority.syncSessionMessages(browserAuth, {
   messages: sessionMessages,
 })
 
+// The full production entry point configures embedded execution immediately
+// after building this app. This focused fixture injects its own services and
+// therefore calls the same canonical authority-policy factory explicitly
+// before any tunnel request can create the runtime host.
+configureEmbeddedWorkspaceRuntime({
+  opencodeRequest,
+  opencodeCompat: true,
+  sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority),
+})
+
 const built = createSelfHostedApp(services, {
   // A production browser normally reuses one document/token. This load suite
   // deliberately boots many fresh documents against one fixture; keep the
@@ -861,6 +860,25 @@ const built = createSelfHostedApp(services, {
   // for that workload.
   connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 10_000, windowMs: 60_000 }),
 })
+if (access === "user-hosted") {
+  // Tunnel startup can create/cache the workspace runtime, and runtime policy
+  // configuration is intentionally not retroactive. Start only after the
+  // authority-backed factory above is ready.
+  await startUserHostedWorkspaceTunnel({
+    workspaceId,
+    hostId,
+    relayUrl,
+    hostTunnelToken: await mintHostTunnelToken(
+      {
+        subject: "user_host",
+        hostId,
+        workspaceIds: [workspaceId],
+      },
+      runtime.privateKey,
+      "EdDSA",
+    ),
+  })
+}
 // This fixture predates the machine-wide Host Connector and deliberately uses
 // the self-host composition for its embedded execution + relay paths. That
 // composition must not own hosted machine-enrollment routes, so compose the

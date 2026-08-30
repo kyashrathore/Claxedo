@@ -1,5 +1,12 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
-import { invalidateSessionListQueries, invalidateSessionShareQueries, upsertCreatedSessionListRow } from "@/features/session/data/query/session-list"
+import {
+  invalidateSessionListQueries,
+  invalidateSessionShareQueries,
+  removeSessionListQueryData,
+  upsertCreatedSessionListRow,
+} from "@/features/session/data/query/session-list"
+import { removeSessionInventoryQueryData } from "@/features/session/data/sync/session-inventory"
+import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
@@ -188,8 +195,21 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     void retryUnsettledSessionProjectionPulls()
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })
-  const unsubscribeClaxedoShareChanged = input.claxedoEvents?.on("session.share.changed", () => {
+  const unsubscribeClaxedoShareChanged = input.claxedoEvents?.on("session.share.changed", (event) => {
     // Doorbell only — control-plane list/inventory already include shares.
+    // A base-page list refetch deliberately preserves cached pagination tails,
+    // so revocation must first evict the now-forbidden row. The subsequent
+    // authoritative refetch reconciles every remaining field and can restore
+    // the row if another independent grant still permits access.
+    if (event.phase === "revoked") {
+      removeSessionListQueryData({
+        sessionId: event.sessionId,
+        workspaceId: event.workspaceId,
+      })
+      removeSessionInventoryQueryData<SessionInventoryRow>({
+        session: { id: event.sessionId, workspaceId: event.workspaceId },
+      })
+    }
     void invalidateSessionShareQueries()
   })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes

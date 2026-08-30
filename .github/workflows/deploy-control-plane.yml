@@ -199,21 +199,21 @@ jobs:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           bunx convex run migrations:run '{"fn":"migrations:normalizeRuntimeLeaseLegacyFields","reset":true}'
-          bun scripts/wait-for-convex-migrations.ts migrations:normalizeRuntimeLeaseLegacyFields
+          bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:normalizeRuntimeLeaseLegacyFields
 
       - name: Backfill tenant identity contracts (staging)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"],"reset":true}'
-          bun scripts/wait-for-convex-migrations.ts migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
+          bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
 
       - name: Verify tenant identity contracts (staging)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           bunx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"],"reset":true}'
-          bun scripts/wait-for-convex-migrations.ts migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
+          bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
 
       - name: Legacy Session tenant migration smoke (staging)
         env:

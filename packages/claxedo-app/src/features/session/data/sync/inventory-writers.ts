@@ -334,6 +334,19 @@ export function removeSessionInventoryQueryData<TSession extends SessionInventor
   baseUrl?: string
   session: SessionInventoryIdentity
 }) {
+  if (input.baseUrl === undefined) {
+    for (const query of queryClient.getQueryCache().findAll({
+      predicate: (query) => {
+        const key = query.queryKey
+        return Array.isArray(key) && key[0] === "shell" && key[2] === "sessionInventory"
+      },
+    })) {
+      const baseUrl = query.queryKey[1]
+      if (typeof baseUrl !== "string") continue
+      removeSessionInventoryQueryData<TSession>({ baseUrl, session: input.session })
+    }
+    return
+  }
   updateSessionInventoryQueryData<TSession>({
     baseUrl: input.baseUrl,
     mutate: (draft) => {

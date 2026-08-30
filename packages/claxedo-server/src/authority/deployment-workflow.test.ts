@@ -1,7 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { migrationStatusDecision } from "../../../../scripts/wait-for-convex-migrations"
+import {
+  migrationStatusDecision,
+  parseMigrationWaitArgs,
+} from "../../../../scripts/wait-for-convex-migrations"
 
 const root = path.resolve(import.meta.dirname, "../../../..")
 const controlPlane = fs.readFileSync(path.join(root, ".github/workflows/deploy-control-plane.yml"), "utf8")
@@ -43,6 +46,23 @@ describe("Claxedo Cloud deployment workflow", () => {
       { name: names[0], state: "success", isDone: true },
       { name: names[1], state: "failed", isDone: false, error: "contract violation" },
     ])).toThrow("contract violation")
+  })
+
+  test("the migration waiter keeps deployment selectors out of migration names", () => {
+    expect(parseMigrationWaitArgs(["--deployment", "staging", "migrations:first"])).toEqual({
+      names: ["migrations:first"],
+      deploymentArgs: ["--deployment", "staging"],
+    })
+    expect(parseMigrationWaitArgs(["--prod", "migrations:first"])).toEqual({
+      names: ["migrations:first"],
+      deploymentArgs: ["--prod"],
+    })
+    expect(() => parseMigrationWaitArgs(["--deployment", "migrations:first"]))
+      .toThrow("requires a deployment name")
+    expect(() => parseMigrationWaitArgs(["--deployment", "staging", "--prod", "migrations:first"]))
+      .toThrow("exactly one Convex deployment selector")
+    expect(() => parseMigrationWaitArgs(["--unknown", "migrations:first"]))
+      .toThrow("Unknown option")
   })
 
   test("serializes every top-level deploy while the reusable app inherits its caller's lock", () => {
@@ -110,11 +130,11 @@ describe("Claxedo Cloud deployment workflow", () => {
 
   test("waits for every asynchronous tenant migration before advancing the release gate", () => {
     const stagingWaits = [
-      "bun scripts/wait-for-convex-migrations.ts migrations:normalizeRuntimeLeaseLegacyFields",
-      "bun scripts/wait-for-convex-migrations.ts migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity",
-      "bun scripts/wait-for-convex-migrations.ts migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract",
+      "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:normalizeRuntimeLeaseLegacyFields",
+      "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity",
+      "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract",
     ]
-    const productionWaits = stagingWaits.map((command) => command.replace(".ts ", ".ts --prod "))
+    const productionWaits = stagingWaits.map((command) => command.replace("--deployment staging", "--prod"))
     for (const command of [...stagingWaits, ...productionWaits]) {
       expect(controlPlane).toContain(command)
     }

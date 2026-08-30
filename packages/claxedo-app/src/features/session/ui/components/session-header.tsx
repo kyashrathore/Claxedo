@@ -66,9 +66,10 @@ export function SessionHeader() {
   })
 
   /**
-   * Share is control-plane only: signed account + central (Convex) session with
-   * a workspace id. Local/unsigned sessions are not shareable — do not invent a
-   * workspace id from the project row.
+   * Session sharing is authority-owned for every signed workspace, regardless
+   * of whether transcript traffic is hosted centrally or by the workspace.
+   * Unsigned/local-only sessions remain unshareable, and the workspace id must
+   * come from the canonical SessionRef rather than being inferred from a path.
    */
   const shareTarget = createMemo(() => {
     if (account.state().status !== "signed") return undefined
@@ -78,7 +79,7 @@ export function SessionHeader() {
     if (!surfaceId) return undefined
     const content = claxedoState.meta.get(surfaceId)?.content
     const sessionRef = content?.type === "session" ? content.sessionRef : undefined
-    if (!sessionRef || sessionRef.host !== "central") return undefined
+    if (!sessionRef) return undefined
     const workspaceId = workspaceKey(sessionRef) ?? sessionRef.workspaceId
     if (!workspaceId) return undefined
     return { sessionId, workspaceId }

@@ -322,10 +322,10 @@ export function reconcileArchivedSessionListQueryData(input: {
 export function removeSessionListQueryData(input: {
   baseUrl?: string
   sessionId: string
-  directory: SessionNavigationRow["directory"]
+  directory?: SessionNavigationRow["directory"]
   workspaceId?: string
 }) {
-  const base = normalizedBase(input.baseUrl)
+  const base = input.baseUrl === undefined ? undefined : normalizedBase(input.baseUrl)
   for (const query of queryClient.getQueryCache().findAll({
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
   })) {
@@ -518,7 +518,7 @@ function removeSessionListTotal(
 type SessionListIdentity = {
   sessionRef?: string
   sessionId: string
-  directory: SessionNavigationRow["directory"]
+  directory?: SessionNavigationRow["directory"]
   workspaceId?: string
 }
 

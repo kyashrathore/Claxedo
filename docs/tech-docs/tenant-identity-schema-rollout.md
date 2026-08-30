@@ -56,7 +56,7 @@ Run the dependency-ordered chain on staging:
 
 ```sh
 npx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"],"reset":true}' --deployment staging
-bun scripts/wait-for-convex-migrations.ts migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
+bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
 ```
 
 After staging verification succeeds, run the same chain on production:
@@ -72,7 +72,7 @@ Run the batched contract probes on each deployment:
 
 ```sh
 npx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"],"reset":true}' --deployment staging
-bun scripts/wait-for-convex-migrations.ts migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
+bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
 npx convex run migrations:run '{"fn":"migrations:verifyUserActorIdentityContract","next":["migrations:verifyProjectTenantIdentityContract","migrations:verifyProjectMembershipIdentityContract","migrations:verifyWorkspaceTenantIdentityContract","migrations:verifySessionTenantIdentityContract"],"reset":true}' --prod
 bun scripts/wait-for-convex-migrations.ts --prod migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract
 npx convex run --component migrations lib:getStatus --deployment staging
@@ -126,9 +126,9 @@ npx convex deploy --message "contract tenant identity schema"
 ## SQLite local upgrade
 
 `openAuthorityDb` checkpoints WAL, creates
-`authority.db.pre-tenancy-v2.bak`, backfills in a transaction, validates nulls
+`authority.db.pre-tenancy-v3.bak`, backfills in a transaction, validates nulls
 and duplicate identities, rebuilds the three affected tables, creates parity
-indexes, and sets `PRAGMA user_version = 2`. An ambiguity rolls the transaction
+indexes, and sets `PRAGMA user_version = 3`. An ambiguity rolls the transaction
 back and reports the exact workspace or project id.
 
 Before starting the upgraded service, capture the legacy shape:
@@ -145,10 +145,10 @@ After one successful start, verify the complete local dataset:
 AUTHORITY_DB=/absolute/path/to/authority.db
 sqlite3 "$AUTHORITY_DB" 'PRAGMA integrity_check; PRAGMA user_version; SELECT COUNT(*) FROM users WHERE public_id IS NULL OR trim(public_id) = ""; SELECT COUNT(*) FROM projects WHERE org_id IS NULL OR repo_key IS NULL OR owner_token_identifier IS NULL; SELECT COUNT(*) FROM workspaces WHERE org_id IS NULL OR project_id IS NULL; SELECT org_id, repo_key, COUNT(*) FROM projects GROUP BY org_id, repo_key HAVING COUNT(*) > 1;'
 sqlite3 "$AUTHORITY_DB" '.schema users' '.schema projects' '.schema workspaces'
-test -f "$AUTHORITY_DB.pre-tenancy-v2.bak"
+test -f "$AUTHORITY_DB.pre-tenancy-v3.bak"
 ```
 
-The integrity result is `ok`, the user version is `2`, every null/blank count is
+The integrity result is `ok`, the user version is `3`, every null/blank count is
 `0`, and the duplicate query has no rows.
 
 For local rollback, stop the service and preserve both the failed upgraded file
@@ -156,12 +156,12 @@ and its WAL sidecars before restoring the snapshot:
 
 ```sh
 AUTHORITY_DB=/absolute/path/to/authority.db
-mv "$AUTHORITY_DB" "$AUTHORITY_DB.failed-v2"
-test ! -f "$AUTHORITY_DB-wal" || mv "$AUTHORITY_DB-wal" "$AUTHORITY_DB-wal.failed-v2"
-test ! -f "$AUTHORITY_DB-shm" || mv "$AUTHORITY_DB-shm" "$AUTHORITY_DB-shm.failed-v2"
-cp "$AUTHORITY_DB.pre-tenancy-v2.bak" "$AUTHORITY_DB"
+mv "$AUTHORITY_DB" "$AUTHORITY_DB.failed-v3"
+test ! -f "$AUTHORITY_DB-wal" || mv "$AUTHORITY_DB-wal" "$AUTHORITY_DB-wal.failed-v3"
+test ! -f "$AUTHORITY_DB-shm" || mv "$AUTHORITY_DB-shm" "$AUTHORITY_DB-shm.failed-v3"
+cp "$AUTHORITY_DB.pre-tenancy-v3.bak" "$AUTHORITY_DB"
 sqlite3 "$AUTHORITY_DB" 'PRAGMA integrity_check;'
 ```
 
 The restored database is opened only by the expand-compatible application
-release. The failed-v2 files remain available for diagnosis and forward repair.
+release. The failed-v3 files remain available for diagnosis and forward repair.

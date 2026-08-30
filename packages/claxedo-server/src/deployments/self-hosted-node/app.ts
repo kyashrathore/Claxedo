@@ -222,7 +222,7 @@ function authRouteOptions(services: ControlPlaneServices) {
   }
 }
 
-function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
+export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
   const decide = (input: SessionAuthorityInput, action: "read" | "write" | "register") =>
     decideWorkspaceSessionAuthority(authority, {
       actorId: input.actor.actorId,

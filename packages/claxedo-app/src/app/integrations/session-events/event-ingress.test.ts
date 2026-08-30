@@ -3,6 +3,12 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionListResponse } from "@/features/session/data/query/session-list"
+import {
+  readSessionInventoryQueryData,
+  setSessionInventoryQueryData,
+} from "@/features/session/data/sync/inventory-writers"
+import type { SessionInventoryRow } from "@/features/session/data/query/types"
+import { emptySessionInventory } from "@/features/session/data/sync/queries"
 import { createGlobalSyncEventIngress } from "./event-ingress"
 import type { RoutableEvent } from "./event-router"
 import type { ClaxedoEvent } from "../claxedo-events"
@@ -426,7 +432,7 @@ describe("global sync event ingress", () => {
     dispose()
   })
 
-  test("session.share.changed invalidates session-list and session-inventory queries", async () => {
+  test("share grant invalidates without eviction while revoke evicts before refetch", async () => {
     queryClient.clear()
     const globalEvents = eventSource()
     const claxedoEvents = claxedoEventSource()
@@ -436,12 +442,41 @@ describe("global sync event ingress", () => {
       limit: 5,
     })
     const inventoryKey = queryKeys.shell.sessionInventory("http://test.local")
-    queryClient.setQueryData(listKey, {
+    queryClient.setQueryData<SessionListResponse>(listKey, {
       view: { scope: "project", groupBy: "none", sort: "updated_desc", limit: 5 },
-      items: [],
-      totalKnown: 0,
+      items: [{
+        type: "session",
+        sessionRef: "workspace:ws_1:session:ses_shared",
+        sessionId: "ses_shared",
+        title: "Shared",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        projectId: "proj_1",
+        createdAt: 1,
+        updatedAt: 1,
+        tags: [],
+        attachments: [],
+      }],
+      totalKnown: 1,
     })
-    queryClient.setQueryData(inventoryKey, { sessions: [], projects: [], workspaces: [] })
+    const inventoryRow: SessionInventoryRow = {
+      id: "ses_shared",
+      title: "Shared",
+      directory: "/repo",
+      workspaceId: "ws_1",
+      projectID: "proj_1",
+      tags: [],
+      attachments: [],
+      time: { created: 1, updated: 1 },
+    }
+    setSessionInventoryQueryData({
+      baseUrl: "http://test.local",
+      value: {
+        ...emptySessionInventory<SessionInventoryRow>(),
+        sessions: [inventoryRow],
+        loaded: true,
+      },
+    })
     const dispose = createGlobalSyncEventIngress({
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
@@ -476,6 +511,26 @@ describe("global sync event ingress", () => {
     await Promise.resolve()
     expect(queryClient.getQueryState(listKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(inventoryKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items?.map((row) => row.sessionId)).toEqual([
+      "ses_shared",
+    ])
+    expect(readSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test.local",
+    }).sessions.map((row) => row.id)).toEqual(["ses_shared"])
+
+    claxedoEvents.emit({
+      type: "session.share.changed",
+      phase: "revoked",
+      ownerUserId: "user_bob",
+      sessionId: "ses_shared",
+      workspaceId: "ws_1",
+      ts: 2,
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items).toEqual([])
+    expect(readSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test.local",
+    }).sessions).toEqual([])
     dispose()
   })
 })

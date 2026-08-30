@@ -3266,7 +3266,7 @@ describe("workspace runtime route audit", () => {
     }
   })
 
-  test("SessionHeader portals Share only for signed central sessions", async () => {
+  test("SessionHeader portals Share for signed authority-backed workspace sessions", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
     expect(
@@ -3274,7 +3274,8 @@ describe("workspace runtime route audit", () => {
     ).toBe(false)
     expect(text).toMatch(/SessionPeopleControl/)
     expect(text).toMatch(/shareTarget/)
-    expect(text).toMatch(/host !== "central"/)
+    expect(text).not.toMatch(/host !== "central"/)
+    expect(text).toMatch(/workspaceKey\(sessionRef\)/)
     expect(text).toMatch(/status !== "signed"/)
     expect(text).not.toMatch(/StatusPopover/)
     expect(text).not.toMatch(/terminal\.toggle/)
@@ -3289,12 +3290,13 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.message/)
   })
 
-  test("upstream SessionHeader portals Share only for signed central sessions", async () => {
+  test("upstream SessionHeader portals Share for signed authority-backed workspace sessions", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
     expect(text).toMatch(/SessionPeopleControl/)
     expect(text).toMatch(/shareTarget/)
-    expect(text).toMatch(/host !== "central"/)
+    expect(text).not.toMatch(/host !== "central"/)
+    expect(text).toMatch(/workspaceKey\(sessionRef\)/)
     expect(text).not.toMatch(/StatusPopover/)
     expect(text).not.toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS/)
     expect(text).not.toMatch(/createActiveConversationSnapshot/)
