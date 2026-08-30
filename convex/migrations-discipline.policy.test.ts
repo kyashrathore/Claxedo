@@ -1,7 +1,16 @@
 import { describe, expect, test } from "vitest"
 import fs from "node:fs"
 import path from "node:path"
-import { backfillLegacyLlmUsage, normalizeRuntimeLeaseLegacyFields, run } from "./migrations"
+import {
+  backfillDefaultTeamMemberships,
+  backfillDefaultTeamProjectGrants,
+  backfillDefaultTeamSessionShares,
+  backfillDefaultTeams,
+  backfillDefaultTeamWorkspaceShares,
+  backfillLegacyLlmUsage,
+  normalizeRuntimeLeaseLegacyFields,
+  run,
+} from "./migrations"
 
 // D14 — Convex schema evolution discipline (ADR 016 §5): the MIGRATE step of expand-migrate-contract runs exclusively
 // through the @convex-dev/migrations component. This test pins the mechanism:
@@ -14,7 +23,7 @@ const convexRoot = path.join(repoRoot, "convex")
 describe("Convex migrations discipline (D14)", () => {
   test("the migrations component is registered in the app definition", () => {
     const config = fs.readFileSync(path.join(convexRoot, "convex.config.ts"), "utf8")
-    expect(config).toContain('@convex-dev/migrations/convex.config')
+    expect(config).toContain("@convex-dev/migrations/convex.config")
     expect(config).toContain("app.use(migrations)")
   })
 
@@ -22,6 +31,14 @@ describe("Convex migrations discipline (D14)", () => {
     expect((run as { isInternal?: boolean }).isInternal).toBe(true)
     expect((normalizeRuntimeLeaseLegacyFields as { isInternal?: boolean }).isInternal).toBe(true)
     expect((backfillLegacyLlmUsage as { isInternal?: boolean }).isInternal).toBe(true)
+    for (const migration of [
+      backfillDefaultTeams,
+      backfillDefaultTeamMemberships,
+      backfillDefaultTeamProjectGrants,
+      backfillDefaultTeamWorkspaceShares,
+      backfillDefaultTeamSessionShares,
+    ])
+      expect((migration as { isInternal?: boolean }).isInternal).toBe(true)
   })
 
   test("usage ledger expansion backfills through the migration component", () => {
@@ -58,12 +75,28 @@ describe("Convex migrations discipline (D14)", () => {
       "verifyProjectMembershipIdentityContract",
       "verifyWorkspaceTenantIdentityContract",
       "verifySessionTenantIdentityContract",
-    ]) expect(source).toContain(`export const ${migration} = migrations.define`)
+    ])
+      expect(source).toContain(`export const ${migration} = migrations.define`)
     expect(schema).toContain('kind: v.optional(v.union(v.literal("human"), v.literal("agent")))')
     expect(schema).toContain('org_id: v.optional(v.id("orgs"))')
     expect(schema).toContain("repo_key: v.optional(v.string())")
     expect(schema).toContain('project_id: v.union(v.id("projects"), v.string())')
     expect(schema).toContain('created_by_user_id: v.optional(v.id("users"))')
+  })
+
+  test("ordered releases run and await every bounded default-team migration", () => {
+    const workflow = fs.readFileSync(path.join(repoRoot, ".github/workflows/deploy-control-plane.yml"), "utf8")
+    for (const migration of [
+      "backfillDefaultTeams",
+      "backfillDefaultTeamMemberships",
+      "backfillDefaultTeamProjectGrants",
+      "backfillDefaultTeamWorkspaceShares",
+      "backfillDefaultTeamSessionShares",
+    ]) {
+      expect(workflow.match(new RegExp(`migrations:${migration}`, "g"))).toHaveLength(4)
+    }
+    expect(workflow).toContain("Backfill default team projections (staging)")
+    expect(workflow).toContain("Backfill default team projections (production)")
   })
 
   test("the retired hand-rolled backfill survives only as the documented break-glass export", () => {

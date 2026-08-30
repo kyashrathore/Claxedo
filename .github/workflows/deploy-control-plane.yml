@@ -260,6 +260,13 @@ jobs:
           bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"],"reset":true}'
           bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
 
+      - name: Backfill default team projections (staging)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:backfillDefaultTeams","next":["migrations:backfillDefaultTeamMemberships","migrations:backfillDefaultTeamProjectGrants","migrations:backfillDefaultTeamWorkspaceShares","migrations:backfillDefaultTeamSessionShares"],"reset":true}'
+          bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillDefaultTeams migrations:backfillDefaultTeamMemberships migrations:backfillDefaultTeamProjectGrants migrations:backfillDefaultTeamWorkspaceShares migrations:backfillDefaultTeamSessionShares
+
       - name: Verify tenant identity contracts (staging)
         env:
           CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
@@ -543,6 +550,13 @@ jobs:
         run: |
           bunx convex run migrations:run '{"fn":"migrations:backfillUserActorIdentity","next":["migrations:backfillProjectTenantIdentity","migrations:reconcileProjectMembershipProjectIds","migrations:backfillWorkspaceTenantIdentity","migrations:backfillSessionTenantIdentity"],"reset":true}' --prod
           bun scripts/wait-for-convex-migrations.ts --prod migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity
+
+      - name: Backfill default team projections (production)
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+        run: |
+          bunx convex run migrations:run '{"fn":"migrations:backfillDefaultTeams","next":["migrations:backfillDefaultTeamMemberships","migrations:backfillDefaultTeamProjectGrants","migrations:backfillDefaultTeamWorkspaceShares","migrations:backfillDefaultTeamSessionShares"],"reset":true}' --prod
+          bun scripts/wait-for-convex-migrations.ts --prod migrations:backfillDefaultTeams migrations:backfillDefaultTeamMemberships migrations:backfillDefaultTeamProjectGrants migrations:backfillDefaultTeamWorkspaceShares migrations:backfillDefaultTeamSessionShares
 
       - name: Verify tenant identity contracts (production)
         env:

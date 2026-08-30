@@ -15,7 +15,7 @@ function publicTeamId() {
 
 async function requireOrgAdmin(ctx: any, orgId: unknown) {
   const actor = await readUser(ctx)
-  if (!await orgAdminForUser(ctx.db, actor._id, orgId)) throw new Error("org_admin_required")
+  if (!(await orgAdminForUser(ctx.db, actor._id, orgId))) throw new Error("org_admin_required")
   return actor
 }
 
@@ -29,11 +29,160 @@ async function orgById(ctx: any, orgId: string) {
   }
 }
 
-async function resolveUser(ctx: any, args: {
-  token_identifier?: string
-  clerk_subject?: string
-  user_public_id?: string
-}) {
+async function defaultTeamForOrg(ctx: any, orgId: unknown) {
+  const teams = await ctx.db
+    .query("teams")
+    .withIndex("by_org_default", (q: any) => q.eq("org_id", orgId).eq("is_default", true))
+    .filter((q: any) => q.eq(q.field("deleted_at"), undefined))
+    .take(2)
+  if (teams.length > 1) throw new Error("default_team_duplicate")
+  return teams[0]
+}
+
+export async function ensureDefaultTeam(
+  ctx: any,
+  input: {
+    org: any
+    creatorUserId: unknown
+    now: number
+  },
+) {
+  const existing = await defaultTeamForOrg(ctx, input.org._id)
+  if (existing) return existing
+  const publicId = publicTeamId()
+  const teamId = await ctx.db.insert("teams", {
+    public_id: publicId,
+    org_id: input.org._id,
+    name: input.org.name || "Everyone",
+    is_default: true,
+    created_by_user_id: input.creatorUserId,
+    created_at: input.now,
+    updated_at: input.now,
+  })
+  const team = await ctx.db.get(teamId)
+  if (!team) throw new Error("default_team_missing")
+  return team
+}
+
+export async function ensureDefaultTeamMembership(
+  ctx: any,
+  input: {
+    orgId: unknown
+    userId: unknown
+    role: "member" | "admin" | "owner"
+    creatorUserId: unknown
+    now: number
+  },
+) {
+  const org = await ctx.db.get(input.orgId)
+  if (!org || org.deleted_at || org.kind === "personal") return undefined
+  const team = await ensureDefaultTeam(ctx, {
+    org,
+    creatorUserId: input.creatorUserId,
+    now: input.now,
+  })
+  const existing = await ctx.db
+    .query("team_memberships")
+    .withIndex("by_team_user", (q: any) => q.eq("team_id", team._id).eq("user_id", input.userId))
+    .unique()
+  if (existing) {
+    if (existing.role !== input.role) await ctx.db.patch(existing._id, { role: input.role, updated_at: input.now })
+    return team
+  }
+  await ctx.db.insert("team_memberships", {
+    team_id: team._id,
+    user_id: input.userId,
+    role: input.role,
+    created_at: input.now,
+    updated_at: input.now,
+  })
+  return team
+}
+
+export async function removeDefaultTeamMembership(ctx: any, input: { orgId: unknown; userId: unknown }) {
+  const team = await defaultTeamForOrg(ctx, input.orgId)
+  if (!team) return
+  const existing = await ctx.db
+    .query("team_memberships")
+    .withIndex("by_team_user", (q: any) => q.eq("team_id", team._id).eq("user_id", input.userId))
+    .unique()
+  if (existing) await ctx.db.delete(existing._id)
+}
+
+export async function ensureDefaultTeamProjectGrant(
+  ctx: any,
+  input: {
+    orgId: unknown
+    projectId: string
+    creatorUserId: unknown
+    now: number
+  },
+) {
+  const org = await ctx.db.get(input.orgId)
+  if (!org || org.deleted_at || org.kind === "personal") return undefined
+  const team = await ensureDefaultTeam(ctx, {
+    org,
+    creatorUserId: input.creatorUserId,
+    now: input.now,
+  })
+  await upsertTeamProjectGrant(ctx, {
+    teamId: team._id,
+    projectId: input.projectId,
+    role: "editor",
+    creatorUserId: input.creatorUserId,
+    now: input.now,
+  })
+  return team
+}
+
+async function upsertTeamProjectGrant(
+  ctx: any,
+  input: {
+    teamId: unknown
+    projectId: string
+    role: "viewer" | "editor" | "admin"
+    creatorUserId: unknown
+    now: number
+  },
+) {
+  const existing = await ctx.db
+    .query("team_project_grants")
+    .withIndex("by_team_project", (q: any) => q.eq("team_id", input.teamId).eq("project_id", input.projectId))
+    .collect()
+  const keeper = existing.find((grant: any) => !grant.revoked_at) ?? existing[0]
+  if (!keeper) {
+    return await ctx.db.insert("team_project_grants", {
+      team_id: input.teamId,
+      project_id: input.projectId,
+      role: input.role,
+      created_by_user_id: input.creatorUserId,
+      created_at: input.now,
+    })
+  }
+  if (keeper.revoked_at || keeper.role !== input.role) {
+    await ctx.db.patch(keeper._id, {
+      role: input.role,
+      created_by_user_id: input.creatorUserId,
+      created_at: input.now,
+      revoked_at: undefined,
+    })
+  }
+  for (const duplicate of existing) {
+    if (duplicate._id !== keeper._id && !duplicate.revoked_at) {
+      await ctx.db.patch(duplicate._id, { revoked_at: input.now })
+    }
+  }
+  return keeper._id
+}
+
+async function resolveUser(
+  ctx: any,
+  args: {
+    token_identifier?: string
+    clerk_subject?: string
+    user_public_id?: string
+  },
+) {
   if (args.user_public_id) {
     const byPublic = await ctx.db
       .query("users")
@@ -193,17 +342,19 @@ export const listMembers = authedQuery({
       .query("team_memberships")
       .withIndex("by_team", (q: any) => q.eq("team_id", team._id))
       .collect()
-    return await Promise.all(rows.map(async (row: any) => {
-      const user = await ctx.db.get(row.user_id)
-      return {
-        user_id: row.user_id,
-        public_id: user?.public_id,
-        display_name: user?.name,
-        email: user?.email,
-        token_identifier: user?.token_identifier,
-        role: row.role,
-      }
-    }))
+    return await Promise.all(
+      rows.map(async (row: any) => {
+        const user = await ctx.db.get(row.user_id)
+        return {
+          user_id: row.user_id,
+          public_id: user?.public_id,
+          display_name: user?.name,
+          email: user?.email,
+          token_identifier: user?.token_identifier,
+          role: row.role,
+        }
+      }),
+    )
   },
 })
 
@@ -221,21 +372,12 @@ export const grantProject = authedMutation({
     if (!team || team.deleted_at) throw new Error("Team not found")
     const actor = await requireOrgAdmin(ctx, team.org_id)
     const now = Date.now()
-    const existing = await ctx.db
-      .query("team_project_grants")
-      .withIndex("by_team_project", (q: any) =>
-        q.eq("team_id", team._id).eq("project_id", args.project_id))
-      .unique()
-    if (existing && !existing.revoked_at && existing.role === args.role) {
-      return { grant_id: existing._id }
-    }
-    if (existing) await ctx.db.patch(existing._id, { revoked_at: now })
-    const grantId = await ctx.db.insert("team_project_grants", {
-      team_id: team._id,
-      project_id: args.project_id,
+    const grantId = await upsertTeamProjectGrant(ctx, {
+      teamId: team._id,
+      projectId: args.project_id,
       role: args.role,
-      created_by_user_id: actor._id,
-      created_at: now,
+      creatorUserId: actor._id,
+      now,
     })
     return { grant_id: grantId }
   },
@@ -255,16 +397,21 @@ export const revokeProject = authedMutation({
     await requireOrgAdmin(ctx, team.org_id)
     const existing = await ctx.db
       .query("team_project_grants")
-      .withIndex("by_team_project", (q: any) =>
-        q.eq("team_id", team._id).eq("project_id", args.project_id))
-      .unique()
-    if (!existing || existing.revoked_at) return { revoked: false }
-    await ctx.db.patch(existing._id, { revoked_at: Date.now() })
+      .withIndex("by_team_project", (q: any) => q.eq("team_id", team._id).eq("project_id", args.project_id))
+      .collect()
+    const active = existing.filter((grant: any) => !grant.revoked_at)
+    if (active.length === 0) return { revoked: false }
+    const now = Date.now()
+    for (const grant of active) await ctx.db.patch(grant._id, { revoked_at: now })
     return { revoked: true }
   },
 })
 
-/** Ensure non-personal orgs have a default team with mirrored memberships and project grants. */
+/**
+ * Provision the caller's default team membership. Historical reconciliation is
+ * deliberately ledger-backed in migrations.ts; this request-path mutation must
+ * not scan every org member, project, or share on each navigation.
+ */
 export const ensureDefaultTeamForOrg = authedMutation({
   args: { org_id: v.string() },
   handler: async (ctx, args) => {
@@ -278,123 +425,18 @@ export const ensureDefaultTeamForOrg = authedMutation({
       .unique()
     if (!membership && org.owner_user_id !== actor._id) throw new Error("org_membership_required")
 
-    const existingTeams = await ctx.db
-      .query("teams")
-      .withIndex("by_org", (q: any) => q.eq("org_id", org._id))
-      .collect()
-    let defaultTeam = existingTeams.find((team: any) => !team.deleted_at && team.is_default)
     const now = Date.now()
-    if (!defaultTeam) {
-      const publicId = publicTeamId()
-      const teamDocId = await ctx.db.insert("teams", {
-        public_id: publicId,
-        org_id: org._id,
-        name: org.name || "Everyone",
-        is_default: true,
-        created_by_user_id: actor._id,
-        created_at: now,
-        updated_at: now,
-      })
-      defaultTeam = await ctx.db.get(teamDocId)
-    }
+    const defaultTeam = await ensureDefaultTeamMembership(ctx, {
+      orgId: org._id,
+      userId: actor._id,
+      role: membership?.role ?? "owner",
+      creatorUserId: actor._id,
+      now,
+    })
     if (!defaultTeam) throw new Error("default_team_missing")
-
-    const orgMembers = await ctx.db
-      .query("org_memberships")
-      .withIndex("by_org_user", (q: any) => q.eq("org_id", org._id))
-      .collect()
-    for (const member of orgMembers) {
-      const existing = await ctx.db
-        .query("team_memberships")
-        .withIndex("by_team_user", (q: any) => q.eq("team_id", defaultTeam!._id).eq("user_id", member.user_id))
-        .unique()
-      if (existing) continue
-      await ctx.db.insert("team_memberships", {
-        team_id: defaultTeam._id,
-        user_id: member.user_id,
-        role: member.role === "owner" || member.role === "admin" ? member.role : "member",
-        created_at: now,
-        updated_at: now,
-      })
-    }
-
-    const projects = await ctx.db
-      .query("projects")
-      .withIndex("by_org", (q: any) => q.eq("org_id", org._id))
-      .collect()
-    for (const project of projects) {
-      if (project.deleted_at) continue
-      const projectKey = project.project_id ?? project._id
-      const grant = await ctx.db
-        .query("team_project_grants")
-        .withIndex("by_team_project", (q: any) =>
-          q.eq("team_id", defaultTeam!._id).eq("project_id", projectKey))
-        .unique()
-      if (grant && !grant.revoked_at) continue
-      if (grant) await ctx.db.patch(grant._id, { revoked_at: now })
-      await ctx.db.insert("team_project_grants", {
-        team_id: defaultTeam._id,
-        project_id: projectKey,
-        role: "editor",
-        created_by_user_id: actor._id,
-        created_at: now,
-      })
-    }
-
-    // D18: retarget interim org-scoped shares onto the default team (no session backfill).
-    const orgWorkspaceShares = await ctx.db
-      .query("workspace_share_grants")
-      .withIndex("by_org", (q: any) => q.eq("granted_to_org_id", org._id))
-      .collect()
-    let workspaceSharesRetargeted = 0
-    for (const share of orgWorkspaceShares) {
-      if (share.revoked_at) continue
-      const existingTeam = await ctx.db
-        .query("workspace_share_grants")
-        .withIndex("by_workspace_team", (q: any) =>
-          q.eq("workspace_id", share.workspace_id).eq("granted_to_team_id", defaultTeam!._id))
-        .unique()
-      if (existingTeam && !existingTeam.revoked_at) {
-        await ctx.db.patch(share._id, { revoked_at: now })
-        continue
-      }
-      await ctx.db.patch(share._id, {
-        granted_to_org_id: undefined,
-        granted_to_team_id: defaultTeam._id,
-      })
-      workspaceSharesRetargeted += 1
-    }
-
-    const orgSessionShares = await ctx.db
-      .query("session_share_grants")
-      .withIndex("by_org", (q: any) => q.eq("granted_to_org_id", org._id))
-      .collect()
-    let sessionSharesRetargeted = 0
-    for (const share of orgSessionShares) {
-      if (share.revoked_at) continue
-      const existingTeam = await ctx.db
-        .query("session_share_grants")
-        .withIndex("by_session_team", (q: any) =>
-          q.eq("session_id", share.session_id).eq("granted_to_team_id", defaultTeam!._id))
-        .unique()
-      if (existingTeam && !existingTeam.revoked_at) {
-        await ctx.db.patch(share._id, { revoked_at: now })
-        continue
-      }
-      await ctx.db.patch(share._id, {
-        granted_to_org_id: undefined,
-        granted_to_team_id: defaultTeam._id,
-      })
-      sessionSharesRetargeted += 1
-    }
-
     return {
       team_id: defaultTeam.public_id,
       org_id: org._id,
-      members: orgMembers.length,
-      projects: projects.filter((p: any) => !p.deleted_at).length,
-      workspace_shares_retargeted: workspaceSharesRetargeted,
-      session_shares_retargeted: sessionSharesRetargeted,
     }
   },
 })

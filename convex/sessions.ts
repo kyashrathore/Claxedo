@@ -38,6 +38,17 @@ const serviceUser = v.object({
   image_url: v.optional(v.string()),
 })
 
+export function createUserLookupCache(get: (userId: Id<"users">) => Promise<Doc<"users"> | null>) {
+  const users = new Map<Id<"users">, Promise<Doc<"users"> | null>>()
+  return (userId: Id<"users">) => {
+    const cached = users.get(userId)
+    if (cached) return cached
+    const lookup = get(userId)
+    users.set(userId, lookup)
+    return lookup
+  }
+}
+
 function rec(input: unknown): Record<string, unknown> | undefined {
   return input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
 }
@@ -72,10 +83,7 @@ async function writableWorkspaceForUser(ctx: any, user: { _id: unknown }, worksp
   return { user, workspace }
 }
 
-async function sessionShareAllowsUser(
-  ctx: any,
-  input: { user: { _id: unknown }; sessionId: string },
-) {
+async function sessionShareAllowsUser(ctx: any, input: { user: { _id: unknown }; sessionId: string }) {
   const grants = await ctx.db
     .query("session_share_grants")
     .withIndex("by_session", (q: any) => q.eq("session_id", input.sessionId))
@@ -86,16 +94,14 @@ async function sessionShareAllowsUser(
     if (grant.granted_to_org_id) {
       const membership = await ctx.db
         .query("org_memberships")
-        .withIndex("by_org_user", (q: any) =>
-          q.eq("org_id", grant.granted_to_org_id).eq("user_id", input.user._id))
+        .withIndex("by_org_user", (q: any) => q.eq("org_id", grant.granted_to_org_id).eq("user_id", input.user._id))
         .unique()
       if (membership) return true
     }
     if (grant.granted_to_team_id) {
       const membership = await ctx.db
         .query("team_memberships")
-        .withIndex("by_team_user", (q: any) =>
-          q.eq("team_id", grant.granted_to_team_id).eq("user_id", input.user._id))
+        .withIndex("by_team_user", (q: any) => q.eq("team_id", grant.granted_to_team_id).eq("user_id", input.user._id))
         .unique()
       if (membership) return true
     }
@@ -118,17 +124,16 @@ async function sessionRoleForUser(
   if (input.session.created_by_user_id === input.user._id) return role
   const participant = await ctx.db
     .query("session_participants")
-    .withIndex("by_session_user", (q: any) => q.eq("session_id", input.session.session_id).eq("user_id", input.user._id))
+    .withIndex("by_session_user", (q: any) =>
+      q.eq("session_id", input.session.session_id).eq("user_id", input.user._id),
+    )
     .unique()
   if (participant && !participant.revoked_at) return role
   if (await sessionShareAllowsUser(ctx, { user: input.user, sessionId: input.session.session_id })) return role
   if (await orgAdminForUser(ctx.db, input.user._id, input.workspace.org_id)) return role
 }
 
-async function requireSessionParticipantAdmin(
-  ctx: any,
-  args: { session_id: string; workspace_id: string },
-) {
+async function requireSessionParticipantAdmin(ctx: any, args: { session_id: string; workspace_id: string }) {
   const actor = await readUser(ctx)
   const [workspace, session] = await Promise.all([
     workspaceByPublicId(ctx.db, args.workspace_id),
@@ -140,10 +145,10 @@ async function requireSessionParticipantAdmin(
   if (!workspace || !session || session.workspace_id !== workspace._id || session.deleted_at) {
     throw new Error("Session not found")
   }
-  if (!await authorizeWorkspaceForUser(ctx, workspace, actor, "read")) {
+  if (!(await authorizeWorkspaceForUser(ctx, workspace, actor, "read"))) {
     throw new Error("session_participant_admin_required")
   }
-  if (session.created_by_user_id !== actor._id && !await orgAdminForUser(ctx.db, actor._id, workspace.org_id)) {
+  if (session.created_by_user_id !== actor._id && !(await orgAdminForUser(ctx.db, actor._id, workspace.org_id))) {
     throw new Error("session_participant_admin_required")
   }
   return { actor, workspace, session }
@@ -171,12 +176,17 @@ async function upsertVisibilityRows(
       .withIndex("by_session_id", (q: any) => q.eq("session_id", session.session_id))
       .unique()
     if (existing && existing.workspace_id !== input.workspace._id) throw new Error("Session not found")
-    if (existing && existing.created_by_user_id !== input.user._id && !await sessionRoleForUser(ctx, {
-      user: input.user,
-      workspace: input.workspace,
-      session: existing,
-      action: "write",
-    })) throw new Error("Session not found")
+    if (
+      existing &&
+      existing.created_by_user_id !== input.user._id &&
+      !(await sessionRoleForUser(ctx, {
+        user: input.user,
+        workspace: input.workspace,
+        session: existing,
+        action: "write",
+      }))
+    )
+      throw new Error("Session not found")
     const hint = directoryHint(session.directory_hint)
     const projectId = await sessionProjectId(ctx, input.workspace, session.project_id)
     const patch = {
@@ -401,17 +411,19 @@ async function meterWorkGraphTranscriptTurns(
     const created = typeof time?.created === "number" ? time.created : completed
     const tokens = rec(info.tokens)
     const cache = rec(tokens?.cache)
-    const known = (value: unknown) => (
+    const known = (value: unknown) =>
       typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null
-    )
     const providerId = txt(info.providerID)
     const modelId = txt(info.modelID)
     const workspaceId = txt(input.workspace.workspace_id)
     if (!providerId || !modelId || !workspaceId) continue
     const access = txt(input.workspace.access)
-    const location = access === "user-hosted" ? "user-hosted" as const
-      : access === "local" ? "local" as const
-      : "cloud-workspace" as const
+    const location =
+      access === "user-hosted"
+        ? ("user-hosted" as const)
+        : access === "local"
+          ? ("local" as const)
+          : ("cloud-workspace" as const)
     await recordLlmTurnFact(
       ctx,
       {
@@ -455,16 +467,17 @@ async function syncMessageRows(
     .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
     .unique()
   if (existingSession && existingSession.workspace_id !== input.workspace._id) throw new Error("Session not found")
-  if (existingSession && !await sessionRoleForUser(ctx, {
-    user: input.user,
-    workspace: input.workspace,
-    session: existingSession,
-    action: "write",
-  })) throw new Error("Session not found")
   if (
-    input.maxEventOrdinal !== undefined
-    && input.maxEventOrdinal < (existingSession?.max_event_ordinal ?? 0)
-  ) {
+    existingSession &&
+    !(await sessionRoleForUser(ctx, {
+      user: input.user,
+      workspace: input.workspace,
+      session: existingSession,
+      action: "write",
+    }))
+  )
+    throw new Error("Session not found")
+  if (input.maxEventOrdinal !== undefined && input.maxEventOrdinal < (existingSession?.max_event_ordinal ?? 0)) {
     return { applied: false, maxEventOrdinal: existingSession?.max_event_ordinal ?? 0 }
   }
   await ensureSessionHistoryRow(ctx, {
@@ -483,16 +496,18 @@ async function syncMessageRows(
   const incomingIds = new Set<string>()
   const now = Date.now()
   const preserveCanonicalRows =
-    input.maxEventOrdinal !== undefined
-    && input.maxEventOrdinal === (existingSession?.max_event_ordinal ?? 0)
-    && existingRows.length > 0
-    && input.messages.length <= existingRows.length
+    input.maxEventOrdinal !== undefined &&
+    input.maxEventOrdinal === (existingSession?.max_event_ordinal ?? 0) &&
+    existingRows.length > 0 &&
+    input.messages.length <= existingRows.length
   if (!preserveCanonicalRows) {
     if (input.maxEventOrdinal !== undefined) {
-      const session = existingSession ?? await ctx.db
-        .query("session_history")
-        .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
-        .unique()
+      const session =
+        existingSession ??
+        (await ctx.db
+          .query("session_history")
+          .withIndex("by_session_id", (query: any) => query.eq("session_id", input.session_id))
+          .unique())
       if (session) await ctx.db.patch(session._id, { max_event_ordinal: input.maxEventOrdinal })
     }
     for (let ordinal = 0; ordinal < input.messages.length; ordinal += 1) {
@@ -506,7 +521,12 @@ async function syncMessageRows(
       if (existing) {
         usedRows.add(existing._id)
         const missingAuthor = !existing.author_actor_id && producerAuthor !== undefined
-        if (existing.ordinal !== ordinal || existing.role !== role || jsonText(existing.data) !== jsonText(data) || missingAuthor) {
+        if (
+          existing.ordinal !== ordinal ||
+          existing.role !== role ||
+          jsonText(existing.data) !== jsonText(data) ||
+          missingAuthor
+        ) {
           await ctx.db.patch(existing._id, {
             role,
             ordinal,
@@ -576,7 +596,10 @@ async function syncMessageRows(
           : {}),
     })
   }
-  return { applied: !preserveCanonicalRows, maxEventOrdinal: input.maxEventOrdinal ?? existingSession?.max_event_ordinal ?? 0 }
+  return {
+    applied: !preserveCanonicalRows,
+    maxEventOrdinal: input.maxEventOrdinal ?? existingSession?.max_event_ordinal ?? 0,
+  }
 }
 
 function messageText(input: unknown) {
@@ -676,17 +699,15 @@ export const registerRuntime = serviceMutation({
     const user = await ctx.db.get(actorId)
     if (!user || user.kind !== args.actor_kind) throw new Error("Session actor not found")
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (!workspace || !await authorizeWorkspaceForUser(ctx, workspace, user, "write")) {
+    if (!workspace || !(await authorizeWorkspaceForUser(ctx, workspace, user, "write"))) {
       throw new Error("Workspace not found")
     }
     const existing = await ctx.db
       .query("session_history")
       .withIndex("by_session_id", (query: any) => query.eq("session_id", args.session_id))
       .unique()
-    if (
-      existing
-      && (existing.workspace_id !== workspace._id || existing.created_by_user_id !== user._id)
-    ) throw new Error("Session not found")
+    if (existing && (existing.workspace_id !== workspace._id || existing.created_by_user_id !== user._id))
+      throw new Error("Session not found")
     const now = Date.now()
     if (existing) {
       await ctx.db.patch(existing._id, {
@@ -734,7 +755,7 @@ export const addParticipant = authedMutation({
   handler: async (ctx, args) => {
     const access = await requireSessionParticipantAdmin(ctx, args)
     const participant = await userByTokenIdentifier(ctx.db, args.participant_token_identifier)
-    if (!participant || !await authorizeWorkspaceForUser(ctx, access.workspace, participant, "read")) {
+    if (!participant || !(await authorizeWorkspaceForUser(ctx, access.workspace, participant, "read"))) {
       throw new Error("session_participant_workspace_access_required")
     }
     const existing = await ctx.db
@@ -789,12 +810,16 @@ export const list = authedQuery({
     const canAdminSessions = await orgAdminForUser(ctx.db, user._id, workspace.org_id)
     const participantSessions = canAdminSessions
       ? new Set<string>()
-      : new Set((await ctx.db
-        .query("session_participants")
-        .withIndex("by_workspace_user", (q: any) => q.eq("workspace_id", workspace._id).eq("user_id", user._id))
-        .collect())
-        .filter((participant) => !participant.revoked_at)
-        .map((participant) => participant.session_id))
+      : new Set(
+          (
+            await ctx.db
+              .query("session_participants")
+              .withIndex("by_workspace_user", (q: any) => q.eq("workspace_id", workspace._id).eq("user_id", user._id))
+              .collect()
+          )
+            .filter((participant) => !participant.revoked_at)
+            .map((participant) => participant.session_id),
+        )
     const sharedSessions = canAdminSessions
       ? new Set<string>()
       : await sessionIdsSharedWithUser(ctx, user._id, workspace._id)
@@ -803,32 +828,43 @@ export const list = authedQuery({
       .withIndex("by_workspace_updated", (q) => q.eq("workspace_id", workspace._id))
       .order("desc")
       .collect()
-    return await Promise.all(sessions
-      .filter((session) => !session.deleted_at && (
-        session.created_by_user_id === user._id
-        || canAdminSessions
-        || participantSessions.has(session.session_id)
-        || sharedSessions.has(session.session_id)
-      ))
-      .map(async (session) => {
-        const projectId = publicProjectId(session.project_id)
-        // Owner favicon is for shared/other-user rows only — creators don't need
-        // their own face on sessions they already own.
-        const creator = session.created_by_user_id && session.created_by_user_id !== user._id
-          ? await ctx.db.get(session.created_by_user_id)
-          : null
-        return {
-          session_id: session.session_id,
-          ...(projectId ? { project_id: projectId } : {}),
-          title: session.title,
-          directory_hint: session.directory_hint,
-          created_at: session.created_at,
-          updated_at: session.updated_at,
-          ...(typeof creator?.name === "string" && creator.name ? { owner_name: creator.name } : {}),
-          ...(typeof creator?.image_url === "string" && creator.image_url ? { owner_avatar_url: creator.image_url } : {}),
-          ...(typeof creator?.public_id === "string" && creator.public_id ? { owner_public_id: creator.public_id } : {}),
-        }
-      }))
+    // A workspace can contain many sessions from the same collaborator. Keep
+    // the promise (rather than just its resolved value) so concurrent mapping
+    // work shares the first lookup as well.
+    const creatorFor = createUserLookupCache((creatorId) => ctx.db.get(creatorId))
+    return await Promise.all(
+      sessions
+        .filter(
+          (session) =>
+            !session.deleted_at &&
+            (session.created_by_user_id === user._id ||
+              canAdminSessions ||
+              participantSessions.has(session.session_id) ||
+              sharedSessions.has(session.session_id)),
+        )
+        .map(async (session) => {
+          const projectId = publicProjectId(session.project_id)
+          // Owner favicon is for shared/other-user rows only — creators don't need
+          // their own face on sessions they already own.
+          const creatorId = session.created_by_user_id as Id<"users"> | undefined
+          const creator = creatorId && creatorId !== user._id ? await creatorFor(creatorId) : null
+          return {
+            session_id: session.session_id,
+            ...(projectId ? { project_id: projectId } : {}),
+            title: session.title,
+            directory_hint: session.directory_hint,
+            created_at: session.created_at,
+            updated_at: session.updated_at,
+            ...(typeof creator?.name === "string" && creator.name ? { owner_name: creator.name } : {}),
+            ...(typeof creator?.image_url === "string" && creator.image_url
+              ? { owner_avatar_url: creator.image_url }
+              : {}),
+            ...(typeof creator?.public_id === "string" && creator.public_id
+              ? { owner_public_id: creator.public_id }
+              : {}),
+          }
+        }),
+    )
   },
 })
 
@@ -837,16 +873,22 @@ async function sessionIdsSharedWithUser(ctx: any, userId: unknown, workspaceDocI
     .query("session_share_grants")
     .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceDocId))
     .collect()
-  const teamIds = new Set((await ctx.db
-    .query("team_memberships")
-    .withIndex("by_user", (q: any) => q.eq("user_id", userId))
-    .collect())
-    .map((row: any) => row.team_id))
-  const orgIds = new Set((await ctx.db
-    .query("org_memberships")
-    .withIndex("by_user", (q: any) => q.eq("user_id", userId))
-    .collect())
-    .map((row: any) => row.org_id))
+  const teamIds = new Set(
+    (
+      await ctx.db
+        .query("team_memberships")
+        .withIndex("by_user", (q: any) => q.eq("user_id", userId))
+        .collect()
+    ).map((row: any) => row.team_id),
+  )
+  const orgIds = new Set(
+    (
+      await ctx.db
+        .query("org_memberships")
+        .withIndex("by_user", (q: any) => q.eq("user_id", userId))
+        .collect()
+    ).map((row: any) => row.org_id),
+  )
   const ids = new Set<string>()
   for (const grant of grants) {
     if (grant.revoked_at) continue
@@ -870,30 +912,33 @@ export const readMessages = authedQuery({
     const authors = new Map<Id<"users">, Promise<Doc<"users"> | null>>()
     const withAuthor = async (message: any) => {
       const authorId = message.author_actor_id as Id<"users"> | undefined
-      const author = authorId
-        ? authors.get(authorId) ?? ctx.db.get(authorId)
-        : undefined
+      const author = authorId ? (authors.get(authorId) ?? ctx.db.get(authorId)) : undefined
       if (authorId && author) authors.set(authorId, author)
       return messageWithPublicAuthor(message.data, author ? await author : undefined)
     }
     const query = ctx.db
       .query("session_messages")
-      .withIndex("by_session_ordinal", (q: any) => args.before_ordinal === undefined
-        ? q.eq("session_id", args.session_id)
-        : q.eq("session_id", args.session_id).lt("ordinal", args.before_ordinal))
+      .withIndex("by_session_ordinal", (q: any) =>
+        args.before_ordinal === undefined
+          ? q.eq("session_id", args.session_id)
+          : q.eq("session_id", args.session_id).lt("ordinal", args.before_ordinal),
+      )
     if (args.limit === undefined) {
       const messages = await query.collect()
       return {
         allowed: true,
         role: result.role,
-        messages: await Promise.all(messages
-          .filter((message: any) => message.workspace_id === result.workspace._id)
-          .sort((a: any, b: any) => a.ordinal - b.ordinal)
-          .map(withAuthor)),
+        messages: await Promise.all(
+          messages
+            .filter((message: any) => message.workspace_id === result.workspace._id)
+            .sort((a: any, b: any) => a.ordinal - b.ordinal)
+            .map(withAuthor),
+        ),
       }
     }
-    const rows = (await query.order("desc").take(args.limit + 1))
-      .filter((message: any) => message.workspace_id === result.workspace._id)
+    const rows = (await query.order("desc").take(args.limit + 1)).filter(
+      (message: any) => message.workspace_id === result.workspace._id,
+    )
     const hasMore = rows.length > args.limit
     const selected = rows.slice(0, args.limit).reverse()
     return {
@@ -918,7 +963,7 @@ export const resolve = authedQuery({
     const workspace = await ctx.db.get(session.workspace_id)
     if (!workspace) return null
     const user = await readUser(ctx)
-    if (!await sessionRoleForUser(ctx, { user, workspace, session, action: "read" })) return null
+    if (!(await sessionRoleForUser(ctx, { user, workspace, session, action: "read" }))) return null
     return {
       session_id: session.session_id,
       workspace_id: workspace.workspace_id,
@@ -1000,7 +1045,7 @@ export const syncWorkGraphSession = serviceMutation({
     // requireTrustedWorkGraphTenantSubject. Without this, a workspace owner who
     // was removed from the org could still have transcript synced under a stale
     // ownership row.
-    if (!await orgMembership(ctx.db, args.organization_id, args.owner_user_id)) {
+    if (!(await orgMembership(ctx.db, args.organization_id, args.owner_user_id))) {
       throw new Error("WorkGraph organization membership is required")
     }
     await upsertVisibilityRows(ctx, {
@@ -1136,11 +1181,10 @@ export const replaceVisibility = authedMutation({
     const rows = await ctx.db
       .query("session_history")
       .withIndex("by_workspace_creator_updated", (q: any) =>
-        q.eq("workspace_id", access.workspace._id).eq("created_by_user_id", access.user._id))
+        q.eq("workspace_id", access.workspace._id).eq("created_by_user_id", access.user._id),
+      )
       .collect()
-    for (const row of rows.filter((row: any) =>
-      !incoming.has(row.session_id)
-      && !row.deleted_at)) {
+    for (const row of rows.filter((row: any) => !incoming.has(row.session_id) && !row.deleted_at)) {
       await ctx.db.patch(row._id, {
         deleted_at: now,
         updated_at: now,
@@ -1168,11 +1212,10 @@ export const replaceVisibilityForService = serviceMutation({
     const rows = await ctx.db
       .query("session_history")
       .withIndex("by_workspace_creator_updated", (q: any) =>
-        q.eq("workspace_id", access.workspace._id).eq("created_by_user_id", access.user._id))
+        q.eq("workspace_id", access.workspace._id).eq("created_by_user_id", access.user._id),
+      )
       .collect()
-    for (const row of rows.filter((row: any) =>
-      !incoming.has(row.session_id)
-      && !row.deleted_at)) {
+    for (const row of rows.filter((row: any) => !incoming.has(row.session_id) && !row.deleted_at)) {
       await ctx.db.patch(row._id, {
         deleted_at: now,
         updated_at: now,
@@ -1195,7 +1238,9 @@ export const deleteVisibility = authedMutation({
       .withIndex("by_session_id", (q: any) => q.eq("session_id", args.session_id))
       .unique()
     if (!session || session.workspace_id !== access.workspace._id) return { ok: true }
-    if (!await sessionRoleForUser(ctx, { user: access.user, workspace: access.workspace, session, action: "write" })) {
+    if (
+      !(await sessionRoleForUser(ctx, { user: access.user, workspace: access.workspace, session, action: "write" }))
+    ) {
       throw new Error("Session not found")
     }
     await ctx.db.patch(session._id, {
@@ -1220,7 +1265,9 @@ export const deleteVisibilityForService = serviceMutation({
       .withIndex("by_session_id", (q: any) => q.eq("session_id", args.session_id))
       .unique()
     if (!session || session.workspace_id !== access.workspace._id) return { ok: true }
-    if (!await sessionRoleForUser(ctx, { user: access.user, workspace: access.workspace, session, action: "write" })) {
+    if (
+      !(await sessionRoleForUser(ctx, { user: access.user, workspace: access.workspace, session, action: "write" }))
+    ) {
       throw new Error("Session not found")
     }
     await ctx.db.patch(session._id, {

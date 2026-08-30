@@ -318,6 +318,7 @@ export default defineSchema({
   })
     .index("by_public_id", ["public_id"])
     .index("by_org", ["org_id"])
+    .index("by_org_default", ["org_id", "is_default"])
     .index("by_org_name", ["org_id", "name"]),
 
   team_memberships: defineTable({

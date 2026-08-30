@@ -49,12 +49,12 @@ async function teamAdminForProject(ctx: any, userId: unknown, workspace: Record<
     if (membership.role !== "admin" && membership.role !== "owner") continue
     const team = await ctx.db.get(membership.team_id)
     if (!team || team.deleted_at || team.org_id !== workspace.org_id) continue
-    const grant = await ctx.db
+    const grants = await ctx.db
       .query("team_project_grants")
       .withIndex("by_team_project", (q: any) =>
         q.eq("team_id", team._id).eq("project_id", workspace.project_id))
-      .unique()
-    if (grant && !grant.revoked_at) return true
+      .collect()
+    if (grants.some((grant: any) => !grant.revoked_at)) return true
   }
   return false
 }

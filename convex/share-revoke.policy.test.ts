@@ -175,6 +175,6 @@ describe("Convex workspace share revoke policy", () => {
       role: "editor",
       granted_to_token_identifier: "target_token",
       granted_to_clerk_subject: "target_subject",
-    } as never)).rejects.toThrow("Share target must be exactly one user or org")
+    } as never)).rejects.toThrow("Share target must be exactly one user, org, or team")
   })
 })

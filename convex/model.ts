@@ -338,13 +338,13 @@ async function teamProjectRole(
     membership,
     team: await db.get(membership.team_id as never),
   })))
-  const grants = await Promise.all(teams
+  const grants = (await Promise.all(teams
     .filter(({ team }) => team && !(team as any).deleted_at && (team as any).org_id === orgId)
     .map(async ({ membership }) => await db
       .query("team_project_grants")
       .withIndex("by_team_project", (q: any) =>
         q.eq("team_id", membership.team_id).eq("project_id", projectId))
-      .unique()))
+      .collect()))).flat()
   return maxRole(grants.map((grant) =>
     grant && !(grant as any).revoked_at && typeof (grant as any).role === "string"
       ? (grant as any).role as WorkspaceRole

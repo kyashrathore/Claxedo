@@ -16,6 +16,7 @@ import {
   workspaceByPublicId,
   workspaceRoleForUser,
 } from "./model"
+import { ensureDefaultTeamProjectGrant } from "./teams"
 
 const workspaceId = { workspace_id: v.string() }
 const serviceUser = v.object({
@@ -156,6 +157,12 @@ export async function ensureProject(
       updated_at: now,
     })
   }
+  await ensureDefaultTeamProjectGrant(ctx, {
+    orgId: input.orgId,
+    projectId: publicProjectId,
+    creatorUserId: input.ownerUserId,
+    now,
+  })
   return await ctx.db.get(projectId)
 }
 
@@ -228,11 +235,13 @@ async function workGraphProject(
           .query("workspaces")
           .withIndex("by_org", (query: any) => query.eq("org_id", input.organizationId))
           .collect()
-      ).find((workspace: any) =>
-        !workspace.deleted_at &&
-        workspace.project_id &&
-        typeof workspace.repo_url === "string" &&
-        canonicalRepoUrl(workspace.repo_url) === wanted)
+      ).find(
+        (workspace: any) =>
+          !workspace.deleted_at &&
+          workspace.project_id &&
+          typeof workspace.repo_url === "string" &&
+          canonicalRepoUrl(workspace.repo_url) === wanted,
+      )
     : undefined
   return await ensureProject(ctx, {
     projectId: matchingWorkspace?.project_id ?? defaultProjectId(),
@@ -386,9 +395,7 @@ export const createCloud = authedMutation({
     if (existing) {
       if (existing.owner_user_id !== user._id || existing.deleted_at) throw new Error("Workspace not found")
       if (existing.backing !== "cloud-vm" || existing.access !== "cloud") {
-        throw new Error(
-          "workspace_backing_conflict: cannot re-create a user-hosted workspace as a cloud workspace",
-        )
+        throw new Error("workspace_backing_conflict: cannot re-create a user-hosted workspace as a cloud workspace")
       }
       return { workspace_doc_id: existing._id }
     }
@@ -502,79 +509,79 @@ export const ensureWorkGraph = serviceMutation({
 })
 
 async function registerLocalForSharingAs(ctx: any, args: any, user: { _id: unknown; name?: string; email?: string }) {
-    const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (existing && !(await authorizeWorkspaceForUser(ctx, existing, user, "admin"))) {
-      throw new Error("Workspace not found")
-    }
-    // This conflict is intrinsic to the workspace row and should remain
-    // deterministic even if an older row is still awaiting tenant backfill.
-    // No project or org lookup is needed to prove that a cloud workspace
-    // cannot be converted into a user-hosted local workspace.
-    if (existing && (existing.backing === "cloud-vm" || existing.access === "cloud")) {
-      throw new Error(
-        "workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace",
-      )
-    }
-    const org = existing
-      ? (existing.org_id ? await ctx.db.get(existing.org_id) : undefined)
-      : await creationOrg(ctx, user, args.org_id)
-    if (!org || org.deleted_at) throw new Error("workspace_tenant_missing")
-    const project = await ensureProject(ctx, {
-      projectId: existing?.project_id ?? args.project_id ?? defaultProjectId(),
-      orgId: org._id,
-      ownerUserId: user._id,
-      repoKey: canonicalRepoKey({
-        repoUrl: args.repo_url ?? existing?.repo_url,
-        remoteDirectory: args.remote_directory ?? existing?.remote_directory,
-        workspaceId: args.workspace_id,
-      }),
-    })
-    const requestedHomeRegion = validatedHomeRegion(args.home_region)
-    const now = Date.now()
-    if (existing) {
-      const home_region = existing.home_region ?? requestedHomeRegion
-      await ctx.db.patch(existing._id, {
-        backing: "local-worktree",
-        access: "user-hosted",
-        ...(home_region ? { home_region } : {}),
-        display_name: args.display_name,
-        // Patch only supplied fields — re-registration must not erase
-        // previously recorded metadata with `undefined`.
-        project_id: project.project_id,
-        ...(args.repo_url !== undefined ? { repo_url: args.repo_url } : {}),
-        ...(args.repo_name !== undefined ? { repo_name: args.repo_name } : {}),
-        ...(args.git_branch !== undefined ? { git_branch: args.git_branch } : {}),
-        ...(args.remote_directory !== undefined ? { remote_directory: args.remote_directory } : {}),
-        updated_at: now,
-      })
-      return { workspace_doc_id: existing._id, workspace_id: args.workspace_id, home_region }
-    }
-
-    const home_region = requestedHomeRegion
-    const id = await ctx.db.insert("workspaces", {
-      workspace_id: args.workspace_id,
-      org_id: org._id,
-      owner_user_id: user._id,
-      project_id: project.project_id,
+  const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
+  if (existing && !(await authorizeWorkspaceForUser(ctx, existing, user, "admin"))) {
+    throw new Error("Workspace not found")
+  }
+  // This conflict is intrinsic to the workspace row and should remain
+  // deterministic even if an older row is still awaiting tenant backfill.
+  // No project or org lookup is needed to prove that a cloud workspace
+  // cannot be converted into a user-hosted local workspace.
+  if (existing && (existing.backing === "cloud-vm" || existing.access === "cloud")) {
+    throw new Error("workspace_backing_conflict: cannot register a cloud workspace as a user-hosted local workspace")
+  }
+  const org = existing
+    ? existing.org_id
+      ? await ctx.db.get(existing.org_id)
+      : undefined
+    : await creationOrg(ctx, user, args.org_id)
+  if (!org || org.deleted_at) throw new Error("workspace_tenant_missing")
+  const project = await ensureProject(ctx, {
+    projectId: existing?.project_id ?? args.project_id ?? defaultProjectId(),
+    orgId: org._id,
+    ownerUserId: user._id,
+    repoKey: canonicalRepoKey({
+      repoUrl: args.repo_url ?? existing?.repo_url,
+      remoteDirectory: args.remote_directory ?? existing?.remote_directory,
+      workspaceId: args.workspace_id,
+    }),
+  })
+  const requestedHomeRegion = validatedHomeRegion(args.home_region)
+  const now = Date.now()
+  if (existing) {
+    const home_region = existing.home_region ?? requestedHomeRegion
+    await ctx.db.patch(existing._id, {
       backing: "local-worktree",
       access: "user-hosted",
       ...(home_region ? { home_region } : {}),
       display_name: args.display_name,
-      repo_url: args.repo_url,
-      repo_name: args.repo_name,
-      git_branch: args.git_branch,
-      remote_directory: args.remote_directory,
-      created_at: now,
+      // Patch only supplied fields — re-registration must not erase
+      // previously recorded metadata with `undefined`.
+      project_id: project.project_id,
+      ...(args.repo_url !== undefined ? { repo_url: args.repo_url } : {}),
+      ...(args.repo_name !== undefined ? { repo_name: args.repo_name } : {}),
+      ...(args.git_branch !== undefined ? { git_branch: args.git_branch } : {}),
+      ...(args.remote_directory !== undefined ? { remote_directory: args.remote_directory } : {}),
       updated_at: now,
     })
-    await ctx.db.insert("workspace_memberships", {
-      workspace_id: id,
-      user_id: user._id,
-      role: "owner",
-      created_at: now,
-      updated_at: now,
-    })
-    return { workspace_doc_id: id, workspace_id: args.workspace_id, home_region }
+    return { workspace_doc_id: existing._id, workspace_id: args.workspace_id, home_region }
+  }
+
+  const home_region = requestedHomeRegion
+  const id = await ctx.db.insert("workspaces", {
+    workspace_id: args.workspace_id,
+    org_id: org._id,
+    owner_user_id: user._id,
+    project_id: project.project_id,
+    backing: "local-worktree",
+    access: "user-hosted",
+    ...(home_region ? { home_region } : {}),
+    display_name: args.display_name,
+    repo_url: args.repo_url,
+    repo_name: args.repo_name,
+    git_branch: args.git_branch,
+    remote_directory: args.remote_directory,
+    created_at: now,
+    updated_at: now,
+  })
+  await ctx.db.insert("workspace_memberships", {
+    workspace_id: id,
+    user_id: user._id,
+    role: "owner",
+    created_at: now,
+    updated_at: now,
+  })
+  return { workspace_doc_id: id, workspace_id: args.workspace_id, home_region }
 }
 
 export const registerLocalForSharing = authedMutation({
