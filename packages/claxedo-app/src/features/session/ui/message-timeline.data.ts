@@ -32,6 +32,21 @@ function isSummaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
 }
 
 export namespace Timeline {
+  export function coldFinalVisibleAssistantMessageIDs(
+    assistantMessages: AssistantMessage[],
+    getMessageParts: (messageID: string) => Part[],
+  ) {
+    const finalAssistant = assistantMessages.at(-1)
+    if (!finalAssistant) return
+    const visible = new Set([finalAssistant.id])
+    for (const message of assistantMessages) {
+      if (getMessageParts(message.id).some((part) => part.type === "tool" && part.tool === "task")) {
+        visible.add(message.id)
+      }
+    }
+    return visible
+  }
+
   export function constructMessageRows(
     userMessage: UserMessage,
     getMessageParts: (messageID: string) => Part[],

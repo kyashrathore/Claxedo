@@ -627,9 +627,15 @@ describe("control-plane services", () => {
     const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     const sync = fakeSync()
     const authorizeSessionRead = vi.fn(async () => {})
+    // A signed POST is a session WRITE, so the write check — not the read one —
+    // is what gates it. Both are stubbed because the guard below proves each
+    // verb reaches its own check; a stub with only one of them cannot tell a
+    // correctly-routed write apart from a crash in the authorization path.
+    const authorizeSessionWrite = vi.fn(async () => {})
     const services = createControlPlaneServices(fakePorts(sync), {
       authority: {
         authorizeSessionRead,
+        authorizeSessionWrite,
       } as never,
       auth: customVerifierAuthAdapter({
         issuer: "https://auth.example.test",
@@ -716,6 +722,7 @@ describe("control-plane services", () => {
       error: { code: "central_session_required" },
     })
     expect(authorizeSessionRead).not.toHaveBeenCalled()
+    expect(authorizeSessionWrite).not.toHaveBeenCalled()
 
     sync.session_meta.mockImplementation(async (sessionID) =>
       sessionID === "central-without-workspace"
@@ -737,6 +744,7 @@ describe("control-plane services", () => {
       error: { code: "central_session_workspace_required" },
     })
     expect(authorizeSessionRead).not.toHaveBeenCalled()
+    expect(authorizeSessionWrite).not.toHaveBeenCalled()
 
     const sessionId = "signed-central-session"
     sync.session_meta.mockImplementation(async (sessionID) =>
@@ -771,8 +779,12 @@ describe("control-plane services", () => {
       parts: [{ text: "loopback" }],
     })
     expect(authorizeSessionRead).not.toHaveBeenCalled()
+    expect(authorizeSessionWrite).not.toHaveBeenCalled()
 
-    authorizeSessionRead.mockImplementationOnce(async () => {
+    // A denied WRITE must stop the turn. Deny through the write check, since
+    // that is the one a POST consults — denying only the read check here would
+    // pass while leaving the write path effectively ungated.
+    authorizeSessionWrite.mockImplementationOnce(async () => {
       throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Convex denied session access")
     })
     const denied = await built.app.request(`https://control.example.test/api/control/session/${sessionId}/message`, {
@@ -812,6 +824,22 @@ describe("control-plane services", () => {
       info: { id: "signed-user_r", role: "assistant" },
       parts: [{ text: "signed" }],
     })
+    expect(authorizeSessionWrite).toHaveBeenCalledWith(expect.objectContaining({
+      user: expect.objectContaining({ subject: "user_1" }),
+    }), {
+      sessionId,
+      workspaceId: "ws_central",
+    })
+    // The POST is a write and nothing else: a read check standing in for a
+    // write would let a read-only participant drive a turn.
+    expect(authorizeSessionRead).not.toHaveBeenCalled()
+
+    // The other half of the split — a safe method still gates on the READ
+    // check, so widening every verb to `write` would fail here too.
+    const read = await built.app.request(`https://control.example.test/api/control/session/${sessionId}`, {
+      headers: { Authorization: "Bearer user_1" },
+    })
+    expect(read.status).toBe(200)
     expect(authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({
       user: expect.objectContaining({ subject: "user_1" }),
     }), {

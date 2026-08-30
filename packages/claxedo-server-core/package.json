@@ -11,6 +11,13 @@
     "directory": "packages/claxedo-server-core"
   },
   "exports": {
+    "./authority/repository-key": {
+      "types": "./src/authority/repository-key.ts",
+      "bun": "./src/authority/repository-key.ts",
+      "development": "./src/authority/repository-key.ts",
+      "import": "./src/authority/repository-key.ts",
+      "default": "./src/authority/repository-key.ts"
+    },
     "./*": {
       "types": "./src/*.ts",
       "bun": "./src/*.ts",

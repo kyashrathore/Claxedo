@@ -1,4 +1,6 @@
-import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -40,13 +42,21 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
  * whatever the user was doing when the freshness window happened to elapse.
  */
 
+function cachedProjectCatalog() {
+  return queryClient.getQueryData<Array<{ id?: string; worktree?: string; workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string }> }>>(
+    queryKeys.controlPlane.projects(getClaxedoServerUrl()),
+  ) ?? []
+}
+
 /**
  * Collapse a `{ directory, workspaceId }` pair to whichever one identifies the
  * runtime, so a directory that is really a workspace ref resolves by id.
  */
 export function runtimeScope(input: { directory?: string; workspaceId?: string }) {
   const workspaceId = input.workspaceId ??
-    (input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId : undefined)
+    (input.directory
+      ? sessionWorkspaceRuntimeRef({ directory: input.directory, projects: cachedProjectCatalog() })?.workspaceId
+      : undefined)
   return {
     workspaceId,
     directory: workspaceId ? undefined : input.directory,
@@ -77,6 +87,34 @@ export type WorkspaceRecordScope = {
  * throws, so a transient failure is never cached as a real "no workspace".
  */
 export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
+  // Custom request (tests) keeps the HTTP path. Desktop AccountPort otherwise.
+  if (!input.request) {
+    const workspaceId = input.workspaceId
+      ?? workspaceIdFromRef(input.directory)
+      ?? localWorkspaceAssociationId(input.directory)
+    const params: Record<string, unknown> = {}
+    // Mirror workspaceResolveUrl: directory only when not identified by id.
+    if (input.directory && !workspaceId) params.directory = input.directory
+    if (workspaceId) params.workspaceId = workspaceId
+    if (input.create) params.create = true
+    try {
+      return await hostedControlCall<WorkspaceRuntimeSnapshot | null>(
+        "workspace.resolve",
+        params,
+        async () => fetchWorkspaceRecordHttp(input),
+      )
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      if (/operation "workspace\.resolve" failed: 404\b/.test(message) || /\bfailed: 404\b/.test(message)) {
+        return null
+      }
+      throw err
+    }
+  }
+  return fetchWorkspaceRecordHttp(input)
+}
+
+async function fetchWorkspaceRecordHttp(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
   const baseUrl = normalizeUrl(input.baseUrl) ?? getDefaultBaseUrl()
   const request = input.request ?? authFetch
   const res = await request(

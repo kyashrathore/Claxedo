@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, spyOn, test } from "bun:test"
 import { execFileSync } from "child_process"
 import { Hono } from "hono"
 import type { CompatEvent } from "../compat-events"
@@ -12,6 +12,7 @@ import {
   acpTransportFactory,
   createWorkspaceHost as createWorkspaceHostImpl,
   defaultWorkspaceHarnessRegistry,
+  filterCompatEventStream,
   materializeCodexAuth,
   runtimeAuthKey,
   type WorkspaceHarnessRegistry,
@@ -21,9 +22,11 @@ import {
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
 import { ConfigRoutes } from "../routes/config"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "../management-auth"
-import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { loopbackWorkspaceRuntimeExposure, privateNetworkWorkspaceRuntimeExposure } from "../exposure"
+import type { SessionAccessPolicy } from "../session-access-policy"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { RuntimeStore } from "../store"
+import { Pty } from "../pty"
 import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
 import type { AgentConfigOption, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
@@ -2023,6 +2026,61 @@ describe("workspace runtime auth helpers", () => {
     expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
   })
 
+  test("managed proxied event streams drop malformed frames while preserving public heartbeats", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-events-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const encoder = new TextEncoder()
+    const handler: OpenCodeRequestFn = async () => new Response(new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
+        controller.enqueue(encoder.encode("data: not-json\n\n"))
+        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
+        controller.close()
+      },
+    }), { headers: { "Content-Type": "text/event-stream" } })
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async () => ({ allowed: true }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => input.sessionIds,
+    }
+    const host = createWorkspaceHost({
+      opencodeRequest: handler,
+      opencodeCompat: true,
+      sessionAccessPolicy: policy,
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        workspace_id: "workspace_1",
+        org_id: "org_1",
+        role: "editor",
+      })
+      await next()
+    })
+    host.mount(app, {
+      exposure: privateNetworkWorkspaceRuntimeExposure({
+        name: "runtime-test",
+        guard: () => true,
+        runtimeAuth: () => true,
+      }),
+    })
+    await host.apply({ version: 1, runner: { type: "opencode" }, auth: {}, mcp: {} })
+
+    const response = await app.request("http://localhost/global/event", {
+      headers: { Accept: "text/event-stream" },
+    })
+    const body = await response.text()
+
+    expect(response.status).toBe(200)
+    expect(body).toContain("server.heartbeat")
+    expect(body).not.toContain("not-json")
+    expect(body).not.toContain("future.transcript")
+    expect(body).not.toContain("secret")
+    host.dispose()
+  })
+
   test("proxies the real Session V2 model, create, prompt, and history contract", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-session-v2-"))
     tempDirs.push(dir)
@@ -3963,6 +4021,83 @@ describe("global compatibility stream (Unit 4)", () => {
     })
     return { app, host }
   }
+
+  test("releases session grants when the downstream client cancels", async () => {
+    let released = 0
+    const upstream = new Response(new ReadableStream<Uint8Array>({ start() {} }), {
+      headers: { "content-type": "text/event-stream" },
+    })
+    const policy = Object.assign(
+      () => "deliver" as const,
+      { release: () => { released++ } },
+    )
+    const response = filterCompatEventStream(
+      upstream,
+      { mode: "unmanaged-local", connectionId: "cancelled-proxy" },
+      policy,
+      "global",
+    )
+
+    await response.body!.getReader().cancel()
+
+    expect(released).toBe(1)
+  })
+
+  test("passes the host session policy to a standalone process-log mount", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-process-policy-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const get = spyOn(Pty, "get").mockReturnValue({ id: "pty_private", sessionId: "ses_private" } as never)
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async () => ({
+        allowed: false,
+        status: 503,
+        code: "host_policy_reached",
+        message: "Host session policy reached",
+      }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => input.sessionIds,
+    }
+    const host = createWorkspaceHost({ sessionAccessPolicy: policy })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      const now = Math.floor(Date.now() / 1_000)
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        sub: "user_1",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+        access: "cloud",
+        backing: "cloud-vm",
+        actor_id: "actor_1",
+        actor_kind: "human",
+        exp: now + 60,
+        iat: now,
+        jti: "rat_1",
+      })
+      await next()
+    })
+    host.mount(app, {
+      exposure: privateNetworkWorkspaceRuntimeExposure({
+        name: "runtime-test",
+        guard: () => true,
+        runtimeAuth: () => true,
+      }),
+      process: true,
+    })
+
+    try {
+      const response = await app.request(`http://localhost/api/wr/process/logs?pty_id=pty_private&directory=${encodeURIComponent(dir)}`)
+      expect(response.status).toBe(503)
+      expect(await response.json()).toMatchObject({ error: { code: "host_policy_reached" } })
+    } finally {
+      get.mockRestore()
+    }
+  })
 
   test("serves the runtime's own hub instead of starting the harness transport", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-compat-sse-cold-"))

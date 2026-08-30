@@ -21,7 +21,7 @@ import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
 import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
 import { useClaxedoAppShellCommands } from "./app-shell-commands"
-import { useAppShellRouteSync } from "./app-shell-route-sync"
+import { applySessionAccessRevocation, useAppShellRouteSync } from "./app-shell-route-sync"
 import { useAppShellState } from "./app-shell-state"
 import { useAppShellActions } from "./app-shell-actions"
 import {
@@ -31,6 +31,7 @@ import {
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
+import { useGlobalSessionAccessRevocations } from "@/app/integrations/sync/global-sync-boundary"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
@@ -49,6 +50,15 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const shell = useAppShellState({
     params,
     pathname: () => location.pathname,
+  })
+  useGlobalSessionAccessRevocations((event) => {
+    applySessionAccessRevocation({
+      ...event,
+      activeSurfaceId: shell.state.wb.selectors.focusedContent,
+      surfaces: shell.state.meta.all,
+      closeContent: shell.state.layout.closeContent,
+      navigate,
+    })
   })
   const productUi = createMemo(() => resolveProductUiFlags(shell.config))
   const diagnosticSession = createMemo(() => {

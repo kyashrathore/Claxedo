@@ -8,22 +8,25 @@ import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { accountRun } from "@/platform/account/hosted-control-call"
+import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { controlSessionListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { applySessionFilter, type SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
 import { mapInventoryToSessions, signedInventoryItems, signedInventoryProjects } from "../query/inventory"
+import {
+  inventoryRecord as rec,
+  inventorySessionAttachments,
+  inventorySessionEnvironment,
+  inventorySessionGit,
+  inventorySessionId,
+  inventoryText as txt,
+} from "./session-inventory"
+export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
 
 type ProjectDirectory = string
 type SignedWorkspaceKind = "cloud" | "user-hosted"
-type SignedRuntimeSessionsInput = {
-  serverUrl: string
-  request: typeof fetch
-  workspaceId: string
-  directory: ProjectDirectory
-  kind: SignedWorkspaceKind
-  limit: number
-}
 type SignedWorkspaceInfo = {
   workspaceId: string
   directory?: ProjectDirectory
@@ -61,26 +64,7 @@ export type InventoryGlobalSession = {
   lastTurn?: unknown
 }
 
-export async function listSignedWorkspaceRuntimeSessions(input: SignedRuntimeSessionsInput) {
-  return (await createAgentRuntimeClient({
-    serverUrl: input.serverUrl,
-    request: input.request,
-    signedControlPlane: true,
-    workspaceId: input.workspaceId,
-    workspaceKind: input.kind,
-  }).listSessions({ directory: input.directory, roots: true, limit: input.limit })).sessions ?? []
-}
-
 const CONTROL_SESSIONS_DEDUPE_MS = 3_000
-const SIGNED_WORKSPACE_SNAPSHOT_STALE_MS = 10_000
-
-function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
-function txt(input: unknown) {
-  return typeof input === "string" ? input : undefined
-}
 
 function inventoryServerUrl(serverUrl: string | undefined) {
   return normalizeUrl(serverUrl) ?? getClaxedoServerUrl()
@@ -153,43 +137,6 @@ export function mergeWorkspaceGroups(localGroups: WorkspaceGroup[], signedGroups
   return [...byDirectory.values()]
 }
 
-/**
- * Workspace runtime statuses that mean "the backing sandbox cannot answer a
- * session list right now". Reported by `GET /api/workspace` from the supervisor
- * lease (`SandboxLeaseStatus`) plus the workspace row's own status
- * (claxedo-server/src/workspace/routes/index.ts:88).
- */
-const UNREACHABLE_WORKSPACE_STATUS = [
-  "stopped",
-  "destroyed",
-  "unavailable",
-  "failed",
-  "offline",
-  "deleted",
-] as const
-
-export function signedWorkspaceStatus(input: unknown) {
-  const row = rec(input)
-  return txt(row?.status) ?? txt(row?.runtime_status) ?? txt(row?.runtimeStatus)
-}
-
-/**
- * Is this workspace's runtime worth asking for a session list?
- *
- * Sessions sync back into the control plane (Convex `session_history`), so the
- * control-plane list stands on its own when the sandbox is gone. Probing a dead
- * runtime cannot add rows — it can only stall the sidebar behind a relay
- * connect that will never succeed — so an unreachable status makes the
- * control-plane answer authoritative, empty or not. An unknown/absent status is
- * treated as reachable: that is the pre-existing behavior for a healthy
- * workspace and we must not stop falling back for those.
- */
-export function workspaceRuntimeReachable(status: string | null | undefined) {
-  if (!status) return true
-  const normalized = status.trim().toLowerCase()
-  return !UNREACHABLE_WORKSPACE_STATUS.some((value) => value === normalized)
-}
-
 export function signedWorkspaceHosting(input: unknown) {
   const row = rec(input)
   const access = txt(row?.access)
@@ -238,43 +185,6 @@ export function controlPlaneSessionToItem(input: {
   }
 }
 
-export function inventorySessionAttachments(input: unknown) {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => {
-    const row = rec(item)
-    const kind = txt(row?.kind)
-    const targetID = txt(row?.targetID) ?? txt(row?.target_id)
-    if (!kind || !targetID) return []
-    return [{ kind, targetID }]
-  })
-}
-
-export function inventorySessionEnvironment(input: unknown) {
-  const row = rec(input)
-  if (!row) return
-  const kind = txt(row.kind)
-  const driver = txt(row.driver) ?? txt(row.provider)
-  if (!kind && !driver) return
-  return {
-    ...(kind ? { kind } : {}),
-    ...(driver ? { driver } : {}),
-  }
-}
-
-export function inventorySessionGit(input: unknown) {
-  const row = rec(input)
-  if (!row) return
-  const repo = txt(row.repo)
-  const branch = txt(row.branch)
-  const remote = txt(row.remote)
-  if (!repo && !branch && !remote) return
-  return {
-    ...(repo ? { repo } : {}),
-    ...(branch ? { branch } : {}),
-    ...(remote ? { remote } : {}),
-  }
-}
-
 export function toSessionInventoryRow(session: InventoryGlobalSession, input: { projectID?: string } = {}): SessionInventoryRow {
   const projectID = session.projectID || input.projectID || session.directory
   const environment = inventorySessionEnvironment(session.environment)
@@ -303,6 +213,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
   const row = rec(input)
   const lastTurn = normalizeSessionTurnOutcome(row?.lastTurn)
   const created = typeof row?.createdAt === "number" ? row.createdAt : 0
+  const workspaceID = txt(row?.workspaceID) ?? txt(row?.workspaceId)
   return {
     id: txt(row?.sessionID) ?? txt(row?.id) ?? "",
     ...(txt(row?.sessionRef) ?? txt(row?.session_ref)
@@ -310,6 +221,7 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
       : {}),
     title: txt(row?.title) ?? "New Session",
     directory: txt(row?.directory) ?? "",
+    ...(workspaceID ? { workspaceID } : {}),
     ...(txt(row?.projectID) ? { projectID: txt(row?.projectID) } : {}),
     ...(txt(row?.parentID) ? { parentID: txt(row?.parentID) } : {}),
     ...(txt(row?.rootID) ? { rootID: txt(row?.rootID) } : {}),
@@ -327,89 +239,54 @@ export function controlMetaToGlobalSession(input: unknown): InventoryGlobalSessi
 export function createSignedInventorySource(input: {
   queryClient: Pick<QueryClient, "fetchQuery">
   baseUrl: () => string
-  snapshotBaseUrl?: () => string
   owner: () => string
   authFetch: typeof fetch
   signedWorkspaceInfo: (key: string) => SignedWorkspaceInfo | undefined
   resolveWorkspace: (input: { directory: ProjectDirectory }) => Promise<ResolvedWorkspaceInfo | undefined>
-  /**
-   * Live runtime status for a workspace, used to decide whether probing the
-   * runtime for sessions can possibly help. Called ONLY when the control plane
-   * returned no sessions. Omitted (or resolving undefined) means "unknown",
-   * which is treated as reachable so healthy workspaces keep their fallback.
-   */
-  workspaceStatus?: (input: {
-    workspaceId: string
-    directory: ProjectDirectory
-  }) => Promise<string | null | undefined>
-  runtimeSessions: (input: {
-    workspaceId: string
-    directory: ProjectDirectory
-    kind?: SignedWorkspaceKind
-  }) => Promise<unknown[]>
 }) {
-  async function fetchSignedRuntimeSessions(sessionInput: {
-    workspaceId: string
-    directory: ProjectDirectory
-    kind?: SignedWorkspaceKind
-  }) {
-    return await input.queryClient.fetchQuery({
-      queryKey: [
-        "shell",
-        "signed-runtime-sessions",
-        input.baseUrl(),
-        sessionInput.workspaceId,
-        sessionInput.kind ?? "",
-      ] as const,
-      queryFn: async () => await input.runtimeSessions(sessionInput).catch(() => []),
-      staleTime: CONTROL_SESSIONS_DEDUPE_MS,
-    })
-  }
-
   async function fetchSignedWorkspaceSessions(sessionInput: {
     workspaceId: string
     directory: ProjectDirectory
     kind?: SignedWorkspaceKind
-    /** Known runtime status, when the caller already has it. */
-    status?: string | null
   }) {
-    const { status: knownStatus, ...runtimeInput } = sessionInput
-    // User-hosted workspaces have no central session copy — the owner's machine
-    // is the only store, so the runtime is the only possible answer. When that
-    // host is offline `runtimeSessions` already resolves to `[]` rather than
-    // hanging, which is the honest empty state for this kind.
-    if (sessionInput.kind === "user-hosted") return await fetchSignedRuntimeSessions(runtimeInput)
-    const control = await fetchControlPlaneSessions(sessionInput.workspaceId)
-    if (control.length > 0) return control
-    // Empty control-plane result: only a REACHABLE runtime can hold sessions the
-    // control plane has not seen yet. On a dead/stopped sandbox the control
-    // plane is authoritative and its empty answer is the truth — falling
-    // through would dead-end on a runtime that cannot respond, leaving the
-    // sidebar spinning on a workspace whose sessions Convex already has.
-    const status = knownStatus ?? await input.workspaceStatus?.({
-      workspaceId: sessionInput.workspaceId,
-      directory: sessionInput.directory,
-    }).catch(() => undefined)
-    if (!workspaceRuntimeReachable(status)) return control
-    return await fetchSignedRuntimeSessions(runtimeInput)
+    // Signed inventory has one authoritative producer. Runtime lists are not
+    // participant-filtered and cached authority must never survive revocation.
+    return await requestControlPlaneSessions(sessionInput.workspaceId)
+  }
+
+  async function requestControlPlaneSessions(workspaceId: string) {
+    const run = accountRun()
+    if (run) {
+      const body = decodeHostedResult<{ sessions: unknown[] }>(
+        "session.list",
+        await run("session.list", { workspaceId }),
+      )
+      if (!Array.isArray(body.sessions)) throw new Error("session.list returned an invalid sessions payload")
+      return body.sessions
+    }
+    const res = await input.authFetch(controlSessionListUrl({
+      baseUrl: inventoryServerUrl(input.baseUrl()),
+      workspaceId,
+    }), { headers: { Accept: "application/json" } })
+    if (!res.ok) throw new Error(`Control-plane session list failed with ${res.status}`)
+    const body = await res.json()
+    if (!Array.isArray(body?.sessions)) throw new Error("Control-plane session list returned an invalid sessions payload")
+    return body.sessions as unknown[]
   }
 
   async function fetchControlPlaneSessions(workspaceId: string) {
     return await input.queryClient.fetchQuery({
-      queryKey: ["shell", "control-plane-sessions", input.baseUrl(), workspaceId] as const,
-      queryFn: async () => {
-        const res = await input.authFetch(controlSessionListUrl({
-          baseUrl: inventoryServerUrl(input.baseUrl()),
-          workspaceId,
-        }), { headers: { Accept: "application/json" } })
-        if (!res.ok) return [] as unknown[]
-        const body = await res.json().catch(() => ({ sessions: [] }))
-        return Array.isArray(body?.sessions) ? body.sessions as unknown[] : []
-      },
+      queryKey: ["shell", "control-plane-sessions", input.baseUrl(), input.owner(), workspaceId] as const,
+      queryFn: async () => await requestControlPlaneSessions(workspaceId),
       staleTime: CONTROL_SESSIONS_DEDUPE_MS,
     })
   }
 
+  async function hasControlPlaneSessionAccess(target: { workspaceId: string; sessionId: string }) {
+    // Security boundary: never reuse cached or in-flight authority data after revoke.
+    const sessions = await requestControlPlaneSessions(target.workspaceId)
+    return sessions.some((session) => inventorySessionId(session) === target.sessionId)
+  }
   async function fetchSignedDirectorySessions(directory: ProjectDirectory) {
     const known = input.signedWorkspaceInfo(directory)
     const workspace = known
@@ -441,27 +318,33 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchControlPlaneWorkspaces(access: SignedWorkspaceKind) {
+    const run = accountRun()
+    if (run) {
+      const operation = access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
+      const body = decodeHostedResult<{ workspaces: unknown[] }>(
+        operation,
+        await run(operation, {}),
+      )
+      if (!Array.isArray(body.workspaces)) throw new Error(`${operation} returned an invalid workspaces payload`)
+      return body.workspaces
+    }
     const res = await input.authFetch(controlWorkspaceListUrl({
       serverUrl: input.baseUrl(),
       access,
     }), { headers: { Accept: "application/json" } })
-    if (!res.ok) return []
-    const body = await res.json().catch(() => ({ workspaces: [] }))
-    return Array.isArray(body?.workspaces) ? body.workspaces as unknown[] : []
+    if (!res.ok) throw new Error(`Control-plane ${access} workspace list failed with ${res.status}`)
+    const body = await res.json()
+    if (!Array.isArray(body?.workspaces)) {
+      throw new Error(`Control-plane ${access} workspace list returned an invalid workspaces payload`)
+    }
+    return body.workspaces as unknown[]
   }
 
   async function fetchSignedWorkspaceSnapshot() {
-    return await input.queryClient.fetchQuery({
-      queryKey: [
-        "shell",
-        "global-sync",
-        "signed-workspace-snapshot",
-        ((input.snapshotBaseUrl?.() ?? input.baseUrl()) ?? "default").replace(/\/+$/, ""),
-        input.owner(),
-      ] as const,
-      queryFn: fetchSignedWorkspaceSnapshotUncached,
-      staleTime: SIGNED_WORKSPACE_SNAPSHOT_STALE_MS,
-    })
+    // This snapshot authorizes both visible rows and durable conversation
+    // writes. It must be a fresh authority read: reusing a pre-revoke cache can
+    // resurrect a revoked row or clear its persistence fence.
+    return await fetchSignedWorkspaceSnapshotUncached()
   }
 
   async function fetchSignedWorkspaceSnapshotUncached() {
@@ -481,10 +364,6 @@ export function createSignedInventorySource(input: {
         workspaceId,
         directory,
         kind: signedWorkspaceHosting(workspace),
-        // `GET /api/workspace` serves raw Convex workspace rows, which have no
-        // status column (convex/schema.ts:203-224); when absent the
-        // `workspaceStatus` port resolves the live supervisor status lazily.
-        ...(signedWorkspaceStatus(workspace) ? { status: signedWorkspaceStatus(workspace) } : {}),
       }).then((sessions) => [workspaceId, sessions] as const)]
     })))
     const items = signedInventoryItems({ workspaces, sessionsByWorkspace })
@@ -519,10 +398,10 @@ export function createSignedInventorySource(input: {
     fetchControlPlaneSessions,
     fetchControlPlaneWorkspaces,
     fetchSignedDirectorySessions,
-    fetchSignedRuntimeSessions,
     fetchSignedWorkspaceGroups: async () => (await fetchSignedWorkspaceSnapshot()).groups,
     fetchSignedWorkspaceSessions,
     fetchSignedWorkspaceSnapshot,
+    hasControlPlaneSessionAccess,
   }
 }
 
@@ -626,23 +505,31 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       const sessions = await fetchLocalControlSessions()
       const byDir = new Map<string, InventoryGlobalSession[]>()
       for (const session of sessions) {
-        const key = session.directory || session.projectID || session.id
+        const key = session.workspaceID || session.workspaceId || session.directory || session.projectID || session.id
         byDir.set(key, [...(byDir.get(key) ?? []), session])
       }
-      return [...byDir.entries()].map(([directory, group]) => ({
-        key: directory,
-        directory,
-        projectID: group[0]?.projectID ?? directory,
-        ...(() => {
-          const page = paginateSessions(group, { limit: opts.perGroup ?? input.pageSize })
-          return {
-            sessions: page.sessions.map((session) => toSessionInventoryRow(session)),
-            hasMore: page.hasMore,
-            total: page.total,
-            nextCursor: page.nextCursor,
-          }
-        })(),
-      }))
+      return [...byDir.entries()].map(([key, group]) => {
+        const directory = group.find((session) =>
+          !session.sessionRef?.startsWith("central:") && !!session.directory
+        )?.directory ?? key
+        return {
+          key,
+          directory,
+          ...(group[0]?.workspaceID || group[0]?.workspaceId
+            ? { workspaceId: group[0]?.workspaceID ?? group[0]?.workspaceId }
+            : {}),
+          projectID: group[0]?.projectID ?? key,
+          ...(() => {
+            const page = paginateSessions(group, { limit: opts.perGroup ?? input.pageSize })
+            return {
+              sessions: page.sessions.map((session) => toSessionInventoryRow(session)),
+              hasMore: page.hasMore,
+              total: page.total,
+              nextCursor: page.nextCursor,
+            }
+          })(),
+        }
+      })
     }
     const url = experimentalSessionUrl({
       serverUrl: getClaxedoServerUrl(),

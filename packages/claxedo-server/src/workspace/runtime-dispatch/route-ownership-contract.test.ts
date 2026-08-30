@@ -12,7 +12,7 @@
 
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
-import { runtimeProxyResponseHeaders } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
+import { requireRuntimeProxyActor, runtimeProxyResponseHeaders } from "@claxedo/local-server/workspace/runtime-dispatch/internals"
 import { createLocalWorkspaceRelayProxy } from "./shared-workspace-endpoint"
 import { routeOwnership, routeRules, RouteDomain, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 
@@ -21,6 +21,12 @@ function classify(path: string) {
 }
 
 describe("route ownership", () => {
+  test("signed runtime proxy refuses the synthetic owner fallback", () => {
+    expect(() => requireRuntimeProxyActor(undefined, true)).toThrow("requires a verified actor")
+    expect(requireRuntimeProxyActor(undefined, false)).toBeUndefined()
+    expect(requireRuntimeProxyActor({ actorId: "actor_1" }, true)).toEqual({ actorId: "actor_1" })
+  })
+
   test("runtime proxy strips stale decompression headers", () => {
     const headers = runtimeProxyResponseHeaders(
       new Headers({

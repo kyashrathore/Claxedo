@@ -47,6 +47,14 @@ function services(): ControlPlaneServices {
   }
 }
 
+function servicesWithWorkspaceOpenAuthorization(
+  authorizeWorkspaceOpen: NonNullable<ControlPlaneServices["authority"]>["authorizeWorkspaceOpen"],
+) {
+  const svc = services()
+  svc.authority = { authorizeWorkspaceOpen } as never
+  return svc
+}
+
 const signedOptions = {
   authConfig: {
     enabled: true as const,
@@ -97,6 +105,24 @@ describe("control plane session routes", () => {
       directory: "/tmp/demo",
     })
     mocks.resolveHarnessHostForRequest.mockResolvedValue("workspace")
+  })
+
+  test("rejects oversized participant mutations before parsing or authentication", async () => {
+    const response = await ControlPlaneSessionRoutes(services(), signedOptions).request(
+      "https://control.example.test/sessions/session-1/participants",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "content-length": String(17 * 1024),
+        },
+        body: JSON.stringify({ participantTokenIdentifier: "x".repeat(17 * 1024), workspaceId: "ws_1" }),
+      },
+    )
+
+    expect(response.status).toBe(413)
+    expect(await response.json()).toMatchObject({ error: { code: "request_body_too_large" } })
+    expect(signedOptions.verifier).not.toHaveBeenCalled()
   })
 
   test("does not expose direct sandbox URLs as hosted session gateways", async () => {
@@ -284,7 +310,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/sessions/session-1/gateway",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -316,7 +341,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/sessions/session-1/gateway",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -368,6 +392,115 @@ describe("control plane session routes", () => {
       title: "Instant chat",
       tags: ["harness:pi"],
     })
+  })
+
+  test("creates signed hosted hybrid sessions through the declared control-plane route", async () => {
+    const createHybridSession = vi.fn(async () => ({ id: "central-hosted-1" }))
+    const authorizeWorkspaceOpen = vi.fn(async () => undefined)
+    const svc = servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen)
+    const response = await ControlPlaneSessionRoutes(svc, {
+      ...signedOptions,
+      createHybridSession,
+    }).request("https://control.example.test/sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer hosted-token",
+      },
+      body: JSON.stringify({
+        mode: "hybrid",
+        title: "Hosted chat",
+        workspaceId: "workspace_1",
+        harness: "pi",
+        toolSandbox: { kind: "virtual" },
+      }),
+    })
+
+    expect(response.status).toBe(201)
+    await expect(response.json()).resolves.toMatchObject({
+      session: { id: "central-hosted-1", host: "central", workspaceId: "workspace_1" },
+      placement: { sessionId: "central-hosted-1", mode: "hybrid", host: "central" },
+    })
+    expect(signedOptions.verifier).toHaveBeenCalledWith("hosted-token", signedOptions.authConfig)
+    expect(authorizeWorkspaceOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed", token: "hosted-token" }),
+      { workspaceId: "workspace_1" },
+    )
+    expect(createHybridSession).toHaveBeenCalledWith(expect.objectContaining({
+      title: "Hosted chat",
+      workspaceId: "workspace_1",
+      harness: "pi",
+      requireModel: true,
+    }))
+  })
+
+  test("rejects signed hosted hybrid session creation without a workspace", async () => {
+    const createHybridSession = vi.fn(async () => ({ id: "central-hosted-1" }))
+    const authorizeWorkspaceOpen = vi.fn(async () => undefined)
+    const svc = servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen)
+
+    const response = await ControlPlaneSessionRoutes(svc, {
+      ...signedOptions,
+      createHybridSession,
+    }).request("https://control.example.test/sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer hosted-token",
+      },
+      body: JSON.stringify({ mode: "hybrid", title: "Unscoped hosted chat" }),
+    })
+
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "workspace_id_required",
+        message: "Signed hosted session creation requires workspaceId",
+      },
+    })
+    expect(authorizeWorkspaceOpen).not.toHaveBeenCalled()
+    expect(createHybridSession).not.toHaveBeenCalled()
+  })
+
+  test("rejects signed hosted hybrid session creation when workspace authority denies", async () => {
+    const createHybridSession = vi.fn(async () => ({ id: "central-hosted-1" }))
+    const authorizeWorkspaceOpen = vi.fn(async () => {
+      throw new ControlPlaneAuthError(
+        403,
+        "workspace_authorization_denied",
+        "Workspace access denied",
+      )
+    })
+    const svc = servicesWithWorkspaceOpenAuthorization(authorizeWorkspaceOpen)
+
+    const response = await ControlPlaneSessionRoutes(svc, {
+      ...signedOptions,
+      createHybridSession,
+    }).request("https://control.example.test/sessions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: "Bearer hosted-token",
+      },
+      body: JSON.stringify({
+        mode: "hybrid",
+        title: "Denied hosted chat",
+        workspaceId: "workspace_denied",
+      }),
+    })
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({
+      error: {
+        code: "workspace_authorization_denied",
+        message: "Workspace access denied",
+      },
+    })
+    expect(authorizeWorkspaceOpen).toHaveBeenCalledWith(
+      expect.objectContaining({ mode: "signed", token: "hosted-token" }),
+      { workspaceId: "workspace_denied" },
+    )
+    expect(createHybridSession).not.toHaveBeenCalled()
   })
 
   test("delegates loopback hybrid creation with explicit virtual tool sandbox placement", async () => {
@@ -603,7 +736,7 @@ describe("control plane session routes", () => {
     }
   })
 
-  test("serves signed session inventory and replay through the control plane", async () => {
+  test("routes loopback bearer inventory and replay through signed authority without browser-only headers", async () => {
     const svc = services()
     const convex = {
       listSessions: vi.fn(async () => [
@@ -625,6 +758,9 @@ describe("control plane session routes", () => {
       authorizeSessionRead: vi.fn(async () => {}),
     }
     svc.authority = convex as never
+    svc.projectionStore.list_session_metas = vi.fn(async () => {
+      throw new Error("signed inventory must not read the unfiltered local projection")
+    })
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 7)
     const app = ControlPlaneSessionRoutes(svc, {
       authConfig: {
@@ -642,10 +778,10 @@ describe("control plane session routes", () => {
       }),
     })
 
-    const list = await app.request("https://control.example.test/sessions?workspaceId=ws_1", {
+    const list = await app.request("http://127.0.0.1/sessions?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
-    const messages = await app.request("https://control.example.test/sessions/session-1/messages?workspaceId=ws_1", {
+    const messages = await app.request("http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1", {
       headers: { Authorization: "Bearer user_1" },
     })
     const capabilities = await app.request(
@@ -790,7 +926,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&limit=10&activeSessionId=ses_route_only",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -843,7 +978,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&limit=1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -878,7 +1012,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=planner&limit=1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -892,7 +1025,6 @@ describe("control plane session routes", () => {
       `http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=planner&limit=1&cursor=${first.nextCursor}`,
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -914,7 +1046,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=planner&limit=1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -925,7 +1056,6 @@ describe("control plane session routes", () => {
       `http://127.0.0.1/session-list?scope=workspace&directory=%2Frepo&status=review&limit=1&cursor=${body.nextCursor}`,
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -951,7 +1081,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/session-list?scope=workspace&groupBy=workspace&archived=all&limit=10",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },
@@ -1225,6 +1354,7 @@ describe("control plane session routes", () => {
     const svc = services()
     const convex = {
       authorizeSessionRead: vi.fn(async () => {}),
+      readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [] })),
     }
     svc.authority = convex as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
@@ -1456,7 +1586,6 @@ describe("control plane session routes", () => {
       "http://127.0.0.1/sessions/session-1/messages?workspaceId=ws_1",
       {
         headers: {
-          Authorization: "Bearer local-test-token",
           Origin: "http://127.0.0.1:4444",
         },
       },

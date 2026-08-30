@@ -20,6 +20,10 @@ import type {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AgentMessagePageError, hasAdapterCapability } from "@claxedo/agent-sdk-runtime/adapters"
 import {
+  AGENT_RUNTIME_TURN_CONFLICT_CODE,
+  isAgentRuntimeTurnConflictError,
+} from "@claxedo/agent-sdk-runtime"
+import {
   messageUpdated,
   permissionReplied,
   questionRejected,
@@ -31,8 +35,7 @@ import {
   type CompatEnvelope,
 } from "../compat-events"
 import { recovering } from "@claxedo/agent-sdk-runtime/status"
-import { isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
-import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import {
   compatScope,
   runRuntimePromptTurn,
@@ -44,6 +47,18 @@ import {
 } from "../session/service"
 import { normalizeSessionConfigUpdate, normalizeSessionCreateConfig } from "../session-config"
 import { disposeRuntimeSessionDocuments, flushRuntimeSessionDocuments } from "./document-hydration"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessOperation,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
+import {
+  createIdentityAwareEventSource,
+  eventDeliveryPrincipal,
+  sessionEventDeliveryPolicy,
+} from "../event-delivery"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -177,6 +192,11 @@ type Opts = {
       directory?: string
     },
   ) => Promise<AgentRuntime | undefined> | AgentRuntime | undefined
+  // Upper bound on how long POST /prompt_async waits for the turn's admission
+  // decision before falling back to its fire-and-forget 204 ack. Guards against a
+  // wedged turns.start (adapter spawn that never settles admission and never
+  // throws) hanging the HTTP request indefinitely. Default 5000ms.
+  promptAsyncAdmissionAckTimeoutMs?: number
   resolveDirectory: (
     c: Ctx,
     input?: {
@@ -239,6 +259,7 @@ type Opts = {
       operation: string
     },
   ) => Promise<Response | void> | Response | void
+  sessionAccessPolicy?: SessionAccessPolicy
   createActiveTurnScope?: (input: {
     c: Ctx
     adapter: AgentHarnessAdapter
@@ -252,6 +273,23 @@ type Opts = {
 }
 
 const DRAFT_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/
+
+/** Apply an optional per-turn permission mode before a direct harness prompt. */
+async function applyTurnPermissionMode(input: {
+  adapter: AgentHarnessAdapter
+  sessionId: string
+  directory: RuntimeDirectory
+  modeId?: string
+}) {
+  if (!input.modeId || !input.adapter.setPermissionMode) return
+  try {
+    await input.adapter.setPermissionMode(input.sessionId, input.modeId, input.directory)
+  } catch {
+    // A stale mode should not prevent the user's prompt from running under the
+    // harness's current mode. The explicit permission-mode endpoint still
+    // reports invalid mode changes synchronously.
+  }
+}
 
 
 export function parseDraftId(raw: string | null | undefined): string | undefined {
@@ -364,17 +402,6 @@ function sessionLifecycleInfo(input: {
   }
 }
 
-async function questionSession(adapter: AgentHarnessAdapter, qId: string, directory: RuntimeDirectory, sessionId?: string) {
-  if (sessionId) return sessionId
-  if (qId.includes(":")) return qId.split(":")[0] ?? ""
-  const list = await adapter.listQuestions?.(directory) ?? []
-  const hit = list.find((item) => {
-    const row = rec(item)
-    return row?.id === qId
-  })
-  return typeof rec(hit)?.sessionID === "string" ? String(rec(hit)?.sessionID) : ""
-}
-
 async function after(input: void | Promise<void> | undefined) {
   try {
     await input
@@ -414,6 +441,16 @@ function unsupportedOperation(
       transport: caps.harness,
       reason: details?.reason ?? "capability_disabled",
       message: details?.message ?? `${caps.harness} does not support ${operation}`,
+    },
+  }, 409)
+}
+
+function turnAdmissionConflict(c: Ctx) {
+  return c.json({
+    ok: false,
+    error: {
+      code: AGENT_RUNTIME_TURN_CONFLICT_CODE,
+      message: "Session is already processing a turn",
     },
   }, 409)
 }
@@ -476,13 +513,165 @@ function harnessSwitchUnsupported(
   })
 }
 
-function sessionOperationGuard(
+async function sessionOperationGuard(
   opts: Opts,
   c: Ctx,
   sessionId: string,
-  operation: string,
+  operation: SessionAccessOperation,
 ) {
+  const decision = await opts.sessionAccessPolicy?.authorize({
+    ...sessionAccessContext(c as never),
+    sessionId,
+    operation,
+    method: c.req.method,
+    path: c.req.path,
+  })
+  if (decision && !decision.allowed) return sessionAccessDenied(decision)
   return opts.beforeSessionOperation?.(c, { sessionId, operation })
+}
+
+async function registerCreatedSession(
+  opts: Opts,
+  c: Ctx,
+  sessionId: string,
+  sessionTitle?: string,
+) {
+  if (!opts.sessionAccessPolicy) return
+  if (!opts.sessionAccessPolicy.registerSession) {
+    if (opts.sessionAccessPolicy.sessionAuthority !== "managed-private") return
+    return sessionAccessDenied({
+      allowed: false,
+      status: 403,
+      code: "session_authority_required",
+      message: "Managed session creation requires creator registration authority",
+    })
+  }
+  const input = {
+    ...sessionAccessContext(c as never),
+    operation: "session_create",
+    sessionId,
+    ...(sessionTitle ? { sessionTitle } : {}),
+    method: c.req.method,
+    path: c.req.path,
+  } as const
+  let decision
+  try {
+    decision = await opts.sessionAccessPolicy.registerSession(input)
+  } catch (firstError) {
+    // Registration is idempotent for one (actor, workspace, session id).
+    // A transport timeout can happen after the authority committed, so one
+    // same-id retry is the reconciliation read/write before compensation.
+    try {
+      decision = await opts.sessionAccessPolicy.registerSession(input)
+    } catch (reconcileError) {
+      throw new AggregateError(
+        [firstError, reconcileError],
+        "Session creator registration could not be reconciled",
+      )
+    }
+  }
+  if (!decision.allowed) return sessionAccessDenied(decision)
+}
+
+async function rollbackCreatedSession(
+  opts: Opts,
+  c: Ctx,
+  adapter: AgentHarnessAdapter,
+  directory: RuntimeDirectory,
+  sessionId: string,
+  cause: unknown,
+) {
+  try {
+    await adapter.deleteSession(sessionId, directory)
+    await opts.afterDeleteSession?.(c, directory, sessionId)
+  } catch (cleanupError) {
+    throw new AggregateError(
+      [cause, cleanupError],
+      "Session creation failed and runtime rollback also failed",
+    )
+  }
+}
+
+async function collectionSessionIds(
+  opts: Opts,
+  c: Ctx,
+  operation: SessionAccessOperation,
+  sessionIds: readonly string[],
+) {
+  if (!opts.sessionAccessPolicy) return new Set(sessionIds)
+  return new Set(await opts.sessionAccessPolicy.filterSessions({
+    ...sessionAccessContext(c as never),
+    operation,
+    method: c.req.method,
+    path: c.req.path,
+    sessionIds: [...new Set(sessionIds.filter(Boolean))],
+  }))
+}
+
+function explicitSessionId(input: unknown) {
+  const row = rec(input)
+  return typeof row?.sessionID === "string"
+    ? row.sessionID
+    : typeof row?.sessionId === "string"
+      ? row.sessionId
+      : ""
+}
+
+function rowSessionId(input: unknown) {
+  const row = rec(input)
+  return explicitSessionId(row) || (typeof row?.id === "string" ? row.id : "")
+}
+
+function interactionSessionId(rows: readonly unknown[], interactionId: string) {
+  return explicitSessionId(rows.find((item) => rec(item)?.id === interactionId))
+}
+
+function interactionNotFound(c: Ctx, kind: "permission" | "question", id: string) {
+  return c.json({
+    ok: false,
+    error: {
+      code: "interaction_not_found",
+      message: `Pending ${kind} ${id} was not found`,
+    },
+  }, 404)
+}
+
+function interactionSessionMismatch(c: Ctx, kind: "permission" | "question", id: string) {
+  return c.json({
+    ok: false,
+    error: {
+      code: "interaction_session_mismatch",
+      message: `Pending ${kind} ${id} does not belong to the supplied session`,
+    },
+  }, 409)
+}
+
+async function filterSessionRows<T>(opts: Opts, c: Ctx, operation: SessionAccessOperation, rows: T[]) {
+  const allowed = await collectionSessionIds(opts, c, operation, rows.map(rowSessionId))
+  return rows.filter((row) => allowed.has(rowSessionId(row)))
+}
+
+async function filterSessionStatus(opts: Opts, c: Ctx, status: unknown) {
+  if (!status || typeof status !== "object" || Array.isArray(status)) return status
+  const entries = Object.entries(status as Record<string, unknown>)
+  const allowed = await collectionSessionIds(opts, c, "session_status", entries.map(([sessionId]) => sessionId))
+  return Object.fromEntries(entries.filter(([sessionId]) => allowed.has(sessionId)))
+}
+
+function sessionBusEventSessionId(event: unknown) {
+  const row = rec(event)
+  if (typeof row?.sessionId === "string") return row.sessionId
+  if (typeof row?.sessionID === "string") return row.sessionID
+  if (row?.type === "process.status" && typeof row.configId === "string") return row.configId
+  const payload = rec(row?.payload)
+  const properties = rec(payload?.properties)
+  if (typeof properties?.sessionID === "string") return properties.sessionID
+  if (typeof properties?.sessionId === "string") return properties.sessionId
+}
+
+function sensitiveSessionBusEvent(event: unknown) {
+  const row = rec(event)
+  return row?.type === "agent.lifecycle" && (typeof row.prompt === "string" || typeof row.lastAssistantMessage === "string")
 }
 
 /**
@@ -494,11 +683,8 @@ function sessionOperationGuard(
  * gating the guard on the param let any caller skip admission entirely by
  * leaving it off, reaching `replyQuestion`/`rejectQuestion` unchecked.
  *
- * So the session is resolved from the cheapest source that can supply it, and
- * the guard runs on whatever that yields. Order matters because resolving an
- * adapter is not free — the host may construct one — so the guard runs before
- * adapter resolution wherever the session is knowable without it, which is
- * every case except a question this runtime cannot see in its own listing.
+ * The pending-question listing is authoritative. A supplied session is only a
+ * consistency assertion and never selects the authorization target.
  */
 async function admitQuestionOperation(
   opts: Opts,
@@ -511,35 +697,63 @@ async function admitQuestionOperation(
   const id = c.req.param("id")
   const requested = c.req.query("sessionId") ?? ""
   const directory = await opts.resolveDirectory(c)
-  // The host's own question listing needs no adapter, and it is the same source
-  // (and same precedence) these routes already preferred over the adapter.
-  const known = requested
-    || (await opts.listQuestions?.(c, directory))?.find((item) => item.id === id)?.sessionID
-    || ""
+  const known = interactionSessionId(await opts.listQuestions?.(c, directory) ?? [], id)
   if (known) {
+    if (requested && requested !== known) return { rejected: interactionSessionMismatch(c, "question", id) }
     const guarded = await sessionOperationGuard(opts, c, known, "question_response")
     if (guarded) return { rejected: guarded }
+    const adapter = await opts.resolveAdapter(c, { sessionId: known, directory })
+    const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "questions", method, "question_response", known)
+    if (unsupported) return { rejected: unsupported }
+    return { id, directory, adapter, sessionId: known }
   }
-  const adapter = await opts.resolveAdapter(c, { sessionId: known || undefined, directory })
-  // Last resort: only an adapter listing can name the session. Admission has
-  // not run yet in this branch, so it runs now, before the reply lands.
-  const sessionId = known || await questionSession(adapter, id, directory)
-  if (!known) {
-    const guarded = await sessionOperationGuard(opts, c, sessionId, "question_response")
-    if (guarded) return { rejected: guarded }
-  }
+
+  const adapter = await opts.resolveAdapter(c, { directory })
   const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "questions", method, "question_response")
   if (unsupported) return { rejected: unsupported }
+  const sessionId = interactionSessionId(await adapter.listQuestions?.(directory) ?? [], id)
+  if (!sessionId) return { rejected: interactionNotFound(c, "question", id) }
+  if (requested && requested !== sessionId) return { rejected: interactionSessionMismatch(c, "question", id) }
+  const guarded = await sessionOperationGuard(opts, c, sessionId, "question_response")
+  if (guarded) return { rejected: guarded }
   return { id, directory, adapter, sessionId }
 }
 
 export function createSessionRoutes(opts: Opts) {
   const app = new Hono()
+  // This map only deduplicates prompt_async retries by message id. The
+  // per-session concurrency lease is owned by AgentRuntime and is deliberately
+  // separate. Production Claxedo-managed message routes resolve AgentRuntime;
+  // the Session V2 wildcard proxy, WorkGraph gateway, and vendored OpenCode
+  // engine have independent admission semantics outside this lease boundary.
+  // The server's checkpoint-freeze middleware runs before these routes, so a
+  // 423 response may preempt lease acquisition entirely.
   const promptAdmissions = new Map<string, Set<string>>()
-  const sessionBusReplay = createSseReplayBuffer<unknown>()
-  opts.sessionBus.subscribe((event) => {
-    sessionBusReplay.push(event)
+  const ADMISSION_ACK_TIMED_OUT = Symbol("prompt-async-admission-timeout")
+  // Wait for the turn's admission decision, but never longer than the bound:
+  // a wedged turns.start (adapter spawn that never settles admission and never
+  // throws) must not hang the prompt_async response. On timeout the caller gets
+  // its fire-and-forget 204 and the detached turn continues; any conflict/error
+  // then surfaces on the event stream, as it did before the admission fast-path.
+  const awaitAdmissionAck = async (admission: Promise<unknown>): Promise<unknown> => {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const timeout = new Promise<typeof ADMISSION_ACK_TIMED_OUT>((resolve) => {
+      timer = setTimeout(() => resolve(ADMISSION_ACK_TIMED_OUT), opts.promptAsyncAdmissionAckTimeoutMs ?? 5_000)
+      timer.unref?.()
+    })
+    try {
+      return await Promise.race([admission, timeout])
+    } finally {
+      if (timer) clearTimeout(timer)
+    }
+  }
+  const sessionEventSource = createIdentityAwareEventSource({
+    subscribe: opts.sessionBus.subscribe,
+    policy: sessionEventDeliveryPolicy(opts.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()),
+    sessionId: sessionBusEventSessionId,
+    sensitive: sensitiveSessionBusEvent,
   })
+  sessionEventSource.open({ mode: "unmanaged-local", connectionId: "local-replay" })
   app
     .get("/session", async (c) => {
       const directory = await opts.resolveDirectory(c)
@@ -548,7 +762,8 @@ export function createSessionRoutes(opts: Opts) {
         ? await opts.listSessions(c, directory)
         : await (await opts.resolveAdapter(c)).listSessions(directory)
       await after(opts.afterListSessions?.(c, directory, sessions))
-      const data = (sessions as unknown[]).map((session) => normalizeSession(session, directory))
+      const visible = await filterSessionRows(opts, c, "session_list", sessions)
+      const data = (visible as unknown[]).map((session) => normalizeSession(session, directory))
       return c.json(data)
     })
     .get("/experimental/session", async (c) => {
@@ -560,7 +775,8 @@ export function createSessionRoutes(opts: Opts) {
         ? await opts.listSessions(c, directory)
         : await (await opts.resolveAdapter(c)).listSessions(directory)
       await after(opts.afterListSessions?.(c, directory, sessions))
-      const data = (sessions as unknown[])
+      const visible = await filterSessionRows(opts, c, "session_list", sessions)
+      const data = (visible as unknown[])
           .map(summarizeSession)
           .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
           .filter((item) => !roots || typeof item.parentID !== "string")
@@ -572,10 +788,21 @@ export function createSessionRoutes(opts: Opts) {
       const directory = await opts.resolveDirectory(c)
       const adapter = await opts.resolveAdapter(c)
       const status = await opts.getStatus?.(c, directory, adapter)
-      if (status instanceof Response) return status
-      return c.json(status ?? {})
+      if (status instanceof Response) {
+        if (!opts.sessionAccessPolicy) return status
+        const data = await status.clone().json().catch(() => undefined)
+        if (data === undefined) return status
+        return c.json(
+          await filterSessionStatus(opts, c, data),
+          status.status as ContentfulStatusCode,
+          Object.fromEntries(status.headers.entries()),
+        )
+      }
+      return c.json(await filterSessionStatus(opts, c, status ?? {}))
     })
     .post("/session", async (c) => {
+      const guarded = await sessionOperationGuard(opts, c, "", "session_create")
+      if (guarded) return guarded
       const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string }
       const config = normalizeSessionCreateConfig(body)
@@ -605,15 +832,43 @@ export function createSessionRoutes(opts: Opts) {
               await adapter.updateSessionConfig(session.id, config, directory)
             }
           } catch (error) {
-            try {
-              await adapter.deleteSession(session.id, directory)
-            } catch (cleanupError) {
-              throw new AggregateError([error, cleanupError], "Session config persistence and creation rollback failed")
-            }
+            await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
             throw error
           }
         }
-        await after(opts.afterCreateSession?.(c, directory, session))
+        let registration: Response | undefined
+        try {
+          registration = await registerCreatedSession(opts, c, session.id, body.title)
+        } catch (error) {
+          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          throw error
+        }
+        if (registration) {
+          await rollbackCreatedSession(
+            opts,
+            c,
+            adapter,
+            directory,
+            session.id,
+            new Error(`Session creator registration was denied with status ${registration.status}`),
+          )
+          opts.publishSessionLifecycle?.({
+            type: "session.lifecycle",
+            phase: "failed",
+            directory,
+            ...(draftId ? { draftId } : {}),
+            ...(workspaceId ? { workspaceId } : {}),
+            message: "Session creator registration was denied",
+            ts: Date.now(),
+          })
+          return registration
+        }
+        try {
+          await after(opts.afterCreateSession?.(c, directory, session))
+        } catch (error) {
+          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          throw error
+        }
         opts.publishSessionLifecycle?.({
           type: "session.lifecycle",
           phase: "created",
@@ -656,7 +911,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/capabilities", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "capabilities")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_capabilities_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -672,7 +927,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "get_session")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -683,7 +938,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "get_config")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -694,7 +949,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .patch("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "update_session")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_write")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -706,7 +961,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .patch("/session/:id/config", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "update_config")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "session_config_write")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -734,7 +989,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .delete("/session/:id", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "delete_session")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "delete")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -745,54 +1000,50 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session/:id/message", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "message")
+      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
+      const access = sessionAccessContext(c as never)
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
-      const activeTurn = runtime && opts.createActiveTurnScope
-        ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
-        : undefined
-      let turn: Awaited<ReturnType<typeof runRuntimePromptTurn>>
-      try {
-        turn = await (async () => {
-          try {
-            return runtime
-              ? await runRuntimePromptTurn({
-                  runtime,
-                  sessionId: id,
-                  directory,
-                  body,
-                  publishGlobal: opts.publishGlobal,
-                  publishStatus: (event) => opts.sessionBus.publish(event),
-                  activeTurn,
-                })
-              : await runSessionPromptTurn({
-                  adapter,
-                  sessionId: id,
-                  directory,
-                  body,
-                  publishGlobal: opts.publishGlobal,
-                  publishStatus: (event) => opts.sessionBus.publish(event),
-                  createActiveTurnScope: opts.createActiveTurnScope
-                    ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
-                    : undefined,
-                })
-          } finally {
-            await flushDocumentsAfterTurn(opts, id)
-          }
-        })()
-      } catch (error) {
-        if (isAgentRuntimeTurnAdmissionError(error)) {
-          return c.json(errorBody(
-            "turn_already_active",
-            `Session ${id} is already processing a message`,
-          ), 409)
+      if (!runtime) await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
+      const turn = await (async () => {
+        try {
+          return runtime
+            ? await runRuntimePromptTurn({
+            runtime,
+            sessionId: id,
+            directory,
+            body,
+            publishGlobal: opts.publishGlobal,
+            publishStatus: (event) => opts.sessionBus.publish(event),
+            createActiveTurnScope: opts.createActiveTurnScope
+              ? () => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id })
+              : undefined,
+            actor: access.actor,
+            author: access.author,
+              })
+            : await runSessionPromptTurn({
+            adapter,
+            sessionId: id,
+            directory,
+            body,
+            publishGlobal: opts.publishGlobal,
+            publishStatus: (event) => opts.sessionBus.publish(event),
+            createActiveTurnScope: opts.createActiveTurnScope
+              ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
+              : undefined,
+              })
+        } finally {
+          await flushDocumentsAfterTurn(opts, id)
         }
+      })().catch((error) => {
+        if (isAgentRuntimeTurnConflictError(error)) return turnAdmissionConflict(c)
         throw error
-      }
+      })
+      if (turn instanceof Response) return turn
       await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
       const output = sessionPromptReply(turn)
       if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
@@ -800,7 +1051,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "messages")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "message_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const snapshotRequested = c.req.query("snapshot") === "1"
@@ -850,7 +1101,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/todo", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "todos")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "todo_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -893,6 +1144,8 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/:id/permission-mode", async (c) => {
       const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode_read")
+      if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       // No `unsupportedIfUnavailable` here, unlike the neighbouring routes: an
@@ -911,7 +1164,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .put("/session/:id/permission-mode", async (c) => {
       const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_mode_write")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
@@ -993,7 +1246,32 @@ export function createSessionRoutes(opts: Opts) {
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "fork", "forkSession", "fork", sessionId)
       if (unsupported) return unsupported
       const body = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-      return c.json(await adapter.forkSession!(sessionId, body.messageId ?? "", directory), 201)
+      const child = await adapter.forkSession!(sessionId, body.messageId ?? "", directory)
+      let registration: Response | undefined
+      try {
+        registration = await registerCreatedSession(opts, c, child.id)
+      } catch (error) {
+        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        throw error
+      }
+      if (registration) {
+        await rollbackCreatedSession(
+          opts,
+          c,
+          adapter,
+          directory,
+          child.id,
+          new Error(`Forked session creator registration was denied with status ${registration.status}`),
+        )
+        return registration
+      }
+      try {
+        await after(opts.afterCreateSession?.(c, directory, child))
+      } catch (error) {
+        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        throw error
+      }
+      return c.json(child, 201)
     })
     .post("/session/:id/command", async (c) => {
       const sessionId = c.req.param("id")
@@ -1009,7 +1287,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, id, "prompt_async")
+      const guarded = await sessionOperationGuard(opts, c, id, "prompt")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId: id })
       const adapter = await opts.resolveAdapter(c, { sessionId: id, directory })
@@ -1043,22 +1321,16 @@ export function createSessionRoutes(opts: Opts) {
         }
       }
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
-      let settleRuntimeAdmission: ((outcome: "accepted" | "rejected") => void) | undefined
-      let runtimeAdmissionSettled = false
-      const runtimeAdmission = runtime
-        ? new Promise<"accepted" | "rejected">((resolve) => {
-            settleRuntimeAdmission = (outcome) => {
-              if (runtimeAdmissionSettled) return
-              runtimeAdmissionSettled = true
-              resolve(outcome)
-            }
+      const access = sessionAccessContext(c as never)
+      if (!runtime) await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
+      let settleAdmission: ((error?: unknown) => void) | undefined
+      const admission = runtime
+        ? new Promise<unknown>((resolve) => {
+            settleAdmission = resolve
           })
         : undefined
       ;(async () => {
         try {
-          const activeTurn = runtime && opts.createActiveTurnScope
-            ? opts.createActiveTurnScope({ c, adapter, directory, sessionId: id })
-            : undefined
           const turn = runtime
             ? await runRuntimePromptTurn({
                 runtime,
@@ -1067,9 +1339,13 @@ export function createSessionRoutes(opts: Opts) {
                 body,
                 publishGlobal: opts.publishGlobal,
                 publishStatus: (event) => opts.sessionBus.publish(event),
-                activeTurn,
+                createActiveTurnScope: opts.createActiveTurnScope
+                  ? () => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id })
+                  : undefined,
                 streamErrorMessage: streamTurnErrorMessage,
-                onAdmitted: () => settleRuntimeAdmission?.("accepted"),
+                onAdmissionSettled: settleAdmission,
+                actor: access.actor,
+                author: access.author,
               })
             : await runSessionPromptTurn({
                 adapter,
@@ -1086,34 +1362,29 @@ export function createSessionRoutes(opts: Opts) {
               })
           await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
         } catch (error) {
-          if (isAgentRuntimeTurnAdmissionError(error)) {
-            if (body.messageID) {
-              const admitted = promptAdmissions.get(id)
-              admitted?.delete(body.messageID)
-              if (admitted?.size === 0) promptAdmissions.delete(id)
-            }
-            settleRuntimeAdmission?.("rejected")
-            return
-          }
-          // Preserve prompt_async's established fire-and-forget contract for
-          // non-admission failures. They still publish the canonical turn error.
-          settleRuntimeAdmission?.("accepted")
+          settleAdmission?.(error)
+          if (isAgentRuntimeTurnConflictError(error)) return
           // Keep a human-safe headline but never discard the cause: route the real
           // message through sessionError (→ firstTurnErrorData), so it classifies
           // (unmatched → "unknown") and the original text reaches the raw-detail
           // disclosure instead of being flattened to the literal "Stream error".
           opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
         } finally {
-          settleRuntimeAdmission?.("accepted")
           await flushDocumentsAfterTurn(opts, id)
           await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))
         }
       })()
-      if (await runtimeAdmission === "rejected") {
-        return c.json(errorBody(
-          "turn_already_active",
-          `Session ${id} is already processing a message`,
-        ), 409)
+      const admissionError = admission ? await awaitAdmissionAck(admission) : undefined
+      // Admission did not settle within the bound — honor prompt_async's
+      // fire-and-forget contract rather than block on a wedged turn.
+      if (admissionError === ADMISSION_ACK_TIMED_OUT) return c.body(null, 204)
+      if (isAgentRuntimeTurnConflictError(admissionError)) {
+        if (body.messageID) {
+          const admitted = promptAdmissions.get(id)
+          admitted?.delete(body.messageID)
+          if (admitted?.size === 0) promptAdmissions.delete(id)
+        }
+        return turnAdmissionConflict(c)
       }
       return c.body(null, 204)
     })
@@ -1140,27 +1411,38 @@ export function createSessionRoutes(opts: Opts) {
       const rows = opts.listPermissions
         ? await opts.listPermissions(c, directory)
         : await (await opts.resolveAdapter(c)).listPermissions?.(directory) ?? []
-      return c.json(rows)
+      return c.json(await filterSessionRows(opts, c, "permission_list", rows))
     })
     .get("/question", async (c) => {
       const directory = await opts.resolveDirectory(c)
       const rows = opts.listQuestions
         ? await opts.listQuestions(c, directory)
         : await (await opts.resolveAdapter(c)).listQuestions?.(directory) ?? []
-      return c.json(rows)
+      return c.json(await filterSessionRows(opts, c, "question_list", rows))
     })
     .post("/session/:sessionId/permissions/:permId", async (c) => {
-      const guarded = await sessionOperationGuard(opts, c, c.req.param("sessionId"), "permission_response")
-      if (guarded) return guarded
-      const sessionId = c.req.param("sessionId")
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      const suppliedSessionId = c.req.param("sessionId")
+      const permId = c.req.param("permId")
+      const directory = await opts.resolveDirectory(c, { sessionId: suppliedSessionId })
+      const listedSessionId = interactionSessionId(await opts.listPermissions?.(c, directory) ?? [], permId)
+      if (listedSessionId && listedSessionId !== suppliedSessionId) {
+        return interactionSessionMismatch(c, "permission", permId)
+      }
+      const adapter = await opts.resolveAdapter(c, {
+        sessionId: listedSessionId || suppliedSessionId,
+        directory,
+      })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "permissions", "respondPermission", "permission_response")
       if (unsupported) return unsupported
+      const sessionId = listedSessionId
+        || interactionSessionId(await adapter.listPermissions?.(directory) ?? [], permId)
+      if (!sessionId) return interactionNotFound(c, "permission", permId)
+      if (sessionId !== suppliedSessionId) return interactionSessionMismatch(c, "permission", permId)
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "permission_response")
+      if (guarded) return guarded
       const body = (await c.req.json().catch(() => ({}))) as { response?: string }
       const r = body.response ?? "deny"
       const decision = r === "once" ? "allow_once" : r === "always" ? "allow_always" : "deny"
-      const permId = c.req.param("permId")
       const result = await adapter.respondPermission!(permId, decision, directory)
       publishInteractionEvents(
         opts.publishGlobal,
@@ -1200,18 +1482,28 @@ export function createSessionRoutes(opts: Opts) {
       )
       return c.json({ ok: true })
     })
-    .get("/event", async (c) =>
-      streamSSE(c, async (stream) => {
-        const cleanup = attachSseFanout({
-          subscribe: opts.sessionBus.subscribe,
-          write: (event, meta) => stream.writeSSE({
+    .get("/event", async (c) => {
+      const guarded = await sessionOperationGuard(opts, c, "", "session_event_stream")
+      if (guarded) return guarded
+      const opened = sessionEventSource.open(eventDeliveryPrincipal(c))
+      await opened.ready
+      return streamSSE(c, async (stream) => {
+        let cleanup: () => void = () => {}
+        cleanup = attachSseFanout({
+          subscribe: (listener) => opened.subscribe(listener, () => {
+            cleanup()
+            stream.abort()
+          }),
+          write: async (event, meta) => {
+            return stream.writeSSE({
             ...(meta?.id ? { id: meta.id } : {}),
             data: JSON.stringify(event),
-          }),
+            })
+          },
           heartbeat: { type: "heartbeat" },
           heartbeatMs: 2 * 60_000,
           lastEventId: c.req.header("last-event-id"),
-          replay: sessionBusReplay,
+          replay: opened.replay,
           replayLive: false,
         })
         await new Promise<void>((resolve) => {
@@ -1220,8 +1512,8 @@ export function createSessionRoutes(opts: Opts) {
             resolve()
           })
         })
-      }),
-    )
+      })
+    })
 
   if (opts.exposeCommandRoute !== false) {
     app.get("/command", async (c) => {

@@ -97,9 +97,37 @@ export function nodeTimer(): OAuthSeams["setTimeout"] {
 /** What a token endpoint answers with, on either grant. */
 type TokenPayload = {
   access_token?: string
+  id_token?: string
   refresh_token?: string
   expires_in?: number
   error?: string
+}
+
+/**
+ * Compact JWTs have three base64url segments. Clerk can still issue opaque
+ * OAuth access tokens; those fail control-plane JWKS verification.
+ */
+export function isJwtShaped(token: string) {
+  const parts = token.split(".")
+  return parts.length === 3 && parts.every((part) => part.length > 0)
+}
+
+/**
+ * Bearer the hosted control plane can verify with `CLERK_JWKS_URL`.
+ *
+ * Prefer a JWT `access_token`. When the OAuth app still issues opaque access
+ * tokens, fall back to the OIDC `id_token` (always a JWT when `openid` was
+ * granted). Opaque-only responses keep the access token so userinfo/sign-in
+ * still work, but People/hosted ops will 401 until JWT access tokens are
+ * enabled on the Clerk OAuth app.
+ */
+export function controlPlaneBearerFromTokenPayload(payload: {
+  access_token?: string
+  id_token?: string
+}): string | undefined {
+  if (payload.access_token && isJwtShaped(payload.access_token)) return payload.access_token
+  if (payload.id_token && isJwtShaped(payload.id_token)) return payload.id_token
+  return payload.access_token
 }
 
 /**
@@ -173,10 +201,11 @@ async function postToTokenEndpoint(
  * next expiry would sign the user out and nothing would explain why.
  */
 function decodeTokenPayload(payload: TokenPayload, fallbackRefreshToken?: string): TokenSet | undefined {
-  if (!payload.access_token) return undefined
+  const accessToken = controlPlaneBearerFromTokenPayload(payload)
+  if (!accessToken) return undefined
   const refreshToken = payload.refresh_token ?? fallbackRefreshToken
   return {
-    accessToken: payload.access_token,
+    accessToken,
     ...(refreshToken ? { refreshToken } : {}),
     // Absolute, in seconds. Storing the relative `expires_in` would mean
     // every reader has to remember when it was issued.

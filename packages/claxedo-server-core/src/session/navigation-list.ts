@@ -37,6 +37,12 @@ export type SessionNavigationRow = {
   attachments: Array<{ kind: string; targetId?: string }>
   environment?: { kind?: string; driver?: string }
   git?: { repo?: string; branch?: string; remote?: string }
+  /** Session creator — used for owner favicon on shared/other-user rows. */
+  owner?: {
+    name?: string
+    avatarUrl?: string
+    publicId?: string
+  }
 }
 
 export type SessionListResponse = {
@@ -248,6 +254,30 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
       ...(stringValue(git.branch) ? { branch: stringValue(git.branch) } : {}),
       ...(stringValue(git.remote) ? { remote: stringValue(git.remote) } : {}),
     } } : {}),
+    ...ownerFromSession(item),
+  }
+}
+
+function ownerFromSession(item: Record<string, unknown>): { owner?: SessionNavigationRow["owner"] } {
+  const nested = record(item.owner)
+  const name = stringValue(nested.name)
+    ?? stringValue(item.owner_name)
+    ?? stringValue(item.ownerName)
+  const avatarUrl = stringValue(nested.avatarUrl)
+    ?? stringValue(nested.avatar_url)
+    ?? stringValue(item.owner_avatar_url)
+    ?? stringValue(item.ownerAvatarUrl)
+  const publicId = stringValue(nested.publicId)
+    ?? stringValue(nested.public_id)
+    ?? stringValue(item.owner_public_id)
+    ?? stringValue(item.ownerPublicId)
+  if (!name && !avatarUrl && !publicId) return {}
+  return {
+    owner: {
+      ...(name ? { name } : {}),
+      ...(avatarUrl ? { avatarUrl } : {}),
+      ...(publicId ? { publicId } : {}),
+    },
   }
 }
 

@@ -27,6 +27,8 @@ type SessionInventoryIdentity = {
 type SessionInventoryLifecycleSession =
   Pick<SessionInventoryRow, "id" | "directory" | "projectID" | "parentID"> &
   Partial<Pick<SessionInventoryRow, "title" | "tags">> & {
+    workspaceID?: string
+    metadata?: Record<string, unknown>
     time: SessionInventoryRow["time"] & { archived?: number }
   }
 
@@ -262,6 +264,10 @@ export function applySessionInventoryLifecycle(
   const existingProjectID = type === "updated"
     ? draft.sessions.find((session) => session.id === info.id)?.projectID
     : undefined
+  const existing = type === "updated"
+    ? draft.sessions.find((session) => session.id === info.id)
+    : undefined
+  if (type === "updated" && !existing) return
   const projectID = info.projectID || existingProjectID
   if (!projectID && !isTaggedGlobal) return
   if (info.parentID) return
@@ -271,13 +277,19 @@ export function applySessionInventoryLifecycle(
     return
   }
 
+  const metadataSessionRef = typeof info.metadata?.sessionRef === "string"
+    ? info.metadata.sessionRef
+    : undefined
   const item: SessionInventoryRow = {
+    ...existing,
     id: info.id,
     title: info.title || "New Session",
     directory: info.directory,
+    ...(metadataSessionRef ? { sessionRef: metadataSessionRef } : {}),
+    ...(info.workspaceID ? { workspaceId: info.workspaceID } : {}),
     projectID: isTaggedGlobal ? "global" : projectID!,
-    tags: isTaggedGlobal ? tags : [],
-    attachments: [],
+    tags: isTaggedGlobal ? tags : tags.length > 0 ? tags : existing?.tags ?? [],
+    attachments: existing?.attachments ?? [],
     ...(typeof info.time.archived === "number" ? { archived: true } : {}),
     time: { created: info.time.created, updated: info.time.updated },
   }
@@ -322,6 +334,19 @@ export function removeSessionInventoryQueryData<TSession extends SessionInventor
   baseUrl?: string
   session: SessionInventoryIdentity
 }) {
+  if (input.baseUrl === undefined) {
+    for (const query of queryClient.getQueryCache().findAll({
+      predicate: (query) => {
+        const key = query.queryKey
+        return Array.isArray(key) && key[0] === "shell" && key[2] === "sessionInventory"
+      },
+    })) {
+      const baseUrl = query.queryKey[1]
+      if (typeof baseUrl !== "string") continue
+      removeSessionInventoryQueryData<TSession>({ baseUrl, session: input.session })
+    }
+    return
+  }
   updateSessionInventoryQueryData<TSession>({
     baseUrl: input.baseUrl,
     mutate: (draft) => {

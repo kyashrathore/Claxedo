@@ -254,7 +254,7 @@ const wakeAuth = {
 function wakeServices(ensure: ReturnType<typeof vi.fn>) {
   return {
     authority: {
-      usersMe: vi.fn(async () => ({ subject: "alice" })),
+      usersMe: vi.fn(async () => ({ subject: "alice", user_id: "alice", actor_id: "alice", actor_kind: "human", actor_public_id: "alice_pub", actor_name: "Alice" })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",

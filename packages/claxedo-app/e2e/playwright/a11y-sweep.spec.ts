@@ -69,7 +69,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-a11y-sweep"
 const SESSION_ID = "ses_a11y_sweep"
@@ -159,6 +159,7 @@ async function settleOneTurn(page: Page, dir: string) {
   await seedOneProject(page, dir)
   await openWorkbench(page, dir)
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill("a11y sweep seed turn")
   await expect(input).toContainText("a11y sweep seed turn", { timeout: 10_000 })

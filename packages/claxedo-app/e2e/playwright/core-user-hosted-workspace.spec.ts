@@ -169,7 +169,7 @@
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
-import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { stampTestAuth } from "../playwright-global-setup"
 import {
   assertSessionConfigPatchResponse,
@@ -390,7 +390,7 @@ async function installUserHostedRuntimeMock(
     // static bundle reads as the same resource type as an API request. They
     // are not a workspace-runtime lane at all; let Vite serve its owned asset
     // namespace and keep the bare-hit oracle scoped to runtime/control APIs.
-    if (url.pathname.startsWith("/assets/")) return route.continue()
+    if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/@fs/")) return route.continue()
 
     // ---- Bootstrap / project inventory (bare origin) ----
     // Bootstrap discovery is legitimately bare-origin at ANY readiness state
@@ -658,18 +658,26 @@ async function installUserHostedRuntimeMock(
       return json(route, {})
     }
 
-    // ---- Control-plane provider catalog (bare origin, ALWAYS) ----
-    // The signed control plane serves a bare `GET /provider` (and
-    // `/provider/auth`) that returns an EMPTY catalog for the default
-    // (opencode) harness — the workspace's real provider/model list is a
-    // RUNTIME-owned read routed through the relay (`/workspaces/:id/provider`
-    // above), exactly as `packages/claxedo-server/src/routes/hosted/shell.ts`
-    // (`GET /provider` → `emptyProvider()`) does. The app fires this global
-    // control-plane catalog query independent of any workspace's readiness, so
-    // — like `/api/claxedo/bootstrap` and `/api/control/session-list` above —
-    // it is NOT the per-workspace runtime lane and is deliberately NOT counted
-    // in `bareHitsDuringReady`.
-    if (url.pathname === "/provider") return json(route, { all: [], connected: [], default: {} })
+    // ---- Control-plane provider catalog (bare origin) ----
+    // Production's unscoped `GET /provider` is empty (`emptyProvider()`); the
+    // workspace catalog is a relay read. The OpenCode composer list, however,
+    // is `useProviders()` → `GET /provider?harness=opencode&directory=…`, and
+    // until that request is rewritten onto `/workspaces/:id/provider` the
+    // picker is fed this bare response. Serving the same catalog the relay
+    // lane returns keeps the draft selectable without inventing an app
+    // auto-seed. Unscoped (no harness) stays empty so the control-plane
+    // contract is still exercised.
+    if (url.pathname === "/provider") {
+      const harness = url.searchParams.get("harness")
+      if (harness === "opencode") {
+        return json(route, {
+          all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
+          default: { opencode: BIG_PICKLE.id },
+          connected: ["opencode"],
+        })
+      }
+      return json(route, { all: [], connected: [], default: {} })
+    }
     if (url.pathname === "/provider/auth") return json(route, {})
 
     if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
@@ -759,14 +767,13 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(input).toBeVisible({ timeout: CONTENTION_TIMEOUT })
     await expect(input).toHaveAttribute("contenteditable", "true")
     await expect(page.locator('[data-component="cloud-startup-view"]')).toHaveCount(0)
-    // The gate unlocking only proves the CONNECTION is ready — the draft's own
-    // provider/model catalog (a separate relay request, fired once the gate
-    // renders children) can still be in flight for a moment after. Sending
-    // before it resolves hits the composer's own (correct) "no-model" submit
-    // block, which no-ops the click — wait for a real model to land in the
-    // model control first, matching core-cloud-provisioning.spec.ts and
-    // core-harness-ownership-cloud.spec.ts's established pattern.
-    await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, {
+    // Catalog can be ready while the draft still has no selected model (product
+    // requires an explicit pick). Wait for the catalog first, then drive the picker.
+    const modelControl = page.locator('[data-action="prompt-harness-model"]')
+    await expect(modelControl).toBeEnabled({ timeout: CONTENTION_TIMEOUT })
+    await expect(modelControl).toHaveAttribute("data-readiness", "ready", { timeout: CONTENTION_TIMEOUT })
+    await ensureComposerModelSelected(page, { modelName: /Big Pickle/i, search: "Big Pickle" })
+    await expect(modelControl).toContainText(/Big Pickle|big-pickle/i, {
       timeout: CONTENTION_TIMEOUT,
     })
 

@@ -11,6 +11,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { validWorktree } from "@/platform/sync/worktree"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
 import type { ProjectItem, WorkspaceItem } from "../../../app/workbench/rail/domain-types"
 import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-toolbar"
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
@@ -24,10 +25,10 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { DirectorySessionCacheValue } from "../../session/data/sync/queries"
 import { ensureLocalProject } from "../data/query/project-ensure"
+import { createCloudWorkspace } from "../data/workspace-create-api"
 import {
   controlWorkspaceUrl,
   experimentalSandboxPath,
-  workspaceCreateUrl,
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
 
@@ -284,20 +285,21 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         })
       }
 
-      const body: Record<string, string> = { projectId: project.id }
-      if (workspaceName) body.workspaceName = workspaceName
-      const result = await api.post<{ workspaceId: string; directory?: string; workspaceName?: string | null; status?: string | null }>(
-        workspaceCreateUrl({ baseUrl }),
-        body,
-      )
+      const result = await createCloudWorkspace({
+        baseUrl,
+        projectId: project.id,
+        ...(workspaceName ? { workspaceName } : {}),
+      })
       const dir = result.directory
       if (!dir) throw new Error("Workspace create did not return a directory")
       workspaceId = result.workspaceId
 
       for (const ev of buffered) publishProvision(ev)
-      const current = await api
-        .get<{ status?: string | null }>(workspaceResolveUrl({ baseUrl, workspaceId }))
-        .catch(() => undefined)
+      const current = await hostedControlCall<{ status?: string | null } | null>(
+        "workspace.resolve",
+        { workspaceId },
+        () => api.get<{ status?: string | null }>(workspaceResolveUrl({ baseUrl, workspaceId })),
+      ).catch(() => undefined)
       const status = current?.status ?? result.status
       if (status && status !== "pending") pushProgress(status)
       if (status === "ready") finishProvision?.()

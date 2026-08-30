@@ -19,6 +19,11 @@ import {
 } from "./conversation-chat-client"
 import { queryClient } from "@/platform/query/query-client"
 import { estimateConversationMemory } from "./conversation-memory"
+import {
+  conversationPersistencePrincipal,
+  preparePersistedSessionRevocation,
+} from "./conversation-persistence"
+import { cleanupSessionCaches } from "@/features/session/data/sync/session-cache-cleanup"
 
 /**
  * One canonical conversation store per session. The registry owns a TanStack
@@ -246,6 +251,45 @@ export function warmConversationMemorySnapshot() {
       buckets: estimateConversationMemory(messages),
     }
   })
+}
+
+/**
+ * Revoke one session from every client-owned conversation layer before the
+ * shell redirects the user. This is deliberately broader than a single
+ * directory because signed workspaces can carry multiple runtime aliases.
+ */
+export function prepareRegisteredSessionRevocation(
+  sessionID: string,
+  namespace = conversationPersistencePrincipal(),
+) {
+  const persistence = preparePersistedSessionRevocation(sessionID, namespace)
+  let memoryPurged = false
+  return {
+    purgePersisted: persistence.purge,
+    purgeMemory() {
+      if (!memoryPurged) {
+        for (const [key, entry] of entries) {
+          if (entry.sessionID !== sessionID) continue
+          entries.delete(key)
+          entry.unsubscribe?.()
+        }
+        for (const key of optimisticMessageKeys) {
+          if (key.includes(`\0${sessionID}\0`)) optimisticMessageKeys.delete(key)
+        }
+        cleanupSessionCaches(sessionID)
+        markTopologyChanged()
+        memoryPurged = true
+      }
+    },
+  }
+}
+
+/** Clear process-local conversation state; app composition owns principal caches. */
+export function clearRegisteredConversationMemory() {
+  for (const entry of entries.values()) entry.unsubscribe?.()
+  entries.clear()
+  optimisticMessageKeys.clear()
+  markTopologyChanged()
 }
 
 export function clearConversationChatRegistryForTest() {

@@ -204,12 +204,14 @@ describe("@claxedo/local-server closure", () => {
     // port, outbox, stable ledger identity, and their desktop composition.
     // Shared implementations live in server-core, so no hosted product edge is
     // introduced; the package count falls back to 21 after that ownership move.
-    // A further rise means the desktop product
+    // The tenant-aware runtime principal composer adds one local module while
+    // keeping the package closure unchanged and gives every runtime proxy the
+    // same fail-closed identity path. A further rise means the desktop product
     // gained surface, and a fall should lower the ceiling with it. The package
     // number is the reach that matters — a rise is a new dependency the
     // unsigned desktop now carries and is worth reading before it is bumped.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(56)
+    expect(modules.size).toBeLessThanOrEqual(57)
     expect(packages.size).toBeLessThanOrEqual(21)
   })
 })

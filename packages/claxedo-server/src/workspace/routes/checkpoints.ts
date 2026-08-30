@@ -6,6 +6,8 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "../route-support"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { RelayRole } from "@claxedo/workspace-relay"
 export function WorkspaceCheckpointRoutes(
   services?: ControlPlaneServices,
   options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean } = {},
@@ -14,10 +16,14 @@ export function WorkspaceCheckpointRoutes(
     .get("/:id/checkpoints", async (c) => {
       const access = await authorized(c.req.raw, c.req.param("id"), services, options)
       if ("response" in access) return access.response
-      return c.json(await service(access.auth, services!, options).inspect(c.req.param("id")))
+      const workspaceId = c.req.param("id")
+      const inspected = await service(access.auth, access.role, access.orgId, services!, options).inspect(workspaceId)
+      if (!access.auth) return c.json(inspected)
+      const visible = await requireAuthority(services).listSessions(access.auth, { workspaceId })
+      return c.json(filterCheckpointSessions(inspected, visible))
     })
     .post("/:id/checkpoints", async (c) => {
-      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const body = await c.req.json().catch(() => ({})) as { policy?: unknown; retentionExpiresAt?: unknown }
       if (body.policy !== undefined && body.policy !== "drain" && body.policy !== "interrupt") {
@@ -27,7 +33,7 @@ export function WorkspaceCheckpointRoutes(
         return c.json({ error: { code: "workspace_checkpoint_retention_invalid", message: "retentionExpiresAt must be an integer" } }, 400)
       }
       try {
-        const result = await service(access.auth, services!, options).capture(c.req.param("id"), {
+        const result = await service(access.auth, access.role, access.orgId, services!, options).capture(c.req.param("id"), {
           ...(body.policy ? { policy: body.policy } : {}),
           ...(typeof body.retentionExpiresAt === "number" ? { retentionExpiresAt: body.retentionExpiresAt } : {}),
         })
@@ -37,7 +43,7 @@ export function WorkspaceCheckpointRoutes(
       }
     })
     .post("/:id/checkpoints/:checkpointId/restore", async (c) => {
-      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const body = await c.req.json().catch(() => ({})) as { approved?: unknown }
       if (body.approved !== true) {
@@ -49,7 +55,7 @@ export function WorkspaceCheckpointRoutes(
         }, 409)
       }
       try {
-        return c.json(await service(access.auth, services!, options).restore(c.req.param("id"), {
+        return c.json(await service(access.auth, access.role, access.orgId, services!, options).restore(c.req.param("id"), {
           checkpointId: c.req.param("checkpointId"),
         }))
       } catch (error) {
@@ -57,7 +63,7 @@ export function WorkspaceCheckpointRoutes(
       }
     })
     .post("/:id/lifecycle/:operation", async (c) => {
-      const access = await authorized(c.req.raw, c.req.param("id"), services, options)
+      const access = await authorized(c.req.raw, c.req.param("id"), services, options, true)
       if ("response" in access) return access.response
       const operation = c.req.param("operation")
       const body = await c.req.json().catch(() => ({})) as { approved?: unknown; checkpointId?: unknown }
@@ -73,7 +79,7 @@ export function WorkspaceCheckpointRoutes(
         }, 409)
       }
       try {
-        const lifecycle = service(access.auth, services!, options)
+        const lifecycle = service(access.auth, access.role, access.orgId, services!, options)
         if (operation === "stop") return c.json(await lifecycle.stop(c.req.param("id")))
         if (operation === "replace") {
           return c.json(await lifecycle.replace(c.req.param("id"), {
@@ -88,17 +94,45 @@ export function WorkspaceCheckpointRoutes(
     })
 }
 
+export function filterCheckpointSessions<T extends { worktrees?: unknown }>(input: T, visible: unknown): T {
+  if (!Array.isArray(input.worktrees)) return input
+  const sessionIds = new Set(
+    (Array.isArray(visible)
+      ? visible
+      : visible && typeof visible === "object" && Array.isArray((visible as { sessions?: unknown }).sessions)
+        ? (visible as { sessions: unknown[] }).sessions
+        : [])
+      .flatMap((item) => {
+        if (!item || typeof item !== "object" || Array.isArray(item)) return []
+        const row = item as Record<string, unknown>
+        const id = row.session_id ?? row.sessionId ?? row.id
+        return typeof id === "string" ? [id] : []
+      }),
+  )
+  return {
+    ...input,
+    worktrees: input.worktrees.filter((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) return false
+      const row = item as Record<string, unknown>
+      const sessionId = row.sessionId ?? row.session_id
+      return typeof sessionId !== "string" || sessionIds.has(sessionId)
+    }),
+  }
+}
+
 async function authorized(
   request: Request,
   workspaceId: string,
   services: ControlPlaneServices | undefined,
   options: { allowUnsignedLocal?: boolean },
+  write = false,
 ) {
   if (options.allowUnsignedLocal && services && !services.auth.config.enabled) {
-    return { auth: undefined }
+    return { auth: undefined, role: "owner" as const, orgId: undefined }
   }
   const auth = await signedOrError(request, {
     authConfig: services?.auth.config ?? controlPlaneAuthConfig(),
+    verifier: services?.auth.verifier,
     requireSigned: true,
   }, services)
   if ("error" in auth) {
@@ -108,8 +142,22 @@ async function authorized(
     return { response: Response.json({ error: { code: "missing_bearer_token", message: "Authorization is required" } }, { status: 401 }) }
   }
   try {
-    await requireAuthority(services).authorizeWorkspaceOpen(auth.auth, { workspaceId })
-    return { auth: auth.auth }
+    const authority = requireAuthority(services)
+    const opened = await authority.openWorkspace(auth.auth, { workspaceId })
+    const role = relayRole(opened.role)
+    const orgId = typeof opened.workspace?.org_id === "string" && opened.workspace.org_id.trim()
+      ? opened.workspace.org_id
+      : undefined
+    if (opened.allowed !== true || !role) {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace access is required")
+    }
+    if (!orgId) {
+      throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace organization authority is unavailable")
+    }
+    if (write && (!opened.allowed || !workspaceCheckpointRoleAllowsWrite(role))) {
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Workspace write authority is required")
+    }
+    return { auth: auth.auth, role, orgId }
   } catch (error) {
     if (error instanceof ControlPlaneAuthError) {
       return { response: Response.json(controlPlaneAuthErrorBody(error), { status: error.status }) }
@@ -118,46 +166,72 @@ async function authorized(
   }
 }
 
+export function workspaceCheckpointRoleAllowsWrite(role: string | undefined) {
+  return role === "editor" || role === "admin" || role === "owner"
+}
+
+function relayRole(role: unknown): RelayRole | undefined {
+  return role === "viewer" || role === "editor" || role === "admin" || role === "owner" ? role : undefined
+}
+
 function service(
   auth: SignedControlPlaneAuth | undefined,
+  role: RelayRole,
+  workspaceOrgId: string | undefined,
   services: ControlPlaneServices,
   options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean },
 ) {
   const sandboxManager = services.sandbox.sandboxManager
   if (!sandboxManager) throw new Error("sandbox_manager_unavailable")
+  let principalPromise: Promise<{
+    principalKind: "user" | "service"
+    subject: string
+    actorId: string
+    actorKind: "human" | "agent"
+    orgId: string | undefined
+    role: RelayRole
+    actorPublicId?: string
+    actorName?: string
+    actorAvatarUrl?: string
+  }> | undefined
+  const principal = () => principalPromise ??= auth
+    ? resolveRuntimeActor(requireAuthority(services), auth).then((actor) => ({
+        principalKind: "user" as const,
+        subject: auth.user.subject,
+        orgId: workspaceOrgId,
+        role,
+        ...actor,
+      }))
+    : Promise.resolve({
+        principalKind: "service" as const,
+        subject: "control-plane",
+        actorId: "control-plane",
+        actorKind: "agent" as const,
+        orgId: undefined,
+        role: "owner" as const,
+      })
+  const runtimeRequest = async (workspaceId: string, path: string, init: RequestInit | undefined, resume: boolean) => {
+    const identity = await principal()
+    return await sandboxFetch({
+      id: workspaceId,
+      org_id: identity.orgId,
+      directory: "/workspace",
+      kind: "cloud",
+      created_at: 0,
+      updated_at: 0,
+    }, path, init, {
+      sandboxManager,
+      relayProvider: services.relay.provider,
+      loopbackRelayUrl: options.loopbackRelayUrl,
+      defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
+      ...identity,
+      resume,
+    })
+  }
   return createWorkspaceCheckpointService({
     sandboxManager,
-    inspectRuntimeRequest: async (workspaceId, path, init) => await sandboxFetch({
-      id: workspaceId,
-      org_id: auth?.user.orgId ?? (auth ? await services.authority!.resolveOrgId(auth) : undefined),
-      directory: "/workspace",
-      kind: "cloud",
-      created_at: 0,
-      updated_at: 0,
-    }, path, init, {
-      sandboxManager,
-      relayProvider: services.relay.provider,
-      loopbackRelayUrl: options.loopbackRelayUrl,
-      defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
-      subject: auth?.user.subject,
-      orgId: auth?.user.orgId,
-      resume: false,
-    }),
-    runtimeRequest: async (workspaceId, path, init) => await sandboxFetch({
-      id: workspaceId,
-      org_id: auth?.user.orgId ?? (auth ? await services.authority!.resolveOrgId(auth) : undefined),
-      directory: "/workspace",
-      kind: "cloud",
-      created_at: 0,
-      updated_at: 0,
-    }, path, init, {
-      sandboxManager,
-      relayProvider: services.relay.provider,
-      loopbackRelayUrl: options.loopbackRelayUrl,
-      defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
-      subject: auth?.user.subject,
-      orgId: auth?.user.orgId,
-    }),
+    inspectRuntimeRequest: async (workspaceId, path, init) => await runtimeRequest(workspaceId, path, init, false),
+    runtimeRequest: async (workspaceId, path, init) => await runtimeRequest(workspaceId, path, init, true),
   })
 }
 

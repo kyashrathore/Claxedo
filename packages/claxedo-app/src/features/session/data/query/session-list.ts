@@ -1,5 +1,6 @@
 import { queryOptions } from "@tanstack/solid-query"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import {
   sessionNavigationListUrl,
   type ControlSessionNavigationListQuery,
@@ -36,12 +37,18 @@ function sessionListBaseQuery(query: SessionListQuery): SessionListQuery {
 }
 
 function mergeSessionListItems(primary: readonly SessionNavigationRow[], tail: readonly SessionNavigationRow[]) {
-  const seen = new Set(primary.map((item) => item.sessionRef))
+  // Prefer primary's row when the same session arrives under both
+  // `local:<dir>:session:<id>` and `workspace:<uuid>:session:<id>` (local
+  // association ids stamped as workspaceID — open issue #14 / tier-real
+  // local harness strict-mode duplicates). sessionRef-only merge kept both.
+  const seenRefs = new Set(primary.map((item) => item.sessionRef))
+  const seenIds = new Set(primary.map((item) => item.sessionId))
   return [
     ...primary,
     ...tail.filter((item) => {
-      if (seen.has(item.sessionRef)) return false
-      seen.add(item.sessionRef)
+      if (seenRefs.has(item.sessionRef) || seenIds.has(item.sessionId)) return false
+      seenRefs.add(item.sessionRef)
+      seenIds.add(item.sessionId)
       return true
     }),
   ]
@@ -53,9 +60,20 @@ function mergeSessionListResponses(input: {
   append: boolean
 }) {
   if (!input.current?.items || !input.page.items) return input.page
-  const merged = input.append
-    ? mergeSessionListItems(input.current.items, input.page.items)
-    : mergeSessionListItems(input.page.items, input.current.items)
+  // A lower authoritative total means at least one cached row no longer
+  // belongs in this view (archive, deletion, or access revocation). Which tail
+  // row disappeared cannot be proven from page one, so discard the cached tail
+  // and let pagination repopulate it. Keeping it would let a revoked row survive
+  // a successful control-plane refetch after a cold cache restore.
+  const authoritativeShrink = !input.append
+    && input.page.totalKnown !== undefined
+    && input.current.totalKnown !== undefined
+    && input.page.totalKnown < input.current.totalKnown
+  const merged = authoritativeShrink
+    ? input.page.items
+    : input.append
+      ? mergeSessionListItems(input.current.items, input.page.items)
+      : mergeSessionListItems(input.page.items, input.current.items)
   const items = reorder(
     merged,
     !input.append && input.page.view.sort === "updated_desc",
@@ -72,10 +90,14 @@ function mergeSessionListResponses(input: {
     // `current` when the merge kept an already-loaded tail beyond what this
     // fresh page covers, so refetching page one doesn't collapse pagination
     // state the user already scrolled past.
-    nextCursor: input.append
+    nextCursor: authoritativeShrink
+      ? input.page.nextCursor
+      : input.append
       ? input.page.nextCursor
       : items.length > input.page.items.length ? input.current.nextCursor : input.page.nextCursor,
-    totalKnown: Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
+    totalKnown: authoritativeShrink
+      ? input.page.totalKnown
+      : Math.max(input.current.totalKnown ?? 0, input.page.totalKnown ?? 0, items.length),
   }
 }
 
@@ -106,13 +128,9 @@ export function sessionListRequest(input: {
   request?: typeof fetch
 }) {
   if (input.request) return input.request
-  // The hosted web entry can deliberately point at a loopback control-plane
-  // fixture (and desktop does the same with its owned server). URL locality
-  // therefore does not determine whether the request needs the credential
-  // installed by the composition root. authFetch is also the canonical local
-  // transport: with no bearer configured it falls through to fetch, while a
-  // configured desktop password is attached as Basic auth.
-  return authFetch
+  // Signed desktop: AccountPort via control-plane adapter. Browser / unsigned:
+  // authFetch (bearer or Basic, or plain fetch when neither is configured).
+  return createControlPlaneAccountFetch(authFetch)
 }
 
 export function sessionListQueryOptions(input: {
@@ -162,12 +180,70 @@ export function invalidateSessionListQueries(input: { baseUrl?: string } = {}) {
   })
 }
 
+/** Invalidate flat session inventory used by the rail workspace groups. */
+export function invalidateSessionInventoryQueries(input: { baseUrl?: string } = {}) {
+  const base = input.baseUrl === undefined ? undefined : normalizedBase(input.baseUrl)
+  return queryClient.invalidateQueries({
+    predicate: (query) => {
+      const key = query.queryKey
+      if (!Array.isArray(key) || key[0] !== "shell" || key[2] !== "sessionInventory") return false
+      return base === undefined || key[1] === base
+    },
+  })
+}
+
+/**
+ * Session-share doorbell: list APIs already include shares; refetch rail
+ * session-list + inventory so Bob sees grant/revoke without navigation.
+ */
+export function invalidateSessionShareQueries(input: { baseUrl?: string } = {}) {
+  return Promise.all([
+    invalidateSessionListQueries(input),
+    invalidateSessionInventoryQueries(input),
+  ])
+}
+
 // A `session.lifecycle` "created" doorbell races the server's projection write:
 // the event is published before the response-tap records the row, so the
 // invalidation refetch can return a list that still lacks the new session (the
 // row then only shows up on the NEXT invalidation). The event carries the full
 // session, so upsert the row into matching active queries directly — the
 // refetch that follows stays the source of truth and reconciles any drift.
+function bootstrapSessionListResponse(query: SessionListQuery): SessionListResponse {
+  return {
+    view: {
+      scope: query.scope,
+      groupBy: query.groupBy ?? "none",
+      sort: "updated_desc",
+      limit: query.limit ?? 0,
+    },
+    items: [],
+    totalKnown: 0,
+  }
+}
+
+function prependCreatedSessionListRow(
+  response: SessionListResponse | undefined,
+  query: SessionListQuery,
+  row: SessionNavigationRow,
+): SessionListResponse {
+  const current = response ?? bootstrapSessionListResponse(query)
+  const existing = current.items ?? []
+  // Same session can arrive once as `local:<dir>:session:<id>` and again as
+  // `workspace:<uuid>:session:<id>` when a lifecycle frame carries a local
+  // association id as workspaceID (open issue #14). Prefer one row keyed by
+  // sessionId so the rail oracle's strict sessionId locator stays unique.
+  if (existing.some((item) => item.sessionRef === row.sessionRef)) return current
+  const without = existing.filter((item) => item.sessionId !== row.sessionId)
+  return {
+    ...current,
+    items: [row, ...without],
+    totalKnown: current.totalKnown === undefined
+      ? without.length + 1
+      : current.totalKnown - (existing.length - without.length) + 1,
+  }
+}
+
 export function upsertCreatedSessionListRow(input: {
   baseUrl?: string
   row: Omit<SessionNavigationRow, "type" | "sessionRef" | "tags" | "attachments">
@@ -187,22 +263,37 @@ export function upsertCreatedSessionListRow(input: {
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
   })) {
     const listQuery = sessionListQueryFromKey(query.queryKey)
-    if (!listQuery || listQuery.cursor || !rowMatchesSessionListQuery(row, listQuery)) continue
-    setSessionListQueryData(query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>, (response) => {
-      if (!response) return response
-      if (response.items?.some((item) => item.sessionRef === row.sessionRef)) return response
-      return {
-        ...response,
-        ...(response.items ? { items: [row, ...response.items] } : {}),
-        totalKnown: response.totalKnown === undefined ? undefined : response.totalKnown + 1,
-      }
-    })
+    if (!listQuery || listQuery.cursor) continue
+    const response = query.state.data as SessionListResponse | undefined
+    const scopedRow = rowForSessionListQuery(row, listQuery, response)
+    if (!scopedRow || !rowMatchesSessionListQuery(scopedRow, listQuery)) continue
+    setSessionListQueryData(
+      query.queryKey as ReturnType<typeof queryKeys.shell.sessionList>,
+      (current) => prependCreatedSessionListRow(current, listQuery, scopedRow),
+    )
   }
 }
 
 function sessionListQueryFromKey(key: readonly unknown[]): SessionListQuery | undefined {
   const query = key[3]
   return query && typeof query === "object" ? query as SessionListQuery : undefined
+}
+
+/**
+ * Create-time optimistic rows often know `workspaceId` before `projectId`.
+ * Project-scoped rail queries require the project id; when this workspace
+ * already has a sibling in that section (the signed fixture seed session),
+ * adopt the section's project id so the live row is not dropped.
+ */
+function rowForSessionListQuery(
+  row: SessionNavigationRow,
+  query: SessionListQuery,
+  response: SessionListResponse | undefined,
+): SessionNavigationRow | undefined {
+  if (row.projectId || query.scope !== "project" || !query.projectId || !row.workspaceId) return row
+  const sibling = response?.items?.some((item) => item.workspaceId === row.workspaceId)
+  if (!sibling) return row
+  return { ...row, projectId: query.projectId }
 }
 
 // Mirrors the server's `rowInScope` for the unfiltered default views. Views
@@ -246,10 +337,10 @@ export function reconcileArchivedSessionListQueryData(input: {
 export function removeSessionListQueryData(input: {
   baseUrl?: string
   sessionId: string
-  directory: SessionNavigationRow["directory"]
+  directory?: SessionNavigationRow["directory"]
   workspaceId?: string
 }) {
-  const base = normalizedBase(input.baseUrl)
+  const base = input.baseUrl === undefined ? undefined : normalizedBase(input.baseUrl)
   for (const query of queryClient.getQueryCache().findAll({
     predicate: (query) => isSessionListQueryKey(query.queryKey, base),
   })) {
@@ -262,6 +353,7 @@ export function removeSessionListQueryData(input: {
 type SessionListUpdate = {
   sessionId: string
   directory: SessionNavigationRow["directory"]
+  workspaceId?: string
   title?: string
   updatedAt?: number
 }
@@ -333,8 +425,8 @@ function updatedAtChanged(
   after: readonly SessionNavigationRow[],
   input: SessionListUpdate,
 ) {
-  const prev = before.find((row) => row.sessionId === input.sessionId && row.directory === input.directory)
-  const next = after.find((row) => row.sessionId === input.sessionId && row.directory === input.directory)
+  const prev = before.find((row) => matchesSessionListRow(row, input))
+  const next = after.find((row) => matchesSessionListRow(row, input))
   if (!prev || !next) return false
   return (prev.updatedAt ?? 0) !== (next.updatedAt ?? 0)
 }
@@ -344,7 +436,7 @@ function reconcileUpdatedSessionListRows(
   input: SessionListUpdate,
 ) {
   return rows.map((row) => {
-    if (row.sessionId !== input.sessionId || row.directory !== input.directory) return row
+    if (!matchesSessionListRow(row, input)) return row
     return {
       ...row,
       title: input.title ?? row.title,
@@ -441,7 +533,7 @@ function removeSessionListTotal(
 type SessionListIdentity = {
   sessionRef?: string
   sessionId: string
-  directory: SessionNavigationRow["directory"]
+  directory?: SessionNavigationRow["directory"]
   workspaceId?: string
 }
 
@@ -451,8 +543,12 @@ function matchesSessionListRow(
 ) {
   if (input.sessionRef && row.sessionRef === input.sessionRef) return true
   if (row.sessionId !== input.sessionId) return false
-  if (input.workspaceId && row.workspaceId) return row.workspaceId === input.workspaceId
-  return row.directory === input.directory
+  // Session ids are unique. Do not also require directory equality — signed
+  // cloud activity frames often name a workspace alias while the cached row
+  // stores the concrete worktree, which left updatedAt bumps matching no row
+  // and the rail stuck in creation order (tier-real B5/B6).
+  if (input.workspaceId && row.workspaceId && input.workspaceId !== row.workspaceId) return false
+  return true
 }
 
 function sessionListArchiveView(key: readonly unknown[]): NonNullable<SessionListQuery["archived"]> {

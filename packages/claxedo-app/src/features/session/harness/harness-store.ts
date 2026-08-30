@@ -327,6 +327,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     draftDefaultState: (scope: string) => read(scope).draftDefaultState,
     draftDefaultLabels: (scope: string) => read(scope).draftDefault?.labels,
     draftDefaultModel: (scope: string) => read(scope).draftDefault?.model,
+    draftDefaultAuthority: (scope: string) => read(scope).draftDefaultAuthority,
   }
 }
 

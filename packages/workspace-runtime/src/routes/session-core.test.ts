@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
 import type {
+  AgentHarnessFactory,
   AgentMessageRow,
+  AgentPermissionRow,
+  AgentQuestionRow,
   AgentRuntime,
   AgentRuntimeStreamEvent,
   AgentSessionRow,
@@ -9,13 +12,16 @@ import type {
   RuntimeDirectory,
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
-import { AgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import {
   AgentMessagePageError,
   type AgentHarnessAdapter,
   type AgentMessagePage,
   type AgentMessagePageInput,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
+import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
+import { Hono } from "hono"
+import type { SessionAccessPolicy } from "../session-access-policy"
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
@@ -331,6 +337,8 @@ function routes(input: {
   getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
   getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined
   getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSessionRow | null> | AgentSessionRow | null
+  sessionAccessPolicy?: SessionAccessPolicy
+  afterCreateSession?: (directory: RuntimeDirectory, session: unknown) => Promise<void> | void
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -348,7 +356,23 @@ function routes(input: {
     getSession: input.getSession
       ? (_c, directory, sessionId) => input.getSession?.(directory, sessionId) ?? null
       : undefined,
+    sessionAccessPolicy: input.sessionAccessPolicy,
+    afterCreateSession: input.afterCreateSession
+      ? (_c, directory, session) => input.afterCreateSession?.(directory, session)
+      : undefined,
   })
+}
+
+function registrationPolicy(
+  registerSession: NonNullable<SessionAccessPolicy["registerSession"]>,
+): SessionAccessPolicy {
+  return {
+    sessionAuthority: "managed-private",
+    authorize: async () => ({ allowed: true }),
+    authorizePrefix: async () => ({ allowed: true }),
+    filterSessions: async (input) => input.sessionIds,
+    registerSession,
+  }
 }
 
 describe("createSessionRoutes directory-less sessions", () => {
@@ -421,6 +445,127 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(await res.json()).toMatchObject({ error: { message: "config unavailable" } })
   })
 
+  test("rolls back an explicit registration denial so the same requested id can retry", async () => {
+    const persisted = new Set<string>()
+    const calls: string[] = []
+    let attempts = 0
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        createSession: async (_directory, _title, id = "generated") => {
+          if (persisted.has(id)) throw new Error("session already exists")
+          persisted.add(id)
+          calls.push(`create:${id}`)
+          return { id }
+        },
+        deleteSession: async (id) => {
+          calls.push(`delete:${id}`)
+          persisted.delete(id)
+        },
+      },
+      sessionAccessPolicy: registrationPolicy(async () => {
+        attempts += 1
+        return attempts === 1
+          ? { allowed: false, status: 403, code: "session_private", message: "Registration denied" }
+          : { allowed: true }
+      }),
+    })
+
+    const request = () => app.request("http://localhost/session", {
+      method: "POST",
+      body: JSON.stringify({ id: "session_stable" }),
+    })
+    expect((await request()).status).toBe(403)
+    expect((await request()).status).toBe(201)
+    expect(calls).toEqual([
+      "create:session_stable",
+      "delete:session_stable",
+      "create:session_stable",
+    ])
+  })
+
+  test("reconciles a timeout after registration commit before compensating", async () => {
+    const calls: string[] = []
+    let registrations = 0
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        createSession: async () => ({ id: "session_committed" }),
+        deleteSession: async (id) => { calls.push(`delete:${id}`) },
+      },
+      sessionAccessPolicy: registrationPolicy(async () => {
+        registrations += 1
+        if (registrations === 1) throw new Error("authority response timed out after commit")
+        return { allowed: true }
+      }),
+    })
+
+    const response = await app.request("http://localhost/session", { method: "POST", body: "{}" })
+
+    expect(response.status).toBe(201)
+    expect(registrations).toBe(2)
+    expect(calls).toEqual([])
+  })
+
+  test("registers and projects a forked child before returning it", async () => {
+    const calls: string[] = []
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        forkSession: async () => {
+          calls.push("fork")
+          return { id: "session_child" }
+        },
+      },
+      sessionAccessPolicy: registrationPolicy(async (input) => {
+        calls.push(`register:${input.sessionId}`)
+        return { allowed: true }
+      }),
+      afterCreateSession: async (_directory, session) => {
+        calls.push(`project:${(session as { id: string }).id}`)
+      },
+    })
+
+    const response = await app.request("http://localhost/session/session_parent/fork", {
+      method: "POST",
+      body: JSON.stringify({ messageId: "message_1" }),
+    })
+
+    expect(response.status).toBe(201)
+    expect(await response.json()).toEqual({ id: "session_child" })
+    expect(calls).toEqual(["fork", "register:session_child", "project:session_child"])
+  })
+
+  test("deletes a forked child when registration is denied", async () => {
+    const calls: string[] = []
+    const item = adapter()
+    const app = routes({
+      adapter: {
+        ...item,
+        forkSession: async () => ({ id: "session_child" }),
+        deleteSession: async (id) => { calls.push(`delete:${id}`) },
+      },
+      sessionAccessPolicy: registrationPolicy(async () => ({
+        allowed: false,
+        status: 403,
+        code: "session_private",
+        message: "Registration denied",
+      })),
+      afterCreateSession: async () => { calls.push("project") },
+    })
+
+    const response = await app.request("http://localhost/session/session_parent/fork", {
+      method: "POST",
+      body: "{}",
+    })
+
+    expect(response.status).toBe(403)
+    expect(calls).toEqual(["delete:session_child"])
+  })
+
   test("keeps a missing backend title empty in the created lifecycle row", async () => {
     const lifecycle: SessionLifecycleEvent[] = []
     const res = await routes({ adapter: adapter(), lifecycle }).request("http://localhost/session", {
@@ -430,6 +575,142 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     expect(res.status).toBe(201)
     expect((lifecycle.find((event) => event.phase === "created")?.info as { title?: string } | undefined)?.title).toBe("")
+  })
+
+  test("filters transcript-bearing collections through the verified relay actor", async () => {
+    const calls: Array<{ operation: string; actorId?: string; sessionIds: string[] }> = []
+    const policy: SessionAccessPolicy = {
+      authorize: async () => ({ allowed: true }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => {
+        calls.push({
+          operation: input.operation,
+          actorId: input.actor?.actorId,
+          sessionIds: [...input.sessionIds],
+        })
+        return input.sessionIds.filter((id) => id === "session_allowed")
+      },
+    }
+    const routes = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => undefined,
+      listSessions: async () => [
+        { id: "session_allowed" },
+        { id: "session_hidden" },
+      ] as AgentSessionRow[],
+      getStatus: () => ({ session_allowed: { type: "idle" }, session_hidden: { type: "busy" } }),
+      listPermissions: async () => [
+        { id: "perm_allowed", sessionID: "session_allowed" },
+        { id: "perm_hidden", sessionID: "session_hidden" },
+      ] as AgentPermissionRow[],
+      listQuestions: async () => [
+        { id: "question_allowed", sessionID: "session_allowed", questions: [] },
+        { id: "question_hidden", sessionID: "session_hidden", questions: [] },
+      ] as AgentQuestionRow[],
+      sessionAccessPolicy: policy,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        actor_id: "actor_verified",
+        actor_kind: "human",
+        workspace_id: "ws_1",
+        org_id: "org_1",
+        role: "editor",
+      })
+      await next()
+    })
+    app.route("/", routes)
+
+    expect(await (await app.request("http://localhost/session")).json()).toHaveLength(1)
+    expect(await (await app.request("http://localhost/session/status")).json()).toEqual({ session_allowed: { type: "idle" } })
+    expect(await (await app.request("http://localhost/permission")).json()).toEqual([
+      { id: "perm_allowed", sessionID: "session_allowed" },
+    ])
+    expect(await (await app.request("http://localhost/question")).json()).toEqual([
+      { id: "question_allowed", sessionID: "session_allowed", questions: [] },
+    ])
+    expect(calls).toEqual([
+      { operation: "session_list", actorId: "actor_verified", sessionIds: ["session_allowed", "session_hidden"] },
+      { operation: "session_status", actorId: "actor_verified", sessionIds: ["session_allowed", "session_hidden"] },
+      { operation: "permission_list", actorId: "actor_verified", sessionIds: ["session_allowed", "session_hidden"] },
+      { operation: "question_list", actorId: "actor_verified", sessionIds: ["session_allowed", "session_hidden"] },
+    ])
+  })
+
+  test("threads immutable actor attribution from verified relay claims and ignores body spoofing", async () => {
+    const starts: unknown[] = []
+    const routes = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => ({
+        turns: {
+          start: async (input: unknown) => {
+            starts.push(input)
+            return {
+              sessionId: "session_1",
+              userMessageId: "user_1",
+              assistantMessageId: "assistant_1",
+              directory: undefined,
+              prompt: {
+                parts: [],
+                userMessageId: "user_1",
+                assistantMessageId: "assistant_1",
+                agent: "build",
+                model: { providerID: "test", modelID: "fixture" },
+              },
+            }
+          },
+        },
+        events: {
+          subscribe: () => (async function* () {
+            yield { sessionId: "session_1", directory: undefined, payload: sessionIdle("session_1") }
+          })(),
+          list: async () => [],
+        },
+      } as unknown as AgentRuntime),
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
+        actor_id: "actor_verified",
+        actor_kind: "human",
+        actor_public_id: "user_public_verified",
+        actor_name: "Verified User",
+        actor_avatar_url: "https://example.invalid/avatar",
+        workspace_id: "ws_1",
+        org_id: "org_1",
+        role: "editor",
+      })
+      await next()
+    })
+    app.route("/", routes)
+
+    const response = await app.request("http://localhost/session/session_1/message", {
+      method: "POST",
+      body: JSON.stringify({
+        actorId: "actor_attacker",
+        actorKind: "agent",
+        author: { id: "attacker", name: "Attacker", kind: "agent" },
+        parts: [],
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(starts).toEqual([expect.objectContaining({
+      actorId: "actor_verified",
+      actorKind: "human",
+      author: {
+        id: "user_public_verified",
+        name: "Verified User",
+        avatarUrl: "https://example.invalid/avatar",
+        kind: "human",
+      },
+    })])
   })
 
   test("returns an empty agent list when harness cannot expose live agent options", async () => {
@@ -645,7 +926,12 @@ describe("createSessionRoutes directory-less sessions", () => {
       },
     } as unknown as AgentRuntime
     const app = createSessionRoutes({
-      resolveAdapter: () => adapter(),
+      resolveAdapter: () => ({
+        ...adapter(),
+        setPermissionMode: async () => {
+          throw new Error("permission mode must be applied by AgentRuntime")
+        },
+      }),
       resolveRuntime: () => runtime,
       resolveDirectory: () => undefined,
       sessionBus: {
@@ -660,6 +946,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       body: JSON.stringify({
         agent: "build",
         model: { providerID: "test", modelID: "fixture" },
+        permissionMode: "winner-mode",
         parts: [{ type: "text", text: "hello" }],
       }),
     })
@@ -668,9 +955,11 @@ describe("createSessionRoutes directory-less sessions", () => {
     await expect(res.json()).resolves.toEqual(messages[0])
     expect(turnStarts).toEqual([{
       sessionId: "session_1",
+      onAdmitted: expect.any(Function),
       parts: [{ type: "text", text: "hello" }],
       agent: "build",
       model: { providerID: "test", modelID: "fixture" },
+      permissionMode: "winner-mode",
     }])
     expect(events.map((event) => event.payload.type)).toEqual(["message.updated", "session.idle"])
     expect(busEvents).toEqual([
@@ -727,12 +1016,12 @@ describe("createSessionRoutes directory-less sessions", () => {
     }
   })
 
-  test("does not publish a turn error when prompt admission rejects a concurrent send", async () => {
+  test("returns sender-only structured conflicts for message and prompt_async", async () => {
     const events: CompatEnvelope[] = []
     const runtime = {
       turns: {
         start: async () => {
-          throw new AgentRuntimeTurnAdmissionError("session_1")
+          throw new AgentRuntimeTurnConflictError("session_1")
         },
       },
       events: {
@@ -746,60 +1035,199 @@ describe("createSessionRoutes directory-less sessions", () => {
       resolveDirectory: () => undefined,
       sessionBus: { publish: () => {}, subscribe: () => () => {} },
       publishGlobal: (event) => events.push(event),
+    })
+    const request = () => ({
+      method: "POST",
+      body: JSON.stringify({
+        messageID: "loser",
+        permissionMode: "loser-mode",
+        parts: [{ type: "text", text: "hello" }],
+      }),
+    })
+
+    const message = await app.request("http://localhost/session/session_1/message", request())
+    const promptAsync = await app.request("http://localhost/session/session_1/prompt_async", request())
+
+    expect(message.status).toBe(409)
+    expect(await message.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+    expect(promptAsync.status).toBe(409)
+    expect(await promptAsync.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+    expect(events.some((event) => event.payload.type === "session.error")).toBe(false)
+
+    const unsupported = await createSessionRoutes({
+      resolveAdapter: () => ({ ...adapter(), executeCommand: undefined }) as unknown as AgentHarnessAdapter,
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    }).request("http://localhost/session/session_1/command", {
+      method: "POST",
+      body: JSON.stringify({ command: "test" }),
+    })
+    expect(unsupported.status).toBe(409)
+    expect(await unsupported.json()).toMatchObject({ error: { code: "unsupported_operation" } })
+  })
+
+  test("prompt_async falls back to 204 when admission does not settle within the bound", async () => {
+    // turns.start hangs before ever settling admission (a wedged adapter spawn).
+    // Without the timeout the request would hang forever; with it the route
+    // honors prompt_async's fire-and-forget contract.
+    const runtime = {
+      turns: {
+        start: () => new Promise(() => {}),
+      },
+      events: {
+        subscribe: () => (async function* () {})(),
+        list: async () => [],
+      },
+    } as unknown as AgentRuntime
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+      promptAsyncAdmissionAckTimeoutMs: 30,
     })
 
     const res = await app.request("http://localhost/session/session_1/prompt_async", {
       method: "POST",
-      body: JSON.stringify({
-        messageID: "msg_duplicate",
-        parts: [{ type: "text", text: "second" }],
-      }),
+      body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
     })
 
-    expect(res.status).toBe(409)
-    await expect(res.json()).resolves.toEqual({
-      error: {
-        code: "turn_already_active",
-        message: "Session session_1 is already processing a message",
-      },
-    })
-    expect(events).toEqual([])
+    expect(res.status).toBe(204)
   })
 
-  test("message returns the same structured admission conflict without a session error", async () => {
-    const events: CompatEnvelope[] = []
+  test("keeps prompt_async success empty and 204", async () => {
     const runtime = {
       turns: {
-        start: async () => {
-          throw new AgentRuntimeTurnAdmissionError("session_1")
-        },
+        start: async () => ({
+          sessionId: "session_1",
+          userMessageId: "user_1",
+          assistantMessageId: "assistant_1",
+          directory: undefined,
+          prompt: {
+            parts: [],
+            userMessageId: "user_1",
+            assistantMessageId: "assistant_1",
+            agent: "build",
+            model: { providerID: "test", modelID: "fixture" },
+          },
+        }),
       },
       events: {
-        subscribe: () => (async function* () {})(),
+        subscribe: () => (async function* () {
+          yield { sessionId: "session_1", directory: undefined, payload: sessionIdle("session_1") }
+        })(),
         list: async () => [],
       },
     } as unknown as AgentRuntime
-    const app = createSessionRoutes({
+    const response = await createSessionRoutes({
       resolveAdapter: () => adapter(),
       resolveRuntime: () => runtime,
       resolveDirectory: () => undefined,
       sessionBus: { publish: () => {}, subscribe: () => () => {} },
-      publishGlobal: (event) => events.push(event),
-    })
-
-    const res = await app.request("http://localhost/session/session_1/message", {
+      publishGlobal: () => {},
+    }).request("http://localhost/session/session_1/prompt_async", {
       method: "POST",
-      body: JSON.stringify({ parts: [{ type: "text", text: "second" }] }),
+      body: JSON.stringify({ messageID: "winner", parts: [] }),
     })
 
-    expect(res.status).toBe(409)
-    await expect(res.json()).resolves.toEqual({
-      error: {
-        code: "turn_already_active",
-        message: "Session session_1 is already processing a message",
+    expect(response.status).toBe(204)
+    expect(await response.text()).toBe("")
+  })
+
+  test("admits exactly one real runtime turn across two route clients", async () => {
+    let markStarted: (() => void) | undefined
+    let finish: (() => void) | undefined
+    const started = new Promise<void>((resolve) => {
+      markStarted = resolve
+    })
+    const blocked = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    const modes: string[] = []
+    let activeScopes = 0
+    const messages: AgentMessageRow[] = [{
+      info: { id: "winner_r", sessionID: "session_1", role: "assistant" },
+      parts: [],
+    }]
+    const integrationAdapter: AgentHarnessAdapter = {
+      ...adapter({ messages }),
+      async *sendMessage(id, prompt) {
+        if (prompt.permissionMode) modes.push(prompt.permissionMode)
+        markStarted?.()
+        yield messageUpdated({
+          id: prompt.userMessageId,
+          sessionID: id,
+          role: "user",
+          time: { created: 1 },
+        } as Message)
+        yield messageUpdated({
+          id: prompt.assistantMessageId,
+          sessionID: id,
+          parentID: prompt.userMessageId,
+          role: "assistant",
+          time: { created: 2 },
+        } as Message)
+        await blocked
+        yield sessionIdle(id)
+      },
+    }
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [{
+        id: "pi",
+        access: "native",
+        create: () => integrationAdapter,
+      } as unknown as AgentHarnessFactory],
+    })
+    await runtime.sessions.create({
+      id: "session_1",
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+    })
+    const events: CompatEnvelope[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => integrationAdapter,
+      resolveRuntime: () => runtime,
+      resolveDirectory: () => undefined,
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: (event) => events.push(event),
+      createActiveTurnScope: () => {
+        activeScopes++
+        return { dispose: () => {} }
       },
     })
-    expect(events).toEqual([])
+    const first = app.request("http://localhost/session/session_1/message", {
+      method: "POST",
+      body: JSON.stringify({
+        messageID: "winner",
+        permissionMode: "winner-mode",
+        parts: [{ type: "text", text: "first" }],
+      }),
+    })
+    await started
+
+    const second = await app.request("http://localhost/session/session_1/prompt_async", {
+      method: "POST",
+      body: JSON.stringify({
+        messageID: "loser",
+        permissionMode: "loser-mode",
+        parts: [{ type: "text", text: "second" }],
+      }),
+    })
+
+    expect(second.status).toBe(409)
+    expect(modes).toEqual(["winner-mode"])
+    expect(activeScopes).toBe(1)
+    expect(events.filter((event) =>
+      event.payload.type === "message.updated" && event.payload.properties.info.role === "user"
+    )).toHaveLength(1)
+    expect(events.some((event) => event.payload.type === "session.error")).toBe(false)
+
+    finish?.()
+    expect((await first).status).toBe(200)
+    runtime.dispose()
   })
 
   test("prompt_async continues after its accepted client request disconnects", async () => {
@@ -811,19 +1239,22 @@ describe("createSessionRoutes directory-less sessions", () => {
     const events: CompatEnvelope[] = []
     const runtime = {
       turns: {
-        start: async () => ({
-          sessionId: "session_1",
-          userMessageId: "user_1",
-          assistantMessageId: "assistant_1",
-          directory: undefined,
-          prompt: {
-            parts: [{ type: "text", text: "continue" }],
+        start: async (input: { onAdmitted?: () => void }) => {
+          input.onAdmitted?.()
+          return {
+            sessionId: "session_1",
             userMessageId: "user_1",
             assistantMessageId: "assistant_1",
-            agent: "build",
-            model: { providerID: "test", modelID: "fixture" },
-          },
-        }),
+            directory: undefined,
+            prompt: {
+              parts: [{ type: "text", text: "continue" }],
+              userMessageId: "user_1",
+              assistantMessageId: "assistant_1",
+              agent: "build",
+              model: { providerID: "test", modelID: "fixture" },
+            },
+          }
+        },
       },
       events: {
         subscribe: () => (async function* () {

@@ -47,6 +47,8 @@ export {
   from "./exposure"
 export type { WorkspaceRuntimeExposure, WorkspaceRuntimeRequestGuard }
   from "./exposure"
+export type { EventDeliveryDecision, EventDeliveryPolicy, EventDeliveryPrincipal }
+  from "./event-delivery"
 /**
  * The canonical env-trim helper: reads `env[key]` (falling back to an optional
  * legacy key), trims it, and returns `undefined` for blank values. Exported so
@@ -56,6 +58,30 @@ export type { WorkspaceRuntimeExposure, WorkspaceRuntimeRequestGuard }
 export { runtimeEnvText } from "./env"
 export { createWorkspaceHost } from "./workspace"
 export type { WorkspaceHost, WorkspaceHostOptions } from "./workspace"
+export {
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessRequiresWrite,
+  SESSION_CORE_ROUTE_ACCESS,
+  SESSION_V2_PROXY_ROUTE_ACCESS,
+} from "./session-access-policy"
+export {
+  WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL,
+  remoteWorkspaceSessionAccessPolicy,
+  remoteWorkspaceSessionAccessPolicyFromEnv,
+} from "./remote-session-authority"
+export type {
+  SessionAccessActor,
+  SessionAccessAuthor,
+  SessionAccessDecision,
+  SessionAccessStreamDecision,
+  SessionAccessOperation,
+  SessionAccessPolicy,
+  SessionAccessPolicyInput,
+  SessionAuthorityInput,
+  SessionAuthorityPredicate,
+  ManagedWorkspaceSessionAccessPolicyOptions,
+  SessionWorkspaceAuthority,
+} from "./session-access-policy"
 export { Pty } from "./pty/index"
 export { defaultWorkspaceHarnessRegistry } from "./workspace/runtime"
 export type {

@@ -1,5 +1,12 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
-import { invalidateSessionListQueries, upsertCreatedSessionListRow } from "@/features/session/data/query/session-list"
+import {
+  invalidateSessionListQueries,
+  invalidateSessionShareQueries,
+  removeSessionListQueryData,
+  upsertCreatedSessionListRow,
+} from "@/features/session/data/query/session-list"
+import { removeSessionInventoryQueryData } from "@/features/session/data/sync/session-inventory"
+import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
 import { routeDirectoryEvent, type RoutableEvent } from "./event-router"
@@ -18,6 +25,48 @@ import type {
   SessionTitleProjectionApi,
   SessionTitleTarget,
 } from "@/features/session/store/session-title-projection"
+import { prepareRegisteredSessionRevocation } from "@/features/session/conversation/conversation-registry"
+import { allowPersistedSessionConversations } from "@/features/session/conversation/conversation-persistence"
+
+export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
+
+export type SessionAccessRevocationSource = {
+  onSessionAccessRevoked: (listener: (event: SessionAccessRevokedEvent) => void) => () => void
+}
+
+export function createSessionAccessRevocationChannel() {
+  const listeners = new Set<(event: SessionAccessRevokedEvent) => void>()
+  return {
+    publish(event: SessionAccessRevokedEvent) {
+      for (const listener of listeners) listener(event)
+    },
+    subscribe(listener: (event: SessionAccessRevokedEvent) => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
+}
+
+export function createSessionAuthorityRevision() {
+  let revision = 0
+  return {
+    capture(scopeIsCurrent: () => boolean) {
+      const captured = revision
+      return () => scopeIsCurrent() && captured === revision
+    },
+    invalidate() {
+      revision++
+    },
+  }
+}
+
+/** Canonical successful inventory is also grant authority when doorbells miss. */
+export function reconcileAuthorizedSessionPersistence(
+  sessions: Iterable<{ id: string }>,
+  scope: string,
+) {
+  for (const session of sessions) allowPersistedSessionConversations(session.id, scope)
+}
 
 type GlobalEventSource = {
   listen: (handler: (event: { name: string; details: RoutableEvent }) => void) => () => void
@@ -66,6 +115,35 @@ type EventIngressInput = {
   draftWasRolledBack: (draftId: string) => boolean
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
+  sessionAccessRetained: (event: SessionAccessRevokedEvent) => Promise<boolean>
+  revocationScope: () => string
+  onSessionAuthorityChanged?: () => void
+  onSessionAccessRevoked?: (event: SessionAccessRevokedEvent) => void
+  flushNavigationPersistence: () => Promise<void>
+  revocationRetryDelays?: readonly number[]
+}
+
+const DEFAULT_REVOCATION_RETRY_DELAYS = [50, 250, 1_000, 5_000] as const
+
+async function retrySessionRevocationOperation<T>(
+  operation: () => Promise<T>,
+  shouldContinue: () => boolean,
+  retryDelays: readonly number[] = DEFAULT_REVOCATION_RETRY_DELAYS,
+): Promise<{ completed: true; value: T } | { completed: false }> {
+  const delays = retryDelays.length > 0 ? retryDelays : DEFAULT_REVOCATION_RETRY_DELAYS
+  for (let attempt = 0; shouldContinue(); attempt++) {
+    try {
+      return { completed: true, value: await operation() }
+    } catch (error) {
+      if (!shouldContinue()) return { completed: false }
+      const delay = delays[Math.min(attempt, delays.length - 1)]!
+      if (attempt === 0 || (attempt + 1) % 12 === 0) {
+        console.error("Retrying revoked session reconciliation", error)
+      }
+      await new Promise((resolve) => setTimeout(resolve, delay))
+    }
+  }
+  return { completed: false }
 }
 
 const claxedoDirectoryEventTypes = [
@@ -100,6 +178,8 @@ export function normalizeClaxedoSessionLifecycleEvent(
 }
 
 export function createGlobalSyncEventIngress(input: EventIngressInput) {
+  let disposed = false
+  const revocationTokens = new Map<string, object>()
   const unsubscribeGlobal = input.globalEvents.listen((entry) => {
     const directory = entry.name
     const event = entry.details
@@ -188,6 +268,36 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     void retryUnsettledSessionProjectionPulls()
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })
+  const unsubscribeClaxedoShareChanged = input.claxedoEvents?.on("session.share.changed", (event) => {
+    // Doorbell only — control-plane list/inventory already include shares.
+    // A base-page list refetch deliberately preserves cached pagination tails,
+    // so revocation must first evict the now-forbidden row. The subsequent
+    // authoritative refetch reconciles every remaining field and can restore
+    // the row if another independent grant still permits access.
+    input.onSessionAuthorityChanged?.()
+    const scope = input.revocationScope()
+    const key = `${scope}\0${event.workspaceId}\0${event.sessionId}`
+    if (event.phase === "revoked") {
+      const revoked = { sessionId: event.sessionId, workspaceId: event.workspaceId }
+      const token = {}
+      revocationTokens.set(key, token)
+      void handleSessionShareRevoked(
+        input,
+        revoked,
+        scope,
+        () => !disposed && input.revocationScope() === scope && revocationTokens.get(key) === token,
+      ).finally(() => {
+        if (revocationTokens.get(key) === token) revocationTokens.delete(key)
+      })
+      return
+    }
+    // A newer grant supersedes any in-flight revoke, including one waiting for
+    // durable storage recovery. Its token can no longer publish a stale access
+    // loss or redirect the now-authorized principal.
+    revocationTokens.delete(key)
+    reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+    void invalidateSessionShareQueries().catch(() => undefined)
+  })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
     .map((type) => input.claxedoEvents?.on(type, (event) => {
       applyClaxedoDirectoryEventToSync(input, event)
@@ -196,10 +306,115 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
   const detachProjectionSelfHeal = installSessionProjectionSelfHeal()
 
   return () => {
+    disposed = true
     unsubscribeGlobal()
     unsubscribeClaxedoLifecycle?.()
+    unsubscribeClaxedoShareChanged?.()
     unsubscribeClaxedoDirectoryEvents.forEach((cleanup) => cleanup())
     detachProjectionSelfHeal()
+  }
+}
+
+async function handleSessionShareRevoked(
+  input: EventIngressInput,
+  event: SessionAccessRevokedEvent,
+  scope: string,
+  isActive: () => boolean,
+) {
+  try {
+    // A share doorbell names one changed grant. Effective access is the union
+    // of owner/participant/direct/org/team grants, so only a fresh authority
+    // read can prove that the user lost the session.
+    const access = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!access.completed) return
+    if (access.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+
+    // The authority read is asynchronous. If identity changed while it was in
+    // flight, this event belongs to the old principal and must not touch the
+    // new principal's memory, navigation, or durable transcript.
+    if (!isActive()) return
+
+    removeSessionListQueryData(event)
+    removeSessionInventoryQueryData<SessionInventoryRow>({
+      session: { id: event.sessionId, workspaceId: event.workspaceId },
+    })
+    // First prove the shared query persister is writable. A storage outage can
+    // last long enough for access to be regranted; do not destroy conversation
+    // state while waiting for that outage to recover.
+    const persistenceReady = await retrySessionRevocationOperation(
+      input.flushNavigationPersistence,
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!persistenceReady.completed) return
+
+    const accessBeforePurge = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!accessBeforePurge.completed) return
+    if (accessBeforePurge.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+
+    const purgeConversation = prepareRegisteredSessionRevocation(event.sessionId, scope)
+    const durablePurge = await retrySessionRevocationOperation(
+      purgeConversation.purgePersisted,
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!durablePurge.completed) return
+
+    // Recipient fanout is fail-soft, so a regrant doorbell may be missed. The
+    // canonical authority read closes that gap before any in-memory state is
+    // destroyed, while the token closes the normal delivered-doorbell race.
+    const accessAfterDurablePurge = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!accessAfterDurablePurge.completed) return
+    if (accessAfterDurablePurge.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+
+    purgeConversation.purgeMemory()
+    const persisted = await retrySessionRevocationOperation(
+      input.flushNavigationPersistence,
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!persisted.completed) return
+
+    const finalAccess = await retrySessionRevocationOperation(
+      () => input.sessionAccessRetained(event),
+      isActive,
+      input.revocationRetryDelays,
+    )
+    if (!finalAccess.completed) return
+    if (finalAccess.value) {
+      reconcileAuthorizedSessionPersistence([{ id: event.sessionId }], scope)
+      return
+    }
+    if (isActive()) input.onSessionAccessRevoked?.(event)
+  } catch (error) {
+    // Defensive guard for programmer errors outside the retryable authority and
+    // persistence operations. Never redirect after incomplete durable cleanup.
+    console.error("Failed to reconcile revoked session access", error)
+  } finally {
+    await invalidateSessionShareQueries().catch((error) => {
+      console.error("Failed to refresh session shares after access change", error)
+    })
   }
 }
 
@@ -292,13 +507,22 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   // created session row appears without a reload (matches the flat-inventory
   // refresh `applySessionEvent` performs below).
   void invalidateSessionListQueries()
+  const eventWorkspaceId = typeof info.workspaceID === "string"
+    ? info.workspaceID
+    : event.workspaceId
+  // Local association UUIDs are not signed workspace ids. Stamping them here
+  // mints a `workspace:<uuid>:session:<id>` row beside the `local:<dir>` row
+  // (open issue #14 / tier-real local harness strict-mode duplicates).
+  const signedWorkspaceId = typeof eventWorkspaceId === "string" && /^ws_/.test(eventWorkspaceId)
+    ? eventWorkspaceId
+    : undefined
   upsertCreatedSessionListRow({
     row: {
       sessionId: info.id,
       title: info.title,
       directory: info.directory,
       projectId: info.projectID,
-      ...(typeof info.workspaceID === "string" ? { workspaceId: info.workspaceID } : event.workspaceId ? { workspaceId: event.workspaceId } : {}),
+      ...(signedWorkspaceId ? { workspaceId: signedWorkspaceId } : {}),
       createdAt: info.time.created,
       updatedAt: info.time.updated,
     },

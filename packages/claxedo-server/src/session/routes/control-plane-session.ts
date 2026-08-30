@@ -12,6 +12,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
+  type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -23,12 +24,15 @@ import {
   sessionInventoryResponse,
 } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
+import type { SessionShareChangedSink } from "../session-people-contract"
+import { SessionPeopleControlRoutes } from "./session-people-routes"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   beforeLocalList?: () => Promise<void>
   createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
+  sessionShareChangedSink?: SessionShareChangedSink
 }
 
 async function signedAuth(req: Request, options: Options) {
@@ -98,6 +102,15 @@ function authorityMessages(body: unknown) {
       : []
 }
 
+function authorityReadAllowed(body: unknown) {
+  return !(
+    body &&
+    typeof body === "object" &&
+    !Array.isArray(body) &&
+    (body as { allowed?: boolean }).allowed === false
+  )
+}
+
 function messagePageJson(
   c: Context,
   body: unknown,
@@ -124,12 +137,6 @@ function projectedMessagePage(
   const read = services.projectionStore.read_session_message_page
   if (!read) throw new AgentMessagePageError(501, "message paging is unavailable for the session projection")
   return read(sessionId, page)
-}
-
-function isSignedHostedBrowserRequest(req: Request) {
-  return hasBearerToken(req) &&
-    !!req.headers.get("origin") &&
-    !!req.headers.get("x-opencode-directory")
 }
 
 async function authorizeCentralSessionRead(
@@ -271,11 +278,19 @@ function hybridHarness(input: unknown): string {
 }
 
 export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
-  return new Hono()
+  const app = new Hono()
+  // The People routes are also mounted by hosted workerd. Keep the central
+  // surface on that worker-safe owner rather than maintaining two copies.
+  app.route("/", SessionPeopleControlRoutes(services, {
+    authConfig: options.authConfig,
+    verifier: options.verifier,
+    ...(options.sessionShareChangedSink ? { sessionShareChangedSink: options.sessionShareChangedSink } : {}),
+  }))
+  return app
     .get("/session-list", async (c) => {
       try {
         const query = parseSessionListQuery(new URL(c.req.url))
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           await options.beforeLocalList?.()
           const canUseBoundedProjection = query.groupBy === "none" &&
             query.environment.length === 0 &&
@@ -348,9 +363,9 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     })
     .post("/sessions", async (c) => {
       try {
+        let signedHostedAuth: SignedControlPlaneAuth | undefined
         if (!isLoopbackLocalRequest(c.req.raw)) {
-          await signedAuth(c.req.raw, options)
-          throw new ControlPlaneAuthError(400, "hybrid_loopback_only", "Hybrid session creation is only available on loopback")
+          signedHostedAuth = await signedAuth(c.req.raw, options)
         }
         const body = await sessionCreateBody(c.req.raw)
         if (body.mode !== "hybrid") {
@@ -362,6 +377,16 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const harness = hybridHarness(body.harness)
         const model = promptModel(body.model)
         const sessionId = optionalText(body.sessionId) ?? optionalText(body.session_id)
+        if (signedHostedAuth) {
+          if (!workspaceId) {
+            throw new ControlPlaneAuthError(
+              400,
+              "workspace_id_required",
+              "Signed hosted session creation requires workspaceId",
+            )
+          }
+          await requireAuthority(services).authorizeWorkspaceOpen(signedHostedAuth, { workspaceId })
+        }
         const session = options.createHybridSession
           ? await options.createHybridSession({
               ...(sessionId ? { sessionId } : {}),
@@ -411,7 +436,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         // or the full local inventory when neither is given — with no remote
         // authority, no signed bearer token, and no dependence on the opencode
         // server being queried.
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           const directory = c.req.query("directory")
           const workspaceId = c.req.query("workspaceId")
           return c.json(sessionInventoryResponse(
@@ -433,7 +458,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     })
     .get("/sessions/:sessionId/gateway", async (c) => {
       try {
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           const meta = await services.projectionStore.session_meta(c.req.param("sessionId"))
           return c.json({
             gatewayUrl: null,
@@ -454,34 +479,12 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const sessionId = c.req.param("sessionId")
         const page = parseMessagePageInput(c.req.query("limit"), c.req.query("before"), c.req.query("view"))
         const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(sessionId)
-        if (isLoopbackLocalRequest(c.req.raw) && !isSignedHostedBrowserRequest(c.req.raw)) {
-          const workspaceId = c.req.query("workspaceId")
-          // A bearer-scoped workspace read belongs to the workspace authority
-          // for the entire cursor chain. An unsigned local read belongs to the
-          // local projection. Never switch producers after the first page.
-          if (page && workspaceId && hasBearerToken(c.req.raw)) {
-            const auth = await signedAuth(c.req.raw, options)
-            const body = await requireAuthority(services).readSessionMessages(auth, {
-              sessionId,
-              workspaceId,
-              ...page,
-            })
-            return messagePageJson(c, body, authorityMessages(body), maxEventOrdinal)
-          }
+        if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           if (page) {
             const projected = projectedMessagePage(services, sessionId, page)
             return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
           }
           const replayMessages = services.projectionStore.read_session_messages(sessionId)
-          if (replayMessages.length === 0 && workspaceId && hasBearerToken(c.req.raw)) {
-            const auth = await signedAuth(c.req.raw, options)
-            const body = await requireAuthority(services).readSessionMessages(auth, { sessionId, workspaceId })
-            return c.json({
-              ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-              messages: authorityMessages(body),
-              maxEventOrdinal,
-            })
-          }
           return c.json({
             messages: replayMessages,
             maxEventOrdinal,
@@ -495,6 +498,22 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
             const projected = projectedMessagePage(services, sessionId, page)
             return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
           }
+          const workspaceId = c.req.query("workspaceId")
+          if (workspaceId) {
+            const body = await requireAuthority(services).readSessionMessages(auth, {
+              sessionId,
+              workspaceId,
+            })
+            const replayMessages = services.projectionStore.read_session_messages(sessionId)
+            const visibleMessages = authorityReadAllowed(body)
+              ? (replayMessages.length > 0 ? replayMessages : authorityMessages(body))
+              : []
+            return c.json({
+              ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
+              messages: visibleMessages,
+              maxEventOrdinal,
+            })
+          }
           return c.json({ messages: services.projectionStore.read_session_messages(sessionId), maxEventOrdinal })
         }
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
@@ -506,9 +525,12 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const messages = authorityMessages(body)
         if (page) return messagePageJson(c, body, messages, maxEventOrdinal)
         const replayMessages = services.projectionStore.read_session_messages(sessionId)
+        const visibleMessages = authorityReadAllowed(body)
+          ? (replayMessages.length > 0 ? replayMessages : messages)
+          : []
         return c.json({
           ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-          messages: replayMessages.length > 0 ? replayMessages : messages,
+          messages: visibleMessages,
           maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
         })
       } catch (err) {

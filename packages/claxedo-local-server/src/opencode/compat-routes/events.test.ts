@@ -1,7 +1,13 @@
 import { Hono } from "hono"
 import { describe, expect, test } from "vitest"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import { createGlobalEventsHandler, streamGlobalEvents } from "./events"
+import {
+  createGlobalEventsHandler,
+  globalEventSessionId,
+  signedGlobalEventVisibleTo,
+  streamGlobalEvents,
+} from "./events"
+import { eventScopePrincipal } from "@claxedo/server-core/platform/http/event-visibility"
 
 // Regression coverage for the BUG A root cause: `claxedoBus` (aka
 // `workspaceRuntimeBus`) carries `session.lifecycle`, the only notification a
@@ -85,6 +91,64 @@ describe("streamGlobalEvents", () => {
   })
 })
 
+describe("signed global event visibility", () => {
+  const principal = eventScopePrincipal({
+    mode: "signed",
+    token: "token",
+    user: {
+      subject: "user_1",
+      tokenIdentifier: "issuer|user_1",
+      issuer: "issuer",
+    },
+  }, "org_1")
+
+  test("uses canonical subject and organization scoping for sessionless events", async () => {
+    await expect(signedGlobalEventVisibleTo({
+      type: "workgraph.changed",
+      ownerUserId: "user_1",
+      ts: 1,
+    }, principal)).resolves.toBe(true)
+    await expect(signedGlobalEventVisibleTo({
+      type: "workgraph.changed",
+      ownerUserId: "user_2",
+      ts: 1,
+    }, principal)).resolves.toBe(false)
+    await expect(signedGlobalEventVisibleTo({
+      type: "document.changed",
+      orgId: "org_1",
+      projectId: "project_1",
+      documentId: "doc_1",
+      ts: 1,
+    }, principal)).resolves.toBe(true)
+    await expect(signedGlobalEventVisibleTo({
+      type: "document.changed",
+      orgId: "org_2",
+      projectId: "project_2",
+      documentId: "doc_2",
+      ts: 1,
+    }, principal)).resolves.toBe(false)
+  })
+
+  test("fails closed for unclassified envelopes and delegates session frames", async () => {
+    await expect(signedGlobalEventVisibleTo({
+      directory: "/tmp/other",
+      payload: { id: "evt_1", type: "provider.updated", properties: {} },
+    }, principal)).resolves.toBe(false)
+
+    const authorized: string[] = []
+    await expect(signedGlobalEventVisibleTo({
+      type: "session.lifecycle",
+      phase: "created",
+      sessionID: "ses_1",
+      ts: 1,
+    }, principal, async (sessionId) => {
+      authorized.push(sessionId)
+      return true
+    })).resolves.toBe(true)
+    expect(authorized).toEqual(["ses_1"])
+  })
+})
+
 // ─── SSE replay ────────────────────────────────────────────────────────────
 //
 // Mirrors `packages/workspace-runtime/src/routes/runtime-events.test.ts`. This
@@ -100,6 +164,7 @@ describe("streamGlobalEvents", () => {
 
 type ReplayConnection = {
   until: (match: (text: string) => boolean, label: string) => Promise<string>
+  ended: () => Promise<boolean>
   close: () => void
 }
 
@@ -107,9 +172,12 @@ function mount(handler: ReturnType<typeof createGlobalEventsHandler>) {
   return new Hono().get("/api/wr/events", handler)
 }
 
-async function connect(app: Hono, lastEventId?: string): Promise<ReplayConnection> {
+async function connect(app: Hono, lastEventId?: string, actor?: string, credential?: string): Promise<ReplayConnection> {
   const ac = new AbortController()
-  const res = await app.request("http://127.0.0.1/api/wr/events", {
+  const query = new URLSearchParams()
+  if (actor) query.set("actor", actor)
+  if (credential) query.set("credential", credential)
+  const res = await app.request(`http://127.0.0.1/api/wr/events${query.size > 0 ? `?${query}` : ""}`, {
     ...(lastEventId === undefined ? {} : { headers: { "Last-Event-ID": lastEventId } }),
     signal: ac.signal,
   })
@@ -127,6 +195,17 @@ async function connect(app: Hono, lastEventId?: string): Promise<ReplayConnectio
       }
       if (match(text)) return text
       throw new Error(`${label}\n--- stream so far ---\n${text}`)
+    },
+    async ended() {
+      return await Promise.race([
+        (async () => {
+          for (let reads = 0; reads < 10; reads += 1) {
+            if ((await reader.read()).done) return true
+          }
+          return false
+        })(),
+        new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+      ])
     },
     close: () => ac.abort(),
   }
@@ -218,6 +297,144 @@ describe("createGlobalEventsHandler — central /api/wr/events replay", () => {
 
     expect(frames(text).find((frame) => frame.data?.includes("prt_live"))?.id).toBe("1")
     expect(frames(text).find((frame) => frame.data?.includes("ses_live"))?.id).toBe("2")
+  })
+
+  test("the compat stream applies one content-aware visibility decision to live and replay", async () => {
+    const global = createBus<GlobalEvent>()
+    const claxedo = createBus<ClaxedoEvent>()
+    const handler = createGlobalEventsHandler({ globalBus: global, claxedoBus: claxedo }, {
+      resolveSubscription: (c) => {
+        const actorId = c.req.query("actor")!
+        return {
+          identity: {
+            mode: "verified",
+            connectionId: `connection_${actorId}`,
+            actorId,
+            actorKind: "human",
+            orgId: "org_1",
+            workspaceId: "ws_1",
+            role: "editor",
+          },
+          visible: (frame) => !globalEventSessionId(frame) || actorId === "actor_participant",
+        }
+      },
+    })
+    const app = mount(handler)
+    claxedo.publish({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/tmp/central",
+      sessionID: "ses_private",
+      ts: 1,
+    })
+    claxedo.publish({ type: "process.status", directory: "/tmp/central", configId: "proc_public", status: "running" })
+
+    const participant = await connect(app, "0", "actor_participant")
+    const workspaceOnly = await connect(app, "0", "actor_workspace_only")
+    const participantText = await participant.until((seen) => seen.includes("proc_public"), "participant replay incomplete")
+    const workspaceOnlyText = await workspaceOnly.until((seen) => seen.includes("proc_public"), "workspace replay incomplete")
+    participant.close()
+    workspaceOnly.close()
+
+    expect(participantText).toContain("ses_private")
+    expect(workspaceOnlyText).not.toContain("ses_private")
+  })
+
+  test("keeps live authorization connection-scoped when one actor renews credentials", async () => {
+    const global = createBus<GlobalEvent>()
+    const claxedo = createBus<ClaxedoEvent>()
+    const revoked = new Set<string>()
+    const handler = createGlobalEventsHandler({ globalBus: global, claxedoBus: claxedo }, {
+      resolveSubscription: (c) => {
+        const credential = c.req.query("credential")!
+        return {
+          identity: {
+            mode: "verified",
+            connectionId: `connection_${credential}`,
+            actorId: "actor_participant",
+            actorKind: "human",
+            orgId: "org_1",
+            workspaceId: "ws_1",
+            role: "editor",
+          },
+          visible: (frame) => !globalEventSessionId(frame) || !revoked.has(credential),
+        }
+      },
+    })
+    const app = mount(handler)
+    const old = await connect(app, undefined, "actor_participant", "old")
+    const fresh = await connect(app, undefined, "actor_participant", "fresh")
+    await old.until((seen) => seen.includes("server.connected"), "old connection did not open")
+    await fresh.until((seen) => seen.includes("server.connected"), "fresh connection did not open")
+
+    claxedo.publish({
+      type: "session.lifecycle",
+      phase: "created",
+      directory: "/tmp/central",
+      sessionID: "ses_private",
+      ts: 1,
+    })
+    await old.until((seen) => seen.includes("ses_private"), "old connection missed initial event")
+    await fresh.until((seen) => seen.includes("ses_private"), "fresh connection missed initial event")
+
+    revoked.add("old")
+    claxedo.publish({
+      type: "session.lifecycle",
+      phase: "creating",
+      directory: "/tmp/central",
+      sessionID: "ses_private",
+      ts: 2,
+    })
+    expect(await old.ended()).toBe(true)
+    expect(await fresh.until((seen) => seen.includes('"phase":"creating"'), "fresh connection missed live event"))
+      .toContain('"phase":"creating"')
+    fresh.close()
+  })
+
+  test("private-session traffic cannot create a false gap for a workspace-only principal", async () => {
+    const global = createBus<GlobalEvent>()
+    const claxedo = createBus<ClaxedoEvent>()
+    const handler = createGlobalEventsHandler({ globalBus: global, claxedoBus: claxedo }, {
+      resolveSubscription: (c) => {
+        const actorId = c.req.query("actor")!
+        return {
+          identity: {
+            mode: "verified",
+            connectionId: crypto.randomUUID(),
+            actorId,
+            actorKind: "human",
+            orgId: "org_1",
+            workspaceId: "ws_1",
+            role: "editor",
+          },
+          visible: (frame) => !globalEventSessionId(frame) || actorId === "actor_participant",
+        }
+      },
+    })
+    const app = mount(handler)
+    const first = await connect(app, undefined, "actor_workspace_only")
+    const opened = await first.until((seen) => seen.includes("server.connected"), "no cursor bootstrap frame")
+    expect(bootstrapId(opened)).toBe("0")
+    first.close()
+
+    for (let index = 0; index < 300; index += 1) {
+      claxedo.publish({
+        type: "session.lifecycle",
+        phase: "created",
+        directory: "/tmp/central",
+        sessionID: `ses_private_${index}`,
+        ts: index,
+      })
+    }
+    claxedo.publish({ type: "process.status", directory: "/tmp/central", configId: "proc_public", status: "running" })
+
+    const second = await connect(app, "0", "actor_workspace_only")
+    const text = await second.until((seen) => seen.includes("proc_public"), "public replay frame never arrived")
+    second.close()
+
+    expect(text).not.toContain("stream.replay-gap")
+    expect(text).not.toContain("ses_private")
+    expect(frames(text).find((frame) => frame.data?.includes("proc_public"))?.id).toBe("1")
   })
 
   test("a frame published while disconnected is delivered on the next Last-Event-ID reconnect", async () => {

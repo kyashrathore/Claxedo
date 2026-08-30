@@ -67,7 +67,7 @@ export class WorkspaceWorktreeManager {
   }
 
   get(sessionId: string) {
-    return this.store.getWorktree(requireSessionId(sessionId))
+    return this.store.getWorktree(this.options.workspaceId, requireSessionId(sessionId))
   }
 
   async flush() {
@@ -96,7 +96,7 @@ export class WorkspaceWorktreeManager {
   private async ensureSerialized(input: { sessionId: string; baseCommit?: string }) {
     await fs.mkdir(this.worktrees, { recursive: true, mode: 0o755 })
     await this.ensureBareRepository()
-    const existing = this.store.getWorktree(input.sessionId)
+    const existing = this.store.getWorktree(this.options.workspaceId, input.sessionId)
     if (existing) {
       if (existing.workspaceId !== this.options.workspaceId) {
         throw new Error(`Session ${input.sessionId} is registered to another workspace`)

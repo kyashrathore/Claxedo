@@ -14,19 +14,31 @@ import type { RelayRole } from "@claxedo/workspace-relay"
  */
 export type RelayProvider = {
   getRelayEndpoint: (workspaceId: string, homeRegion: ClaxedoRegion) => string | Promise<string>
-  mintHostTunnelToken: (input: RelayTokenInput) => Promise<RelayToken>
+  mintHostTunnelToken: (input: HostTunnelTokenInput) => Promise<RelayToken>
   mintRuntimeAccessToken: (input: RelayTokenInput) => Promise<RelayToken>
   resolveTarget: (workspaceId: string, hostId: string) => Promise<RelayTarget | undefined>
   drainWorkspace: (workspaceId: string) => Promise<void>
 }
 
-export type RelayTokenInput = {
+type RelayTokenBaseInput = {
   workspaceId: string
   hostId: string
   subject: string
   orgId?: string
   role?: RelayRole
   ttlMs: number
+}
+
+export type HostTunnelTokenInput = RelayTokenBaseInput
+
+export type RelayTokenInput = Omit<RelayTokenBaseInput, "role"> & {
+  principalKind: "user" | "service"
+  actorId: string
+  actorKind: "human" | "agent"
+  role: RelayRole
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
 }
 
 export type RelayToken = {

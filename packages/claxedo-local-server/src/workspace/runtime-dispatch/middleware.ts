@@ -51,13 +51,22 @@ async function workspaceRuntimeProxyWithOptions(
       directory: input.directory,
     })
     if (!ws) return next()
-    if (ws.kind !== "cloud") return await embedded(c, ws)
+    if (ws.kind !== "cloud") {
+      // Same identity stamp as `/workspaces/:id` — without `resolveRelayActor`
+      // (and the hop header it feeds), embedded prompts never get `claxedo.author`.
+      return await embedded(c, ws, undefined, {
+        ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+        ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
+      })
+    }
     const hit = await resolveWorkspaceHit(ws, options)
     if (!hit) return next()
     return await proxy(c, hit, {
       sandboxManager: options.sandboxManager,
       ...(options.relayProvider ? { relayProvider: options.relayProvider } : {}),
       ...(options.defaultHomeRegion ? { defaultHomeRegion: options.defaultHomeRegion } : {}),
+      ...(options.resolveRelayActor ? { resolveRelayActor: options.resolveRelayActor } : {}),
+      ...(options.requireRelayActor ? { requireRelayActor: true } : {}),
     })
   } catch (err) {
     return noWr(c, err)

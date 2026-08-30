@@ -79,6 +79,16 @@ export default defineConfig((env) => {
   return {
     ...base,
     plugins: [
+      {
+        name: "claxedo:local-html-entry",
+        apply: "serve",
+        transformIndexHtml(html) {
+          // `build.rollupOptions.input` only affects production. Dev still
+          // serves `index.html` → `main.tsx` (Clerk). Unsigned local needs
+          // `local.tsx` or every authFetch waits on a bearer that never comes.
+          return html.replace("/src/app/entry/main.tsx", "/src/app/entry/local.tsx")
+        },
+      },
       ...(base.plugins ?? []),
       productBoundaryBuildManifestPlugin({
         entry: fileURLToPath(new URL("./src/app/entry/local.tsx", import.meta.url)),

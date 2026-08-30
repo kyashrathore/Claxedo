@@ -1,4 +1,11 @@
 import { beforeEach, describe, expect, test } from "bun:test"
+import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { queryClient } from "@/platform/query/query-client"
+import { shellDataKeys } from "@/platform/sync/keys"
+import {
+  dispatchSessionStatusEvent,
+  promptSessionStatusMeta,
+} from "@/features/session/store/session-status-dispatcher"
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
@@ -8,7 +15,9 @@ import {
   publishFocusedRailSessionMeta,
   railBatchData,
   readRailBatchLeg,
+  shouldAcceptRailBatchStatus,
   sidebarSessionStatusBatches,
+  syncUnfocusedRailBatchStatusToCache,
 } from "./rail-sidebar-status"
 import {
   activateDisclosureFromKeyboard,
@@ -20,6 +29,7 @@ import {
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
   primedSessionStatusType,
+  mergedSessionStatusType,
   unambiguousSessionStatusTarget,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
@@ -106,6 +116,20 @@ describe("primedSessionStatusType", () => {
   test("preserves canonical busy state instead of replacing it with idle", () => {
     expect(primedSessionStatusType({ type: "busy" })).toBe("busy")
     expect(primedSessionStatusType()).toBe("idle")
+  })
+})
+
+describe("mergedSessionStatusType", () => {
+  test("prefers live busy over a stale batch idle", () => {
+    expect(mergedSessionStatusType("idle", "busy")).toBe("busy")
+  })
+
+  test("preserves batch busy when live is absent", () => {
+    expect(mergedSessionStatusType("busy", undefined)).toBe("busy")
+  })
+
+  test("falls back to live idle when batch is absent", () => {
+    expect(mergedSessionStatusType(undefined, "idle")).toBe("idle")
   })
 })
 
@@ -396,6 +420,44 @@ describe("publishFocusedRailSessionMeta", () => {
       permissions: undefined,
       questions: [{ id: "q1" }],
     }])
+  })
+})
+
+describe("syncUnfocusedRailBatchStatusToCache", () => {
+  beforeEach(() => queryClient.clear())
+
+  test("rejects a stale idle poll while optimistic status is in flight", () => {
+    dispatchSessionStatusEvent({
+      event: {
+        type: "session.status",
+        source: "optimistic",
+        sessionID: "ses_a",
+        status: { type: "busy" },
+        deadline: Date.now() + 20_000,
+      },
+    })
+
+    syncUnfocusedRailBatchStatusToCache({
+      targets: [{ key: "central:ses_a", sessionID: "ses_a" }],
+      statuses: { ses_a: { type: "idle" } },
+    })
+
+    expect(queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId("ses_a", "status"))).toEqual({ type: "busy" })
+    expect(promptSessionStatusMeta("ses_a")?.source).toBe("optimistic")
+  })
+
+  test("accepts a non-idle poll while optimistic status is in flight", () => {
+    dispatchSessionStatusEvent({
+      event: {
+        type: "session.status",
+        source: "optimistic",
+        sessionID: "ses_a",
+        status: { type: "busy" },
+        deadline: Date.now() + 20_000,
+      },
+    })
+
+    expect(shouldAcceptRailBatchStatus("ses_a", { type: "retry", attempt: 1, message: "", next: 0 })).toBe(true)
   })
 })
 

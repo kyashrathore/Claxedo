@@ -86,6 +86,15 @@ function createCloudSandboxRequester(
   if (!relayProvider) throw new Error(`workspace relay provider unavailable: ${ws.id}`)
   const orgId = options.orgId ?? ws.org_id
   if (!orgId) throw new Error(`workspace org required for runtime token minting: ${ws.id}`)
+  if (!options.principalKind) throw new Error(`runtime principal kind required for runtime token minting: ${ws.id}`)
+  if (!options.subject || !options.actorId || !options.actorKind || !options.role) {
+    throw new Error(`complete runtime principal required for runtime token minting: ${ws.id}`)
+  }
+  const principalKind = options.principalKind
+  const subject = options.subject
+  const actorId = options.actorId
+  const actorKind = options.actorKind
+  const role = options.role
   const defaultHomeRegion = options.defaultHomeRegion ?? "us-east"
 
   type Target = { hostId: string; homeRegion: string }
@@ -130,9 +139,12 @@ function createCloudSandboxRequester(
     const minted = await relayProvider!.mintRuntimeAccessToken({
       workspaceId: ws.id,
       hostId: active.hostId,
-      subject: options.subject ?? "control-plane",
+      subject,
+      principalKind,
+      actorId,
+      actorKind,
       orgId: orgId!,
-      role: options.role ?? "owner",
+      role,
       ttlMs: 10 * 60_000,
     })
     token = { token: minted.token, expiresAt: minted.expiresAt }

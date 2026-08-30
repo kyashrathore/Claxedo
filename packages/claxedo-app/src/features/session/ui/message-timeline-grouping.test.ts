@@ -69,6 +69,22 @@ function groupTypes(rows: TimelineRow.TimelineRow[]) {
 }
 
 describe("timeline grouping across harness vocabularies", () => {
+  test("cold final turns retain subagent cards from intermediate assistant messages", () => {
+    const toolMessage = assistantMessage("assistant-tool")
+    const finalMessage = assistantMessage("assistant-final")
+    const byMessage: Record<string, Part[]> = {
+      "assistant-tool": [toolPart("task-part", "assistant-tool", "task")],
+      "assistant-final": [textPart("text-part", "assistant-final", "done")],
+    }
+
+    expect([
+      ...Timeline.coldFinalVisibleAssistantMessageIDs(
+        [toolMessage, finalMessage],
+        (messageID) => byMessage[messageID] ?? [],
+      )!,
+    ]).toEqual(["assistant-final", "assistant-tool"])
+  })
+
   for (const shell of ["bash", "command", "shell", "local_shell"]) {
     test(`folds a run of consecutive \`${shell}\` calls into one work group`, () => {
       const rows = rowsFor([

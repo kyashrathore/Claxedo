@@ -202,8 +202,8 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
     expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/claxedo/workspace/resolve")
     expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/workspace/ws_1/connection")
-    expect(startup.some((item) => item.status === "acquiring_sandbox" && item.id === "ws_1")).toBe(true)
-    expect(startup.some((item) => item.status === "ready")).toBe(true)
+    // Runtime preparation progress is remembered but not shown as a second
+    // submit overlay; WorkspaceGate owns those connection phases.
     expect(startup.some((item) => item.status === "loading_models")).toBe(true)
     expect(startup.some((item) => item.status === "creating_session")).toBe(true)
     expect(startup.some((item) => item.status === "sending_prompt")).toBe(true)
@@ -261,7 +261,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
 
-  test("cloud create resolves model from workspace runtime providers when no model is selected", async () => {
+  test("cloud create requires an explicit model when no model is selected", async () => {
     state.demoMode = false
     state.claxedoServerUrl = "https://claxedo.example"
     state.localCurrentModel = undefined
@@ -301,15 +301,12 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(runtimeCalls.some((call) => call.input.startsWith("/provider?"))).toBe(true)
-    // `opencode` is the zero-key gateway and is connected everywhere, so the
-    // credentialed provider (google) supplies the model — see model-strategy.
-    expect(sessionCreateCalls.at(-1)?.input).toMatchObject({
-      directory: "ws_1",
-      model: { providerID: "google", id: "gemini-3-pro-image-preview" },
-    })
-    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
-      model: { providerID: "google", modelID: "gemini-3-pro-image-preview" },
+    expect(runtimeCalls.some((call) => call.input.startsWith("/provider?"))).toBe(false)
+    expect(sessionCreateCalls).toEqual([])
+    expect(transportPromptAsyncCalls).toEqual([])
+    expect(toasts).toContainEqual({
+      title: "prompt.toast.modelAgentRequired.title",
+      description: "prompt.toast.modelAgentRequired.description",
     })
   })
 
@@ -453,7 +450,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(startup.some((item) => item.status === "ready")).toBe(true)
     expect(startup.at(-1)).toEqual({
       status: "error",
       id: undefined,
@@ -644,7 +640,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-1" })
     expect(optimisticAdds.map((item) => item.directory)).toContain("ws_1")
     expect(optimisticAdds.map((item) => item.directory)).not.toContain("/repo/main")
-    expect(startup.some((item) => item.status === "acquiring_sandbox" && item.id === "ws_1")).toBe(true)
   })
 
 

@@ -1,6 +1,7 @@
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
 
 type ProjectWorkspace = {
   id?: string
@@ -67,19 +68,30 @@ export async function registerUserHostedWorkspace(input: {
   serverUrl?: string
   request?: typeof fetch
 }) {
-  const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
-    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
-    workspaceId: input.workspaceId,
-  }), {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
+  const fallback = async () => {
+    const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
+      serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+      workspaceId: input.workspaceId,
+    }), {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        ...(input.displayName ? { displayName: input.displayName } : {}),
+      }),
+    })
+    if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
+    return await responseJson(response)
+  }
+  if (input.request) return fallback()
+  return hostedControlCall(
+    "hostLink.register",
+    {
+      id: input.workspaceId,
       ...(input.displayName ? { displayName: input.displayName } : {}),
-    }),
-  })
-  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
-  return await responseJson(response)
+    },
+    fallback,
+  )
 }

@@ -343,6 +343,16 @@ describe("createSseReplayBuffer", () => {
     expect(replay.hasGap(undefined)).toBe(false)
   })
 
+  test("continues a reconstructed principal sequence after its last issued cursor", () => {
+    const replay = createSseReplayBuffer<TestEvent>({ initialSequence: 7 })
+    replay.push({ type: "delta", value: "after reconnect" })
+
+    expect(replay.lastId()).toBe("8")
+    expect(replay.replayAfter("7").map((event) => ({ id: event.id, payload: event.payload }))).toEqual([
+      { id: "8", payload: { type: "delta", value: "after reconnect" } },
+    ])
+  })
+
   test("encodes SSE ids before data", () => {
     expect(new TextDecoder().decode(encodeSseData({ ok: true }, "42"))).toBe("id: 42\ndata: {\"ok\":true}\n\n")
   })

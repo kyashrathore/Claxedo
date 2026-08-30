@@ -13,3 +13,22 @@ export function sessionMessageScrollTop(input: {
   const inset = sessionMessageScrollInset(input)
   return Math.max(0, input.currentScrollTop + input.targetTop - input.rootTop - inset)
 }
+
+/** Resume bottom anchoring before and after the virtualizer's next layout pass. */
+export function resumeSessionScroll(input: {
+  clearMessageSelection: () => void
+  clearMessageHash: () => void
+  resumeAutoScroll: () => void
+  scrollToEnd: () => void
+  scheduleScrollState: () => void
+}) {
+  input.clearMessageSelection()
+  input.clearMessageHash()
+  input.resumeAutoScroll()
+  input.scrollToEnd()
+  input.scheduleScrollState()
+  requestAnimationFrame(() => {
+    input.scrollToEnd()
+    input.scheduleScrollState()
+  })
+}

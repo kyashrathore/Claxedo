@@ -10,6 +10,7 @@ import {
   routeSessionMetaIsCentral,
   routeSessionDirectory,
   routeLifecycleSessionRef,
+  routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
 } from "./route-bridge-resolution"
@@ -269,5 +270,28 @@ describe("session probe single-flight", () => {
     await Promise.all([first, second])
 
     expect(calls).toHaveLength(2)
+  })
+})
+
+describe("routeCentralSessionRef", () => {
+  test("builds a central identity from inventory workspace and harness fields", () => {
+    expect(routeCentralSessionRef("ses_central", {
+      workspaceId: "ws_1",
+      harness: { id: "pi" },
+    })).toMatchObject({
+      sessionId: "ses_central",
+      host: "central",
+      workspaceId: "ws_1",
+      harness: { id: "pi" },
+    })
+  })
+
+  test("reads camel and API workspace id spellings without inventing a harness", () => {
+    expect(routeCentralSessionRef("ses_meta", { workspaceID: "ws_api" })).toMatchObject({
+      sessionId: "ses_meta",
+      host: "central",
+      workspaceId: "ws_api",
+    })
+    expect(routeCentralSessionRef("ses_meta", { workspaceID: "ws_api" })?.harness).toBeUndefined()
   })
 })

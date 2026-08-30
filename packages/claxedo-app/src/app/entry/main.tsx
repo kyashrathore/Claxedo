@@ -116,7 +116,23 @@ initClaxedo(config)
 // The hosted entry starts the identity provider. `initClaxedo` deliberately
 // does not — see the note there; a shared init that imports Clerk puts it in
 // the local build too.
-if (config.authEnabled) initializeClerk().catch(() => {})
+//
+// Playwright preview builds bake `VITE_CLAXEDO_E2E=1` and inject
+// `__CLAXEDO_TEST_AUTH_*` (see auth-client testAuth). Without initializeClerk()
+// the user signal stays null and the rail shows "Account". Only hydrate that
+// path when the e2e flag is set AND a test principal is actually present —
+// never on a real ship artifact that accidentally inherits the flag alone.
+const e2eTestPrincipal = (() => {
+  if (import.meta.env.VITE_CLAXEDO_E2E !== "1" || typeof window === "undefined") return false
+  const w = window as typeof window & {
+    __CLAXEDO_TEST_AUTH_TOKEN__?: string
+    __CLAXEDO_TEST_AUTH_USER__?: unknown
+  }
+  return !!(w.__CLAXEDO_TEST_AUTH_TOKEN__ || w.__CLAXEDO_TEST_AUTH_USER__)
+})()
+if (config.authEnabled || e2eTestPrincipal) {
+  initializeClerk().catch(() => {})
+}
 
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {

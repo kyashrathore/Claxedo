@@ -19,7 +19,7 @@ process.env.CLAXEDO_STATE_DIR = path.join(root, "state")
 // These modules share the storage and workspace dependency graph. Loading
 // them concurrently deadlocks Vitest's SSR module evaluator before collection.
 const { ClaxedoDB } = await import("@claxedo/server-core/platform/db/index")
-const { putSessionMeta, sessionMeta } = await import("@claxedo/server-core/session/meta/index")
+const { putSessionMeta, sessionMeta, listSessionMetas } = await import("@claxedo/server-core/session/meta/index")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 const { SessionMetaRoutes } = await import("./meta-routes")
 ClaxedoDB.Drizzle()
@@ -54,6 +54,18 @@ function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesC
       usersMe: vi.fn(async () => ({})),
       authorizeSessionRead: vi.fn(async () => {}),
       listWorkspaces: vi.fn(async () => input.workspaces ?? []),
+      // Participant-scoped list in production; for these route tests the local
+      // projection store is the seeded source of truth for which sessions exist.
+      listSessions: vi.fn(async (_auth, args: { workspaceId: string }) =>
+        (await listSessionMetas({ workspaceID: args.workspaceId })).map((row) => ({
+          session_id: row.sessionID,
+          workspace_id: row.workspaceID,
+          project_id: row.projectID,
+          title: row.title,
+          created_at: row.createdAt,
+          updated_at: row.updatedAt,
+        })),
+      ),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "member",

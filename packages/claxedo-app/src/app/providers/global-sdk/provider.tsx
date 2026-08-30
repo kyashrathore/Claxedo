@@ -20,7 +20,7 @@ import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
-import { createControlPlaneEventFetch, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
+import { createControlPlaneEventFetch, openCentralRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
 import { createGlobalSdkFetch } from "@/platform/sync/global-sdk-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
@@ -473,7 +473,14 @@ const globalSDKContextInput = {
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
             const sessionWorkspaceKind = runtimeWorkspaceKind(session.workspaceKind)
             const response = session.host === "central"
-              ? await request(new URL(`/api/control/session/${encodeURIComponent(session.sessionID)}/runtime-events?parentSessionId=${encodeURIComponent(session.sessionID)}`, currentServer.http.url), init)
+              ? await openCentralRuntimeEventResponse({
+                  request,
+                  serverUrl: currentServer.http.url,
+                  sessionId: session.sessionID,
+                  lastEventId: lastRuntimeEventId,
+                  init,
+                  signal: runtimeAttempt.signal,
+                })
               : await createTransport({
               placement: {
                 ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),

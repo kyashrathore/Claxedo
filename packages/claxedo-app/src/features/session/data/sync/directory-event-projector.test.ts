@@ -96,4 +96,21 @@ describe("directory event shell query projector", () => {
 
     expect(queryClient.getQueryData(shellDataKeys.sessionId("ses_query", "todo"))).toBeUndefined()
   })
+
+  test("message.completed bumps session list updatedAt for reorder", () => {
+    const key = ["shell", "default", "sessionList", { scope: "directory", directory: "/tmp/ws", archived: "active", sort: "updated_desc", limit: 50, groupBy: "none" }] as const
+    queryClient.setQueryData(key, {
+      view: { scope: "directory", groupBy: "none", sort: "updated_desc", limit: 50 },
+      items: [
+        { sessionId: "ses_b", directory: "/tmp/ws", updatedAt: 200, type: "session", sessionRef: "local:/tmp/ws:session:ses_b", tags: [], attachments: [] },
+        { sessionId: "ses_a", directory: "/tmp/ws", updatedAt: 100, type: "session", sessionRef: "local:/tmp/ws:session:ses_a", tags: [], attachments: [] },
+      ],
+    })
+
+    apply({ type: "message.completed", properties: { sessionID: "ses_a" } })
+
+    const next = queryClient.getQueryData<{ items: Array<{ sessionId: string; updatedAt: number }> }>(key)
+    expect(next?.items?.map((row) => row.sessionId)).toEqual(["ses_a", "ses_b"])
+    expect(next?.items?.[0]?.updatedAt).toBeGreaterThan(100)
+  })
 })

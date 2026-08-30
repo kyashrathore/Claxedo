@@ -3,6 +3,7 @@ import { QueryClientProvider, skipToken } from "@tanstack/solid-query"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
+import { queryKeys } from "@/platform/query/keys"
 
 vi.mock("@/features/session/app-ports", () => ({
   useWorkspaceQuery: () => ({ data: undefined }),
@@ -42,5 +43,30 @@ describe("session pane cache observers", () => {
     for (const queryKey of keys) {
       expect(queryClient.getQueryCache().find({ queryKey })?.options.queryFn).toBe(skipToken)
     }
+  })
+
+  test("central session rows use their authoritative transport query", async () => {
+    const fetchSessionRow = vi.fn(async () => ({ id: "ses_1" } as never))
+    const Probe = () => {
+      createSessionPaneQueries({
+        active: () => true,
+        sessionID: () => "ses_1",
+        directory: () => "/repo",
+        sessionRef: () => ({ sessionId: "ses_1", host: "central", toolSandbox: { kind: "virtual" } }),
+        fetchSessionRow,
+      })
+      return <div />
+    }
+
+    render(() => (
+      <QueryClientProvider client={queryClient}>
+        <Probe />
+      </QueryClientProvider>
+    ))
+
+    await vi.waitFor(() => expect(fetchSessionRow).toHaveBeenCalledWith("ses_1"))
+    await vi.waitFor(() => expect(
+      queryClient.getQueryData(queryKeys.session.row(undefined, "/repo", "ses_1")),
+    ).toEqual({ id: "ses_1" }))
   })
 })

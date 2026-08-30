@@ -66,10 +66,7 @@ export function reservedSessionEnvironmentOccupancy(input: {
   return input.collapsed ? "collapsed" : "expanded"
 }
 
-export function sessionEnvironmentCardCollapsed(
-  persist: SessionEnvironmentCardPersist,
-  sessionId: string | undefined,
-) {
+export function sessionEnvironmentCardCollapsed(persist: SessionEnvironmentCardPersist, sessionId: string | undefined) {
   if (!usableSessionId(sessionId)) return true
   return persist.collapsedBySessionId[sessionId] ?? true
 }
@@ -128,13 +125,16 @@ export function createSessionEnvironmentCardState(): SessionEnvironmentCardState
  * `ready` covers that first read. Collapse itself is keyed by session id so
  * expanding in one session cannot open the card in another.
  */
-let sharedCardState: SessionEnvironmentCardState | undefined
+let sharedCardState: { state: SessionEnvironmentCardState; dispose: () => void } | undefined
 export function sessionEnvironmentCardState(): SessionEnvironmentCardState {
-  if (!sharedCardState) sharedCardState = createRoot(() => createSessionEnvironmentCardState())
-  return sharedCardState
+  if (!sharedCardState) {
+    sharedCardState = createRoot((dispose) => ({ state: createSessionEnvironmentCardState(), dispose }))
+  }
+  return sharedCardState.state
 }
 
 /** Test-only: drop the process-wide store so the next read picks up setPersisted. */
 export function resetSessionEnvironmentCardStateForTests() {
+  sharedCardState?.dispose()
   sharedCardState = undefined
 }

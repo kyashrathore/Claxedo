@@ -6,6 +6,11 @@ import type { ConvexAuthorityInput, ServiceArgs } from "./types"
 
 export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: ServiceArgs) {
   return {
+    async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args: { orgId?: string }) {
+      await requireAllowed(await requireExecutor(input, auth).query(convexApi.workspaces.authorizeCreate, {
+        ...(args.orgId ? { org_id: args.orgId } : {}),
+      }))
+    },
     async authorizeWorkspaceOpen(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
     }) {
@@ -22,6 +27,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
           serviceArgs(auth),
         ) as Array<{
           workspace_id?: string
+          org_id?: string
+          project_id?: string
           role?: string
           backing?: "local-worktree" | "cloud-vm"
           access?: "local" | "cloud" | "user-hosted"
@@ -35,6 +42,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
           role: workspace.role,
           workspace: {
             workspace_id: args.workspaceId,
+            org_id: workspace.org_id,
+            project_id: workspace.project_id,
             backing: workspace.backing,
             access: workspace.access,
             display_name: workspace.display_name,
@@ -71,6 +80,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     },
     async registerLocalForSharing(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
+      orgId?: string
       displayName: string
       projectId?: string
       repoUrl?: string
@@ -81,6 +91,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     }) {
       const body = {
         workspace_id: args.workspaceId,
+        ...(args.orgId ? { org_id: args.orgId } : {}),
         display_name: args.displayName,
         ...(args.projectId ? { project_id: args.projectId } : {}),
         ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
@@ -201,6 +212,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     },
     async createCloudWorkspace(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
+      orgId?: string
       projectId?: string
       displayName: string
       repoUrl?: string
@@ -210,6 +222,7 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaces.createCloud, {
         workspace_id: args.workspaceId,
+        ...(args.orgId ? { org_id: args.orgId } : {}),
         ...(args.projectId ? { project_id: args.projectId } : {}),
         display_name: args.displayName,
         ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
@@ -224,6 +237,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       grantedToTokenIdentifier?: string
       grantedToClerkSubject?: string
       grantedToClerkOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.grant, {
         workspace_id: args.workspaceId,
@@ -231,6 +246,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
         ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
         ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
         ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
+        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
       })
     },
     async revokeWorkspaceShare(auth: SignedControlPlaneAuth, args: {
@@ -239,6 +256,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       grantedToTokenIdentifier?: string
       grantedToClerkSubject?: string
       grantedToClerkOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.revoke, {
         workspace_id: args.workspaceId,
@@ -246,6 +265,8 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
         ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
         ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
         ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
+        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
+        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
       })
     },
   }

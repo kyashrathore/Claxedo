@@ -123,7 +123,8 @@ fi
 HOOK_PORT="${CLAXEDO_SERVER_PORT:-${CLAXEDO_PORT:-{{PORT}}}}"
 HOOK_URL="http://127.0.0.1:${HOOK_PORT}/api/wr/hook/agent-lifecycle"
 
-curl -sG "$HOOK_URL" \
+curl -s "$HOOK_URL" \
+  --request POST \
   --connect-timeout 1 \
   --max-time 2 \
   --data-urlencode "tabId=$CLAXEDO_TAB_ID" \

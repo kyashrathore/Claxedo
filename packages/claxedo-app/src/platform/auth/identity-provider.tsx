@@ -59,3 +59,13 @@ export function usePrincipal() {
 export function principalHasSignedAccess(principal: Principal) {
   return principal.kind === "local" || principal.kind === "signed" || principal.kind === "org-member"
 }
+
+/** Stable namespace for every cache and persistence owner scoped by viewer identity. */
+export function principalDataScope(principal: Principal) {
+  switch (principal.kind) {
+    case "anonymous": return "anonymous"
+    case "local": return `local:${principal.deviceId}`
+    case "signed": return `signed:${principal.userId}`
+    case "org-member": return `org-member:${principal.userId}:${principal.orgId}`
+  }
+}

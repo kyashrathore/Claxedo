@@ -145,6 +145,43 @@ describe("session service", () => {
     expect(starts).toEqual([expect.objectContaining({ permissionMode: "agent-full-access" })])
   })
 
+  it("forwards only a complete runtime actor pair", async () => {
+    const starts: unknown[] = []
+    const runtime = {
+      turns: {
+        start: async (input: unknown) => {
+          starts.push(input)
+          return {
+            sessionId: "s1",
+            userMessageId: "msg-user",
+            assistantMessageId: "msg-user_r",
+            directory: "/work",
+            prompt: { parts: [], userMessageId: "msg-user", agent: "build", model: { providerID: "test", modelID: "test" } },
+          }
+        },
+      },
+      events: {
+        subscribe: () => ({ async *[Symbol.asyncIterator]() {} }),
+        list: async () => [],
+      },
+    } as never
+    const common = {
+      runtime,
+      sessionId: "s1",
+      directory: "/work" as const,
+      body: { parts: [{ type: "text", text: "hello" }] },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    }
+
+    await runRuntimePromptTurn({ ...common, actor: { actorId: "actor-1", actorKind: "human" } })
+    await runRuntimePromptTurn(common)
+
+    expect(starts[0]).toEqual(expect.objectContaining({ actorId: "actor-1", actorKind: "human" }))
+    expect(starts[1]).not.toHaveProperty("actorId")
+    expect(starts[1]).not.toHaveProperty("actorKind")
+  })
+
   it("does not synthesize prompt events when the adapter yields none", async () => {
     const events: CompatEnvelope[] = []
 

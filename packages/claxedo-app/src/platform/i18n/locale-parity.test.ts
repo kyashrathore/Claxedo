@@ -21,9 +21,13 @@ function tokenSet(value: string): string[] {
 async function loadAppDict(code: LocaleCode): Promise<Record<string, string>> {
   // The app-side dictionary file backing locale "br" is pt-BR.ts (see
   // src/i18n/locales.ts's file header) — every other code matches its file 1:1.
+  // Provider settings are a separate feature dictionary so the already-large
+  // base locale files stay inside their size ratchets.
   const filename = code === "br" ? "pt-BR" : code
-  const mod = (await import(`./${filename}`)) as { dict: Record<string, string> }
-  return mod.dict
+  const base = (await import(`./${filename}`)) as { dict: Record<string, string> }
+  if (code === "en") return base.dict
+  const provider = (await import(`./provider-settings/${filename}`)) as { dict: Record<string, string> }
+  return { ...base.dict, ...provider.dict }
 }
 
 describe("locale-parity: missing keys vs en.ts", () => {

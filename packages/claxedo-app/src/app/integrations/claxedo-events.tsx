@@ -15,6 +15,10 @@ import {
 import { createStreamConnectivity } from "../connection/stream-connectivity"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import {
+  accountStreamAvailable,
+  openAccountStreamResponse,
+} from "@/platform/account/account-stream-fetch"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
@@ -33,6 +37,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createTransport } from "@/platform/runtime/transport"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
   HEARTBEAT_TIMEOUT_MS,
   failureEscalation,
@@ -50,6 +55,16 @@ export type PtyInfo = {
   cwd: string
   status: "running" | "exited"
   pid: number
+}
+
+type SessionShareChangedEvent = {
+  type: "session.share.changed"
+  phase: "granted" | "revoked"
+  ownerUserId: string
+  sessionId: string
+  workspaceId: string
+  orgId?: string
+  ts: number
 }
 
 export type ClaxedoEvent =
@@ -87,6 +102,7 @@ export type ClaxedoEvent =
   | SessionLifecycleEvent
   | WorkgraphChangedEvent
   | DocumentChangedEvent
+  | SessionShareChangedEvent
   | ClaxedoDirectoryEvent
   | {
       type: "provision"
@@ -195,7 +211,8 @@ type ClaxedoEventsContextValue = {
   connected: () => boolean
   /**
    * The CENTRAL control-plane stream is up. This is the stream that carries
-   * `workgraph.changed` / `document.changed` / `session.lifecycle`, so its
+   * `workgraph.changed` / `document.changed` / `session.lifecycle` /
+   * `session.share.changed`, so its
    * `false → true` edge is the revalidation trigger for every consumer of those
    * doorbells. Distinct from `connected` on purpose: with a remote workspace
    * open the aggregate never drops to false when only the central stream flaps.
@@ -277,7 +294,7 @@ export function claxedoEventStreamTargets(input: {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
   const central: ClaxedoEventStreamTarget = {
     kind: "central",
-    url: new URL("/api/wr/events", serverUrl),
+    url: controlPlaneEventsUrl({ baseUrl: serverUrl }),
   }
   const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
   const workspace = routeWorkspace
@@ -381,6 +398,14 @@ export function eventStreamFetch(
   overrides?: { request?: typeof fetch; relayRequest?: typeof fetch },
 ) {
   if (target.kind === "central") {
+    if (!overrides?.request && accountStreamAvailable()) {
+      const lastEventId = new Headers(init.headers).get("Last-Event-ID") ?? undefined
+      return openAccountStreamResponse({
+        operation: "session.events",
+        params: lastEventId ? { lastEventId } : {},
+        signal: init.signal ?? undefined,
+      })
+    }
     return (overrides?.request ?? authFetch)(target.url, init)
   }
   const serverTransport = centralTransportForServer(target.serverUrl)

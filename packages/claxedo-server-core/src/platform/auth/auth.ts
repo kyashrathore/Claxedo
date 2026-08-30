@@ -31,6 +31,19 @@ export type SignedControlPlaneAuth = {
   }
 }
 
+/** Canonical identity used by the explicit unsigned-local composition. */
+export function localControlPlaneAuth(): SignedControlPlaneAuth {
+  return {
+    mode: "signed",
+    token: "",
+    user: {
+      subject: "local",
+      tokenIdentifier: "local:default",
+      issuer: "claxedo-local",
+    },
+  }
+}
+
 export type ControlPlaneAuthContext =
   | SignedControlPlaneAuth
   | {

@@ -41,9 +41,15 @@ describe("agent-hooks real-world execution", () => {
     mockServer = createServer((req, res) => {
       const url = new URL(req.url || "", `http://127.0.0.1`)
       if (url.pathname === "/api/wr/hook/agent-lifecycle") {
-        lastEvent = Object.fromEntries(url.searchParams.entries())
-        res.writeHead(200, { "Content-Type": "application/json" })
-        res.end(JSON.stringify({ success: true }))
+        let body = ""
+        req.on("data", (chunk) => {
+          body += String(chunk)
+        })
+        req.on("end", () => {
+          lastEvent = Object.fromEntries(new URLSearchParams(body).entries())
+          res.writeHead(200, { "Content-Type": "application/json" })
+          res.end(JSON.stringify({ success: true }))
+        })
         return
       }
       res.writeHead(404).end()
@@ -97,7 +103,7 @@ describe("agent-hooks real-world execution", () => {
 
     // 3. Server should have received the Busy event (mapped from BeforeAgent)
     // Wait a bit for the background curl to finish
-    await new Promise((r) => setTimeout(r, 1000))
+    await new Promise((r) => setTimeout(r, 2500))
     expect(lastEvent).toMatchObject({
       eventType: "Busy",
       tabId: "test-tab",
@@ -121,7 +127,7 @@ describe("agent-hooks real-world execution", () => {
     })
 
     expect(result.status).toBe(0)
-    await new Promise((r) => setTimeout(r, 1000))
+    await new Promise((r) => setTimeout(r, 2500))
     expect(lastEvent).toMatchObject({
       eventType: "Busy",
       tabId: "split-port-tab",

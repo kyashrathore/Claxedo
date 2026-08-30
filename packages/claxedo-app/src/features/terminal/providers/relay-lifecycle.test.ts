@@ -182,6 +182,7 @@ describe("terminal relay lifecycle", () => {
       if (req.url === "https://relay.example.test/workspaces/ws_1/api/wr/pty" && req.method === "POST") {
         return Response.json({
           id: "pty_1",
+          createRequestId: "request-client-a",
           title: "Claude",
           cwd: "/workspace",
         })
@@ -191,16 +192,19 @@ describe("terminal relay lifecycle", () => {
     }
 
     const { session, dispose } = createSession({ request })
-    const ptyId = await session.new(
-      `"/Users/yashvardhansingh/.claxedo/bin/claude" --dangerously-skip-permissions`,
-      "Claude",
-    )
+    const ptyId = await session.new({
+      createRequestId: "request-client-a",
+      initialCommand: `"/Users/yashvardhansingh/.claxedo/bin/claude" --dangerously-skip-permissions`,
+      title: "Claude",
+    })
 
     expect(ptyId).toBe("pty_1")
     const create = calls.find((call) => call.method === "POST")
     expect(create?.body?.command).toBe("/Users/yashvardhansingh/.claxedo/bin/claude")
     expect(create?.body?.args).toEqual(["--dangerously-skip-permissions"])
     expect(create?.body?.initialCommand).toBeUndefined()
+    expect(create?.body?.createRequestId).toBe("request-client-a")
+    expect(session.all()[0]?.createRequestId).toBe("request-client-a")
 
     dispose()
   })
@@ -304,13 +308,13 @@ describe("terminal relay lifecycle", () => {
 
     const { session, dispose } = createSession({ request, workspaceId: "ws_lifecycle" })
 
-    const ptyId = await session.new("echo ok", "Terminal")
+    const ptyId = await session.new({ initialCommand: "echo ok", title: "Terminal", sessionId: "session_private" })
     expect(ptyId).toBe("pty_1")
 
     session.update({ id: "pty_1", title: "Renamed", cols: 100, rows: 30 })
     await tick()
 
-    const cloneId = await session.clone("pty_1")
+    const cloneId = await session.clone("pty_1", "session_private")
     expect(cloneId).toBe("pty_2")
 
     await session.close("pty_2")
@@ -323,6 +327,8 @@ describe("terminal relay lifecycle", () => {
       "DELETE https://relay.example.test/workspaces/ws_lifecycle/api/wr/pty/pty_2",
     ])
     expect(calls[1].body.initialCommand).toBe("echo ok")
+    expect(calls[1].body.sessionId).toBe("session_private")
+    expect(calls[3].body.sessionId).toBe("session_private")
     expect(calls.slice(1).every((call) => call.authorization === `Bearer ${token("rat_1")}`)).toBe(true)
 
     dispose()
@@ -382,7 +388,7 @@ describe("terminal relay lifecycle", () => {
       resolveWorkspaceRuntime: async () => null,
     })
 
-    const ptyId = await session.new("echo ok", "Terminal")
+    const ptyId = await session.new({ initialCommand: "echo ok", title: "Terminal" })
     expect(ptyId).toBe("pty_selfhost")
     expect(calls.map((call) => `${call.method} ${call.url}`)).toEqual([
       "GET http://server.test/api/workspace/ws_selfhost/connection",
@@ -415,7 +421,7 @@ describe("terminal relay lifecycle", () => {
     })
 
     try {
-      const ptyId = await session.new("echo ok", "Terminal")
+      const ptyId = await session.new({ initialCommand: "echo ok", title: "Terminal" })
       expect(ptyId).toBe("pty_1")
 
       session.update({ id: "pty_1", title: "Renamed", cols: 100, rows: 30 })
@@ -462,7 +468,7 @@ describe("terminal relay lifecycle", () => {
       resolveWorkspaceRuntime: async () => null,
     })
 
-    const ptyId = await session.new("echo ok", "Terminal")
+    const ptyId = await session.new({ initialCommand: "echo ok", title: "Terminal" })
     expect(ptyId).toBe("pty_1")
 
     session.update({ id: "pty_1", cwd: "/Users/yash/project/subdir" })

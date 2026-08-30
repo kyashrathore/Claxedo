@@ -81,6 +81,11 @@ function roleClaim(payload: Record<string, unknown>) {
   return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
+function actorKindClaim(payload: Record<string, unknown>) {
+  const value = stringClaim(payload, "actor_kind")
+  return value === "human" || value === "agent" ? value : undefined
+}
+
 function numberClaim(payload: Record<string, unknown>, key: string) {
   const value = payload[key]
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
@@ -102,6 +107,11 @@ function validateRelayHostVerifierClaims(
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
   const role = roleClaim(payload)
+  const actor_id = stringClaim(payload, "actor_id")
+  const actor_kind = actorKindClaim(payload)
+  const actor_public_id = stringClaim(payload, "actor_public_id")
+  const actor_name = stringClaim(payload, "actor_name")
+  const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
   const access = stringClaim(payload, "access")
   const backing = stringClaim(payload, "backing")
   const pair = { access, backing }
@@ -119,6 +129,9 @@ function validateRelayHostVerifierClaims(
     || !exp
     || !iat
     || !jti
+    || (!!actor_id !== !!actor_kind)
+    || (!!actor_public_id !== !!actor_name)
+    || (!!actor_avatar_url && (!actor_public_id || !actor_name))
   ) {
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Relay Host Token claims are incomplete")
   }
@@ -129,7 +142,7 @@ function validateRelayHostVerifierClaims(
     throw new WorkspaceRelayAuthError("relay_token_host_mismatch", "Relay token host does not match request")
   }
 
-  return {
+  const claims = {
     iss: relayHostTokenIssuer,
     aud: relayHostTokenAudience,
     sub,
@@ -141,7 +154,16 @@ function validateRelayHostVerifierClaims(
     exp,
     iat,
     jti,
+  } as const
+  if (actor_id && actor_kind) return {
+    ...claims,
+    actor_id,
+    actor_kind,
+    ...(actor_public_id && actor_name
+      ? { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
+      : {}),
   }
+  return { ...claims, actor_id: undefined, actor_kind: undefined }
 }
 
 /**
@@ -189,20 +211,11 @@ async function audit(options: RelayHostAuthOptions, input: Omit<RelayHostAuthAud
   })
 }
 
-// RHT verification semantics:
-// The Workspace Host Service verifies the RHT only for connection
-// establishment. Once a long-lived socket is open (PTY, SSE, agent event
-// stream), it continues to flow through the upgraded connection without
-// per-message RHT re-verification.
-//
-// This is intentional: the RHT TTL is 60s, but interactive sessions can run
-// for hours. Mid-stream re-verification would require shipping fresh RHTs
-// over the existing socket — a complexity with no security benefit, since
-// the connection is already trusted at establishment.
-//
-// If a session must be torn down (e.g., user revoked, host service
-// restarted), close the underlying socket. Reconnects then require a fresh
-// RHT.
+// This middleware verifies the RHT at request establishment. Long-lived
+// session-derived event streams separately re-authorize each event through the
+// session access policy, which also expires stale proofs and observes
+// participant revocation. Other upgraded connections remain trusted until
+// close and require a fresh RHT when they reconnect.
 export function createRelayHostAuthMiddleware(options: RelayHostAuthOptions) {
   return createMiddleware<{ Variables: RelayHostAuthContext }>(async (c, next) => {
     const token = bearerToken(c.req.header("authorization"))

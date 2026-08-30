@@ -49,9 +49,9 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider } from "@/platform/account/account-provider"
+import { browserAccountPort, type RunHostedOperation } from "@/platform/account/browser-account-port"
+import { accountBridge, electronAccountPort } from "@/platform/account/electron-account-port"
 import { queryClient } from "@/platform/query/query-client"
-import { installQueryPersister } from "@/platform/query/persister"
-import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { installSessionStatusTelemetryDevtools } from "../../features/session/store/session-status-telemetry"
 import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding/remote-access-marker"
@@ -64,9 +64,6 @@ if (rendererTraceEnabled()) {
   performance.mark("runtime.appEntryModuleEvaluated")
 }
 
-// Restore navigation data before the shell mounts so the sidebar can paint its
-// last-known session rows while the local server refresh runs in the background.
-installQueryPersister({ quietDelay: fastSessionSwitchAnyQuietDelay })
 // Rubric Q8: attach the polling-removal-gate devtools accessor at boot.
 // Self-gated by __CLAXEDO_DEBUG__ / CLAXEDO_DEBUG=1 — no-op in production.
 installSessionStatusTelemetryDevtools()
@@ -128,6 +125,14 @@ const DialogMatrixHarness = lazy(() => import("@/app/routes/dialog-matrix-harnes
 const ErrorPageHarness = lazy(() => import("@/app/routes/error-page-harness"))
 const Loading = () => <div class="size-full" />
 const HiddenRouteOutlet = () => <div class="hidden" />
+
+function BootSplash() {
+  return (
+    <div class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
+      <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
+    </div>
+  )
+}
 
 function UiI18nBridge(props: ParentProps) {
   const language = useLanguage()
@@ -269,9 +274,7 @@ function ConnectionGate(props: ParentProps) {
         </Show>
       </Show>
       <Show when={showBlockingSplash()}>
-        <div class="fixed inset-0 z-[9999] h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-          <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
-        </div>
+        <BootSplash />
       </Show>
     </>
   )
@@ -388,7 +391,7 @@ function AuthenticatedProviders(props: ParentProps) {
     <PrincipalProvider authEnabled={config?.authEnabled === true}>
       {/* Inside PrincipalProvider so both read one session, and above every
           account surface so none of them reaches the session directly. */}
-      <AccountPortProvider>
+      <BoundAccountPortProvider>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       {/* Removes the hosted contribution set when the account signs out.
@@ -399,9 +402,20 @@ function AuthenticatedProviders(props: ParentProps) {
           <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
         </Show>
       </CloudAuthGate>
-      </AccountPortProvider>
+      </BoundAccountPortProvider>
     </PrincipalProvider>
   )
+}
+
+function BoundAccountPortProvider(props: ParentProps) {
+  const auth = useAuthSession()
+  const bridge = accountBridge()
+  const port = bridge ? electronAccountPort(bridge) : browserAccountPort(auth, unboundHostedOperation)
+  return <AccountPortProvider port={port}>{props.children}</AccountPortProvider>
+}
+
+const unboundHostedOperation: RunHostedOperation = async (operation) => {
+  throw new Error(`hosted operation "${operation}" has no transport bound in this build`)
 }
 
 function RoutedClaxedoEventsProvider(props: ParentProps) {
@@ -452,7 +466,9 @@ function AuthenticatedLayout(
       <RoutedClaxedoEventsProvider>
         <AuthenticatedProviders>
           <ConnectionGate>
-            <RuntimeProviders>{props.children}</RuntimeProviders>
+            <Suspense fallback={<BootSplash />}>
+              <RuntimeProviders>{props.children}</RuntimeProviders>
+            </Suspense>
           </ConnectionGate>
         </AuthenticatedProviders>
       </RoutedClaxedoEventsProvider>
@@ -478,11 +494,11 @@ export function AppInterface(props: {
           // AuthenticatedProviders — LoginPage reads the account port, so the
           // route brings its own provider (self-sufficient: it reads the
           // module-bound auth session and the optional Electron bridge).
-          <AccountPortProvider>
+          <BoundAccountPortProvider>
             <Suspense fallback={<Loading />}>
               <LoginPage />
             </Suspense>
-          </AccountPortProvider>
+          </BoundAccountPortProvider>
         )}
       />
       <Route
@@ -493,31 +509,38 @@ export function AppInterface(props: {
           </Suspense>
         )}
       />
-      {import.meta.env.DEV ? (
-        <Route
-          path="/__e2e/dialog-matrix"
-          component={() => (
+      <Route
+        path="/__e2e/dialog-matrix"
+        component={() =>
+          import.meta.env.DEV ? (
             <Suspense fallback={<Loading />}>
               <DialogMatrixHarness />
             </Suspense>
-          )}
-        />
-      ) : null}
-
-      {import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1" ? (
-        <Route
-          path="/__e2e/error-page"
-          component={() => (
+          ) : (
+            <Navigate href="/" />
+          )
+        }
+      />
+      <Route
+        path="/__e2e/error-page"
+        component={() =>
+          import.meta.env.DEV || import.meta.env.VITE_CLAXEDO_E2E === "1" ? (
             <Suspense fallback={<Loading />}>
               <ErrorPageHarness />
             </Suspense>
-          )}
-        />
-      ) : null}
+          ) : (
+            <Navigate href="/" />
+          )
+        }
+      />
 
       <Route
         path="/"
-        component={(p) => <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />}
+        component={(p) => (
+          <ErrorBoundary fallback={(error) => <ErrorPage error={error} />}>
+            <AuthenticatedLayout {...p} defaultServer={props.defaultServer} servers={props.servers} />
+          </ErrorBoundary>
+        )}
       >
         <Route
           path="/"

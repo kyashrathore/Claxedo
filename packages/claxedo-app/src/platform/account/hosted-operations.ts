@@ -67,14 +67,58 @@ function withStrings(...fields: string[]) {
   }
 }
 
-/** Requires a named field holding an array. The envelope is returned as sent. */
-function withArray(field: string) {
+/** Requires a bare JSON array. */
+function array(raw: unknown): DecodeResult<unknown[]> {
+  if (!Array.isArray(raw)) return { ok: false, reason: "expected an array" }
+  return { ok: true, value: raw }
+}
+
+/** Requires named fields holding arrays. */
+function withArrays(...fields: string[]) {
   return (raw: unknown): DecodeResult<Record<string, unknown>> => {
     const shape = object(raw)
     if (!shape.ok) return shape
-    if (!Array.isArray(shape.value[field])) return { ok: false, reason: `expected an array "${field}"` }
+    for (const field of fields) {
+      if (!Array.isArray(shape.value[field])) return { ok: false, reason: `expected an array "${field}"` }
+    }
     return shape
   }
+}
+
+function sessionPeople(raw: unknown): DecodeResult<Record<string, unknown>> {
+  const shape = withArrays("grants", "participants", "teams")(raw)
+  if (!shape.ok) return shape
+  if (typeof shape.value.can_manage_shares !== "boolean") {
+    return { ok: false, reason: 'expected a boolean "can_manage_shares"' }
+  }
+  for (const [index, team] of (shape.value.teams as unknown[]).entries()) {
+    const row = object(team)
+    if (!row.ok) return { ok: false, reason: `expected teams[${index}] to be an object` }
+    for (const field of ["team_id", "name", "is_shared"] as const) {
+      const expected = field === "is_shared" ? "boolean" : "string"
+      if (typeof row.value[field] !== expected) {
+        return { ok: false, reason: `expected teams[${index}].${field} to be a ${expected}` }
+      }
+    }
+  }
+  for (const [index, participant] of (shape.value.participants as unknown[]).entries()) {
+    const row = object(participant)
+    if (!row.ok || typeof row.value.user_id !== "string") {
+      return { ok: false, reason: `expected participants[${index}].user_id to be a string` }
+    }
+  }
+  for (const [index, grant] of (shape.value.grants as unknown[]).entries()) {
+    const row = object(grant)
+    if (!row.ok || typeof row.value.grant_id !== "string") {
+      return { ok: false, reason: `expected grants[${index}].grant_id to be a string` }
+    }
+    for (const field of ["granted_to_user_id", "granted_to_org_id", "granted_to_team_id"] as const) {
+      if (row.value[field] !== undefined && typeof row.value[field] !== "string") {
+        return { ok: false, reason: `expected grants[${index}].${field} to be a string when present` }
+      }
+    }
+  }
+  return shape
 }
 
 /** Requires a named field holding an object, checked by `inner`. */
@@ -141,8 +185,8 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // needs the whole picture asks for both and merges them. Two names rather
   // than one operation taking an access argument, so the set of calls stays
   // enumerable by name — the property the closed set rests on.
-  "workspace.list.cloud": { safe: true, decode: withArray("workspaces") },
-  "workspace.list.userHosted": { safe: true, decode: withArray("workspaces") },
+  "workspace.list.cloud": { safe: true, decode: withArrays("workspaces") },
+  "workspace.list.userHosted": { safe: true, decode: withArrays("workspaces") },
   // Nullable: the hosted control plane answers `null` on purpose.
   "workspace.resolve": { safe: true, decode: nullable(object) },
   // Provisions a cloud VM. Without a key, an uncertain response creates a
@@ -157,6 +201,7 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // The lifecycle SNAPSHOT — lease, checkpoint, worktrees, runtime — not a
   // list. The route is `GET /:id/checkpoints` and the name has misled twice.
   "workspace.checkpoints.list": { safe: true, decode: object },
+  "workspace.checkpoints.create": { safe: false, decode: object },
   // Destructive to working state.
   "workspace.checkpoints.restore": { safe: false, decode: object },
   // Returns a relay URL and a scoped token — and deliberately no laptop
@@ -179,6 +224,72 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // is not retried at all — the connector stops, because re-enrolling would be
   // it overruling a revocation.
   "host.enrollmentHeartbeat": { safe: true, decode: object },
+  // Control-plane session rows for a workspace (`{ sessions: [...] }`).
+  "session.list": { safe: true, decode: withArrays("sessions") },
+  // Paginated rail navigation list (`GET /api/control/session-list`).
+  "session.navigationList": { safe: true, decode: object },
+  "session.projection.register": { safe: false, decode: object },
+  "session.projection.checkpoint": { safe: false, decode: object },
+  "session.projection.repair": { safe: false, decode: object },
+  // Central control-plane SSE (`GET /api/wr/events`). Stream IPC, not unary `run`.
+  "session.events": { safe: true, decode: object },
+  // Per-session central runtime SSE. Stream IPC.
+  "session.runtimeEvents": { safe: true, decode: object },
+  // Private-session People capability, grants, participants, and session-org teams.
+  "session.shares.list": { safe: true, decode: sessionPeople },
+  "session.shares.grant": { safe: false, decode: object },
+  "session.shares.revoke": { safe: false, decode: object },
+  "session.participants.add": { safe: false, decode: object },
+  // Org / team settings (Settings + rail switcher). Desktop signed mode goes
+  // through AccountPort; browser keeps authFetch in org-team-api.
+  "org.list": { safe: true, decode: array },
+  "org.create": { safe: false, decode: withStrings("org_id", "name") },
+  // Bare team rows for the active org in Settings.
+  "org.teams.list": { safe: true, decode: array },
+  "org.teams.create": { safe: false, decode: withStrings("team_id", "name") },
+  "org.ensureDefaultTeam": { safe: false, decode: object },
+  "team.members.list": { safe: true, decode: array },
+  "team.members.add": { safe: false, decode: object },
+  "team.members.remove": { safe: false, decode: object },
+  "team.projects.grant": { safe: false, decode: object },
+  // Integrations catalog + OAuth/key connect flow.
+  "connections.list": { safe: true, decode: object },
+  "connections.connect": { safe: false, decode: object },
+  "connections.attempt": { safe: true, decode: object },
+  "connections.repositories": { safe: true, decode: object },
+  "connections.disconnect": { safe: true, decode: object },
+  "connections.reverify": { safe: false, decode: object },
+  "documents.list": { safe: true, decode: array },
+  "documents.get": { safe: true, decode: object },
+  "documents.create": { safe: false, decode: object },
+  "documents.update": { safe: true, decode: object },
+  "documents.content.get": { safe: true, decode: object },
+  "documents.content.put": { safe: false, decode: object },
+  "documents.snapshots": { safe: true, decode: array },
+  "documents.snapshots.restore": { safe: false, decode: object },
+  "documents.workSource": { safe: true, decode: object },
+  "documents.workSourcePin": { safe: true, decode: object },
+  "documents.statuses": { safe: true, decode: array },
+  // Binary export as `{ bytesBase64, contentType? }` — not a raw Response.
+  "documents.export": { safe: true, decode: withStrings("bytesBase64") },
+  "documents.agentOpen": { safe: false, decode: object },
+  "documents.runtimeConflictResolve": { safe: false, decode: object },
+  "documents.moveToRepository": { safe: false, decode: object },
+  "documents.fromRepo": { safe: false, decode: object },
+  "agentConfig.extensions.read": { safe: true, decode: object },
+  "agentConfig.extensions.write": { safe: false, decode: object },
+  "workgraph.snapshot": { safe: true, decode: object },
+  "workgraph.command": { safe: false, decode: object },
+  "workgraph.read": { safe: true, decode: object },
+  "workgraph.write": { safe: false, decode: object },
+  "session.create": { safe: false, decode: object },
+  "session.messages": { safe: true, decode: object },
+  "session.gateway": { safe: true, decode: object },
+  "billing.checkout": { safe: false, decode: object },
+  "billing.portal": { safe: true, decode: object },
+  "hostLink.register": { safe: false, decode: object },
+  "usage.get": { safe: true, decode: object },
+  "usage.sync": { safe: true, decode: object },
 }
 
 export function hostedOperationNames(): HostedOperationName[] {

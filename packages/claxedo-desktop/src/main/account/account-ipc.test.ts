@@ -1,8 +1,12 @@
 import { describe, expect, test } from "bun:test"
+import { EventEmitter } from "node:events"
 import {
   ACCOUNT_SIGN_IN_CHANNEL,
   ACCOUNT_SIGN_OUT_CHANNEL,
   ACCOUNT_STATE_CHANNEL,
+  ACCOUNT_STREAM_CLOSE_CHANNEL,
+  ACCOUNT_STREAM_OPEN_CHANNEL,
+  ACCOUNT_STREAM_START_CHANNEL,
   RENDERER_WITHHELD_OPERATIONS,
   registerAccountIpc,
   type AccountIpcService,
@@ -28,6 +32,7 @@ function harness(overrides: Partial<AccountIpcService> = {}) {
       calls.push({ name, input })
       return { ran: name }
     },
+    openStream: async () => {},
     ...overrides,
   }
   const registered = registerAccountIpc({
@@ -38,13 +43,37 @@ function harness(overrides: Partial<AccountIpcService> = {}) {
     calls,
     registered,
     invoke: (channel: string, ...args: unknown[]) => handlers.get(channel)!(undefined as never, ...(args as never[])),
+    invokeFrom: (sender: StreamSender, channel: string, ...args: unknown[]) =>
+      handlers.get(channel)!({ sender } as unknown as never, ...(args as never[])),
     has: (channel: string) => handlers.has(channel),
     channels: () => [...handlers.keys()],
   }
 }
 
+class StreamSender extends EventEmitter {
+  readonly sent: Array<{ channel: string; payload: unknown }> = []
+  private destroyed = false
+
+  send(channel: string, payload: unknown) {
+    this.sent.push({ channel, payload })
+  }
+
+  isDestroyed() {
+    return this.destroyed
+  }
+
+  destroy() {
+    this.destroyed = true
+    this.emit("destroyed")
+  }
+}
+
+async function flushStreamSettlement() {
+  for (let index = 0; index < 10; index++) await Promise.resolve()
+}
+
 describe("registered channels", () => {
-  test("exposes exactly one channel per operation, plus the three account ones", () => {
+  test("exposes exactly one channel per operation, plus the account protocol", () => {
     // Both directions. An extra channel is the failure that matters, and only
     // an equality check finds it.
     const h = harness()
@@ -52,6 +81,9 @@ describe("registered channels", () => {
       ACCOUNT_STATE_CHANNEL,
       ACCOUNT_SIGN_IN_CHANNEL,
       ACCOUNT_SIGN_OUT_CHANNEL,
+      ACCOUNT_STREAM_OPEN_CHANNEL,
+      ACCOUNT_STREAM_START_CHANNEL,
+      ACCOUNT_STREAM_CLOSE_CHANNEL,
       ...Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never)),
     ]
 
@@ -63,6 +95,150 @@ describe("registered channels", () => {
 
     for (const channel of h.channels()) {
       expect(channel).not.toMatch(/fetch|proxy|invoke|request$/i)
+    }
+  })
+})
+
+describe("stream channels", () => {
+  test("reserves an id without starting the service, then preserves synchronous chunks and end after start", async () => {
+    const opened: string[] = []
+    const h = harness({
+      openStream: async ({ onChunk }) => {
+        opened.push("opened")
+        onChunk("first")
+        onChunk("second")
+      },
+    })
+    const sender = new StreamSender()
+
+    const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
+      operation: "session.events",
+      input: { workspaceId: "ws_1" },
+    }) as { streamId: string }
+
+    expect(opened).toEqual([])
+    expect(sender.sent).toEqual([])
+
+    await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
+    await flushStreamSettlement()
+
+    expect(opened).toEqual(["opened"])
+    expect(sender.sent).toEqual([
+      { channel: "claxedo.account.stream.chunk", payload: { streamId, text: "first" } },
+      { channel: "claxedo.account.stream.chunk", payload: { streamId, text: "second" } },
+      { channel: "claxedo.account.stream.end", payload: { streamId } },
+    ])
+    expect(sender.listenerCount("destroyed")).toBe(0)
+  })
+
+  test("preserves a stream failure that happens synchronously during start", async () => {
+    const h = harness({
+      openStream: (() => {
+        throw new Error("sync stream failure")
+      }) as AccountIpcService["openStream"],
+    })
+    const sender = new StreamSender()
+    const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
+      operation: "session.events",
+    }) as { streamId: string }
+
+    await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
+    await flushStreamSettlement()
+
+    expect(sender.sent).toEqual([
+      {
+        channel: "claxedo.account.stream.error",
+        payload: { streamId, message: "sync stream failure" },
+      },
+    ])
+    expect(sender.listenerCount("destroyed")).toBe(0)
+  })
+
+  test("close before start aborts the reservation and refuses a later start", async () => {
+    let opens = 0
+    const h = harness({
+      openStream: async () => {
+        opens++
+      },
+    })
+    const sender = new StreamSender()
+    const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
+      operation: "session.events",
+    }) as { streamId: string }
+
+    await h.invokeFrom(sender, ACCOUNT_STREAM_CLOSE_CHANNEL, { streamId })
+
+    expect(opens).toBe(0)
+    expect(sender.listenerCount("destroyed")).toBe(0)
+    await expect(h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })).rejects.toThrow("unknown")
+  })
+
+  test("close aborts a running stream and suppresses its later terminal frame", async () => {
+    let signal: AbortSignal | undefined
+    let release!: () => void
+    const h = harness({
+      openStream: (input) => new Promise<void>((resolve) => {
+        signal = input.signal
+        release = resolve
+      }),
+    })
+    const sender = new StreamSender()
+    const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
+      operation: "session.events",
+    }) as { streamId: string }
+    await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
+
+    await h.invokeFrom(sender, ACCOUNT_STREAM_CLOSE_CHANNEL, { streamId })
+    release()
+    await flushStreamSettlement()
+
+    expect(signal?.aborted).toBe(true)
+    expect(sender.sent).toEqual([])
+    expect(sender.listenerCount("destroyed")).toBe(0)
+  })
+
+  test("refuses duplicate, unknown, and cross-renderer starts", async () => {
+    let release!: () => void
+    const h = harness({
+      openStream: () => new Promise<void>((resolve) => {
+        release = resolve
+      }),
+    })
+    const owner = new StreamSender()
+    const other = new StreamSender()
+    const { streamId } = await h.invokeFrom(owner, ACCOUNT_STREAM_OPEN_CHANNEL, {
+      operation: "session.events",
+    }) as { streamId: string }
+
+    await expect(h.invokeFrom(other, ACCOUNT_STREAM_START_CHANNEL, { streamId })).rejects.toThrow("unknown")
+    await h.invokeFrom(owner, ACCOUNT_STREAM_START_CHANNEL, { streamId })
+    await expect(h.invokeFrom(owner, ACCOUNT_STREAM_START_CHANNEL, { streamId })).rejects.toThrow("already started")
+    await expect(h.invokeFrom(owner, ACCOUNT_STREAM_START_CHANNEL, { streamId: "missing" })).rejects.toThrow("unknown")
+
+    release()
+    await flushStreamSettlement()
+  })
+
+  test("sender destruction aborts and removes both pending and running streams", async () => {
+    let runningSignal: AbortSignal | undefined
+    const h = harness({
+      openStream: ({ signal }) => new Promise<void>(() => {
+        runningSignal = signal
+      }),
+    })
+
+    for (const start of [false, true]) {
+      const sender = new StreamSender()
+      const { streamId } = await h.invokeFrom(sender, ACCOUNT_STREAM_OPEN_CHANNEL, {
+        operation: "session.events",
+      }) as { streamId: string }
+      if (start) await h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })
+
+      sender.destroy()
+
+      if (start) expect(runningSignal?.aborted).toBe(true)
+      expect(sender.listenerCount("destroyed")).toBe(0)
+      await expect(h.invokeFrom(sender, ACCOUNT_STREAM_START_CHANNEL, { streamId })).rejects.toThrow("unknown")
     }
   })
 })
@@ -189,17 +365,22 @@ describe("operations whose result is a credential", () => {
   test("withholds nothing else — every other operation still resolves", async () => {
     // Positive control for the branch. A refusal applied to the whole loop
     // would satisfy every assertion above and break the desktop entirely.
+    // Stream ops refuse unary invoke on purpose (open via stream IPC).
     const h = harness()
     const withheld = new Set<string>(RENDERER_WITHHELD_OPERATIONS)
+    const { isStreamHostedOperation } = await import("./hosted-operations")
     const ran: string[] = []
 
     for (const name of Object.keys(HOSTED_OPERATIONS)) {
-      if (withheld.has(name)) continue
+      if (withheld.has(name) || isStreamHostedOperation(name)) continue
       expect(await h.invoke(hostedOperationChannel(name as never))).toEqual({ ran: name })
       ran.push(name)
     }
 
-    expect(ran.length).toBe(Object.keys(HOSTED_OPERATIONS).length - RENDERER_WITHHELD_OPERATIONS.length)
+    const streamCount = Object.keys(HOSTED_OPERATIONS).filter((name) => isStreamHostedOperation(name)).length
+    expect(ran.length).toBe(
+      Object.keys(HOSTED_OPERATIONS).length - RENDERER_WITHHELD_OPERATIONS.length - streamCount,
+    )
     expect(ran.length).toBeGreaterThan(0)
   })
 })

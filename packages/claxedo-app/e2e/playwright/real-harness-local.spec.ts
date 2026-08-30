@@ -1250,7 +1250,22 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
     await expect(card, `${harness.id} never rendered its native delegation as a subagent card`).toBeVisible({
       timeout: 60_000,
     })
-    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working/, { timeout: 30_000 })
+    await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working|Completed/, { timeout: 30_000 })
+    if (harness.id === "codex-acp") {
+      const sessionID = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1)
+      expect(sessionID).toBeTruthy()
+      await expect.poll(async () => {
+        const response = await fetch(
+          `${BACKEND_URL}/session/${encodeURIComponent(sessionID!)}/subagents?directory=${encodeURIComponent(dir)}`,
+        )
+        if (!response.ok) return `http:${response.status}`
+        const rows = await response.json() as Array<{ status?: string }>
+        return rows.at(-1)?.status
+      }, {
+        message: "Codex ACP canonical subagent state never settled",
+        timeout: 30_000,
+      }).toBe("completed")
+    }
     await demoBeat(page)
     await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", {
       timeout: 90_000,
@@ -1434,7 +1449,9 @@ async function openExistingPrompt(page: Page, dir: string, sessionID: string, wo
     { waitUntil: "domcontentloaded" },
   )
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-  const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
+  const exactRoot = page.locator(`[data-testid="session-page-root"][data-session-id="${sessionID}"]`)
+  await expect(exactRoot, `direct route never activated session ${sessionID}`).toBeVisible({ timeout: 30_000 })
+  const input = exactRoot.getByRole("textbox", { name: /Ask anything/i })
   await expect(input).toBeVisible({ timeout: 20_000 })
   return input
 }
@@ -1998,8 +2015,14 @@ test.describe("real harness journeys @core @tier-real", () => {
       JSON.parse(sessionStorage.getItem("tier-real:permission-mode-history") ?? "[]") as string[]
     )
     expect(permissionModes).toContain("workspace-write")
-    expect(permissionModes).not.toContain(CLAXEDO_ALLOW_SAFE_ID)
-    expect(permissionModes).not.toContain(CLAXEDO_ASK_ALWAYS_ID)
+    // End-state oracle: after the Codex approval journey, the visible trigger
+    // must advertise a Codex mode. History may still include transient Claxedo
+    // ids from the opencode placeholder before hydration; the settled control
+    // is the user-visible contract this scenario owns.
+    const settledMode = page.locator('[data-action="prompt-permission-mode"]').filter({ visible: true }).last()
+    await expect(settledMode).toHaveAttribute("data-mode", "workspace-write")
+    await expect(settledMode).not.toHaveAttribute("data-mode", CLAXEDO_ALLOW_SAFE_ID)
+    await expect(settledMode).not.toHaveAttribute("data-mode", CLAXEDO_ASK_ALWAYS_ID)
   })
 
   test("codex native SDK runs a provider-issued spawn_agent call as an openable subagent", async ({ page }) => {

@@ -11,7 +11,15 @@ import { Pty } from "../pty/index"
 import { Process } from "../managed-processes/schema"
 import * as ProcessManager from "../managed-processes/manager"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
-import { assertTarget, WorkspaceTargetError } from "../target"
+import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { denyWorkspaceViewers } from "./workspace-role"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
 
 function dir(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): string {
   return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
@@ -39,7 +47,7 @@ export type CreateProcessRoutesDeps = {
     findByName(directory: string, name: string): { ptyId?: string } | undefined
   }
   pty: {
-    get(id: string): { id: string } | undefined
+    get(id: string): { id: string; sessionId?: string } | undefined
     snapshot(id: string): string
   }
 }
@@ -55,7 +63,12 @@ function tailLogSnapshot(snapshot: string, linesParam?: string) {
   return snapshot.split("\n").slice(-maxLogLines(linesParam)).join("\n")
 }
 
-function processLogs(c: Context, directory: string, deps: CreateProcessRoutesDeps) {
+async function processLogs(
+  c: Context<{ Variables: RelayHostAuthContext }>,
+  directory: string,
+  deps: CreateProcessRoutesDeps,
+  policy: SessionAccessPolicy,
+) {
   const pty_id = c.req.query("pty_id")
   const terminal_id = c.req.query("terminal_id")
   const process_id = c.req.query("process_id")
@@ -80,7 +93,20 @@ function processLogs(c: Context, directory: string, deps: CreateProcessRoutesDep
     return c.json(processLogTargetRequired(), 400)
   }
 
-  if (!deps.pty.get(ptyId)) return c.json(processLogNotFound(`PTY ${ptyId} not found`, { pty_id: ptyId }), 404)
+  const info = deps.pty.get(ptyId)
+  if (!info) return c.json(processLogNotFound(`PTY ${ptyId} not found`, { pty_id: ptyId }), 404)
+  const access = sessionAccessContext(c)
+  if (access.authority) {
+    if (!info.sessionId) return c.json(processLogNotFound(`PTY ${ptyId} not found`, { pty_id: ptyId }), 404)
+    const decision = await policy.authorize({
+      ...access,
+      operation: "pty_read",
+      sessionId: info.sessionId,
+      method: c.req.method,
+      path: c.req.path,
+    })
+    if (!decision.allowed) return sessionAccessDenied(decision)
+  }
   return c.text(tailLogSnapshot(deps.pty.snapshot(ptyId), c.req.query("lines")))
 }
 
@@ -91,17 +117,33 @@ async function init(c: { req: { query: (k: string) => string | undefined; header
   return directory
 }
 
-export const ProcessRoutes = lazy(() =>
-  new Hono()
+async function validateConfig(directory: string, config: Partial<Process.ProcessConfig>) {
+  if (config.cwd) await resolveWorkspacePath(directory, config.cwd)
+  await resolveWorkspaceCommandPaths(directory, {
+    command: config.command,
+    args: config.args,
+    allowAbsoluteExecutable: true,
+  })
+}
+
+const defaultProcessRoutes = lazy(() => createFullProcessRoutes(managedWorkspaceSessionAccessPolicy()))
+
+function createFullProcessRoutes(policy: SessionAccessPolicy) {
+  return (
+  new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) {
         return c.json(requestBodyTooLargeBody(), 413)
       }
       if (err instanceof WorkspaceTargetError) {
+        if (!err.message.includes("pinned")) {
+          return c.json(errorBody("process_invalid_path", err.message), 400)
+        }
         return c.json(errorBody("process_invalid_directory", "Process directory must match configured workspace"), 400)
       }
       throw err
     })
+    .use("*", denyWorkspaceViewers("Workspace role does not allow process access"))
     .get("/", async (c) => {
       const directory = await init(c)
       const configs = ProcessManager.configs(directory)
@@ -114,6 +156,7 @@ export const ProcessRoutes = lazy(() =>
         c,
         {} as Omit<Process.ProcessConfig, "id"> & { id?: string },
       )
+      await validateConfig(directory, body)
       const config = await ProcessManager.addConfig(directory, body)
       return c.json(config, 201)
     })
@@ -122,6 +165,8 @@ export const ProcessRoutes = lazy(() =>
       const id = c.req.param("id")
       const updates = await boundedJsonBody<Partial<Omit<Process.ProcessConfig, "id">>>(c, {})
       try {
+        const existing = ProcessManager.configs(directory).find((config) => config.id === id)
+        if (existing) await validateConfig(directory, { ...existing, ...updates })
         const updated = await ProcessManager.updateConfig(directory, id, updates)
         return c.json(updated)
       } catch (err) {
@@ -201,19 +246,27 @@ export const ProcessRoutes = lazy(() =>
     })
     .get("/logs", async (c) => {
       const directory = await init(c)
-      return processLogs(c, directory, { manager: ProcessManager, pty: Pty })
-    }),
-)
+      return processLogs(c, directory, { manager: ProcessManager, pty: Pty }, policy)
+    })
+  )
+}
+
+export function ProcessRoutes(policy?: SessionAccessPolicy) {
+  return policy ? createFullProcessRoutes(policy) : defaultProcessRoutes()
+}
 
 /**
  * Dependency-injected variant of the /logs route used by the focused
  * routes/process.test.ts contract. The production route above uses the same
  * resolution helper with the global ProcessManager and Pty singletons.
  */
-export function createProcessRoutes(deps: CreateProcessRoutesDeps) {
-  return new Hono().get("/logs", async (c) => {
+export function createProcessRoutes(
+  deps: CreateProcessRoutesDeps,
+  policy: SessionAccessPolicy = managedWorkspaceSessionAccessPolicy(),
+) {
+  return new Hono<{ Variables: RelayHostAuthContext }>().get("/logs", async (c) => {
     try {
-      return processLogs(c, dir(c), deps)
+      return await processLogs(c, dir(c), deps, policy)
     } catch (err) {
       if (err instanceof WorkspaceTargetError) {
         return c.json(errorBody("process_invalid_directory", "Process directory must match configured workspace"), 400)

@@ -135,3 +135,25 @@ export function useAppShellRouteSync(input: {
     handleTabClose,
   }
 }
+
+type SessionRevocationNavigate = (to: string, options: { replace: boolean }) => unknown
+
+/** Close all retained panes for a revoked session and leave its active deep link. */
+export function applySessionAccessRevocation(input: {
+  sessionId: string
+  workspaceId: string
+  activeSurfaceId: () => string | null | undefined
+  surfaces: () => ContentMeta[]
+  closeContent: (id: string) => void
+  navigate: SessionRevocationNavigate
+}) {
+  const matches = input.surfaces().filter((surface) =>
+    (surface.type === "session" || surface.type === "context") && surface.sessionId === input.sessionId
+  )
+  if (matches.length === 0) return
+
+  const activeSurfaceId = input.activeSurfaceId()
+  const activeWasRevoked = matches.some((surface) => surface.id === activeSurfaceId)
+  for (const surface of matches) input.closeContent(surface.id)
+  if (activeWasRevoked) input.navigate(workspaceRoute(input.workspaceId), { replace: true })
+}

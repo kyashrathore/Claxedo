@@ -111,19 +111,15 @@ describe("what the picker offers", () => {
     })
   })
 
-  // An unidentified harness must not leave the user with no control, and must
-  // never guess a harness — a ruleset written to the wrong engine is the failure
-  // this guards. Local answering cannot produce a write at all.
-  test("an unidentified harness gets Claxedo's options with a delivery that cannot write", () => {
+  // An unidentified harness must not flash Claxedo rows globally — tier-real
+  // behavior 13 records every visible permission trigger from first navigation,
+  // including background composers beside a Codex draft. Withhold the picker until
+  // the harness is named; local answering cannot produce a ruleset write anyway.
+  test("an unidentified harness hides the picker until the harness is named", () => {
     createRoot((dispose) => {
       const { control } = harness({})
-      const claxedo = control.groups()!.claxedo
-      expect(claxedo.map((row) => row.option.id)).toEqual([CLAXEDO_ALLOW_SAFE_ID, CLAXEDO_ASK_ALWAYS_ID])
-      for (const row of claxedo) {
-        expect(row.selectable, row.option.id).toBe(true)
-        expect(row.option.delivery.kind, row.option.id).toBe("claxedo-auto-answer")
-      }
-      expect(control.groups()!.harness.unavailable).toMatch(/identif/i)
+      expect(control.groups()).toBeUndefined()
+      expect(control.current()).toBeUndefined()
       dispose()
     })
   })

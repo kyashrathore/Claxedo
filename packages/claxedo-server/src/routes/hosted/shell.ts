@@ -40,6 +40,7 @@ import {
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 
 export type HostedShellRouteOptions = {
   authConfig: ControlPlaneAuthConfig
@@ -68,6 +69,14 @@ export type HostedShellRouteOptions = {
   piProviderCatalog?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   putPiCredential?: (auth: SignedControlPlaneAuth, providerID: string, key: string) => Promise<void>
   deletePiCredential?: (auth: SignedControlPlaneAuth, providerID: string) => Promise<void>
+  /** Durable workspace extension controls owned by the hosted authority. */
+  workspaceAgentExtensions?: Pick<
+    WorkspaceAuthority,
+    | "listWorkspaceAgentExtensions"
+    | "authorizeWorkspaceAgentExtensionsAdmin"
+    | "setWorkspaceAgentExtensionEnabled"
+    | "deleteWorkspaceAgentExtension"
+  >
   /** Idempotent owner setup scheduled only from signed bootstrap on Worker waitUntil. */
   activateOwner?: (auth: SignedControlPlaneAuth) => Promise<void>
 }
@@ -371,27 +380,25 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // room routes by owner and applies the same per-event `eventVisibleTo`
       // scoping the local Node bus does — to REPLAYED frames as much as live
       // ones, since a room's retention ring is shared by every member of an org.
-      const authorize = () => controlPlaneAuthContext(c.req.raw, {
-        config: options.authConfig,
-        ...(options.verifier ? { verifier: options.verifier } : {}),
-      })
-      const ctx = await authorize()
+      const authorize = async () => {
+        const auth = await controlPlaneAuthContext(c.req.raw, {
+          config: options.authConfig,
+          ...(options.verifier ? { verifier: options.verifier } : {}),
+        })
+        const orgId = auth.mode === "signed" && options.resolveOrgId
+          ? await options.resolveOrgId(auth)
+          : undefined
+        return { auth, ...(orgId ? { orgId } : {}) }
+      }
+      const subscriber = await authorize()
       // The cursor is read here and forwarded, not resolved here: the room owns
       // the sequence, so it is the only party that can turn a cursor-less
       // connection into a resume point.
       const lastEventId = c.req.header("last-event-id")
       if (options.liveSyncRoom) {
-        // Resolve the internal org id ONCE per connect (not per heartbeat or
-        // event) so the subscriber's room and visibility identity share the
-        // namespace publishers stamp. A resolution failure fails the connect
-        // (the client's reconnect loop retries); silently degrading to the
-        // owner room would strand this caller's org events until reconnect.
-        const orgId = ctx.mode === "signed" && options.resolveOrgId
-          ? await options.resolveOrgId(ctx)
-          : undefined
         return await connectLiveSyncRoom(
           options.liveSyncRoom,
-          { auth: ctx, ...(orgId ? { orgId } : {}) },
+          subscriber,
           heartbeatMs,
           authorize,
           lastEventId,
@@ -486,11 +493,83 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Machine-scan discovers extensions already installed under ~/.claude etc.
     // A hosted central has no such local machine, so it returns an empty set.
     .get("/api/claxedo/agent-config/extensions/machine-scan", (c) => c.json([]))
-    // Installed-extensions list (marketplace `loadInstalled`, ?scope=machine|
-    // project). A hosted central has no local machine/project install surface,
-    // so the installed set is empty — served as the `extensionListBody` object
-    // shape the app parses, with 200 (a 404 would log a red console error).
-    // Workspace-scope installs never land here: the app routes those through
-    // the marketplace's workspace flow, not this boot surface.
-    .get("/api/claxedo/agent-config/extensions", (c) => c.json(emptyExtensionList()))
+    // A hosted central has no local machine/project install surface, so those
+    // scopes return the valid empty shape. Workspace scope is authority-owned:
+    // list and state mutations below use the same durable rows runtimes read.
+    .get("/api/claxedo/agent-config/extensions", async (c) => {
+      const workspaceId = c.req.query("scope") === "workspace" ? c.req.query("workspaceId")?.trim() : undefined
+      if (!workspaceId) return c.json(emptyExtensionList())
+      if (!options.workspaceAgentExtensions) {
+        return c.json({ error: { code: "workspace_extensions_unavailable", message: "Workspace extensions are unavailable" } }, 503)
+      }
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        const records = await options.workspaceAgentExtensions.listWorkspaceAgentExtensions(auth, { workspaceId })
+        const rows = Array.isArray(records) ? records : []
+        return c.json({
+          desired: { version: 1, installs: rows.flatMap((row) => {
+            const desired = rec(row)?.desired
+            return desired && typeof desired === "object" && !Array.isArray(desired) ? [desired] : []
+          }) },
+          materialized: { version: 1, packages: {} },
+          effective: {},
+        })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    .post("/api/claxedo/agent-config/extensions/:id/enable", async (c) => {
+      const workspaceId = c.req.query("scope") === "workspace" ? c.req.query("workspaceId")?.trim() : undefined
+      if (!workspaceId) return c.json({ error: { code: "agent_config_workspace_required", message: "workspaceId is required" } }, 400)
+      if (!options.workspaceAgentExtensions) return c.json({ error: { code: "workspace_extensions_unavailable", message: "Workspace extensions are unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        await options.workspaceAgentExtensions.authorizeWorkspaceAgentExtensionsAdmin(auth, { workspaceId })
+        await options.workspaceAgentExtensions.setWorkspaceAgentExtensionEnabled(auth, {
+          workspaceId,
+          extensionId: c.req.param("id"),
+          enabled: true,
+        })
+        return c.json({ ok: true })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    .post("/api/claxedo/agent-config/extensions/:id/disable", async (c) => {
+      const workspaceId = c.req.query("scope") === "workspace" ? c.req.query("workspaceId")?.trim() : undefined
+      if (!workspaceId) return c.json({ error: { code: "agent_config_workspace_required", message: "workspaceId is required" } }, 400)
+      if (!options.workspaceAgentExtensions) return c.json({ error: { code: "workspace_extensions_unavailable", message: "Workspace extensions are unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        await options.workspaceAgentExtensions.authorizeWorkspaceAgentExtensionsAdmin(auth, { workspaceId })
+        await options.workspaceAgentExtensions.setWorkspaceAgentExtensionEnabled(auth, {
+          workspaceId,
+          extensionId: c.req.param("id"),
+          enabled: false,
+        })
+        return c.json({ ok: true })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    .delete("/api/claxedo/agent-config/extensions/:id", async (c) => {
+      const workspaceId = c.req.query("scope") === "workspace" ? c.req.query("workspaceId")?.trim() : undefined
+      if (!workspaceId) return c.json({ error: { code: "agent_config_workspace_required", message: "workspaceId is required" } }, 400)
+      if (!options.workspaceAgentExtensions) return c.json({ error: { code: "workspace_extensions_unavailable", message: "Workspace extensions are unavailable" } }, 503)
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        await options.workspaceAgentExtensions.authorizeWorkspaceAgentExtensionsAdmin(auth, { workspaceId })
+        await options.workspaceAgentExtensions.deleteWorkspaceAgentExtension(auth, {
+          workspaceId,
+          extensionId: c.req.param("id"),
+        })
+        return c.json({ ok: true })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
 }

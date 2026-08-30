@@ -7,15 +7,21 @@ import { promisify } from "node:util"
 import { once } from "node:events"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
-import { createRemoteJWKSet, exportJWK, generateKeyPair, jwtVerify } from "jose"
+import { createRemoteJWKSet, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
+import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "../../workspace-runtime/src/remote-session-authority.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
-import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
+import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/self-hosted-execution"
+import {
+  createSelfHostedApp,
+  embeddedManagedPrivateSessionPolicy,
+} from "./deployments/self-hosted-node/app"
 import { opencodeRequest } from "@claxedo/server-core/opencode/engine"
 import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
+import { upsertUser, openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
 // PRE-EXISTING BREAKAGE, fixed in passing: `refactor(server): group the
@@ -51,6 +57,12 @@ const requestedRole = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ROLE?.trim()
 const role =
   requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner" ? requestedRole : "editor"
 const backendPort = Number(process.env.CLAXEDO_E2E_BACKEND_PORT || 0)
+
+function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
+  const normalized = controlPlaneUrl.replace(/\/+$/, "")
+  if (!normalized || normalized.endsWith(":0")) return
+  process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] = `${normalized}/api/runtime-authority/session-authorize`
+}
 // Overridable so live-user-hosted-relay.spec.ts's token-refresh scenario can
 // force `tokenExpiresAt` inside `refreshWindowMs` (default 60s, see
 // `src/utils/workspace-relay-connection.ts`'s `ensureFresh`) almost
@@ -84,6 +96,23 @@ const hostId =
 
 async function run(cwd, ...args) {
   await execFileAsync(args[0], args.slice(1), { cwd })
+}
+
+function attachHttpServerErrorHandlers(server) {
+  server.on("clientError", (error, socket) => {
+    if (error?.code === "ECONNRESET" || error?.code === "EPIPE") {
+      socket.destroy()
+      return
+    }
+    socket.end("HTTP/1.1 400 Bad Request\r\n\r\n")
+  })
+  server.on("connection", (socket) => {
+    socket.setKeepAlive(false)
+    socket.on("error", (error) => {
+      if (error?.code === "ECONNRESET" || error?.code === "EPIPE") return
+      console.error("signed-browser-relay-fixture: socket error", error)
+    })
+  })
 }
 
 async function closeHttp(server) {
@@ -161,6 +190,7 @@ async function forbiddenOpencodeServer() {
 }
 
 async function startCloudRuntime(input) {
+  configureRuntimeSessionAuthorityUrl(input.controlPlaneUrl)
   const relayHostAuth = {
     key: input.relayHostPublicKey,
     workspaceId,
@@ -226,6 +256,7 @@ async function startCloudRuntime(input) {
     port: 0,
     hostname: "127.0.0.1",
   })
+  attachHttpServerErrorHandlers(server)
   runtime.injectWebSocket(server)
   const url = `http://127.0.0.1:${await serverPort(server, "Cloud runtime fixture")}`
   const health = await fetch(`${url}/api/wr/health`, {
@@ -340,6 +371,13 @@ await fs.appendFile(path.join(workspaceDir, "hello.txt"), "relay diff line\n")
 const runtime = await generateKeyPair("EdDSA", { extractable: true })
 const relayHost = await generateKeyPair("EdDSA", { extractable: true })
 process.env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK = JSON.stringify(await exportJWK(relayHost.publicKey))
+// PTY connect authorizeStream mints a short stream lease with this key
+// (`runtime-session-authority.ts` streamLeaseMinter). Without it, cloud WS
+// opens then refreshAuthorization fails → closeDenied → double
+// `client disconnected` before firstByte (blank xterm / cloud D).
+process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = await exportPKCS8(runtime.privateKey)
+process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(runtime.publicKey)
+process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
 
 const relay = await startRelayFixture({
   runtimePublicKeyJwk: await exportJWK(runtime.publicKey),
@@ -347,6 +385,7 @@ const relay = await startRelayFixture({
 })
 const relayUrl = relay.url
 const backendUrl = `http://127.0.0.1:${backendPort || 0}`
+if (backendPort) configureRuntimeSessionAuthorityUrl(backendUrl)
 const opencode = await forbiddenOpencodeServer()
 
 configureWorkspaceSupervisor({
@@ -371,6 +410,7 @@ let effectiveWorkspace = workspace
 if (access === "cloud") {
   cloudRuntime = await startCloudRuntime({
     relayHostPublicKey: relayHost.publicKey,
+    controlPlaneUrl: backendUrl,
   })
   const cloudWorkspace = await updateWorkspace(workspaceId, {
     kind: "cloud",
@@ -386,21 +426,6 @@ if (access === "cloud") {
     url: cloudRuntime.url,
   })
   injectRuntime(effectiveWorkspace, cloudRuntime.url)
-} else {
-  await startUserHostedWorkspaceTunnel({
-    workspaceId,
-    hostId,
-    relayUrl,
-    hostTunnelToken: await mintHostTunnelToken(
-      {
-        subject: "user_host",
-        hostId,
-        workspaceIds: [workspaceId],
-      },
-      runtime.privateKey,
-      "EdDSA",
-    ),
-  })
 }
 
 // --- REAL control-plane auth + authority (2026-08-06 plan Phase 3) ---------
@@ -499,6 +524,19 @@ const browserControlPlaneToken = await jwksIssuer.mint({
 })
 
 const authority = createSqliteWorkspaceAuthority()
+// Org→Team multiplayer e2e: personal orgs reject team CRUD. When
+// `CLAXEDO_E2E_COLLABORATIVE_ORG_NAME` is set, create an application org with a
+// default team and attach the fixture workspace to that org (D17).
+const collaborativeOrgName = process.env.CLAXEDO_E2E_COLLABORATIVE_ORG_NAME?.trim() || ""
+let fixtureOrgId = "personal"
+let fixtureDefaultTeamId
+await authority.usersMe(browserAuth)
+if (collaborativeOrgName) {
+  const org = await authority.createOrg(browserAuth, { name: collaborativeOrgName })
+  fixtureOrgId = org.org_id
+  fixtureDefaultTeamId = org.default_team_id
+}
+const collaborativeOrgArgs = collaborativeOrgName ? { orgId: fixtureOrgId } : {}
 if (access === "cloud") {
   await authority.createCloudWorkspace(browserAuth, {
     workspaceId,
@@ -506,6 +544,7 @@ if (access === "cloud") {
     displayName: "Signed Cloud Relay",
     repoName: "opencode",
     gitBranch: "main",
+    ...collaborativeOrgArgs,
   })
 } else {
   if (!fixtureLocalHostIdentity) throw new Error("User-hosted fixture identity was not initialized")
@@ -526,6 +565,7 @@ if (access === "cloud") {
     remoteDirectory: workspaceDir,
     repoName: "opencode",
     gitBranch: "main",
+    ...collaborativeOrgArgs,
   })
 
   // Starting the relay tunnel above proves transport availability, while the
@@ -574,15 +614,55 @@ if (access === "cloud") {
       })
   }, 15_000)
 }
+if (collaborativeOrgName && fixtureDefaultTeamId) {
+  await authority.ensureDefaultTeam(browserAuth, { orgId: fixtureOrgId })
+}
+// Real display names for multiuser proof / attribution: the authority upsert
+ // path does not take a name from the JWT, so stamp the owner before usersMe
+ // caches actor_name for runtime token minting.
+const authorityDb = openAuthorityDb()
+const ownerDisplayName = process.env.CLAXEDO_E2E_OWNER_DISPLAY_NAME?.trim() || "Alice"
+const ownerAvatarUrl = process.env.CLAXEDO_E2E_OWNER_AVATAR_URL?.trim() ||
+  "data:image/svg+xml," + encodeURIComponent(
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64"><circle cx="32" cy="32" r="32" fill="#2563eb"/><text x="32" y="33" dy=".35em" text-anchor="middle" fill="#fff" font-size="28" font-family="ui-sans-serif,system-ui,sans-serif" font-weight="700">A</text></svg>`,
+  )
+upsertUser(authorityDb(), {
+  token_identifier: browserAuth.user.tokenIdentifier,
+  subject: browserSubject,
+  issuer: jwksIssuer.issuer,
+  name: ownerDisplayName,
+  image_url: ownerAvatarUrl,
+  kind: "human",
+})
+const browserActor = await authority.usersMe(browserAuth)
+const withRuntimeActor = (input) => ({
+  ...input,
+  actorId: input.actorId ?? browserActor.actor_id,
+  actorKind: input.actorKind ?? browserActor.actor_kind,
+  actorPublicId: input.actorPublicId ?? browserActor.actor_public_id,
+  actorName: input.actorName ?? browserActor.actor_name,
+  ...((input.actorAvatarUrl ?? browserActor.actor_avatar_url)
+    ? { actorAvatarUrl: input.actorAvatarUrl ?? browserActor.actor_avatar_url }
+    : {}),
+})
+function fixtureJti(prefix = "jti") {
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
+}
+
 const runtimeAccessTokenSigner = async (input) => {
   const now = Date.now()
-  const jti = `jti_${now}`
+  const jti = fixtureJti()
   return {
     jti,
     tokenExpiresAt: now + tokenTtlSeconds * 1_000,
     runtimeAccessToken: await mintRuntimeAccessToken(
-      {
+      withRuntimeActor({
         subject: input.subject,
+        actorId: input.actorId,
+        actorKind: input.actorKind,
+        actorPublicId: input.actorPublicId,
+        actorName: input.actorName,
+        ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
         orgId: input.orgId,
         workspaceId: input.workspaceId,
         hostId: input.hostId,
@@ -590,7 +670,7 @@ const runtimeAccessTokenSigner = async (input) => {
         ttlSeconds: tokenTtlSeconds,
         jti,
         now,
-      },
+      }),
       runtime.privateKey,
       "EdDSA",
     ),
@@ -639,12 +719,12 @@ const services = createControlPlaneServices(
         getRelayEndpoint: () => relayUrl,
         mintRuntimeAccessToken: async (input) => {
           const now = Date.now()
-          const jti = `relay_provider_${now}`
+          const jti = fixtureJti("relay_provider")
           return {
             jti,
             expiresAt: now + input.ttlMs,
             token: await mintRuntimeAccessToken(
-              {
+              withRuntimeActor({
                 subject: input.subject,
                 orgId: input.orgId,
                 workspaceId: input.workspaceId,
@@ -653,7 +733,20 @@ const services = createControlPlaneServices(
                 ttlSeconds: Math.ceil(input.ttlMs / 1_000),
                 jti,
                 now,
-              },
+                ...(input.actorId && input.actorKind
+                  ? {
+                      actorId: input.actorId,
+                      actorKind: input.actorKind,
+                      ...(input.actorPublicId && input.actorName
+                        ? {
+                            actorPublicId: input.actorPublicId,
+                            actorName: input.actorName,
+                            ...(input.actorAvatarUrl ? { actorAvatarUrl: input.actorAvatarUrl } : {}),
+                          }
+                        : {}),
+                    }
+                  : {}),
+              }),
               runtime.privateKey,
               "EdDSA",
             ),
@@ -750,6 +843,16 @@ await authority.syncSessionMessages(browserAuth, {
   messages: sessionMessages,
 })
 
+// The full production entry point configures embedded execution immediately
+// after building this app. This focused fixture injects its own services and
+// therefore calls the same canonical authority-policy factory explicitly
+// before any tunnel request can create the runtime host.
+configureEmbeddedWorkspaceRuntime({
+  opencodeRequest,
+  opencodeCompat: true,
+  sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority),
+})
+
 const built = createSelfHostedApp(services, {
   // A production browser normally reuses one document/token. This load suite
   // deliberately boots many fresh documents against one fixture; keep the
@@ -757,6 +860,25 @@ const built = createSelfHostedApp(services, {
   // for that workload.
   connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 10_000, windowMs: 60_000 }),
 })
+if (access === "user-hosted") {
+  // Tunnel startup can create/cache the workspace runtime, and runtime policy
+  // configuration is intentionally not retroactive. Start only after the
+  // authority-backed factory above is ready.
+  await startUserHostedWorkspaceTunnel({
+    workspaceId,
+    hostId,
+    relayUrl,
+    hostTunnelToken: await mintHostTunnelToken(
+      {
+        subject: "user_host",
+        hostId,
+        workspaceIds: [workspaceId],
+      },
+      runtime.privateKey,
+      "EdDSA",
+    ),
+  })
+}
 // This fixture predates the machine-wide Host Connector and deliberately uses
 // the self-host composition for its embedded execution + relay paths. That
 // composition must not own hosted machine-enrollment routes, so compose the
@@ -810,9 +932,9 @@ built.app.get("/__fixture/mint", async (c) => {
   }
   const now = Date.now()
   const token = await mintRuntimeAccessToken(
-    {
+    withRuntimeActor({
       subject: "user_browser",
-      orgId: "personal",
+      orgId: fixtureOrgId,
       workspaceId,
       // Must match whatever host identity the runtime was configured with, or the
       // relay rejects this token with `relay_token_host_mismatch`. In cloud mode
@@ -823,7 +945,7 @@ built.app.get("/__fixture/mint", async (c) => {
       ttlSeconds: tokenTtlSeconds,
       jti: `fixture_mint_${now}`,
       now,
-    },
+    }),
     runtime.privateKey,
     "EdDSA",
   )
@@ -840,18 +962,58 @@ built.app.get("/__fixture/mint", async (c) => {
 built.app.get("/__fixture/authority-identity", async (c) => {
   const subject = c.req.query("subject")
   const role = c.req.query("role")
+  const name = c.req.query("name")?.trim()
+  const grantWorkspaceShare = c.req.query("grantWorkspaceShare") !== "0"
+  const joinOrg = c.req.query("joinOrg") === "1"
   if (!subject) return c.json({ error: "subject is required" }, 400)
   if (role !== "viewer" && role !== "editor" && role !== "admin") {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
   }
   const tokenIdentifier = `${jwksIssuer.issuer}|${subject}`
-  await authority.grantWorkspaceShare(browserAuth, {
-    workspaceId,
-    role,
-    grantedToTokenIdentifier: tokenIdentifier,
+  // `grantWorkspaceShare` refuses unknown targets (`requireExisting: true`).
+  // Upsert the teammate first so a fresh `sub` is a real user row, the same
+  // way the product invite flow resolves the collaborator before writing the grant.
+  await authority.usersMe({
+    mode: "signed",
+    token: "",
+    user: {
+      subject,
+      tokenIdentifier,
+      issuer: jwksIssuer.issuer,
+    },
   })
+  if (joinOrg) {
+    if (!collaborativeOrgName || fixtureOrgId === "personal") {
+      return c.json({ error: "joinOrg requires a collaborative fixture organization" }, 400)
+    }
+    const now = Date.now()
+    authorityDb().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', ?, ?)
+      ON CONFLICT (org_id, token_identifier) DO UPDATE SET role = 'member', updated_at = excluded.updated_at
+    `).run(fixtureOrgId, tokenIdentifier, now, now)
+  }
+  if (name) {
+    upsertUser(authorityDb(), {
+      token_identifier: tokenIdentifier,
+      subject,
+      issuer: jwksIssuer.issuer,
+      name,
+      kind: "human",
+    })
+  }
+  // Org→Team proofs mint Bob without a direct workspace share so access comes
+  // from team membership + team_project_grants. Casey keeps a user workspace
+  // share (default) to prove workspace access alone does not unlock sessions.
+  if (grantWorkspaceShare) {
+    await authority.grantWorkspaceShare(browserAuth, {
+      workspaceId,
+      role,
+      grantedToTokenIdentifier: tokenIdentifier,
+    })
+  }
   const token = await jwksIssuer.mint({ subject, audience: controlPlaneAudience, ttlSeconds: 3600 })
-  return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token })
+  return c.json({ subject, tokenIdentifier, role, controlPlaneToken: token, ...(name ? { name } : {}) })
 })
 if (access !== "cloud") {
   built.app.post("/__fixture/tunnel/pause", async (c) => {
@@ -894,6 +1056,17 @@ if (access !== "cloud") {
   )
 }
 
+function withConnectionClose(response) {
+  if (response.status === 101) return response
+  const headers = new Headers(response.headers)
+  headers.set("connection", "close")
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
+}
+
 const server = serve({
   fetch: async (request, ...rest) => {
     const url = new URL(request.url)
@@ -923,19 +1096,21 @@ const server = serve({
         status: response.status,
         at: Date.now(),
       })
-      return response
+      return withConnectionClose(response)
     }
-    return built.app.fetch(request, ...rest)
+    return withConnectionClose(await built.app.fetch(request, ...rest))
   },
   port: backendPort || 0,
   hostname: "127.0.0.1",
 })
+attachHttpServerErrorHandlers(server)
 built.injectWebSocket(server)
 const address = server.address()
 if ((!address || typeof address === "string") && !backendPort) {
   throw new Error("Signed browser relay backend did not bind")
 }
 const boundPort = typeof address === "object" && address ? address.port : backendPort
+configureRuntimeSessionAuthorityUrl(`http://127.0.0.1:${boundPort}`)
 
 console.log(
   JSON.stringify({
@@ -943,10 +1118,12 @@ console.log(
     relayUrl,
     workspaceId,
     hostId,
+    orgId: fixtureOrgId,
+    ...(fixtureDefaultTeamId ? { defaultTeamId: fixtureDefaultTeamId } : {}),
     runtimeAccessToken: await mintRuntimeAccessToken(
-      {
+      withRuntimeActor({
         subject: "user_browser",
-        orgId: "personal",
+        orgId: fixtureOrgId,
         workspaceId,
         // Same host-identity rule as `/__fixture/mint` above.
         hostId: access === "cloud" ? workspaceId : hostId,
@@ -954,7 +1131,7 @@ console.log(
         ttlSeconds: 120,
         jti: `fixture_${Date.now()}`,
         now: Date.now(),
-      },
+      }),
       runtime.privateKey,
       "EdDSA",
     ),
@@ -966,6 +1143,11 @@ console.log(
     // verifies it and why no current spec consumes this field yet.
     controlPlaneToken: browserControlPlaneToken,
     controlPlaneIssuer: jwksIssuer.issuer,
+    ownerActor: {
+      actor_id: browserActor.actor_id,
+      actor_public_id: browserActor.actor_public_id,
+      actor_name: browserActor.actor_name,
+    },
     desktopRefreshToken,
   }),
 )
@@ -991,8 +1173,18 @@ function shutdown() {
 // The harness owns this process through a pipe, not a health check against a
 // possibly stale listener. Parent death closes the pipe even on SIGKILL.
 process.stdin.resume()
+process.stdin.on("error", () => {})
 process.stdin.once("end", () => {
   shutdown().finally(() => process.exit(0))
+})
+
+process.on("uncaughtException", (error) => {
+  if (error?.code === "ECONNRESET" || error?.code === "EPIPE") {
+    console.error("signed-browser-relay-fixture: ignored benign socket reset")
+    return
+  }
+  console.error(error)
+  process.exit(1)
 })
 
 process.on("SIGTERM", () => {

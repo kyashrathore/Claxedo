@@ -62,6 +62,21 @@ function asOwner(t: ReturnType<typeof convexTest>) {
   return t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
 }
 
+async function seedOwnerOrg(t: ReturnType<typeof convexTest>) {
+  return await t.run(async (ctx) => {
+    const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
+    const orgId = await ctx.db.insert(
+      "orgs",
+      stamped({ name: "Personal", kind: "personal", owner_user_id: ownerId }) as never,
+    )
+    await ctx.db.insert(
+      "org_memberships",
+      stamped({ org_id: orgId, user_id: ownerId, role: "owner" }) as never,
+    )
+    return { ownerId, orgId }
+  })
+}
+
 /**
  * Local Host Link attestation and pause policy (`convex/localHostLinks.ts`).
  *
@@ -78,12 +93,13 @@ describe("Convex Local Host Link pause policy", () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const key = hostKey()
     const t = convexTest(schema, modules)
-    const ownerId = await t.run(async (ctx) => ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never))
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     await t.run(async (ctx) =>
       ctx.db.insert(
         "workspaces",
         stamped({
           workspace_id: "ws_1",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "local-worktree",
           access: "user-hosted",
@@ -150,12 +166,13 @@ describe("Convex Local Host Link pause policy", () => {
     // The SAME host_id is linked to two different workspaces — what happens
     // when a CLI re-runs `claxedo up` across workspaces. The old heartbeat
     // used by_host_id.unique() and 500'd here.
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     const { linkTargetId, linkOtherId } = await t.run(async (ctx) => {
-      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       const ws1Id = await ctx.db.insert(
         "workspaces",
         stamped({
           workspace_id: "ws_1",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "local-worktree",
           access: "user-hosted",
@@ -167,6 +184,7 @@ describe("Convex Local Host Link pause policy", () => {
         "workspaces",
         stamped({
           workspace_id: "ws_2",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "local-worktree",
           access: "user-hosted",
@@ -219,12 +237,13 @@ describe("Convex Local Host Link pause policy", () => {
     const key = hostKey()
     const otherKey = hostKey()
     const t = convexTest(schema, modules)
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     await t.run(async (ctx) => {
-      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       await ctx.db.insert(
         "workspaces",
         stamped({
           workspace_id: "ws_1",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "local-worktree",
           access: "user-hosted",
@@ -259,12 +278,13 @@ describe("Convex Local Host Link pause policy", () => {
   test("a per-workspace pause is recorded as a USER pause", async () => {
     vi.spyOn(Date, "now").mockReturnValue(400_000)
     const t = convexTest(schema, modules)
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     const linkId = await t.run(async (ctx) => {
-      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       const workspaceId = await ctx.db.insert(
         "workspaces",
         stamped({
           workspace_id: "ws_1",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "local-worktree",
           access: "user-hosted",
@@ -301,12 +321,13 @@ describe("Convex Local Host Link pause policy", () => {
     process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "relay-service-token"
     try {
       const t = convexTest(schema, modules)
+      const { ownerId, orgId } = await seedOwnerOrg(t)
       await t.run(async (ctx) => {
-        const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
         const workspaceId = await ctx.db.insert(
           "workspaces",
           stamped({
             workspace_id: "ws_1",
+            org_id: orgId,
             owner_user_id: ownerId,
             backing: "local-worktree",
             access: "local",
@@ -367,12 +388,13 @@ describe("Convex Local Host Link pause policy", () => {
     const t = convexTest(schema, modules)
     // Workspace has NO home_region: the result must not invent one — the
     // server normalizes with its configured default at read time.
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     await t.run(async (ctx) => {
-      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       await ctx.db.insert(
         "workspaces",
         stamped({
           workspace_id: "ws_1",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "local-worktree",
           access: "user-hosted",
@@ -411,7 +433,7 @@ describe("Convex Local Host Link pause policy", () => {
     // The hosted first-time flow: NO workspace doc exists yet — the security
     // reorder runs registerLocalForSharing only AFTER host proof, so the
     // challenge/register pair must work without one.
-    const ownerId = await t.run(async (ctx) => ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never))
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     const owner = asOwner(t)
 
     // Challenge: succeeds with no doc and mutates nothing but the nonce row.
@@ -554,7 +576,7 @@ describe("Convex Local Host Link pause policy", () => {
     vi.spyOn(Date, "now").mockReturnValue(700_000)
     const key = hostKey()
     const t = convexTest(schema, modules)
-    const ownerId = await t.run(async (ctx) => ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never))
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     const owner = asOwner(t)
     const challenge = (await owner.mutation(api.localHostLinks.createChallenge, {
       workspace_id: "ws_race",
@@ -567,6 +589,7 @@ describe("Convex Local Host Link pause policy", () => {
         "workspaces",
         stamped({
           workspace_id: "ws_race",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "cloud-vm",
           access: "cloud",
@@ -598,12 +621,13 @@ describe("Convex Local Host Link pause policy", () => {
 
   test("refuses challenges and registrations against cloud-backed workspaces", async () => {
     const t = convexTest(schema, modules)
+    const { ownerId, orgId } = await seedOwnerOrg(t)
     await t.run(async (ctx) => {
-      const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       await ctx.db.insert(
         "workspaces",
         stamped({
           workspace_id: "ws_1",
+          org_id: orgId,
           owner_user_id: ownerId,
           backing: "cloud-vm",
           access: "cloud",

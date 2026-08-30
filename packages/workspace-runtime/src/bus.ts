@@ -43,6 +43,8 @@ export function createBus<T>(options: BusOptions<T> = {}) {
 
 export type PtyInfo = {
   id: string
+  sessionId?: string
+  createRequestId?: string
   title: string
   command: string
   args: string[]
@@ -54,11 +56,12 @@ export type PtyInfo = {
 export type WorkspaceRuntimeEvent =
   | { type: "pty.created"; info: PtyInfo }
   | { type: "pty.updated"; info: PtyInfo }
-  | { type: "pty.exited"; id: string; exitCode: number; tail?: string }
-  | { type: "pty.deleted"; id: string }
+  | { type: "pty.exited"; id: string; sessionId?: string; exitCode: number; tail?: string }
+  | { type: "pty.deleted"; id: string; sessionId?: string }
   | {
       type: "pty.stream"
       id: string
+      sessionId?: string
       kind: "data" | "exit" | "disconnect" | "error" | "command-exit"
       exitCode?: number
       message?: string

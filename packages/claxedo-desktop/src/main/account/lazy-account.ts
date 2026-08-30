@@ -64,6 +64,7 @@ export function setupLazyAccount(input: {
       await (await ensureLoaded()).service.signOut()
     },
     run: async (name, params) => await (await ensureLoaded()).service.run(name, params),
+    openStream: async (stream) => await (await ensureLoaded()).service.openStream(stream),
   }
 
   registerAccountIpc({ ipcMain: input.ipcMain, service })

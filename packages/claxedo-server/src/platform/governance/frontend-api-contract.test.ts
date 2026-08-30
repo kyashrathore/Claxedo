@@ -112,7 +112,7 @@ vi.mock("@claxedo/server-core/opencode/auth", () => ({
   opencodeHeaders: vi.fn((headers?: HeadersInit) => new Headers(headers)),
 }))
 
-const [serverMod, servicesMod, syncMod, compatMod, agentConfigMod, engineMod] = await Promise.all([
+const [serverMod, servicesMod, syncMod, , agentConfigMod, engineMod] = await Promise.all([
   import("../../deployments/self-hosted-node/app"),
   import("../../authority/services"),
   import("../../authority/adapters/sqlite/central-store"),
@@ -172,10 +172,11 @@ function createContractApp() {
   ).app
 }
 
-function expectOk(responses: Record<string, Response>) {
+async function expectOk(responses: Record<string, Response>) {
   for (const [name, res] of Object.entries(responses)) {
-    expect(res.status, name).toBeGreaterThanOrEqual(200)
-    expect(res.status, name).toBeLessThan(300)
+    const diagnostic = `${name}: ${await res.clone().text()}`
+    expect(res.status, diagnostic).toBeGreaterThanOrEqual(200)
+    expect(res.status, diagnostic).toBeLessThan(300)
   }
 }
 
@@ -213,7 +214,10 @@ describe("frontend API contract", () => {
         }
         if (url.pathname === "/provider/auth") return Response.json({})
         if (url.pathname === "/config/providers") {
-          return Response.json({ providers: [{ id: "opencode" }], default: { opencode: "big-pickle" } })
+          return Response.json({
+            providers: [{ id: "opencode", models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
+            default: { opencode: "big-pickle" },
+          })
         }
         if (url.pathname === "/config" || url.pathname === "/global/config") {
           return Response.json({ model: "", provider: {}, mcp: {} })
@@ -299,8 +303,8 @@ describe("frontend API contract", () => {
       slashCommands: await app.request(`/api/claxedo/agent-config/commands?${workspaceQuery}`),
     }
 
-    const { runnerOptions, ...okResponses } = responses
-    expectOk(okResponses)
+    const { runnerOptions: _runnerOptions, ...okResponses } = responses
+    await expectOk(okResponses)
 
     await expect(responses.bootstrap.json()).resolves.toMatchObject({
       provider: {
@@ -314,8 +318,8 @@ describe("frontend API contract", () => {
       "claude-acp": [expect.objectContaining({ type: "api" })],
       "codex-acp": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
     })
-    await expect(responses.configProviders.json()).resolves.toEqual({
-      providers: [{ id: "opencode" }],
+    await expect(responses.configProviders.json()).resolves.toMatchObject({
+      providers: [expect.objectContaining({ id: "opencode" })],
       default: { opencode: "big-pickle" },
     })
     await expect(responses.workspaceResolve.json()).resolves.toMatchObject({
@@ -345,6 +349,7 @@ describe("frontend API contract", () => {
 
     expect(runtimeFetches.sort()).toEqual(
       [
+        "http://runtime.frontend.test/workspaces/ws_frontend_contract/agent?directory=%2Fworkspace",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
@@ -367,43 +372,29 @@ describe("frontend API contract", () => {
     })
   })
 
-  test("serves the stale Cursor SDK catalog when the SDK API key is missing", async () => {
+  test("does not synthesize a Cursor SDK catalog when the SDK API key is missing", async () => {
     await agentConfigMod.saveUserConfig({ mcp: {}, auth: {} })
 
     const res = await createContractApp().request(
       "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
     )
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(502)
     await expect(res.json()).resolves.toMatchObject({
-      source: "catalog",
-      stale: true,
-      options: [
-        {
-          id: "model",
-          currentValue: "auto",
-        },
-      ],
+      error: { code: "harness_config_options_unavailable" },
     })
   })
 
-  test("serves the stale Cursor SDK catalog fallback when the runtime cannot live-list", async () => {
+  test("does not synthesize a Cursor SDK catalog when the runtime cannot live-list", async () => {
     await agentConfigMod.saveUserConfig({ mcp: {}, auth: { "cursor-sdk": "cursor-sdk-test-key" } })
 
     const res = await createContractApp().request(
       "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
     )
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(502)
     await expect(res.json()).resolves.toMatchObject({
-      source: "catalog",
-      stale: true,
-      options: [
-        {
-          id: "model",
-          currentValue: "auto",
-        },
-      ],
+      error: { code: "harness_config_options_unavailable" },
     })
   })
 })

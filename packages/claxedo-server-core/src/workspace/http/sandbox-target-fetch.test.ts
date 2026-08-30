@@ -45,6 +45,11 @@ describe("sandboxFetch", () => {
         sandboxManager: sandboxManager as never,
         relayProvider: relayProvider as never,
         defaultHomeRegion: "eu-west",
+        subject: "control-plane",
+        principalKind: "service",
+        actorId: "control-plane",
+        actorKind: "agent",
+        role: "owner",
       },
     )
 
@@ -54,6 +59,9 @@ describe("sandboxFetch", () => {
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "control-plane",
+      principalKind: "service",
+      actorId: "control-plane",
+      actorKind: "agent",
       orgId: "org_1",
       role: "owner",
       ttlMs: 10 * 60_000,
@@ -100,12 +108,55 @@ describe("sandboxFetch", () => {
       {
         sandboxManager: sandboxManager as never,
         relayProvider: relayProvider as never,
+        subject: "control-plane",
+        principalKind: "service",
+        actorId: "control-plane",
+        actorKind: "agent",
+        role: "owner",
         resume: false,
       },
     )
 
     expect(sandboxManager.target).toHaveBeenCalledWith("ws_1")
     expect(sandboxManager.ensure).not.toHaveBeenCalled()
+  })
+
+  test("rejects an incomplete service principal instead of synthesizing owner authority", async () => {
+    const sandboxManager = {
+      ensure: vi.fn(async () => ({
+        status: "ready" as const,
+        workspaceId: "ws_1",
+        sandboxId: "sb_1",
+        hostId: "host_1",
+        url: "https://runtime-manager.test/base/",
+        epoch: 1,
+        homeRegion: "us-east" as const,
+      })),
+    }
+    const relayProvider = {
+      mintRuntimeAccessToken: vi.fn(),
+      getRelayEndpoint: vi.fn(),
+    }
+
+    await expect(sandboxFetch(
+      {
+        id: "ws_1",
+        org_id: "org_1",
+        kind: "cloud",
+        directory: "/workspace",
+        created_at: 1,
+        updated_at: 1,
+      } as Workspace,
+      "/api/wr/health",
+      undefined,
+      {
+        sandboxManager: sandboxManager as never,
+        relayProvider: relayProvider as never,
+        principalKind: "service",
+      },
+    )).rejects.toThrow("complete runtime principal required for runtime token minting: ws_1")
+
+    expect(relayProvider.mintRuntimeAccessToken).not.toHaveBeenCalled()
   })
 
   test("fails closed for cloud workspace requests without a SandboxManager", async () => {

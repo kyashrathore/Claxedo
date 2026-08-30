@@ -1849,6 +1849,73 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  test("closes an idle user-hosted channel and notifies its host after token revocation", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const directory = createWorkspaceRelayDirectory()
+    const observer = observeDirectory(directory)
+    let active = true
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      directory,
+      isRuntimeAccessTokenActive: () => active
+        ? { active: true as const }
+        : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://user-hosted.invalid",
+        access: "user-hosted",
+        backing: "local-worktree",
+      }),
+    }, {
+      authorizeHostTunnel: () => true,
+      runtimeAccessTokenActiveCheckIntervalMs: 5,
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const host = new WebSocket(
+      new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
+    )
+    const hostClose = new Promise<Record<string, unknown>>((resolve) => {
+      host.onmessage = (event) => {
+        const message = JSON.parse(String(event.data)) as Record<string, unknown>
+        if (message.type === "ws.close") resolve(message)
+      }
+    })
+    const token = await mintRuntimeAccessToken({
+      subject: "user_1",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+
+    try {
+      await waitForOpen(host)
+      await observer.waitForPresence()
+      const client = new (WebSocket as unknown as {
+        new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+      })(new URL("/workspaces/ws_1/api/claxedo/pty/pty_1/connect", relay.url).toString().replace(/^http/, "ws"), {
+        headers: { origin: "http://localhost:3000" },
+        protocols: [`claxedo-rat.${token}`],
+      })
+      try {
+        await waitForOpen(client)
+        const closed = waitForClose(client)
+        active = false
+        await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token has been revoked" })
+        await expect(hostClose).resolves.toMatchObject({ type: "ws.close", code: 1008 })
+      } finally {
+        client.close()
+      }
+    } finally {
+      host.close()
+      relay.stop(true)
+    }
+  })
+
   test("round-trips binary user-hosted WebSocket frames through the tunnel", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -2424,6 +2491,169 @@ describe("workspace relay Bun adapter", () => {
       expect(body.error?.code).toBe("origin_not_allowed")
     } finally {
       relay.stop(true)
+    }
+  })
+
+  test("honors configured allowedOrigins for user WebSocket upgrades", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      allowedOrigins: ["https://selfhost.example.com"],
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        access: "cloud",
+        backing: "cloud-vm",
+      }),
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      subject: "user_1",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const custom = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "https://selfhost.example.com" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      await waitForOpen(custom)
+      const product = await fetch(new URL("/workspaces/ws_1/api/ws", relay.url), {
+        headers: {
+          upgrade: "websocket",
+          connection: "upgrade",
+          "sec-websocket-version": "13",
+          "sec-websocket-key": "dGhlIHNhbXBsZSBub25jZQ==",
+          "sec-websocket-protocol": `claxedo-rat.${token}`,
+          origin: "https://app.claxedo.com",
+        },
+      })
+      expect(product.status).toBe(403)
+      await expect(product.json()).resolves.toMatchObject({ error: { code: "origin_not_allowed" } })
+    } finally {
+      custom.close()
+      relay.stop(true)
+      host.stop(true)
+    }
+  })
+
+  test("closes an idle Bun WebSocket after its Runtime Access Token is revoked", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    let active = true
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      isRuntimeAccessTokenActive: () => active
+        ? { active: true as const }
+        : { active: false as const, code: "runtime_access_token_revoked", reason: "Runtime Access Token has been revoked" },
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        access: "cloud",
+        backing: "cloud-vm",
+      }),
+    }, { runtimeAccessTokenActiveCheckIntervalMs: 5 })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      subject: "user_1",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      await waitForOpen(client)
+      const closed = waitForClose(client)
+      active = false
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token has been revoked" })
+    } finally {
+      client.close()
+      relay.stop(true)
+      host.stop(true)
+    }
+  })
+
+  test("caps an idle Bun WebSocket lifetime at Runtime Access Token expiry", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const host = Bun.serve<{ ok: true }>({
+      port: 0,
+      fetch(request, server) {
+        if (server.upgrade(request, { data: { ok: true } })) return
+        return new Response("upgrade failed", { status: 400 })
+      },
+      websocket: { message() {} },
+    })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: String(host.url).replace(/\/$/, ""),
+        access: "cloud",
+        backing: "cloud-vm",
+      }),
+    }, { now: () => Date.now() + 31 * 60_000 })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    const token = await mintRuntimeAccessToken({
+      subject: "user_1",
+      orgId: "org_1",
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      role: "editor",
+    }, runtime.privateKey, "EdDSA")
+    const client = new (WebSocket as unknown as {
+      new(url: string, options: { headers: Record<string, string>; protocols: string[] }): WebSocket
+    })(new URL("/workspaces/ws_1/api/ws", relay.url).toString().replace(/^http/, "ws"), {
+      headers: { origin: "http://localhost:3000" },
+      protocols: [`claxedo-rat.${token}`],
+    })
+
+    try {
+      const closed = waitForClose(client)
+      await waitForOpen(client)
+      await expect(closed).resolves.toEqual({ code: 1008, reason: "Runtime Access Token expired" })
+    } finally {
+      client.close()
+      relay.stop(true)
+      host.stop(true)
     }
   })
 

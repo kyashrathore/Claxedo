@@ -101,7 +101,7 @@ describe("bootstrapDirectory provider routing", () => {
     expect(calls.filter((url) => url.startsWith(`${CENTRAL}/provider`))).toEqual([])
 
     const providers = queryClient.getQueryData<NormalizedProviderListResponse>(
-      queryKeys.controlPlane.providers(CENTRAL),
+      queryKeys.controlPlane.providers(CENTRAL, `workspace:${WS}`, "opencode"),
     )
     expect([...(providers?.all.keys() ?? [])]).toEqual(["opencode"])
   })

@@ -234,7 +234,7 @@
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-harness-ownership-local"
 
@@ -690,6 +690,8 @@ test.describe("core harness ownership (local) @core", () => {
 
     await page.goto(`/${slug(DIR)}/session`)
     await page.waitForLoadState("domcontentloaded")
+    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
 
@@ -964,6 +966,7 @@ test.describe("core harness ownership (local) @core", () => {
 
     const text = "core harness abort-disabled turn"
     await composePrompt(page, input, text)
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await page.locator(SELECTORS.submitControl).last().click()
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
 

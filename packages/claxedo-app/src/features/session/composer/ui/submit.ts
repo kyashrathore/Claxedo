@@ -2,45 +2,36 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
-import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
-import { useGlobalSDK } from "@/features/session/app-ports"
+import {
+  createCloudWorkspace, isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
+  useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
+} from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
-import { useLayout } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { usePermission } from "@/features/session/providers/permission"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { useSDK } from "@/features/session/app-ports"
 import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/platform/api/api"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
-import { useClaxedoState } from "@/features/session/app-ports"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
-import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
-import { useGlobalBootstrapActions } from "@/features/session/app-ports"
-import {
-  addRegisteredConversationMessage,
-  removeRegisteredConversationMessage,
-} from "../../conversation/conversation-registry"
 import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
-import { useConfigOptional } from "@/features/session/app-ports"
-import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
   recordPromptSubmission,
   resolvePromptDispatchClient,
   resolveSubmitMode,
   resolveSubmittedConfig,
   setPromptSessionStatus,
-  type PromptTimelineOptimisticStore,
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../submit/index"
@@ -54,9 +45,16 @@ import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
-import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
+import {
+  parseExistingSessionConfig,
+  preferAuthoritativeExistingSessionConfig,
+  sameExistingSessionConfig,
+} from "./submit-session-config"
 import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
-import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
+import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
+import { createSubmitCommentActions } from "./comment-routing"
+import { createSubmitOptimisticTimeline } from "./submit-ui-state"
+import type { CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
 export type { FollowupDraft } from "./submit-input"
 
@@ -109,45 +107,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     /* not in claxedo context */
   }
   const surfaceId = () => input.surfaceId?.()
-  const optimisticTimeline: PromptTimelineOptimisticStore = {
-    add: (item) => {
-      addRegisteredConversationMessage({
-        directory: item.directory,
-        sessionID: item.sessionID,
-        message: item.message,
-        parts: item.parts,
-      })
-    },
-    remove: (item) => {
-      removeRegisteredConversationMessage({
-        directory: item.directory,
-        sessionID: item.sessionID,
-        messageID: item.messageID,
-      })
-    },
-  }
+  const optimisticTimeline = createSubmitOptimisticTimeline()
 
   const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
 
-  const restoreCommentItems = (items: CommentItem[]) => {
-    for (const item of items) {
-      prompt.context.add({
-        type: "file",
-        path: item.path,
-        selection: item.selection,
-        comment: item.comment,
-        commentID: item.commentID,
-        commentOrigin: item.commentOrigin,
-        preview: item.preview,
-      })
-    }
-  }
-
-  const removeCommentItems = (items: { key: string }[]) => {
-    for (const item of items) {
-      prompt.context.remove(item.key)
-    }
-  }
+  const commentActions = createSubmitCommentActions(prompt.context)
 
   const transport = createSubmitTransportAdapter({
     serverUrl: getClaxedoServerUrl,
@@ -191,8 +155,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     usesSignedControlPlane,
   })
 
-  const globalProjects = () =>
-    queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey) ?? []
+  const globalProjects = () => {
+    const serverUrl = getClaxedoServerUrl()
+    return queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(serverUrl))
+      ?? queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey)
+      ?? (globalSDK
+        ? queryClient.getQueryData<ProjectCatalogItem[]>(queryKeys.controlPlane.projects(globalSDK.url))
+        : undefined)
+      ?? []
+  }
 
   const projectCatalog = () => globalProjects()
 
@@ -244,8 +215,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const baseRef = input.newSessionBaseRef?.()?.trim() || undefined
     const sourceBranch = input.newSessionSourceBranch?.()?.trim() || undefined
     const workspaceKind = input.newSessionWorkspaceKind?.() ?? "local"
+    const relayWorkspaceConnectionReady = () => {
+      const workspaceId =
+        input.workspaceId?.() ??
+        workspaceRuntimeRef(projectDirectory ?? fallbackDirectory ?? sdk.directory)?.workspaceId
+      return isWorkspaceReady(workspaceId)
+    }
     const cloudStartup = createCloudStartupController({
-      enabled: isNewSession && workspaceKind === "cloud",
+      enabled: isNewSession && workspaceKind === "cloud" && !relayWorkspaceConnectionReady(),
       onCloudStartup: input.onCloudStartup,
       errorMessage,
     })
@@ -265,21 +242,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef,
       workspaceForDirectory: (directory) => typeof sdk.workspace === "function" ? sdk.workspace(directory) : undefined,
+      isWorkspaceReady,
       baseUrl: getClaxedoServerUrl(),
       request: platform.fetch ?? authFetch,
       events,
       onCloudStartup: input.onCloudStartup,
       rememberCloudStartup,
       publishCloudHandoff,
-      createCloudWorkspace: async (projectId) => {
-        const response = await authFetch(workspaceCreateUrl({ baseUrl: getDefaultBaseUrl() }), {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId, ...(sourceBranch ? { gitBranch: sourceBranch } : {}) }),
-        })
-        if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)
-        return await response.json() as CreateWorkspaceResult
-      },
+      createCloudWorkspace: async (projectId) => createCloudWorkspace({
+        baseUrl: getDefaultBaseUrl(),
+        projectId,
+        ...(sourceBranch ? { gitBranch: sourceBranch } : {}),
+      }),
       createLocalWorktree: (directory) => sdk.client.worktree.create({
         directory,
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),
@@ -331,12 +305,19 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
     const existingSessionConfig = await (async () => {
       if (isNewSession) return undefined
+      // A fully persisted harness config owns follow-up model/variant. Incomplete
+      // session-list metadata (model without variant) still reads live `/config`
+      // so a later GET can beat stale inventory.
+      if (infoSessionConfig?.model && infoSessionConfig.variant) return infoSessionConfig
       try {
-        return parseExistingSessionConfig(await readSessionConfig({
-          sessionID: explicitSessionID!,
-          directory: sessionDirectory,
-          harnessType: selectedHarnessType(scope),
-        }))
+        return preferAuthoritativeExistingSessionConfig(
+          parseExistingSessionConfig(await readSessionConfig({
+            sessionID: explicitSessionID!,
+            directory: sessionDirectory,
+            harnessType: selectedHarnessType(scope),
+          })),
+          infoSessionConfig,
+        )
       } catch (err) {
         showToast({
           title: language.t("prompt.toast.promptSendFailed.title"),
@@ -549,7 +530,37 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!target.created && persistedHarnessRef && sessionRef) {
       patchExistingSubmitSessionRef({ claxedoState, surfaceId: surfaceId(), sessionID: session.id, sessionRef })
     }
-    handoffCreatedSession = finalizedSessionTarget.handoffCreatedSession
+    // Rail cache writes must run AFTER draft→session handoff. A synchronous
+    // upsert/reconcile remounts the sidebar first and the draft surface is no
+    // longer retargetable, so the URL stays on `/w/:id` (tier-real behavior 13).
+    // Follow-up turns must not bump the rail mid-submit either: reconcile
+    // remounts the session list while handleSubmit is still running and the
+    // composer restores the draft (tier-real T2 never leaves the input).
+    const bumpSessionRail = () => {
+      if (!target.created) return
+      // Signed public workspace ids are `ws_*` (or host === "workspace").
+      // Local inventory UUID associations must keep directory-scoped rail
+      // rows — stamping them as workspaceId duplicates the row under both
+      // `local:` and `workspace:` sessionRefs (tier-real local harness).
+      bumpCreatedSessionRail({
+        sessionId: session.id,
+        title: provisionalTitle ?? "New Session",
+        directory: sessionDirectory,
+        sessionRef,
+        workspaceId: input.workspaceId?.(),
+        projects: projectCatalog(),
+      })
+    }
+    const createdSessionHandoff = finalizedSessionTarget.handoffCreatedSession
+    handoffCreatedSession = createdSessionHandoff
+      ? () => {
+          createdSessionHandoff()
+          bumpSessionRail()
+        }
+      : undefined
+    // Created sessions without a handoff still need the optimistic rail row
+    // after session id is known; never remount the rail for follow-up submits.
+    if (!createdSessionHandoff && target.created) bumpSessionRail()
 
     const refreshPromptDirectory = () =>
       directorySessionCacheActions.refresh({
@@ -747,10 +758,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       demo: isDemoMode(),
       globalSDK,
       refreshDirectory: refreshPromptDirectory,
-      clearInput,
+      clearInput: () => {
+        clearInput()
+        // Follow-up turns: bump updatedAt only after the composer is cleared so a
+        // rail remount cannot restore the draft (tier-real T2). Create turns already
+        // wrote the optimistic row via bumpSessionRail.
+        if (target.created) return
+        bumpExistingSessionRail({
+          sessionId: session.id,
+          directory: sessionDirectory,
+          sessionRef,
+          workspaceId: input.workspaceId?.(),
+        })
+      },
       restoreInput,
-      removeCommentItems,
-      restoreCommentItems,
+      removeCommentItems: commentActions.remove,
+      restoreCommentItems: commentActions.restore,
       applyCreatedSessionHandoff,
       publishCloudHandoff,
       showSendingFirstMessage,

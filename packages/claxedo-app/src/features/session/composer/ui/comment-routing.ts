@@ -1,3 +1,21 @@
+import type { CommentItem } from "./submit-input"
+
+export function createSubmitCommentActions(context: {
+  add: (item: CommentItem & { type: "file" }) => unknown
+  remove: (key: string) => unknown
+}) {
+  return {
+    restore(items: Array<CommentItem & { key?: string }>) {
+      for (const { key: _storedKey, ...item } of items) {
+        context.add({ type: "file", ...item })
+      }
+    },
+    remove(items: { key: string }[]) {
+      for (const item of items) context.remove(item.key)
+    },
+  }
+}
+
 type PromptCommentFocus = {
   file: string
   id: string

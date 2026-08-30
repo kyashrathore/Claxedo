@@ -19,9 +19,11 @@ import { createCredentialStore } from "./credential-store"
 import { credentialFile, loopbackListener, nodeTimer, refreshExchange, tokenExchange } from "./electron-seams"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
+import { createIdentityResolver, userInfoUrlFromTokenUrl } from "./identity"
 import type { OAuthSeams } from "./oauth-flow"
 
-const SIGN_IN_TIMEOUT_MS = 5 * 60_000
+/** How long to wait for the browser callback before failing the attempt. */
+const SIGN_IN_TIMEOUT_MS = 90_000
 
 /**
  * Build the account service and register its IPC.
@@ -66,6 +68,9 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
         run: async () => {
           throw new Error(unavailable.detail)
         },
+        openStream: async () => {
+          throw new Error(unavailable.detail)
+        },
       },
     }
   }
@@ -98,6 +103,15 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
   // typical one-hour token means every day starts signed out.
   const refresh = refreshExchange()
 
+  const userInfoUrl = userInfoUrlFromTokenUrl(config.tokenUrl)
+  const resolveIdentity = userInfoUrl
+    ? createIdentityResolver({
+        userInfoUrl,
+        fetch,
+        ...(input.onError ? { onError: (error) => input.onError?.("identity", error) } : {}),
+      })
+    : undefined
+
   const service = createAccountService({
     config: {
       authorizeUrl: config.authorizeUrl,
@@ -111,6 +125,7 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     serverOrigin: config.serverOrigin,
     fetch: (url, init) => fetch(url, init),
     refresh: (refreshToken) => refresh({ tokenUrl: config.tokenUrl, clientId: config.clientId, refreshToken }),
+    ...(resolveIdentity ? { resolveIdentity } : {}),
     now: () => Math.floor(Date.now() / 1000),
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),

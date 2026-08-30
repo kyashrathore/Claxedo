@@ -169,7 +169,7 @@
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-boot-deep-links-home"
 const PROJECT_ID = "project_core_boot_deep_links_home"
@@ -315,9 +315,17 @@ async function installSessionListMock(page: Page) {
  * fall through to a real, non-existent backend at 127.0.0.1:3001 and hung every
  * caller on the `ConnectionError` screen — see finding in this spec's PR notes). */
 async function createSessionViaFirstSend(page: Page, promptText: string) {
-  await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
+  await installMockRuntime(page, {
+    dir: DIR,
+    projectId: PROJECT_ID,
+    sessionId: SESSION_ID,
+    // Explicit catalog model — drafts do not invent a default after the
+    // require-explicit-model product change; the helper picks it below.
+    harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] },
+  })
   await seedOneProject(page, DIR)
   const input = await openDraftPrompt(page, DIR)
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill(promptText)
   await expect(input).toContainText(promptText, { timeout: 10_000 })
@@ -552,6 +560,7 @@ test.describe("core boot, deep links, and home @core", () => {
 
     const firstPrompt = "inspect this repository and suggest a first task"
     const composer = page.getByRole("textbox", { name: /Ask anything/i }).last()
+    await ensureComposerModelSelected(page)
     await composer.fill(firstPrompt)
     await page.locator(SELECTORS.submitControl).last().click()
     await expectAssistantReplyVisible(page, `ack 1: ${firstPrompt}`)

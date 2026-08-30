@@ -11,6 +11,7 @@ import {
   __setFetchThrottleForTests,
   bypassFetchThrottle,
   getFetchThrottle,
+  isEventStreamPath,
   throttledFetch,
 } from "./fetch-throttle"
 
@@ -91,6 +92,45 @@ describe("throttledFetch", () => {
 
     blockers[0].resolve(new Response(""))
     blockers[1].resolve(new Response(""))
+  })
+
+  test("event-stream pathnames bypass the throttle even without Accept", async () => {
+    __setFetchThrottleForTests(1)
+    const t = getFetchThrottle()
+
+    const blocker = deferred<Response>()
+    void throttledFetch(() => blocker.promise, {})
+    await new Promise((r) => setTimeout(r, 0))
+    expect(t.inFlight()).toBe(1)
+
+    let ran = false
+    await throttledFetch(
+      async () => {
+        ran = true
+        return new Response("")
+      },
+      {},
+      "http://127.0.0.1:2594/api/wr/events",
+    )
+    expect(ran).toBe(true)
+    expect(t.inFlight()).toBe(1)
+
+    await throttledFetch(
+      async () => new Response(""),
+      {},
+      new Request("http://127.0.0.1:2594/global/event"),
+    )
+    expect(t.inFlight()).toBe(1)
+
+    blocker.resolve(new Response(""))
+  })
+
+  test("classifies hosted and workspace event paths as streams", () => {
+    expect(isEventStreamPath("https://control.test/api/wr/events")).toBe(true)
+    expect(isEventStreamPath("https://control.test/api/wr/runtime-events")).toBe(true)
+    expect(isEventStreamPath("https://control.test/workspaces/ws_1/api/wr/events")).toBe(true)
+    expect(isEventStreamPath("https://control.test/workspaces/ws_1/global/event")).toBe(true)
+    expect(isEventStreamPath("http://127.0.0.1:2594/session")).toBe(false)
   })
 
   test("explicit bypass marker also skips the throttle", async () => {

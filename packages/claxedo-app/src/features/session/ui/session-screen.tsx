@@ -58,9 +58,10 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
+import { resumeSessionScroll } from "@/features/session/ui/session-message-scroll-position"
 import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import {
-  scheduleDirectorySessionHydration,
+  scheduleDirectorySessionHydration, shouldScheduleDirectorySessionHydration,
   removeDirectorySession,
   updateDirectorySession,
   useDirectorySessionCacheActions,
@@ -453,7 +454,7 @@ export default function SessionPage() {
     if (!paneActive()) return
     const sessionIDValue = sessionID()
     const directory = dir()
-    if (!sessionIDValue || sessionIDValue === "new" || !directory || info()) return
+    if (!sessionIDValue || !shouldScheduleDirectorySessionHydration({ directory, sessionID: sessionIDValue, hasSessionInfo: !!info(), sessionRef: activeSessionRef() })) return
     const cancel = scheduleDirectorySessionHydration({
       directory, sessionID: sessionIDValue,
       getSession: (parameters) => sdk.client.session.get(parameters).then((result) => result.data),
@@ -1041,13 +1042,12 @@ export default function SessionPage() {
   }
 
   const resumeScroll = () => {
-    setStore("messageId", undefined)
-    autoScroll.resume()
-    scrollToEnd()
-    clearMessageHash()
-
     const el = scroller
-    if (el) scheduleScrollState(el)
+    resumeSessionScroll({
+      clearMessageSelection: () => setStore("messageId", undefined),
+      clearMessageHash, resumeAutoScroll: autoScroll.resume,
+      scrollToEnd, scheduleScrollState: () => { if (el) scheduleScrollState(el) },
+    })
   }
 
   // When the user returns to the bottom, treat the active message as "latest".

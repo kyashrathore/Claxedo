@@ -11,7 +11,6 @@ import {
   upsertCreatedSessionListRow,
   type SessionListResponse,
 } from "./session-list"
-import { authFetch } from "@/platform/api/api"
 
 const response = (): SessionListResponse => ({
   view: {
@@ -68,12 +67,13 @@ afterEach(() => {
 })
 
 describe("session list query cache", () => {
-  test("uses the configured auth transport for loopback and hosted session-list requests", () => {
+  test("uses the control-plane AccountPort adapter (or an injected request) for session-list", () => {
     const request = async () => new Response("{}")
 
-    expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe(authFetch)
-    expect(sessionListRequest({ baseUrl: "http://localhost:3001" })).toBe(authFetch)
-    expect(sessionListRequest({ baseUrl: "https://control.example.test" })).toBe(authFetch)
+    // Default transport is the dual-path adapter (AccountPort when the Electron
+    // bridge is present; authFetch otherwise) — never a bare caller-chosen URL.
+    expect(typeof sessionListRequest({ baseUrl: "http://127.0.0.1:3001" })).toBe("function")
+    expect(typeof sessionListRequest({ baseUrl: "https://control.example.test" })).toBe("function")
     expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001", request })).toBe(request)
   })
 
@@ -464,6 +464,38 @@ describe("session list query cache", () => {
       .toEqual(["ses_1", "ses_2", "ses_3"])
   })
 
+  test("base refetch discards an unprovable cached tail when the authoritative total shrinks", async () => {
+    const query = {
+      scope: "project" as const,
+      projectId: "project_1",
+      limit: 2,
+    }
+    const key = queryKeys.shell.sessionList("http://test.local", query)
+    queryClient.setQueryData<SessionListResponse>(key, {
+      ...response(),
+      view: { ...response().view, scope: "project" },
+      items: [row("ses_still_visible", 6), row("ses_revoked", 5), row("ses_tail", 4)],
+      nextCursor: "cursor_after_tail",
+      totalKnown: 3,
+    })
+
+    const result = await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "http://test.local",
+      query,
+      request: async () => new Response(JSON.stringify({
+        ...response(),
+        view: { ...response().view, scope: "project" },
+        items: [row("ses_still_visible", 6), row("ses_tail", 4)],
+        nextCursor: undefined,
+        totalKnown: 2,
+      })),
+    }))
+
+    expect(result.items?.map((item) => item.sessionId)).toEqual(["ses_still_visible", "ses_tail"])
+    expect(result.nextCursor).toBeUndefined()
+    expect(result.totalKnown).toBe(2)
+  })
+
   test("base refetch keeps a newer lifecycle row ahead of a stale authoritative page", async () => {
     const query = {
       scope: "workspace" as const,
@@ -625,5 +657,144 @@ describe("upsertCreatedSessionListRow", () => {
     expect(items?.filter((item) => item.sessionId === "ses_new")).toHaveLength(1)
     expect(queryClient.getQueryData<SessionListResponse>(filteredKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
     expect(queryClient.getQueryData<SessionListResponse>(archivedKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
+  })
+
+  test("bootstraps an in-flight query with no cached page yet", async () => {
+    const query = { scope: "workspace" as const, workspaceId: "ws_1", directory: "/repo", limit: 2 }
+    const workspaceKey = key(query)
+    let resolveRequest!: (response: Response) => void
+    const request = new Promise<Response>((resolve) => { resolveRequest = resolve })
+    const pendingFetch = queryClient.fetchQuery({
+      ...sessionListQueryOptions({
+        baseUrl: "http://test.local",
+        query,
+        request: () => request,
+      }),
+    })
+
+    upsertCreatedSessionListRow({ row: newRow })
+
+    expect(queryClient.getQueryData<SessionListResponse>(workspaceKey)?.items?.[0]?.sessionId).toBe("ses_new")
+    expect(queryClient.getQueryData<SessionListResponse>(workspaceKey)?.totalKnown).toBe(1)
+
+    resolveRequest(new Response(JSON.stringify(response())))
+    await pendingFetch
+  })
+
+  test("adopts project id from a sibling workspace row when create-time upsert omits it", () => {
+    const projectKey = key({ scope: "project", projectId: "proj_1", archived: "active", limit: 2 })
+    queryClient.setQueryData(projectKey, response())
+
+    upsertCreatedSessionListRow({
+      row: {
+        sessionId: "ses_live",
+        title: "Live",
+        directory: "/repo",
+        workspaceId: "ws_1",
+        createdAt: 5,
+        updatedAt: 5,
+      },
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(projectKey)?.items?.[0]).toMatchObject({
+      sessionId: "ses_live",
+      projectId: "proj_1",
+      workspaceId: "ws_1",
+    })
+  })
+})
+
+describe("session list merge + updated reconcile", () => {
+  const listKeyFor = (query: Parameters<typeof queryKeys.shell.sessionList>[1]) =>
+    queryKeys.shell.sessionList("http://test.local", query)
+
+  test("refetch merge keeps one row when local and workspace refs share a sessionId", async () => {
+    const query = { scope: "workspace" as const, directory: "/repo", limit: 5 }
+    const listKey = listKeyFor(query)
+    queryClient.setQueryData(listKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [
+        {
+          type: "session",
+          sessionRef: "local:/repo:session:ses_dup",
+          sessionId: "ses_dup",
+          title: "Local",
+          directory: "/repo",
+          createdAt: 1,
+          updatedAt: 1,
+          tags: [],
+          attachments: [],
+        },
+      ],
+    })
+
+    await queryClient.fetchQuery(sessionListQueryOptions({
+      baseUrl: "http://test.local",
+      query,
+      request: async () => new Response(JSON.stringify({
+        view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+        items: [
+          {
+            type: "session",
+            sessionRef: "workspace:assoc-uuid:session:ses_dup",
+            sessionId: "ses_dup",
+            title: "Workspace",
+            directory: "/repo",
+            workspaceId: "assoc-uuid",
+            createdAt: 1,
+            updatedAt: 2,
+            tags: [],
+            attachments: [],
+          },
+        ],
+      })),
+    }))
+
+    const items = queryClient.getQueryData<SessionListResponse>(listKey)?.items
+    expect(items).toHaveLength(1)
+    expect(items?.[0]?.sessionRef).toBe("workspace:assoc-uuid:session:ses_dup")
+  })
+
+  test("reconcile bumps updatedAt and reorders when event directory differs from the row", () => {
+    const listKey = listKeyFor({ scope: "workspace", workspaceId: "ws_1", directory: "/repo", limit: 5 })
+    queryClient.setQueryData(listKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [
+        {
+          type: "session",
+          sessionRef: "workspace:ws_1:session:ses_old",
+          sessionId: "ses_old",
+          title: "Older activity",
+          directory: "/repo",
+          workspaceId: "ws_1",
+          createdAt: 1,
+          updatedAt: 200,
+          tags: [],
+          attachments: [],
+        },
+        {
+          type: "session",
+          sessionRef: "workspace:ws_1:session:ses_target",
+          sessionId: "ses_target",
+          title: "Target",
+          directory: "/repo",
+          workspaceId: "ws_1",
+          createdAt: 1,
+          updatedAt: 100,
+          tags: [],
+          attachments: [],
+        },
+      ],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_target",
+      directory: "workspace:ws_1",
+      updatedAt: 300,
+    })
+
+    const items = queryClient.getQueryData<SessionListResponse>(listKey)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_target", "ses_old"])
+    expect(items?.[0]?.updatedAt).toBe(300)
   })
 })

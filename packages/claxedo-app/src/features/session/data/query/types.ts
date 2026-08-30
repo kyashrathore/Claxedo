@@ -2,6 +2,12 @@ import type { SessionTurnOutcome } from "../session-types"
 
 export type { ProjectMeta } from "@/platform/query/project-meta"
 
+export type SessionOwner = {
+  name?: string
+  avatarUrl?: string
+  publicId?: string
+}
+
 export type SessionInventoryRow = {
   id: string
   sessionRef?: string
@@ -16,6 +22,7 @@ export type SessionInventoryRow = {
   attachments: Array<{ kind: string; targetID: string }>
   environment?: { kind?: string; driver?: string }
   git?: { repo?: string; branch?: string; remote?: string }
+  owner?: SessionOwner
   archived?: boolean
   lastTurn?: SessionTurnOutcome
   time: { created: number; updated: number }

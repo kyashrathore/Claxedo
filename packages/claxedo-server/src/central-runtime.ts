@@ -3,6 +3,7 @@ import { type SessionEnvFactory } from "@claxedo/agent-sdk-runtime"
 import { runtimeEventsHandler } from "@claxedo/workspace-runtime/routes"
 import { createCentralSessionRuntime } from "./session/runtime"
 import { ControlPlaneSessionRoutes } from "./session/routes/control-plane-session"
+import { OrgTeamControlRoutes } from "./session/routes/org-team-routes"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import {
   ControlPlaneAuthError,
@@ -22,6 +23,7 @@ import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 import type { UsageRevisionReader, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import type { SessionShareChangedSink } from "./session/session-people-contract"
 
 export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
@@ -50,6 +52,10 @@ export type CentralControlAppOptions = {
   mountPublicUsageRoute?: boolean
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
+  /** Deterministic model backend injection for tests and embedded deployments. */
+  modelBackend?: NonNullable<Parameters<typeof createCentralSessionRuntime>[1]>["modelBackend"]
+  /** Injected by composition roots (local bus or hosted LiveSync). */
+  sessionShareChangedSink?: SessionShareChangedSink
 }
 
 function centralControlRequest(request: Request) {
@@ -77,6 +83,7 @@ async function authorizeSignedCentralRuntimeSession(
   services: ControlPlaneServices,
   auth: SignedControlPlaneAuth,
   sessionId: string,
+  action: "read" | "write",
 ) {
   const meta = await services.projectionStore.session_meta(sessionId)
   if (meta?.host !== "central") {
@@ -93,7 +100,8 @@ async function authorizeSignedCentralRuntimeSession(
       "Signed central session access requires workspace scope",
     )
   }
-  await requireAuthority(services).authorizeSessionRead(auth, {
+  const authority = requireAuthority(services)
+  await (action === "read" ? authority.authorizeSessionRead : authority.authorizeSessionWrite)(auth, {
     sessionId,
     workspaceId: meta.workspaceID,
   })
@@ -129,7 +137,12 @@ async function centralRuntimeAccess(
         "Signed central runtime access requires a central session",
       )
     }
-    await authorizeSignedCentralRuntimeSession(services, auth, sessionId)
+    await authorizeSignedCentralRuntimeSession(
+      services,
+      auth,
+      sessionId,
+      ["GET", "HEAD", "OPTIONS"].includes(request.method) ? "read" : "write",
+    )
     // The org travels with the subject so a completed turn can be keyed to
     // a tenant. Both come from the same verified token, and the org claim is
     // absent on personal-account sign-ins — the metering path treats that as
@@ -156,6 +169,7 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
     ...(options.onUsageTerminal ? { onUsageTerminal: options.onUsageTerminal } : {}),
     ...(options.productDeploymentMode ? { productDeploymentMode: options.productDeploymentMode } : {}),
+    ...(options.modelBackend ? { modelBackend: options.modelBackend } : {}),
   })
   const app = new Hono()
   const sessionRuntimeEvents = runtimeEventsHandler(runtime.eventHub, {
@@ -174,7 +188,12 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.authConfig ? { authConfig: options.authConfig } : {}),
     ...(options.verifier ? { verifier: options.verifier } : {}),
     ...(options.beforeLocalSessionList ? { beforeLocalList: options.beforeLocalSessionList } : {}),
+    ...(options.sessionShareChangedSink ? { sessionShareChangedSink: options.sessionShareChangedSink } : {}),
     createHybridSession: runtime.createHybridSession,
+  }))
+  app.route("/api/control", OrgTeamControlRoutes(services, {
+    ...(options.authConfig ? { authConfig: options.authConfig } : {}),
+    ...(options.verifier ? { verifier: options.verifier } : {}),
   }))
   if (options.usageLedger) {
     const usageOptions = {

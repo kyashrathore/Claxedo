@@ -296,6 +296,13 @@ describe("the two groups are mutually exclusive", () => {
     expect(options.claxedo.map((option) => option.id)).toEqual([CLAXEDO_ALLOW_SAFE_ID, CLAXEDO_ASK_ALWAYS_ID])
   })
 
+  test("a policy harness with an empty report does not flash Claxedo rows in the picker", () => {
+    const options = permissionModeOptions({ harness: "codex-app-server", report: report() })
+    expect(options.claxedo).toEqual([])
+    expect(options.harness.modes).toEqual([])
+    expect(options.harness.unavailable).toMatch(/has not reported any permission modes/i)
+  })
+
   test("every harness id resolves without throwing, and empty always says why", () => {
     for (const harness of HARNESS_IDS) {
       const result = harnessPermissionModes({ harness, report: report() })

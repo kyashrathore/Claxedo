@@ -114,9 +114,20 @@ export const appLocal: Policy = {
   // Session markdown first-fold preload, environment-card persistence, Thinking
   // visibility hold, provider-settings detect/disconnect logic, models-settings
   // logic, provider setup row, and the settings-providers dialog opener add
-  // eight named owners on the already-reachable session/settings path:
-  // 897 + 8 = 905 modules, still no package edge.
-  ceilings: { modules: 905, packages: 41 },
+  // eight named owners (897 + 8 = 905). Tenant-aware multiplayer adds four
+  // already-reachable local owners: 905 + 4 = 909. Org→Team product UI adds six
+  // local owners (settings org-team section + API, session share API + Share
+  // control, rail org/team switcher): 909 + 6 = 915 modules.
+  // Cloud workspace create routes through AccountPort via workspace-create-api:
+  // 915 + 1 = 916. Shared AccountPort bridge (`hosted-control-call`) plus
+  // connection mint/refresh and workspace.resolve: 916 + 1 = 917.
+  // Integrations, documents, and WorkGraph AccountPort adapters: 917 + 3 = 920.
+  // Control-plane AccountPort fetch adapter: 920 + 1 = 921.
+  // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
+  // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
+  // modules. Provider-settings translations are split into one lazy feature
+  // dictionary per non-English locale: 923 + 16 = 939, still no package edge.
+  ceilings: { modules: 939, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

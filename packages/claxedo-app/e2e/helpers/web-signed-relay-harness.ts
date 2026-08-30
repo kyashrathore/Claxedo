@@ -44,7 +44,7 @@
  * `CLAXEDO_TIER_REAL_BACKEND_PORT` convention) rather than this module
  * allocating one dynamically.
  */
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
@@ -78,6 +78,15 @@ export type RelayFixtureInfo = {
   directory: string
   role: string
   controlPlaneToken: string
+  /** Application org id for the fixture workspace (`personal` unless collaborative). */
+  orgId?: string
+  /** Default team public id when `collaborativeOrg` was requested. */
+  defaultTeamId?: string
+  ownerActor?: {
+    actor_id?: string
+    actor_public_id?: string
+    actor_name?: string
+  }
 }
 
 export type RunningRelayFixture = {
@@ -144,6 +153,8 @@ export async function startSignedRelayFixture(opts: {
   backendPort: number
   scripted: ScriptedModelServer
   claudeConfigDir: string
+  /** When set, fixture creates a collaborative org + default team and scopes the workspace to it. */
+  collaborativeOrg?: { name: string }
   extraEnv?: Record<string, string>
 }): Promise<RunningRelayFixture> {
   let log = ""
@@ -163,6 +174,9 @@ export async function startSignedRelayFixture(opts: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(opts.backendPort),
         ...(opts.access === "cloud" ? { CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud" } : {}),
+        ...(opts.collaborativeOrg?.name
+          ? { CLAXEDO_E2E_COLLABORATIVE_ORG_NAME: opts.collaborativeOrg.name }
+          : {}),
         OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(opts.scripted.v1Url)),
         TIER_REAL_API_KEY: "test-key",
         OPENCODE_DISABLE_MODELS_FETCH: "true",
@@ -378,16 +392,40 @@ export async function buildAndServeWebApp(opts: {
  * missing the row or aliasing a `/private/var` symlink into a second
  * workspace). `kind` is threaded through so ONE function serves both lanes.
  */
-export async function seedWorkspace(page: Page, info: RelayFixtureInfo, kind: SignedRelayAccess) {
+export async function seedWorkspace(
+  page: Page,
+  info: RelayFixtureInfo,
+  kind: SignedRelayAccess,
+  authUser?: { id: string; fullName?: string },
+) {
   await page.addInitScript(
-    (seed: RelayFixtureInfo & { kind: SignedRelayAccess }) => {
+    (seed: RelayFixtureInfo & {
+      kind: SignedRelayAccess
+      authUserId?: string
+      authUserFullName?: string
+    }) => {
       localStorage.clear()
+      localStorage.setItem("opencode.terminal.renderer", "dom")
+      if (seed.orgId && seed.orgId !== "personal") {
+        localStorage.setItem("claxedo.activeOrgId", seed.orgId)
+      }
+      if (seed.defaultTeamId) {
+        localStorage.setItem("claxedo.activeTeamId", seed.defaultTeamId)
+      }
       const w = window as typeof window & {
         __CLAXEDO_TEST_AUTH_TOKEN__?: string
-        __CLAXEDO_TEST_AUTH_USER__?: { id: string }
+        __CLAXEDO_TEST_AUTH_USER__?: { id: string; fullName?: string; primaryEmailAddress?: { emailAddress: string } }
       }
       w.__CLAXEDO_TEST_AUTH_TOKEN__ = seed.controlPlaneToken
-      w.__CLAXEDO_TEST_AUTH_USER__ = { id: "user_browser" }
+      w.__CLAXEDO_TEST_AUTH_USER__ = {
+        id: seed.authUserId ?? "user_browser",
+        ...(seed.authUserFullName
+          ? {
+              fullName: seed.authUserFullName,
+              primaryEmailAddress: { emailAddress: `${seed.authUserId ?? "user_browser"}@claxedo.test` },
+            }
+          : {}),
+      }
       const ref = `workspace:${seed.workspaceId}`
       localStorage.setItem(
         "opencode.global.dat:server",
@@ -404,7 +442,12 @@ export async function seedWorkspace(page: Page, info: RelayFixtureInfo, kind: Si
         JSON.stringify({
           value: [
             {
-              id: `proj_web_signed_${seed.kind}`,
+              // Must match `signed-browser-relay-fixture.mjs`'s `projectId`.
+              // Signed bootstrap inventory overrides the display name, but
+              // create-time rail upserts still resolve project id from this
+              // client catalog — a mismatched id never matches the project-
+              // scoped session-list query and the live row never appears.
+              id: "proj_signed_browser_relay",
               name: `Web Signed ${seed.kind}`,
               worktree: ref,
               sandboxes: [seed.workspaceId],
@@ -421,13 +464,28 @@ export async function seedWorkspace(page: Page, info: RelayFixtureInfo, kind: Si
                   workspace_name: `Web Signed ${seed.kind}`,
                   directory: seed.directory,
                 },
+                [seed.workspaceId]: {
+                  id: seed.workspaceId,
+                  kind: seed.kind,
+                  workspace_name: `Web Signed ${seed.kind}`,
+                  directory: seed.directory,
+                },
               },
             },
           ],
         }),
       )
     },
-    { ...info, kind },
+    {
+      ...info,
+      kind,
+      ...(authUser
+        ? {
+            authUserId: authUser.id,
+            ...(authUser.fullName ? { authUserFullName: authUser.fullName } : {}),
+          }
+        : {}),
+    },
   )
 }
 
@@ -446,6 +504,32 @@ export async function gateReachesReady(page: Page, timeoutMs = 60_000): Promise<
   await expect(input).toBeVisible({ timeout: timeoutMs })
   await expect(input).toHaveAttribute("contenteditable", "true")
   return input
+}
+
+/** Wait for the connection authority to project the role minted by the signed control plane. */
+export async function waitForWorkspaceRole(
+  page: Page,
+  workspaceId: string,
+  role: "owner" | "editor" | "viewer" | "admin" = "owner",
+) {
+  await page.waitForFunction(
+    ({ id, expectedRole }) => {
+      const scope = window as typeof window & {
+        __claxedoConnections?: {
+          snapshot?: () => Record<string, {
+            status?: string
+            rolePlacement?: { state?: string; role?: string }
+          }>
+        }
+      }
+      const row = scope.__claxedoConnections?.snapshot?.()?.[id]
+      return row?.status === "ready"
+        && row.rolePlacement?.state === "role-known"
+        && row.rolePlacement.role === expectedRole
+    },
+    { id: workspaceId, expectedRole: role },
+    { timeout: 60_000 },
+  )
 }
 
 export function composerInput(page: Page): Locator {
@@ -539,6 +623,17 @@ export async function submitDraft(page: Page): Promise<string> {
   const submit = submitControl(page)
   await expect(submit, "no submit control").toBeVisible({ timeout: 10_000 })
   await expect(submit, "submit stayed disabled").toBeEnabled({ timeout: 10_000 })
+  const postRequests: Array<{ url: string; status?: number }> = []
+  const onRequest = (request: Request) => {
+    if (request.method() === "POST") {
+      const entry: { url: string; status?: number } = { url: request.url() }
+      postRequests.push(entry)
+      void request.response().then((response) => {
+        if (response) entry.status = response.status()
+      }).catch(() => undefined)
+    }
+  }
+  page.on("request", onRequest)
   const createdResponse = page.waitForResponse(
     (response) =>
       response.request().method() === "POST" &&
@@ -548,6 +643,7 @@ export async function submitDraft(page: Page): Promise<string> {
   )
   await submit.click()
   const response = await createdResponse.catch(async (err) => {
+    page.off("request", onRequest)
     const routing = await page.evaluate(() => {
       const scope = window as typeof window & {
         __claxedoConnections?: { snapshot?: () => unknown }
@@ -570,9 +666,11 @@ export async function submitDraft(page: Page): Promise<string> {
     }).catch((diagnosticError) => ({ diagnosticError: String(diagnosticError) }))
     throw new Error(
       `GATING: never observed the authoritative 201 POST .../session response — ${String(err)}; ` +
+      `postRequests=${JSON.stringify(postRequests).slice(0, 4_000)}; ` +
       `routing=${JSON.stringify(routing).slice(0, 8_000)}`,
     )
   })
+  page.off("request", onRequest)
   const created = (await response.json()) as { id?: unknown }
   if (typeof created.id !== "string" || !created.id) {
     throw new Error(`GATING: POST .../session omitted its canonical session id: ${JSON.stringify(created)}`)
@@ -653,8 +751,107 @@ export async function waitForNewTerminalId(page: Page, before: string[], timeout
   }
 }
 
+/** Ensures the rail is pinned open so terminal rows are visible in the sidebar tree. */
+export async function ensureRailPinnedOpen(page: Page) {
+  const sidebar = page.locator('[data-testid="rail-sidebar"]')
+  // rail-sidebar.tsx sets `data-pinned={docked() ? "" : undefined}` — presence
+  // means pinned (empty string), not the literal `"true"`. Treating `""` as
+  // unpinned used to click Hide Sidebar and collapse the rail mid-journey.
+  if ((await sidebar.getAttribute("data-pinned")) !== null) return
+
+  // When unpinned, the in-rail Hide control is unmounted; the workbench header
+  // owns "Show Sidebar" (workbench-shell-header.tsx).
+  const show = page.getByRole("button", { name: "Show Sidebar" })
+  if (await show.isVisible().catch(() => false)) {
+    await show.click()
+  }
+  const deadline = Date.now() + 5_000
+  while (Date.now() < deadline) {
+    if ((await sidebar.getAttribute("data-pinned")) !== null) return
+    await page.waitForTimeout(100)
+  }
+  throw new Error("GATING: rail sidebar stayed unpinned after Show Sidebar")
+}
+
+async function expandVisibleDisclosures(
+  page: Page,
+  headerTestId: "project-header" | "workspace-header",
+  expandLabel: string,
+  collapseLabel: string,
+) {
+  const headers = page.locator(`[data-testid="${headerTestId}"]`)
+  const count = await headers.count()
+  let expanded = 0
+  for (let i = 0; i < count; i++) {
+    const header = headers.nth(i)
+    if (!(await header.isVisible().catch(() => false))) continue
+    const disclosure = header.locator(`[aria-label="${expandLabel}"], [aria-label="${collapseLabel}"]`)
+    if ((await disclosure.count()) === 0) continue
+    if ((await disclosure.getAttribute("aria-expanded")) !== "true") {
+      await disclosure.click()
+    }
+    await expect(disclosure, `${headerTestId} never expanded`).toHaveAttribute("aria-expanded", "true", {
+      timeout: 10_000,
+    })
+    expanded++
+  }
+  return expanded
+}
+
+/** Expands project/workspace sections so nested terminal rows are visible, not just present in the DOM. */
+export async function ensureWorkspaceSectionExpanded(page: Page, info: RelayFixtureInfo) {
+  await ensureRailPinnedOpen(page)
+
+  // Default "Group by: Project" mode renders terminal rows under project-header
+  // (ProjectBlock) — there is no workspace-header in that tree at all.
+  const projectsExpanded = await expandVisibleDisclosures(
+    page,
+    "project-header",
+    "Expand project",
+    "Collapse project",
+  )
+
+  const candidates = [`workspace:${info.workspaceId}`, info.directory, info.workspaceId]
+  for (const workspaceDir of candidates) {
+    const header = page.locator(`[data-testid="workspace-header"][data-workspace-id="${workspaceDir}"]`)
+    if ((await header.count()) === 0) continue
+    await expect(header, `workspace header for "${workspaceDir}" never became visible`).toBeVisible({
+      timeout: 15_000,
+    })
+    const disclosure = header.locator('[aria-label="Expand workspace"], [aria-label="Collapse workspace"]')
+    if ((await disclosure.getAttribute("aria-expanded")) !== "true") {
+      await disclosure.click()
+    }
+    await expect(disclosure, `workspace "${workspaceDir}" never expanded`).toHaveAttribute("aria-expanded", "true", {
+      timeout: 10_000,
+    })
+    return
+  }
+
+  // Workspace-group mode / nested signed inventory: expand any visible workspace header.
+  const workspacesExpanded = await expandVisibleDisclosures(
+    page,
+    "workspace-header",
+    "Expand workspace",
+    "Collapse workspace",
+  )
+  if (projectsExpanded > 0 || workspacesExpanded > 0) return
+
+  const seenWorkspace = await page
+    .locator('[data-testid="workspace-header"]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-workspace-id")))
+  const seenProject = await page
+    .locator('[data-testid="project-header"]')
+    .evaluateAll((els) => els.map((el) => el.getAttribute("data-project-id") ?? el.textContent?.trim() ?? null))
+  throw new Error(
+    `GATING: no project/workspace section to expand for ${JSON.stringify(candidates)} — ` +
+      `projects=${JSON.stringify(seenProject)} workspaces=${JSON.stringify(seenWorkspace)}`,
+  )
+}
+
 /** Opens the terminal creator and presses the "Shell" tile — same contract `core-terminal.spec.ts`'s `createPlainTerminal` pins against the mock. */
 export async function createShellTerminal(page: Page) {
+  await ensureRailPinnedOpen(page)
   const before = await page
     .locator('[data-testid="rail-sidebar-terminal-row"]')
     .evaluateAll((els) => els.map((el) => el.getAttribute("data-terminal-id")).filter((id): id is string => !!id))
@@ -666,7 +863,34 @@ export async function createShellTerminal(page: Page) {
   const shellTile = launchers.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]')
   await expect(shellTile, 'the creator\'s "Shell" tile never appeared').toBeVisible({ timeout: 10_000 })
   await shellTile.click()
-  return waitForNewTerminalId(page, before, 20_000)
+  const deadline = Date.now() + 30_000
+  for (;;) {
+    const fromRail = await page
+      .locator('[data-testid="rail-sidebar-terminal-row"]')
+      .evaluateAll((els) => els.map((el) => el.getAttribute("data-terminal-id")))
+    const railId = fromRail.find(
+      (id): id is string => !!id && id !== "new" && !id.startsWith("pending-") && !before.includes(id),
+    )
+    if (railId) {
+      const row = page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${railId}"]`)
+      const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${railId}"]`)
+      if (await pane.isVisible().catch(() => false)) return railId
+      if (await row.isVisible().catch(() => false)) await row.click()
+      return railId
+    }
+    const paneId = await page
+      .locator('[data-testid="terminal-pane"][data-terminal-id]:not([data-terminal-id^="pending-"])')
+      .last()
+      .getAttribute("data-terminal-id")
+      .catch(() => null)
+    if (paneId && !before.includes(paneId)) return paneId
+    if (Date.now() > deadline) {
+      throw new Error(
+        `GATING: no new terminal row or pane appeared within 30000ms. Rows seen: ${JSON.stringify(fromRail)}`,
+      )
+    }
+    await page.waitForTimeout(200)
+  }
 }
 
 /** A scratch git worktree — same shape `desktop-unsigned-embedded.spec.ts`'s `makeScratchWorkspace` uses, kept here only for callers that need a real directory alongside the fixture's own (currently unused by either spec but kept available for a future scenario that needs a SECOND workspace). */

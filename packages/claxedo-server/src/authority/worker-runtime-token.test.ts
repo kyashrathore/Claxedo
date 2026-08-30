@@ -44,6 +44,8 @@ describe("Worker-compatible token signing", () => {
 
     const result = await runtimeAccessTokenSigner(env)({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",

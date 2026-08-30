@@ -12,6 +12,7 @@ import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { TextField } from "@opencode-ai/ui/text-field"
+import { showToast } from "@opencode-ai/ui/toast"
 import { createMemo, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
@@ -96,6 +97,11 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
 
   const complete = async () => {
     await markConnected()
+    const name = provider().name
+    showToast({
+      title: language.t("provider.connect.toast.connected.title", { provider: name }),
+      description: language.t("provider.connect.toast.connected.description", { provider: name }),
+    })
     await props.onConnected?.()
     await globalSDK.client.global.dispose().catch(() => undefined)
     props.onDone?.()

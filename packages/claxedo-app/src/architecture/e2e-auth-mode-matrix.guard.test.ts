@@ -100,4 +100,14 @@ describe("e2e auth mode matrix", () => {
     expect(setupBun).toContain("if: runner.os != 'Windows'")
     expect(setupBun).toContain("if: runner.os != 'Windows' && steps.bun-cache.outputs.cache-hit != 'true'")
   })
+
+  test("CI gates the signed org-team multiplayer proof with the real-tier environment", () => {
+    const stepStart = workflow.indexOf("- name: Run signed web relay e2e")
+    const signedRelayStep = workflow.slice(
+      stepStart,
+      workflow.indexOf("- name: Upload Playwright artifacts", stepStart),
+    )
+    expect(signedRelayStep).toContain('CLAXEDO_TIER_REAL_E2E: "1"')
+    expect(signedRelayStep).toContain("e2e/playwright/web-signed-org-team-multiplayer.spec.ts")
+  })
 })

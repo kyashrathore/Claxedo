@@ -29,6 +29,7 @@ describe("Convex WorkGraph motion layer", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "motion-owner",
         clerk_subject: "motion-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -85,6 +86,7 @@ describe("Convex WorkGraph motion layer", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "dense-owner",
         clerk_subject: "dense-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -174,6 +176,7 @@ describe("Convex WorkGraph motion layer", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "dirty-owner",
         clerk_subject: "dirty-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -211,6 +214,7 @@ describe("Convex WorkGraph motion layer", () => {
         const ownerUserId = await ctx.db.insert("users", {
           token_identifier: "same-ms-owner",
           clerk_subject: "same-ms-owner",
+          kind: "human",
           created_at: 1,
           updated_at: 1,
         })
@@ -277,6 +281,7 @@ describe("Convex WorkGraph motion layer", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "duplicate-token-owner",
         clerk_subject: "duplicate-token-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -317,6 +322,7 @@ describe("Convex WorkGraph motion layer", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "prune-owner",
         clerk_subject: "prune-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })
@@ -375,6 +381,7 @@ describe("Convex WorkGraph motion layer", () => {
       const ownerUserId = await ctx.db.insert("users", {
         token_identifier: "delete-owner",
         clerk_subject: "delete-owner",
+        kind: "human",
         created_at: 1,
         updated_at: 1,
       })

@@ -587,10 +587,19 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     })
     return true
   }
+  const sessionAccessPolicy = {
+    authorize: () => ({ allowed: true as const }),
+    authorizePrefix: () => ({ allowed: true as const }),
+    filterSessions: (input: { sessionIds: readonly string[] }) => input.sessionIds,
+  }
   const routes = createSessionRoutes({
+    // Central requests are authorized by centralRuntimeAccess before they reach
+    // this router. Keeping an explicit policy here makes route composition
+    // complete while the outer authority owns creator/participant checks.
+    sessionAccessPolicy,
     resolveAdapter: () => adapter,
     beforeSessionOperation: async (_c, input) => {
-      if (input.operation === "delete_session") await terminateBackgrounds(input.sessionId, "interrupted")
+      if (input.operation === "delete") await terminateBackgrounds(input.sessionId, "interrupted")
     },
     resolveRuntime: async (_c, input) => {
       if (input?.sessionId) await ensureCentralRuntimeSession(input.sessionId)
@@ -720,6 +729,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
    * message completes.
    */
   function publishGlobal(event: CompatEnvelope) {
+    const published = centralSessionCompatEnvelope(event)
     const sessionId = eventSessionId(event.payload)
     const messageId = event.payload.type === "session.usage"
       ? event.payload.properties.messageID
@@ -750,7 +760,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     if (terminal && options.onUsageTerminal) {
       void metered.then(() => options.onUsageTerminal?.()).catch((error) => console.error("[central-runtime] usage terminal sync wake failed:", error))
     }
-    eventHub.publishGlobal(event)
+    eventHub.publishGlobal(published)
     if (event.payload.type === "session.updated") {
       const title = typeof event.payload.properties.info.title === "string"
         ? event.payload.properties.info.title
@@ -767,6 +777,31 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       })
     }
     if (sessionId) services.durableSessionLog.persist_message_event(sessionId, event.payload)
+  }
+
+  function centralSessionCompatEnvelope(event: CompatEnvelope): CompatEnvelope {
+    if (event.payload.type !== "session.updated") return event
+    const info = event.payload.properties.info
+    const placement = sessionPlacements.get(info.id)
+    const workspaceID = placement?.workspaceId
+    return {
+      ...event,
+      payload: {
+        ...event.payload,
+        properties: {
+          ...event.payload.properties,
+          info: {
+            ...info,
+            ...(workspaceID ? { workspaceID, projectID: workspaceID } : {}),
+            metadata: {
+              ...info.metadata,
+              host: "central",
+              sessionRef: `central:${info.id}`,
+            },
+          },
+        },
+      },
+    }
   }
 
   // Demo B — placement swap: attach/detach a session's tool sandbox
@@ -848,11 +883,24 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     requireModel?: boolean
     admitToolSandbox?: boolean
   }) {
+    const sessionId = input.sessionId ?? randomUUID()
     if (input.model) {
       const invalid = validatePiPromptModel(input.model)
-      if (invalid) throw new Error(invalid.message)
+      // An injected/deployment backend is authoritative for credential
+      // availability. The process-global catalog cannot see credentials held
+      // behind that backend (for example a hosted org-scoped provider), so it
+      // may only veto an otherwise supported model when the backend agrees it
+      // is unavailable.
+      if (invalid && invalid.code !== "pi_model_credentials_missing") {
+        throw new Error(invalid.message)
+      }
+      if (options.modelBackend || invalid?.code === "pi_model_credentials_missing") {
+        const backend = await baseModelBackend({ sessionId, model: input.model })
+        if (!backend) {
+          throw new Error(invalid?.message ?? `Model backend unavailable for ${input.model.providerID}/${input.model.modelID}`)
+        }
+      }
     }
-    const sessionId = input.sessionId ?? randomUUID()
     const requestedToolSandbox = virtualToolSandbox(input.toolSandbox)
     const admitted = input.admitToolSandbox !== false && requestedToolSandbox.kind === "workspace-runtime" && options.admitWorkspaceSession
       ? await options.admitWorkspaceSession({

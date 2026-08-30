@@ -11,13 +11,11 @@ import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
 import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
 import { clearSessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import type { ProjectMeta, SessionInventoryRow, SessionCacheValue, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
-import { SESSION_RECENT_LIMIT } from "@/features/session/data/sync/global-sync-types"
 import type { Session } from "@opencode-ai/sdk/v2/client"
 import type { SessionFilter } from "@/platform/sync/global-sync/session-filter"
 import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
@@ -52,18 +50,22 @@ import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime
 import { createTransport } from "@/platform/runtime/transport"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { principalDataScope, principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
 import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
-import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
+import {
+  createGlobalSyncEventIngress,
+  createSessionAccessRevocationChannel,
+  createSessionAuthorityRevision,
+  reconcileAuthorizedSessionPersistence,
+} from "../../integrations/session-events/event-ingress"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
   createInventoryPageSource,
   createSignedInventorySource,
-  listSignedWorkspaceRuntimeSessions,
   type InventoryGlobalSession,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
@@ -72,14 +74,12 @@ import {
   toSessionInventoryRow,
   workspaceGroupKey,
 } from "../../../features/session/data/sync/inventory-source"
-
 export { shouldUseSignedControlPlaneInventory, shouldUseSignedProjectSessionInventory, shouldUseSignedSessionInventory } from "../../../features/session/data/sync/inventory-source"
-
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const PAGE = GLOBAL_SESSION_PAGE_SIZE
 
-function createGlobalSync() {
+function createGlobalSync(input: { flushNavigationPersistence: () => Promise<void> }) {
   const globalSDK = useGlobalSDK()
   const platform = usePlatform()
   const language = useLanguage()
@@ -89,8 +89,10 @@ function createGlobalSync() {
   // are web too. Inventory predicates further narrow this principal capability
   // to an explicit relay-backed project, route, or non-loopback control plane.
   const hasSignedAccess = () => principalHasSignedAccess(principal())
+  const principalScope = () => principalDataScope(principal())
   const claxedoEvents = useClaxedoEventsOptional()
-
+  const sessionAccessRevocations = createSessionAccessRevocationChannel()
+  const sessionAuthorityRevision = createSessionAuthorityRevision()
   const sdkClientCacheOwner = Math.random().toString(36).slice(2, 7)
 
   const sessionInventory = () => readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: globalSDK.url })
@@ -131,19 +133,15 @@ function createGlobalSync() {
   function projectFor(directory: string) {
     return projectForDirectory(projects(), directory)
   }
-
   function inventoryRow(session: InventoryGlobalSession) {
     return toSessionInventoryRow(session, { projectID: projectFor(session.directory)?.id })
   }
-
   function isGlobal(item: Pick<SessionInventoryRow, "tags">) {
     return item.tags.includes(GLOBAL_TAG)
   }
-
   function showGlobal(item: Pick<SessionInventoryRow, "tags">) {
     return item.tags.includes(GLOBAL_SHOW_TAG)
   }
-
   function signedWorkspaceProjects() {
     return projects().filter((project) =>
       shouldUseSignedProjectSessionInventory({
@@ -180,13 +178,7 @@ function createGlobalSync() {
   const signedInventorySource = createSignedInventorySource({
     queryClient,
     baseUrl: () => getClaxedoServerUrl(),
-    snapshotBaseUrl: () => globalSDK.url,
-    owner: () => {
-      const identity = principal()
-      if (identity.kind === "signed") return identity.userId
-      if (identity.kind === "org-member") return `${identity.userId}:${identity.orgId}`
-      return identity.kind
-    },
+    owner: principalScope,
     authFetch,
     signedWorkspaceInfo,
     resolveWorkspace: async ({ directory }) =>
@@ -195,20 +187,6 @@ function createGlobalSync() {
         request: platform.fetch,
         directory,
       }) ?? undefined,
-    // Only consulted when the control plane returned no sessions, to decide
-    // whether probing that workspace's runtime can still help. Query-cached.
-    workspaceStatus: async (scope) =>
-      (await resolveWorkspaceRuntime({ baseUrl: globalSDK.url, request: platform.fetch, ...scope }))?.status,
-    runtimeSessions: (input) => {
-      if (!input.kind) throw new Error(`Signed runtime session inventory requires a workspace kind for ${input.workspaceId}`)
-      return listSignedWorkspaceRuntimeSessions({
-        serverUrl: globalSDK.url,
-        request: authFetch,
-        ...input,
-        kind: input.kind,
-        limit: SESSION_RECENT_LIMIT,
-      })
-    },
   })
   const {
     fetchGlobalList,
@@ -226,6 +204,8 @@ function createGlobalSync() {
   })
 
   async function loadSessionInventorySnapshot() {
+    const scope = principalScope()
+    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
     const inventory = sessionInventory()
     if (inventory.loaded || inventory.loading) return
     updateSessionInventory((draft) => {
@@ -238,19 +218,14 @@ function createGlobalSync() {
         baseUrl: globalSDK.url,
       }) || signedWorkspaceProjects().length > 0
       const signedSnapshot = useSignedSnapshot
-        ? await signedInventorySource.fetchSignedWorkspaceSnapshot().catch(() => ({ projects: [], groups: [] as WorkspaceGroup[] }))
+        ? await signedInventorySource.fetchSignedWorkspaceSnapshot()
         : { projects: [], groups: [] as WorkspaceGroup[] }
-      if (
-        (signedSnapshot.projects.length > 0 || signedWorkspaceProjects().length > 0) &&
-        centralTransportForServer(globalSDK.url) !== "loopback"
-      ) {
-        const snapshot = signedSnapshot.projects.length > 0
-          ? signedSnapshot
-          : await signedInventorySource.fetchSignedWorkspaceSnapshot()
+      if (!isCurrent()) throw new Error("Session authority changed during inventory load")
+      if (useSignedSnapshot && centralTransportForServer(globalSDK.url) !== "loopback") {
+        const snapshot = signedSnapshot
         const wsResult = snapshot.groups
-        if (snapshot.projects.length > 0) {
-          setProjects((projects) => mergeSignedInventoryProjects(projects, snapshot.projects))
-        }
+        setProjects(snapshot.projects, { preserveSignedAliases: false })
+        reconcileAuthorizedSessionPersistence(wsResult.flatMap((group) => group.sessions), scope)
         const byWorkspace = Object.fromEntries(wsResult.map((group) => [workspaceGroupKey(group), group] as const))
         const workspaceState = Object.fromEntries(wsResult.map((group) => [
           workspaceGroupKey(group),
@@ -272,7 +247,12 @@ function createGlobalSync() {
         fetchGlobalList({ limit: 100 }),
         fetchWorkspaceGrouped({ perGroup: PAGE }),
       ])
+      if (!isCurrent()) throw new Error("Session authority changed during inventory load")
       const combinedWorkspaceResult = mergeWorkspaceGroups(wsResult, signedSnapshot.groups)
+      reconcileAuthorizedSessionPersistence(
+        combinedWorkspaceResult.flatMap((group) => group.sessions),
+        scope,
+      )
       const sessions = flatResult.data.filter((s) => !!s?.id && !s.parentID)
       const cursor = flatResult.cursor
 
@@ -336,6 +316,7 @@ function createGlobalSync() {
         ...(cursor ? { initialCursor: Number(cursor) } : {}),
       }))
     } catch {
+      if (principalScope() !== scope) return
       updateSessionInventory((draft) => {
         draft.loading = false
       })
@@ -343,8 +324,12 @@ function createGlobalSync() {
   }
 
   async function reloadWorkspaceGroups(filter?: SessionFilter) {
+    const scope = principalScope()
+    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
     try {
       const wsResult = await fetchWorkspaceGrouped({ perGroup: PAGE, filter })
+      if (!isCurrent()) return
+      reconcileAuthorizedSessionPersistence(wsResult.flatMap((group) => group.sessions), scope)
       const byWorkspace: Record<string, WorkspaceGroup> = {}
       const workspaceState: Record<string, { hasMore: boolean; loading: boolean; cursor?: number }> = {}
       const workspaceOrder: string[] = []
@@ -395,6 +380,8 @@ function createGlobalSync() {
   }
 
   async function loadMoreForProject(projectID: string, projectWorktree: string, sandboxes: string[]) {
+    const scope = principalScope()
+    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
     const pState = sessionInventory().projectState[projectID]
     if (pState?.loading) return
 
@@ -418,7 +405,9 @@ function createGlobalSync() {
           limit: PAGE,
           cursor: workspaceState?.cursor ?? workspaceGroup?.nextCursor,
         })
+        if (!isCurrent()) return
         const sessions = result.data.filter((s) => !!s?.id && !s.parentID)
+        reconcileAuthorizedSessionPersistence(sessions, scope)
         const cursor = result.cursor
         projectHasMore ||= !!cursor
 
@@ -440,6 +429,7 @@ function createGlobalSync() {
       })
     } catch {
     } finally {
+      if (principalScope() !== scope) return
       updateSessionInventory((draft) => {
         if (!draft.projectState[projectID]) return
         draft.projectState[projectID].loading = false
@@ -448,6 +438,8 @@ function createGlobalSync() {
   }
 
   async function loadMoreForWorkspace(directory: string, filter?: SessionFilter) {
+    const scope = principalScope()
+    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
     const key = workspaceInventoryKey(directory)
     const wState = sessionInventory().workspaceState[key]
     if (wState?.loading) return
@@ -462,7 +454,9 @@ function createGlobalSync() {
 
     try {
       const result = await fetchWorkspacePage(directory, { limit: PAGE, filter, cursor: wState?.cursor })
+      if (!isCurrent()) return
       const sessions = result.data.filter((s) => !!s?.id && !s.parentID)
+      reconcileAuthorizedSessionPersistence(sessions, scope)
       const cursor = result.cursor
 
       updateSessionInventory((draft) => {
@@ -475,6 +469,7 @@ function createGlobalSync() {
       })
     } catch {
     } finally {
+      if (principalScope() !== scope) return
       updateSessionInventory((draft) => {
         if (!draft.workspaceState[key]) return
         draft.workspaceState[key].loading = false
@@ -548,14 +543,17 @@ function createGlobalSync() {
     return merged
   }
 
-  const setProjects = (next: Project[] | ((project: Project[]) => Project[] | void)) => {
+  const setProjects = (
+    next: Project[] | ((project: Project[]) => Project[] | void),
+    options: { preserveSignedAliases?: boolean } = {},
+  ) => {
     const value = typeof next === "function"
       ? (() => {
           const draft = projects().slice()
           return next(draft) ?? draft
         })()
       : next
-    const merged = mergeSignedWorkspaceAliases(value)
+    const merged = options.preserveSignedAliases === false ? value : mergeSignedWorkspaceAliases(value)
     queryClient.setQueryData(projectQueryKey, merged)
   }
 
@@ -709,6 +707,11 @@ function createGlobalSync() {
     draftWasRolledBack: wasRolledBackDraft,
     cacheSessions,
     sessionCacheLimit,
+    sessionAccessRetained: signedInventorySource.hasControlPlaneSessionAccess,
+    revocationScope: principalScope,
+    onSessionAuthorityChanged: sessionAuthorityRevision.invalidate,
+    onSessionAccessRevoked: sessionAccessRevocations.publish,
+    flushNavigationPersistence: input.flushNavigationPersistence,
   }))
   onCleanup(() => {
     queue.dispose()
@@ -767,14 +770,15 @@ function createGlobalSync() {
     setFocusedDirectory(directory: string | undefined) {
       queue.setFocused(directory)
     },
+    onSessionAccessRevoked: sessionAccessRevocations.subscribe,
     inventoryActions: sessionInventoryActions,
   }
 }
 
 const GlobalSyncContext = createContext<ReturnType<typeof createGlobalSync>>()
 
-export function GlobalSyncProvider(props: ParentProps) {
-  const value = createGlobalSync()
+export function GlobalSyncProvider(props: ParentProps<{ flushNavigationPersistence: () => Promise<void> }>) {
+  const value = createGlobalSync({ flushNavigationPersistence: props.flushNavigationPersistence })
   return (
     <Switch>
       <Match when={value.ready}>

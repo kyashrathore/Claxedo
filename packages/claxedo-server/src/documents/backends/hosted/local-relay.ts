@@ -5,6 +5,7 @@ import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/
 import { DocumentVersionConflictError } from "../../errors"
 import type { DocumentVersion } from "../../port"
 import { fetchRelayResponse, parseRelayJson, relayResponseText, type RelayHttpOptions } from "../../relay-http"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 export function createHostedLocalDocumentRelay(
   services: ControlPlaneServices,
@@ -45,6 +46,8 @@ export function createHostedLocalDocumentRelay(
         workspaceId: input.localWorkspaceId,
         hostId: link.host_id,
         subject: input.auth.user.subject,
+        principalKind: "user",
+        ...await resolveRuntimeActor(authority, input.auth),
         orgId: input.orgId,
         role: write ? "editor" : "viewer",
         ttlMs: 5 * 60_000,

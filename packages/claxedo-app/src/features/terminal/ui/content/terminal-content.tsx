@@ -7,9 +7,11 @@ import { requestTerminalFitOnPaneChange } from "../../workbench/terminal-fit"
 import { aliasTerminalSessionPreview, loadTerminalSessionPreview } from "../../lib/terminal-session-preview"
 import { aliasTerminalLogSummary } from "../../lib/terminal-log-summary"
 import { pendingRecovery, resolveRecovery, trackRecovery } from "../../workbench/pane-terminal-recovery"
-import { getClaxedoServerUrl } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import { createTransport, centralTransportForServer } from "@/platform/runtime/transport"
+import { terminalPtyApiPath } from "@/features/terminal/core/terminal-connection"
 import {
   SessionPaneScope,
   TerminalNewView,
@@ -19,16 +21,23 @@ import {
   type PaneCtx,
 } from "@/features/terminal/app-ports"
 import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-surface-id"
-import { shouldMountTerminalPane } from "./terminal-content-policy"
+import {
+  isDefinitiveTerminalCreateFailure,
+  pickAdoptedPty,
+  shouldMountTerminalPane,
+  startSingleFlightPoll,
+} from "./terminal-content-policy"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 import { terminalAgentStatusFromEventType } from "../../core/terminal-agent-status"
+import { urlRoutingEnabled } from "@/lib/runtime-mode"
 
 /** See the note on the same alias in `app/workbench/terminal/terminal-new-view.tsx`. */
 type WorkspaceDirectoryRef = string
 
 const recoveryAlias = new Map<string, { id: string; at: number }>()
 const TERMINAL_ACTIVATION_DELAY_MS = 120
+const PENDING_CREATE_POLL_TIMEOUT_MS = 15_000
 
 export function TerminalContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
   const directory = () => props.meta.directory ?? props.meta.content?.directory
@@ -97,10 +106,17 @@ function TerminalNewSurface(props: {
   const launch = (input: { directory: WorkspaceDirectoryRef; workspaceId: string; command?: string; title?: string }) => {
     const pendingId = `${PENDING_TERMINAL_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
     const title = input.title || "Terminal"
+    // A creator may carry the exact session that opened it. Never guess from
+    // another open surface: collaborators can have several sessions in one
+    // workspace and directory equality is not an ownership contract.
+    const sessionId = props.meta.sessionId
+    const createRequestId = crypto.randomUUID()
     batch(() => {
       state.meta.patch(props.meta.id, {
         directory: input.directory,
         terminalId: pendingId,
+        terminalCreateRequestId: createRequestId,
+        ...(sessionId ? { sessionId } : {}),
         content: {
           ...props.meta.content,
           type: "terminal",
@@ -156,7 +172,16 @@ function TerminalContentInner(props: {
   const replaceTerminalRoute = (oldId: string, newId: string, dir: string) => {
     const workspaceId = props.meta.content?.workspaceRouteId ?? sdk.workspaceId
     if (!workspaceId || location.pathname !== workspaceTerminalRoute(workspaceId, oldId)) return
-    navigate(workspaceTerminalRoute(workspaceId, newId), { replace: true })
+    const next = workspaceTerminalRoute(workspaceId, newId)
+    // Pending→real upgrades happen while the terminal socket is opening.
+    // Solid Router navigation remounts the pane and drops the live PTY stream;
+    // a quiet history replace keeps the URL aligned without tearing down xterm.
+    if (oldId.startsWith("pending-")) {
+      if (!urlRoutingEnabled()) return
+      window.history.replaceState(window.history.state, "", next)
+      return
+    }
+    navigate(next, { replace: true })
   }
 
   const [realPtyId, setRealPtyId] = createSignal(
@@ -194,10 +219,121 @@ function TerminalContentInner(props: {
   const [activated, setActivated] = createSignal(false)
   let activationTimer: ReturnType<typeof setTimeout> | undefined
   let createStarted = false
+  let pendingCreateSettled = false
+  let pendingCreateRequestId = props.meta.terminalCreateRequestId
+  let pendingPoll: ReturnType<typeof startSingleFlightPoll> | undefined
   let disposed = false
+
+  const stopPendingPoll = () => {
+    pendingPoll?.stop()
+    pendingPoll = undefined
+  }
+
+  const resolvePollWorkspaceId = async (dir: string) => {
+    const routed = props.meta.content?.workspaceRouteId ?? sdk.workspaceId
+    if (routed) return routed
+    const workspace = await resolveWorkspaceRuntime({
+      baseUrl: claxedoServerUrl,
+      request: authFetch,
+      directory: dir,
+    })
+    return workspace?.kind === "local" ? undefined : workspace?.workspaceId
+  }
+
+  const pollPendingCreateFromServer = (pendingId: string, dir: string, nextTitle: string, nextCommand?: string) => {
+    const pollOnce = async () => {
+      if (pendingCreateSettled || disposed) return
+      const workspaceId = await resolvePollWorkspaceId(dir)
+      if (!workspaceId || disposed || pendingCreateSettled) return
+      const transport = createTransport({
+        placement: {
+          workspaceId,
+          hosting: "workspace",
+          transport: centralTransportForServer(claxedoServerUrl) !== "loopback" ? "workspace-relay" : "loopback",
+        },
+        serverUrl: claxedoServerUrl,
+        directory: workspaceId ? undefined : dir,
+        request: authFetch,
+        resolveWorkspaceRuntime: async ({ directory }) => {
+          const resolved = await resolveWorkspaceRuntime({
+            baseUrl: claxedoServerUrl,
+            request: authFetch,
+            directory,
+          })
+          if (!resolved?.kind) return null
+          return { kind: resolved.kind, workspaceId: resolved.workspaceId }
+        },
+      })
+      // List endpoint is `/api/wr/pty` (no trailing slash). A trailing `/`
+      // is routed as an empty pty id and 404s on the signed relay path.
+      const res = await transport.fetch(
+        terminalPtyApiPath(workspaceId ? { workspaceId } : { directory: dir }),
+      )
+      if (!res.ok || disposed || pendingCreateSettled) return
+      const body = await res.json()
+      if (disposed || pendingCreateSettled) return
+      const rows = Array.isArray(body) ? body : []
+      const adopted = pickAdoptedPty(rows, pendingCreateRequestId)
+      if (!adopted) return
+      completePendingCreate(pendingId, adopted.id, dir, nextTitle, nextCommand)
+    }
+
+    stopPendingPoll()
+    pendingPoll = startSingleFlightPoll(pollOnce, 400, {
+      timeoutMs: PENDING_CREATE_POLL_TIMEOUT_MS,
+      onTimeout: () => {
+        if (pendingCreateSettled || disposed) return
+        pendingCreateSettled = true
+        createStarted = false
+        pendingPoll = undefined
+        setCreateError("Timed out waiting for terminal creation to be confirmed.")
+      },
+    })
+  }
+
+  const completePendingCreate = (
+    pendingId: string,
+    createdId: string,
+    dir: string,
+    nextTitle: string,
+    nextCommand?: string,
+  ) => {
+    if (pendingCreateSettled || disposed) return
+    pendingCreateSettled = true
+    stopPendingPoll()
+    setCreateError(undefined)
+    terminal.ensure({
+      id: createdId,
+      ...(props.meta.sessionId ? { sessionId: props.meta.sessionId } : {}),
+      ...(pendingCreateRequestId ? { createRequestId: pendingCreateRequestId } : {}),
+      title: nextTitle || "Terminal",
+      cwd: dir,
+      ...(nextCommand ? { initialCommand: nextCommand } : {}),
+    })
+    state.terminal.own(props.meta.id, createdId)
+    batch(() => {
+      state.meta.patch(props.meta.id, {
+        terminalCreateRequestId: undefined,
+        terminalId: createdId,
+        content: {
+          ...props.meta.content,
+          type: "terminal",
+          directory: dir,
+          terminalId: createdId,
+          title: nextTitle || "Terminal",
+          ...(nextCommand ? { command: nextCommand } : {}),
+        },
+      })
+      if (disposed) return
+      replaceTerminalRoute(pendingId, createdId, dir)
+      setRealPtyId(createdId)
+    })
+    if (!disposed) requestTerminalFitOnPaneChange()
+  }
 
   onCleanup(() => {
     disposed = true
+    stopPendingPoll()
     if (activationTimer) clearTimeout(activationTimer)
   })
 
@@ -230,11 +366,14 @@ function TerminalContentInner(props: {
         })
         return
       }
-      terminal.ensure({
-        id: tid,
-        title: title(),
-        cwd: dir,
-      })
+      if (!terminal.all().some((p) => p.id === tid)) {
+        terminal.ensure({
+          id: tid,
+          ...(props.meta.sessionId ? { sessionId: props.meta.sessionId } : {}),
+          title: title(),
+          cwd: dir,
+        })
+      }
       setRealPtyId(tid)
       return
     }
@@ -243,47 +382,72 @@ function TerminalContentInner(props: {
     const queued = state.terminal.peekCreateForContent(props.meta.id)
 
     createStarted = true
+    pendingCreateSettled = false
     const consumed = queued ? state.terminal.consumeCreateForContent(props.meta.id) : undefined
     const nextCommand = consumed?.command ?? command()
     const nextTitle = consumed?.title ?? title()
     const previousPtyId = consumed?.previousPtyId
+    if (!pendingCreateRequestId) {
+      pendingCreateRequestId = crypto.randomUUID()
+      state.meta.patch(props.meta.id, {
+        terminalCreateRequestId: pendingCreateRequestId,
+        content: {
+          ...props.meta.content,
+          type: "terminal",
+          directory: dir,
+          terminalId: tid,
+        },
+      })
+    }
 
     setCreateError(undefined)
-    const created = terminal.new(nextCommand, nextTitle, previousPtyId)
+    const created = terminal.new({
+      initialCommand: nextCommand,
+      title: nextTitle,
+      previousPtyId,
+      sessionId: props.meta.sessionId,
+      createRequestId: pendingCreateRequestId,
+    })
     if (!created) {
       createStarted = false
       setCreateError("Terminal context is not available for this workspace.")
       return
     }
 
+    pollPendingCreateFromServer(tid, dir, nextTitle || "Terminal", nextCommand)
+
     void created
       .then((createdId) => {
+        if (disposed) return
         if (!createdId) {
           createStarted = false
+          pendingCreateSettled = true
+          stopPendingPoll()
           setCreateError("Claxedo did not return a terminal id.")
           return
         }
-        if (disposed) return
-        setRealPtyId(createdId)
-        state.terminal.own(props.meta.id, createdId)
-        state.meta.patch(props.meta.id, {
-          terminalId: createdId,
-          content: {
-            ...props.meta.content,
-            type: "terminal",
-            directory: dir,
-            terminalId: createdId,
-            title: nextTitle || "Terminal",
-            ...(nextCommand ? { command: nextCommand } : {}),
-          },
-        })
-        replaceTerminalRoute(tid, createdId, dir)
-        requestTerminalFitOnPaneChange()
+        stopPendingPoll()
+        completePendingCreate(tid, createdId, dir, nextTitle || "Terminal", nextCommand)
       })
       .catch((error) => {
-        createStarted = false
+        if (pendingCreateSettled || disposed) return
+        if (isDefinitiveTerminalCreateFailure(error)) {
+          pendingCreateSettled = true
+          createStarted = false
+          stopPendingPoll()
+        }
         setCreateError(error instanceof Error ? error.message : "Terminal failed to start.")
       })
+  })
+
+  createEffect(() => {
+    const tid = terminalId()
+    const dir = directory()
+    if (!tid?.startsWith("pending-") || !dir || !createStarted || pendingCreateSettled) return
+    const adopted = pickAdoptedPty(terminal.all(), pendingCreateRequestId)
+    if (!adopted) return
+    stopPendingPoll()
+    completePendingCreate(tid, adopted.id, dir, title(), command())
   })
 
   const pty = createMemo(() => {
@@ -349,7 +513,11 @@ function TerminalContentInner(props: {
     if (error instanceof WebSocketCloseError && error.code === 1008) {
       let newId: string | undefined
       try {
-        newId = await trackRecovery(recoveryAlias, id, () => terminal.clone(id) ?? Promise.resolve(undefined))
+        newId = await trackRecovery(
+          recoveryAlias,
+          id,
+          () => terminal.clone(id, props.meta.sessionId) ?? Promise.resolve(undefined),
+        )
       } catch {
         // clone failed; keep the existing terminal visible.
       }
@@ -359,14 +527,20 @@ function TerminalContentInner(props: {
     }
   }
 
+  // Key on the stable pty id string (not the LocalPTY object). Solid 1.9
+  // keyed-on-object remounts whenever ensure/update replaces row identity and
+  // tears down the live WebSocket before firstByte. Mount only after
+  // `activated` so pending→real route adoption settles first.
   return (
     <Show
+      keyed
       when={shouldMountTerminalPane({
         visible: props.ctx.isVisible(),
         ptyReady: !!pty(),
         activated: activated(),
-      }) ? pty() : undefined}
-      keyed
+      })
+        ? realPtyId()
+        : undefined}
       fallback={
         <Show
           when={createError()}
@@ -398,55 +572,58 @@ function TerminalContentInner(props: {
         </Show>
       }
     >
-      {(pty) => (
-        <div
-          data-testid="terminal-pane"
-          data-terminal-id={pty.id}
-          data-content-id={props.meta.id}
-          data-terminal-connected={connected() ? "true" : "false"}
-          class="flex-1 min-h-0 h-full w-full overflow-hidden"
-        >
-          <RoleGuardedTerminal
-            pty={pty}
-            data-testid="terminal-xterm-host"
-            autoFocus={false}
-            onConnect={() => setConnected(true)}
-            onCleanup={terminal.update}
-            onUpdate={terminal.update}
-            onConnectError={handleConnectError}
-            onAgentInterrupt={() => {
-              const id = realPtyId()
-              if (!id) return
-              if (!state.terminal.isTracked(id)) return
-              if (state.terminal.agentStatus(id) === "idle") return
+      {(id) => {
+        const current = () => pty()
+        return (
+          <Show when={!!current()}>
+            <div
+              data-testid="terminal-pane"
+              data-terminal-id={id}
+              data-content-id={props.meta.id}
+              data-terminal-connected={connected() ? "true" : "false"}
+              class="flex-1 min-h-0 h-full w-full overflow-hidden"
+            >
+              <RoleGuardedTerminal
+                pty={current()!}
+                data-testid="terminal-xterm-host"
+                autoFocus={false}
+                onConnect={() => setConnected(true)}
+                onCleanup={terminal.update}
+                onUpdate={terminal.update}
+                onConnectError={handleConnectError}
+                onAgentInterrupt={() => {
+                  if (!state.terminal.isTracked(id)) return
+                  if (state.terminal.agentStatus(id) === "idle") return
 
-              batch(() => {
-                state.terminal.setAgentStatus(id, "idle")
-              })
-            }}
-            onSplitVertical={() => requestTerminalFitOnPaneChange()}
-            onSplitHorizontal={() => requestTerminalFitOnPaneChange()}
-            onFileLinkOpen={(filePath, line, col) => {
-              const workspaceDir = directory()
-              const target = resolveWorkspaceFileFocus(filePath, workspaceDir)
-              if (!target) return
-              // No `navigator: "files"`: the tree drawer would slide over the
-              // file tab this click opens.
-              state.workspacePanel.open({
-                workspaceDir,
-                targetPaneId: props.ctx.paneId,
-                focus: {
-                  kind: "file",
-                  path: target.path,
-                  intent: "tab",
-                  line: line ?? target.line,
-                  col: col ?? target.col,
-                },
-              })
-            }}
-          />
-        </div>
-      )}
+                  batch(() => {
+                    state.terminal.setAgentStatus(id, "idle")
+                  })
+                }}
+                onSplitVertical={() => requestTerminalFitOnPaneChange()}
+                onSplitHorizontal={() => requestTerminalFitOnPaneChange()}
+                onFileLinkOpen={(filePath, line, col) => {
+                  const workspaceDir = directory()
+                  const target = resolveWorkspaceFileFocus(filePath, workspaceDir)
+                  if (!target) return
+                  // No `navigator: "files"`: the tree drawer would slide over the
+                  // file tab this click opens.
+                  state.workspacePanel.open({
+                    workspaceDir,
+                    targetPaneId: props.ctx.paneId,
+                    focus: {
+                      kind: "file",
+                      path: target.path,
+                      intent: "tab",
+                      line: line ?? target.line,
+                      col: col ?? target.col,
+                    },
+                  })
+                }}
+              />
+            </div>
+          </Show>
+        )
+      }}
     </Show>
   )
 }

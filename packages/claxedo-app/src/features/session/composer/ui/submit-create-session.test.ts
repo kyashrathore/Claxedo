@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import type { useClaxedoState } from "@/features/session/app-ports"
 import type { SessionRef } from "@/platform/identity/session-ref"
+import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 import {
   acquireSubmitSessionTarget,
   createCloudStartupController,
@@ -286,6 +288,32 @@ describe("finalizeSubmitSessionTarget", () => {
     expect(typeof result.handoffCreatedSession).toBe("function")
     expect(tabs).toEqual([])
     expect(navigations).toEqual([])
+  })
+
+  test("does not upsert into the rail list during finalize (handoff owns the optimistic row)", () => {
+    const workspaceKey = queryKeys.shell.sessionList("http://test.local", {
+      scope: "workspace",
+      workspaceId: "ws_1",
+      directory: "workspace:ws_1",
+      groupBy: "none",
+      limit: 5,
+    })
+    queryClient.setQueryData(workspaceKey, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
+      items: [],
+      totalKnown: 0,
+    })
+
+    finalizeSessionTarget({
+      target: { created: true },
+      sessionDirectory: "workspace:ws_1",
+      provisionalTitle: "First prompt",
+      runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
+      projects: [{ id: "proj_1", worktree: "workspace:ws_1", name: "Project", sandboxes: [] }],
+      scheduleProjectionPull: () => undefined,
+    })
+
+    expect(queryClient.getQueryData<{ items?: Array<{ sessionId: string; title: string }> }>(workspaceKey)?.items).toEqual([])
   })
 
   test("refetches the canonical session list only after registration lands", async () => {

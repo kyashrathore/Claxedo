@@ -4,7 +4,7 @@ import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
 import type { AcpConnectionRow } from "./acp-connections"
-import type { DraftDefaultResult, ResolveDraftDefaultInput } from "./draft-default-policy"
+import type { DraftDefaultResult, DraftDefaultAuthority, ResolveDraftDefaultInput } from "./draft-default-policy"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 
 export type HarnessScopeInput = {
@@ -54,6 +54,7 @@ export type HarnessSelectionControllerStore = {
   draftDefaultState(scope: string): DraftDefaultResult["state"] | undefined
   draftDefaultLabels(scope: string): DraftDefaultLabels | undefined
   draftDefaultModel(scope: string): ModelKey | undefined
+  draftDefaultAuthority?(scope: string): DraftDefaultAuthority | undefined
 }
 
 export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
@@ -80,6 +81,7 @@ export type HarnessSelectionSnapshot = {
   draftDefaultState?: DraftDefaultResult["state"]
   draftDefaultLabels?: DraftDefaultLabels
   draftDefaultModel?: ModelKey
+  draftDefaultAuthority?: DraftDefaultAuthority
 }
 
 export function createHarnessSelectionController(store: HarnessSelectionControllerStore) {
@@ -102,6 +104,7 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
         draftDefaultState: store.draftDefaultState(scope),
         draftDefaultLabels: store.draftDefaultLabels(scope),
         draftDefaultModel: store.draftDefaultModel(scope),
+        draftDefaultAuthority: store.draftDefaultAuthority?.(scope),
       }
     },
     hydrate: (scope: string, input?: HarnessScopeInput) => store.hydrate(scope, input),

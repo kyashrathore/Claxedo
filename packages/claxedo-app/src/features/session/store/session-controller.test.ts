@@ -23,6 +23,7 @@ import {
   syncSessionMeta,
   waitForFirstActiveSessionStatusPoll,
 } from "./session-controller"
+import { sessionHydrationAuthorityKey } from "./session-resource-authority"
 import {
   createActivationSessionReadEpoch,
   firstFoldSessionHydrateDelay,
@@ -85,6 +86,31 @@ function question(id: string, sessionID: string): QuestionRequest {
 }
 
 describe("session controller helpers", () => {
+  test("session hydration authority changes when a provisional route resolves centrally", () => {
+    expect(sessionHydrationAuthorityKey(undefined)).toBe("unresolved")
+    expect(sessionHydrationAuthorityKey({
+      sessionId: "ses_child",
+      host: "central",
+      workspaceId: "ws_1",
+      toolSandbox: { kind: "virtual" },
+      harness: { id: "pi" },
+    })).not.toBe("unresolved")
+  })
+
+  test("session hydration authority distinguishes workspace backing changes", () => {
+    const cloud = sessionHydrationAuthorityKey({
+      sessionId: "ses_1",
+      host: "workspace",
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud" },
+    })
+    const userHosted = sessionHydrationAuthorityKey({
+      sessionId: "ses_1",
+      host: "workspace",
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted" },
+    })
+    expect(cloud).not.toBe(userHosted)
+  })
+
   test("activation session reads become inactive and abort on pane deactivation", () => {
     const epoch = createActivationSessionReadEpoch()
 

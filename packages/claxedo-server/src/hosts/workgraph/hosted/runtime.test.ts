@@ -354,8 +354,14 @@ describe("hosted WorkGraph runtime outbox", () => {
       users: [{ _id: "user-a", token_identifier: "user-a" }],
       orgs: [{ _id: "org-a", owner_user_id: "user-a", kind: "personal" }],
       org_memberships: [{ _id: "org-member", org_id: "org-a", user_id: "user-a", role: "owner" }],
-      projects: [{ _id: "project-row", project_id: "project-existing", org_id: "org-a", owner_user_id: "user-a" }],
-      project_memberships: [{ _id: "project-member", project_id: "project-row", user_id: "user-a", role: "owner" }],
+      projects: [{
+        _id: "project-row",
+        project_id: "project-existing",
+        org_id: "org-a",
+        repo_key: "https://github.com/claxedo/workgraph-target",
+        owner_user_id: "user-a",
+      }],
+      project_memberships: [{ _id: "project-member", project_id: "project-existing", user_id: "user-a", role: "owner" }],
       workspaces: [
         {
           _id: "workspace-existing",
@@ -2370,13 +2376,22 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("retains the transcript durably before a hosted completion is accepted", async () => {
     const retained: Record<string, unknown>[] = []
+    const resolvedActors: Record<string, unknown>[] = []
+    const mintedTokens: Record<string, unknown>[] = []
     const snapshotRequests: string[] = []
     const retain = createHostedSessionTranscriptRetention(
       { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
-      transcriptServices(),
+      transcriptServices(async (input) => {
+        mintedTokens.push(input)
+        return { token: "runtime-token", expiresAt: 1000, jti: "jti" }
+      }),
       {
         now: () => 42,
         executor: {
+          query: async (_fn, args) => {
+            resolvedActors.push(args)
+            return { actor_id: "internal-user-a", actor_kind: "human" }
+          },
           mutation: async (_fn, args) => {
             retained.push(args)
             return { ok: true }
@@ -2405,6 +2420,12 @@ describe("hosted WorkGraph runtime outbox", () => {
     expect(snapshotRequests).toEqual([
       "https://relay.test/workspaces/workspace-a/session/session-a/message?snapshot=1",
     ])
+    expect(resolvedActors).toEqual([{ service_token: "service-secret", subject: "clerk-user-a" }])
+    expect(mintedTokens).toEqual([expect.objectContaining({
+      subject: "clerk-user-a",
+      actorId: "internal-user-a",
+      actorKind: "human",
+    })])
     expect(retained).toEqual([
       {
         service_token: "service-secret",
@@ -2428,6 +2449,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       transcriptServices(),
       {
         executor: {
+          query: async () => ({ actor_id: "internal-user-a", actor_kind: "human" }),
           mutation: async (_fn, args) => {
             retained.push(args)
             return { ok: true }
@@ -2452,7 +2474,10 @@ describe("hosted WorkGraph runtime outbox", () => {
       { CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test", CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-secret" },
       transcriptServices(),
       {
-        executor: { mutation: async () => ({ ok: true }) },
+        executor: {
+          query: async () => ({ actor_id: "internal-user-a", actor_kind: "human" }),
+          mutation: async () => ({ ok: true }),
+        },
         fetch: async () => new Response("boom", { status: 502 }),
       },
     )
@@ -3406,7 +3431,10 @@ function handler(fn: unknown) {
     })
 }
 
-function transcriptServices() {
+function transcriptServices(
+  mintRuntimeAccessToken: (input: Record<string, unknown>) => Promise<{ token: string; expiresAt: number; jti: string }>
+    = async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+) {
   return {
     sandbox: {
       sandboxManager: {
@@ -3422,7 +3450,7 @@ function transcriptServices() {
     },
     relay: {
       provider: {
-        mintRuntimeAccessToken: async () => ({ token: "runtime-token", expiresAt: 1000, jti: "jti" }),
+        mintRuntimeAccessToken,
         getRelayEndpoint: async () => "https://relay.test",
       },
     },

@@ -12,5 +12,5 @@
     "lib": ["ESNext", "DOM", "DOM.Iterable"]
   },
   "include": ["src"],
-  "exclude": ["src/**/*.vitest.ts", "src/**/*.typecheck.ts"]
+  "exclude": ["src/**/*.vitest.ts"]
 }

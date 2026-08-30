@@ -74,6 +74,11 @@ vi.mock("@/platform/api/api", () => ({
   },
   getClaxedoServerUrl: () => mocks.baseUrl,
   getDefaultBaseUrl: () => mocks.baseUrl,
+  isLoopbackHttpUrl: (url: string | undefined) => {
+    if (!url) return false
+    const hostname = new URL(url).hostname
+    return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  },
   normalizeUrl: (url: string | undefined) => url?.trim().replace(/\/+$/, "") || undefined,
 }))
 

@@ -24,7 +24,6 @@ import { Button } from "@opencode-ai/ui/button"
 import { Card } from "@opencode-ai/ui/card"
 import {
   ContextToolGroup,
-  Message,
   MessageNav,
   MessageDivider,
   Part as MessagePart,
@@ -108,6 +107,7 @@ import { formatDuration } from "@/ui/session-kit"
 import { installTimelineMermaid } from "./mermaid-timeline"
 import { installTimelineTables } from "./table-timeline"
 import { sessionMessageScrollInset } from "./session-message-scroll-position"
+import { TimelineUserMessage } from "./timeline-user-message"
 import {
   timelineAnchorClickTarget,
   timelineExternalSourceClickTarget,
@@ -496,11 +496,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: sameArrayItems },
         )
-        const visibleAssistantMessageIDs = createMemo(() => {
-          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return
-          const finalAssistant = turnAssistants().at(-1)
-          return finalAssistant ? new Set([finalAssistant.id]) : undefined
-        })
         const turnParts = createMemo(
           () => {
             const conversation = sessionConversation()
@@ -515,6 +510,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
           undefined,
           { equals: samePartsRecord },
         )
+        const visibleAssistantMessageIDs = createMemo(() => {
+          if (initialTurnExpanded() || indexAccessor() !== props.userMessages.length - 1) return
+          const parts = turnParts()
+          return Timeline.coldFinalVisibleAssistantMessageIDs(
+            turnAssistants(),
+            (messageID) => parts[messageID] ?? emptyParts,
+          )
+        })
         const isActive = createMemo(() => activeMessageID() === userMessage.id)
         return createMemo((previous: TimelineRow.TimelineRow[] | undefined) => {
           const parts = turnParts()
@@ -1495,15 +1498,11 @@ export function MessageTimeline(props: MessageTimelineProps) {
           <TimelineRowFrame row={userMessageRow}>
             <Show when={message()}>
               {(message) => (
-                <div data-slot="session-turn-message-container" class="w-full px-4 md:px-5">
-                  <div data-slot="session-turn-message-content" aria-live="off">
-                    <Message
-                      message={message()}
-                      parts={getMsgParts(userMessageRow().userMessageID)}
-                      actions={props.actions}
-                    />
-                  </div>
-                </div>
+                <TimelineUserMessage
+                  message={message()}
+                  parts={getMsgParts(userMessageRow().userMessageID)}
+                  actions={props.actions}
+                />
               )}
             </Show>
           </TimelineRowFrame>

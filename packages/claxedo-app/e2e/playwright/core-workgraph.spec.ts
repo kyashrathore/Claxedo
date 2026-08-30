@@ -1212,6 +1212,14 @@ test.describe.serial("@core @workgraph-real personal WorkGraph real local journe
     ).get() as { count: number }).count).toBe(0)
     expect(harness.connectionEvidence().pullRequests).toEqual([])
 
+    // The real-workgraph harness intentionally exposes the production WorkGraph
+    // HTTP router without the shell's central events SSE. This escalation is
+    // created after the page's initial Attention read, so re-enter the surface
+    // to exercise the canonical mount read instead of waiting for a doorbell the
+    // harness cannot deliver (the production doorbell path has its own browser
+    // and lifecycle coverage).
+    await page.reload()
+    await expect(page.getByRole("article", { name: "Stream Public release delivery" })).toBeVisible({ timeout: 30_000 })
     const panel = await openWaitingItemPanel(page, /Master needs your help/)
     await panel.getByRole("button", { name: /Master needs your help/ }).click()
     const dialog = page.getByRole("dialog", { name: "Master needs your help" })
@@ -2055,7 +2063,7 @@ async function openWaitingItemPanel(page: Page, name: RegExp) {
   const panel = page.getByRole("complementary", { name: "Workspace panel" })
   await expect.poll(async () => await card.isVisible() || await panel.isVisible()).toBe(true)
   if (!(await card.isVisible())) {
-    await page.getByRole("button", { name: /Needs you/ }).click()
+    await page.getByRole("button", { name: /^Needs you — \d+ waiting on you$/ }).click()
     await expect(card).toBeVisible()
   }
   await card.getByRole("button", { name: "Needs you", exact: true }).click()

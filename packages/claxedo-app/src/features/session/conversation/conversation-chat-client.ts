@@ -7,7 +7,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { memoizeSuccessfulLoad, retry } from "@/lib/retry"
 import type { ConversationChatHandle } from "./opencode-conversation"
-import { conversationPersistence } from "./conversation-persistence"
+import { conversationPersistence, conversationPersistenceKey } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
 import { scheduleSessionCacheCeiling } from "../data/sync/session-cache-cleanup"
 
@@ -133,7 +133,10 @@ export function createConversationChatClient(
   let client: ChatClient | undefined
   const ready = (options.loadRuntime ?? loadChatClientRuntime)().then((runtime) => {
     client = new runtime.ChatClient({
-      id: conversationScopeKey(scope),
+      // Snapshot the signed principal/org namespace into the ChatClient id at
+      // construction. A retained old-principal client therefore cannot write
+      // into the next account's durable namespace after an auth transition.
+      id: conversationPersistenceKey(conversationScopeKey(scope)),
       initialMessages: buffered,
       connection: noopConnection,
       persistence: conversationPersistence,

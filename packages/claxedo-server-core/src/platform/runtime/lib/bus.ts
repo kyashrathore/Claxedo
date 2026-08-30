@@ -114,6 +114,28 @@ export type DocumentChangedEvent = {
   ts: number
 }
 
+// Doorbell nudge for session-share live sync.
+//
+// Publisher: control-plane share grant/revoke HTTP handlers, after the
+// authority write succeeds. One event per recipient Clerk subject.
+// Consumer: claxedo-app session rail/inventory via the central events stream —
+// invalidate and refetch (list APIs already include shares).
+//
+// This remains a doorbell, not a change envelope. `ownerUserId` is the
+// *recipient* subject (not the granter), matching workgraph.changed subject
+// scoping so Bob receives Alice's grant without Alice seeing Bob's doorbell.
+export type SessionShareChangedEvent = {
+  type: "session.share.changed"
+  phase: "granted" | "revoked"
+  /** Recipient Clerk subject — visibility matches workgraph.changed. */
+  ownerUserId: string
+  sessionId: string
+  workspaceId: string
+  /** Authority-internal org id for hosted LiveSync room routing. */
+  orgId?: string
+  ts: number
+}
+
 type ControlEvent =
   | {
       type: "provision"
@@ -136,6 +158,7 @@ type ControlEvent =
   | SessionLifecycleEvent
   | WorkgraphChangedEvent
   | DocumentChangedEvent
+  | SessionShareChangedEvent
 
 export type ClaxedoEvent = RuntimeClaxedoEvent | ControlEvent
 

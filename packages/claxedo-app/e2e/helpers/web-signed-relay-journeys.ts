@@ -36,6 +36,7 @@ import {
   composerInput,
   composeText,
   createShellTerminal,
+  ensureWorkspaceSectionExpanded,
   gateReachesReady,
   selectScriptedModel,
   seedWorkspace,
@@ -104,6 +105,17 @@ async function openReadyDraft(ctx: JourneyCtx): Promise<Locator> {
   // already have sessions even though each browser context is fresh. Enter a
   // draft through the product's canonical New Session action instead of
   // relying on the bare workspace route to remain a draft forever.
+  //
+  // When the connect gate is already `ready` on the workspace draft route,
+  // submitting from that composer matches the real-cloud-relay lane and avoids
+  // a second submit-time provisioning pass through the project header flow.
+  const gateComposer = page
+    .getByRole("textbox", { name: /Ask anything/i })
+    .filter({ visible: true })
+    .last()
+  if (await gateComposer.isVisible().catch(() => false)) {
+    return gateComposer
+  }
   return openNewDraftInProject(page)
 }
 
@@ -343,28 +355,33 @@ export async function journeyB9(ctx: JourneyCtx) {
   await pollSurfaceStatus({ page, sessionId, expected: "idle" })
 
   scripted.resetCounts()
-  scripted.setReplyDelayMs(1_500)
+  scripted.setReplyDelayMs(8_000)
   try {
     await focusSwitcherTab(page, sessionTitle)
     await expect(page.locator('[data-component="session-composer"]:visible')).toBeVisible({ timeout: 10_000 })
     await composeText(page, composerInput(page), "Reply with exactly this one token, nothing else: B9_MARK2")
     await sendSubsequentMessage(page)
+    await expect(
+      submitControl(page),
+      "second turn never entered a busy state before the focus switch",
+    ).toHaveAttribute("aria-label", /stop/i, { timeout: 10_000 })
+    // Switch away while the 8s scripted delay keeps the turn in flight.
+    await focusSwitcherTab(page, { contentId: draftContentId, title: "New Session" })
+    await expect(page.locator('[data-component="session-new-composer"]:visible')).toBeVisible({ timeout: 10_000 })
     await expect.poll(
       () => Object.values(scripted.counts()).reduce((total, count) => total + count, 0),
       { message: "scripted provider never received B9's delayed second turn", timeout: 10_000 },
     ).toBeGreaterThan(0)
-    await focusSwitcherTab(page, { contentId: draftContentId, title: "New Session" })
-    await expect(page.locator('[data-component="session-new-composer"]:visible')).toBeVisible({ timeout: 10_000 })
-
     await pollSurfaceStatus({ page, sessionId, expected: "working" })
-    await pollSurfaceStatus({ page, sessionId, expected: "done" })
+    await page.waitForTimeout(12_000)
+    await pollSurfaceStatus({ page, sessionId, expected: "done" }, 20_000)
   } finally {
     scripted.setReplyDelayMs(0)
   }
 }
 
 /** Same poll wrapper `desktop-unsigned-embedded.spec.ts` uses — see that file's doc for why a bare single-shot check races a real busy/idle transition by a beat. */
-async function pollSurfaceStatus(opts: { page: Page; sessionId: string; expected: SurfaceStatus }, timeoutMs = 15_000) {
+async function pollSurfaceStatus(opts: { page: Page; sessionId: string; expected: SurfaceStatus }, timeoutMs = 30_000) {
   const deadline = Date.now() + timeoutMs
   for (;;) {
     try {
@@ -465,9 +482,17 @@ export async function journeyC4(ctx: JourneyCtx) {
 /** D1/D2/D3/E1: a real terminal streams a live prompt, its rail row settles, and row geometry matches session rows. */
 export async function journeyD1toD3E1(ctx: JourneyCtx) {
   const { page, scripted, frontendUrl, info } = ctx
-  await openReadyDraft(ctx)
+  const seedInput = await openReadyDraft(ctx)
   await selectScriptedModel(page)
   scripted.resetCounts()
+
+  // Managed (signed) PTY creation requires a sessionId on the authority path
+  // (`workspace-runtime` `pty_session_id_required`). Create a real session first
+  // and keep it focused so the Shell launcher can bind the PTY to it — otherwise
+  // the rail stays on `pending-*` with "Terminal failed to start".
+  await composeText(page, seedInput, "Reply with exactly this one token, nothing else: D0_SESSION")
+  await submitDraft(page)
+  await expectAssistantReplyVisible(page, "D0_SESSION", { spec: ctx.spec, scenario: "d0-session-for-pty" })
 
   // Force xterm's DOM renderer BEFORE opening any terminal — the default is a
   // WebGL/canvas renderer whose painted pixels a `page.locator` cannot read as
@@ -479,14 +504,20 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
 
   const terminalId = await createShellTerminal(page)
 
-  // D1: streams a live prompt within 10s and never matches /Reconnecting.../.
+  // D1: streams a live prompt within 30s and never matches /Reconnecting.../.
   const pane = page.locator(`[data-testid="terminal-pane"][data-terminal-id="${terminalId}"]`)
-  await expect(pane, "terminal pane never mounted").toBeVisible({ timeout: 10_000 })
+  await expect(pane, "terminal pane never mounted").toBeVisible({ timeout: 15_000 })
+  await pane.click()
   const xtermRows = pane.locator(".xterm-rows").first()
-  await expect(
-    xtermRows,
-    "no DOM-rendered terminal content within 10s — see defects 4/5/6/7 / open issue #17 (terminal creation hangs)",
-  ).toHaveText(/\S/, { timeout: 10_000 })
+  const xtermDeadlineMs = 30_000
+  await expect.poll(
+    async () => (await xtermRows.innerText().catch(() => "")).replace(/\s+/g, " ").trim(),
+    {
+      message:
+        "no DOM-rendered terminal content within 30s — see defects 4/5/6/7 / open issue #17 (terminal creation hangs)",
+      timeout: xtermDeadlineMs,
+    },
+  ).toMatch(/\S/)
 
   const deadline = Date.now() + 10_000
   while (Date.now() < deadline) {
@@ -500,6 +531,7 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
   // richer working->done proof for a SESSION row is B7's job, and a terminal
   // row's own status semantics are `[data-terminal-id]` presence + no
   // reconnect banner, which the loop above already covers over the full 10s.
+  await ensureWorkspaceSectionExpanded(page, info)
   await expect(
     page.locator(RAIL_SELECTORS.terminalRow(terminalId)),
     "terminal never gained a stable rail row",

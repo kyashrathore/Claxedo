@@ -71,7 +71,11 @@ export const localServer: Policy = {
   // complete local usage pipeline (route, durable ports, scanner, pricing
   // port, outbox, host identity, and composition). Shared implementation lives
   // in server-core, so the desktop still reaches no hosted capability package.
-  ceilings: { modules: 56, packages: 21 },
+  // Tenant-aware sandbox fetch options are a local workspace owner with no
+  // hosted capability package: 56 + 1 = 57 modules.
+  // 2026-08-29: +1 `embedded-relay-host-auth.ts` — verified actor hop stamp for
+  // in-process embedded prompts (`claxedo.author` without managed authority).
+  ceilings: { modules: 58, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

@@ -1,9 +1,13 @@
 import { randomUUID } from "crypto"
 import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
-import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout, createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import { claxedoBus, createBus, globalBus, type ClaxedoEvent, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { isTerminalClaxedoEvent } from "@claxedo/server-core/platform/http/event-retention"
+import {
+  eventVisibleTo,
+  type EventScopePrincipal,
+} from "@claxedo/server-core/platform/http/event-visibility"
 
 /** A `globalBus` envelope after `normalizeGlobalEvent` has filled in its defaults. */
 type NormalizedGlobalEvent = {
@@ -34,7 +38,7 @@ export type GlobalStreamGapEvent = {
  * envelope) and `claxedoBus` frames stay flat, because `ClaxedoEventsProvider`'s
  * `isClaxedoEvent` guard requires a top-level `.type` for the latter.
  */
-type CentralFrame = NormalizedGlobalEvent | ClaxedoEvent | GlobalStreamGapEvent
+export type CentralFrame = NormalizedGlobalEvent | ClaxedoEvent | GlobalStreamGapEvent
 
 /** The per-connection handshake/heartbeat wire frame, unchanged from before replay. */
 type ConnectedFrame = {
@@ -87,6 +91,66 @@ type GlobalEventsBuses = {
   claxedoBus: Pick<typeof claxedoBus, "subscribe">
 }
 
+export type GlobalEventSubscription = {
+  identity:
+    | { mode: "unmanaged-local"; connectionId: string }
+    | {
+        mode: "verified"
+        connectionId: string
+        actorId: string
+        actorKind: "human" | "agent"
+        orgId: string
+        workspaceId: string
+        role: string
+      }
+  visible(frame: CentralFrame): boolean | Promise<boolean>
+}
+
+export type GlobalEventsHandlerOptions = {
+  resolveSubscription?: (context: Context) => GlobalEventSubscription | Promise<GlobalEventSubscription>
+}
+
+export function globalEventSessionId(frame: CentralFrame) {
+  if (!("type" in frame)) {
+    const properties = frame.payload.properties
+    if (typeof properties.sessionID === "string") return properties.sessionID
+    const info = properties.info && typeof properties.info === "object" && !Array.isArray(properties.info)
+      ? properties.info as Record<string, unknown>
+      : undefined
+    if (frame.payload.type === "session.updated" && typeof info?.id === "string") return info.id
+    if (typeof info?.sessionID === "string") return info.sessionID
+    const part = properties.part && typeof properties.part === "object" && !Array.isArray(properties.part)
+      ? properties.part as Record<string, unknown>
+      : undefined
+    if (typeof part?.sessionID === "string") return part.sessionID
+    return undefined
+  }
+  if (frame.type === "session.lifecycle") return frame.sessionID
+  if (frame.type === "agent.lifecycle") return frame.sessionId
+  return undefined
+}
+
+/**
+ * Canonical visibility for a signed subscriber on the process-global compat
+ * stream. Session frames are checked by the session authority supplied by the
+ * caller; tenant-scoped Claxedo events use the same subject/org predicate as
+ * the hosted event plane. Wrapped native events without a session identity are
+ * deliberately denied because their arbitrary properties carry no trusted
+ * tenant scope.
+ */
+export async function signedGlobalEventVisibleTo(
+  frame: CentralFrame,
+  principal: EventScopePrincipal,
+  authorizeSession?: (sessionId: string) => boolean | Promise<boolean>,
+) {
+  if (principal.mode !== "signed") return true
+  if ("type" in frame && frame.type === "stream.replay-gap") return true
+  const sessionId = globalEventSessionId(frame)
+  if (sessionId) return authorizeSession ? await authorizeSession(sessionId) : false
+  if (!("type" in frame)) return false
+  return eventVisibleTo(principal, frame)
+}
+
 /**
  * The central `/global/event` + `/api/wr/events` stream (local/desktop mode).
  *
@@ -130,20 +194,19 @@ type GlobalEventsBuses = {
  * caches, so a full re-read on every reconnect resurrects permission and
  * question docks the user already answered.
  *
- * ## No per-identity filter — on purpose, and it is pre-existing
+ * ## Identity-aware compatibility delivery
  *
- * Unlike `routes/events.ts`, this handler applies no `eventVisibleTo` scoping:
- * `eventVisibleTo` default-denies every compat envelope and every `pty.*` /
- * `agent.lifecycle` / `session.lifecycle` frame to a signed caller, which is the
- * entire content of this stream, so adding it would silently empty the route for
- * signed self-host deployments. Authorization is the route-level
- * `controlPlaneRouteAuth` gate in `routes/opencode-compat.ts` instead. The ring
- * therefore does NOT cross a visibility boundary the live path does not already
- * cross — but it does widen the window: a caller presenting a low
- * `Last-Event-ID` now receives retained frames from before it connected. That is
- * a timing widening on an already-unfiltered route, not a new boundary.
+ * Compat envelopes contain transcript events, so route authentication alone is
+ * insufficient for private sessions. The caller supplies one content-aware
+ * visibility predicate backed by the session authority. It is applied before a
+ * frame receives a per-principal cursor id and again at the final live/replay
+ * write. Another principal's traffic therefore cannot leak through replay or
+ * manufacture a replay-gap notice for a quiet subscriber.
  */
-export function createGlobalEventsHandler(buses: GlobalEventsBuses = { globalBus, claxedoBus }) {
+export function createGlobalEventsHandler(
+  buses: GlobalEventsBuses = { globalBus, claxedoBus },
+  options: GlobalEventsHandlerOptions = {},
+) {
   const frames = createBus<CentralFrame>()
   // Retention stays at the shared 256 + 64 even though this bus IS chattier
   // than the workspace one: `server.ts` bridges the embedded native-opencode
@@ -167,9 +230,157 @@ export function createGlobalEventsHandler(buses: GlobalEventsBuses = { globalBus
   // The cost is that a reconnect mid-stream can land on a replay-gap notice
   // instead of a replay. That degrades to the pre-fix behaviour for delta
   // frames only, which is safe.
-  const replay = createSseReplayBuffer<CentralFrame>({ isTerminal: isTerminalCentralFrame })
+  type Connection = {
+    subscription: GlobalEventSubscription
+    push: (frame: CentralFrame) => unknown
+    close: () => void
+    authorizedSessions: Set<string>
+  }
+  type Scope = {
+    key: string
+    replay: SseReplayBuffer<CentralFrame>
+    connections: Set<Connection>
+    reservations: number
+    retainedCursor?: string
+    tail: Promise<void>
+    pending: boolean
+    unknownSequence: boolean
+    sharedRetained: boolean
+  }
+  const retained = createSseReplayBuffer<CentralFrame>({ isTerminal: isTerminalCentralFrame })
+  const scopes = new Map<string, Scope>()
+  const tombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
+  const subscriptionKey = (subscription: GlobalEventSubscription) => subscription.identity.mode === "unmanaged-local"
+    ? "local"
+    : JSON.stringify([
+        subscription.identity.orgId,
+        subscription.identity.workspaceId,
+        subscription.identity.actorKind,
+        subscription.identity.actorId,
+      ])
+  const evict = (scope: Scope) => {
+    if (scope.connections.size > 0 || scope.reservations > 0) return
+    if (scopes.get(scope.key) !== scope) return
+    if (!scope.sharedRetained) {
+      tombstones.delete(scope.key)
+      tombstones.set(scope.key, {
+        sequence: Number(scope.replay.lastId() ?? "0"),
+        ...(scope.retainedCursor ? { retainedCursor: scope.retainedCursor } : {}),
+      })
+      while (tombstones.size > 256) tombstones.delete(tombstones.keys().next().value!)
+    }
+    scopes.delete(scope.key)
+  }
+  const terminate = (scope: Scope, connection: Connection) => {
+    scope.connections.delete(connection)
+    connection.close()
+  }
+  const deliver = (
+    scope: Scope,
+    frame: CentralFrame,
+    decisions: Array<{ connection: Connection; visible: boolean }>,
+  ) => {
+    const sessionId = globalEventSessionId(frame)
+    let visible = false
+    for (const decision of decisions) {
+      if (!scope.connections.has(decision.connection)) continue
+      if (!decision.visible) {
+        if (sessionId && decision.connection.authorizedSessions.has(sessionId)) {
+          terminate(scope, decision.connection)
+        }
+        continue
+      }
+      visible = true
+      if (sessionId) decision.connection.authorizedSessions.add(sessionId)
+      void Promise.resolve(decision.connection.push(frame)).catch(() => undefined)
+    }
+    if (visible && !scope.sharedRetained) {
+      scope.replay.push(frame)
+      scope.retainedCursor = retained.idFor(frame) ?? scope.retainedCursor
+    }
+    evict(scope)
+  }
+  const evaluate = (scope: Scope, frame: CentralFrame) => {
+    const pending = [...scope.connections].map((connection) => {
+      try {
+        return { connection, visible: connection.subscription.visible(frame) }
+      } catch {
+        return { connection, visible: false as const }
+      }
+    })
+    if (!pending.some((item) => item.visible instanceof Promise)) {
+      deliver(scope, frame, pending as Array<{ connection: Connection; visible: boolean }>)
+      return
+    }
+    return Promise.all(pending.map(async (item) => ({
+      connection: item.connection,
+      visible: await Promise.resolve(item.visible).catch(() => false),
+    }))).then((decisions) => deliver(scope, frame, decisions))
+  }
+  const enqueue = (scope: Scope, frame: CentralFrame) => {
+    if (!scope.pending) {
+      const result = evaluate(scope, frame)
+      if (!result) return
+      scope.pending = true
+      scope.tail = result
+      void result.finally(() => {
+        if (scope.tail === result) scope.pending = false
+      })
+      return
+    }
+    const tail = scope.tail.then(() => evaluate(scope, frame))
+    scope.tail = tail
+    void tail.finally(() => {
+      if (scope.tail === tail) scope.pending = false
+    })
+  }
+  const scopeFor = (subscription: GlobalEventSubscription) => {
+    const key = subscriptionKey(subscription)
+    const existing = scopes.get(key)
+    if (existing) return existing
+    const tombstone = tombstones.get(key)
+    tombstones.delete(key)
+    const sharedRetained = subscription.identity.mode === "unmanaged-local"
+    const scope: Scope = {
+      key,
+      replay: sharedRetained
+        ? retained
+        : createSseReplayBuffer<CentralFrame>({
+            isTerminal: isTerminalCentralFrame,
+            ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
+          }),
+      connections: new Set(),
+      reservations: 0,
+      ...(tombstone?.retainedCursor ? { retainedCursor: tombstone.retainedCursor } : {}),
+      tail: Promise.resolve(),
+      pending: false,
+      unknownSequence: !sharedRetained && !tombstone && retained.lastId() !== undefined,
+      sharedRetained,
+    }
+    scopes.set(key, scope)
+    const retainedFrames = sharedRetained ? [] : retained.replayAfter(tombstone?.retainedCursor)
+    if (retainedFrames.length > 0) {
+      scope.pending = true
+      scope.tail = retainedFrames.reduce(
+        (tail, retainedFrame) => tail.then(async () => {
+          if (await Promise.resolve(subscription.visible(retainedFrame.payload)).catch(() => false)) {
+            scope.replay.push(retainedFrame.payload)
+            scope.retainedCursor = retainedFrame.id
+          }
+        }),
+        Promise.resolve(),
+      )
+      void scope.tail.finally(() => {
+        scope.pending = false
+      })
+    }
+    return scope
+  }
   frames.subscribe((frame) => {
-    replay.push(frame)
+    retained.push(frame)
+    for (const scope of scopes.values()) {
+      if (scope.connections.size > 0) enqueue(scope, frame)
+    }
   })
   buses.globalBus.subscribe((event) => {
     frames.publish(normalizeGlobalEvent(event))
@@ -178,7 +389,16 @@ export function createGlobalEventsHandler(buses: GlobalEventsBuses = { globalBus
     frames.publish(event)
   })
 
-  return (c: Context) => streamSSE(c, async (stream) => {
+  return async (c: Context) => {
+    const subscription = await options.resolveSubscription?.(c) ?? {
+      identity: { mode: "unmanaged-local" as const, connectionId: randomUUID() },
+      visible: () => true,
+    }
+    const retainedCursor = retained.lastId()
+    const scope = scopeFor(subscription)
+    scope.reservations += 1
+    await scope.tail
+    return streamSSE(c, async (stream) => {
     // `attachSseFanout` recognises its heartbeat by object identity (that is how
     // it knows to shed heartbeats first when a pending queue overflows), so the
     // sentinel must be one stable object. The WIRE shape stays the legacy
@@ -186,18 +406,50 @@ export function createGlobalEventsHandler(buses: GlobalEventsBuses = { globalBus
     // it as a "refresh the project catalog" nudge, so changing it would change
     // behaviour well beyond replay.
     const heartbeat = { type: "heartbeat" } as const
-    const cursor = c.req.header("last-event-id") ?? replay.lastId() ?? "0"
+    const cursor = c.req.header("last-event-id") ?? scope.replay.lastId() ?? "0"
+    const replay = scope.unknownSequence && Number(c.req.header("last-event-id") ?? "0") > 0
+      ? { ...scope.replay, hasGap: () => true }
+      : scope.replay
 
     await stream
       .writeSSE({ id: cursor, data: JSON.stringify(connectedFrame()) })
       .catch(() => {})
 
     const cleanup = attachSseFanout<CentralFrame>({
-      subscribe: frames.subscribe,
-      write: (frame, meta) => stream.writeSSE({
-        ...(meta?.id ? { id: meta.id } : {}),
-        data: JSON.stringify(frame === heartbeat ? connectedFrame() : frame),
-      }),
+      subscribe: (listener) => {
+        const close = () => stream.abort()
+        const connection = { subscription, push: listener, close, authorizedSessions: new Set<string>() }
+        scope.connections.add(connection)
+        scope.reservations -= 1
+        for (const retainedFrame of retained.replayAfter(retainedCursor)) enqueue(scope, retainedFrame.payload)
+        return () => {
+          scope.connections.delete(connection)
+          evict(scope)
+        }
+      },
+      write: async (frame, meta) => {
+        const content = "type" in frame || "directory" in frame ? frame as CentralFrame : undefined
+        if (content && !await Promise.resolve(subscription.visible(content)).catch(() => false)) {
+          const sessionId = globalEventSessionId(content)
+          if (sessionId && [...scope.connections].some((connection) =>
+            connection.subscription === subscription && connection.authorizedSessions.has(sessionId))) {
+            for (const connection of [...scope.connections]) {
+              if (connection.subscription === subscription) terminate(scope, connection)
+            }
+          }
+          return
+        }
+        const sessionId = content && globalEventSessionId(content)
+        if (sessionId) {
+          for (const connection of scope.connections) {
+            if (connection.subscription === subscription) connection.authorizedSessions.add(sessionId)
+          }
+        }
+        return stream.writeSSE({
+          ...(meta?.id ? { id: meta.id } : {}),
+          data: JSON.stringify(frame === heartbeat ? connectedFrame() : frame),
+        })
+      },
       heartbeat,
       heartbeatMs: 5_000,
       lastEventId: cursor,
@@ -220,6 +472,7 @@ export function createGlobalEventsHandler(buses: GlobalEventsBuses = { globalBus
       })
     })
   })
+  }
 }
 
 /**

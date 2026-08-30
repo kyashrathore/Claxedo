@@ -11,6 +11,7 @@ import {
   readRailBatchLeg,
   sidebarRequestDebug,
   sidebarSessionStatusBatches,
+  syncUnfocusedRailBatchStatusToCache,
 } from "./rail-sidebar-status"
 import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
 
@@ -44,6 +45,7 @@ import { GlobalNavigation } from "./global-navigation"
 import { useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
 import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
+import { terminalSessionIdForWorkspace } from "@/features/terminal/core/terminal-session-context"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
@@ -57,9 +59,10 @@ import { usePermission } from "@/features/session/providers/permission"
 import { useOptionalTerminal } from "@/features/terminal/providers/provider"
 import { DialogEditProject } from "../../../features/workspaces/ui/dialog-edit-project"
 import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
+import { RailOrgTeamSwitcher } from "./rail-org-team-switcher"
 import { getFilename } from "@/lib/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
-import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
+import { workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
 import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 import {
   activateDisclosureFromKeyboard,
@@ -72,6 +75,7 @@ import {
   sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  mergedSessionStatusType,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
 import { queryClient } from "@/platform/query/query-client"
@@ -94,7 +98,8 @@ import { isWorkspaceReady, workspacePlacement } from "../../../features/workspac
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import { shellDataKeys } from "@/platform/sync/keys"
 import {
   nextUnseenDone,
   sessionSurfaceActive as sessionRowActive,
@@ -114,6 +119,7 @@ import {
 import {
   deriveTerminalSurfaceRows,
   reconcileSessionRowsAfterArchive,
+  terminalMetaMatchesPlacement,
   type SessionNavigationRow,
   type TerminalSurfaceRow,
 } from "../../../features/session/ui/navigation/session-navigation"
@@ -124,6 +130,7 @@ import {
 import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigation/terminal-surface-navigation"
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
+import { projectWorkspaceInfo, railProjectDirectoryRefs } from "./rail-project-session-info"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
@@ -299,15 +306,6 @@ function workspaceSessionBacking(
   })
 }
 
-function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
-  return project.workspaces?.[directory] ??
-    Object.values(project.workspaces ?? {}).find((workspace) =>
-      workspace.directory === directory ||
-      workspace.id === directory ||
-      workspace.workspaceId === directory
-    )
-}
-
 function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">, directory: string): RuntimeKind {
   const environmentKind = session.environment?.kind
   if (environmentKind === "cloud" || environmentKind === "user-hosted" || environmentKind === "local") return environmentKind
@@ -471,6 +469,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const width = createMemo(() => props.railWidth)
   const [clock, setClock] = createSignal(Date.now())
   const [sessionStatuses, setSessionStatuses] = createSignal<Record<string, string | undefined>>({})
+  const [sessionActivityRevision, bumpSessionActivityRevision] = createSignal(0)
   const [sessionRequests, setSessionRequests] = createSignal<
     Record<string, { permissions?: PermissionRequest[]; questions?: QuestionRequest[] } | undefined>
   >({})
@@ -634,6 +633,7 @@ export function RailSidebar(props: RailSidebarProps) {
       attachments: item.attachments,
       environment: item.environment,
       git: item.git,
+      ...(item.owner ? { owner: item.owner } : {}),
       archived: item.archived,
       status: state(item),
       project,
@@ -671,6 +671,7 @@ export function RailSidebar(props: RailSidebarProps) {
       attachments,
       environment: item.environment,
       git: item.git,
+      ...(item.owner ? { owner: item.owner } : {}),
       archived: !!item.archivedAt,
       status: state({
         tags: item.tags,
@@ -705,7 +706,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const dirs = (project: ProjectItem) => {
-    const all = new Set<string>(projectWorkspaceDirectories(project))
+    const all = railProjectDirectoryRefs(project)
     if (projectMatches(project) && props.activeDirectory) {
       all.add(projectWorkspaceInfo(project, props.activeDirectory)?.directory ?? props.activeDirectory)
     }
@@ -815,13 +816,24 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionStatusTargetGroups = createMemo(statusChain.groups)
   const sessionStatusTargetSignature = createMemo(statusChain.signature)
   const sidebarSessionStatusInputs = createMemo(() => {
+    sessionActivityRevision()
     const statuses = sessionStatuses()
     const requests = sessionRequests()
+    const focusedSessionId = focusedSessionStatusTarget()?.sessionID
     return new Map(sessionStatusTargets().map((target) => [
       target.key,
       {
         directory: target.directory,
-        statusType: statuses[target.key],
+        statusType: mergedSessionStatusType(
+          statuses[target.key],
+          // Background rows must follow the rail batch read. The query cache
+          // keeps optimistic busy for the composer even after an unfocused turn
+          // finishes — especially on cloud runtimes where session.idle may not
+          // reconcile the cache before the batch reports idle.
+          focusedSessionId === target.sessionID
+            ? queryClient.getQueryData<SessionStatus>(shellDataKeys.sessionId(target.sessionID, "status"))?.type
+            : undefined,
+        ),
         requests: requests[target.key],
       },
     ] as const))
@@ -860,6 +872,7 @@ export function RailSidebar(props: RailSidebarProps) {
       const groups = sessionStatusTargetGroups()
       const sessionIDs = new Set(groups.flatMap((group) => group.targets.map((target) => target.sessionID)))
       const releases = [...sessionIDs].map((sessionID) => subscribeSessionActivity(sessionID, () => {
+        bumpSessionActivityRevision((value) => value + 1)
         // The event carries only an opaque id, so it cannot identify which of
         // several workspace placements changed. Never copy its id-keyed cache
         // value into placement-local rows; ask each placement authority.
@@ -908,6 +921,11 @@ export function RailSidebar(props: RailSidebarProps) {
               if (permissions || questions) {
                 setSessionRequests((current) => mergeRailRequestRead(current, group.targets, permissions, questions))
               }
+              syncUnfocusedRailBatchStatusToCache({
+                focusedSessionId: focusedSessionStatusTarget()?.sessionID,
+                targets: group.targets,
+                statuses,
+              })
               publishFocusedRailSessionMeta({
                 focused: focusedSessionStatusTarget(),
                 group,
@@ -1052,11 +1070,11 @@ export function RailSidebar(props: RailSidebarProps) {
     const directories = input.directories ? new Set(input.directories) : undefined
     const metas = claxedoState.meta.idsOfType("terminal").flatMap((id) => {
       const meta = claxedoState.meta.get(id)
-      if (!meta) return []
-      if (input.directory) return meta.directory === input.directory
-        ? [meta]
-        : []
-      if (directories) return meta.directory && directories.has(meta.directory) ? [meta] : []
+      if (!meta || meta.type !== "terminal") return []
+      if (input.directory) return terminalMetaMatchesPlacement(meta, input.directory) ? [meta] : []
+      if (directories) {
+        return [...directories].some((placement) => terminalMetaMatchesPlacement(meta, placement)) ? [meta] : []
+      }
       return [meta]
     })
     const terminalIds = metas.flatMap((meta) => meta.type === "terminal" && meta.terminalId ? [meta.terminalId] : [])
@@ -1119,6 +1137,7 @@ export function RailSidebar(props: RailSidebarProps) {
       })),
       ...(session.environment ? { environment: session.environment } : {}),
       ...(session.git ? { git: session.git } : {}),
+      ...(session.owner ? { owner: session.owner } : {}),
     }
   }
   const sessionMetadata = (session: Row, showMetadata?: boolean): SessionNavigationDisplayRow["metadata"] => {
@@ -1190,6 +1209,7 @@ export function RailSidebar(props: RailSidebarProps) {
           : sessionActiveInWorkbench(session, sessionDirectory(session))
       },
       ...(input?.nested ? { nested: true } : {}),
+      ...(session.owner ? { owner: session.owner } : {}),
       get status() { return sessionStatus(session) },
       // `clock()` is read HERE, lazily, instead of at the top of this builder.
       // The rail's 10 s clock exists only to refresh this one label, but reading
@@ -1492,7 +1512,17 @@ export function RailSidebar(props: RailSidebarProps) {
     // Opened directly rather than through `onNewTerminal`: the creator is a
     // surface, not a pty, so it needs none of that action's pty plumbing.
     const openTerminalCreator = () => {
-      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal", { workspaceRouteId: selectedRouteId() })
+      const focusedId = claxedoState.wb.selectors.focusedContent()
+      const focused = focusedId ? claxedoState.meta.get(focusedId) : undefined
+      const routeId = selectedRouteId()
+      const sessionId = terminalSessionIdForWorkspace(focused, {
+        directory: input.workspaceDir,
+        workspaceRouteId: routeId,
+      })
+      claxedoState.layout.openTerminal(input.workspaceDir, NEW_TERMINAL_ID, "New Terminal", {
+        workspaceRouteId: routeId,
+        ...(sessionId ? { sessionId } : {}),
+      })
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
     const shareTarget = createMemo(() => localWorkspaceShareTarget({
@@ -2637,7 +2667,12 @@ export function RailSidebar(props: RailSidebarProps) {
             onSettings={props.onSettings}
             onUsage={props.onUsage}
             onHelp={props.onHelp}
-            utilities={() => <FilterMenu />}
+            utilities={() => (
+              <>
+                <RailOrgTeamSwitcher />
+                <FilterMenu />
+              </>
+            )}
           />
         </div>
       </div>

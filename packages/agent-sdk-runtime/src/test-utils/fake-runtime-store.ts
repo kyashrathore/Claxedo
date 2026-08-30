@@ -36,6 +36,7 @@ export function committedAppend(input: {
 export function fakeRuntimeStore(
   overrides: Partial<AgentRuntimeStoreWithRecovery> = {},
 ): AgentRuntimeStoreWithRecovery {
+  const leases = new Map<string, string>()
   return {
     listSessions: () => [],
     getSession: () => null,
@@ -56,5 +57,14 @@ export function fakeRuntimeStore(
     markSessionInterrupted: () => {},
     consumeRecoveryError: () => null,
     ...overrides,
+    acquireTurnLease: overrides.acquireTurnLease ?? ((sessionId) => {
+      if (leases.has(sessionId)) return
+      const lease = `${sessionId}:fake`
+      leases.set(sessionId, lease)
+      return lease
+    }),
+    releaseTurnLease: overrides.releaseTurnLease ?? ((sessionId, leaseId) => {
+      if (leases.get(sessionId) === leaseId) leases.delete(sessionId)
+    }),
   }
 }

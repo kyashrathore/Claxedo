@@ -2,6 +2,29 @@
   background-color: transparent;
 }
 
+/*
+ * Shared-session owner mark. Nested rows place this in NavigationRowGlyph
+ * (absolute left-4 size-4) so it aligns with the tree indent and is never
+ * clipped by the title row's overflow-hidden flex.
+ */
+.ui-session-navigation-owner-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  height: 1rem;
+  flex-shrink: 0;
+  overflow: visible;
+  line-height: 0;
+}
+
+.ui-session-navigation-owner-avatar svg {
+  display: block;
+  width: 1rem;
+  height: 1rem;
+  overflow: visible;
+}
+
 [data-slot="session-navigation-row"]:hover {
   background-color: color-mix(in srgb, var(--surface-base-hover) 40%, transparent);
 }

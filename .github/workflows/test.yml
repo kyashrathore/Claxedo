@@ -707,7 +707,7 @@ jobs:
       # together on one worker: their fixed port blocks and output directories
       # are distinct, but serial execution avoids concurrent Vite builds
       # starving the 4-vCPU runner and keeps one combined Playwright report.
-      - name: Run signed web relay e2e (cloud + user-hosted)
+      - name: Run signed web relay e2e (cloud + user-hosted + org-team multiplayer)
         working-directory: packages/claxedo-app
         timeout-minutes: 60
         env:
@@ -720,6 +720,7 @@ jobs:
           --config playwright.config.ts
           e2e/playwright/web-signed-cloud.spec.ts
           e2e/playwright/web-signed-userhosted.spec.ts
+          e2e/playwright/web-signed-org-team-multiplayer.spec.ts
           --workers=1
 
       - name: Upload Playwright artifacts

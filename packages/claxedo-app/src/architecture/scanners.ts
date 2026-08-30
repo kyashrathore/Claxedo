@@ -266,7 +266,9 @@ const APP_ROUTE_SPINE_REQUIRED = [
 
 export const APP_RUNTIME_PROVIDERS_FILE = "app/entry/runtime-providers.tsx"
 
-const RUNTIME_PROVIDERS_REQUIRED = ["<GlobalSyncProvider>"] as const
+// Match the opening tag so composition-owned policy may be supplied as props
+// without making the guard confuse a configured provider with a missing one.
+const RUNTIME_PROVIDERS_REQUIRED = ["<GlobalSyncProvider"] as const
 
 export function runtimeProvidersSpineViolations(source: string): Finding[] {
   const findings: Finding[] = []

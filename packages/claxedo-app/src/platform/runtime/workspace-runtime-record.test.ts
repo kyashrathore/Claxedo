@@ -18,6 +18,7 @@ afterEach(() => {
   queryClient.clear()
   delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
   ;(globalThis as typeof globalThis & { window?: unknown }).window = preloadedWindow
+  delete (globalThis as { api?: unknown }).api
 })
 
 function requestUrl(input: Parameters<typeof fetch>[0]) {
@@ -105,11 +106,15 @@ describe("workspace runtime record", () => {
   })
 
   test("resolveWorkspaceRuntime skips uncached directory resolve during fast session switch quiet", async () => {
-    ;(globalThis as typeof globalThis & {
+    const host = globalThis as typeof globalThis & {
       window?: {
+        location?: { pathname?: string }
         __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }
       }
-    }).window = {
+    }
+    host.window = {
+      ...(host.window ?? {}),
+      location: host.window?.location ?? { pathname: "/" },
       __claxedoFastSessionSwitch: {
         sessionId: "ses_next",
         until: Date.now() + 250,
@@ -225,5 +230,60 @@ describe("workspace runtime record", () => {
       "http://runtime.test/api/workspace/resolve?workspaceId=ws_1",
       "http://runtime.test/api/workspace/resolve?workspaceId=ws_2",
     ])
+  })
+
+  test("desktop signed mode resolves through AccountPort workspace.resolve", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const run = mock(async (operation: string, input?: Record<string, unknown>) => {
+      expect(operation).toBe("workspace.resolve")
+      expect(input).toEqual({ workspaceId: "ws_1" })
+      return {
+        workspaceId: "ws_1",
+        kind: "cloud",
+        status: "ready",
+      }
+    })
+    ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
+      account: {
+        run,
+        state: async () => ({ status: "signed" }),
+        onState: () => () => undefined,
+        signIn: async () => ({ status: "signed" }),
+        signOut: async () => ({ status: "unsigned" }),
+      },
+    }
+
+    const result = await fetchWorkspaceRecord({ workspaceId: "ws_1" })
+    expect(result).toMatchObject({ workspaceId: "ws_1", status: "ready" })
+    expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  test("options.request override bypasses AccountPort for resolve", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const run = mock(async () => {
+      throw new Error("AccountPort should not run when request is overridden")
+    })
+    ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
+      account: {
+        run,
+        state: async () => ({ status: "signed" }),
+        onState: () => () => undefined,
+        signIn: async () => ({ status: "signed" }),
+        signOut: async () => ({ status: "unsigned" }),
+      },
+    }
+
+    const result = await fetchWorkspaceRecord({
+      baseUrl: "http://runtime.test",
+      workspaceId: "ws_http",
+      request: async () => new Response(JSON.stringify({
+        workspaceId: "ws_http",
+        kind: "cloud",
+        status: "ready",
+      }), { status: 200 }),
+    })
+
+    expect(result).toMatchObject({ workspaceId: "ws_http" })
+    expect(run).not.toHaveBeenCalled()
   })
 })

@@ -241,7 +241,7 @@ describe("cloud create UI integration", () => {
         }
         if (pathname === "/provider/auth") return json({ upstream: [{ type: "oauth", label: "Login" }] })
         if (pathname === "/config/providers") {
-          return json({ providers: [{ id: "opencode" }], default: { opencode: "mock" } })
+          return json({ providers: [{ id: "opencode", models: {} }], default: { opencode: "mock" } })
         }
         if (pathname === "/config" || pathname === "/global/config") {
           return json({ model: "upstream/mock", provider: {}, mcp: {} })

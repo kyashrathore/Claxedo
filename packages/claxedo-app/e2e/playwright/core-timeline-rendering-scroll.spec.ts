@@ -219,7 +219,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeOptions } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-timeline-rendering-scroll"
 const SESSION_ID = "ses_core_timeline_rendering_scroll"
@@ -287,6 +287,7 @@ function sessionUrlPattern(sessionId: string) {
 
 async function sendAndProve(page: Page, text: string, expectedSubstring: string) {
   const input = composer(page)
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill(text)
   await expect(input).toContainText(text, { timeout: 10_000 })
@@ -1083,7 +1084,15 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
     await jumpToBottomButton(page).click()
 
     // Returns to the bottom and clears the hash that was active on load.
-    await expect.poll(() => jumpToBottomOpacity(page), { timeout: 30_000 }).toBe("0")
+    // Under suite load, late virtualizer measurements can grow the scroller after
+    // the first scrollToEnd; wait for distance first so opacity is not asserted
+    // against a mid-settlement frame.
+    await expect
+      .poll(async () => scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop), {
+        timeout: 30_000,
+      })
+      .toBeLessThan(20)
+    await expect.poll(() => jumpToBottomOpacity(page), { timeout: 15_000 }).toBe("0")
     await expect.poll(() => new URL(page.url()).hash).toBe("")
     const distance = await scroller.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop)
     expect(distance).toBeLessThan(20)
@@ -1113,6 +1122,11 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
       }))
       if (position.max > 0 && position.top >= position.max * 0.35) break
       await page.mouse.wheel(0, 100)
+      // A wheel command can return before Blink applies the matching scroll
+      // frame. Settle it before either the next threshold check or the
+      // baseline sample below, otherwise the final 100px gesture is mistaken
+      // for a virtualization-induced offset rewrite.
+      await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
     }
 
     const middle = await scroller.evaluate((el) => ({

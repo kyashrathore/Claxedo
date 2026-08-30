@@ -19,7 +19,9 @@ import {
 } from "@/features/documents/actions/doc-actions"
 import { createWorkGraphClient, type WorkGraphClient } from "@/features/workgraph/api"
 import { documentWorkSourcePinUrl, documentWorkSourceUrl } from "@/features/documents/data/documents-api"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import { createWorkGraphAccountFetch } from "@/platform/account/workgraph-account-fetch"
+import { createDocumentsAccountFetch } from "@/platform/account/documents-account-fetch"
 import { hash } from "@/lib/encode"
 
 const adapterId = "claxedo_docs"
@@ -172,12 +174,15 @@ export function createDocumentSnapshotApi(input: Readonly<{ baseUrl: string; req
   }
 }
 
+const workgraphRequest = createWorkGraphAccountFetch()
+const documentsRequest = createDocumentsAccountFetch()
+
 const documentSnapshot = createDocumentSnapshotApi({
   baseUrl: getClaxedoServerUrl(),
-  request: authFetch,
+  request: documentsRequest,
 })
 const documentWorkGraphHandoff = createDocumentWorkGraphHandoff({
-  client: createWorkGraphClient({ request: authFetch }),
+  client: createWorkGraphClient({ request: workgraphRequest }),
   onSource: documentSnapshot.pin,
 })
 export const turnDocumentIntoWork = createTurnDocumentIntoWork({

@@ -1,17 +1,24 @@
 import { v } from "convex/values"
-import { authedMutation, authorizeWorkspace, serviceMutation, serviceQuery, upsertUser, workspaceByPublicId } from "./model"
+import { authedMutation, authorizeWorkspace, roleAtLeast, serviceMutation, serviceQuery, upsertUser, workspaceByPublicId, workspaceRoleForUser } from "./model"
+
+const workspaceRole = v.union(v.literal("viewer"), v.literal("editor"), v.literal("admin"), v.literal("owner"))
 
 export const recordMint = authedMutation({
   args: {
     jti: v.string(),
     workspace_id: v.string(),
     host_id: v.string(),
+    actor_id: v.string(),
+    actor_kind: v.union(v.literal("human"), v.literal("agent")),
+    role: workspaceRole,
     expires_at: v.number(),
   },
   handler: async (ctx, args) => {
     const user = await upsertUser(ctx)
+    if (String(user._id) !== args.actor_id || user.kind !== args.actor_kind) throw new Error("Workspace not found")
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (!workspace || !await authorizeWorkspace(ctx, workspace, "read")) throw new Error("Workspace not found")
+    const currentRole = workspace ? await authorizeWorkspace(ctx, workspace, "read") : undefined
+    if (!workspace || !currentRole || !roleAtLeast(currentRole, args.role)) throw new Error("Workspace not found")
     const existing = await ctx.db
       .query("runtime_access_tokens")
       .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
@@ -22,6 +29,10 @@ export const recordMint = authedMutation({
       workspace_id: workspace._id,
       host_id: args.host_id,
       minted_for_user_id: user._id,
+      principal_kind: "user",
+      minted_for_actor_id: args.actor_id,
+      minted_for_actor_kind: args.actor_kind,
+      workspace_role: args.role,
       expires_at: args.expires_at,
       created_at: Date.now(),
     })
@@ -34,7 +45,10 @@ export const recordMintForService = serviceMutation({
     jti: v.string(),
     workspace_id: v.string(),
     host_id: v.string(),
-    subject: v.string(),
+    actor_id: v.string(),
+    actor_kind: v.union(v.literal("human"), v.literal("agent")),
+    principal_kind: v.union(v.literal("user"), v.literal("service")),
+    role: workspaceRole,
     expires_at: v.number(),
   },
   handler: async (ctx, args) => {
@@ -43,11 +57,39 @@ export const recordMintForService = serviceMutation({
       .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
       .unique()
     if (existing) throw new Error("Runtime Access Token already recorded")
+    // Resolve the doc-id keys as well as the public/subject strings so that
+    // membership-change revocation (revokeWorkspaceUserTokens, keyed on the
+    // by_workspace_user index over workspace_id + minted_for_user_id) can reach
+    // service-minted tokens. Without this, a kicked/downgraded hosted user's RAT
+    // stays live until expiry. The active-check still matches on
+    // workspace_public_id, so its behaviour is unchanged.
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    const userId = args.principal_kind === "user" ? ctx.db.normalizeId("users", args.actor_id) : null
+    const user = userId ? await ctx.db.get(userId) : undefined
+    const currentRole = workspace && user ? await workspaceRoleForUser(ctx, workspace, user) : undefined
+    const userAllowed = args.principal_kind === "user"
+      && user
+      && user.kind === args.actor_kind
+      && currentRole
+      && roleAtLeast(currentRole, args.role)
+    const serviceAllowed = args.principal_kind === "service"
+      && args.actor_kind === "agent"
+      && !!args.actor_id.trim()
+      && args.role === "owner"
+    if (!workspace || workspace.deleted_at || (!userAllowed && !serviceAllowed)) {
+      throw new Error("Workspace not found")
+    }
     await ctx.db.insert("runtime_access_tokens", {
       jti: args.jti,
       workspace_public_id: args.workspace_id,
+      ...(workspace ? { workspace_id: workspace._id } : {}),
       host_id: args.host_id,
-      minted_for_subject: args.subject,
+      ...(user?.clerk_subject ? { minted_for_subject: user.clerk_subject } : {}),
+      ...(user ? { minted_for_user_id: user._id } : {}),
+      principal_kind: args.principal_kind,
+      minted_for_actor_id: args.actor_id,
+      minted_for_actor_kind: args.actor_kind,
+      workspace_role: args.role,
       expires_at: args.expires_at,
       created_at: Date.now(),
     })
@@ -101,6 +143,34 @@ export const active = serviceQuery({
         reason: "Runtime Access Token has expired",
       }
     }
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    const user = token.principal_kind === "user" && token.minted_for_user_id
+      ? await ctx.db.get(token.minted_for_user_id)
+      : undefined
+    const currentRole = workspace && user ? await workspaceRoleForUser(ctx, workspace, user) : undefined
+    const authorizationChanged = !workspace
+      || !!workspace.deleted_at
+      || !token.workspace_role
+      || !token.principal_kind
+      || (token.principal_kind === "user" && (
+        !user
+        || String(user._id) !== token.minted_for_actor_id
+        || user.kind !== token.minted_for_actor_kind
+        || !currentRole
+        || !roleAtLeast(currentRole, token.workspace_role)
+      ))
+      || (token.principal_kind === "service" && (
+        token.workspace_role !== "owner"
+        || token.minted_for_actor_kind !== "agent"
+        || !token.minted_for_actor_id?.trim()
+      ))
+    if (authorizationChanged) {
+      return {
+        active: false,
+        code: "runtime_access_token_revoked",
+        reason: "Runtime Access Token authorization has changed",
+      }
+    }
     return { active: true }
   },
 })
@@ -134,17 +204,21 @@ export const revokeForWorkspaceUser = authedMutation({
     const user = await upsertUser(ctx)
     const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
     if (!workspace || !await authorizeWorkspace(ctx, workspace, "read")) throw new Error("Workspace not found")
-    const now = Date.now()
+    return await revokeWorkspaceUserTokens(ctx, workspace._id, user._id, Date.now())
+  },
+})
+
+export async function revokeWorkspaceUserTokens(ctx: any, workspaceId: unknown, userId: unknown, now: number) {
     const rows = await ctx.db
       .query("runtime_access_tokens")
       .withIndex("by_workspace_user", (q: any) =>
-        q.eq("workspace_id", workspace._id).eq("minted_for_user_id", user._id))
+        q.eq("workspace_id", workspaceId).eq("minted_for_user_id", userId))
       .collect()
-    for (const token of rows.filter((token: any) => !token.revoked_at)) {
+    const active = rows.filter((token: any) => !token.revoked_at)
+    for (const token of active) {
       await ctx.db.patch(token._id, {
         revoked_at: now,
       })
     }
-    return { revoked: rows.filter((token: any) => !token.revoked_at).length }
-  },
-})
+    return { revoked: active.length }
+}

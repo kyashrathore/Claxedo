@@ -37,6 +37,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
+import { ensureComposerModelSelected } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-permission-mode-picker"
 const SESSION_ID = "ses_perm_mode_picker"
@@ -172,14 +173,16 @@ test.describe("@core permission picker — the harness's own modes", () => {
 
     expect(await rowIds(page)).toEqual(["claxedo-allow-safe", "claxedo-ask-always"])
     await expect(page.getByText(/opencode has no permission modes of its own/i)).toBeVisible()
-    // Named for what they do. "Auto" named a Claxedo abstraction and told the user
-    // nothing about what would actually happen.
+    // Named for what they do. "Auto" is Claxedo's permissive local-answer option;
+    // "Ask for everything" is the restrictive off switch.
     //
-    // The DEFAULT here is the restrictive option, unlike every harness above, and that
-    // asymmetry is real rather than an oversight: Claxedo's selection derives from the
-    // per-scope auto-accept preference, which starts off. So opencode asks until the
-    // user opts in, while a harness with its own modes starts on its auto rung.
-    await expect(trigger(page).last()).toHaveText(/Ask for everything/i)
+    // With no harness modes, `defaultPermissionSelection` starts on
+    // `claxedo-allow-safe` (see modes.test.ts) — unlike harness-backed drafts that
+    // start on the harness's own auto rung.
+    await expect(trigger(page).last()).toHaveText(/^Auto$/i)
+    await expect(
+      page.locator('[role="menuitem"][data-mode="claxedo-allow-safe"][data-checked]'),
+    ).toHaveCount(1)
   })
 
   // Behaviour 4. Keying the fetch on harness is what makes a switch invalidate the
@@ -250,11 +253,14 @@ test.describe("@core permission picker — the choice reaches the harness", () =
   // the engine as a RULESET and never as `permissionMode`.
   test("a Claxedo option is never smuggled onto the prompt as a harness mode", async ({ page }) => {
     const mock = await seedDraft(page, "opencode")
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await openPicker(page)
     await rows(page).and(page.locator('[data-mode="claxedo-ask-always"]')).first().click()
+    await page.keyboard.press("Escape")
 
-    await page.getByRole("textbox").first().fill("hello")
-    await page.keyboard.press("Enter")
+    const input = page.getByRole("textbox").first()
+    await input.fill("hello")
+    await page.locator('[data-action="prompt-submit"]').last().click()
 
     await expect.poll(() => mock.requests.promptBodies.length, { timeout: 20_000 }).toBeGreaterThan(0)
     expect(mock.requests.promptBodies[0]?.permissionMode).toBeUndefined()

@@ -4,6 +4,7 @@ import { emitTerminalFit } from "@/features/workspaces/app-ports"
 import type { WorkspacePanelMode, WorkspacePanelState } from "./workspace-panel-state"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { api, getDefaultBaseUrl } from "@/platform/api/api"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
 import {
   workspaceCheckpointRestoreUrl,
   workspaceCheckpointsUrl,
@@ -475,7 +476,11 @@ function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
   const [busy, setBusy] = createSignal("")
   const [snapshot, { refetch }] = createResource(
     () => props.workspaceId,
-    (workspaceId) => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
+    (workspaceId) => hostedControlCall(
+      "workspace.checkpoints.list",
+      { id: workspaceId },
+      () => api.get<WorkspaceLifecycleSnapshot>(workspaceCheckpointsUrl({ baseUrl, workspaceId })),
+    ),
   )
   const act = async (operation: "checkpoint" | "stop" | "restore" | "replace" | "cleanup" | "destroy") => {
     const checkpoint = snapshot()?.checkpoint
@@ -493,24 +498,41 @@ function WorkspaceLifecycleSummary(props: { workspaceId: string }) {
     setBusy(operation)
     try {
       if (operation === "checkpoint") {
-        await api.post(workspaceCheckpointsUrl({ baseUrl, workspaceId: props.workspaceId }), { policy: "drain" })
+        await hostedControlCall(
+          "workspace.checkpoints.create",
+          { id: props.workspaceId, policy: "drain" },
+          () => api.post(workspaceCheckpointsUrl({ baseUrl, workspaceId: props.workspaceId }), { policy: "drain" }),
+        )
       } else if (operation === "restore") {
-        await api.post(workspaceCheckpointRestoreUrl({
-          baseUrl,
-          workspaceId: props.workspaceId,
-          checkpointId: checkpoint!.id,
-        }), { approved: true })
+        await hostedControlCall(
+          "workspace.checkpoints.restore",
+          { id: props.workspaceId, checkpointId: checkpoint!.id, approved: true },
+          () => api.post(workspaceCheckpointRestoreUrl({
+            baseUrl,
+            workspaceId: props.workspaceId,
+            checkpointId: checkpoint!.id,
+          }), { approved: true }),
+        )
       } else {
-        await api.post(workspaceLifecycleUrl({
-          baseUrl,
-          workspaceId: props.workspaceId,
-          operation,
-        }), operation === "stop"
-          ? {}
-          : {
-              approved: true,
-              ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
-            })
+        await hostedControlCall(
+          "workspace.lifecycle",
+          {
+            id: props.workspaceId,
+            operation,
+            ...(operation === "stop" ? {} : { approved: true }),
+            ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
+          },
+          () => api.post(workspaceLifecycleUrl({
+            baseUrl,
+            workspaceId: props.workspaceId,
+            operation,
+          }), operation === "stop"
+            ? {}
+            : {
+                approved: true,
+                ...(operation === "replace" ? { checkpointId: checkpoint!.id } : {}),
+              }),
+        )
       }
       await refetch()
       showToast({ variant: "success", title: `Workspace ${operation} completed` })

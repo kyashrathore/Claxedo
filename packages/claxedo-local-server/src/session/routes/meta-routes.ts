@@ -163,6 +163,41 @@ function responseMeta(input: SessionMeta | undefined, auth: SignedControlPlaneAu
   return safe
 }
 
+function authoritySessionId(input: unknown) {
+  const row = record(input)
+  return nonEmptyString(row?.session_id)
+    ?? nonEmptyString(row?.sessionId)
+    ?? nonEmptyString(row?.sessionID)
+    ?? nonEmptyString(row?.id)
+    ?? ""
+}
+
+function authoritySessionMeta(input: unknown, workspaceId: string): SessionMeta | undefined {
+  const sessionID = authoritySessionId(input)
+  if (!sessionID) return
+  const row = record(input)
+  const createdAt = typeof row?.created_at === "number"
+    ? row.created_at
+    : typeof row?.createdAt === "number"
+      ? row.createdAt
+      : 0
+  const updatedAt = typeof row?.updated_at === "number"
+    ? row.updated_at
+    : typeof row?.updatedAt === "number"
+      ? row.updatedAt
+      : createdAt
+  return {
+    sessionID,
+    title: nonEmptyString(row?.title) ?? sessionID,
+    workspaceID: workspaceId,
+    host: "workspace",
+    tags: [],
+    attachments: [],
+    createdAt,
+    updatedAt,
+  }
+}
+
 export function SessionMetaRoutes(options: Options = {}) {
   return new Hono()
     .onError((err, c) => {
@@ -179,6 +214,21 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       const resolved = await workspace(c).catch(() => undefined)
       await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
+      // Signed callers get participant-scoped authority rows. Projection metas
+      // are workspace-complete and would leak private sessions to editors who
+      // are not participants (two-user privacy / Journey 3).
+      if (authResult.auth && resolved?.id) {
+        const rows = await requireAuthority(options.services).listSessions(authResult.auth, {
+          workspaceId: resolved.id,
+        })
+        return c.json({
+          sessions: (Array.isArray(rows) ? rows : []).flatMap((item) => {
+            const meta = authoritySessionMeta(item, resolved.id)
+            if (!meta) return []
+            return [responseMeta(meta, authResult.auth, meta.sessionID)]
+          }),
+        })
+      }
       const sessions = await listSessionMetas({
         ...(resolved?.id ? { workspaceID: resolved.id } : {}),
         ...(c.req.query("directory") ? { directory: c.req.query("directory") } : {}),
@@ -195,15 +245,34 @@ export function SessionMetaRoutes(options: Options = {}) {
         if (authResult.auth && query.scope === "project" && query.projectId) {
           // Project membership is not workspace membership. Workspace shares
           // are granted independently, so authorize from the principal's real
-          // workspace inventory and filter before pagination; authorizing one
-          // arbitrary "main" workspace would expose sibling session metadata.
+          // workspace inventory and list each workspace through authority so
+          // private sessions stay participant-scoped.
           const authorized = await authorizedProjectWorkspaceIds(authResult.auth, options, query.projectId)
-          const sessions = (await listSessionMetas(sessionListStoreFilter(query)))
-            .filter((item) => !!item.workspaceID && authorized.has(item.workspaceID))
+          const authority = requireAuthority(options.services)
+          const projectId = query.projectId
+          const sessions = (await Promise.all(
+            [...authorized].map(async (workspaceId) => {
+              const rows = await authority.listSessions(authResult.auth!, { workspaceId })
+              return (Array.isArray(rows) ? rows : []).map((row) => ({
+                ...(row && typeof row === "object" ? row : {}),
+                workspace_id: workspaceId,
+                project_id: projectId,
+              }))
+            }),
+          )).flat()
           return c.json(buildSessionListResponse({ query, sessions }))
         }
         const resolved = await workspace(c).catch(() => undefined)
         await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
+        if (authResult.auth && resolved?.id) {
+          const sessions = await requireAuthority(options.services).listSessions(authResult.auth, {
+            workspaceId: resolved.id,
+          })
+          return c.json(buildSessionListResponse({
+            query,
+            sessions: Array.isArray(sessions) ? sessions : [],
+          }))
+        }
         const canUseBoundedProjection = query.groupBy === "none" &&
           query.environment.length === 0 &&
           query.git.length === 0

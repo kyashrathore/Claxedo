@@ -512,6 +512,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
         sessionID: id,
         agent: input.agent,
         model: input.model,
+        ...(input.author ? { author: input.author } : {}),
         ...(input.tools ? { tools: input.tools } : {}),
         ...(input.format ? { format: input.format } : {}),
         ...(input.system ? { system: input.system } : {}),

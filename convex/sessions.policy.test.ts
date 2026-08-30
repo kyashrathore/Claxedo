@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { convexTest } from "convex-test"
 import { api } from "./_generated/api"
+import { verifySessionTenantIdentity } from "./migrations"
 import schema from "./schema"
 
 declare global {
@@ -21,11 +22,14 @@ const stamped = <T extends Record<string, unknown>>(row: T) => ({ created_at: 1,
 afterEach(() => {
   vi.restoreAllMocks()
 })
-
 async function seedWorkspace(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
     const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme" }) as never)
-    const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "user_token" }) as never)
+    const ownerId = await ctx.db.insert("users", stamped({
+      token_identifier: "user_token",
+      public_id: "usr_owner",
+      kind: "human",
+    }) as never)
     const workspaceId = await ctx.db.insert(
       "workspaces",
       stamped({
@@ -39,6 +43,20 @@ async function seedWorkspace(t: ReturnType<typeof convexTest>) {
     )
     return { orgId, ownerId, workspaceId }
   })
+}
+
+async function seedCanonicalWorkspace(t: ReturnType<typeof convexTest>) {
+  const seeded = await seedWorkspace(t)
+  await t.run(async (ctx) => {
+    await ctx.db.insert("projects", stamped({
+      project_id: "project_1",
+      org_id: seeded.orgId,
+      repo_key: "workspace:project_1",
+      owner_user_id: seeded.ownerId,
+    }) as never)
+    await ctx.db.patch(seeded.workspaceId, { project_id: "project_1" })
+  })
+  return seeded
 }
 
 function asOwner(t: ReturnType<typeof convexTest>) {
@@ -58,6 +76,177 @@ function asOwner(t: ReturnType<typeof convexTest>) {
  * wrappers that make them safe.
  */
 describe("Convex session visibility policy", () => {
+  test("an organization owner retains workspace admin authority without a membership mirror", async () => {
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => {
+      const orgOwnerId = await ctx.db.insert("users", stamped({
+        token_identifier: "org_owner_token",
+        clerk_subject: "org_owner",
+        kind: "human",
+      }) as never)
+      const workspaceOwnerId = await ctx.db.insert("users", stamped({
+        token_identifier: "workspace_owner_token",
+        kind: "human",
+      }) as never)
+      const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme", owner_user_id: orgOwnerId }) as never)
+      await ctx.db.insert("workspaces", stamped({
+        workspace_id: "ws_org_owner",
+        org_id: orgId,
+        owner_user_id: workspaceOwnerId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Org owner workspace",
+      }) as never)
+    })
+
+    const orgOwner = t.withIdentity({ tokenIdentifier: "org_owner_token", subject: "org_owner" })
+    await expect(orgOwner.mutation(api.sessions.upsertVisibility, {
+      workspace_id: "ws_org_owner",
+      sessions: [{ session_id: "ses_org_owner" }],
+    } as never)).resolves.toEqual({ ok: true })
+  })
+
+  test("an authoritative member role overrides the durable organization-owner fallback", async () => {
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => {
+      const orgOwnerId = await ctx.db.insert("users", stamped({
+        token_identifier: "demoted_org_owner_token",
+        clerk_subject: "demoted_org_owner",
+        kind: "human",
+      }) as never)
+      const creatorId = await ctx.db.insert("users", stamped({
+        token_identifier: "session_creator_token",
+        kind: "human",
+      }) as never)
+      const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme", owner_user_id: orgOwnerId }) as never)
+      await ctx.db.insert("org_memberships", stamped({
+        org_id: orgId,
+        user_id: orgOwnerId,
+        role: "member",
+      }) as never)
+      const workspaceId = await ctx.db.insert("workspaces", stamped({
+        workspace_id: "ws_demoted_org_owner",
+        org_id: orgId,
+        owner_user_id: creatorId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Demoted org owner workspace",
+      }) as never)
+      await ctx.db.insert("session_history", stamped({
+        session_id: "ses_private_creator",
+        workspace_id: workspaceId,
+        org_id: orgId,
+        created_by_user_id: creatorId,
+      }) as never)
+    })
+
+    const demotedOwner = t.withIdentity({
+      tokenIdentifier: "demoted_org_owner_token",
+      subject: "demoted_org_owner",
+    })
+    await expect(demotedOwner.query(api.sessions.list, {
+      workspace_id: "ws_demoted_org_owner",
+    } as never)).resolves.toEqual([])
+    await expect(demotedOwner.query(api.sessions.authorizeRead, {
+      workspace_id: "ws_demoted_org_owner",
+      session_id: "ses_private_creator",
+    } as never)).resolves.toEqual({ allowed: false })
+  })
+
+  test("service projection reuses the webhook-mirrored user identity", async () => {
+    const previousServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "svc_secret"
+    try {
+      const t = convexTest(schema, modules)
+      await t.run(async (ctx) => {
+        const userId = await ctx.db.insert("users", stamped({
+          token_identifier: "clerk:bob",
+          clerk_subject: "bob",
+          kind: "human",
+        }) as never)
+        const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme", owner_user_id: userId }) as never)
+        await ctx.db.insert("workspaces", stamped({
+          workspace_id: "ws_service_identity",
+          org_id: orgId,
+          owner_user_id: userId,
+          backing: "cloud-vm",
+          access: "cloud",
+          display_name: "Service identity",
+        }) as never)
+      })
+
+      await expect(t.mutation(api.sessions.upsertVisibilityForService, {
+        service_token: "svc_secret",
+        user: {
+          token_identifier: "https://identity.example.test|bob",
+          subject: "bob",
+          issuer: "https://identity.example.test",
+        },
+        workspace_id: "ws_service_identity",
+        sessions: [{ session_id: "ses_service_identity" }],
+      } as never)).resolves.toEqual({ ok: true })
+
+      await t.run(async (ctx) => {
+        const users = await ctx.db.query("users").collect()
+        expect(users).toHaveLength(1)
+        expect(users[0]).toMatchObject({
+          token_identifier: "https://identity.example.test|bob",
+          clerk_subject: "bob",
+          kind: "human",
+        })
+      })
+    } finally {
+      if (previousServiceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+      else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = previousServiceToken
+    }
+  })
+
+  test("revoked creators cannot manage participants", async () => {
+    const t = convexTest(schema, modules)
+    const { workspaceId } = await seedWorkspace(t)
+    const creatorId = await t.run(async (ctx) => {
+      const userId = await ctx.db.insert("users", stamped({
+        token_identifier: "creator_token",
+        clerk_subject: "creator_subject",
+        kind: "human",
+      }) as never)
+      await ctx.db.insert("workspace_memberships", stamped({
+        workspace_id: workspaceId,
+        user_id: userId,
+        role: "editor",
+      }) as never)
+      const participantId = await ctx.db.insert("users", stamped({
+        token_identifier: "participant_token",
+        clerk_subject: "participant_subject",
+        kind: "human",
+      }) as never)
+      await ctx.db.insert("workspace_memberships", stamped({
+        workspace_id: workspaceId,
+        user_id: participantId,
+        role: "viewer",
+      }) as never)
+      return userId
+    })
+    const creator = t.withIdentity({ tokenIdentifier: "creator_token", subject: "creator_subject" })
+    await creator.mutation(api.sessions.upsertVisibility, {
+      workspace_id: "ws_1",
+      sessions: [{ session_id: "ses_revoked_creator" }],
+    } as never)
+    await t.run(async (ctx) => {
+      const membership = await ctx.db
+        .query("workspace_memberships")
+        .withIndex("by_workspace_user", (q: any) => q.eq("workspace_id", workspaceId).eq("user_id", creatorId))
+        .unique()
+      await ctx.db.delete(membership!._id)
+    })
+
+    await expect(creator.mutation(api.sessions.addParticipant, {
+      workspace_id: "ws_1",
+      session_id: "ses_revoked_creator",
+      participant_token_identifier: "participant_token",
+    } as never)).rejects.toThrow("session_participant_admin_required")
+  })
+
   test("stores only basename-style directory hints", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
@@ -82,14 +271,21 @@ describe("Convex session visibility policy", () => {
     })
   })
 
-  test("stores internal project ids and lists public project ids", async () => {
+  test("stores and lists canonical public project ids", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
-    const { ownerId } = await seedWorkspace(t)
-    const projectDocId = await t.run(async (ctx) =>
+    const { ownerId, orgId } = await seedWorkspace(t)
+    await t.run(async (ctx) =>
       ctx.db.insert(
         "projects",
-        { project_id: "project_1", owner_user_id: ownerId, created_at: 1, updated_at: 1 } as never,
+        {
+          project_id: "project_1",
+          org_id: orgId,
+          repo_key: "workspace:project_1",
+          owner_user_id: ownerId,
+          created_at: 1,
+          updated_at: 1,
+        } as never,
       ),
     )
     const asUser = asOwner(t)
@@ -103,12 +299,54 @@ describe("Convex session visibility policy", () => {
 
     await t.run(async (ctx) => {
       const row = (await ctx.db.query("session_history").collect())[0]
-      expect(row).toMatchObject({ session_id: "ses_1", project_id: projectDocId })
+      expect(row).toMatchObject({ session_id: "ses_1", project_id: "project_1" })
     })
 
     await expect(asUser.query(api.sessions.list, { workspace_id: "ws_1" } as never)).resolves.toMatchObject([
       { session_id: "ses_1", project_id: "project_1" },
     ])
+  })
+
+  test("rejects a session project that differs from the workspace project", async () => {
+    const t = convexTest(schema, modules)
+    const { ownerId, orgId, workspaceId } = await seedWorkspace(t)
+    await t.run(async (ctx) => {
+      for (const projectId of ["project_workspace", "project_other"]) {
+        await ctx.db.insert("projects", stamped({
+          project_id: projectId,
+          org_id: orgId,
+          repo_key: `workspace:${projectId}`,
+          owner_user_id: ownerId,
+        }) as never)
+      }
+      await ctx.db.patch(workspaceId, { project_id: "project_workspace" })
+    })
+
+    await expect(asOwner(t).mutation(api.sessions.upsertVisibility, {
+      workspace_id: "ws_1",
+      sessions: [{ session_id: "ses_wrong_project", project_id: "project_other" }],
+    } as never)).rejects.toThrow("Session project must match workspace project")
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("session_history").collect()).toEqual([])
+    })
+  })
+
+  test("rejects a workspace whose canonical project no longer exists", async () => {
+    const t = convexTest(schema, modules)
+    const { workspaceId } = await seedWorkspace(t)
+    await t.run(async (ctx) => {
+      await ctx.db.patch(workspaceId, { project_id: "project_missing" })
+    })
+
+    await expect(asOwner(t).mutation(api.sessions.upsertVisibility, {
+      workspace_id: "ws_1",
+      sessions: [{ session_id: "ses_missing_project" }],
+    } as never)).rejects.toThrow("Workspace project not found")
+
+    await t.run(async (ctx) => {
+      expect(await ctx.db.query("session_history").collect()).toEqual([])
+    })
   })
 
   test.each(["/Users/yash/opencode", "src/app", "src\\app", "C:\\repo", "~/.claxedo", ".", ".."])(
@@ -132,13 +370,23 @@ describe("Convex session visibility policy", () => {
     const t = convexTest(schema, modules)
     await seedWorkspace(t)
     const asUser = asOwner(t)
+    const ownerPublicId = await t.run(async (ctx) =>
+      (await ctx.db.query("users").withIndex("by_token_identifier", (q) => q.eq("token_identifier", "user_token")).unique())!.public_id,
+    )
 
     await expect(
       asUser.mutation(api.sessions.syncMessages, {
         workspace_id: "ws_1",
         session_id: "ses_1",
         messages: [
-          { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "hi" }] },
+          {
+            info: {
+              id: "msg_1",
+              role: "user",
+              claxedo: { author: { id: ownerPublicId } },
+            },
+            parts: [{ type: "text", text: "hi" }],
+          },
           { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "hello" }] },
         ],
       } as never),
@@ -153,7 +401,20 @@ describe("Convex session visibility policy", () => {
       allowed: true,
       role: "owner",
       messages: [
-        { info: { id: "msg_1", role: "user" }, parts: [{ type: "text", text: "hi" }] },
+        {
+          info: {
+            id: "msg_1",
+            role: "user",
+            claxedo: {
+              author: {
+                id: expect.stringMatching(/^usr_/),
+                name: "User",
+                kind: "human",
+              },
+            },
+          },
+          parts: [{ type: "text", text: "hi" }],
+        },
         { info: { id: "msg_2", role: "assistant" }, parts: [{ type: "text", text: "hello" }] },
       ],
     })
@@ -164,6 +425,160 @@ describe("Convex session visibility policy", () => {
       const messages = await ctx.db.query("session_messages").collect()
       expect(messages.map((row) => row.message_id)).toEqual(["msg_1", "msg_2"])
     })
+  })
+
+  test("message sync creates a session with canonical workspace tenant identity", async () => {
+    const t = convexTest(schema, modules)
+    const { orgId, ownerId } = await seedCanonicalWorkspace(t)
+
+    await expect(asOwner(t).mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_canonical_tenant",
+      messages: [],
+    } as never)).resolves.toEqual({ ok: true })
+
+    await t.run(async (ctx) => {
+      const session = await ctx.db
+        .query("session_history")
+        .withIndex("by_session_id", (q) => q.eq("session_id", "ses_canonical_tenant"))
+        .unique()
+      expect(session).toMatchObject({
+        org_id: orgId,
+        project_id: "project_1",
+        created_by_user_id: ownerId,
+      })
+      await expect(verifySessionTenantIdentity(ctx, session)).resolves.toBeUndefined()
+    })
+  })
+
+  test("message sync repairs missing workspace tenant identity without replacing the creator", async () => {
+    const t = convexTest(schema, modules)
+    const { orgId, ownerId, workspaceId } = await seedCanonicalWorkspace(t)
+    await t.run(async (ctx) => {
+      await ctx.db.insert("session_history", stamped({
+        session_id: "ses_incomplete_tenant",
+        workspace_id: workspaceId,
+        created_by_user_id: ownerId,
+        title: "Keep this title",
+      }) as never)
+    })
+
+    await expect(asOwner(t).mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_incomplete_tenant",
+      messages: [],
+    } as never)).resolves.toEqual({ ok: true })
+
+    await t.run(async (ctx) => {
+      const session = await ctx.db
+        .query("session_history")
+        .withIndex("by_session_id", (q) => q.eq("session_id", "ses_incomplete_tenant"))
+        .unique()
+      expect(session).toMatchObject({
+        org_id: orgId,
+        project_id: "project_1",
+        created_by_user_id: ownerId,
+        title: "Keep this title",
+      })
+      await expect(verifySessionTenantIdentity(ctx, session)).resolves.toBeUndefined()
+    })
+  })
+
+  test.each(["organization", "project"])(
+    "message sync rejects an existing session with conflicting %s identity",
+    async (field) => {
+      const t = convexTest(schema, modules)
+      const { orgId, ownerId, workspaceId } = await seedCanonicalWorkspace(t)
+      await t.run(async (ctx) => {
+        const conflict = field === "organization"
+          ? { org_id: await ctx.db.insert("orgs", stamped({ name: "Other" }) as never) }
+          : { project_id: "project_conflict" }
+        await ctx.db.insert("session_history", stamped({
+          session_id: "ses_conflicting_tenant",
+          workspace_id: workspaceId,
+          org_id: orgId,
+          project_id: "project_1",
+          created_by_user_id: ownerId,
+          ...conflict,
+        }) as never)
+      })
+
+      await expect(asOwner(t).mutation(api.sessions.syncMessages, {
+        workspace_id: "ws_1",
+        session_id: "ses_conflicting_tenant",
+        messages: [{ info: { id: "msg_rejected", role: "user" }, parts: [] }],
+      } as never)).rejects.toThrow("Session tenant identity conflicts with workspace")
+
+      await t.run(async (ctx) => {
+        expect(await ctx.db.query("session_messages").collect()).toEqual([])
+      })
+    },
+  )
+
+  test("leaves forged and producer-unattributed user messages without an author", async () => {
+    const t = convexTest(schema, modules)
+    const { workspaceId } = await seedWorkspace(t)
+    const { ownerPublicId } = await t.run(async (ctx) => {
+      const owner = await ctx.db
+        .query("users")
+        .withIndex("by_token_identifier", (q) => q.eq("token_identifier", "user_token"))
+        .unique()
+      const collaboratorId = await ctx.db.insert("users", stamped({
+        token_identifier: "collaborator_token",
+        clerk_subject: "collaborator_subject",
+        public_id: "usr_collaborator",
+        kind: "human",
+      }) as never)
+      await ctx.db.insert("workspace_memberships", stamped({
+        workspace_id: workspaceId,
+        user_id: collaboratorId,
+        role: "editor",
+      }) as never)
+      return { ownerPublicId: owner!.public_id }
+    })
+    const collaborator = t.withIdentity({
+      tokenIdentifier: "collaborator_token",
+      subject: "collaborator_subject",
+    })
+
+    await collaborator.mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_author_spoof",
+      messages: [
+        {
+          info: {
+            id: "msg_forged",
+            role: "user",
+            claxedo: { author: { id: ownerPublicId } },
+          },
+          parts: [],
+        },
+        { info: { id: "msg_unknown", role: "user" }, parts: [] },
+      ],
+    } as never)
+
+    await t.run(async (ctx) => {
+      const rows = await ctx.db.query("session_messages").collect()
+      expect(rows.map((row) => ({ id: row.message_id, author: row.author_actor_id }))).toEqual([
+        { id: "msg_forged", author: undefined },
+        { id: "msg_unknown", author: undefined },
+      ])
+    })
+    await expect(collaborator.query(api.sessions.readMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_author_spoof",
+    } as never)).resolves.toMatchObject({
+      allowed: true,
+      messages: [
+        { info: { id: "msg_forged", role: "user" } },
+        { info: { id: "msg_unknown", role: "user" } },
+      ],
+    })
+    const read = await collaborator.query(api.sessions.readMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_author_spoof",
+    } as never) as { messages: unknown[] }
+    expect(JSON.stringify(read.messages)).not.toContain("claxedo")
   })
 
   test("rejects an older message snapshot after a newer event ordinal commits", async () => {

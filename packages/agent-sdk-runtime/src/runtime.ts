@@ -75,6 +75,7 @@ export type CreateAgentRuntimeInput = {
   store: AgentRuntimeStore
   harnesses: AgentHarnessFactory[]
   resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
+  eventDelivery?: AgentRuntimeEventDeliveryPolicy
 }
 
 export type AgentRuntimeEventEnvelope = {
@@ -86,7 +87,24 @@ export type AgentRuntimeEventEnvelope = {
 export type AgentRuntimeSubscribeInput = {
   sessionId?: string
   directory?: RuntimeDirectory
+  identity?: AgentRuntimeSubscriptionIdentity
 }
+
+export type AgentRuntimeSubscriptionIdentity = {
+  connectionId: string
+  actorId: string
+  actorKind: "human" | "agent"
+  orgId: string
+  workspaceId: string
+  role: "viewer" | "editor" | "admin" | "owner"
+  /** Opaque signed proof forwarded only to the host's authorization policy. */
+  credential?: string
+}
+
+export type AgentRuntimeEventDeliveryPolicy = (input: {
+  identity: AgentRuntimeSubscriptionIdentity
+  event: AgentRuntimeEventEnvelope
+}) => "deliver" | "omit" | "terminate" | Promise<"deliver" | "omit" | "terminate">
 
 export type AgentRuntimeSessionCreateInput = {
   id?: string
@@ -98,8 +116,14 @@ export type AgentRuntimeSessionCreateInput = {
   title?: string
 }
 
+type AgentRuntimeTurnActor =
+  | { actorId: string; actorKind: "human" | "agent" }
+  | { actorId?: never; actorKind?: never }
+
 export type AgentRuntimeTurnStartInput = {
   sessionId: string
+  /** Runs after this turn wins the per-session lease and before harness work starts. */
+  onAdmitted?: () => void
   text?: string
   parts?: unknown[]
   messageId?: string
@@ -111,7 +135,8 @@ export type AgentRuntimeTurnStartInput = {
   system?: string
   permissionMode?: string
   variant?: string
-}
+  author?: PromptInput["author"]
+} & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {
   sessionId: string
@@ -121,20 +146,22 @@ export type AgentRuntimeTurnStartResult = {
   prompt: PromptInput
 }
 
-export class AgentRuntimeTurnAdmissionError extends Error {
-  readonly code = "turn_already_active"
+export const AGENT_RUNTIME_TURN_CONFLICT_CODE = "session_turn_in_progress"
+
+export class AgentRuntimeTurnConflictError extends Error {
+  readonly code = AGENT_RUNTIME_TURN_CONFLICT_CODE
+  readonly status = 409
 
   constructor(readonly sessionId: string) {
-    super("Session is already processing a message")
-    this.name = "AgentRuntimeTurnAdmissionError"
+    super(`Session ${sessionId} is already processing a turn`)
+    this.name = "AgentRuntimeTurnConflictError"
   }
 }
 
-export function isAgentRuntimeTurnAdmissionError(error: unknown): error is AgentRuntimeTurnAdmissionError {
-  return error instanceof AgentRuntimeTurnAdmissionError || (
-    !!error && typeof error === "object" &&
-    (error as { code?: unknown }).code === "turn_already_active"
-  )
+export function isAgentRuntimeTurnConflictError(error: unknown): error is AgentRuntimeTurnConflictError {
+  return error instanceof AgentRuntimeTurnConflictError
+    || !!error && typeof error === "object"
+      && (error as { code?: unknown }).code === AGENT_RUNTIME_TURN_CONFLICT_CODE
 }
 
 type Subscriber = {
@@ -164,11 +191,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     factory.create({ store, eventHub }),
   ]))
   const subscribers = new Set<Subscriber>()
-  // Prompt admission belongs to the runtime, not to a downstream harness
-  // iterator. Claim the session before persisting the user/assistant rows so a
-  // rejected concurrent prompt cannot manufacture a failed turn or overwrite
-  // the status of the turn that is actually running.
-  const activeTurnAdmissions = new Map<string, object>()
+  const acquireTurnLease = (sessionId: string) => {
+    const leaseId = store.acquireTurnLease(sessionId)
+    if (!leaseId) throw new AgentRuntimeTurnConflictError(sessionId)
+    return leaseId
+  }
+
+  const releaseTurnLease = (sessionId: string, leaseId: string) => {
+    store.releaseTurnLease(sessionId, leaseId)
+  }
 
   const adapterFor = async (harness: SessionHarness) => {
     const existing = adapters.get(key(harness))
@@ -228,10 +259,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     prompt: PromptInput,
     directory: RuntimeDirectory,
     adapter: AgentHarnessAdapter,
-    admission: object,
+    openingUserAlreadyPublished = false,
     clearsHandoff = false,
   ) => {
-    const ownsAdmission = () => activeTurnAdmissions.get(sessionId) === admission
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
@@ -319,14 +349,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       assistantMessageId: stableAssistantMessageId,
       created: Date.now(),
       onEvent: () => {},
-      onRuntimeEvent: (event) => {
-        if (!ownsAdmission()) return
-        publish({
-          sessionId: event.sessionId,
-          directory: event.directory,
-          payload: event.payload,
-        })
-      },
+      onRuntimeEvent: (event) => publish({
+        sessionId: event.sessionId,
+        directory: event.directory,
+        payload: event.payload,
+      }),
     })
     const router = createChildEventRouter({
       parent: parentProjector,
@@ -341,21 +368,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         assistantMessageId: target.assistantMessageId,
         created: target.created,
         onEvent: () => {},
-        onRuntimeEvent: (event) => {
-          if (!ownsAdmission()) return
-          publish({
-            sessionId: event.sessionId,
-            directory: event.directory,
-            payload: event.payload,
-          })
-        },
+        onRuntimeEvent: (event) => publish({
+          sessionId: event.sessionId,
+          directory: event.directory,
+          payload: event.payload,
+        }),
       }),
-      onDiagnostic: (payload) => {
-        if (ownsAdmission()) publish({ sessionId, directory, payload })
-      },
+      onDiagnostic: (payload) => publish({ sessionId, directory, payload }),
     })
     const maybeEmitTitle = async () => {
-      if (!ownsAdmission()) return
       if (titleEmitted) return
       titleEmitted = true
       const session = store.getSession(sessionId) as { title?: string | null; time?: { created?: number } } | null
@@ -364,7 +385,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       if (!text) return
       const title = fallbackSessionTitle(text)
       await adapter.updateSession(sessionId, { title }, directory)
-      if (!ownsAdmission()) return
       commitAndPublish(sessionId, directory, sessionUpdated(buildSession({
         id: sessionId,
         directory: runtimeDirectory(directory),
@@ -376,10 +396,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     try {
       let terminal = false
       for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
-        // An acknowledged abort may release this session for a replacement
-        // turn before a misbehaving adapter closes its old iterator. Fence all
-        // late events from that superseded generation.
-        if (!ownsAdmission()) return
         terminal ||= isTerminalRuntimePayload(payload)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
         // A failed turn has one authoritative terminal publication path below.
@@ -388,6 +404,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
         const compat = toCompatEvent(payload)
         if (compat) {
+          if (
+            openingUserAlreadyPublished
+            && compat.type === "message.updated"
+            && compat.properties.info.role === "user"
+            && compat.properties.info.id === prompt.userMessageId
+          ) {
+            openingUserAlreadyPublished = false
+            continue
+          }
           if (compat.type === "session.idle") await maybeEmitTitle()
           if (adapter.commitsStreamEvents) {
             publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
@@ -402,9 +427,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         publish({ sessionId, directory, payload })
       }
-      if (!ownsAdmission()) return
       await maybeEmitTitle()
-      if (!ownsAdmission()) return
       if (!terminal) {
         const payload = sessionIdle(sessionId)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
@@ -429,7 +452,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       }
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
-      if (!ownsAdmission()) return
       const message = err instanceof Error ? err.message : "turn failed"
       const finished = store.finishTurn?.({
         sessionId,
@@ -593,32 +615,33 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     turns: {
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
+        if ((turn.actorId === undefined) !== (turn.actorKind === undefined)) {
+          throw new Error("Turn actor id and kind must be provided together")
+        }
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
-        const config = store.getSessionConfig(turn.sessionId)
-        const directory = session.directory ?? undefined
-        const adapter = await adapterForSession(turn.sessionId, directory)
-        const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
-        const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
-        const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
-        const prompt: PromptInput = {
-          parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
-          userMessageId,
-          assistantMessageId,
-          agent: turn.agent ?? config?.agent ?? "build",
-          model: turn.model ?? config?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
-          ...(turn.tools ? { tools: turn.tools } : {}),
-          ...(turn.format ? { format: turn.format } : {}),
-          ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
-          ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
-          ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
-        }
-        if (activeTurnAdmissions.has(turn.sessionId)) {
-          throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
-        }
-        const admission = {}
-        activeTurnAdmissions.set(turn.sessionId, admission)
+        const leaseId = acquireTurnLease(turn.sessionId)
         try {
+          turn.onAdmitted?.()
+          const config = store.getSessionConfig(turn.sessionId)
+          const directory = session.directory ?? undefined
+          const adapter = await adapterForSession(turn.sessionId, directory)
+          const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
+          const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
+          const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
+          const prompt: PromptInput = {
+            parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
+            userMessageId,
+            assistantMessageId,
+            agent: turn.agent ?? config?.agent ?? "build",
+            model: turn.model ?? config?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
+            ...(turn.tools ? { tools: turn.tools } : {}),
+            ...(turn.format ? { format: turn.format } : {}),
+            ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
+            ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
+            ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
+            ...(turn.author ? { author: turn.author } : {}),
+          }
           const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
           const started = store.startTurn({
             sessionId: turn.sessionId,
@@ -632,23 +655,24 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             ...(turn.format ? { format: turn.format } : {}),
             ...(turn.system ? { system: turn.system } : {}),
             ...(prompt.variant ? { variant: prompt.variant } : {}),
+            ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
+            ...(turn.author ? { author: turn.author } : {}),
           })
           for (const payload of started?.events ?? []) {
             publish({ sessionId: turn.sessionId, directory, payload })
           }
-          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff)
-            .finally(() => {
-              if (activeTurnAdmissions.get(turn.sessionId) === admission) {
-                activeTurnAdmissions.delete(turn.sessionId)
-              }
-            })
+          const openingUserPublished = started?.events?.some((payload) =>
+            payload.type === "message.updated"
+            && payload.properties.info.role === "user"
+            && payload.properties.info.id === userMessageId
+          ) ?? false
+          void runTurn(turn.sessionId, prompt, directory, adapter, openingUserPublished, !!handoff)
+            .finally(() => releaseTurnLease(turn.sessionId, leaseId))
+          return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
         } catch (error) {
-          if (activeTurnAdmissions.get(turn.sessionId) === admission) {
-            activeTurnAdmissions.delete(turn.sessionId)
-          }
+          releaseTurnLease(turn.sessionId, leaseId)
           throw error
         }
-        return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
       },
       async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {
         const adapter = await adapterForSession(sessionId, directory)
@@ -659,20 +683,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             sessionId,
             outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
           })
-          // The runtime owns cancellation completion. Some adapters terminate
-          // their stream after acknowledging abort, while a stuck adapter may
-          // never yield again. Publish the canonical terminal frame before
-          // releasing admission so route-level subscribers always settle and
-          // any later adapter frames remain fenced as the old generation.
-          publish({ sessionId, directory, payload: { type: "finish", sessionId } })
-          activeTurnAdmissions.delete(sessionId)
         }
         return result
       },
     },
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
-        return subscription(subscribers, subscribe)
+        return subscription(subscribers, subscribe, input.eventDelivery)
       },
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
         const adapter = await adapterForSession(sessionId, directory)
@@ -766,7 +783,6 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
     },
     dispose() {
-      activeTurnAdmissions.clear()
       for (const subscriber of subscribers) subscriber.close()
       for (const adapter of adapters.values()) adapter.dispose()
       store.close?.()
@@ -826,7 +842,11 @@ function compatErrorMessage(input: unknown) {
     : "session error"
 }
 
-function subscription(subscribers: Set<Subscriber>, input: AgentRuntimeSubscribeInput): AsyncIterable<AgentRuntimeEventEnvelope> {
+function subscription(
+  subscribers: Set<Subscriber>,
+  input: AgentRuntimeSubscribeInput,
+  eventDelivery?: AgentRuntimeEventDeliveryPolicy,
+): AsyncIterable<AgentRuntimeEventEnvelope> {
   const queue: AgentRuntimeEventEnvelope[] = []
   const resolvers: Array<(result: IteratorResult<AgentRuntimeEventEnvelope>) => void> = []
   let closed = false
@@ -851,13 +871,25 @@ function subscription(subscribers: Set<Subscriber>, input: AgentRuntimeSubscribe
     },
   }
   subscribers.add(subscriber)
+  const nextEvent = (): Promise<IteratorResult<AgentRuntimeEventEnvelope>> => {
+    if (queue.length > 0) return Promise.resolve({ done: false, value: queue.shift()! })
+    if (closed) return Promise.resolve({ done: true, value: undefined })
+    return new Promise((resolve) => resolvers.push(resolve))
+  }
   return {
     [Symbol.asyncIterator]() {
       return {
-        next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
-          if (queue.length > 0) return Promise.resolve({ done: false, value: queue.shift()! })
-          if (closed) return Promise.resolve({ done: true, value: undefined })
-          return new Promise((resolve) => resolvers.push(resolve))
+        async next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
+          while (true) {
+            const next = await nextEvent()
+            if (next.done || !eventDelivery || !input.identity) return next
+            const decision = await eventDelivery({ identity: input.identity, event: next.value })
+            if (decision === "deliver") return next
+            if (decision === "terminate") {
+              finish()
+              return { done: true, value: undefined }
+            }
+          }
         },
         return(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
           finish()

@@ -67,9 +67,16 @@ export type EventsHandlerOptions = {
   bus?: ClaxedoEventBus
 }
 
-// Loopback requests bypass bearer auth (single-user desktop mode); model them
-// as unsigned-local so the visibility predicate passes everything through.
+// Unsigned loopback requests bypass bearer auth (single-user desktop mode);
+// bearer-bearing loopback requests are still signed clients and must retain
+// tenant filtering.
 const LOOPBACK_PRINCIPAL: EventScopePrincipal = { mode: "unsigned-local" }
+
+function samePrincipal(left: EventScopePrincipal, right: EventScopePrincipal) {
+  if (left.mode !== right.mode) return false
+  if (left.mode === "unsigned-local" || right.mode === "unsigned-local") return true
+  return left.subject === right.subject && left.orgId === right.orgId
+}
 
 /**
  * `/api/claxedo/events` — the central control-plane bus stream.
@@ -82,39 +89,23 @@ const LOOPBACK_PRINCIPAL: EventScopePrincipal = { mode: "unsigned-local" }
  * watchdog, the 2s session-switch quiet window) was gone for good, and only the
  * frame types with an independent REST reconciliation path recovered.
  *
- * ## Buffer / visibility split
+ * ## Retention / identity split
  *
- * The retention ring is created ONCE per handler and fed by ONE bus
+ * The source retention ring is created ONCE per handler and fed by ONE bus
  * subscription that exists for the process lifetime — not per connection. That
  * is forced by what the fix is for: the frames worth recovering are exactly the
  * ones published while NO connection was attached, so a buffer that only starts
  * filling at connect time would be empty precisely when it is needed. It also
- * makes the `id:` cursor a single global publish-order sequence, which is what
- * lets a client resume against a *different* connection object after a
- * reconnect.
+ * lets a newly seen principal recover events published before its first
+ * connection.
  *
- * The consequence is that the ring holds EVERY identity's frames, while this
- * stream is per-identity filtered (`eventVisibleTo`) — the bus is
- * server-global, so without that filter any valid bearer would observe every
- * other tenant's events. So the split is: **buffer everything once, filter on
- * read.** The filter runs in `write`, which is the single choke point
- * `attachSseFanout` funnels BOTH replayed and live frames through; putting it
- * there (rather than wrapping `subscribe`, which only covers the live half)
- * makes it impossible for the replay path to drift from the live path and start
- * leaking across the signed-mode visibility boundary on reconnect.
- *
- * Two knock-on effects, both accepted deliberately:
- *  - A filtered frame consumes an id without being delivered, so a quiet
- *    identity's cursor lags the ring. Harmless: those frames would never be
- *    delivered on replay either, and the next visible frame jumps the cursor
- *    forward.
- *  - `hasGap` is therefore computed over the SHARED sequence, so a busy
- *    multi-tenant bus can age a quiet identity's cursor out of the window and
- *    produce a replay-gap notice even though none of that identity's own frames
- *    were lost. Over-reporting is the only safe direction — the buffer cannot
- *    know whether an already-evicted frame was visible to the caller, and
- *    under-reporting would silently drop a real one. The cost is a redundant
- *    client refetch.
+ * The source ring holds every identity's frames, while each verified principal
+ * gets a stable replay ring containing only frames that clear
+ * `eventVisibleTo`. Cursor ids are minted by that filtered ring, so another
+ * tenant's traffic neither creates holes nor ages a quiet principal's cursor
+ * out of retention. Live and replay writes still re-run the same predicate at
+ * the final delivery choke point, preserving the fail-closed boundary if a
+ * frame or principal shape changes.
  *
  * ## Cursor-less connections are served NOTHING from the buffer
  *
@@ -147,9 +138,66 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
   // token-level deltas ride here; those are on the runtime event hub. 256
   // control frames is far more than the worst client gap (45s heartbeat
   // watchdog + 2s reconnect floor) can span.
-  const replay = createSseReplayBuffer<StreamFrame>({ isTerminal: isTerminalStreamFrame })
+  const retained = createSseReplayBuffer<StreamFrame>({ isTerminal: isTerminalStreamFrame })
+  const scopes = new Map<string, {
+    key: string
+    principal: EventScopePrincipal
+    replay: SseReplayBuffer<StreamFrame>
+    connections: number
+    sharedRetained: boolean
+    unknownSequence: boolean
+  }>()
+  const tombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
+  const scopeFor = (principal: EventScopePrincipal) => {
+    const key = principal.mode === "unsigned-local"
+      ? "unsigned-local"
+      : JSON.stringify([principal.subject, principal.orgId ?? null])
+    const existing = scopes.get(key)
+    if (existing) return existing
+    const tombstone = tombstones.get(key)
+    tombstones.delete(key)
+    const sharedRetained = principal.mode === "unsigned-local"
+    const replay = sharedRetained
+      ? retained
+      : createSseReplayBuffer<StreamFrame>({
+          isTerminal: isTerminalStreamFrame,
+          ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
+        })
+    if (!sharedRetained) {
+      for (const event of retained.replayAfter(tombstone?.retainedCursor)) {
+        if (eventVisibleTo(principal, event.payload as ClaxedoEvent)) replay.push(event.payload)
+      }
+    }
+    const scope = {
+      key,
+      principal,
+      replay,
+      connections: 0,
+      sharedRetained,
+      unknownSequence: !sharedRetained && !tombstone && retained.lastId() !== undefined,
+    }
+    scopes.set(key, scope)
+    return scope
+  }
+  const release = (scope: ReturnType<typeof scopeFor>) => {
+    scope.connections -= 1
+    if (scope.connections > 0 || scopes.get(scope.key) !== scope) return
+    if (!scope.sharedRetained) {
+      const retainedCursor = retained.lastId()
+      tombstones.delete(scope.key)
+      tombstones.set(scope.key, {
+        sequence: Number(scope.replay.lastId() ?? "0"),
+        ...(retainedCursor ? { retainedCursor } : {}),
+      })
+      while (tombstones.size > 256) tombstones.delete(tombstones.keys().next().value!)
+    }
+    scopes.delete(scope.key)
+  }
   bus.subscribe((event) => {
-    replay.push(event)
+    retained.push(event)
+    for (const scope of scopes.values()) {
+      if (!scope.sharedRetained && eventVisibleTo(scope.principal, event)) scope.replay.push(event)
+    }
   })
   return async function handler(c: Context) {
     // Every claxedoBus subscriber must pass the same control-plane
@@ -162,21 +210,41 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
     // rejected before this handler runs); the loopback check below stays as
     // defense-in-depth for compositions that mount this handler directly.
     try {
-      if (options.allowLoopbackLocal && isLoopbackLocalRequest(c.req.raw)) {
-        return streamClaxedoEvents(c, LOOPBACK_PRINCIPAL, bus, replay)
+      if (
+        options.allowLoopbackLocal &&
+        isLoopbackLocalRequest(c.req.raw) &&
+        !c.req.header("authorization")
+      ) {
+        const scope = scopeFor(LOOPBACK_PRINCIPAL)
+        scope.connections += 1
+        return streamClaxedoEvents(c, LOOPBACK_PRINCIPAL, bus, scope.replay, () => release(scope), scope.unknownSequence)
       }
-      const ctx = await controlPlaneAuthContext(c.req.raw, {
+      const authenticate = () => controlPlaneAuthContext(c.req.raw, {
         ...(options.authConfig ? { config: options.authConfig } : {}),
         ...(options.verifier ? { verifier: options.verifier } : {}),
       })
-      // Resolve the internal org id ONCE per connection (not per event/frame).
-      // A resolution failure fails the connect — the client's reconnect loop
-      // retries — rather than silently degrading to a principal whose org
-      // events would strand until the next reconnect anyway.
+      const ctx = await authenticate()
       const orgId = ctx.mode === "signed" && options.resolveOrgId
         ? await options.resolveOrgId(ctx)
         : undefined
-      return streamClaxedoEvents(c, eventScopePrincipal(ctx, orgId), bus, replay)
+      const principal = eventScopePrincipal(ctx, orgId)
+      const scope = scopeFor(principal)
+      scope.connections += 1
+      return streamClaxedoEvents(
+        c,
+        principal,
+        bus,
+        scope.replay,
+        () => release(scope),
+        scope.unknownSequence,
+        async () => {
+          const current = await authenticate()
+          const currentOrgId = current.mode === "signed" && options.resolveOrgId
+            ? await options.resolveOrgId(current)
+            : undefined
+          return samePrincipal(principal, eventScopePrincipal(current, currentOrgId))
+        },
+      )
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) {
         return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -191,10 +259,16 @@ function streamClaxedoEvents(
   principal: EventScopePrincipal,
   bus: ClaxedoEventBus,
   replay: SseReplayBuffer<StreamFrame>,
+  release: () => void,
+  unknownSequence: boolean,
+  stillAuthorized?: () => Promise<boolean>,
 ) {
   return streamSSE(c, async (stream) => {
     const heartbeat = { type: "heartbeat" } as const
     const cursor = c.req.header("last-event-id") ?? replay.lastId() ?? "0"
+    const connectionReplay = unknownSequence && Number(c.req.header("last-event-id") ?? "0") > 0
+      ? { ...replay, hasGap: () => true }
+      : replay
 
     // The replay-gap notice and the connection's own heartbeats carry no tenant
     // data — only cursor ids — and the gap notice exists precisely to tell a
@@ -211,20 +285,43 @@ function streamClaxedoEvents(
       .writeSSE({ id: cursor, data: JSON.stringify(heartbeat) })
       .catch(() => {})
 
-    const cleanup = attachSseFanout<StreamFrame>({
+    let cleanup = () => {}
+    let closed = false
+    let finish: (() => void) | undefined
+    const releaseOnce = () => {
+      if (closed) return
+      closed = true
+      cleanup()
+      release()
+      finish?.()
+    }
+    const closeUnauthorized = async () => {
+      releaseOnce()
+      await stream.close()
+    }
+
+    cleanup = attachSseFanout<StreamFrame>({
       subscribe: bus.subscribe,
       // Returned, not voided: `attachSseFanout` awaits each write in turn, which
       // is what keeps frames ordered and applies backpressure.
-      write: (frame, meta) => visibleTo(frame)
-        ? stream.writeSSE({
-            ...(meta?.id ? { id: meta.id } : {}),
-            data: JSON.stringify(frame),
-          })
-        : undefined,
+      write: async (frame, meta) => {
+        if (stillAuthorized) {
+          const authorized = await stillAuthorized().catch(() => false)
+          if (!authorized) {
+            await closeUnauthorized()
+            return
+          }
+        }
+        if (!visibleTo(frame)) return
+        await stream.writeSSE({
+          ...(meta?.id ? { id: meta.id } : {}),
+          data: JSON.stringify(frame),
+        })
+      },
       heartbeat,
       heartbeatMs: 30_000,
       lastEventId: cursor,
-      replay,
+      replay: connectionReplay,
       replayLive: false,
       replayGap: ({ lastEventId, throughId }) => ({
         type: "stream.replay-gap",
@@ -237,8 +334,10 @@ function streamClaxedoEvents(
     })
 
     await new Promise<void>((resolve) => {
+      finish = resolve
+      if (closed) resolve()
       stream.onAbort(() => {
-        cleanup()
+        releaseOnce()
         resolve()
       })
     })

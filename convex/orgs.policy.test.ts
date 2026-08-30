@@ -30,12 +30,52 @@ const stamped = <T extends Record<string, unknown>>(row: T) => ({ created_at: 1,
  * handler bodies while skipping the auth wrappers that make them safe.
  */
 describe("Convex org webhook policy", () => {
+  test("organizationMembership.created provisions the member in the canonical default team", async () => {
+    const t = convexTest(schema, modules)
+    await t.run(async (ctx) => {
+      await ctx.db.insert("users", stamped({ clerk_subject: "clerk_user_1", token_identifier: "token_1" }) as never)
+    })
+
+    await t.mutation(internal.orgs.applyClerkWebhook, {
+      type: "organizationMembership.created",
+      data: {
+        id: "membership_1",
+        created_at: 1,
+        organization: { id: "clerk_org_1", name: "Acme" },
+        public_user_data: { user_id: "clerk_user_1" },
+        role: "org:member",
+      },
+    } as never)
+
+    await t.run(async (ctx) => {
+      const team = (await ctx.db.query("teams").collect()).find((candidate) => candidate.is_default)
+      const user = await ctx.db
+        .query("users")
+        .withIndex("by_clerk_subject", (q) => q.eq("clerk_subject", "clerk_user_1"))
+        .unique()
+      expect(team).toBeDefined()
+      expect(user).toBeDefined()
+      expect(
+        await ctx.db
+          .query("team_memberships")
+          .withIndex("by_team_user", (q) => q.eq("team_id", team!._id).eq("user_id", user!._id))
+          .unique(),
+      ).toMatchObject({ role: "member" })
+    })
+  })
+
   test("organizationMembership.deleted removes the matching org membership", async () => {
     const t = convexTest(schema, modules)
 
     await t.run(async (ctx) => {
-      const orgId = await ctx.db.insert("orgs", stamped({ clerk_org_id: "clerk_org_1", kind: "clerk", name: "Acme" }) as never)
-      const userId = await ctx.db.insert("users", stamped({ clerk_subject: "clerk_user_1", token_identifier: "token_1" }) as never)
+      const orgId = await ctx.db.insert(
+        "orgs",
+        stamped({ clerk_org_id: "clerk_org_1", kind: "clerk", name: "Acme" }) as never,
+      )
+      const userId = await ctx.db.insert(
+        "users",
+        stamped({ clerk_subject: "clerk_user_1", token_identifier: "token_1" }) as never,
+      )
       await ctx.db.insert("org_memberships", stamped({ org_id: orgId, user_id: userId, role: "member" }) as never)
     })
 
@@ -55,14 +95,21 @@ describe("Convex org webhook policy", () => {
     const t = convexTest(schema, modules)
 
     await t.run(async (ctx) => {
-      const orgId = await ctx.db.insert("orgs", stamped({ clerk_org_id: "clerk_org_1", kind: "clerk", name: "Acme" }) as never)
-      const userId = await ctx.db.insert("users", stamped({ token_identifier: "clerk|user_1", clerk_subject: "user_1" }) as never)
+      const orgId = await ctx.db.insert(
+        "orgs",
+        stamped({ clerk_org_id: "clerk_org_1", kind: "clerk", name: "Acme" }) as never,
+      )
+      const userId = await ctx.db.insert(
+        "users",
+        stamped({ token_identifier: "clerk|user_1", clerk_subject: "user_1" }) as never,
+      )
       await ctx.db.insert("org_memberships", stamped({ org_id: orgId, user_id: userId, role: "member" }) as never)
     })
 
     const asUser = t.withIdentity({ tokenIdentifier: "clerk|user_1", subject: "user_1" })
-    await expect(asUser.mutation(api.orgs.resolveForMe, { clerk_org_id: "clerk_org_1" } as never))
-      .resolves.toMatchObject({ clerk_org_id: "clerk_org_1", role: "member" })
+    await expect(
+      asUser.mutation(api.orgs.resolveForMe, { clerk_org_id: "clerk_org_1" } as never),
+    ).resolves.toMatchObject({ clerk_org_id: "clerk_org_1", role: "member" })
   })
 
   test("never falls back to a personal organization for an unknown or unauthorized Clerk organization", async () => {
@@ -70,24 +117,31 @@ describe("Convex org webhook policy", () => {
 
     await t.run(async (ctx) => {
       await ctx.db.insert("orgs", stamped({ clerk_org_id: "clerk_org_1", kind: "clerk", name: "Acme" }) as never)
-      const userId = await ctx.db.insert("users", stamped({ token_identifier: "clerk|user_1", clerk_subject: "user_1" }) as never)
-      const personalId = await ctx.db.insert("orgs", stamped({ kind: "personal", owner_user_id: userId, name: "Personal" }) as never)
+      const userId = await ctx.db.insert(
+        "users",
+        stamped({ token_identifier: "clerk|user_1", clerk_subject: "user_1" }) as never,
+      )
+      const personalId = await ctx.db.insert(
+        "orgs",
+        stamped({ kind: "personal", owner_user_id: userId, name: "Personal" }) as never,
+      )
       await ctx.db.insert("org_memberships", stamped({ org_id: personalId, user_id: userId, role: "owner" }) as never)
     })
 
     const asUser = t.withIdentity({ tokenIdentifier: "clerk|user_1", subject: "user_1" })
 
     // Unknown org: not silently downgraded to the personal org.
-    await expect(asUser.mutation(api.orgs.resolveForMe, { clerk_org_id: "missing" } as never))
-      .rejects.toThrow("Organization not found")
+    await expect(asUser.mutation(api.orgs.resolveForMe, { clerk_org_id: "missing" } as never)).rejects.toThrow(
+      "Organization not found",
+    )
 
     // Known org the user is NOT a member of: membership is required, and the
     // personal org is still not substituted.
-    await expect(asUser.mutation(api.orgs.resolveForMe, { clerk_org_id: "clerk_org_1" } as never))
-      .rejects.toThrow("Organization membership is required")
+    await expect(asUser.mutation(api.orgs.resolveForMe, { clerk_org_id: "clerk_org_1" } as never)).rejects.toThrow(
+      "Organization membership is required",
+    )
 
     // No org requested at all: the personal org IS the correct answer.
-    await expect(asUser.mutation(api.orgs.resolveForMe, {} as never))
-      .resolves.toMatchObject({ role: "owner" })
+    await expect(asUser.mutation(api.orgs.resolveForMe, {} as never)).resolves.toMatchObject({ role: "owner" })
   })
 })
