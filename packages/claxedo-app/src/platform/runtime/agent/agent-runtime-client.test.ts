@@ -81,10 +81,10 @@ describe("AgentRuntimeClient", () => {
     ])
   })
 
-  it("propagates the semantic latest-turn view through projected workspace reads", async () => {
+  it("propagates the semantic latest-turn view through workspace-runtime reads", async () => {
     const seen: string[] = []
     const client = createAgentRuntimeClient({
-      serverUrl: "https://control.example/",
+      serverUrl: "http://127.0.0.1:3001/",
       workspaceId: "ws_1",
       request: async (input) => {
         seen.push(String(input))
@@ -99,8 +99,21 @@ describe("AgentRuntimeClient", () => {
     })
 
     expect(seen).toEqual([
-      "https://control.example/api/control/sessions/runtime-session-1/messages?workspaceId=ws_1&view=latest-turn",
+      "http://127.0.0.1:3001/workspaces/ws_1/session/runtime-session-1/message?view=latest-turn",
     ])
+  })
+
+  it("rejects malformed history instead of synthesizing an empty transcript", async () => {
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async () => ok({ maxEventOrdinal: 0 }),
+    })
+
+    await expect(client.getMessages({
+      directory: "/repo/main",
+      sessionID: "runtime-session-1",
+      limit: 20,
+    })).rejects.toMatchObject({ status: 502, code: "invalid_response" })
   })
 
   it("parses prompt admission conflicts into a structured request error", async () => {
@@ -222,40 +235,10 @@ describe("AgentRuntimeClient", () => {
   it("keeps non-workspace legacy OpenCode sessions on the injected SDK client", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
-      request: async () => {
-        throw new Error("request should not be used")
-      },
-      opencodeClient: {
-        session: {
-          async create() {
-            calls.push("create")
-            return { data: undefined }
-          },
-          async get() {
-            calls.push("get")
-            return { data: undefined }
-          },
-          async messages() {
-            calls.push("messages")
-            return { data: [], response: ok([], { headers: { "x-max-event-ordinal": "7" } }) }
-          },
-          async todo() {
-            calls.push("todo")
-            return { data: [] }
-          },
-          async prompt() {
-            calls.push("prompt")
-            return { data: undefined }
-          },
-          async promptAsync() {
-            calls.push("promptAsync")
-            return { data: undefined }
-          },
-          async abort() {
-            calls.push("abort")
-            return {}
-          },
-        },
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async (input) => {
+        calls.push(String(input))
+        return ok({ messages: [], maxEventOrdinal: 7 })
       },
     })
 
@@ -265,26 +248,21 @@ describe("AgentRuntimeClient", () => {
       limit: 10,
     })
 
-    expect(calls).toEqual(["messages"])
+    expect(calls).toEqual([
+      "http://127.0.0.1:3001/session/ses_1/message?directory=opencode&limit=10",
+    ])
     expect(page.maxEventOrdinal).toBe(7)
   })
 
-  it("forwards cancellation to the injected SDK and rejects a late ignored result", async () => {
+  it("forwards cancellation to the canonical runtime request", async () => {
     const controller = new AbortController()
-    let resolveMessages!: () => void
+    let resolveRequest!: (response: Response) => void
     let receivedSignal: AbortSignal | undefined
     const client = createAgentRuntimeClient({
-      request: async () => {
-        throw new Error("request should not be used")
-      },
-      opencodeClient: {
-        session: {
-          async messages(_input, options) {
-            receivedSignal = options?.signal
-            await new Promise<void>((resolve) => { resolveMessages = resolve })
-            return { data: [], response: ok([]) }
-          },
-        },
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async (_input, init) => {
+        receivedSignal = init?.signal ?? undefined
+        return await new Promise<Response>((resolve) => { resolveRequest = resolve })
       },
     })
 
@@ -298,7 +276,7 @@ describe("AgentRuntimeClient", () => {
     expect(receivedSignal).toBe(controller.signal)
 
     controller.abort()
-    resolveMessages()
+    resolveRequest(ok({ messages: [], maxEventOrdinal: 0 }))
     await expect(read).rejects.toMatchObject({ name: "AbortError" })
   })
 
@@ -332,20 +310,13 @@ describe("AgentRuntimeClient", () => {
     expect(parses).toBe(0)
   })
 
-  it("routes filesystem OpenCode sessions through runtime transport for durable workspace state", async () => {
+  it("routes filesystem sessions through runtime transport for durable workspace state", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${String(input)}`)
         return ok([{ info: { id: "msg_1" }, parts: [] }], { headers: { "x-max-event-ordinal": "8" } })
-      },
-      opencodeClient: {
-        session: {
-          async messages() {
-            throw new Error("opencode client should not be used")
-          },
-        },
       },
     })
 
@@ -361,25 +332,13 @@ describe("AgentRuntimeClient", () => {
     expect(page.maxEventOrdinal).toBe(8)
   })
 
-  it("routes scoped sends through runtime session routes even when an OpenCode client is injected", async () => {
+  it("routes scoped sends through runtime session routes", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${String(input)}`)
         return ok({})
-      },
-      opencodeClient: {
-        session: {
-          async prompt() {
-            calls.push("legacy prompt")
-            return { data: undefined }
-          },
-          async promptAsync() {
-            calls.push("legacy promptAsync")
-            return { data: undefined }
-          },
-        },
       },
     })
 
@@ -453,18 +412,6 @@ describe("AgentRuntimeClient", () => {
         if (init?.body) bodies.push(JSON.parse(String(init.body)))
         if (url.pathname.endsWith("/message")) return ok({ messages: [], maxEventOrdinal: 5 })
         return ok({})
-      },
-      opencodeClient: {
-        session: {
-          async prompt() {
-            calls.push("legacy prompt")
-            return { data: undefined }
-          },
-          async promptAsync() {
-            calls.push("legacy promptAsync")
-            return { data: undefined }
-          },
-        },
       },
     })
 
@@ -758,6 +705,40 @@ describe("AgentRuntimeClient", () => {
     expect(page.data?.map((row) => row.info.id)).toEqual(["msg_uh1"])
     expect(calls.some((call) => call.includes("/api/control/sessions/"))).toBe(false)
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session/runtime-session-1/message")
+  })
+
+  it("surfaces offline user-hosted history as an error instead of an empty transcript", async () => {
+    const calls: string[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "https://control.example/",
+      signedControlPlane: true,
+      workspaceId: "ws_cleantest1",
+      workspaceKind: "user-hosted",
+      request: async (input) => {
+        calls.push(String(input))
+        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+          return ok({
+            access: "user-hosted",
+            backing: "local-worktree",
+            workspaceId: "ws_cleantest1",
+            relayUrl: "https://relay.example",
+            runtimeAccessToken: "runtime-token",
+            role: "owner",
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        }
+        return new Response(JSON.stringify({
+          error: { code: "workspace_offline", message: "Workspace runtime is offline" },
+        }), { status: 503, headers: { "Content-Type": "application/json" } })
+      },
+    })
+
+    await expect(client.getMessages({
+      directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+      sessionID: "runtime-session-1",
+      limit: 80,
+    })).rejects.toMatchObject({ status: 503, code: "workspace_offline" })
+    expect(calls.some((call) => call.includes("/api/control/sessions/"))).toBe(false)
   })
 
   it("signed user-hosted getSession falls through to the relay runtime instead of the control sessions list", async () => {

@@ -1,7 +1,7 @@
 import type { SessionPromptResponse, Todo } from "@opencode-ai/sdk/v2/client"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
-import { runtimeRequestError } from "./agent-runtime-request-error"
+import { AgentRuntimeRequestError, runtimeRequestError } from "./agent-runtime-request-error"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
@@ -25,17 +25,16 @@ import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import {
   resolveRuntimePlacement,
   resolveSessionResourceRoute,
-  shouldUseRuntimeSessionTransport as decideRuntimeSessionTransport,
 } from "@/platform/runtime/agent/placement-table"
 import { centralRuntimePath } from "./central-runtime-path"
 import { createAgentRuntimeGoalClient } from "./agent-runtime-goal-client"
 import { readRuntimeJson as readJson } from "./agent-runtime-json"
 import {
   agentRuntimeBaseUrl,
-  agentRuntimeEventsUrl as claxedoEventsUrl,
-  agentRuntimeSessionListUrl as sessionListUrl,
-  agentRuntimeSessionResourceUrl as sessionResourceUrl,
-  agentRuntimeSessionUrl as sessionUrl,
+  agentRuntimeEventsUrl,
+  agentRuntimeSessionListUrl,
+  agentRuntimeSessionResourceUrl,
+  agentRuntimeSessionUrl,
   normalizedAgentRuntimeServerUrl,
   type AgentRuntimeDirectory,
   type AgentRuntimeSessionResource,
@@ -57,11 +56,13 @@ export type {
   AgentRuntimePromptPayload,
 } from "@/platform/runtime/session"
 
-type ControlSessionRow = RuntimeSession & {
-  session_id?: string
-  project_id?: string
-  created_at?: number
-  updated_at?: number
+export type AgentRuntimeSessionCreateInput = {
+  directory: AgentRuntimeDirectory
+  harness: { id: string; access: "native" | "acp" }
+  agent: string
+  model: PromptModel
+  variant?: string
+  headers?: Record<string, string>
 }
 
 export type AgentRuntimeOpenCodeClient = {
@@ -100,11 +101,45 @@ export function agentRuntimeWorkspaceTargetQueryKey(input: { serverUrl?: string;
 }
 
 function ordinal(data: unknown, response: Response) {
-  if (data && typeof data === "object") {
-    const value = (data as { maxEventOrdinal?: unknown }).maxEventOrdinal
-    if (typeof value === "number") return value
+  if (data && typeof data === "object" && "maxEventOrdinal" in data) {
+    const value = data.maxEventOrdinal
+    if (typeof value === "number" && Number.isFinite(value)) return value
   }
-  return Number(response.headers.get("x-max-event-ordinal") ?? 0) || 0
+  const header = response.headers.get("x-max-event-ordinal")
+  const value = header === null ? Number.NaN : Number(header)
+  if (Number.isFinite(value)) return value
+  throw new AgentRuntimeRequestError("Session history omitted maxEventOrdinal", 502, "invalid_response")
+}
+
+function messageRows(input: unknown): Array<{ info: AgentPresentationMessage; parts?: AgentContentPart[] }> {
+  if (Array.isArray(input)) {
+    return input
+  }
+  if (input && typeof input === "object" && "messages" in input && Array.isArray(input.messages)) {
+    return input.messages
+  }
+  throw new AgentRuntimeRequestError("Session history response omitted messages", 502, "invalid_response")
+}
+
+function sessionRows(input: unknown): AgentPresentationSession[] {
+  if (input && typeof input === "object" && "sessions" in input && Array.isArray(input.sessions)) {
+    return input.sessions
+  }
+  throw new AgentRuntimeRequestError("Session list response omitted sessions", 502, "invalid_response")
+}
+
+function createdSession(input: unknown): AgentSession {
+  if (!input || typeof input !== "object" || !("id" in input) || typeof input.id !== "string" || !input.id) {
+    throw new AgentRuntimeRequestError("Session create response omitted the canonical session id", 502, "invalid_response")
+  }
+  return input
+}
+
+function deleteResult(input: unknown): { ok: true } {
+  if (!input || typeof input !== "object" || !("ok" in input) || input.ok !== true) {
+    throw new AgentRuntimeRequestError("Session delete response omitted confirmation", 502, "invalid_response")
+  }
+  return { ok: true }
 }
 
 function jsonInit(method: "POST" | "PATCH" | "PUT", body?: unknown, init?: RequestInit): RequestInit {
@@ -132,7 +167,6 @@ export function createAgentRuntimeClient(options: {
   // indistinguishable from signed-cloud and session reads 404 on the central control
   // plane. `workspaceReachable` is its runtime liveness (resolveSessionResourceRoute).
   workspaceKind?: "cloud" | "user-hosted"; workspaceReachable?: boolean
-  opencodeClient?: AgentRuntimeOpenCodeClient
 } = {}) {
   const request = options.request ?? createControlPlaneAccountFetch(authFetch)
   const signed = options.signedControlPlane === true
@@ -201,15 +235,6 @@ export function createAgentRuntimeClient(options: {
     return { serverUrl: serverUrl(), baseUrl: agentRuntimeBaseUrl(serverUrl()) }
   }
 
-  function shouldUseRuntimeSessionTransport(input: { sessionID?: string; directory: AgentRuntimeDirectory }) {
-    return decideRuntimeSessionTransport({
-      sessionID: input.sessionID,
-      directory: input.directory,
-      signed,
-      sessionRef: options.sessionRef,
-    })
-  }
-
   function runtimeTransport(input: {
     directory?: string
     sessionRef?: SessionRef
@@ -256,8 +281,8 @@ export function createAgentRuntimeClient(options: {
     if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("Directory-less central sessions require the Pi harness")
     const init = await signedControlPlaneInit(input.init)
     const target = signed ? await workspaceTarget(input.directory) : undefined
-    const directoryWorkspaceId = workspaceIdFromRef(input.directory)
-    const runtimeUrl = sessionResourceUrl({
+    const directoryWorkspaceId = workspaceIdFromRef(input.directory) ?? (!signed ? options.workspaceId : undefined)
+    const runtimeUrl = agentRuntimeSessionResourceUrl({
       serverUrl: serverUrl(),
       sessionID: input.sessionID,
       directory: input.directory,
@@ -304,7 +329,7 @@ export function createAgentRuntimeClient(options: {
           ...(route.preferRelayOnLoopback ? { preferRelayOnLoopback: true } : {}),
         }).fetch(runtimePath, init)
       case "control-plane":
-        return await request(sessionResourceUrl({
+        return await request(agentRuntimeSessionResourceUrl({
           serverUrl: serverUrl(),
           signedControlPlane: true,
           workspaceId: target?.workspaceId,
@@ -370,7 +395,7 @@ export function createAgentRuntimeClient(options: {
     query?: Record<string, string | number | undefined>
     init?: RequestInit
   }) {
-    const url = sessionUrl({
+    const url = agentRuntimeSessionUrl({
       serverUrl: serverUrl(),
       sessionID: input.sessionID,
       suffix: input.suffix,
@@ -411,7 +436,7 @@ export function createAgentRuntimeClient(options: {
           path: `${url.pathname}${url.search}`,
           init: { headers: { Accept: "application/json" } },
         })
-        return { sessions: await readJson<RuntimeSession[]>(res) }
+        return { sessions: await readJson<AgentPresentationSession[]>(res) }
       }
       const res = await request(
         controlSessionListUrl({
@@ -420,71 +445,59 @@ export function createAgentRuntimeClient(options: {
         }),
         await signedControlPlaneInit(),
       )
-      return await readJson<{ sessions?: RuntimeSession[] }>(res)
+      return { sessions: sessionRows(await readJson<unknown>(res)) }
     }
-    const res = await fetchPath(input.directory, sessionListUrl({
+    const res = await fetchPath(input.directory, agentRuntimeSessionListUrl({
       serverUrl: serverUrl(),
       scope: input.directory,
       roots: input.roots,
       limit: input.limit,
     }))
-    return { sessions: await readJson<RuntimeSession[]>(res) }
+    return { sessions: await readJson<AgentPresentationSession[]>(res) }
   }
 
   return {
     usesScopedTransport: usesScopedSessionTransport,
     listSessions,
-    async createSession(input: { directory: AgentRuntimeDirectory; headers?: Record<string, string> }) {
-      if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.create) {
-        return await options.opencodeClient.session.create({ directory: input.directory }, input.headers ? { headers: input.headers } : undefined)
-      }
-      const url = sessionListUrl({ serverUrl: serverUrl(), scope: input.directory })
+    async createSession(input: AgentRuntimeSessionCreateInput) {
+      const url = agentRuntimeSessionListUrl({ serverUrl: serverUrl(), scope: input.directory })
       const res = await fetchRuntimePath({
         directory: input.directory,
         path: `${url.pathname}${url.search}`,
-        init: {
-        method: "POST",
-        headers: input.headers,
-        },
+        init: jsonInit("POST", {
+          harness: input.harness,
+          agent: input.agent,
+          model: input.model,
+          ...(input.variant ? { variant: input.variant } : {}),
+        }, { headers: input.headers }),
       })
-      return { data: await readJson<RuntimeSession>(res) }
+      return { data: createdSession(await readJson<unknown>(res)) }
+    },
+    async deleteSession(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
+      const res = await fetchRuntimeSession({
+        sessionID: input.sessionID,
+        directory: input.directory,
+        init: { method: "DELETE", headers: { Accept: "application/json" } },
+      })
+      return deleteResult(await readJson<unknown>(res))
     },
     async getSession(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
-      if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.get) {
-        return await options.opencodeClient.session.get({ sessionID: input.sessionID })
-      }
       // A user-hosted workspace has NO central session store — the hosted
       // control plane's session-list endpoint is an empty stub, so the
       // signed list-emulation below can never find the row. Fall through to
       // `fetchSessionResource`, which diverts to the runtime via the relay.
       if (signed && options.workspaceKind !== "user-hosted") {
-        const row = ((await listSessions({ directory: input.directory })).sessions ?? [])
-          .map((item) => item as ControlSessionRow)
-          .find((item) => item.id === input.sessionID || item.session_id === input.sessionID)
+        const row = (await listSessions({ directory: input.directory })).sessions
+          .find((item) => item.id === input.sessionID)
         if (!row) return { data: undefined }
-        const id = row.session_id ?? row.id ?? input.sessionID
-        return {
-          data: {
-            ...row,
-            id,
-            slug: row.slug ?? id,
-            projectID: row.projectID ?? row.project_id ?? "",
-            title: row.title ?? "Session",
-            directory: input.directory,
-            version: row.version ?? "",
-            time: {
-              created: row.created_at ?? row.time?.created ?? 0,
-              updated: row.updated_at ?? row.time?.updated ?? row.created_at ?? row.time?.created ?? 0,
-            },
-          },
-        }
+        return { data: row }
       }
       const res = await fetchSessionResource({
         sessionID: input.sessionID,
         directory: input.directory,
         init: { headers: { Accept: "application/json" } },
       })
-      return { data: await readJson<RuntimeSession>(res) }
+      return { data: await readJson<AgentPresentationSession>(res) }
     },
     async getSessionConfig(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
       const res = await fetchRuntimeSession({
@@ -528,19 +541,6 @@ export function createAgentRuntimeClient(options: {
       signal?: AbortSignal
     } & SessionMessagePageRequest) {
       input.signal?.throwIfAborted()
-      if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.messages) {
-        const result = await options.opencodeClient.session.messages(input, { signal: input.signal })
-        input.signal?.throwIfAborted()
-        return {
-          ...result,
-          maxEventOrdinal: ordinal(result.data, result.response),
-        }
-      }
-      if (!signed && options.workspaceId) {
-        const projected = await fetchProjectedMessages(input).catch(() => undefined)
-        input.signal?.throwIfAborted()
-        if (projected) return projected
-      }
       const res = await fetchSessionResource({
         sessionID: input.sessionID,
         directory: input.directory,
@@ -557,37 +557,28 @@ export function createAgentRuntimeClient(options: {
         },
       })
       input.signal?.throwIfAborted()
-      const body = await readJson<AgentRuntimeMessageRow[] | { messages?: AgentRuntimeMessageRow[]; maxEventOrdinal?: number }>(res)
+      const body = await readJson<unknown>(res)
       input.signal?.throwIfAborted()
       return {
-        data: Array.isArray(body) ? body : body.messages ?? [],
+        data: messageRows(body),
         response: res,
         maxEventOrdinal: ordinal(body, res),
       }
     },
     async getTodos(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
-      if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.todo) {
-        return await options.opencodeClient.session.todo({ sessionID: input.sessionID })
-      }
       const res = await fetchRuntimeSession({
         sessionID: input.sessionID,
         directory: input.directory,
         suffix: "/todo",
         init: { headers: { Accept: "application/json" } },
       })
-      return { data: await readJson<Todo[]>(res) }
+      return { data: await readJson<AgentTodo[]>(res) }
     },
     /**
      * Permission modes for a session, in the HARNESS's own vocabulary.
-     *
-     * Runtime transport only, with no `opencodeClient` fallback — unlike the
-     * neighbouring methods. The opencode engine has no mode list at all (it has
-     * per-tool rules), so there is nothing on that client to fall back TO, and a
-     * fallback that silently answered `[]` would make an unreachable route look
-     * like a harness with nothing to offer.
      */
     async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string; harness?: string }) {
-      const init = { cache: "no-store" as const, headers: { Accept: "application/json" } }
+      const init: RequestInit = { cache: "no-store", headers: { Accept: "application/json" } }
       // A DRAFT has no session, so it asks the directory-scoped route instead of
       // showing nothing until after the first message. Same payload either way;
       // the difference is only which harness state can answer — a draft gets the
@@ -627,10 +618,6 @@ export function createAgentRuntimeClient(options: {
       return { data: await readJson<AgentRuntimePermissionModeState>(res) }
     },
     async sendMessage(input: AgentRuntimePromptPayload & { mode?: "sync" | "async" }) {
-      if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.prompt && options.opencodeClient.session.promptAsync) {
-        if (input.mode === "sync") return await options.opencodeClient.session.prompt(input)
-        return await options.opencodeClient.session.promptAsync(input)
-      }
       const res = await fetchRuntimeSession({
         sessionID: input.sessionID,
         directory: input.directory,
@@ -638,13 +625,12 @@ export function createAgentRuntimeClient(options: {
         init: jsonInit("POST", input),
       })
       if (input.mode !== "sync" && !res.ok) throw await runtimeRequestError(res)
-      return input.mode === "sync" ? { data: await readJson<SessionPromptResponse>(res) } : { data: undefined }
+      return input.mode === "sync"
+        ? { data: await readJson<AgentPromptResponse>(res) }
+        : { data: undefined }
     },
     async abort(input: { directory: AgentRuntimeDirectory; sessionID: string }) {
-      if (!shouldUseRuntimeSessionTransport(input) && options.opencodeClient?.session.abort) {
-        return await options.opencodeClient.session.abort({ sessionID: input.sessionID })
-      }
-      const url = sessionUrl({
+      const url = agentRuntimeSessionUrl({
         serverUrl: serverUrl(),
         sessionID: input.sessionID,
         suffix: "/abort",
@@ -657,7 +643,7 @@ export function createAgentRuntimeClient(options: {
       })
     },
     async answerPermission(input: { directory: AgentRuntimeDirectory; sessionID: string; permissionID: string; response: "once" | "always" | "reject" }) {
-      const url = sessionUrl({
+      const url = agentRuntimeSessionUrl({
         serverUrl: serverUrl(),
         sessionID: input.sessionID,
         suffix: `/permissions/${encodeURIComponent(input.permissionID)}`,
@@ -670,7 +656,7 @@ export function createAgentRuntimeClient(options: {
       })
     },
     async answerQuestion(input: { directory: AgentRuntimeDirectory; sessionID?: string; questionID: string; answer: string }) {
-      const url = new URL(`/question/${encodeURIComponent(input.questionID)}/reply`, sessionUrl({
+      const url = new URL(`/question/${encodeURIComponent(input.questionID)}/reply`, agentRuntimeSessionUrl({
         serverUrl: serverUrl(),
         sessionID: input.sessionID ?? "runtime",
       }))
@@ -683,7 +669,7 @@ export function createAgentRuntimeClient(options: {
       })
     },
     async rejectQuestion(input: { directory: AgentRuntimeDirectory; sessionID?: string; questionID: string }) {
-      const url = new URL(`/question/${encodeURIComponent(input.questionID)}/reject`, sessionUrl({
+      const url = new URL(`/question/${encodeURIComponent(input.questionID)}/reject`, agentRuntimeSessionUrl({
         serverUrl: serverUrl(),
         sessionID: input.sessionID ?? "runtime",
       }))
@@ -713,38 +699,5 @@ export function createAgentRuntimeClient(options: {
       url.searchParams.set("directory", input.directory)
       return url
     },
-  }
-
-  async function fetchProjectedMessages(input: {
-    directory: AgentRuntimeDirectory
-    sessionID: string
-    signal?: AbortSignal
-  } & SessionMessagePageRequest): Promise<AgentRuntimeMessagesPage | undefined> {
-    const url = sessionResourceUrl({
-      serverUrl: serverUrl(),
-      signedControlPlane: true,
-      workspaceId: options.workspaceId,
-      sessionID: input.sessionID,
-      directory: input.directory,
-      resource: "messages",
-      query: {
-        limit: input.limit,
-        before: input.before,
-        view: input.view,
-      },
-    })
-    const res = await request(url, await controlPlaneAuthInit({
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-      signal: input.signal,
-    }))
-    input.signal?.throwIfAborted()
-    if (!res.ok) return
-    const body = await readJson<AgentRuntimeMessageRow[] | { messages?: AgentRuntimeMessageRow[]; maxEventOrdinal?: number }>(res)
-    input.signal?.throwIfAborted()
-    const data = Array.isArray(body) ? body : body.messages ?? []
-    const maxEventOrdinal = ordinal(body, res)
-    if (data.length === 0 && maxEventOrdinal === 0) return
-    return { data, response: res, maxEventOrdinal }
   }
 }

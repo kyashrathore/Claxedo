@@ -1,14 +1,18 @@
-import type { LspStatus, McpStatus, Session, Todo, VcsInfo } from "@opencode-ai/sdk/v2/client"
+import type {
+  ClaxedoLspStatus as LspStatus,
+  ClaxedoMcpStatus as McpStatus,
+  ClaxedoVcsInfo as VcsInfo,
+} from "@/platform/api/claxedo-api-types"
 import { authFetch, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   createAgentRuntimeClient,
-  DEFAULT_AGENT_RUNTIME_CAPABILITIES,
 } from "@/platform/runtime/agent/agent-runtime-client"
 import { openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createTransport, centralTransportForServer } from "@/platform/runtime/transport"
-import type { SessionBackend, SessionMessagePageRequest, SessionMessageRow } from "@/platform/runtime/session"
+import type { SessionBackend } from "@/platform/runtime/session"
+import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 import { fetchWorkspaceRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
@@ -37,16 +41,20 @@ type LspClient = {
 
 type WorkspaceRuntimeStatusResource = "vcs" | "mcp" | "lsp"
 
-type SessionClient = {
-  get: (input: { sessionID: string }) => Promise<{ data?: Session }>
-  messages: (input: {
-    sessionID: string
-    directory?: string
-  } & SessionMessagePageRequest, options?: { signal?: AbortSignal }) => Promise<{ data?: SessionMessageRow[]; response: Response }>
-  todo: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
+export const DEFAULT_SESSION_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
+  transport: "opencode",
+  abort: true,
+  reconnect: false,
+  replay: true,
+  permissions: true,
+  questions: true,
+  todos: true,
+  commands: true,
+  fork: true,
+  revert: true,
+  unrevert: true,
+  configOptions: false,
 }
-
-export const DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES = DEFAULT_AGENT_RUNTIME_CAPABILITIES
 
 async function readWorkspaceRecord(input: { baseUrl: string; request: typeof fetch; directory?: string; workspaceId?: string }) {
   const workspace = await fetchWorkspaceRecord(input)
@@ -141,7 +149,6 @@ export function createHttpWorkspaceRuntimeBackend(input: {
 }
 
 export function createHttpSessionBackend(input: {
-  client: SessionClient
   request?: typeof fetch
   claxedoServerUrl?: string
   sessionRef?: SessionRef
@@ -160,7 +167,6 @@ export function createHttpSessionBackend(input: {
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
     workspaceReachable: input.workspaceReachable,
-    opencodeClient: { session: input.client },
   })
   const runtime = runtimeFor()
 

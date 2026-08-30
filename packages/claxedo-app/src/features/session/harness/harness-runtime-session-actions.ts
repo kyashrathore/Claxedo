@@ -5,26 +5,12 @@ import type {
   PreparedRuntimeSessionConfig,
   PreparedSessionDirectory,
 } from "./prepared-session"
-import type { HarnessType } from "./profile"
-import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
+import { sessionHarnessIdentity, type HarnessType } from "./profile"
+import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 
-type HarnessRuntimeSessionClient = {
-  session: {
-    create(input: {
-      directory: PreparedSessionDirectory
-      agent: string
-      model: { providerID: string; id: string; variant?: string }
-    }): Promise<{ data?: { id?: string } }>
-    delete(input: { directory: PreparedSessionDirectory; sessionID: string }): Promise<unknown>
-  }
-}
+type HarnessRuntimeSessionClient = Pick<ReturnType<typeof createAgentRuntimeClient>, "createSession" | "deleteSession">
 
-type CreateHarnessRuntimeSessionClient = (input: {
-  baseUrl: string
-  fetch: typeof fetch
-  directory: PreparedSessionDirectory
-  throwOnError?: boolean
-}) => HarnessRuntimeSessionClient
+type CreateHarnessRuntimeSessionClient = (input: Parameters<typeof createAgentRuntimeClient>[0]) => HarnessRuntimeSessionClient
 
 type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
   useLocalHarnessConfig(input?: ScopeInput): boolean
@@ -35,10 +21,10 @@ type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
 
 export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }>(input: {
   base: string
-  runtime: HarnessRuntimeSessionRuntime<ScopeInput>
+  runtime: HarnessRuntimeSessionRuntime
   createClient?: CreateHarnessRuntimeSessionClient
 }) {
-  const createClient = input.createClient ?? (defaultCreateOpencodeClient as CreateHarnessRuntimeSessionClient)
+  const createClient = input.createClient ?? createAgentRuntimeClient
 
   const canUseRuntimeSession = (params?: ScopeInput) =>
     input.runtime.useLocalHarnessConfig(params) || !!input.runtime.workspaceRef(params)
@@ -49,38 +35,28 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
     harness: HarnessType
   }) => {
     const res = await createClient({
-      baseUrl: input.base,
-      fetch: harnessQueryFetch({
-        request: input.runtime.harnessSessionFetch(params.input),
-        harnessType: params.harness,
-        baseUrl: input.base,
-      }),
+      serverUrl: input.base,
+      request: input.runtime.harnessSessionFetch(params.input),
+    }).createSession({
       directory: params.directory,
-      throwOnError: true,
-    }).session.create({
-      directory: params.directory,
+      harness: sessionHarnessIdentity(params.harness),
       agent: params.input.sessionConfig.agent,
-      model: {
-        providerID: params.input.sessionConfig.model.providerID,
-        id: params.input.sessionConfig.model.modelID,
-        ...(params.input.sessionConfig.variant ? { variant: params.input.sessionConfig.variant } : {}),
-      },
+      model: params.input.sessionConfig.model,
+      ...(params.input.sessionConfig.variant ? { variant: params.input.sessionConfig.variant } : {}),
     })
-    return res.data?.id
+    return res.data.id
   }
 
   const remove = async (item: PreparedRuntimeSession) => {
-    if (!canUseRuntimeSession({ directory: item.directory } as ScopeInput)) return
+    const scope = { directory: item.directory }
+    if (!canUseRuntimeSession(scope)) return
     await createClient({
-      baseUrl: input.base,
-      fetch: input.runtime.harnessSessionFetch({ directory: item.directory } as ScopeInput),
+      serverUrl: input.base,
+      request: input.runtime.harnessSessionFetch(scope),
+    }).deleteSession({
       directory: item.directory,
+      sessionID: item.id,
     })
-      .session.delete({
-        directory: item.directory,
-        sessionID: item.id,
-      })
-      .catch(() => {})
   }
 
   return {

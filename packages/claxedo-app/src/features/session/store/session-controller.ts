@@ -1,5 +1,10 @@
 import { createEffect, createMemo, createSignal, on, onCleanup, type Accessor } from "solid-js"
-import type { Message, PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentPresentationMessage as Message,
+  AgentQuestion as QuestionRequest,
+  AgentRuntimeStatus as SessionStatus,
+} from "@claxedo/agent-runtime-contract"
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
 import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
@@ -17,7 +22,7 @@ import {
   releaseAcceptedPromptRefresh,
 } from "./accepted-prompt-refresh"
 import {
-  DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
+  DEFAULT_SESSION_TRANSPORT_CAPABILITIES,
   fetchSessionByTransport,
   fetchSessionMessagesByTransport,
   fetchSessionTodoByTransport,
@@ -331,7 +336,6 @@ export function createSessionController(input: {
       workspaceKind: input.workspaceKind,
       sessionRef: input.sessionRef,
       fetchSessionRow: async (sessionID) => (await fetchSessionByTransport({
-        client: sdk.client.session,
         directory: input.directory(),
         sessionID,
         claxedoServerUrl: globalSDK.url,
@@ -431,14 +435,13 @@ export function createSessionController(input: {
   const blocked = createMemo(() => !!permissionRequest() || !!questionRequest())
   const sourceCapabilities = createMemo(() => {
     const sessionID = input.sessionID()
-    if (!sessionID || sessionID === "new") return DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES
-    if (!usesClaxedoSessionTransport(sessionID, input.directory())) return DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES
+    if (!sessionID || sessionID === "new") return DEFAULT_SESSION_TRANSPORT_CAPABILITIES
     return settledData(capabilitiesQuery) ?? PENDING_SCOPED_TRANSPORT_CAPABILITIES
   })
   const capabilities = createActivePaneProjection({
     active: paneActive,
     read: sourceCapabilities,
-    initial: DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
+    initial: DEFAULT_SESSION_TRANSPORT_CAPABILITIES,
   })
   const goals = createSessionGoalController({
     active: paneActive,
@@ -546,7 +549,6 @@ export function createSessionController(input: {
     const transportRequest = () => fetchTransportSession({
       shouldFetchSession,
       fetchSession: () => fetchSessionByTransport({
-        client: sdk.client.session,
         directory,
         sessionID,
         claxedoServerUrl: globalSDK.url,
@@ -556,7 +558,6 @@ export function createSessionController(input: {
         sessionRef: input.sessionRef?.(),
       }),
       fetchMessages: () => fetchSessionMessagesByTransport({
-        client: sdk.client.session,
         directory,
         sessionID,
         claxedoServerUrl: globalSDK.url,
@@ -750,7 +751,6 @@ export function createSessionController(input: {
     return queryClient.fetchQuery({
       queryKey: sessionTodoTransportRequestKey({ sessionID, directory, signedControlPlane, workspaceId, workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined }),
       queryFn: async () => (await fetchSessionTodoByTransport({
-        client: sdk.client.session,
         directory,
         sessionID,
         claxedoServerUrl: globalSDK.url,
@@ -790,7 +790,6 @@ export function createSessionController(input: {
     if (queryClient.getQueryData<SessionTransportCapabilities>(key) && !opts?.force) return true
     return syncSessionCapabilitiesData({
       request: {
-        client: sdk.client.session,
         directory,
         sessionID,
         claxedoServerUrl: globalSDK.url,

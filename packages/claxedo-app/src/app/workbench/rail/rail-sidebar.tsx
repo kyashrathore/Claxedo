@@ -480,7 +480,6 @@ export function RailSidebar(props: RailSidebarProps) {
     Record<string, { permissions?: PermissionRequest[]; questions?: QuestionRequest[] } | undefined>
   >({})
   const prefetchSidebarSessionMessages = createRailSessionMessagePrefetch({
-    client: globalSDK.client.session,
     claxedoServerUrl: globalSDK.url,
     workspaceReachable: isWorkspaceReady,
   })

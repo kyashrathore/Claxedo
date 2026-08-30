@@ -241,24 +241,41 @@ describe("http backend ports", () => {
     expect(client.mcp.status).toHaveBeenCalledTimes(0)
   })
 
-  test("session backend splits upstream and claxedo transport", async () => {
+  test("session backend routes opaque and scoped sessions through AgentRuntime", async () => {
     const calls: string[] = []
     const request: typeof fetch = async (input, init) => {
-      calls.push(requestUrl(input, init))
+      const url = requestUrl(input, init)
+      calls.push(url)
+      if (url.includes("/capabilities")) {
+        return new Response(JSON.stringify({
+          transport: "opencode",
+          abort: true,
+          reconnect: false,
+          replay: true,
+          permissions: true,
+          questions: true,
+          todos: true,
+          commands: true,
+          fork: true,
+          revert: true,
+          unrevert: true,
+          configOptions: false,
+        }), { status: 200 })
+      }
+      if (url.includes("/message")) {
+        return new Response(JSON.stringify([{ info: { id: "msg_1" } }]), {
+          status: 200,
+          headers: { "x-next-cursor": "cursor_1", "x-max-event-ordinal": "1" },
+        })
+      }
+      if (url.includes("/session/ses_1")) return new Response(JSON.stringify(session("ses_1")), { status: 200 })
       return new Response(JSON.stringify([{ info: { id: "msg_1" } }]), {
         status: 200,
-        headers: { "x-next-cursor": "cursor_1" },
+        headers: { "x-next-cursor": "cursor_1", "x-max-event-ordinal": "1" },
       })
     }
 
-    const client = {
-      get: mock(async () => ({ data: session("ses_1") })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const backend = createHttpSessionBackend({
-      client,
       request,
       claxedoServerUrl: "http://claxedo.test",
     })
@@ -268,13 +285,14 @@ describe("http backend ports", () => {
     expect(backend.usesScopedTransport("uuid-1")).toBe(true)
 
     await backend.getSession({ directory: "legacy-project", sessionID: "ses_1" })
-    const legacyCapabilities = await backend.getCapabilities({ directory: "legacy-project", sessionID: "ses_1" })
+    const opaqueCapabilities = await backend.getCapabilities({ directory: "legacy-project", sessionID: "ses_1" })
     await backend.listMessages({ directory: "/repo", sessionID: "uuid-1", limit: 8, before: "cursor_0" })
     await backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" })
 
-    expect(client.get).toHaveBeenCalledTimes(1)
-    expect(legacyCapabilities).toMatchObject({ transport: "opencode", commands: true })
+    expect(opaqueCapabilities).toMatchObject({ transport: "opencode", commands: true })
     expect(calls).toEqual([
+      "http://claxedo.test/session/ses_1?directory=legacy-project",
+      "http://claxedo.test/session/ses_1/capabilities?directory=legacy-project",
       "http://claxedo.test/session/uuid-1/message?directory=%2Frepo&limit=8&before=cursor_0",
       "http://claxedo.test/session/uuid-1/capabilities?directory=%2Frepo",
     ])
@@ -299,18 +317,15 @@ describe("http backend ports", () => {
       }
       if (url.toString() === "https://relay.test/workspaces/ws_cloud/session/ses_cloud/message?limit=8") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_cloud")
-        return new Response(JSON.stringify([{ info: { id: "msg_1" } }]), { status: 200 })
+        return new Response(JSON.stringify([{ info: { id: "msg_1" } }]), {
+          status: 200,
+          headers: { "x-max-event-ordinal": "1" },
+        })
       }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
     }
 
-    const client = {
-      get: mock(async () => ({ data: session("ses_cloud") })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
     const backend = createHttpSessionBackend({
-      client,
       request,
       claxedoServerUrl: "http://claxedo.test",
     })
@@ -329,7 +344,6 @@ describe("http backend ports", () => {
     }
 
     expect(messages?.data?.map((row) => row.info.id)).toEqual(["msg_1"])
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(calls).toEqual([
       "GET http://claxedo.test/api/workspace/ws_cloud/connection",
       "GET https://relay.test/workspaces/ws_cloud/session/ses_cloud/message?limit=8 Bearer rat_cloud",
@@ -355,18 +369,15 @@ describe("http backend ports", () => {
       }
       if (url.toString() === "https://relay.test/workspaces/ws_explicit/session/ses_explicit/message?limit=8") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_explicit")
-        return new Response(JSON.stringify([{ info: { id: "msg_1" } }]), { status: 200 })
+        return new Response(JSON.stringify([{ info: { id: "msg_1" } }]), {
+          status: 200,
+          headers: { "x-max-event-ordinal": "1" },
+        })
       }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
     }
 
-    const client = {
-      get: mock(async () => ({ data: session("ses_explicit") })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
     const backend = createHttpSessionBackend({
-      client,
       request,
       claxedoServerUrl: "http://claxedo.test",
     })
@@ -395,7 +406,6 @@ describe("http backend ports", () => {
     }
 
     expect(messages?.data?.map((row) => row.info.id)).toEqual(["msg_1"])
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(calls).toEqual([
       "GET http://claxedo.test/api/workspace/ws_explicit/connection",
       "GET https://relay.test/workspaces/ws_explicit/session/ses_explicit/message?limit=8 Bearer rat_explicit",
@@ -441,18 +451,12 @@ describe("http backend ports", () => {
         }), { status: 200 })
       }
       if (url.includes("/api/control/sessions")) {
-        return new Response(JSON.stringify({ sessions: [{ session_id: "uuid-1", title: "Cloud session" }] }), { status: 200 })
+        return new Response(JSON.stringify({ sessions: [{ id: "uuid-1", title: "Cloud session" }] }), { status: 200 })
       }
       throw new Error(`unexpected URL: ${url}`)
     }
 
-    const client = {
-      get: mock(async () => ({ data: undefined })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
     const backend = createHttpSessionBackend({
-      client,
       request,
       claxedoServerUrl: "http://claxedo.test",
       signedControlPlane: true,
@@ -463,9 +467,6 @@ describe("http backend ports", () => {
     const capabilities = await backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" })
     const todos = await backend.listTodos({ directory: "/repo", sessionID: "uuid-1" })
 
-    expect(client.get).toHaveBeenCalledTimes(0)
-    expect(client.messages).toHaveBeenCalledTimes(0)
-    expect(client.todo).toHaveBeenCalledTimes(0)
     expect(session.data).toMatchObject({ id: "uuid-1", title: "Cloud session" })
     expect(messages.maxEventOrdinal).toBe(9)
     expect(capabilities).toMatchObject({
@@ -487,11 +488,6 @@ describe("http backend ports", () => {
   test("signed session backend fails closed when workspace resolve omits workspaceId", async () => {
     const calls: string[] = []
     const backend = createHttpSessionBackend({
-      client: {
-        get: mock(async () => ({ data: undefined })),
-        messages: mock(async () => ({ data: [], response: new Response(null) })),
-        todo: mock(async () => ({ data: [] })),
-      },
       request: async (input, init) => {
         const url = requestUrl(input, init)
         calls.push(url)

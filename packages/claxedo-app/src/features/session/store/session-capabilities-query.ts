@@ -12,6 +12,8 @@ type SessionCapabilitiesTransportRequest = Omit<
   "signal"
 >
 
+const sessionCapabilitiesTransportAuthority = {}
+
 function sessionCapabilitiesTransportRequestScope(input: SessionCapabilitiesTransportRequest) {
   return [
     "runtime",
@@ -29,7 +31,7 @@ function sessionCapabilitiesTransportRequestScope(input: SessionCapabilitiesTran
 }
 
 export function sessionCapabilitiesTransportRequestKey(input: SessionCapabilitiesTransportRequest) {
-  return leasedQueryRequestKey(sessionCapabilitiesTransportRequestScope(input), input.client)
+  return leasedQueryRequestKey(sessionCapabilitiesTransportRequestScope(input), sessionCapabilitiesTransportAuthority)
 }
 
 async function fetchSessionCapabilitiesRequest(
@@ -38,7 +40,7 @@ async function fetchSessionCapabilitiesRequest(
 ) {
   return await leasedQueryRequest({
     scopeKey: sessionCapabilitiesTransportRequestScope(request),
-    authority: request.client,
+    authority: sessionCapabilitiesTransportAuthority,
     signal: consumerSignal,
     queryFn: (signal) => fetchSessionCapabilitiesByTransport({
       ...request,

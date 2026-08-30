@@ -49,7 +49,6 @@ const capabilities = {
 }
 
 const request = {
-  client: {} as never,
   directory: "/repo/a",
   sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
   claxedoServerUrl: "http://test.local",
@@ -202,9 +201,9 @@ describe("session capabilities query ownership", () => {
     cancelSpy.mockRestore()
   })
 
-  test("does not dedupe the same placement across distinct transport authorities", async () => {
-    const firstRequest = { ...request, client: {} as never }
-    const secondRequest = { ...request, client: {} as never }
+  test("dedupes the same placement through the canonical transport authority", async () => {
+    const firstRequest = { ...request }
+    const secondRequest = { ...request }
     const ownership = {
       currentSessionID: () => request.sessionID,
       currentDirectory: () => request.directory,
@@ -214,12 +213,10 @@ describe("session capabilities query ownership", () => {
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
     const firstKey = sessionCapabilitiesTransportRequestKey(firstRequest)
     const second = syncSessionCapabilitiesData({ request: secondRequest, ...ownership })
-    await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
     const secondKey = sessionCapabilitiesTransportRequestKey(secondRequest)
 
-    expect(firstKey).not.toEqual(secondKey)
+    expect(firstKey).toEqual(secondKey)
     harness.pending[0]!.resolve(Response.json(capabilities))
-    harness.pending[1]!.resolve(Response.json(capabilities))
     await expect(Promise.all([first, second])).resolves.toEqual([true, true])
   })
 

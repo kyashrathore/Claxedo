@@ -1,17 +1,14 @@
-import { createHttpSessionBackend, DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES } from "@/platform/runtime/http-backend"
+import { createHttpSessionBackend, DEFAULT_SESSION_TRANSPORT_CAPABILITIES } from "@/platform/runtime/http-backend"
 import type { SessionTransportCapabilities } from "../data/backend/types"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { usesScopedSessionTransport } from "@/platform/identity/legacy-resolver"
-import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionBackend, SessionMessagePageRequest } from "@/platform/runtime/session"
 import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"
 import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runtime-goal-client"
 
-export type SessionClient = Parameters<typeof createHttpSessionBackend>[0]["client"]
-
 export type { SessionTransportCapabilities }
-export { DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES }
+export { DEFAULT_SESSION_TRANSPORT_CAPABILITIES }
 
 export async function fetchTransportSession<TSession, TMessages>(input: {
   shouldFetchSession: boolean
@@ -51,7 +48,7 @@ export function shouldFetchSessionAlongsideHistory(input: {
 // only runs at delayed first-fold hydration, which lands after a short first
 // turn has already gone idle.
 export const PENDING_SCOPED_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
-  ...DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
+  ...DEFAULT_SESSION_TRANSPORT_CAPABILITIES,
   permissions: false,
   questions: false,
   commands: false,
@@ -66,7 +63,6 @@ export function usesClaxedoSessionTransport(sessionID: string | undefined, direc
 }
 
 export async function fetchSessionByTransport(input: {
-  client: SessionClient
   directory: string
   sessionID: string
   claxedoServerUrl?: string
@@ -76,7 +72,6 @@ export async function fetchSessionByTransport(input: {
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
-    client: input.client,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
@@ -105,7 +100,6 @@ export function createSessionInfoHydrationGetter(input: {
 }
 
 export async function fetchSessionMessagesByTransport(input: {
-  client: SessionClient
   directory: string
   sessionID: string
   claxedoServerUrl?: string
@@ -120,14 +114,8 @@ export async function fetchSessionMessagesByTransport(input: {
   workspaceReachable?: boolean
   sessionRef?: SessionRef
   signal?: AbortSignal
-  /** Explicit user intent owns this read even while background switch work is suppressed. */
-  bypassQuiet?: boolean
 } & SessionMessagePageRequest) {
-  if (!input.bypassQuiet && suppressedByFastSessionSwitch(input.sessionID)) {
-    return { data: [], response: new Response(null) }
-  }
   return await createHttpSessionBackend({
-    client: input.client,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
@@ -138,7 +126,6 @@ export async function fetchSessionMessagesByTransport(input: {
 }
 
 export async function fetchSessionTodoByTransport(input: {
-  client: SessionClient
   directory: string
   sessionID: string
   claxedoServerUrl?: string
@@ -148,7 +135,6 @@ export async function fetchSessionTodoByTransport(input: {
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
-    client: input.client,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
@@ -165,7 +151,6 @@ export async function fetchSessionTodoByTransport(input: {
  * has this route at all.
  */
 export async function fetchSessionPermissionModesByTransport(input: {
-  client: SessionClient
   directory: AgentRuntimeDirectory
   sessionID: string
   /** The harness being asked about — see the port doc; required on a draft. */
@@ -177,7 +162,6 @@ export async function fetchSessionPermissionModesByTransport(input: {
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
-    client: input.client,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
@@ -187,7 +171,6 @@ export async function fetchSessionPermissionModesByTransport(input: {
 }
 
 export async function setSessionPermissionModeByTransport(input: {
-  client: SessionClient
   directory: AgentRuntimeDirectory
   sessionID: string
   modeId: string
@@ -198,7 +181,6 @@ export async function setSessionPermissionModeByTransport(input: {
   sessionRef?: SessionRef
 }) {
   return await createHttpSessionBackend({
-    client: input.client,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,
@@ -208,7 +190,6 @@ export async function setSessionPermissionModeByTransport(input: {
 }
 
 export async function fetchSessionCapabilitiesByTransport(input: {
-  client: SessionClient
   directory: string
   sessionID?: string
   harness?: string
@@ -220,7 +201,6 @@ export async function fetchSessionCapabilitiesByTransport(input: {
   signal?: AbortSignal
 }) {
   return await createHttpSessionBackend({
-    client: input.client,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,

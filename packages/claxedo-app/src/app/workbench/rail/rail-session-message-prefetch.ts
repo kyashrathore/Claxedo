@@ -1,8 +1,5 @@
 import { normalizeMessageRows } from "@/features/session/store/message-page"
-import {
-  fetchSessionMessagesByTransport,
-  type SessionClient,
-} from "@/features/session/store/session-transport"
+import { fetchSessionMessagesByTransport } from "@/features/session/store/session-transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   getSessionPrefetch,
@@ -25,7 +22,6 @@ type RailSessionPrefetchOptions = {
 }
 
 export function createRailSessionMessagePrefetch(input: {
-  client: SessionClient
   claxedoServerUrl?: string
   workspaceReachable: (workspaceId: string) => boolean
 }) {
@@ -66,22 +62,20 @@ export function createRailSessionMessagePrefetch(input: {
         try {
           markRendererPhase("sessionActivate.prefetch.transportStart")
           const messages = await fetchSessionMessagesByTransport({
-          client: input.client,
-          directory,
-          sessionID,
-          claxedoServerUrl: input.claxedoServerUrl,
-          ...sessionHistoryPageRequest(),
-          sessionRef: options.sessionRef,
-          signal: controller.signal,
-          bypassQuiet: options.bypassQuiet,
-          workspaceReachable: options.workspaceId ? input.workspaceReachable(options.workspaceId) : undefined,
-          ...(options.workspaceKind
-            ? {
-                signedControlPlane: true,
-                workspaceKind: options.workspaceKind,
-                ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
-              }
-            : {}),
+            directory,
+            sessionID,
+            claxedoServerUrl: input.claxedoServerUrl,
+            ...sessionHistoryPageRequest(),
+            sessionRef: options.sessionRef,
+            signal: controller.signal,
+            workspaceReachable: options.workspaceId ? input.workspaceReachable(options.workspaceId) : undefined,
+            ...(options.workspaceKind
+              ? {
+                  signedControlPlane: true,
+                  workspaceKind: options.workspaceKind,
+                  ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
+                }
+              : {}),
           })
           markRendererPhase("sessionActivate.prefetch.transportEnd")
           if (controller.signal.aborted) return

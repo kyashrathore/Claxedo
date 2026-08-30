@@ -169,6 +169,8 @@ describe("session controller helpers", () => {
       "todoInflight",
       "capabilitiesInflight",
       "capabilitiesCache",
+      "client: sdk.client.session",
+      "DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES",
     ]
 
     banned.forEach((pattern) => {

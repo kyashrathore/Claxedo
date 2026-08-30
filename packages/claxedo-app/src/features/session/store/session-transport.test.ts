@@ -24,11 +24,12 @@ mock.module("@/platform/api/api", () => ({
         headers: { "Content-Type": "application/json" },
       })
     }
-    if (request.url.includes("/api/workspace/ws_1/connection")) {
+    if (request.url.includes("/api/workspace/ws_1/connection") || request.url.includes("/api/workspace/ws_known/connection")) {
+      const workspaceId = request.url.includes("ws_known") ? "ws_known" : "ws_1"
       return new Response(JSON.stringify({
         access: "cloud",
         backing: "cloud-vm",
-        workspaceId: "ws_1",
+        workspaceId,
         relayUrl: "https://relay.test",
         runtimeAccessToken: "rat_1",
         role: "editor",
@@ -44,6 +45,7 @@ mock.module("@/platform/api/api", () => ({
         headers: {
           "Content-Type": "application/json",
           "x-next-cursor": "cursor_workspace",
+          "x-max-event-ordinal": "4",
         },
       })
     }
@@ -79,6 +81,7 @@ mock.module("@/platform/api/api", () => ({
     if (request.url.includes("/api/control/sessions/")) {
       return new Response(JSON.stringify({
         messages: [{ info: { id: "msg_control", role: "assistant" } }],
+        maxEventOrdinal: 0,
       }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -89,6 +92,7 @@ mock.module("@/platform/api/api", () => ({
       headers: {
         "Content-Type": "application/json",
         "x-next-cursor": "cursor_1",
+        "x-max-event-ordinal": "4",
       },
     })
   },
@@ -169,20 +173,12 @@ describe("session transport split", () => {
   })
 
   test("uses scoped runtime transport for filesystem-backed ses-prefixed message reads", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const result = await fetchSessionMessagesByTransport({
-      client,
       directory: "/repo",
       sessionID: "ses_123",
       limit: 8,
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(result.data?.[0]?.info?.id).toBe("msg_1")
     expect(calls).toEqual([{
       url: "http://test.local/session/ses_123/message?directory=%2Frepo&limit=8",
@@ -191,14 +187,7 @@ describe("session transport split", () => {
   })
 
   test("passes the semantic latest-turn view through the session transport", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     await fetchSessionMessagesByTransport({
-      client,
       directory: "/repo",
       sessionID: "ses_123",
       view: "latest-turn",
@@ -211,20 +200,12 @@ describe("session transport split", () => {
   })
 
   test("uses workspace transport for ses-prefixed synthetic workspace reads", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const result = await fetchSessionMessagesByTransport({
-      client,
       directory: "ws_1",
       sessionID: "ses_123",
       limit: 8,
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(result.data?.[0]?.info?.id).toBe("msg_workspace")
     expect(calls.map((item) => item.url)).toEqual([
       "http://test.local/api/workspace/ws_1/connection",
@@ -233,12 +214,6 @@ describe("session transport split", () => {
   })
 
   test("uses claxedo-server for uuid message reads", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const result = await fetchSessionMessagesByTransport({
 
       directory: "/repo",
@@ -247,7 +222,6 @@ describe("session transport split", () => {
       before: "cursor_0",
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(calls).toEqual([
       {
         url: "http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992/message?directory=%2Frepo&limit=8&before=cursor_0",
@@ -259,25 +233,15 @@ describe("session transport split", () => {
   })
 
   test("uses claxedo-server for uuid session and todo reads", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     await fetchSessionByTransport({
-      client,
       directory: "/repo",
       sessionID: "3aca2eef-6d50-4366-9600-a7ebb9852a58",
     })
     await fetchSessionTodoByTransport({
-      client,
       directory: "/repo",
       sessionID: "3aca2eef-6d50-4366-9600-a7ebb9852a58",
     })
 
-    expect(client.get).toHaveBeenCalledTimes(0)
-    expect(client.todo).toHaveBeenCalledTimes(0)
     expect(calls.map((item) => item.url)).toEqual([
       "http://test.local/session/3aca2eef-6d50-4366-9600-a7ebb9852a58?directory=%2Frepo",
       "http://test.local/session/3aca2eef-6d50-4366-9600-a7ebb9852a58/todo?directory=%2Frepo",
@@ -285,24 +249,16 @@ describe("session transport split", () => {
   })
 
   test("reads capabilities from claxedo-server for scoped sessions", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
-    const legacy = await fetchSessionCapabilitiesByTransport({
-      client,
+    const opaque = await fetchSessionCapabilitiesByTransport({
       directory: "/repo",
       sessionID: "ses_123",
     })
     const scoped = await fetchSessionCapabilitiesByTransport({
-      client,
       directory: "/repo",
       sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
     })
 
-    expect(legacy).toMatchObject({
+    expect(opaque).toMatchObject({
       transport: "codex-acp",
       commands: false,
       questions: false,
@@ -324,27 +280,18 @@ describe("session transport split", () => {
   })
 
   test("signed scoped message reads use Control Plane instead of /session", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const result = await fetchSessionMessagesByTransport({
-      client,
       directory: "/repo",
       sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
       limit: 8,
       signedControlPlane: true,
     })
     const capabilities = await fetchSessionCapabilitiesByTransport({
-      client,
       directory: "/repo",
       sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
       signedControlPlane: true,
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(result.maxEventOrdinal).toBe(0)
     expect(result.data?.[0]?.info?.id).toBe("msg_control")
     expect(capabilities).toMatchObject({ transport: "codex-acp", replay: true, abort: true, fork: true, revert: false })
@@ -361,14 +308,7 @@ describe("session transport split", () => {
   })
 
   test("signed scoped message reads use the known workspace id without resolving", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const result = await fetchSessionMessagesByTransport({
-      client,
       directory: "/repo",
       workspaceId: "ws_known",
       sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
@@ -376,7 +316,6 @@ describe("session transport split", () => {
       signedControlPlane: true,
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(result.data?.[0]?.info?.id).toBe("msg_control")
     expect(calls.map((item) => item.url)).toEqual([
       "http://test.local/api/control/sessions/0251fd86-2f35-4efe-a802-b2fd6d473992/messages?workspaceId=ws_known&limit=8",
@@ -384,14 +323,7 @@ describe("session transport split", () => {
   })
 
   test("local signed workspace message reads use the workspace runtime proxy", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
     const result = await fetchSessionMessagesByTransport({
-      client,
       claxedoServerUrl: "http://127.0.0.1:3001",
       directory: "/workspace",
       workspaceId: "ws_known",
@@ -400,32 +332,32 @@ describe("session transport split", () => {
       signedControlPlane: true,
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
     expect(result.data?.[0]?.info?.id).toBe("msg_1")
     expect(calls.map((item) => item.url)).toEqual([
       "http://127.0.0.1:3001/workspaces/ws_known/session/ses_123/message?limit=8",
     ])
   })
 
-  test("local workspace-scoped message reads prefer replay projection when populated", async () => {
-    const client = {
-      get: mock(async () => ({ data: { id: "ses_123" } })),
-      messages: mock(async () => ({ data: [], response: new Response(null) })),
-      todo: mock(async () => ({ data: [] })),
-    }
-
+  test("workspace-scoped message reads use the canonical workspace runtime", async () => {
     const result = await fetchSessionMessagesByTransport({
-      client,
       directory: "/repo",
       workspaceId: "ws_known",
       sessionID: "ses_123",
       limit: 8,
     })
 
-    expect(client.messages).toHaveBeenCalledTimes(0)
-    expect(result.data?.[0]?.info?.id).toBe("msg_control")
+    expect(result.data?.[0]?.info?.id).toBe("msg_1")
     expect(calls.map((item) => item.url)).toEqual([
-      "http://test.local/api/control/sessions/ses_123/messages?workspaceId=ws_known&limit=8",
+      "http://test.local/api/workspace/ws_known/connection",
+      "https://relay.test/workspaces/ws_known/session/ses_123/message?limit=8",
     ])
+  })
+
+  test("exports Claxedo-owned default session capabilities", () => {
+    expect(DEFAULT_SESSION_TRANSPORT_CAPABILITIES).toMatchObject({
+      transport: "opencode",
+      abort: true,
+      replay: true,
+    })
   })
 })

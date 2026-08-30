@@ -12,136 +12,144 @@ const sessionConfig = {
   variant: "high",
 }
 
+const canonicalSession = {
+  id: "ses_created",
+}
+
 describe("harness runtime session actions", () => {
-  test("creates prepared sessions through SDK fetch with harness routing", async () => {
-    const fetchUrls: string[] = []
-    const clients: ClientInput[] = []
-    const creates: unknown[] = []
+  test("creates prepared sessions through the explicit runtime transport with canonical config", async () => {
+    const requests: Array<{ url: string; method: string; body: unknown }> = []
     const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "http://127.0.0.1:3001",
       runtime: runtime({
-        sessionFetch: async (input) => {
-          fetchUrls.push(String(input))
-          return Response.json({})
+        sessionFetch: async (resource, init) => {
+          requests.push({
+            url: String(resource),
+            method: init?.method ?? "GET",
+            body: init?.body ? JSON.parse(String(init.body)) : undefined,
+          })
+          return Response.json(canonicalSession)
         },
       }),
-      createClient: (input) => {
-        clients.push(input)
-        return {
-          session: {
-            create: async (value) => {
-              creates.push(value)
-              await input.fetch("http://127.0.0.1:3001/session", { method: "POST" })
-              return { data: { id: "ses_created" } }
-            },
-            delete: async () => undefined,
-          },
-        }
-      },
     })
 
     await expect(actions.create({
       input: { directory: "/repo", sessionConfig },
       directory: "/repo",
-      harness: "claude-acp",
+      harness: "acp:claude",
     })).resolves.toBe("ses_created")
 
-    expect(clients).toMatchObject([{
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "/repo",
-      throwOnError: true,
-    }])
-    expect(fetchUrls).toEqual(["http://127.0.0.1:3001/session?harness=claude-acp"])
-    expect(creates).toEqual([{
-      directory: "/repo",
-      agent: "build",
-      model: { providerID: "claude-sdk", id: "sonnet", variant: "high" },
+    expect(requests).toEqual([{
+      url: "http://127.0.0.1:3001/session?directory=%2Frepo",
+      method: "POST",
+      body: {
+        harness: { id: "claude", access: "acp" },
+        agent: "build",
+        model: { providerID: "claude-sdk", modelID: "sonnet" },
+        variant: "high",
+      },
     }])
   })
 
   test("skips delete outside local config or workspace runtime scopes", async () => {
-    const deletes: string[] = []
+    let clients = 0
     const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "https://claxedo.example.test",
       runtime: runtime({ useLocal: false }),
-      createClient: () => ({
-        session: {
-          create: async () => ({ data: { id: "ses_created" } }),
-          delete: async (input) => {
-            deletes.push(input.sessionID)
-          },
-        },
-      }),
+      createClient: () => {
+        clients += 1
+        return client()
+      },
     })
 
     await actions.remove({
       id: "ses_prepared",
       directory: "/repo",
-      harness: "claude-acp",
+      harness: "acp:claude",
       model: "sonnet",
     })
 
-    expect(deletes).toEqual([])
+    expect(clients).toBe(0)
   })
 
-  test("returns undefined when create response has no id", async () => {
+  test("rejects the legacy SDK response envelope", async () => {
     const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "http://127.0.0.1:3001",
-      runtime: runtime(),
-      createClient: () => ({
-        session: {
-          create: async () => ({ data: {} }),
-          delete: async () => undefined,
-        },
+      runtime: runtime({
+        sessionFetch: async () => Response.json({ data: { id: "ses_legacy" } }),
       }),
     })
 
     await expect(actions.create({
       input: { directory: "/repo", sessionConfig },
       directory: "/repo",
-      harness: "claude-acp",
-    })).resolves.toBeUndefined()
+      harness: "acp:claude",
+    })).rejects.toMatchObject({ status: 502, code: "invalid_response" })
   })
 
-  test("deletes local and workspace runtime prepared sessions and swallows failures", async () => {
-    const deletes: string[] = []
+  test("deletes eligible prepared sessions and propagates runtime failures", async () => {
+    const requests: Array<{ url: string; method: string }> = []
     const actions = createHarnessRuntimeSessionActions<ClaimInput>({
       base: "http://127.0.0.1:3001",
-      runtime: runtime({ useLocal: (input) => input?.directory === "/repo" }),
-      createClient: () => ({
-        session: {
-          create: async () => ({ data: { id: "ses_created" } }),
-          delete: async (input) => {
-            deletes.push(input.sessionID)
-            throw new Error("already gone")
-          },
+      runtime: runtime({
+        sessionFetch: async (resource, init) => {
+          requests.push({ url: String(resource), method: init?.method ?? "GET" })
+          return Response.json(
+            { error: { code: "delete_failed", message: "Session is still running" } },
+            { status: 409 },
+          )
+        },
+      }),
+    })
+
+    await expect(actions.remove({
+      id: "ses_local",
+      directory: "/repo",
+      harness: "acp:claude",
+      model: "sonnet",
+    })).rejects.toMatchObject({ status: 409, code: "delete_failed" })
+
+    expect(requests).toEqual([{
+      url: "http://127.0.0.1:3001/session/ses_local?directory=%2Frepo",
+      method: "DELETE",
+    }])
+  })
+
+  test("deletes workspace-runtime prepared sessions through the scoped request", async () => {
+    const deletes: string[] = []
+    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+      base: "https://claxedo.example.test",
+      runtime: runtime({ useLocal: false }),
+      createClient: () => client({
+        deleteSession: async (input) => {
+          deletes.push(input.sessionID)
+          return { ok: true }
         },
       }),
     })
 
     await actions.remove({
-      id: "ses_local",
-      directory: "/repo",
-      harness: "claude-acp",
-      model: "sonnet",
-    })
-    await actions.remove({
       id: "ses_workspace",
       directory: "workspace:ws_1",
-      harness: "codex-acp",
+      harness: "acp:codex",
       model: "gpt-5.5",
     })
 
-    expect(deletes).toEqual(["ses_local", "ses_workspace"])
+    expect(deletes).toEqual(["ses_workspace"])
   })
-
 })
 
-type ClientInput = {
-  baseUrl: string
-  fetch: typeof fetch
-  directory: string
-  throwOnError?: boolean
+function client(overrides: {
+  deleteSession?: (input: { directory: string; sessionID: string }) => Promise<{ ok: true }>
+} = {}) {
+  return {
+    createSession: async () => ({ data: canonicalSession }),
+    deleteSession: overrides.deleteSession ?? successfulDelete,
+  }
+}
+
+async function successfulDelete(): Promise<{ ok: true }> {
+  return { ok: true }
 }
 
 function runtime(input: {

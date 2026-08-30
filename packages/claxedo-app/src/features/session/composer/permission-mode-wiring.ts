@@ -3,7 +3,6 @@ import { showToast } from "@opencode-ai/ui/toast"
 import {
   fetchSessionPermissionModesByTransport,
   setSessionPermissionModeByTransport,
-  type SessionClient,
 } from "@/features/session/store/session-transport"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { harnessUsesClaxedoPermissionPicker } from "@/features/session/permission/mechanisms"
@@ -53,12 +52,10 @@ export function createComposerPermissionModeWiring(input: {
    */
   harnessUnavailable?: () => string | undefined
   /**
-   * Both halves of the session client, intersected because this module needs
-   * both and they come from different declarations: the transport helpers accept
-   * the read client, while the writer port needs `update` for the opencode
-   * ruleset path. `sdk.client.session` satisfies both.
+   * The writer port remains separate from AgentRuntime reads because the
+   * OpenCode ruleset path still writes through the presentation SDK.
    */
-  client: SessionClient & SessionPermissionWriter["session"]
+  client: SessionPermissionWriter["session"]
   claxedoServerUrl: () => string
   signedControlPlane: () => boolean
   workspace: () => WorkspaceSessionBacking | undefined
@@ -138,7 +135,6 @@ export function createComposerPermissionModeWiring(input: {
       return (
         await fetchSessionPermissionModesByTransport({
           ...transportScope(),
-          client: input.client,
           directory: source.directory,
           sessionID: source.sessionID,
           // Was in the KEY but not in the REQUEST. Invalidation worked, so a
@@ -218,7 +214,6 @@ export function createComposerPermissionModeWiring(input: {
     setPermissionMode: async (call) => {
       const result = await setSessionPermissionModeByTransport({
         ...transportScope(),
-        client: input.client,
         directory: input.directory(),
         sessionID: call.sessionID,
         modeId: call.modeId,
