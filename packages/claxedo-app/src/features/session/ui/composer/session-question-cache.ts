@@ -1,4 +1,4 @@
-import type { QuestionAnswer } from "@opencode-ai/sdk/v2"
+import type { AgentQuestionAnswer as QuestionAnswer } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 
 export const sessionQuestionDockQueryRoot = ["shell", "session-question-dock"] as const

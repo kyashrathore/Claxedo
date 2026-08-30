@@ -1,7 +1,7 @@
 import type { Prompt } from "@/features/session/providers/prompt"
 import type { FollowupDraft } from "@/features/session/composer/ui/submit"
 import type { SessionStatusStage as SessionStatusStageValue } from "@/features/session/ui/components/session-status-stage"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import type { HarnessSelectionController, HarnessSubmitController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"

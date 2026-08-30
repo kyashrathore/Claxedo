@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import { useGlobalSync } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "./queries"

@@ -204,7 +204,6 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     readonly signedControlPlane: boolean
     readonly sessionDirectory: SubmitDirectory
     readonly sessionRef: SessionRef | undefined
-    readonly opencodeClient: PromptDispatchInput["client"]
   }) => {
     const runtimeClient = createAgentRuntimeClient({
       serverUrl: input.serverUrl(),
@@ -215,13 +214,12 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       sessionRef: clientInput.sessionRef,
       workspaceId: input.workspaceId(),
       workspaceKind: input.workspaceKind(),
-      opencodeClient: clientInput.opencodeClient,
     })
-    const runtimePromptClient: typeof clientInput.opencodeClient = {
+    const runtimePromptClient: PromptDispatchInput["client"] = {
       session: {
-        prompt: (payload: Parameters<typeof clientInput.opencodeClient.session.prompt>[0]) =>
-          runtimeClient.sendMessage({ ...payload, mode: "sync" }) as ReturnType<typeof clientInput.opencodeClient.session.prompt>,
-        promptAsync: (payload: Parameters<typeof clientInput.opencodeClient.session.promptAsync>[0]) =>
+        prompt: (payload) =>
+          runtimeClient.sendMessage({ ...payload, mode: "sync" }),
+        promptAsync: (payload) =>
           runtimeClient.sendMessage({ ...payload, mode: "async" }),
       },
     }

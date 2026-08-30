@@ -202,7 +202,7 @@ function createSessionEntries(props: {
         })) {
           return Promise.resolve([])
         }
-        return props.globalSDK.client.session
+        return props.globalSDK.createClient({ directory }).session
           .list({ directory, roots: true })
           .then((x) =>
             (x.data ?? [])

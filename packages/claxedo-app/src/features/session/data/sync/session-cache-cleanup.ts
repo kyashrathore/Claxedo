@@ -1,4 +1,7 @@
-import type { Session, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPresentationSession as Session,
+  AgentRuntimeStatus as SessionStatus,
+} from "@claxedo/agent-runtime-contract"
 import { hasOpenSession } from "@/features/session/store/open-sessions"
 import { cachedConversationBytes } from "@/features/session/conversation/conversation-memory-accounting"
 import { queryClient } from "@/platform/query/query-client"

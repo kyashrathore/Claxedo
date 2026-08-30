@@ -114,15 +114,6 @@ function relayRuntimePath(path: string) {
   return `${url.pathname}${url.search}`
 }
 
-function relayRuntimeInit(init: RequestInit | undefined, workspaceId: string): RequestInit | undefined {
-  const headers = new Headers(init?.headers)
-  headers.set("x-opencode-directory", `workspace:${workspaceId}`)
-  return {
-    ...init,
-    headers,
-  }
-}
-
 function connectionFailureResponse(error: unknown) {
   const message = error instanceof Error ? error.message : String(error)
   const status = Number(/^Workspace connection failed: (\d+)$/.exec(message)?.[1])
@@ -214,7 +205,7 @@ export function createWorkspaceRuntimeRequest(options: WorkspaceRuntimeRequestOp
         return await unsignedFetchWith(
           request,
           `${serverUrl}/workspaces/${encodeURIComponent(runtime.workspaceId)}${relayRuntimePath(path)}`,
-          relayRuntimeInit(init, runtime.workspaceId),
+          init,
         )
       }
       return await workspaceRelayConnection({
@@ -224,7 +215,7 @@ export function createWorkspaceRuntimeRequest(options: WorkspaceRuntimeRequestOp
         workspaceId: runtime.workspaceId,
         headers: controlPlaneHeaders(init),
       })
-        .then((relay) => relay.transport.fetch(relayRuntimePath(path), relayRuntimeInit(init, runtime.workspaceId!)))
+        .then((relay) => relay.transport.fetch(relayRuntimePath(path), init))
         .catch(connectionFailureResponse)
     }
     if (isLoopbackHttpUrl(serverUrl)) {

@@ -1,4 +1,4 @@
-import type { FileNode } from "@opencode-ai/sdk/v2"
+import type { WorkspaceFileNode as FileNode } from "@claxedo/workspace-runtime/client"
 
 type WatcherEvent = {
   type: string

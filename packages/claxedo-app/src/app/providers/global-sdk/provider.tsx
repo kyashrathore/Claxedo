@@ -25,7 +25,6 @@ import {
 } from "@/platform/runtime/session-event-scope"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { createControlPlaneEventFetch, openCentralRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
-import { createGlobalSdkFetch } from "@/platform/sync/global-sdk-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
@@ -52,7 +51,7 @@ import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
 import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
-export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
+export { createControlPlaneEventFetch, workspaceEventTransport }
 export { runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import {
   compatEventEnvelope,
@@ -611,27 +610,9 @@ const globalSDKContextInput = {
       flush()
     })
 
-    const guardedSdkFetch = createGlobalSdkFetch({
-      serverUrl: currentServer.http.url,
-      resolveSignedWorkspace: (directory) => {
-        const projects = cachedProjectInventory(currentServer.http.url)
-        return signedWorkspaceFromProjects(projects, directory) ??
-          signedWorkspaceFromProjects(projects, sessionWorkspaceRuntimeRef({ directory, projects })?.workspaceId)
-      },
-      request: platform.fetch ?? authFetch,
-    })
-    const guardedGlobalFetch: typeof fetch = async (requestInput, init) => {
-      const url = new URL(requestInput instanceof Request ? requestInput.url : String(requestInput), currentServer.http.url)
-      if (url.pathname === "/global/event" || url.pathname === "/event") {
-        return eventFetch(requestInput, init)
-      }
-      return guardedSdkFetch(requestInput, init)
-    }
-
-    const sdk = createSdkForServer({
+    const sdk = createServerClient({
       server: server.current.http,
-      fetch: guardedGlobalFetch,
-      throwOnError: true,
+      request: platform.fetch ?? authFetch,
     })
 
     const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }) => {
@@ -658,16 +639,16 @@ const globalSDKContextInput = {
       createClient(opts: GlobalSdkClientOptions) {
         const s = server.current
         if (!s) throw new Error(language.t("error.globalSDK.serverNotAvailable"))
-        const { workspaceId: explicitWorkspaceId, ...clientOptions } = opts
+        const { workspaceId: explicitWorkspaceId, request: explicitRequest, ...clientOptions } = opts
         const workspaceId = globalSdkClientWorkspaceId(cachedProjectInventory(s.http.url), {
           directory: clientOptions.directory,
           workspaceId: explicitWorkspaceId,
         })
         const placement = globalSdkClientPlacement(workspaceId)
-        const request = platform.fetch ?? authFetch
-        return createSdkForServer({
+        const request = explicitRequest ?? platform.fetch ?? authFetch
+        return createServerClient({
           server: s.http,
-          fetch: placement
+          request: placement
             ? createTransport({
               placement,
               serverUrl: s.http.url,
@@ -675,7 +656,7 @@ const globalSDKContextInput = {
               request,
               relayRequest: request,
             }).sdkFetch
-            : platform.fetch,
+            : request,
           ...clientOptions,
         })
       },

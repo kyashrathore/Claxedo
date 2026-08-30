@@ -1,5 +1,8 @@
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPresentationMessage as Message,
+  AgentSnapshotFileDiff as SnapshotFileDiff,
+  AgentVcsFileDiff as VcsFileDiff,
+} from "@claxedo/agent-runtime-contract"
 
 type Diff = SnapshotFileDiff | VcsFileDiff
 

@@ -2,7 +2,7 @@ import { createEffect, createMemo, createResource, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { useGlobalSDK, useShellQueryOptions } from "@/features/session/app-ports"
 import { useParams } from "@solidjs/router"
@@ -78,6 +78,7 @@ const permissionContextInput = {
       return directoryConfigQuery(globalSDK.url, dir, workspaceFor(dir))
     })
     const permissionConfig = createMemo(() => configQuery.data?.permission)
+    const permissionClient = (target: string) => globalSDK.createClient({ directory: target }).permission
 
     const permissionsEnabled = createMemo(() => {
       if (!directory()) return false
@@ -128,8 +129,10 @@ const permissionContextInput = {
 
     const respond: PermissionRespondFn = async (input) => {
       try {
-        await globalSDK.client.permission.respond(input)
-        if (input.response === "always" && input.directory) enable(input.sessionID, input.directory)
+        const target = input.directory ?? directory()
+        if (!target) throw new Error("Permission response requires an explicit workspace directory")
+        await permissionClient(target).respond({ ...input, directory: target })
+        if (input.response === "always") enable(input.sessionID, target)
       } catch (err) {
         clearPermissionAutoResponded(input.permissionID)
         throw err
@@ -215,7 +218,7 @@ const permissionContextInput = {
         active: () => ready() && directory() === source.directory,
         autoAccept: () => store.autoAccept,
         sessions: () => directorySessions(source.directory),
-        list: async () => (await globalSDK.client.permission.list({ directory: source.directory })).data ?? [],
+        list: async () => (await permissionClient(source.directory).list({ directory: source.directory })).data ?? [],
         respond: (permission) => respondOnce(permission, source.directory),
       })
       return { directory: source.directory, state }
@@ -235,7 +238,7 @@ const permissionContextInput = {
         }),
       )
 
-      globalSDK.client.permission
+      permissionClient(directory)
         .list({ directory })
         .then((x) => {
           if (!isAutoAcceptingDirectory(directory)) return
@@ -267,7 +270,7 @@ const permissionContextInput = {
         }),
       )
 
-      globalSDK.client.permission
+      permissionClient(directory)
         .list({ directory })
         .then((x) => {
           if (permissionAutoAcceptVersion(sessionID, directory) !== version) return

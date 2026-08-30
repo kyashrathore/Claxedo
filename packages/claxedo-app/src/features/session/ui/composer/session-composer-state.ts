@@ -1,7 +1,11 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useQueries, useQuery } from "@tanstack/solid-query"
-import type { PermissionRequest, QuestionRequest, Todo } from "@opencode-ai/sdk/v2"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentQuestion as QuestionRequest,
+  AgentTodo as Todo,
+} from "@claxedo/agent-runtime-contract"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePermission } from "@/features/session/providers/permission"

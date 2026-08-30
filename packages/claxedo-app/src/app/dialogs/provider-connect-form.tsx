@@ -6,7 +6,10 @@
 // onboarding writes a scoped credential so the user's "this machine only"
 // choice is honoured — so that is a prop, not a fork.
 
-import type { ProviderAuthAuthorization, ProviderAuthMethod } from "@opencode-ai/sdk/v2/client"
+import type {
+  ClaxedoProviderAuthorization as ProviderAuthAuthorization,
+  ClaxedoProviderAuthMethod as ProviderAuthMethod,
+} from "@/platform/api/claxedo-api-types"
 import { Button } from "@opencode-ai/ui/button"
 import { List } from "@opencode-ai/ui/list"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
@@ -116,7 +119,7 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
         providerID: authProviderID(),
         method: store.methodIndex,
         ...(code ? { code } : {}),
-      }, { throwOnError: true })
+      })
       await complete()
     } catch (err) {
       fail(err)
@@ -135,7 +138,7 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
       const result = await globalSDK.client.provider.oauth.authorize({
         providerID: authProviderID(),
         method: index,
-      }, { throwOnError: true })
+      })
       const authorization = result.data ?? undefined
       if (!authorization) {
         await complete()

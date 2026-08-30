@@ -1,4 +1,7 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 import { mergeStoredItems, normalizeMessageRows, reconcileStoredParts } from "../store/message-page"
 import { hydrateRegisteredConversationSnapshot, registeredConversationSnapshot } from "./conversation-registry"
 import type { ConversationDirectory } from "./conversation-chat-client"

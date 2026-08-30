@@ -34,6 +34,9 @@ const allowed = new Set([
 ])
 
 const runtimeGatewayBoundary = new Set([
+  // Claxedo's explicit server HTTP client owns the typed route construction
+  // formerly hidden inside the generated OpenCode SDK.
+  "platform/api/server-client-contract.ts",
   "platform/runtime/agent/workspace-relay-connection.ts",
   "platform/runtime/agent/workspace-runtime-request.ts",
   "platform/api/credential-request.ts",
@@ -1143,14 +1146,14 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/\n\s*set,\n/)
     expect(context).not.toMatch(/function sessionScopedKey/)
     expect(context).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    expect(context).toMatch(/cachedGlobalSyncSdkClient/)
-    expect(context).toMatch(/clearGlobalSyncSdkClientsForDirectory/)
+    expect(context).toMatch(/cachedGlobalSyncServerClient/)
+    expect(context).toMatch(/clearGlobalSyncServerClientsForDirectory/)
     expect(context).toMatch(/@\/features\/session\/data\/sync\/global-sync-types/)
     expect(context).not.toMatch(/@\/shell\/data\/global-sync-types/)
     expect(context).not.toMatch(/@\/context\/global-sync\/types/)
     expect(context).not.toMatch(/sdkCache = new Map/)
     expect(context).not.toMatch(/sdkCache\.(?:get|set|delete|keys)/)
-    expect(sdkClientCache).toMatch(/"global-sync-sdk-client"/)
+    expect(sdkClientCache).toMatch(/"global-sync-server-client"/)
     expect(sdkClientCache).toMatch(/queryClient\.setQueryData/)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/sdk-client-cache.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "platform/sync/global-sync-sdk-client-cache.ts")).exists()).toBe(true)
@@ -2044,7 +2047,7 @@ describe("workspace runtime route audit", () => {
     expect(api).not.toMatch(/signedWorkspaceFromProjects/)
     expect(api).not.toMatch(/queryClient/)
     expect(api).not.toMatch(/queryKeys/)
-    expect(globalSdk).toMatch(/createGlobalSdkFetch/)
+    expect(globalSdk).not.toMatch(/createGlobalSdkFetch/)
     expect(globalSdk).toMatch(/createTransport/)
     expect(globalSdk).toMatch(/signedWorkspaceFromProjects/)
   })
@@ -2206,7 +2209,7 @@ describe("workspace runtime route audit", () => {
     expect(globalSdk).toMatch(/sameWorkspaceDirectory/)
     expect(globalSdk).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
-    expect(globalSdk).toMatch(/fetch: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
+    expect(globalSdk).toMatch(/request: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
     expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
     expect(runtimeProjection).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
     expect(runtimeProjection).toMatch(/return sessionID/)

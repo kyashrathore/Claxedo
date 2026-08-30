@@ -1,5 +1,8 @@
 import { Binary } from "@/lib/binary"
-import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentPresentationSession as Session,
+} from "@claxedo/agent-runtime-contract"
 import { trimSessions } from "../../../../platform/sync/global-sync/session-trim"
 import type { SessionLifecycleEvent } from "../session-lifecycle"
 import { queryClient } from "@/platform/query/query-client"

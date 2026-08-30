@@ -1,4 +1,5 @@
-import type { FileContent, FileNode } from "@opencode-ai/sdk/v2"
+import type { AgentFileContent as FileContent } from "@claxedo/agent-runtime-contract"
+import type { WorkspaceFileNode as FileNode } from "@claxedo/workspace-runtime/client"
 import { scopeUrl } from "@/lib/url"
 import { queryClient, removeExactQuery } from "@/platform/query/query-client"
 import { createRefCountedResourceCache } from "@/platform/sync/live-resource-cache"

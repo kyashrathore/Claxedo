@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@solidjs/testing-library"
 import { describe, expect, test } from "vitest"
-import type { Message } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import { MessageAuthorLane, messageAuthor } from "./message-author"
 
 function userMessage(claxedo?: unknown) {

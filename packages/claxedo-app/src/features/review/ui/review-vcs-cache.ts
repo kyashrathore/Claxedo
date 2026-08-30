@@ -1,10 +1,10 @@
-import type { VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-contract"
 import type { VcsRefs } from "./review-toolbar"
 import { queryClient } from "@/platform/query/query-client"
 
 // The review VCS modules read the diff contract through this module so the
 // SDK import surface stays in one place.
-export type { VcsFileDiff } from "@opencode-ai/sdk/v2"
+export type { AgentVcsFileDiff as VcsFileDiff } from "@claxedo/agent-runtime-contract"
 
 /** One workspace worktree, as every review read and invalidation names it. */
 export type ReviewVcsDirectory = {

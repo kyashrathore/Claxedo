@@ -2,7 +2,7 @@
 // split from message-timeline.tsx (size budget). Unchanged messages keep
 // their object identities across conversation snapshots, so element-wise
 // `===` is exact and cheap.
-import type { Part as PartType } from "@opencode-ai/sdk/v2"
+import type { AgentContentPart as PartType } from "@claxedo/agent-runtime-contract"
 import type { SessionTurnOutcome } from "@/features/session/data/session-types"
 
 // Identity-based equality gates for the per-message row memos. Unchanged

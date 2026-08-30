@@ -17,7 +17,7 @@ import { directorySessions } from "@/features/session/data/sync/directory-sessio
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "@/features/session/composer/mode"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"

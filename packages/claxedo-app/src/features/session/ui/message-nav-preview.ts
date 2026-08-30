@@ -1,4 +1,4 @@
-import type { Part } from "@opencode-ai/sdk/v2"
+import type { AgentContentPart as Part } from "@claxedo/agent-runtime-contract"
 
 export const messageNavVisible = (turnCount: number) => turnCount > 10
 

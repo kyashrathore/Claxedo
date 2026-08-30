@@ -1,4 +1,9 @@
-import type { AgentPart as MessageAgentPart, FilePart, Part, TextPart } from "@opencode-ai/sdk/v2"
+import type {
+  AgentAgentPart as MessageAgentPart,
+  AgentContentPart as Part,
+  AgentFilePart as FilePart,
+  AgentTextPart as TextPart,
+} from "@claxedo/agent-runtime-contract"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"
 
 type Inline =

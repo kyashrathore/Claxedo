@@ -1,6 +1,9 @@
 // Request-part preparation and optimistic timeline reconciliation for the
 // prompt submit pipeline.
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 import { Identifier } from "@/lib/id"
 import { type ImageAttachmentPart, type Prompt } from "@/features/session/providers/prompt"
 import { buildRequestParts } from "@/features/session/composer/ui/build-request-parts"

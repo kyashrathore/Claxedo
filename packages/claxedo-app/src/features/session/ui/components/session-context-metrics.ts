@@ -1,4 +1,7 @@
-import type { AssistantMessage, Message } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentAssistantMessage as AssistantMessage,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 
 type Provider = {
   id: string

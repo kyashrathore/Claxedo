@@ -1,5 +1,5 @@
 import { Binary } from "@/lib/binary"
-import type { Project } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 
 type GlobalEvent = {
   type: string

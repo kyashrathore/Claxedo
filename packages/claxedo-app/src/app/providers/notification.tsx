@@ -16,8 +16,10 @@ import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSettings } from "@/platform/settings/provider"
-import { EventSessionError } from "@opencode-ai/sdk/v2"
-import type { Session } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPresentationEvent,
+  AgentPresentationSession as Session,
+} from "@claxedo/agent-runtime-contract"
 import { Persist, persisted } from "@/platform/persistence/persist"
 import { sessionRoute } from "@/platform/identity/route"
 import { directorySessions, upsertDirectorySession } from "../../features/session/data/sync/directory-session-cache"
@@ -36,7 +38,7 @@ type TurnCompleteNotification = NotificationBase & {
 
 type ErrorNotification = NotificationBase & {
   type: "error"
-  error: EventSessionError["properties"]["error"]
+  error: Extract<AgentPresentationEvent, { type: "session.error" }>["properties"]["error"]
 }
 
 export type Notification = TurnCompleteNotification | ErrorNotification
@@ -252,7 +254,7 @@ const notificationContextInput = {
           void lookupNotificationSession({
             directory,
             sessionID,
-            getSession: (parameters) => globalSDK.client.session.get(parameters).then((result) => result.data),
+            getSession: (parameters) => globalSDK.createClient({ directory }).session.get(parameters).then((result) => result.data),
           }).then((session) => {
             if (meta.disposed || !session || session.parentID) return
 
@@ -308,7 +310,7 @@ const notificationContextInput = {
           void lookupNotificationSession({
             directory,
             sessionID,
-            getSession: (parameters) => globalSDK.client.session.get(parameters).then((result) => result.data),
+            getSession: (parameters) => globalSDK.createClient({ directory }).session.get(parameters).then((result) => result.data),
           }).then((session) => {
             if (!session) return
             notifyError(session)

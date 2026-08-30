@@ -28,7 +28,7 @@ describe("global sync state ownership", () => {
     expect(source).not.toContain("@/app/providers/global-sync/provider/session-load")
     expect(source).toContain("@/features/session/data/sync/global-sync-types")
     expect(source).not.toContain("@/platform/sync/global-sync/types")
-    expect(source).toContain("cachedGlobalSyncSdkClient")
+    expect(source).toContain("cachedGlobalSyncServerClient")
     expect(source).not.toContain("routeDirectoryEvent")
     expect(eventIngress).toContain("createGlobalSyncEventIngress")
     expect(eventIngress).toContain("routeDirectoryEvent")

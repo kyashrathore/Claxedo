@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
+import type { AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
 import { MessageNav } from "@opencode-ai/session-ui/message-nav"
 
 const message = (index: number): UserMessage => ({

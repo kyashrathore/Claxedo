@@ -134,4 +134,14 @@ describe("sdk runtime request cache", () => {
       expect(source).not.toContain("RuntimeGateway.")
     }
   })
+
+  test("uses the typed workspace runtime file client without SDK proxies", async () => {
+    const source = await Bun.file(new URL("./sdk.tsx", import.meta.url)).text()
+
+    expect(source).toContain("createWorkspaceRuntimeClient")
+    expect(source).not.toContain("createOpencodeClient")
+    expect(source).not.toContain("new Proxy(")
+    expect(source).toContain("workspaceId: workspace.workspaceId")
+    expect(source).toContain("signal: options?.signal")
+  })
 })

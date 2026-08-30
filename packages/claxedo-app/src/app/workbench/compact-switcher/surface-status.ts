@@ -1,4 +1,7 @@
-import type { PermissionRequest, QuestionRequest } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentQuestion as QuestionRequest,
+} from "@claxedo/agent-runtime-contract"
 import type { TerminalAgentStatus } from "../state/types"
 import type { SwitcherStatus } from "./switcher-items"
 

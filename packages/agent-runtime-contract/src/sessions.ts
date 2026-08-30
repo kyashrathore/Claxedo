@@ -42,6 +42,7 @@ export type AgentSession = {
 }
 
 export type AgentPresentationSession = AgentSession & {
+  tags?: string[]
   slug: string
   projectID: string
   workspaceID?: string

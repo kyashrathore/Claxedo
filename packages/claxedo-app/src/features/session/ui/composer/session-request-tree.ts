@@ -1,4 +1,8 @@
-import type { PermissionRequest, QuestionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentPresentationSession as Session,
+  AgentQuestion as QuestionRequest,
+} from "@claxedo/agent-runtime-contract"
 
 function sessionTreeRequest<T>(
   session: Session[],

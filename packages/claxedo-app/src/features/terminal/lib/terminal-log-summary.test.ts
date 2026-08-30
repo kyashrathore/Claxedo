@@ -118,7 +118,7 @@ describe("terminal log summary", () => {
       "https://relay.test/workspaces/ws_logs/api/wr/process/logs?terminal_id=pty_cloud&lines=40",
     ])
     expect(seen[1]?.authorization).toBe("Bearer rat_logs")
-    expect(seen[1]?.directory).toBe("workspace:ws_logs")
+    expect(seen[1]?.directory).toBeNull()
   })
 
   test("follows terminal id aliases", async () => {

@@ -1,4 +1,3 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
@@ -107,7 +106,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     request: platform.fetch ?? authFetch,
     localRequest: authFetch,
     config,
-    createClient: createOpencodeClient,
+    createClient: (options) => sdk.createClient({
+      directory: options.directory,
+      request: options.fetch,
+    }),
     showToast: (toast) => showToast(toast),
     formatError: (err) => formatServerError(err, language.t, language.t("common.requestFailed")),
     text: {
@@ -136,7 +138,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         ? sessionClient(directory)
         : directory === sdk.directory
           ? sdk.client
-          : sdk.createClient({ directory, throwOnError: true }),
+          : sdk.createClient({ directory }),
     usesSignedControlPlane,
     hasActiveGoal: input.hasActiveGoal,
     stopGoal: input.stopGoal,
@@ -301,7 +303,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (isNewSession && sessionDirectory !== projectDirectory) {
       client = sdk.createClient({
         directory: sessionDirectory,
-        throwOnError: true,
       })
     }
 
@@ -593,7 +594,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       signedControlPlane,
       sessionDirectory,
       sessionRef,
-      opencodeClient: promptClient,
     })
 
     const recordPromptSubmissionContext = {

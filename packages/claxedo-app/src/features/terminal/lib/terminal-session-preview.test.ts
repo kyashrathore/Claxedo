@@ -244,7 +244,7 @@ describe("terminal session preview aliases", () => {
 
     expect(out?.sessionId).toBe("sess-cloud-local")
     expect(seen).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_local/api/wr/hook/terminal-session?terminalId=pty-cloud-local workspace:ws_local",
+      "GET http://127.0.0.1:3001/workspaces/ws_local/api/wr/hook/terminal-session?terminalId=pty-cloud-local",
     ])
   })
 })

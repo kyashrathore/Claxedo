@@ -4,7 +4,7 @@ import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
 
-export type { ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+export type { ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 
 type ProjectClient = {
   project: {

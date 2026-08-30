@@ -1,4 +1,7 @@
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"

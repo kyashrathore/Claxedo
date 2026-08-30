@@ -1,11 +1,24 @@
 import { queryOptions, skipToken } from "@tanstack/solid-query"
-import type { PermissionRequest, QuestionRequest, Session, SessionStatus, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentPresentationSession as Session,
+  AgentQuestion as QuestionRequest,
+  AgentRuntimeStatus as SessionStatus,
+  AgentSnapshotFileDiff as SnapshotFileDiff,
+  AgentTodo as Todo,
+} from "@claxedo/agent-runtime-contract"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys, type SessionScopedQueryKey, type WorkspaceScopedQueryKey } from "@/platform/sync/keys"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ClaxedoSession } from "../session-types"
 import { sameSessionIdentity } from "@/platform/sync/global-session-identity"
-export type { PermissionRequest, QuestionRequest, SessionStatus, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+export type {
+  AgentPermission as PermissionRequest,
+  AgentQuestion as QuestionRequest,
+  AgentRuntimeStatus as SessionStatus,
+  AgentSnapshotFileDiff as SnapshotFileDiff,
+  AgentTodo as Todo,
+} from "@claxedo/agent-runtime-contract"
 export {
   setSessionDiffQueryData,
   setSessionCapabilitiesQueryData,

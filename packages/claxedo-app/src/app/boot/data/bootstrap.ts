@@ -22,7 +22,6 @@ import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-ru
 import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { createTransport } from "@/platform/runtime/transport"
-import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
@@ -31,9 +30,30 @@ import {
   synchronizeServiceCatalogFromBootstrap,
 } from "@/app/composition/service-contributions"
 
-type OpencodeClient = ReturnType<typeof createOpencodeClient>
-export type GlobalBootstrapSdk = Pick<OpencodeClient, "global" | "path" | "project" | "provider">
-export type DirectoryBootstrapSdk = Pick<OpencodeClient, "project" | "provider" | "app" | "config" | "path" | "command" | "vcs">
+type DataResponse<T> = Promise<{ data?: T }>
+
+export type GlobalBootstrapSdk = {
+  global: {
+    health(): DataResponse<{ healthy: boolean; version?: string }>
+    config: { get(): DataResponse<Config> }
+  }
+  path: { get(): DataResponse<Path> }
+  project: { list(): DataResponse<Project[]> }
+  provider: {
+    list(): DataResponse<ProviderListResponse>
+    auth(): DataResponse<ProviderAuthResponse>
+  }
+}
+
+export type DirectoryBootstrapSdk = {
+  project: { current(): DataResponse<Project> }
+  provider: { list(): DataResponse<ProviderListResponse> }
+  app: { agents(input?: { directory?: string }): DataResponse<ClaxedoAgentProfile[]> }
+  config: { get(): DataResponse<Config> }
+  path: { get(): DataResponse<Path> }
+  command: { list(): DataResponse<ClaxedoCommand[]> }
+  vcs: { get(): DataResponse<ClaxedoVcsInfo> }
+}
 type BootstrapDirectory = string
 
 export type GlobalBootstrapState = {
@@ -122,24 +142,6 @@ async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, 
   } catch {
     return undefined
   }
-}
-
-function agentClient(input: {
-  baseUrl?: string
-  fetch?: typeof globalThis.fetch
-  directory: BootstrapDirectory
-  harnessType?: string
-}) {
-  if (!input.baseUrl || !input.harnessType) return undefined
-  return createOpencodeClient({
-    baseUrl: input.baseUrl,
-    fetch: harnessQueryFetch({
-      request: input.fetch,
-      harnessType: input.harnessType,
-      baseUrl: normalizedServerUrl(getClaxedoServerUrl()),
-    }),
-    directory: input.directory,
-  })
 }
 
 function postPaint(task: () => void) {
@@ -554,12 +556,7 @@ export async function bootstrapDirectory(input: {
               harnessType,
               request: input.fetch,
               workspace: ws,
-              client: agentClient({
-                baseUrl: input.baseUrl,
-                fetch: input.fetch,
-                directory: input.directory,
-                harnessType,
-              }) ?? input.sdk,
+              client: input.sdk,
             })),
           ),
           isRemoteWorkspace(ws)

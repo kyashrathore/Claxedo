@@ -374,7 +374,6 @@ export async function createHandlers() {
     http.get(`${DEMO_BASE}/project/current`, ({ request }) => {
       const dir =
         new URL(request.url).searchParams.get("directory")
-        || request.headers.get("x-opencode-directory")
         || root
       return HttpResponse.json(projectFor(state, dir) ?? state.projects[0] ?? null)
     }),
@@ -636,7 +635,6 @@ export async function createHandlers() {
     http.get(`${DEMO_BASE}/path`, ({ request }) => {
       const dir =
         new URL(request.url).searchParams.get("directory")
-        ?? request.headers.get("x-opencode-directory")
         ?? root
       return HttpResponse.json({
         ...state.path,

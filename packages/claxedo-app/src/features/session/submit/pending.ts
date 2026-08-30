@@ -1,7 +1,7 @@
 // Module-scoped pending-prompt registry for imperative abort controllers. Server
 // state lives in Query; this map only tracks non-serializable resources needed to
 // cancel one in-flight prompt.
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import {
   dispatchSessionStatusEvent,
   schedulePromptSessionStatusTimeouts,

@@ -1,4 +1,4 @@
-import type { FileContent } from "@opencode-ai/sdk/v2"
+import type { AgentFileContent as FileContent } from "@claxedo/agent-runtime-contract"
 
 export type FileSelection = {
   startLine: number

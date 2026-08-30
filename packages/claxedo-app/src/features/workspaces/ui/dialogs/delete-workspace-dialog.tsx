@@ -53,7 +53,7 @@ export function DialogDeleteWorkspace(props: DialogDeleteWorkspaceProps) {
     }
 
     // We'll just check status if possible, or skip if complex dependency needed
-    globalSDK.client.file
+    globalSDK.createClient({ directory: props.directory }).file
       .status({ directory: props.directory })
       .then((x) => {
         const files = x.data ?? []

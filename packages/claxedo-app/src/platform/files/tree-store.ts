@@ -1,5 +1,5 @@
 import { createStore, produce, reconcile } from "solid-js/store"
-import type { FileNode } from "@opencode-ai/sdk/v2"
+import type { WorkspaceFileNode as FileNode } from "@claxedo/workspace-runtime/client"
 import {
   cachedFileTreeRequest,
   fileRequestRuntimeKey,

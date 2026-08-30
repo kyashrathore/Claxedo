@@ -1,5 +1,5 @@
 import { createComputed, createEffect, createMemo, createSelector, createSignal, mapArray, onCleanup, type Accessor } from "solid-js"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { getFilename } from "@/lib/path"
 
 import {

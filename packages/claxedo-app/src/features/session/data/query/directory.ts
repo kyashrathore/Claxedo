@@ -89,6 +89,7 @@ export function configQuery(input: {
         // logging) on every load.
         return {} as Config
       }
+      return (await input.client.config.get()).data
     },
   }
 }
@@ -129,7 +130,9 @@ export function agentListQuery(input: {
           parse: agentListFromUnknown,
         })
       }
-      return (await input.client.app.agents({ directory: input.directory })).data ?? []
+      const data = (await input.client.app.agents({ directory: input.directory })).data
+      if (!data) throw new Error("Agent list response omitted agents")
+      return data
     },
   }
 }

@@ -378,12 +378,6 @@ describe("submit transport adapter", () => {
         cwd: "/repo/main",
         toolSandbox: { kind: "local", cwd: "/repo/main" },
       },
-      opencodeClient: {
-        session: {
-          prompt: async () => ({}),
-          promptAsync: async () => ({}),
-        },
-      },
     })
     await promptClient.session.promptAsync({
       sessionID: "session-signed",

@@ -51,7 +51,7 @@ type InventorySourceProject = {
 export type InventoryGlobalSession = {
   id: string
   sessionRef?: string
-  title?: string
+  title?: string | null
   directory: ProjectDirectory
   projectID?: string
   parentID?: string
@@ -453,10 +453,14 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       directory,
       roots: true,
       limit: input.pageSize,
-    }).catch(() => ({ sessions: [] }))
+    })
     return (body.sessions ?? [])
-      .filter((session) => !!session?.id)
-      .map((session) => ({ ...session, directory }))
+      .map((session) => {
+        if (!session.id || !session.time || typeof session.time.updated !== "number") {
+          throw new Error("Workspace runtime returned an invalid session inventory row")
+        }
+        return { ...session, directory, time: session.time }
+      })
   }
 
   async function fetchGlobalList(opts: { directory?: string; limit: number; cursor?: number }) {

@@ -1,4 +1,4 @@
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 
 // Rubric C3: a session that *had* a disagreement at any point used to lock

@@ -1,4 +1,4 @@
-import type { Project } from "@opencode-ai/sdk/v2"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 
 function isRejectedWorktree(dir: string) {
   if (dir === "/workspace") return true

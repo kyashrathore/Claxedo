@@ -132,7 +132,7 @@ function createdSession(input: unknown): AgentSession {
   if (!input || typeof input !== "object" || !("id" in input) || typeof input.id !== "string" || !input.id) {
     throw new AgentRuntimeRequestError("Session create response omitted the canonical session id", 502, "invalid_response")
   }
-  return input
+  return { id: input.id }
 }
 
 function deleteResult(input: unknown): { ok: true } {

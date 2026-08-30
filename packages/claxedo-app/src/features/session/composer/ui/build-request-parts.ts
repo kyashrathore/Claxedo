@@ -1,5 +1,10 @@
 import { getFilename } from "@opencode-ai/core/util/path"
-import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentAgentPartInput as AgentPartInput,
+  AgentContentPart as Part,
+  AgentFilePartInput as FilePartInput,
+  AgentTextPartInput as TextPartInput,
+} from "@claxedo/agent-runtime-contract"
 import type { FileSelection } from "@/platform/files/types"
 import { encodeFilePath } from "@/platform/files/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/features/session/providers/prompt"

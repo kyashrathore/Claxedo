@@ -5,7 +5,10 @@ import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { QuestionAnswer, QuestionRequest } from "@opencode-ai/sdk/v2"
+import type {
+  AgentQuestion as QuestionRequest,
+  AgentQuestionAnswer as QuestionAnswer,
+} from "@claxedo/agent-runtime-contract"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useSDK } from "@/features/session/app-ports"
 import { makeEventListener } from "@solid-primitives/event-listener"

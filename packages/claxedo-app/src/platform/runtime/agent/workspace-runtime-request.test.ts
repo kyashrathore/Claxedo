@@ -157,7 +157,7 @@ describe("workspace runtime request", () => {
       ok: true,
     })
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_direct/api/wr/health  workspace:ws_direct",
+      "GET http://127.0.0.1:3001/workspaces/ws_direct/api/wr/health",
     ])
   })
 
@@ -181,7 +181,7 @@ describe("workspace runtime request", () => {
       }
       if (url.toString() === "https://relay.loopback.test/workspaces/ws_signed_loopback/session/ses_1/prompt_async") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_signed_loopback")
-        expect(req.headers.get("x-opencode-directory")).toBe("workspace:ws_signed_loopback")
+        expect(req.headers.get("x-opencode-directory")).toBeNull()
         return Response.json({ ok: true })
       }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
@@ -201,7 +201,7 @@ describe("workspace runtime request", () => {
     }).then((res) => res.json())).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
       "GET http://127.0.0.1:3001/api/workspace/ws_signed_loopback/connection Bearer signed-browser-token",
-      "POST https://relay.loopback.test/workspaces/ws_signed_loopback/session/ses_1/prompt_async Bearer rat_signed_loopback workspace:ws_signed_loopback",
+      "POST https://relay.loopback.test/workspaces/ws_signed_loopback/session/ses_1/prompt_async Bearer rat_signed_loopback",
     ])
   })
 
@@ -494,11 +494,10 @@ describe("workspace runtime request", () => {
     await expect(runtime.fetch("/provider?directory=ws_1", {
       headers: {
         Authorization: "Bearer signed-browser-token",
-        "x-opencode-directory": "ws_1",
       },
     }).then((res) => res.json())).resolves.toEqual({ ok: true })
     expect(calls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_1/provider  workspace:ws_1",
+      "GET http://127.0.0.1:3001/workspaces/ws_1/provider",
     ])
   })
 

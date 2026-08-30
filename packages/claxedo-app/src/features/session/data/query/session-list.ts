@@ -227,7 +227,7 @@ export function applyFetchedSessionListPage(input: {
   })
 }
 
-// A harness/non-opencode `POST /session` only publishes a `session.lifecycle`
+// A harness-backed `POST /session` only publishes a `session.lifecycle`
 // "created" event; it never streams the per-directory session rows the way an
 // interactive session does. The flat inventory (`GET /api/control/sessions`)
 // already refetches on that event, but the paginated per-section query

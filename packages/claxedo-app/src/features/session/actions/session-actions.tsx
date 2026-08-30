@@ -1,4 +1,4 @@
-import type { Session } from "@opencode-ai/sdk/v2"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createStore } from "solid-js/store"
@@ -318,7 +318,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     props.layout.projects.open(workspaceDir)
     setFocusedWorkspace(workspaceDir)
 
-    const created = await props.globalSDK.client.session.create({
+    const created = await props.globalSDK.createClient({ directory: workspaceDir }).session.create({
       directory: workspaceDir,
       title: "Review",
     }).catch(() => undefined)
@@ -357,7 +357,10 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         }}
         onDelete={async (item) => {
           try {
-            await props.globalSDK.client.session.delete({ directory: item.directory, sessionID: item.id })
+            await props.globalSDK.createClient({ directory: item.directory }).session.delete({
+              directory: item.directory,
+              sessionID: item.id,
+            })
             removeDirectorySessionCacheRow(item.directory, item.id)
             const meta = sessionMeta(item.directory, item.id)
             if (meta) props.state.layout.closeContent(meta.id)
@@ -381,7 +384,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
 
     try {
       const archivedAt = Date.now()
-      await props.globalSDK.client.session.update({
+      await props.globalSDK.createClient({ directory }).session.update({
         directory,
         sessionID: sessionItem.id,
         time: { archived: archivedAt },

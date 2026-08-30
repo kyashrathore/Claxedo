@@ -661,6 +661,7 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
       messageID: message.id,
       type: "reasoning",
       text: part.content,
+      time: { start: message.createdAt?.getTime() ?? 0 },
     } as Part]
   }
   if (part.type === "tool-call" && stored) {
@@ -683,6 +684,7 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
       sessionID: chatMessageSessionId(message),
       messageID: message.id,
       type: "compaction",
+      auto: false,
     } as Part]
   }
   // Agent mention → OpenCode AgentPart. Reuse the stored original when present

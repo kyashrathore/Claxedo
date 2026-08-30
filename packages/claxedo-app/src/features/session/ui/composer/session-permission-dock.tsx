@@ -1,5 +1,5 @@
 import { For, Show } from "solid-js"
-import type { PermissionRequest } from "@opencode-ai/sdk/v2"
+import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
 import { Button } from "@opencode-ai/ui/button"
 import { DockPrompt } from "@/ui/session-kit"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"

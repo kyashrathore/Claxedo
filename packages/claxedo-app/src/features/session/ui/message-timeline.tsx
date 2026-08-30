@@ -42,12 +42,12 @@ import { ClaxedoSessionRetry } from "@/features/session/ui/components/claxedo-se
 import { TimelineErrorPresentation } from "@/features/session/onboarding/first-turn-recovery-card"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
 import type {
-  AssistantMessage,
-  Message as MessageType,
-  Part as PartType,
-  ToolPart,
-  UserMessage,
-} from "@opencode-ai/sdk/v2"
+  AgentAssistantMessage as AssistantMessage,
+  AgentContentPart as PartType,
+  AgentPresentationMessage as MessageType,
+  AgentToolPart as ToolPart,
+  AgentUserMessage as UserMessage,
+} from "@claxedo/agent-runtime-contract"
 import { showToast } from "@opencode-ai/ui/toast"
 import { Binary } from "@opencode-ai/core/util/binary"
 import { getFilename } from "@opencode-ai/core/util/path"

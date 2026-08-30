@@ -1,4 +1,4 @@
-import type { Event } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationEvent as Event } from "@claxedo/agent-runtime-contract"
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import {
   applyOpencodeConversationEvent,
@@ -7,7 +7,10 @@ import {
   opencodeConversationProjection,
   type ConversationChatHandle,
 } from "./opencode-conversation"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 import type { UIMessage } from "@tanstack/ai"
 import {
   conversationScopeKey,

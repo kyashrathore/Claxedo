@@ -1,4 +1,7 @@
-import type { PermissionRequest, Session } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentPresentationSession as Session,
+} from "@claxedo/agent-runtime-contract"
 import { cmp } from "@/platform/query/sort"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 

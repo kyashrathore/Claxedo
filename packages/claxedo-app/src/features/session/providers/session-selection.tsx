@@ -183,7 +183,6 @@ const localContextInput = {
         runtime: {
           serverUrl: sdk.url,
           request: platform.fetch ?? fetch,
-          opencodeClient: sdk.client,
           sessionRef: input.sessionRef?.(),
           // Thread the resolved relay identity: with an fs-path
           // directory and no workspaceId the config restore fell
@@ -363,7 +362,6 @@ const localContextInput = {
         createAgentRuntimeClient({
           serverUrl: sdk.url,
           request: platform.fetch ?? fetch,
-          opencodeClient: sdk.client,
           sessionRef: input.sessionRef?.(),
           ...(workspaceClientOptions()),
         }).updateSessionConfig({

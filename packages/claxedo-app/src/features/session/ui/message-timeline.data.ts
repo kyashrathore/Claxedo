@@ -1,5 +1,11 @@
 import { parseCommentNote, readCommentMetadata } from "@/features/session/data/comment-note"
-import { AssistantMessage, Part, SessionStatus, SnapshotFileDiff, UserMessage } from "@opencode-ai/sdk/v2"
+import type {
+  AgentAssistantMessage as AssistantMessage,
+  AgentContentPart as Part,
+  AgentRuntimeStatus as SessionStatus,
+  AgentSnapshotFileDiff as SnapshotFileDiff,
+  AgentUserMessage as UserMessage,
+} from "@claxedo/agent-runtime-contract"
 import type { PartGroup, WorkGroupTool } from "@/ui/session-kit"
 import {
   isTurnAdmissionConflict,

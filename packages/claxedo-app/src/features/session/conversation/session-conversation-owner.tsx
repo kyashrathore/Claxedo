@@ -1,5 +1,8 @@
 import { createEffect, onCleanup, type Accessor } from "solid-js"
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 import {
   hydrateRegisteredConversationSnapshot,
   registerSessionConversationChat,

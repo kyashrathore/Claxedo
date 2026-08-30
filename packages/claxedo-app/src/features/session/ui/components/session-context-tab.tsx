@@ -22,7 +22,11 @@ import { StickyAccordionHeader } from "@opencode-ai/ui/sticky-accordion-header"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 import { loadMarkdownComponent } from "@/ui/session-kit-loaders"
 import { ScrollView } from "@opencode-ai/ui/scroll-view"
-import type { Message, Part, UserMessage } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+  AgentUserMessage as UserMessage,
+} from "@claxedo/agent-runtime-contract"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/features/session/app-ports"
 import { getSessionContextMetrics } from "@/features/session/ui/components/session-context-metrics"

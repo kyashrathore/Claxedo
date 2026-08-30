@@ -1,5 +1,7 @@
-import type { Message } from "@opencode-ai/sdk/v2"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
+import type {
+  AgentPresentationMessage as Message,
+  AgentUserMessage as UserMessage,
+} from "@claxedo/agent-runtime-contract"
 import {
   sessionTurnOutcomeMatchesAssistant,
   type ClaxedoSession,

@@ -37,7 +37,10 @@ import { ReviewCodeViewFileHeader } from "./review-file-header"
 import { diffTriggerTestId } from "./review-session-logic"
 import { Spinner } from "@opencode-ai/ui/spinner"
 import { ClaxedoLogo as Mark } from "@/ui/controls/claxedo-logo"
-import type { FileContent, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type {
+  AgentFileContent as FileContent,
+  AgentVcsFileDiff as VcsFileDiff,
+} from "@claxedo/agent-runtime-contract"
 import { queryClient } from "@/platform/query/query-client"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { getClaxedoServerUrl } from "@/platform/api/api"

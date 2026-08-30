@@ -17,8 +17,10 @@ import type { PickerState } from "@/features/session/ui/model/select-model"
 import { showToast } from "@opencode-ai/ui/toast"
 import { findLast } from "@/lib/array"
 import { extractPromptFromParts } from "@/features/session/data/prompt"
-import { UserMessage } from "@opencode-ai/sdk/v2"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentRuntimeStatus as SessionStatus,
+  AgentUserMessage as UserMessage,
+} from "@claxedo/agent-runtime-contract"
 const canAddSelectionContext = (input: {
   active?: string
   pathFromTab: (tab: string) => string | undefined

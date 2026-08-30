@@ -27,7 +27,7 @@ import {
   type DirectorySessionCacheRefreshOptions,
   type DirectorySessionLoadMeta,
 } from "../../../features/session/data/sync/directory-session-cache"
-import type { Config } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoConfig as Config } from "@/platform/api/claxedo-api-types"
 import { trimSessions } from "../../../platform/sync/global-sync/session-trim"
 import { shouldUseSignedControlPlaneInventory, type InventoryGlobalSession } from "../../../features/session/data/sync/inventory-source"
 

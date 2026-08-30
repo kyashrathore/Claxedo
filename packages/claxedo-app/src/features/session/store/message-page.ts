@@ -1,6 +1,9 @@
 // Shared message-page normalization for the compat-session controller and
 // DirectoryScope DataProvider hydration fallback.
-import type { Message, Part } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentContentPart as Part,
+  AgentPresentationMessage as Message,
+} from "@claxedo/agent-runtime-contract"
 import { message as clean } from "@/lib/diffs"
 
 const SKIP_PART_TYPES = new Set(["patch", "step-start", "step-finish"])

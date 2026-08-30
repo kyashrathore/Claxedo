@@ -152,7 +152,6 @@ export function createProcessClient(input: Input) {
 
   async function req(path: string, init?: RequestInit) {
     const headers = new Headers(init?.headers)
-    headers.set("x-opencode-directory", input.directory)
     if (input.workspaceId) headers.set("x-workspace-id", input.workspaceId)
     if (input.workspaceName) headers.set("x-workspace-name", input.workspaceName)
     if (init?.body !== undefined && !headers.has("Content-Type")) {

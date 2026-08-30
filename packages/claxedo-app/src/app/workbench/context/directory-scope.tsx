@@ -40,7 +40,7 @@ import {
 } from "../../../features/session/data/sync/directory-session-cache"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { agentListQuery } from "../../../features/session/data/query/directory"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import {

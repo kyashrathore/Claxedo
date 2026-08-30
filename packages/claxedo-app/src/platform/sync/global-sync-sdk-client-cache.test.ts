@@ -1,33 +1,37 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import { createClaxedoServerClient } from "@/platform/api/server-client-contract"
 import { queryClient } from "@/platform/query/query-client"
 import {
-  cachedGlobalSyncSdkClient,
-  clearGlobalSyncSdkClientsForDirectory,
-  clearGlobalSyncSdkClientsForOwner,
-  globalSyncSdkClientQueryKey,
-  resetGlobalSyncSdkClientCacheForTest,
+  cachedGlobalSyncServerClient,
+  clearGlobalSyncServerClientsForDirectory,
+  clearGlobalSyncServerClientsForOwner,
+  globalSyncServerClientQueryKey,
+  resetGlobalSyncServerClientCacheForTest,
 } from "./global-sync-sdk-client-cache"
 
 afterEach(() => {
-  resetGlobalSyncSdkClientCacheForTest()
+  resetGlobalSyncServerClientCacheForTest()
 })
 
 function client(id: string) {
-  // as-any: test double implements only the API surface exercised by this test.
-  return { id } as unknown as OpencodeClient
+  return Object.assign(createClaxedoServerClient({
+    baseUrl: "https://server.example",
+    request: async () => Response.json({}),
+  }), {
+    id,
+  })
 }
 
-describe("global sync SDK client cache", () => {
+describe("global sync server client cache", () => {
   test("uses an owner-scoped shell query key", () => {
-    expect(globalSyncSdkClientQueryKey({
+    expect(globalSyncServerClientQueryKey({
       owner: "sync-a",
       serverUrl: "https://control.example/",
       directory: "/repo/main",
       workspaceId: "ws_1",
     })).toEqual([
       "shell",
-      "global-sync-sdk-client",
+      "global-sync-server-client",
       "sync-a",
       "https://control.example",
       "/repo/main",
@@ -35,7 +39,7 @@ describe("global sync SDK client cache", () => {
     ])
   })
 
-  test("dedupes SDK clients through Query", () => {
+  test("dedupes server clients through Query", () => {
     let created = 0
     const input = {
       owner: "sync-a",
@@ -48,7 +52,7 @@ describe("global sync SDK client cache", () => {
       },
     }
 
-    expect(cachedGlobalSyncSdkClient(input)).toBe(cachedGlobalSyncSdkClient(input))
+    expect(cachedGlobalSyncServerClient(input)).toBe(cachedGlobalSyncServerClient(input))
     expect(created).toBe(1)
   })
 
@@ -59,53 +63,53 @@ describe("global sync SDK client cache", () => {
       create: () => client("client"),
     }
 
-    expect(cachedGlobalSyncSdkClient({ ...base, owner: "sync-a", workspaceId: "ws_1" })).not.toBe(
-      cachedGlobalSyncSdkClient({ ...base, owner: "sync-b", workspaceId: "ws_1" }),
+    expect(cachedGlobalSyncServerClient({ ...base, owner: "sync-a", workspaceId: "ws_1" })).not.toBe(
+      cachedGlobalSyncServerClient({ ...base, owner: "sync-b", workspaceId: "ws_1" }),
     )
-    expect(cachedGlobalSyncSdkClient({ ...base, owner: "sync-a", workspaceId: "ws_1" })).not.toBe(
-      cachedGlobalSyncSdkClient({ ...base, owner: "sync-a", workspaceId: "ws_2" }),
+    expect(cachedGlobalSyncServerClient({ ...base, owner: "sync-a", workspaceId: "ws_1" })).not.toBe(
+      cachedGlobalSyncServerClient({ ...base, owner: "sync-a", workspaceId: "ws_2" }),
     )
   })
 
   test("clears entries by directory or workspace id for disposal", () => {
-    const repo = cachedGlobalSyncSdkClient({
+    const repo = cachedGlobalSyncServerClient({
       owner: "sync-a",
       directory: "/repo/main",
       workspaceId: "ws_1",
       create: () => client("repo"),
     })
-    const plain = cachedGlobalSyncSdkClient({
+    const plain = cachedGlobalSyncServerClient({
       owner: "sync-a",
       directory: "/repo/plain",
       create: () => client("plain"),
     })
-    const otherOwner = cachedGlobalSyncSdkClient({
+    const otherOwner = cachedGlobalSyncServerClient({
       owner: "sync-b",
       directory: "/repo/main",
       workspaceId: "ws_1",
       create: () => client("other"),
     })
 
-    clearGlobalSyncSdkClientsForDirectory({ owner: "sync-a", directory: "ws_1" })
-    expect(queryClient.getQueryData(globalSyncSdkClientQueryKey({
+    clearGlobalSyncServerClientsForDirectory({ owner: "sync-a", directory: "ws_1" })
+    expect(queryClient.getQueryData(globalSyncServerClientQueryKey({
       owner: "sync-a",
       directory: "/repo/main",
       workspaceId: "ws_1",
     }))).toBeUndefined()
-    expect(cachedGlobalSyncSdkClient({
+    expect(cachedGlobalSyncServerClient({
       owner: "sync-a",
       directory: "/repo/plain",
       create: () => client("plain-next"),
     })).toBe(plain)
-    expect(cachedGlobalSyncSdkClient({
+    expect(cachedGlobalSyncServerClient({
       owner: "sync-b",
       directory: "/repo/main",
       workspaceId: "ws_1",
       create: () => client("other-next"),
     })).toBe(otherOwner)
 
-    clearGlobalSyncSdkClientsForDirectory({ owner: "sync-a", directory: "/repo/plain" })
-    expect(cachedGlobalSyncSdkClient({
+    clearGlobalSyncServerClientsForDirectory({ owner: "sync-a", directory: "/repo/plain" })
+    expect(cachedGlobalSyncServerClient({
       owner: "sync-a",
       directory: "/repo/plain",
       create: () => client("plain-next"),
@@ -114,25 +118,25 @@ describe("global sync SDK client cache", () => {
   })
 
   test("clears all entries for one provider owner", () => {
-    const first = cachedGlobalSyncSdkClient({
+    const first = cachedGlobalSyncServerClient({
       owner: "sync-a",
       directory: "/repo/main",
       create: () => client("first"),
     })
-    const second = cachedGlobalSyncSdkClient({
+    const second = cachedGlobalSyncServerClient({
       owner: "sync-b",
       directory: "/repo/main",
       create: () => client("second"),
     })
 
-    clearGlobalSyncSdkClientsForOwner("sync-a")
+    clearGlobalSyncServerClientsForOwner("sync-a")
 
-    expect(cachedGlobalSyncSdkClient({
+    expect(cachedGlobalSyncServerClient({
       owner: "sync-a",
       directory: "/repo/main",
       create: () => client("first-next"),
     })).not.toBe(first)
-    expect(cachedGlobalSyncSdkClient({
+    expect(cachedGlobalSyncServerClient({
       owner: "sync-b",
       directory: "/repo/main",
       create: () => client("second-next"),

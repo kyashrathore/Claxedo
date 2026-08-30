@@ -1,7 +1,7 @@
-import type { OpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoServerClient } from "@/platform/api/server-client-contract"
 import { queryClient } from "@/platform/query/query-client"
 
-export const globalSyncSdkClientQueryRoot = ["shell", "global-sync-sdk-client"] as const
+export const globalSyncServerClientQueryRoot = ["shell", "global-sync-server-client"] as const
 
 function normalized(url: string | undefined) {
   const trimmed = url?.trim()
@@ -9,14 +9,14 @@ function normalized(url: string | undefined) {
   return trimmed.replace(/\/+$/, "")
 }
 
-export function globalSyncSdkClientQueryKey(input: {
+export function globalSyncServerClientQueryKey(input: {
   owner: string
   serverUrl?: string
   directory: string
   workspaceId?: string
 }) {
   return [
-    ...globalSyncSdkClientQueryRoot,
+    ...globalSyncServerClientQueryRoot,
     input.owner,
     normalized(input.serverUrl),
     input.directory,
@@ -24,14 +24,14 @@ export function globalSyncSdkClientQueryKey(input: {
   ] as const
 }
 
-export function cachedGlobalSyncSdkClient<T extends OpencodeClient>(input: {
+export function cachedGlobalSyncServerClient<T extends ClaxedoServerClient>(input: {
   owner: string
   serverUrl?: string
   directory: string
   workspaceId?: string
   create: () => T
 }) {
-  const queryKey = globalSyncSdkClientQueryKey(input)
+  const queryKey = globalSyncServerClientQueryKey(input)
   const cached = queryClient.getQueryData<T>(queryKey)
   if (cached) return cached
   const next = input.create()
@@ -39,8 +39,8 @@ export function cachedGlobalSyncSdkClient<T extends OpencodeClient>(input: {
   return next
 }
 
-export function clearGlobalSyncSdkClientsForDirectory(input: { owner: string; directory: string }) {
-  for (const query of queryClient.getQueryCache().findAll({ queryKey: globalSyncSdkClientQueryRoot })) {
+export function clearGlobalSyncServerClientsForDirectory(input: { owner: string; directory: string }) {
+  for (const query of queryClient.getQueryCache().findAll({ queryKey: globalSyncServerClientQueryRoot })) {
     const key = query.queryKey
     if (key[2] !== input.owner) continue
     if (key[4] !== input.directory && key[5] !== input.directory) continue
@@ -48,12 +48,12 @@ export function clearGlobalSyncSdkClientsForDirectory(input: { owner: string; di
   }
 }
 
-export function clearGlobalSyncSdkClientsForOwner(owner: string) {
-  for (const query of queryClient.getQueryCache().findAll({ queryKey: globalSyncSdkClientQueryRoot })) {
+export function clearGlobalSyncServerClientsForOwner(owner: string) {
+  for (const query of queryClient.getQueryCache().findAll({ queryKey: globalSyncServerClientQueryRoot })) {
     if (query.queryKey[2] === owner) queryClient.removeQueries({ queryKey: query.queryKey, exact: true })
   }
 }
 
-export function resetGlobalSyncSdkClientCacheForTest() {
-  queryClient.removeQueries({ queryKey: globalSyncSdkClientQueryRoot })
+export function resetGlobalSyncServerClientCacheForTest() {
+  queryClient.removeQueries({ queryKey: globalSyncServerClientQueryRoot })
 }

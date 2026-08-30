@@ -2,14 +2,14 @@
 // session/submit/* and the entry orchestration in
 // components/prompt-input/submit.ts and the phase helpers both import from this file.
 import type {
-  AgentPartInput,
-  FilePartInput,
-  Message,
-  OutputFormat,
-  Part,
-  SessionPromptResponse,
-  TextPartInput,
-} from "@opencode-ai/sdk/v2/client"
+  AgentAgentPartInput as AgentPartInput,
+  AgentContentPart as Part,
+  AgentFilePartInput as FilePartInput,
+  AgentOutputFormat as OutputFormat,
+  AgentPresentationMessage as Message,
+  AgentPromptResponse as SessionPromptResponse,
+  AgentTextPartInput as TextPartInput,
+} from "@claxedo/agent-runtime-contract"
 import type { ContextItem } from "@/features/session/providers/prompt"
 import type { useClaxedoState } from "@/features/session/app-ports"
 import type { ModelKey } from "../composer/model-strategy"

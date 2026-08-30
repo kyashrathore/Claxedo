@@ -1,4 +1,10 @@
-import type { PermissionRequest, QuestionRequest, Session, SnapshotFileDiff, Todo } from "@opencode-ai/sdk/v2/client"
+import type {
+  AgentPermission as PermissionRequest,
+  AgentPresentationSession as Session,
+  AgentQuestion as QuestionRequest,
+  AgentSnapshotFileDiff as SnapshotFileDiff,
+  AgentTodo as Todo,
+} from "@claxedo/agent-runtime-contract"
 import { Binary } from "@/lib/binary"
 import { diffs as list } from "@/lib/diffs"
 import { queryClient } from "@/platform/query/query-client"

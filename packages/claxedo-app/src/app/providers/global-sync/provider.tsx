@@ -1,4 +1,5 @@
-import { type Project, createOpencodeClient } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import type { InitError } from "@/app/routes/error"
 import { createContext, useContext, onCleanup, onMount, createSignal, type ParentProps } from "solid-js"
@@ -42,12 +43,11 @@ import {
 } from "@/features/workspaces/data/workspace-catalog"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import {
-  cachedGlobalSyncSdkClient,
-  clearGlobalSyncSdkClientsForDirectory,
-  clearGlobalSyncSdkClientsForOwner,
+  cachedGlobalSyncServerClient,
+  clearGlobalSyncServerClientsForDirectory,
+  clearGlobalSyncServerClientsForOwner,
 } from "@/platform/sync/global-sync-sdk-client-cache"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
-import { createTransport } from "@/platform/runtime/transport"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { principalDataScope, principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
@@ -353,7 +353,7 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       queue.clear(directory)
       queryClient.removeQueries({ queryKey: sessionLoadRequestKey(directory) })
       queryClient.removeQueries({ queryKey: sessionLoadMetaKey(directory) })
-      clearGlobalSyncSdkClientsForDirectory({ owner: sdkClientCacheOwner, directory })
+      clearGlobalSyncServerClientsForDirectory({ owner: sdkClientCacheOwner, directory })
       clearSessionPrefetchDirectory(directory)
     },
     resolveScopeKey: workspaceScopeKey,
@@ -364,32 +364,15 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     const workspace = signedWorkspaceInfo(directory)
     const workspaceId = workspace?.workspaceId ?? sessionWorkspaceRuntimeRef({ directory })?.workspaceId
     const request = platform.fetch ?? authFetch
-    return cachedGlobalSyncSdkClient({
+    return cachedGlobalSyncServerClient({
       owner: sdkClientCacheOwner,
       serverUrl: globalSDK.url,
       directory,
       workspaceId,
-      create: () => createOpencodeClient({
-        baseUrl: globalSDK.url,
-        fetch: workspaceId
-          ? createTransport({
-              placement: {
-                workspaceId,
-                hosting: "workspace",
-                // `workspaceId` came only from signed inventory or a canonical
-                // workspace ref. Placement therefore targets the relay even
-                // while principal hydration is pending; the relay authorizes.
-                transport: "workspace-relay",
-              },
-              serverUrl: globalSDK.url,
-              directory,
-              workspace: workspace ?? { kind: "cloud", workspaceId },
-              request,
-              relayRequest: request,
-            }).sdkFetch
-          : platform.fetch,
+      create: () => globalSDK.createClient({
         directory,
-        throwOnError: true,
+        ...(workspaceId ? { workspaceId } : {}),
+        request,
       }),
     })
   }
@@ -414,11 +397,9 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     cacheSessions,
     sessionCacheLimit,
     sdkFor,
-    localSessionListClient: (directory) => createOpencodeClient({
-      baseUrl: globalSDK.url,
-      fetch: unsignedLocalFetch,
+    localSessionListClient: (directory) => globalSDK.createClient({
+      request: unsignedLocalFetch,
       directory,
-      throwOnError: true,
     }),
     setSessionLoadMeta: (directory, value) => queryClient.setQueryData(sessionLoadMetaKey(directory), value),
     markGlobalBootstrapFresh: (baseUrl, harnessType) => queryClient.setQueryData(globalBootstrapFreshKey(baseUrl, harnessType), true),
@@ -486,7 +467,7 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     for (const directory of children.directories()) {
       children.disposeDirectory(directory)
     }
-    clearGlobalSyncSdkClientsForOwner(sdkClientCacheOwner)
+    clearGlobalSyncServerClientsForOwner(sdkClientCacheOwner)
   })
 
   onMount(() => {

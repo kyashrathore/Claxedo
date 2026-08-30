@@ -1,10 +1,9 @@
-import type { Event, File as StatusFile, FileContent, FileNode } from "@opencode-ai/sdk/v2/client"
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
+import { createWorkspaceRuntimeClient, type WorkspaceRuntimeRequestOptions } from "@claxedo/workspace-runtime/client"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { useQuery } from "@tanstack/solid-query"
 import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
-import { isOpenCodeSdkEvent, useGlobalSDK } from "@/app/providers/global-sdk/provider"
+import { isWorkspacePresentationEvent, useGlobalSDK, type GlobalSdkEvent } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { cachedSdkRuntimeRequest, sdkWorkspaceTransport } from "./runtime-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -12,11 +11,10 @@ import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "@/platfor
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
-import { workspaceRuntimeFilePath, workspaceRuntimeFindFilePath } from "@/platform/runtime/agent/dialog-select-directory-routes"
 import { createTransport } from "@/platform/runtime/transport"
 
 type SDKEventMap = {
-  [key in Event["type"]]: Extract<Event, { type: key }>
+  [key in GlobalSdkEvent["type"]]: Extract<GlobalSdkEvent, { type: key }>
 }
 
 type SdkResponse<T> = {
@@ -24,11 +22,10 @@ type SdkResponse<T> = {
   response?: Response
 }
 
-async function readRuntimeJson<T>(response: Response): Promise<SdkResponse<T>> {
-  if (!response.ok) throw new Error((await response.text()) || `Request failed: ${response.status}`)
+function runtimeRequestOptions(options?: WorkspaceRuntimeRequestOptions): WorkspaceRuntimeRequestOptions {
   return {
-    data: (await response.json()) as T,
-    response,
+    headers: options?.headers,
+    signal: options?.signal,
   }
 }
 
@@ -80,30 +77,13 @@ const sDKContextInput = {
       const dir = opts.directory ?? directory()
       const workspace = workspaceForDirectory(dir)
       if (!workspace) return globalSDK.createClient(opts)
-      const request = platform.fetch ?? authFetch
-      return createOpencodeClient({
+      return globalSDK.createClient({
         ...opts,
-        baseUrl: globalSDK.url,
         directory: dir,
-        fetch: createTransport({
-          placement: {
-            workspaceId: workspace.workspaceId,
-            hosting: "workspace",
-            transport: sdkWorkspaceTransport({
-              serverUrl: globalSDK.url,
-              workspaceId: workspace.workspaceId,
-              // workspaceForDirectory returns only signed inventory or the
-              // scope's explicit workspace identity. That canonical placement
-              // may select the relay before principal hydration; the relay
-              // endpoint still authorizes the actual request.
-              signedAccess: true,
-            }),
-          },
-          serverUrl: globalSDK.url,
-          directory: dir,
-          request,
-          relayRequest: request,
-        }).sdkFetch,
+        // workspaceForDirectory returns only signed inventory or the scope's
+        // explicit workspace identity. The global client owns the canonical
+        // relay placement and authorization boundary for that identity.
+        workspaceId: workspace.workspaceId,
       })
     }
 
@@ -142,103 +122,82 @@ const sDKContextInput = {
         })
       }
 
-      const runtimeJson = <T,>(dir: string, path: string) =>
-        runtime(dir)
-          .fetch(path, {
-            headers: { Accept: "application/json" },
-          })
-          .then((response) => readRuntimeJson<T>(response))
+      const runtimeClient = (dir: string, onResponse: (response: Response) => void) => createWorkspaceRuntimeClient({
+        baseUrl: globalSDK.url,
+        fetch: async (request, init) => {
+          const response = await runtime(dir).sdkFetch(request, init)
+          onResponse(response)
+          return response
+        },
+        headers: { Accept: "application/json" },
+      })
+      const runtimeResponse = async <T,>(
+        dir: string,
+        request: (client: ReturnType<typeof createWorkspaceRuntimeClient>) => Promise<T>,
+      ): Promise<SdkResponse<T>> => {
+        let response: Response | undefined
+        const data = await request(runtimeClient(dir, (next) => response = next))
+        return { data, response }
+      }
 
-      const file = new Proxy(client.file, {
-        get(target, prop, receiver) {
-          if (prop === "list") {
-            return (params: { directory?: string; workspace?: string; path: string }) => {
-              const scopedDirectory = params.directory ?? directory
-              return runtimeJson<FileNode[]>(
-                scopedDirectory,
-                workspaceRuntimeFilePath({
-                  resource: "file",
-                  scope: scopedDirectory,
-                  workspace: params.workspace,
-                  path: params.path,
-                }),
-              )
-            }
-          }
-          if (prop === "read") {
-            return (params: { directory?: string; workspace?: string; path: string }) => {
-              const scopedDirectory = params.directory ?? directory
-              return runtimeJson<FileContent>(
-                scopedDirectory,
-                workspaceRuntimeFilePath({
-                  resource: "file/content",
-                  scope: scopedDirectory,
-                  workspace: params.workspace,
-                  path: params.path,
-                }),
-              )
-            }
-          }
-          if (prop === "status") {
-            return (params?: { directory?: string; workspace?: string }) => {
-              const scopedDirectory = params?.directory ?? directory
-              return runtimeJson<StatusFile[]>(
-                scopedDirectory,
-                workspaceRuntimeFilePath({
-                  resource: "file/status",
-                  scope: scopedDirectory,
-                  workspace: params?.workspace,
-                }),
-              )
-            }
-          }
-          return Reflect.get(target, prop, receiver)
+      const file = Object.create(client.file) as typeof client.file
+      Object.defineProperties(file, {
+        list: {
+          value: (params: { directory?: string; workspace?: string; path: string }, options?: WorkspaceRuntimeRequestOptions) => {
+            const scopedDirectory = params.directory ?? directory
+            return runtimeResponse(scopedDirectory, (runtime) =>
+              runtime.files.tree(params.path, runtimeRequestOptions(options)))
+          },
+        },
+        read: {
+          value: (params: { directory?: string; workspace?: string; path: string }, options?: WorkspaceRuntimeRequestOptions) => {
+            const scopedDirectory = params.directory ?? directory
+            return runtimeResponse(scopedDirectory, (runtime) =>
+              runtime.files.content(params.path, runtimeRequestOptions(options)))
+          },
+        },
+        status: {
+          value: (params?: { directory?: string; workspace?: string }, options?: WorkspaceRuntimeRequestOptions) => {
+            const scopedDirectory = params?.directory ?? directory
+            return runtimeResponse(scopedDirectory, (runtime) =>
+              runtime.files.status(runtimeRequestOptions(options)))
+          },
         },
       })
 
-      const find = new Proxy(client.find, {
-        get(target, prop, receiver) {
-          if (prop === "files") {
-            return (params: {
-              directory?: string
-              workspace?: string
-              query: string
-              dirs?: "true" | "false"
-              type?: "file" | "directory"
-              limit?: number
-            }) => {
-              const scopedDirectory = params.directory ?? directory
-              return runtimeJson<string[]>(
-                scopedDirectory,
-                workspaceRuntimeFindFilePath({
-                  scope: scopedDirectory,
-                  workspace: params.workspace,
-                  query: params.query,
-                  dirs: params.dirs,
-                  type: params.type,
-                  limit: params.limit,
-                }),
-              )
-            }
-          }
-          return Reflect.get(target, prop, receiver)
+      const find = Object.create(client.find) as typeof client.find
+      Object.defineProperty(find, "files", {
+        value: (params: {
+          directory?: string
+          workspace?: string
+          query: string
+          dirs?: "true" | "false"
+          type?: "file" | "directory"
+          limit?: number
+        }, options?: WorkspaceRuntimeRequestOptions) => {
+          const scopedDirectory = params.directory ?? directory
+          return runtimeResponse(scopedDirectory, (runtime) =>
+            runtime.files.search({
+              query: params.query,
+              dirs: params.dirs,
+              type: params.type,
+              limit: params.limit,
+            }, runtimeRequestOptions(options)))
         },
       })
 
-      return new Proxy(client, {
-        get(target, prop, receiver) {
-          if (prop === "file") return file
-          if (prop === "find") return find
-          return Reflect.get(target, prop, receiver)
-        },
+      const wrapped = Object.create(client) as typeof client
+      Object.defineProperties(wrapped, {
+        file: { value: file },
+        find: { value: find },
       })
+      return wrapped
     }
 
     const client = createMemo(() =>
       wrapRuntimeFileClient(
         scopedClient({
           directory: directory(),
-          throwOnError: true,
         }),
         directory(),
       ),
@@ -260,7 +219,7 @@ const sDKContextInput = {
     createEffect(() => {
       const dir = directory()
       const unsub = globalSDK.event.on(dir, (event) => {
-        if (!isOpenCodeSdkEvent(event)) return
+        if (!isWorkspacePresentationEvent(event)) return
         emitter.emit(event.type, event)
       })
       onCleanup(() => {})
