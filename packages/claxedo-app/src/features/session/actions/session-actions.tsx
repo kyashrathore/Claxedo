@@ -218,7 +218,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
 
   const handleNewSession = async (workspaceDir?: string, _paneId?: string, selectedRouteId?: string) => {
     const focusOrigin = typeof document === "undefined" ? undefined : document.activeElement
-    const handOffComposerFocus = () => focusComposerWhenReady({ origin: focusOrigin })
+    const handOffComposerFocus = () => focusComposerWhenReady({ origin: focusOrigin, sessionId: "new" })
     props.flowLog("new session click", {
       workspaceDir: workspaceDir ?? null,
       routeDir: props.activeDirectory(),

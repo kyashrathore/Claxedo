@@ -1251,7 +1251,7 @@ export function RailSidebar(props: RailSidebarProps) {
       sessionRef: sessionWorkbenchRef(session),
     }))
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
-    focusComposerWhenReady({ origin: focusOrigin })
+    focusComposerWhenReady({ origin: focusOrigin, sessionId: session.id })
     afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
       scheduleSidebarStatusPrime(session.id)

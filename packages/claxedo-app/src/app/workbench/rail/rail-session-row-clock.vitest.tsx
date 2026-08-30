@@ -7,7 +7,10 @@ import { ClaxedoStateProvider } from "../state/index"
 import { emptyClaxedoState } from "../state/persistence"
 import { RailSidebar, type ProjectItem } from "./rail-sidebar"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
-import type { SessionNavigationDisplayRow } from "../../../features/session/ui/navigation/session-navigation-list"
+import type {
+  SessionNavigationDisplayRow,
+  SessionNavigationProps,
+} from "../../../features/session/ui/navigation/session-navigation-list"
 
 vi.mock("@claxedo/app", () => ({
   getAvatarColors: () => ({ background: "#000", color: "#fff" }),
@@ -141,9 +144,11 @@ vi.mock("../../../features/session/data/query/session-list", () => ({
 // child is the only seam that yields a REAL row object built by the real
 // `sessionDisplayRow`, without restructuring production code to expose it.
 const captured: SessionNavigationDisplayRow[][] = []
+const capturedActivations: SessionNavigationProps["onActivate"][] = []
 vi.mock("../../../features/session/ui/navigation/session-navigation-list", () => ({
-  SessionNavigation: (props: { rows: readonly SessionNavigationDisplayRow[] }) => {
+  SessionNavigation: (props: SessionNavigationProps) => {
     captured.push([...props.rows])
+    capturedActivations.push(props.onActivate)
     return null
   },
 }))
@@ -158,6 +163,7 @@ afterEach(() => {
   cleanup()
   localStorage.clear()
   captured.length = 0
+  capturedActivations.length = 0
 })
 
 const project = {
@@ -243,6 +249,34 @@ describe("rail session row clock invalidation", () => {
     expect(typeof descriptor?.get).toBe("function")
     expect(descriptor?.value).toBeUndefined()
     expect(row.title).toBe("Lazy label session")
+  })
+
+  test("existing-session activation hands focus from the rail to a delayed composer", async () => {
+    const row = await renderSidebarWithSession()
+    const navigationIndex = captured.findLastIndex((rows) => rows.some((item) => item.source.sessionId === row.source.sessionId))
+    const activate = capturedActivations[navigationIndex]
+    if (!activate) throw new Error("no session activation callback was captured")
+
+    const origin = document.createElement("button")
+    document.body.append(origin)
+    origin.focus()
+    activate(row)
+
+    const destination = document.createElement("div")
+    destination.dataset.sessionId = row.source.sessionId
+    const composer = document.createElement("div")
+    composer.dataset.component = "prompt-input"
+    composer.setAttribute("contenteditable", "true")
+    composer.setAttribute("role", "textbox")
+    composer.tabIndex = 0
+    destination.append(composer)
+    document.body.append(destination)
+
+    await vi.advanceTimersByTimeAsync(20)
+
+    expect(document.activeElement).toBe(composer)
+    origin.remove()
+    destination.remove()
   })
 
   test("a clock tick re-runs the timeLabel binding and nothing else on the row", async () => {

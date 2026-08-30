@@ -187,10 +187,13 @@ describe("createSessionActions", () => {
     const queue: Array<() => void> = []
     composerFocus.schedule = (run) => queue.push(run)
     const origin = document.createElement("button")
+    const destination = document.createElement("div")
+    destination.dataset.sessionId = "new"
     const editor = document.createElement("div")
     editor.setAttribute("data-component", "prompt-input")
     editor.setAttribute("contenteditable", "true")
-    document.body.append(origin, editor)
+    destination.append(editor)
+    document.body.append(origin, destination)
     origin.focus()
 
     await createSessionActions(props, nav).handleNewSession("/workspace/main")

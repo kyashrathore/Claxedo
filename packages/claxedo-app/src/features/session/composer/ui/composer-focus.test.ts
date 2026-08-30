@@ -88,6 +88,33 @@ describe("focusComposerWhenReady", () => {
     expect(document.activeElement).toBe(editor)
   })
 
+  test("waits for the destination composer instead of focusing the outgoing session", () => {
+    const queue: Array<() => void> = []
+    composerFocus.schedule = (run) => queue.push(run)
+    const origin = document.createElement("button")
+    const outgoingSurface = document.createElement("div")
+    outgoingSurface.dataset.sessionId = "old"
+    const outgoingEditor = mountEditor()
+    outgoingSurface.append(outgoingEditor)
+    document.body.append(origin, outgoingSurface)
+    origin.focus()
+
+    focusComposerWhenReady({ origin, sessionId: "new" })
+    queue.shift()?.()
+
+    expect(document.activeElement).toBe(origin)
+    expect(queue).toHaveLength(1)
+
+    const destinationSurface = document.createElement("div")
+    destinationSurface.dataset.sessionId = "new"
+    const destinationEditor = mountEditor()
+    destinationSurface.append(destinationEditor)
+    document.body.append(destinationSurface)
+    queue.shift()?.()
+
+    expect(document.activeElement).toBe(destinationEditor)
+  })
+
   test("does not steal focus after the user moves away from the navigation control", () => {
     const queue: Array<() => void> = []
     composerFocus.schedule = (run) => queue.push(run)
