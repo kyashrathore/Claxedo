@@ -1,5 +1,5 @@
 import { createSseReplayBuffer, type SseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
-import { randomUUID } from "node:crypto"
+import { createHash, randomUUID } from "node:crypto"
 import type { Context } from "hono"
 import type { SessionAccessPolicy } from "./session-access-policy"
 import type { RelayHostAuthContext } from "./workspace-host-service-auth"
@@ -228,10 +228,13 @@ export function agentRuntimeEventDeliveryPolicy(policy: SessionAccessPolicy): Ag
 
 function scopeKey(principal: EventDeliveryPrincipal) {
   if (principal.mode === "unmanaged-local") return "local"
+  const credential = principal.credential
+    ? createHash("sha256").update(principal.credential).digest("base64url")
+    : `connection:${principal.connectionId}`
   if (principal.mode === "signed-unattributed") {
-    return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}`
+    return `unattributed:${principal.orgId}:${principal.workspaceId}:${principal.role}:${credential}`
   }
-  return `actor:${principal.orgId}:${principal.workspaceId}:${principal.actorKind}:${principal.actorId}`
+  return `actor:${principal.orgId}:${principal.workspaceId}:${principal.actorKind}:${principal.actorId}:${credential}`
 }
 
 /**
@@ -242,9 +245,10 @@ function scopeKey(principal: EventDeliveryPrincipal) {
  * This source assigns ids only after the content-aware policy delivers an
  * event to a principal, so filtered traffic cannot punch holes in that
  * principal's cursor. Empty scopes are evicted; a reconnect reconstructs its
- * actor-scoped replay from the bounded retained ring using the reconnecting
- * principal. Live authorization remains connection-scoped so one renewed
- * credential cannot authorize an older simultaneous connection.
+ * credential-scoped replay from the bounded retained ring using the
+ * reconnecting principal. Both replay and live authorization remain bound to
+ * the presenting credential, so one renewed credential cannot authorize an
+ * older or revoked simultaneous connection.
  */
 export function createIdentityAwareEventSource<T>(input: {
   subscribe: Source<T>["subscribe"]

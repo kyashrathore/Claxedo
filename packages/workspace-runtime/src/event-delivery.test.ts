@@ -217,6 +217,31 @@ describe("createIdentityAwareEventSource", () => {
     source.close()
   })
 
+  test("does not expose another credential's replay to a revoked connection for the same actor", async () => {
+    const bus = createBus<Event>()
+    const revoked = new Set(["Bearer revoked"])
+    const source = createIdentityAwareEventSource({
+      subscribe: bus.subscribe,
+      policy: ({ principal }) => {
+        if (principal.mode !== "verified" || !principal.credential) return "terminate"
+        return revoked.has(principal.credential) ? "terminate" : "deliver"
+      },
+      sessionId: (event) => event.sessionId,
+    })
+    const valid = source.open({ ...participant("connection_valid"), credential: "Bearer valid" })
+    valid.subscribe(() => undefined)
+
+    bus.publish({ sessionId: "ses_private", value: "valid-credential-only" })
+    await source.flush()
+
+    const denied = source.open({ ...participant("connection_revoked"), credential: "Bearer revoked" })
+    await denied.ready
+
+    expect(denied.replay.replayAfter("0")).toEqual([])
+    expect(await denied.decide({ sessionId: "ses_private", value: "valid-credential-only" })).toBe("terminate")
+    source.close()
+  })
+
   test("evicts disconnected scopes and reconstructs replay from bounded retention", async () => {
     const bus = createBus<Event>()
     const decisions: string[] = []

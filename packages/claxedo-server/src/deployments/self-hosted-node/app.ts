@@ -15,8 +15,15 @@ import { createNodeWebSocket } from "@hono/node-ws"
 import { importJWK, importSPKI } from "jose"
 import { verifyRelayHostToken, verifyRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { z } from "zod"
-import { optionalGit, setupAgentHooks } from "@claxedo/workspace-runtime/host"
-import type { ProcessObserver } from "@claxedo/workspace-runtime"
+import {
+  optionalGit,
+  setupAgentHooks,
+} from "@claxedo/workspace-runtime/host"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  type ProcessObserver,
+  type SessionAuthorityInput,
+} from "@claxedo/workspace-runtime"
 import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/errors/posthog"
 import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
@@ -105,7 +112,10 @@ import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
-import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
+import {
+  decideWorkspaceSessionAuthority,
+  RuntimeSessionAuthorityRoutes,
+} from "../../routes/runtime-session-authority"
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
@@ -210,6 +220,23 @@ function authRouteOptions(services: ControlPlaneServices) {
     authConfig: services.auth.config,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
   }
+}
+
+function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
+  const decide = (input: SessionAuthorityInput, action: "read" | "write" | "register") =>
+    decideWorkspaceSessionAuthority(authority, {
+      actorId: input.actor.actorId,
+      actorKind: input.actor.actorKind,
+      workspaceId: input.authority.workspaceId,
+      sessionId: input.sessionId,
+      action,
+      ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
+    })
+  return managedWorkspaceSessionAccessPolicy({
+    authorizeSessionRead: (input) => decide(input, "read"),
+    authorizeSessionWrite: (input) => decide(input, "write"),
+    registerSession: (input) => decide(input, "register"),
+  })
 }
 
 export function localDocumentsBackend() {
@@ -1468,6 +1495,9 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     opencodeRequest,
     opencodeCompat,
     piModelBackend: centralModelBackend().modelBackend,
+    ...(services.auth.config.enabled && services.authority
+      ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
+      : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     routeContributions: capabilities.runtimeRouteContributions,
     // See `projectLocalSessionMetaFromEvent` above: a harness session's

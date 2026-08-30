@@ -324,12 +324,6 @@ export function sessionAccessContext(input: SessionAccessContextReader):
     actor_public_id?: string
     actor_name?: string
     actor_avatar_url?: string
-    /**
-     * Embedded local hop stamp: carry display author without enabling
-     * managed-private session authority (which has no registerSession on
-     * the in-process embedded composition and would 403 session create).
-     */
-    attribution_only?: boolean
   }
   const author = auth.actor_kind && profile.actor_public_id && profile.actor_name
     ? {
@@ -341,7 +335,6 @@ export function sessionAccessContext(input: SessionAccessContextReader):
         } satisfies SessionAccessAuthor,
       }
     : {}
-  if (profile.attribution_only) return author
   return {
     ...(input.req?.header("authorization") ? { credential: input.req.header("authorization") } : {}),
     ...(auth.actor_id && auth.actor_kind

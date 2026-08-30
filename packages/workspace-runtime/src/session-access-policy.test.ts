@@ -1,4 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { Hono } from "hono"
+import {
+  createWorkspaceRuntimeExposureMiddleware,
+  embeddedWorkspaceRuntimeExposure,
+  EMBEDDED_RELAY_HOST_AUTH_HEADER,
+} from "./exposure"
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
@@ -135,25 +141,33 @@ describe("SessionAccessPolicy", () => {
     })
   })
 
-  test("embedded attribution-only stamp yields author without managed authority", () => {
-    const context = sessionAccessContext({
-      get(name: "relayHostAuth" | "relayHostDirectAuth") {
-        if (name === "relayHostDirectAuth") return undefined
-        return {
+  test("embedded verified stamp retains managed authority and the forwarded credential", async () => {
+    const app = new Hono()
+    app.use("*", createWorkspaceRuntimeExposureMiddleware(embeddedWorkspaceRuntimeExposure({
+      owner: "session-access-test",
+      guard: () => true,
+    })))
+    app.get("/context", (c) => c.json(sessionAccessContext(c as never)))
+
+    const response = await app.request("http://runtime.test/context", {
+      headers: {
+        authorization: "Bearer verified-runtime-proof",
+        [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({
           actor_id: "actor_alice",
-          actor_kind: "human" as const,
+          actor_kind: "human",
           actor_public_id: "usr_alice",
           actor_name: "Alice",
           workspace_id: "ws_1",
           org_id: "org_1",
-          role: "editor" as const,
-          attribution_only: true,
-        }
+          role: "editor",
+        }),
       },
-    } as never)
-
-    expect(context).toEqual({
+    })
+    await expect(response.json()).resolves.toEqual({
+      actor: { actorId: "actor_alice", actorKind: "human" },
       author: { id: "usr_alice", name: "Alice", kind: "human" },
+      authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
+      credential: "Bearer verified-runtime-proof",
     })
   })
 

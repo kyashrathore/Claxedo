@@ -11,6 +11,7 @@ import {
 } from "jose"
 import type { RelayHostTokenClaims } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "../authority/services"
+import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 
@@ -33,6 +34,62 @@ export type RuntimeSessionAuthorityOptions = {
   verifyRelayProof?: (token: string) => Promise<RelayHostTokenClaims>
   mintStreamLease?: (claims: StreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyStreamLease?: (lease: string) => Promise<StreamLeaseClaims>
+}
+
+type WorkspaceSessionAuthorityRequest = {
+  actorId: string
+  actorKind: "human" | "agent"
+  workspaceId: string
+  sessionId: string
+  action: "read" | "write" | "register"
+  title?: string
+}
+
+export type WorkspaceSessionAuthorityDecision =
+  | { allowed: true }
+  | { allowed: false; status: 401 | 403 | 503; code: string; message: string }
+
+export async function decideWorkspaceSessionAuthority(
+  authority: WorkspaceAuthority,
+  input: WorkspaceSessionAuthorityRequest,
+): Promise<WorkspaceSessionAuthorityDecision> {
+  try {
+    if (input.action === "register") {
+      if (!authority.registerRuntimeSession) throw new Error("runtime session registration is unavailable")
+      await authority.registerRuntimeSession({
+        actorId: input.actorId,
+        actorKind: input.actorKind,
+        sessionId: input.sessionId,
+        workspaceId: input.workspaceId,
+        ...(input.title ? { title: input.title } : {}),
+      })
+    } else {
+      if (!authority.authorizeRuntimeSession) throw new Error("runtime session authority is unavailable")
+      await authority.authorizeRuntimeSession({
+        actorId: input.actorId,
+        actorKind: input.actorKind,
+        sessionId: input.sessionId,
+        workspaceId: input.workspaceId,
+        action: input.action,
+      })
+    }
+    return { allowed: true }
+  } catch (error) {
+    if (error instanceof ControlPlaneAuthError) {
+      return {
+        allowed: false,
+        status: error.status === 401 ? 401 : error.status === 503 ? 503 : 403,
+        code: error.code,
+        message: error.message,
+      }
+    }
+    return {
+      allowed: false,
+      status: 503,
+      code: "session_authority_unavailable",
+      message: "Session authority is temporarily unavailable",
+    }
+  }
 }
 
 /**
@@ -115,15 +172,17 @@ export function RuntimeSessionAuthorityRoutes(
     try {
       const authority = requireAuthority(services)
       if (body.action === "register") {
-        if (!authority.registerRuntimeSession) throw new Error("runtime session registration is unavailable")
-        await authority.registerRuntimeSession({
+        const decision = await decideWorkspaceSessionAuthority(authority, {
           actorId: claims.actorId,
           actorKind: claims.actorKind,
           sessionId: body.sessionId,
           workspaceId: claims.workspaceId,
+          action: "register",
           ...(typeof body.title === "string" && body.title.trim() ? { title: body.title.trim() } : {}),
         })
-        return c.json({ allowed: true })
+        return decision.allowed
+          ? c.json({ allowed: true })
+          : c.json({ error: { code: decision.code, message: decision.message } }, decision.status)
       }
       if (body.stream === true) {
         if (!authority.runtimeAccessTokenActive) throw new Error("runtime token authority is unavailable")
@@ -141,14 +200,16 @@ export function RuntimeSessionAuthorityRoutes(
           }, 401)
         }
       }
-      if (!authority.authorizeRuntimeSession) throw new Error("runtime session authority is unavailable")
-      await authority.authorizeRuntimeSession({
+      const decision = await decideWorkspaceSessionAuthority(authority, {
         actorId: claims.actorId,
         actorKind: claims.actorKind,
         sessionId: body.sessionId,
         workspaceId: claims.workspaceId,
         action: body.action as "read" | "write",
       })
+      if (!decision.allowed) {
+        return c.json({ error: { code: decision.code, message: decision.message } }, decision.status)
+      }
       if (body.stream === true) {
         const minted = await (options.mintStreamLease ?? streamLeaseMinter(env))(claims)
         return c.json({ allowed: true, ...minted })

@@ -1,7 +1,7 @@
 import type { MiddlewareHandler } from "hono"
 import type { RelayHostAuthContext, RelayHostAuthOptions } from "./workspace-host-service-auth"
 
-/** Hop-only header stamped by `@claxedo/local-server` `embedded()` for author attribution. */
+/** Hop-only header stamped by `@claxedo/local-server` `embedded()` after actor verification. */
 export const EMBEDDED_RELAY_HOST_AUTH_HEADER = "x-claxedo-embedded-relay-host-auth"
 
 export type WorkspaceRuntimeRequestGuard = (input: {
@@ -196,9 +196,6 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       org_id,
       role,
       ...(stringValue(row.host_id) ? { host_id: stringValue(row.host_id) } : {}),
-      // Attribution-only: chips need author; do not flip local embedded policy
-      // into managed-private session authority (no registerSession there).
-      attribution_only: true,
       access: "user-hosted",
       backing: "local-worktree",
       iss: "workspace-relay",
