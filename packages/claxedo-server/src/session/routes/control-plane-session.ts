@@ -1,5 +1,4 @@
 import { Hono, type Context } from "hono"
-import { bodyLimit } from "hono/body-limit"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { randomUUID } from "node:crypto"
 import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
@@ -25,12 +24,8 @@ import {
   sessionInventoryResponse,
 } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
-import {
-  notifySessionShareChanged,
-  peopleErrorResponse,
-  type SessionShareChangedSink,
-  type SessionShareFanoutTarget,
-} from "./session-people-contract"
+import type { SessionShareChangedSink } from "./session-people-contract"
+import { SessionPeopleControlRoutes } from "./session-people-routes"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -38,20 +33,6 @@ type Options = {
   beforeLocalList?: () => Promise<void>
   createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
   sessionShareChangedSink?: SessionShareChangedSink
-}
-
-const participantBodyLimitBytes = 16 * 1024
-
-function shareTargetFromBody(body: Record<string, unknown>): SessionShareFanoutTarget {
-  return {
-    ...(typeof body.grantedToTokenIdentifier === "string" ? { grantedToTokenIdentifier: body.grantedToTokenIdentifier } : {}),
-    ...(typeof body.grantedToClerkSubject === "string" ? { grantedToClerkSubject: body.grantedToClerkSubject } : {}),
-    ...(typeof body.grantedToUserId === "string" ? { grantedToUserId: body.grantedToUserId } : {}),
-    ...(typeof body.grantedToClerkOrgId === "string" ? { grantedToClerkOrgId: body.grantedToClerkOrgId } : {}),
-    ...(typeof body.grantedToOrgId === "string" ? { grantedToOrgId: body.grantedToOrgId } : {}),
-    ...(typeof body.grantedToTeamId === "string" ? { grantedToTeamId: body.grantedToTeamId } : {}),
-    ...(typeof body.grantedToTeamPublicId === "string" ? { grantedToTeamPublicId: body.grantedToTeamPublicId } : {}),
-  }
 }
 
 async function signedAuth(req: Request, options: Options) {
@@ -66,18 +47,6 @@ async function signedAuth(req: Request, options: Options) {
 function requiredWorkspaceId(value: string | undefined) {
   if (value) return value
   throw new ControlPlaneAuthError(400, "workspace_id_required", "workspaceId is required")
-}
-
-async function participantBody(req: Request) {
-  const body = await req.json().catch(() => undefined)
-  if (!body || typeof body !== "object" || Array.isArray(body)) return
-  const input = body as Record<string, unknown>
-  const workspaceId = typeof input.workspaceId === "string" ? input.workspaceId.trim() : ""
-  const participantTokenIdentifier = typeof input.participantTokenIdentifier === "string"
-    ? input.participantTokenIdentifier.trim()
-    : ""
-  if (!workspaceId || !participantTokenIdentifier) return
-  return { workspaceId, participantTokenIdentifier }
 }
 
 function sessionListWorkspaceId(query: ReturnType<typeof parseSessionListQuery>) {
@@ -316,23 +285,12 @@ function hybridHarness(input: unknown): string {
 
 export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
   const app = new Hono()
-  app.use("/sessions/:sessionId/participants", bodyLimit({
-    maxSize: participantBodyLimitBytes,
-    onError: (c) => c.json({
-      error: {
-        code: "request_body_too_large",
-        message: `Request body exceeds the ${participantBodyLimitBytes}-byte limit`,
-      },
-    }, 413),
-  }))
-  app.use("/sessions/:sessionId/shares", bodyLimit({
-    maxSize: participantBodyLimitBytes,
-    onError: (c) => c.json({
-      error: {
-        code: "request_body_too_large",
-        message: `Request body exceeds the ${participantBodyLimitBytes}-byte limit`,
-      },
-    }, 413),
+  // The People routes are also mounted by hosted workerd. Keep the central
+  // surface on that worker-safe owner rather than maintaining two copies.
+  app.route("/", SessionPeopleControlRoutes(services, {
+    authConfig: options.authConfig,
+    verifier: options.verifier,
+    ...(options.sessionShareChangedSink ? { sessionShareChangedSink: options.sessionShareChangedSink } : {}),
   }))
   return app
     .get("/session-list", async (c) => {
@@ -502,146 +460,6 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
         throw err
-      }
-    })
-    .post("/sessions/:sessionId/participants", async (c) => {
-      const body = await participantBody(c.req.raw)
-      if (!body) {
-        return c.json({
-          error: {
-            code: "session_participant_input_required",
-            message: "workspaceId and participantTokenIdentifier are required",
-          },
-        }, 400)
-      }
-      try {
-        const auth = await signedAuth(c.req.raw, options)
-        return c.json(await requireAuthority(services).addSessionParticipant(auth, {
-          sessionId: c.req.param("sessionId"),
-          workspaceId: body.workspaceId,
-          participantTokenIdentifier: body.participantTokenIdentifier,
-        }))
-      } catch (err) {
-        return peopleErrorResponse(c, err)
-      }
-    })
-    .delete("/sessions/:sessionId/participants", async (c) => {
-      const body = await participantBody(c.req.raw)
-      if (!body) {
-        return c.json({
-          error: {
-            code: "session_participant_input_required",
-            message: "workspaceId and participantTokenIdentifier are required",
-          },
-        }, 400)
-      }
-      try {
-        const auth = await signedAuth(c.req.raw, options)
-        return c.json(await requireAuthority(services).removeSessionParticipant(auth, {
-          sessionId: c.req.param("sessionId"),
-          workspaceId: body.workspaceId,
-          participantTokenIdentifier: body.participantTokenIdentifier,
-        }))
-      } catch (err) {
-        return peopleErrorResponse(c, err)
-      }
-    })
-    .get("/sessions/:sessionId/shares", async (c) => {
-      const workspaceId = c.req.query("workspaceId")
-      if (!workspaceId) {
-        return c.json({
-          error: {
-            code: "session_share_input_required",
-            message: "workspaceId is required",
-          },
-        }, 400)
-      }
-      try {
-        const auth = await signedAuth(c.req.raw, options)
-        const list = requireAuthority(services).listSessionShares
-        if (!list) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
-        return c.json(await list(auth, {
-          sessionId: c.req.param("sessionId"),
-          workspaceId,
-        }))
-      } catch (err) {
-        return peopleErrorResponse(c, err)
-      }
-    })
-    .post("/sessions/:sessionId/shares", async (c) => {
-      const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
-      const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined
-      if (!workspaceId) {
-        return c.json({
-          error: {
-            code: "session_share_input_required",
-            message: "workspaceId is required",
-          },
-        }, 400)
-      }
-      try {
-        const auth = await signedAuth(c.req.raw, options)
-        const authority = requireAuthority(services)
-        const grant = authority.grantSessionShare
-        if (!grant) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
-        const target = shareTargetFromBody(body)
-        const result = await grant(auth, {
-          sessionId: c.req.param("sessionId"),
-          workspaceId,
-          ...target,
-        })
-        await notifySessionShareChanged({
-          auth,
-          authority,
-          phase: "granted",
-          sessionId: c.req.param("sessionId"),
-          workspaceId,
-          target,
-          ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
-        })
-        return c.json(result)
-      } catch (err) {
-        return peopleErrorResponse(c, err)
-      }
-    })
-    .delete("/sessions/:sessionId/shares", async (c) => {
-      const body = await c.req.json().catch(() => ({})) as Record<string, unknown>
-      const workspaceId = typeof body.workspaceId === "string" ? body.workspaceId : undefined
-      if (!workspaceId) {
-        return c.json({
-          error: {
-            code: "session_share_input_required",
-            message: "workspaceId is required",
-          },
-        }, 400)
-      }
-      try {
-        const auth = await signedAuth(c.req.raw, options)
-        const authority = requireAuthority(services)
-        const revoke = authority.revokeSessionShare
-        if (!revoke) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
-        const target = shareTargetFromBody(body)
-        const result = await revoke(auth, {
-          sessionId: c.req.param("sessionId"),
-          workspaceId,
-          ...(typeof body.grantId === "string" ? { grantId: body.grantId } : {}),
-          ...target,
-        })
-        for (const revokedTarget of result.revokedTargets) {
-          await notifySessionShareChanged({
-            auth,
-            authority,
-            phase: "revoked",
-            sessionId: c.req.param("sessionId"),
-            workspaceId,
-            target: revokedTarget,
-            ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
-          })
-        }
-        const { revokedTargets: _revokedTargets, ...response } = result
-        return c.json(response)
-      } catch (err) {
-        return peopleErrorResponse(c, err)
       }
     })
     .get("/sessions/:sessionId/gateway", async (c) => {
