@@ -32,9 +32,8 @@ async function orgById(ctx: any, orgId: string) {
 async function defaultTeamForOrg(ctx: any, orgId: unknown) {
   const teams = await ctx.db
     .query("teams")
-    .withIndex("by_org_default", (q: any) => q.eq("org_id", orgId).eq("is_default", true))
-    .filter((q: any) => q.eq(q.field("deleted_at"), undefined))
-    .take(2)
+    .withIndex("by_org_default", (q: any) => q.eq("org_id", orgId).eq("is_default", true).eq("deleted_at", undefined))
+    .collect()
   if (teams.length > 1) throw new Error("default_team_duplicate")
   return teams[0]
 }

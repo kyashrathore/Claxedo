@@ -1,10 +1,7 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import {
-  migrationStatusDecision,
-  parseMigrationWaitArgs,
-} from "../../../../scripts/wait-for-convex-migrations"
+import { migrationStatusDecision, parseMigrationWaitArgs } from "../../../../scripts/wait-for-convex-migrations"
 
 const root = path.resolve(import.meta.dirname, "../../../..")
 const controlPlane = fs.readFileSync(path.join(root, ".github/workflows/deploy-control-plane.yml"), "utf8")
@@ -12,10 +9,7 @@ const convex = fs.readFileSync(path.join(root, ".github/workflows/deploy-convex.
 const app = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app.yml"), "utf8")
 const appStaging = fs.readFileSync(path.join(root, ".github/workflows/deploy-claxedo-app-staging.yml"), "utf8")
 const sandboxImage = fs.readFileSync(path.join(root, ".github/workflows/claxedo-sandbox-image.yml"), "utf8")
-const sandboxWorker = fs.readFileSync(
-  path.join(root, ".github/workflows/deploy-cloudflare-sandbox-worker.yml"),
-  "utf8",
-)
+const sandboxWorker = fs.readFileSync(path.join(root, ".github/workflows/deploy-cloudflare-sandbox-worker.yml"), "utf8")
 const setupBun = fs.readFileSync(path.join(root, ".github/actions/setup-bun/action.yml"), "utf8")
 const deployedBrowser = fs.readFileSync(
   path.join(root, "packages/claxedo-app/e2e/playwright/deployed-workgraph.spec.ts"),
@@ -30,22 +24,37 @@ const appPlaywrightConfig = fs.readFileSync(path.join(root, "packages/claxedo-ap
 describe("Claxedo Cloud deployment workflow", () => {
   test("the migration waiter fails closed and completes only on successful terminal states", () => {
     const names = ["migrations:first", "migrations:second"]
-    expect(migrationStatusDecision(names, [
-      { name: names[0], state: "success", isDone: true },
-      { name: names[1], state: "inProgress", isDone: false },
-    ])).toBe(false)
-    expect(migrationStatusDecision(names, names.map((name) => ({ name, state: "success", isDone: true })))).toBe(true)
-    expect(() => migrationStatusDecision(names, [{ name: names[0], state: "success", isDone: true }]))
-      .toThrow("incomplete migration status set")
-    expect(() => migrationStatusDecision(names, names.map(() => ({
-      name: names[0],
-      state: "success",
-      isDone: true,
-    })))).toThrow("mismatched migration status set")
-    expect(() => migrationStatusDecision(names, [
-      { name: names[0], state: "success", isDone: true },
-      { name: names[1], state: "failed", isDone: false, error: "contract violation" },
-    ])).toThrow("contract violation")
+    expect(
+      migrationStatusDecision(names, [
+        { name: names[0], state: "success", isDone: true },
+        { name: names[1], state: "inProgress", isDone: false },
+      ]),
+    ).toBe(false)
+    expect(
+      migrationStatusDecision(
+        names,
+        names.map((name) => ({ name, state: "success", isDone: true })),
+      ),
+    ).toBe(true)
+    expect(() => migrationStatusDecision(names, [{ name: names[0], state: "success", isDone: true }])).toThrow(
+      "incomplete migration status set",
+    )
+    expect(() =>
+      migrationStatusDecision(
+        names,
+        names.map(() => ({
+          name: names[0],
+          state: "success",
+          isDone: true,
+        })),
+      ),
+    ).toThrow("mismatched migration status set")
+    expect(() =>
+      migrationStatusDecision(names, [
+        { name: names[0], state: "success", isDone: true },
+        { name: names[1], state: "failed", isDone: false, error: "contract violation" },
+      ]),
+    ).toThrow("contract violation")
   })
 
   test("the migration waiter keeps deployment selectors out of migration names", () => {
@@ -57,12 +66,11 @@ describe("Claxedo Cloud deployment workflow", () => {
       names: ["migrations:first"],
       deploymentArgs: ["--prod"],
     })
-    expect(() => parseMigrationWaitArgs(["--deployment", "migrations:first"]))
-      .toThrow("requires a deployment name")
-    expect(() => parseMigrationWaitArgs(["--deployment", "staging", "--prod", "migrations:first"]))
-      .toThrow("exactly one Convex deployment selector")
-    expect(() => parseMigrationWaitArgs(["--unknown", "migrations:first"]))
-      .toThrow("Unknown option")
+    expect(() => parseMigrationWaitArgs(["--deployment", "migrations:first"])).toThrow("requires a deployment name")
+    expect(() => parseMigrationWaitArgs(["--deployment", "staging", "--prod", "migrations:first"])).toThrow(
+      "exactly one Convex deployment selector",
+    )
+    expect(() => parseMigrationWaitArgs(["--unknown", "migrations:first"])).toThrow("Unknown option")
   })
 
   test("serializes every top-level deploy while the reusable app inherits its caller's lock", () => {
@@ -118,12 +126,18 @@ describe("Claxedo Cloud deployment workflow", () => {
       "reconcileProjectMembershipProjectIds",
       "backfillWorkspaceTenantIdentity",
       "backfillSessionTenantIdentity",
+      "backfillDefaultTeams",
+      "backfillDefaultTeamMemberships",
+      "backfillDefaultTeamProjectGrants",
+      "backfillDefaultTeamWorkspaceShares",
+      "backfillDefaultTeamSessionShares",
       "verifyUserActorIdentityContract",
       "verifyProjectTenantIdentityContract",
       "verifyProjectMembershipIdentityContract",
       "verifyWorkspaceTenantIdentityContract",
       "verifySessionTenantIdentityContract",
-    ]) expect(controlPlane.match(new RegExp(migration, "g"))?.length).toBe(4)
+    ])
+      expect(controlPlane.match(new RegExp(migration, "g"))?.length).toBe(4)
     expect(controlPlane.match(/TENANT_MIGRATION_LEGACY_SESSION_ID/g)?.length).toBeGreaterThanOrEqual(5)
     expect(controlPlane).toContain("legacy_session_tenant_mismatch")
   })
@@ -132,6 +146,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     const stagingWaits = [
       "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:normalizeRuntimeLeaseLegacyFields",
       "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillUserActorIdentity migrations:backfillProjectTenantIdentity migrations:reconcileProjectMembershipProjectIds migrations:backfillWorkspaceTenantIdentity migrations:backfillSessionTenantIdentity",
+      "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:backfillDefaultTeams migrations:backfillDefaultTeamMemberships migrations:backfillDefaultTeamProjectGrants migrations:backfillDefaultTeamWorkspaceShares migrations:backfillDefaultTeamSessionShares",
       "bun scripts/wait-for-convex-migrations.ts --deployment staging migrations:verifyUserActorIdentityContract migrations:verifyProjectTenantIdentityContract migrations:verifyProjectMembershipIdentityContract migrations:verifyWorkspaceTenantIdentityContract migrations:verifySessionTenantIdentityContract",
     ]
     const productionWaits = stagingWaits.map((command) => command.replace("--deployment staging", "--prod"))
@@ -142,12 +157,15 @@ describe("Claxedo Cloud deployment workflow", () => {
       controlPlane.indexOf("- name: Backfill tenant identity contracts (staging)"),
     )
     expect(controlPlane.indexOf(stagingWaits[1]!)).toBeLessThan(
-      controlPlane.indexOf("- name: Verify tenant identity contracts (staging)"),
+      controlPlane.indexOf("- name: Backfill default team projections (staging)"),
     )
     expect(controlPlane.indexOf(stagingWaits[2]!)).toBeLessThan(
+      controlPlane.indexOf("- name: Verify tenant identity contracts (staging)"),
+    )
+    expect(controlPlane.indexOf(stagingWaits[3]!)).toBeLessThan(
       controlPlane.indexOf("- name: Legacy Session tenant migration smoke (staging)"),
     )
-    expect(controlPlane.match(/"reset":true/g)).toHaveLength(6)
+    expect(controlPlane.match(/"reset":true/g)).toHaveLength(8)
   })
 
   test("fails before Convex mutation when release configuration is incomplete", () => {
@@ -240,16 +258,22 @@ describe("Claxedo Cloud deployment workflow", () => {
     // "Interactive hosted Session smoke", whose `smoke-interactive-session.ts`
     // requires only REPOSITORY_URL. Adding a BASE_REVISION to that step to make
     // the counts match would assert an env var the script never reads.
-    expect(controlPlane.match(/WORKGRAPH_SMOKE_REPOSITORY_URL: \$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\.git/g)).toHaveLength(3)
+    expect(
+      controlPlane.match(
+        /WORKGRAPH_SMOKE_REPOSITORY_URL: \$\{\{ github\.server_url \}\}\/\$\{\{ github\.repository \}\}\.git/g,
+      ),
+    ).toHaveLength(3)
     expect(controlPlane.match(/WORKGRAPH_SMOKE_BASE_REVISION: \$\{\{ github\.sha \}\}/g)).toHaveLength(2)
-    expect(controlPlane).toContain('working-directory: packages/workspace-relay')
+    expect(controlPlane).toContain("working-directory: packages/workspace-relay")
     expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
     expect(controlPlane.match(/--var "CLAXEDO_PUBLIC_URL:\$\{CONTROL_PLANE_URL\}"/g)).toHaveLength(2)
     expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')
     expect(controlPlane).toContain("build_sandbox_runtime:")
     expect(controlPlane).toContain("bun run --cwd packages/claxedo-server sandbox:image --push")
     expect(controlPlane).toContain("build_id: ${{ steps.sandbox_identity.outputs.build_id }}")
-    expect(controlPlane.match(/SANDBOX_BUILD_ID: \$\{\{ needs\.build_sandbox_runtime\.outputs\.build_id \}\}/g)).toHaveLength(4)
+    expect(
+      controlPlane.match(/SANDBOX_BUILD_ID: \$\{\{ needs\.build_sandbox_runtime\.outputs\.build_id \}\}/g),
+    ).toHaveLength(4)
     expect(controlPlane).not.toContain("vars.CLAXEDO_SANDBOX_BUILD_ID")
     expect(controlPlane.match(/--var "CLAXEDO_SANDBOX_BUILD_ID:\$\{SANDBOX_BUILD_ID\}"/g)).toHaveLength(2)
     expect(controlPlane.match(/WORKSPACE_RELAY_URL SANDBOX_BUILD_ID/g)).toHaveLength(2)
@@ -287,7 +311,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(deployedBrowser).toContain("clerk.signIn({ page, emailAddress: smokeEmail })")
     expect(deployedBrowser).toContain("await instance.setActive({ organization })")
     expect(deployedBrowser).toContain("scope.__CLAXEDO_CLERK_TESTING__ = true")
-    expect(deployedBrowser).not.toContain("document.createElement(\"script\")")
+    expect(deployedBrowser).not.toContain('document.createElement("script")')
     expect(deployedBrowser).not.toContain('required("CLERK_FAPI")')
     expect(deployedBrowser).toContain('await page.reload({ waitUntil: "domcontentloaded" })')
     expect(deployedBrowser).toContain("await page.setViewportSize({ width: 390, height: 844 })")
