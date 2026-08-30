@@ -110,11 +110,11 @@ the named job.
 
 Linux does not prove Windows or macOS behavior.
 
-- `pr-unit-windows` and `pr-agent-runtime-stats-windows` use AWS native-Windows
-  boxes and execute
+- `pr-unit-windows` uses AWS native-Windows
+  boxes and executes
   `script/cbx-ci-windows.ps1`. AWS credentials and quota must be configured in
   trusted user state, not committed to the repository.
-- `pr-e2e-desktop-macos` and `pr-agent-runtime-stats-macos` use `provider: ssh`
+- `pr-e2e-desktop-macos` uses `provider: ssh`
   and tag leases with `claxedo-macos`. Configure `static.host`, `static.user`,
   `static.port`, and `static.workRoot` in the trusted Crabbox user config (or
   their `CRABBOX_STATIC_*` environment equivalents); never commit the host or

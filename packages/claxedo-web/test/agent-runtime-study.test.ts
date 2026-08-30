@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import study from "../../agent-runtime-stats/data/2026-08-09-runtime-study.json"
+import study from "../src/content/2026-08-09-runtime-study.json"
 import { requireClaim } from "../src/content/claims"
 import { routes } from "../src/content/routes"
 
@@ -9,7 +9,7 @@ describe("agent runtime study", () => {
   test("owns one canonical, indexable research route", () => {
     expect(routes.agentRuntimeStudy).toBe("/how-often-do-coding-agents-need-a-full-machine")
     expect(requireClaim("agent-runtime-study").evidence).toContain(
-      "packages/agent-runtime-stats/data/2026-08-09-runtime-study.json",
+      "packages/claxedo-web/src/content/2026-08-09-runtime-study.json",
     )
   })
 
@@ -27,7 +27,8 @@ describe("agent runtime study", () => {
   test("links the source discussion and the local analyzer", async () => {
     const source = await Bun.file(page).text()
     expect(source).toContain("https://x.com/kyashrathore/status/2082195455107268983")
-    expect(source).toContain("npx @claxedo/agent-runtime-stats")
+    expect(source).toContain("npx github:kyashrathore/agent-runtime-stats")
+    expect(source).toContain("https://github.com/kyashrathore/agent-runtime-stats")
     expect(source).toContain("data-copy-command")
     expect(source).toContain("https://github.com/vercel-labs/just-bash")
     expect(source).toContain("System binaries outside the lightweight shell")

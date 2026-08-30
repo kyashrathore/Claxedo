@@ -199,15 +199,6 @@ jobs:
     command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
     stop: auto
 
-  pr-agent-runtime-stats-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh agent-runtime-stats
-    stop: auto
-
   pr-docs-links-linux:
     provider: hetzner
     target: linux
@@ -332,9 +323,6 @@ jobs:
   pr-e2e-workgraph-journey-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
-  pr-agent-runtime-stats-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh agent-runtime-stats
   pr-docs-links-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh docs-links
@@ -356,15 +344,6 @@ jobs:
     serverType: m7i.2xlarge
     market: on-demand
     command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane unit
-    stop: auto
-
-  pr-agent-runtime-stats-windows:
-    provider: aws
-    target: windows
-    architecture: amd64
-    serverType: m7i.2xlarge
-    market: on-demand
-    command: powershell.exe -NoProfile -ExecutionPolicy Bypass -File script/cbx-ci-windows.ps1 -Lane agent-runtime-stats
     stop: auto
 
   focus-agent-sdk-runtime-windows:
@@ -393,12 +372,4 @@ jobs:
     target: macos
     shell: true
     command: bash script/cbx-ci-macos.sh e2e-desktop
-    stop: auto
-
-  pr-agent-runtime-stats-macos:
-    provider: ssh
-    profile: claxedo-macos
-    target: macos
-    shell: true
-    command: bash script/cbx-ci-macos.sh agent-runtime-stats
     stop: auto

@@ -24,7 +24,6 @@ const DOC_PREFIXES = [
 const WINDOWS_PREFIXES = [
   "packages/agent-event-runtime/",
   "packages/agent-extensions/",
-  "packages/agent-runtime-stats/",
   "packages/agent-sdk-runtime/",
   "packages/claxedo-desktop/",
   "packages/claxedo-host-connector/",

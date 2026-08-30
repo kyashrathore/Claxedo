@@ -69,19 +69,6 @@
         "typescript": "catalog:",
       },
     },
-    "packages/agent-runtime-stats": {
-      "name": "@claxedo/agent-runtime-stats",
-      "version": "0.1.4",
-      "bin": {
-        "agent-runtime-stats": "./bin/agent-runtime-stats.js",
-      },
-      "devDependencies": {
-        "@cloudflare/workers-types": "5.20260724.1",
-        "@types/bun": "1.3.14",
-        "typescript": "7.0.2",
-        "wrangler": "4.114.0",
-      },
-    },
     "packages/agent-sdk-runtime": {
       "name": "@claxedo/agent-sdk-runtime",
       "version": "0.7.0",
@@ -1641,8 +1628,6 @@
     "@claxedo/agent-event-runtime": ["@claxedo/agent-event-runtime@workspace:packages/agent-event-runtime"],
 
     "@claxedo/agent-extensions": ["@claxedo/agent-extensions@workspace:packages/agent-extensions"],
-
-    "@claxedo/agent-runtime-stats": ["@claxedo/agent-runtime-stats@workspace:packages/agent-runtime-stats"],
 
     "@claxedo/agent-sdk-runtime": ["@claxedo/agent-sdk-runtime@workspace:packages/agent-sdk-runtime"],
 

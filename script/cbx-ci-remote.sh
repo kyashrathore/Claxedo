@@ -424,21 +424,6 @@ run_e2e_workgraph_journey() {
   (cd packages/claxedo-app && bun run test:e2e:journey)
 }
 
-run_agent_runtime_stats() {
-  # The dedicated workflow intentionally tests this dependency-free package on
-  # Node 22. The pinned Crabbox Linux image supplies Node 22 before install_root
-  # prepends the Node 24 e2e toolchain, so keep this lane independent.
-  [[ "$(node --version)" == v22.* ]]
-  (
-    cd packages/agent-runtime-stats
-    npm test
-    node bin/agent-runtime-stats.js --version
-    npm pack --dry-run
-  )
-  bun install --frozen-lockfile --filter @claxedo/agent-runtime-stats
-  (cd packages/agent-runtime-stats && bun run worker:check)
-}
-
 run_packages_dry_run() {
   install_root
   (
@@ -480,7 +465,6 @@ case "$LANE" in
   e2e-tier-real-web) run_e2e_tier_real_web ;;
   e2e-tier-real-web-target) run_e2e_tier_real_web_target "$@" ;;
   e2e-workgraph-journey) run_e2e_workgraph_journey ;;
-  agent-runtime-stats) run_agent_runtime_stats ;;
   packages-dry-run) run_packages_dry_run ;;
   relay-bench) run_relay_bench ;;
   storybook) run_storybook ;;

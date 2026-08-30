@@ -14,7 +14,6 @@ const groups = {
     "pr-typecheck-linux-aws",
     ...awsCoreShards,
     "pr-e2e-tier-real-linux-aws",
-    "pr-agent-runtime-stats-linux-aws",
     "pr-packages-dry-run-linux-aws",
     "pr-relay-bench-linux-aws",
     "pr-storybook-linux-aws",
@@ -24,12 +23,11 @@ const groups = {
     "pr-typecheck-linux",
     ...coreShards,
     "pr-e2e-tier-real-linux",
-    "pr-agent-runtime-stats-linux",
     "pr-packages-dry-run-linux",
     "pr-relay-bench-linux",
     "pr-storybook-linux",
   ],
-  "pr-native": ["pr-unit-windows", "pr-agent-runtime-stats-windows", "pr-agent-runtime-stats-macos"],
+  "pr-native": ["pr-unit-windows"],
 } as const
 
 // Full desktop compilation and release diagnostics are intentionally excluded
