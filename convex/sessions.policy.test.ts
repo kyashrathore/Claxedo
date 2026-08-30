@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import { convexTest } from "convex-test"
 import { api } from "./_generated/api"
+import { verifySessionTenantIdentity } from "./migrations"
 import schema from "./schema"
 
 declare global {
@@ -21,7 +22,6 @@ const stamped = <T extends Record<string, unknown>>(row: T) => ({ created_at: 1,
 afterEach(() => {
   vi.restoreAllMocks()
 })
-
 async function seedWorkspace(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
     const orgId = await ctx.db.insert("orgs", stamped({ name: "Acme" }) as never)
@@ -43,6 +43,20 @@ async function seedWorkspace(t: ReturnType<typeof convexTest>) {
     )
     return { orgId, ownerId, workspaceId }
   })
+}
+
+async function seedCanonicalWorkspace(t: ReturnType<typeof convexTest>) {
+  const seeded = await seedWorkspace(t)
+  await t.run(async (ctx) => {
+    await ctx.db.insert("projects", stamped({
+      project_id: "project_1",
+      org_id: seeded.orgId,
+      repo_key: "workspace:project_1",
+      owner_user_id: seeded.ownerId,
+    }) as never)
+    await ctx.db.patch(seeded.workspaceId, { project_id: "project_1" })
+  })
+  return seeded
 }
 
 function asOwner(t: ReturnType<typeof convexTest>) {
@@ -412,6 +426,94 @@ describe("Convex session visibility policy", () => {
       expect(messages.map((row) => row.message_id)).toEqual(["msg_1", "msg_2"])
     })
   })
+
+  test("message sync creates a session with canonical workspace tenant identity", async () => {
+    const t = convexTest(schema, modules)
+    const { orgId, ownerId } = await seedCanonicalWorkspace(t)
+
+    await expect(asOwner(t).mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_canonical_tenant",
+      messages: [],
+    } as never)).resolves.toEqual({ ok: true })
+
+    await t.run(async (ctx) => {
+      const session = await ctx.db
+        .query("session_history")
+        .withIndex("by_session_id", (q) => q.eq("session_id", "ses_canonical_tenant"))
+        .unique()
+      expect(session).toMatchObject({
+        org_id: orgId,
+        project_id: "project_1",
+        created_by_user_id: ownerId,
+      })
+      await expect(verifySessionTenantIdentity(ctx, session)).resolves.toBeUndefined()
+    })
+  })
+
+  test("message sync repairs missing workspace tenant identity without replacing the creator", async () => {
+    const t = convexTest(schema, modules)
+    const { orgId, ownerId, workspaceId } = await seedCanonicalWorkspace(t)
+    await t.run(async (ctx) => {
+      await ctx.db.insert("session_history", stamped({
+        session_id: "ses_incomplete_tenant",
+        workspace_id: workspaceId,
+        created_by_user_id: ownerId,
+        title: "Keep this title",
+      }) as never)
+    })
+
+    await expect(asOwner(t).mutation(api.sessions.syncMessages, {
+      workspace_id: "ws_1",
+      session_id: "ses_incomplete_tenant",
+      messages: [],
+    } as never)).resolves.toEqual({ ok: true })
+
+    await t.run(async (ctx) => {
+      const session = await ctx.db
+        .query("session_history")
+        .withIndex("by_session_id", (q) => q.eq("session_id", "ses_incomplete_tenant"))
+        .unique()
+      expect(session).toMatchObject({
+        org_id: orgId,
+        project_id: "project_1",
+        created_by_user_id: ownerId,
+        title: "Keep this title",
+      })
+      await expect(verifySessionTenantIdentity(ctx, session)).resolves.toBeUndefined()
+    })
+  })
+
+  test.each(["organization", "project"])(
+    "message sync rejects an existing session with conflicting %s identity",
+    async (field) => {
+      const t = convexTest(schema, modules)
+      const { orgId, ownerId, workspaceId } = await seedCanonicalWorkspace(t)
+      await t.run(async (ctx) => {
+        const conflict = field === "organization"
+          ? { org_id: await ctx.db.insert("orgs", stamped({ name: "Other" }) as never) }
+          : { project_id: "project_conflict" }
+        await ctx.db.insert("session_history", stamped({
+          session_id: "ses_conflicting_tenant",
+          workspace_id: workspaceId,
+          org_id: orgId,
+          project_id: "project_1",
+          created_by_user_id: ownerId,
+          ...conflict,
+        }) as never)
+      })
+
+      await expect(asOwner(t).mutation(api.sessions.syncMessages, {
+        workspace_id: "ws_1",
+        session_id: "ses_conflicting_tenant",
+        messages: [{ info: { id: "msg_rejected", role: "user" }, parts: [] }],
+      } as never)).rejects.toThrow("Session tenant identity conflicts with workspace")
+
+      await t.run(async (ctx) => {
+        expect(await ctx.db.query("session_messages").collect()).toEqual([])
+      })
+    },
+  )
 
   test("leaves forged and producer-unattributed user messages without an author", async () => {
     const t = convexTest(schema, modules)

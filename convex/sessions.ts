@@ -319,10 +319,21 @@ async function ensureSessionHistoryRow(
 ) {
   const existing = input.existing
   if (existing) {
-    if (existing.deleted_at || (!existing.org_id && input.workspace.org_id)) {
+    if (
+      (existing.org_id && input.workspace.org_id && existing.org_id !== input.workspace.org_id) ||
+      (existing.project_id && input.workspace.project_id && existing.project_id !== input.workspace.project_id)
+    ) {
+      throw new Error("Session tenant identity conflicts with workspace")
+    }
+    if (
+      existing.deleted_at ||
+      (!existing.org_id && input.workspace.org_id) ||
+      (!existing.project_id && input.workspace.project_id)
+    ) {
       await ctx.db.patch(existing._id, {
         ...(existing.deleted_at ? { deleted_at: undefined } : {}),
         ...(!existing.org_id && input.workspace.org_id ? { org_id: input.workspace.org_id } : {}),
+        ...(!existing.project_id && input.workspace.project_id ? { project_id: input.workspace.project_id } : {}),
       })
     }
     return
@@ -332,6 +343,7 @@ async function ensureSessionHistoryRow(
     session_id: input.session_id,
     workspace_id: input.workspace._id,
     org_id: input.workspace.org_id,
+    project_id: input.workspace.project_id,
     created_by_user_id: input.user._id,
     created_at: now,
     updated_at: now,
