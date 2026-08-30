@@ -168,7 +168,13 @@ type TerminalSessionOptions = {
 async function ptyResponse<T>(res: Response): Promise<T> {
   if (res.ok) return res.json() as Promise<T>
   const text = await res.text().catch(() => "")
-  throw new Error(text || `PTY request failed: ${res.status}`)
+  // Keep the server's response class available to the pending-create owner.
+  // A rejected 4xx conclusively means no PTY will appear; a transport failure
+  // does not, because the server may have created one before the response was
+  // lost. `Error` itself drops arbitrary HTTP information across this layer.
+  const error = new Error(text || `PTY request failed: ${res.status}`)
+  Object.defineProperty(error, "status", { value: res.status })
+  throw error
 }
 
 const acquireTerminalSession = (

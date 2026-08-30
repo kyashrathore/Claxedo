@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
   sdkWorkspaceId: "ws_terminal" as string | undefined,
   urlRoutingEnabled: true,
   resolveRecovery: vi.fn((_alias: unknown, id: string) => id),
+  resolveWorkspaceRuntime: vi.fn(async () => null),
+  transportFetch: vi.fn(),
 }))
 
 vi.mock("@/features/terminal/ui/terminal", () => ({
@@ -82,7 +84,12 @@ vi.mock("@/platform/api/api", () => ({
 }))
 
 vi.mock("@/platform/runtime/workspace-runtime-record", () => ({
-  resolveWorkspaceRuntime: vi.fn(async () => null),
+  resolveWorkspaceRuntime: h.resolveWorkspaceRuntime,
+}))
+
+vi.mock("@/platform/runtime/transport", () => ({
+  createTransport: () => ({ fetch: h.transportFetch }),
+  centralTransportForServer: () => "loopback",
 }))
 
 vi.mock("@/lib/runtime-mode", () => ({
@@ -191,6 +198,9 @@ describe("TerminalContent switching", () => {
     h.sdkWorkspaceId = "ws_terminal"
     h.urlRoutingEnabled = true
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id)
+    h.resolveWorkspaceRuntime.mockReset()
+    h.resolveWorkspaceRuntime.mockResolvedValue(null)
+    h.transportFetch.mockReset()
   })
 
   test("creates two terminal panes and keeps them mounted through repeated switches", async () => {
@@ -282,6 +292,29 @@ describe("TerminalContent switching", () => {
 
     expect(h.ensure).not.toHaveBeenCalled()
     expect(h.metaPatch).toHaveBeenCalledTimes(patchesBeforeDispose)
+  })
+
+  test("stops pending-create reconciliation after a definitive runtime rejection", async () => {
+    h.ptys.splice(0)
+    let resolveWorkspace!: (workspace: { kind: "cloud"; workspaceId: string }) => void
+    h.resolveWorkspaceRuntime.mockReturnValue(new Promise((resolve) => {
+      resolveWorkspace = resolve
+    }))
+    h.terminalNew.mockRejectedValue(Object.assign(new Error("permission denied"), { status: 403 }))
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-denied", "Terminal")}
+        ctx={{ paneId: "pane-denied", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByText("permission denied")).toBeTruthy())
+    resolveWorkspace({ kind: "cloud", workspaceId: "ws_denied" })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(h.transportFetch).not.toHaveBeenCalled()
   })
 
   test("replaces the route when recovery swaps a real terminal id", async () => {

@@ -528,6 +528,7 @@ describe("signIn", () => {
     })
 
     await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
+    await Promise.resolve()
     expect(api.state()).toEqual({
       status: "signed",
       identity: {
@@ -550,6 +551,31 @@ describe("signIn", () => {
     await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
     expect(api.state()).toEqual({ status: "signed", identity: { userId: "" } })
     expect(errors.map((entry) => entry.stage)).toContain("identity")
+  })
+
+  test("publishes adopted credentials before a never-settling identity lookup", async () => {
+    const { api, completeSignIn } = service({
+      resolveIdentity: async () => await new Promise<{ userId: string }>(() => {}),
+    })
+
+    await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
+    expect(api.state()).toEqual({ status: "signed", identity: { userId: "" } })
+  })
+
+  test("does not republish identity after sign-out while userinfo is in flight", async () => {
+    let resolveIdentity!: (identity: { userId: string; displayName?: string }) => void
+    const { api, completeSignIn } = service({
+      resolveIdentity: () => new Promise((resolve) => {
+        resolveIdentity = resolve
+      }),
+    })
+
+    await expect(completeSignIn()).resolves.toMatchObject({ ok: true })
+    await api.signOut()
+    resolveIdentity({ userId: "user_stale", displayName: "Stale User" })
+    await Promise.resolve()
+
+    expect(api.state()).toEqual({ status: "unsigned" })
   })
 
   test("leaves no live token and no pending state when the credential cannot be stored", async () => {

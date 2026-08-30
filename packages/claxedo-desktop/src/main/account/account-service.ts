@@ -223,17 +223,23 @@ export function createAccountService(options: AccountServiceOptions) {
    * adopted — but the rail's label is `displayName ?? email ?? "Account"`, so
    * leaving `userId: ""` forever is what made a successful login look anonymous.
    */
-  const publishSigned = async (accessToken: string, startedIn: number) => {
-    let identity: AccountIdentity = { userId: "" }
-    if (options.resolveIdentity) {
-      try {
-        identity = await options.resolveIdentity(accessToken)
-      } catch (error) {
-        options.onError?.("identity", error)
-      }
-    }
+  const publishSigned = (accessToken: string, startedIn: number) => {
     if (startedIn !== era) return
-    setState({ status: "signed", identity })
+    // Credentials are authoritative as soon as `adopt` persists them. Profile
+    // lookup is display enrichment only: waiting on it turns a slow or hung
+    // /userinfo endpoint into a sign-in that never completes.
+    setState({ status: "signed", identity: { userId: "" } })
+    if (!options.resolveIdentity) return
+    void options.resolveIdentity(accessToken)
+      .then((identity) => {
+        // Sign-out (or a superseding sign-in) may have happened while the
+        // optional lookup was in flight. Never republish stale identity.
+        if (startedIn !== era) return
+        setState({ status: "signed", identity })
+      })
+      .catch((error) => {
+        options.onError?.("identity", error)
+      })
   }
 
   return {
@@ -259,9 +265,8 @@ export function createAccountService(options: AccountServiceOptions) {
         if (!stored) return state
         tokens = stored
         const startedIn = era
-        setState({ status: "signed", identity: { userId: "" } })
         // Profile is best-effort and must not delay launch.
-        void publishSigned(stored.accessToken, startedIn)
+        publishSigned(stored.accessToken, startedIn)
       } catch (error) {
         options.onError?.("restore", error)
       }
@@ -297,7 +302,7 @@ export function createAccountService(options: AccountServiceOptions) {
         // that is over.
         return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
       }
-      await publishSigned(result.tokens.accessToken, startedIn)
+      publishSigned(result.tokens.accessToken, startedIn)
       return result
     },
 

@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test"
-import { shouldMountTerminalPane, pickAdoptedPty, startSingleFlightPoll } from "./terminal-content-policy"
+import {
+  isDefinitiveTerminalCreateFailure,
+  pickAdoptedPty,
+  shouldMountTerminalPane,
+  startSingleFlightPoll,
+} from "./terminal-content-policy"
 
 describe("terminal content mount policy", () => {
   test("keeps never-activated hidden terminal panes from reconnecting on reload", () => {
@@ -86,5 +91,32 @@ describe("startSingleFlightPoll", () => {
     const stoppedAt = calls
     await new Promise((resolve) => setTimeout(resolve, 10))
     expect(calls).toBe(stoppedAt)
+  })
+
+  test("stops a stalled reconciliation at its deadline", async () => {
+    let calls = 0
+    let timedOut = 0
+    startSingleFlightPoll(async () => {
+      calls += 1
+      await new Promise<void>(() => {})
+    }, 1, {
+      timeoutMs: 10,
+      onTimeout: () => {
+        timedOut += 1
+      },
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, 30))
+    expect(calls).toBe(1)
+    expect(timedOut).toBe(1)
+  })
+})
+
+describe("pending terminal create failure policy", () => {
+  test("ends reconciliation only for an authoritative non-retryable client failure", () => {
+    expect(isDefinitiveTerminalCreateFailure(Object.assign(new Error("denied"), { status: 403 }))).toBe(true)
+    expect(isDefinitiveTerminalCreateFailure(Object.assign(new Error("timeout"), { status: 408 }))).toBe(false)
+    expect(isDefinitiveTerminalCreateFailure(Object.assign(new Error("overloaded"), { status: 503 }))).toBe(false)
+    expect(isDefinitiveTerminalCreateFailure(new TypeError("network unavailable"))).toBe(false)
   })
 })

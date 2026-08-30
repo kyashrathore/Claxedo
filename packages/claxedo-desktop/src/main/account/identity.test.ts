@@ -81,4 +81,19 @@ describe("createIdentityResolver", () => {
     await expect(resolve("at")).resolves.toEqual({ userId: "" })
     expect(errors).toHaveLength(1)
   })
+
+  test("bounds a userinfo request that never settles", async () => {
+    const errors: unknown[] = []
+    const resolve = createIdentityResolver({
+      userInfoUrl: "https://id.test/oauth/userinfo",
+      fetch: async () => await new Promise<Response>(() => {}),
+      onError: (error) => errors.push(error),
+      timeoutMs: 1,
+    })
+
+    await expect(resolve("at")).resolves.toEqual({ userId: "" })
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toBeInstanceOf(Error)
+    expect((errors[0] as Error).message).toBe("userinfo timed out")
+  })
 })

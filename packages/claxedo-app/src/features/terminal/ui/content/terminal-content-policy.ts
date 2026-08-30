@@ -18,12 +18,36 @@ export function pickAdoptedPty<T extends { id: string; createRequestId?: string 
 }
 
 /**
+ * A completed client-error response is authoritative: the runtime declined the
+ * create, so continuing to look for its request id can only leave a spinner
+ * running forever. Transport errors and retryable responses remain ambiguous.
+ */
+export function isDefinitiveTerminalCreateFailure(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const status = (error as { status?: unknown }).status
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+
+/**
  * Run one poll at a time. The next timeout is armed only after the current
  * async read settles, and stop() prevents both future runs and re-arming.
  */
-export function startSingleFlightPoll(run: () => Promise<void>, intervalMs: number) {
+export function startSingleFlightPoll(
+  run: () => Promise<void>,
+  intervalMs: number,
+  options?: { timeoutMs?: number; onTimeout?: () => void },
+) {
   let stopped = false
   let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = options?.timeoutMs === undefined
+    ? undefined
+    : setTimeout(() => {
+      if (stopped) return
+      stopped = true
+      if (timer) clearTimeout(timer)
+      timer = undefined
+      options.onTimeout?.()
+    }, options.timeoutMs)
 
   const cycle = async () => {
     if (stopped) return
@@ -40,6 +64,7 @@ export function startSingleFlightPoll(run: () => Promise<void>, intervalMs: numb
       stopped = true
       if (timer) clearTimeout(timer)
       timer = undefined
+      if (timeout) clearTimeout(timeout)
     },
   }
 }

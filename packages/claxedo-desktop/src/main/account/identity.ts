@@ -49,22 +49,41 @@ export function identityFromUserInfo(body: unknown): AccountIdentity {
 
 export type ResolveIdentity = (accessToken: string) => Promise<AccountIdentity>
 
+const USERINFO_TIMEOUT_MS = 5_000
+
 /** GET userinfo with the access token; never throws — empty identity on failure. */
 export function createIdentityResolver(input: {
   userInfoUrl: string
   fetch: typeof fetch
   onError?: (error: unknown) => void
+  /** Kept injectable so the bounded-failure behavior is testable. */
+  timeoutMs?: number
 }): ResolveIdentity {
   return async (accessToken) => {
+    const controller = new AbortController()
+    const timeoutMs = Math.max(1, input.timeoutMs ?? USERINFO_TIMEOUT_MS)
+    let timeout: ReturnType<typeof setTimeout> | undefined
     try {
-      const response = await input.fetch(input.userInfoUrl, {
-        headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
-      })
+      const response = await Promise.race([
+        input.fetch(input.userInfoUrl, {
+          headers: { authorization: `Bearer ${accessToken}`, accept: "application/json" },
+          signal: controller.signal,
+        }),
+        new Promise<never>((_, reject) => {
+          timeout = setTimeout(() => {
+            const error = new Error("userinfo timed out")
+            controller.abort(error)
+            reject(error)
+          }, timeoutMs)
+        }),
+      ])
       if (!response.ok) throw new Error(`userinfo failed: ${response.status}`)
       return identityFromUserInfo(await response.json())
     } catch (error) {
       input.onError?.(error)
       return { userId: "" }
+    } finally {
+      if (timeout) clearTimeout(timeout)
     }
   }
 }

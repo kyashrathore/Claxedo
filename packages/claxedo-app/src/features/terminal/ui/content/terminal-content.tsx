@@ -21,7 +21,12 @@ import {
   type PaneCtx,
 } from "@/features/terminal/app-ports"
 import { NEW_TERMINAL_ID, PENDING_TERMINAL_PREFIX } from "../../core/terminal-surface-id"
-import { shouldMountTerminalPane, pickAdoptedPty, startSingleFlightPoll } from "./terminal-content-policy"
+import {
+  isDefinitiveTerminalCreateFailure,
+  pickAdoptedPty,
+  shouldMountTerminalPane,
+  startSingleFlightPoll,
+} from "./terminal-content-policy"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 import { resolveWorkspaceFileFocus } from "@/platform/files/workspace-file-focus"
 import { terminalAgentStatusFromEventType } from "../../core/terminal-agent-status"
@@ -32,6 +37,7 @@ type WorkspaceDirectoryRef = string
 
 const recoveryAlias = new Map<string, { id: string; at: number }>()
 const TERMINAL_ACTIVATION_DELAY_MS = 120
+const PENDING_CREATE_POLL_TIMEOUT_MS = 15_000
 
 export function TerminalContent(props: { meta: ContentMeta; ctx: PaneCtx }) {
   const directory = () => props.meta.directory ?? props.meta.content?.directory
@@ -273,7 +279,16 @@ function TerminalContentInner(props: {
     }
 
     stopPendingPoll()
-    pendingPoll = startSingleFlightPoll(pollOnce, 400)
+    pendingPoll = startSingleFlightPoll(pollOnce, 400, {
+      timeoutMs: PENDING_CREATE_POLL_TIMEOUT_MS,
+      onTimeout: () => {
+        if (pendingCreateSettled || disposed) return
+        pendingCreateSettled = true
+        createStarted = false
+        pendingPoll = undefined
+        setCreateError("Timed out waiting for terminal creation to be confirmed.")
+      },
+    })
   }
 
   const completePendingCreate = (
@@ -406,7 +421,8 @@ function TerminalContentInner(props: {
         if (disposed) return
         if (!createdId) {
           createStarted = false
-          pendingCreateSettled = false
+          pendingCreateSettled = true
+          stopPendingPoll()
           setCreateError("Claxedo did not return a terminal id.")
           return
         }
@@ -415,6 +431,11 @@ function TerminalContentInner(props: {
       })
       .catch((error) => {
         if (pendingCreateSettled || disposed) return
+        if (isDefinitiveTerminalCreateFailure(error)) {
+          pendingCreateSettled = true
+          createStarted = false
+          stopPendingPoll()
+        }
         setCreateError(error instanceof Error ? error.message : "Terminal failed to start.")
       })
   })
