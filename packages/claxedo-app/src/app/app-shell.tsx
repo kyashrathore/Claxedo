@@ -31,7 +31,7 @@ import {
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
 import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
-import { useGlobalSync } from "@/app/providers/global-sync/provider"
+import { useSessionAccessRevocations } from "@/app/integrations/sync/global-readiness"
 
 const DemoTourController = __DEMO_ENABLED__
   ? lazy(() => import("./demo/tour-controller").then((m) => ({ default: m.DemoTourController })))
@@ -46,13 +46,12 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  const globalSync = useGlobalSync()
   onMount(() => onCleanup(installUsageOutboxWakeups()))
   const shell = useAppShellState({
     params,
     pathname: () => location.pathname,
   })
-  onMount(() => onCleanup(globalSync.onSessionAccessRevoked((event) => {
+  useSessionAccessRevocations((event) => {
     applySessionAccessRevocation({
       ...event,
       activeSurfaceId: shell.state.wb.selectors.focusedContent,
@@ -60,7 +59,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
       closeContent: shell.state.layout.closeContent,
       navigate,
     })
-  })))
+  })
   const productUi = createMemo(() => resolveProductUiFlags(shell.config))
   const diagnosticSession = createMemo(() => {
     const panes = shell.state.wb.selectors.visiblePanes()
