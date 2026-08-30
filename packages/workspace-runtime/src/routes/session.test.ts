@@ -1185,7 +1185,7 @@ describe("session prompt route", () => {
         harness: "opencode",
         transport: "opencode",
         reason: "harness_switch_not_supported",
-        message: "opencode sessions cannot switch to claude through session config patch",
+        message: "opencode sessions cannot switch to example through session config patch",
       },
     })
     expect(calls).toEqual([])

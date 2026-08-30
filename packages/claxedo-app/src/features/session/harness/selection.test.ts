@@ -18,9 +18,9 @@ const base = {
 } satisfies Omit<HarnessSelectionState, "harness">
 
 describe("harness selection", () => {
-  test("resolves display names from harness ids and binaries", () => {
-    expect(harnessDisplayName({ harness: "codex-acp", harnessBinary: "" })).toBe("Codex")
-    expect(harnessDisplayName({ harness: "claude-acp", harnessBinary: "/tmp/claude-agent-acp" })).toBe("Claude")
+  test("keeps operator ACP identities generic", () => {
+    expect(harnessDisplayName({ harness: "codex-acp", harnessBinary: "" })).toBe("codex-acp")
+    expect(harnessDisplayName({ harness: "claude-acp", harnessBinary: "/tmp/claude-agent-acp" })).toBe("claude-agent-acp")
     expect(harnessDisplayName({ harness: "opencode", harnessBinary: "custom-binary" })).toBe("custom-binary")
   })
 
