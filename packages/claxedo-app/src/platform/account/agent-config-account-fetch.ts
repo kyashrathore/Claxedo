@@ -4,8 +4,7 @@
  * Maps `/api/claxedo/agent-config/extensions*` onto named read/write ops.
  */
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { accountRun, parseHostedHttpError } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
 
 const PREFIX = "/api/claxedo/agent-config/extensions"
@@ -27,9 +26,9 @@ function hostedErrorResponse(error: unknown): Response {
 }
 
 async function runOp(name: HostedOperationName, input: Record<string, unknown>) {
-  const run = accountRun()
-  if (!run) throw new Error("account bridge unavailable")
-  return decodeHostedResult(name, await run(name, input))
+  return await hostedControlCall(name, input, async () => {
+    throw new Error("account bridge unavailable")
+  })
 }
 
 function queryRecord(url: URL): Record<string, string> {

@@ -8,8 +8,7 @@
  * stores keep their Response-based contract (including 409 connect conflicts).
  */
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { accountRun, parseHostedHttpError } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
+import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
 
 /** Path is relative to the /api/claxedo/integrations mount ("" for the root list). */
@@ -32,9 +31,9 @@ function hostedErrorResponse(error: unknown): Response {
 }
 
 async function runOp(name: HostedOperationName, input: Record<string, unknown> = {}) {
-  const run = accountRun()
-  if (!run) throw new Error("account bridge unavailable")
-  return decodeHostedResult(name, await run(name, input))
+  return await hostedControlCall(name, input, async () => {
+    throw new Error("account bridge unavailable")
+  })
 }
 
 /**

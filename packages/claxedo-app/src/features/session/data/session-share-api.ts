@@ -1,7 +1,5 @@
 import { authFetch } from "@/platform/api/api"
-import { accountBridge } from "@/platform/account/electron-account-port"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
-import type { HostedOperationName } from "@/platform/account/account-port"
+import { hostedControlCall } from "@/platform/account/hosted-control-call"
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -9,21 +7,6 @@ async function json<T>(res: Response): Promise<T> {
     throw new Error(body.error?.message ?? `Request failed (${res.status})`)
   }
   return await res.json() as T
-}
-
-/**
- * Desktop signed mode: renderer has no bearer. Named AccountPort ops reach the
- * hosted control plane through Electron main. Browser signed mode keeps
- * authFetch against `VITE_CLAXEDO_SERVER_URL`.
- */
-async function controlCall<T>(
-  operation: HostedOperationName,
-  input: Record<string, unknown>,
-  fallback: () => Promise<T>,
-): Promise<T> {
-  const bridge = accountBridge()
-  if (!bridge) return fallback()
-  return decodeHostedResult<T>(operation, await bridge.run(operation, input))
 }
 
 const ACTIVE_ORG_KEY = "claxedo.activeOrgId"
@@ -35,7 +18,7 @@ export function readActiveOrgId() {
 export async function listTeamsForActiveOrg() {
   const orgId = readActiveOrgId()
   if (!orgId) return [] as Array<{ team_id: string; name: string }>
-  return controlCall(
+  return hostedControlCall(
     "org.teams.list",
     { orgId },
     async () => json<Array<{ team_id: string; name: string }>>(
@@ -45,7 +28,7 @@ export async function listTeamsForActiveOrg() {
 }
 
 export async function listSessionShares(sessionId: string, workspaceId: string) {
-  return controlCall(
+  return hostedControlCall(
     "session.shares.list",
     { sessionId, workspaceId },
     async () => json<{
@@ -67,7 +50,7 @@ export async function grantSessionShare(input: {
   grantedToTeamPublicId?: string
   grantedToOrgId?: string
 }) {
-  return controlCall(
+  return hostedControlCall(
     "session.shares.grant",
     {
       sessionId: input.sessionId,
@@ -96,7 +79,7 @@ export async function revokeSessionShare(input: {
   grantedToTokenIdentifier?: string
   grantedToTeamPublicId?: string
 }) {
-  return controlCall(
+  return hostedControlCall(
     "session.shares.revoke",
     {
       sessionId: input.sessionId,
@@ -123,7 +106,7 @@ export async function addSessionParticipant(input: {
   workspaceId: string
   participantTokenIdentifier: string
 }) {
-  return controlCall(
+  return hostedControlCall(
     "session.participants.add",
     {
       sessionId: input.sessionId,
