@@ -5,8 +5,10 @@ export function createSubmitCommentActions(context: {
   remove: (key: string) => unknown
 }) {
   return {
-    restore(items: CommentItem[]) {
-      for (const item of items) context.add({ type: "file", ...item })
+    restore(items: Array<CommentItem & { key?: string }>) {
+      for (const { key: _storedKey, ...item } of items) {
+        context.add({ type: "file", ...item })
+      }
     },
     remove(items: { key: string }[]) {
       for (const item of items) context.remove(item.key)

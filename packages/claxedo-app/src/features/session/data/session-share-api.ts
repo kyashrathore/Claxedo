@@ -1,5 +1,6 @@
-import { authFetch } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { controlSessionUrl } from "@/platform/runtime/agent/workspace-control-routes"
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -39,7 +40,12 @@ export async function listSessionShares(sessionId: string, workspaceId: string) 
         granted_to_team_id?: string
       }>
       participants: Array<{ user_id: string }>
-    }>(await authFetch(`/api/control/sessions/${encodeURIComponent(sessionId)}/shares?workspaceId=${encodeURIComponent(workspaceId)}`)),
+    }>(await authFetch(controlSessionUrl({
+      baseUrl: getClaxedoServerUrl(),
+      sessionID: sessionId,
+      suffix: "/shares",
+      workspaceId,
+    }))),
   )
 }
 
@@ -59,7 +65,11 @@ export async function grantSessionShare(input: {
       ...(input.grantedToTeamPublicId ? { grantedToTeamPublicId: input.grantedToTeamPublicId } : {}),
       ...(input.grantedToOrgId ? { grantedToOrgId: input.grantedToOrgId } : {}),
     },
-    async () => json<unknown>(await authFetch(`/api/control/sessions/${encodeURIComponent(input.sessionId)}/shares`, {
+    async () => json<unknown>(await authFetch(controlSessionUrl({
+      baseUrl: getClaxedoServerUrl(),
+      sessionID: input.sessionId,
+      suffix: "/shares",
+    }), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -88,7 +98,11 @@ export async function revokeSessionShare(input: {
       ...(input.grantedToTokenIdentifier ? { grantedToTokenIdentifier: input.grantedToTokenIdentifier } : {}),
       ...(input.grantedToTeamPublicId ? { grantedToTeamPublicId: input.grantedToTeamPublicId } : {}),
     },
-    async () => json<unknown>(await authFetch(`/api/control/sessions/${encodeURIComponent(input.sessionId)}/shares`, {
+    async () => json<unknown>(await authFetch(controlSessionUrl({
+      baseUrl: getClaxedoServerUrl(),
+      sessionID: input.sessionId,
+      suffix: "/shares",
+    }), {
       method: "DELETE",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -113,7 +127,11 @@ export async function addSessionParticipant(input: {
       workspaceId: input.workspaceId,
       participantTokenIdentifier: input.participantTokenIdentifier,
     },
-    async () => json<unknown>(await authFetch(`/api/control/sessions/${encodeURIComponent(input.sessionId)}/participants`, {
+    async () => json<unknown>(await authFetch(controlSessionUrl({
+      baseUrl: getClaxedoServerUrl(),
+      sessionID: input.sessionId,
+      suffix: "/participants",
+    }), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({

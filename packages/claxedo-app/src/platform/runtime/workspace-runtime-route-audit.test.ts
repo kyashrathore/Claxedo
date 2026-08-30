@@ -58,6 +58,10 @@ const runtimeGatewayBoundary = new Set([
   // Cross-feature provider query adapter owns the explicit harness-scoped
   // provider route used by settings and session model selectors.
   "platform/query/control-plane.ts",
+  // AccountPort fetch adapters are transport boundaries: they parse legacy
+  // browser URLs and translate them into named desktop operations.
+  "platform/account/control-plane-account-fetch.ts",
+  "platform/account/documents-account-fetch.ts",
 ])
 
 const workspaceRuntimeIdentityBoundary = new Set([
@@ -69,6 +73,7 @@ const workspaceRuntimeIdentityBoundary = new Set([
   // unit-testable — re-exports the canonical workspaceIdFromRef selector.
   "platform/runtime/agent/placement-table.ts",
   "platform/runtime/session-workspace.ts",
+  "platform/runtime/workspace-runtime-record.ts",
 ])
 
 const workspaceSelectorSyntaxBoundary = new Set([
@@ -712,7 +717,7 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
       if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(text)) {
         offenders.push(file)
       }
@@ -3019,6 +3024,9 @@ describe("workspace runtime route audit", () => {
   test("PromptInput resolves session identity without router params", async () => {
     const text = await Bun.file(path.join(root, promptInput)).text()
     const submit = await Bun.file(path.join(root, promptSubmit)).text()
+    const submitUiState = await Bun.file(
+      path.join(root, "features/session/composer/ui/submit-ui-state.ts"),
+    ).text()
     const submitInput = await Bun.file(path.join(root, promptSubmitInput)).text()
     const props = await Bun.file(path.join(root, "features/session/composer/prompt-input-props.ts")).text()
     const toolbar = await Bun.file(path.join(root, promptToolbarState)).text()
@@ -3071,8 +3079,8 @@ describe("workspace runtime route audit", () => {
     expect(workspaceResolver).toMatch(/sessionRefForWorkspaceSession/)
     expect(submitCreate).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(submitCreate).toMatch(/content\?\.sessionRef/)
-    expect(submit).toMatch(/addRegisteredConversationMessage/)
-    expect(submit).toMatch(/removeRegisteredConversationMessage/)
+    expect(submitUiState).toMatch(/addRegisteredConversationMessage\(item\)/)
+    expect(submitUiState).toMatch(/removeRegisteredConversationMessage\(item\)/)
     expect(submit).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(sessionID, "requests"\)/)
     expect(submitInput).toMatch(/surfaceId\?:\s*Accessor<string \| undefined>/)
   })
@@ -3745,6 +3753,9 @@ describe("workspace runtime route audit", () => {
   test("upstream PromptInput checks review membership from shell diff queries", async () => {
     const text = await Bun.file(path.join(root, "features/session/composer/composer.tsx")).text()
     const submit = await Bun.file(path.join(root, "features/session/composer/ui/submit.ts")).text()
+    const submitUiState = await Bun.file(
+      path.join(root, "features/session/composer/ui/submit-ui-state.ts"),
+    ).text()
     const globalSync = await Bun.file(path.join(root, globalSyncContext)).text()
     const shellQuery = await Bun.file(path.join(root, "features/session/data/query/shell.ts")).text()
     const workspaceResolver = await Bun.file(path.join(root, "features/session/composer/workspace-resolver.ts")).text()
@@ -3774,10 +3785,8 @@ describe("workspace runtime route audit", () => {
     expect(submit).toMatch(/commandListQuery\(/)
     expect(submit).toMatch(/queryClient\s*\.\s*fetchQuery\(/)
     expect(shellQuery).toMatch(/export function commandListQuery/)
-    expect(submit).toMatch(
-      /addRegisteredConversationMessage\(\{[\s\S]*message: item\.message,[\s\S]*parts: item\.parts/,
-    )
-    expect(submit).toMatch(/removeRegisteredConversationMessage\(\{[\s\S]*messageID/)
+    expect(submitUiState).toMatch(/addRegisteredConversationMessage\(item\)/)
+    expect(submitUiState).toMatch(/removeRegisteredConversationMessage\(item\)/)
     expect(submit).toMatch(/setPromptSessionStatus/)
     expect(submit).not.toMatch(/sessionStatusKey/)
     expect(submit).not.toMatch(/setQueryData\(sessionStatusKey/)

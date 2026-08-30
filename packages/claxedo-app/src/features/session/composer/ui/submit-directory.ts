@@ -1,4 +1,4 @@
-import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
 import { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
@@ -291,8 +291,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
   const workspace = input.workspaceForDirectory(input.directory)
   const connectedWorkspaceId =
     runtimeRef?.workspaceId ??
-    workspace?.workspaceId ??
-    workspaceIdFromRef(input.directory)
+    workspace?.workspaceId
   // The WorkspaceGate already drove relay-backed workspaces to `ready` before
   // the composer unlocked. Re-running provisioning on first send can treat a
   // stale resolve snapshot as not-ready and abort before POST .../session.

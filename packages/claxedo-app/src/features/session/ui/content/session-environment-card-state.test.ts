@@ -11,6 +11,7 @@ import {
   MAX_SESSION_ENVIRONMENT_CARD_SNAPSHOTS,
 } from "./session-environment-card-state"
 import { setPersisted } from "@/platform/persistence/persist"
+import { configurePersistencePlatform } from "@/platform/persistence/persist"
 
 describe("migrateSessionEnvironmentCardPersist", () => {
   test("keeps per-session collapse and drops the v1 global boolean", () => {
@@ -100,6 +101,7 @@ describe("createSessionEnvironmentCardState", () => {
 describe("sessionEnvironmentCardState", () => {
   test("reads a persisted expanded preference for that session from the process-wide store", () => {
     resetSessionEnvironmentCardStateForTests()
+    configurePersistencePlatform({ platform: "web" })
     localStorage.clear()
     setPersisted(sessionEnvironmentCardCollapsePersist, {
       collapsedBySessionId: { ses_a: false },

@@ -297,7 +297,7 @@ describe("global sync inventory source helpers", () => {
     })
   })
 
-  test("signed inventory source combines cloud and user-hosted workspace snapshots", async () => {
+  test("signed inventory source keeps user-hosted visibility authority-filtered", async () => {
     const runtimeCalls: unknown[] = []
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
@@ -350,16 +350,11 @@ describe("global sync inventory source helpers", () => {
     const snapshot = await source.fetchSignedWorkspaceSnapshot()
 
     expect(snapshot.projects.map((project) => project.id).sort()).toEqual(["project_cloud", "project_user"])
-    expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud", "ws_user"])
+    expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])
-    expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")?.sessions.map((item) => item.id))
-      .toEqual(["ses_user"])
-    expect(runtimeCalls).toEqual([{
-      workspaceId: "ws_user",
-      directory: "workspace:ws_user",
-      kind: "user-hosted",
-    }])
+    expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
+    expect(runtimeCalls).toEqual([])
   })
 
   test("signed directory fetch uses known workspace metadata before resolving runtime", async () => {
@@ -547,7 +542,7 @@ describe("global sync inventory source helpers", () => {
     expect(statusCalls).toBe(0)
   })
 
-  test("user-hosted workspaces never consult the control plane or the status port", async () => {
+  test("user-hosted workspaces use participant-filtered control-plane visibility", async () => {
     let statusCalls = 0
     let controlCalls = 0
     const source = createSignedInventorySource({
@@ -556,7 +551,7 @@ describe("global sync inventory source helpers", () => {
       owner: () => "user_1",
       authFetch: async () => {
         controlCalls++
-        return jsonResponse({ sessions: [] })
+        return jsonResponse({ sessions: [{ session_id: "ses_user", created_at: 1, updated_at: 1 }] })
       },
       signedWorkspaceInfo: () => undefined,
       resolveWorkspace: async () => undefined,
@@ -573,7 +568,7 @@ describe("global sync inventory source helpers", () => {
       kind: "user-hosted",
     })).toEqual([{ session_id: "ses_user", created_at: 1, updated_at: 1 }])
     expect(statusCalls).toBe(0)
-    expect(controlCalls).toBe(0)
+    expect(controlCalls).toBe(1)
   })
 
   test("a known workspace status wins over the status port", async () => {

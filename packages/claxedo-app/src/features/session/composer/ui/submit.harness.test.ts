@@ -280,6 +280,7 @@ export function createPromptSubmit(
   return rawCreatePromptSubmit({
     composerMode: defaultComposerMode,
     harnessController: testHarnessController(),
+    selectedModelForSubmit: () => state.localCurrentModel,
     ...input,
   })
 }

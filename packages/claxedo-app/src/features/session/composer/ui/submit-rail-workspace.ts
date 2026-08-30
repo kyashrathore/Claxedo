@@ -1,5 +1,5 @@
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { reconcileUpdatedSessionListQueryData, upsertCreatedSessionListRow } from "../../data/query/session-list"
 import { projectForDirectory, projectId, type ProjectCatalogItem } from "../workspace-resolver"
 
@@ -27,7 +27,7 @@ export function resolveCreatedSessionListWorkspaceId(input: {
   if (fromRef) return fromRef
   const fromRoute = publicWorkspaceId(input.workspaceId)
   if (fromRoute) return fromRoute
-  return publicWorkspaceId(workspaceIdFromRef(input.sessionDirectory))
+  return publicWorkspaceId(sessionWorkspaceRuntimeRef({ directory: input.sessionDirectory })?.workspaceId)
 }
 
 export function bumpCreatedSessionRail(input: {

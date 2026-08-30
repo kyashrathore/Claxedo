@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import { buildSessionListResponse, parseSessionListQuery } from "./navigation-list"
 
 describe("session list owner mapping", () => {
