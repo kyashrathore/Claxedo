@@ -1,5 +1,5 @@
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import type { ServerConnection } from "@/app/connection/server"
+import type { ServerConnection } from "@/platform/connection/server-connection"
 import { queryClient } from "@/platform/query/query-client"
 
 export type ServerHealth = { healthy: boolean; version?: string }

@@ -1,4 +1,3 @@
-import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { useQuery } from "@tanstack/solid-query"
 import { type Accessor, batch, createEffect, createMemo } from "solid-js"
@@ -9,9 +8,9 @@ import { validProjectRef } from "@/platform/sync/worktree"
 import { getExtensions } from "@/features/extensions"
 import { isDemoMode } from "@/platform/api/api"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_PORT } from "@/platform/api/local-server"
-import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import { ServerConnection } from "@/platform/connection/server-connection"
+import { checkServerHealthCached, serverHealthQueryKey } from "./server-health"
 
 export { ServerConnection } from "@/platform/connection/server-connection"
 
@@ -53,87 +52,8 @@ function serverDisplayName(conn?: ServerConnection.Any | string) {
   return url.replace(/^https?:\/\//, "").replace(/\/+$/, "")
 }
 
-const healthFetchIds = new WeakMap<typeof globalThis.fetch, number>()
-let nextHealthFetchId = 0
-const HEALTH_CACHE_MS = 10_000
-const opencodeServerHealthQueryRoot = ["shell", "opencode-server-health"] as const
-const opencodeServerHealthPollQueryRoot = ["shell", "opencode-server-health-poll"] as const
-
-type OpenCodeServerHealthCacheEntry = {
-  time: number
-  promise: Promise<boolean>
-}
-
-function healthFetchKey(fetchFn: typeof globalThis.fetch | undefined) {
-  if (!fetchFn) return "default"
-  const existing = healthFetchIds.get(fetchFn)
-  if (existing !== undefined) return String(existing)
-  nextHealthFetchId += 1
-  healthFetchIds.set(fetchFn, nextHealthFetchId)
-  return String(nextHealthFetchId)
-}
-
-function opencodeServerHealthCacheUrl(url: string) {
-  try {
-    const parsed = new URL(url)
-    parsed.username = ""
-    parsed.password = ""
-    return parsed.toString().replace(/\/+$/, "")
-  } catch {
-    return url.replace(/^(https?:\/\/)[^/@]+@/, "$1").replace(/\/+$/, "")
-  }
-}
-
-export function opencodeServerHealthQueryKey(input: { fetchKey: string; url: string }) {
-  return [...opencodeServerHealthQueryRoot, input.fetchKey, opencodeServerHealthCacheUrl(input.url)] as const
-}
-
-export function resetOpenCodeServerHealthCacheForTest() {
-  queryClient.removeQueries({ queryKey: opencodeServerHealthQueryRoot })
-  queryClient.removeQueries({ queryKey: opencodeServerHealthPollQueryRoot })
-}
-
-function opencodeServerHealthPollQueryKey(input: { fetchKey: string; url: string }) {
-  return [...opencodeServerHealthPollQueryRoot, input.fetchKey, opencodeServerHealthCacheUrl(input.url)] as const
-}
-
 function wait(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms))
-}
-
-export function checkOpenCodeServerHealthCached(input: {
-  url: string
-  fetch?: typeof globalThis.fetch
-  signal?: AbortSignal
-  now?: () => number
-}) {
-  const queryKey = opencodeServerHealthQueryKey({
-    fetchKey: healthFetchKey(input.fetch),
-    url: input.url,
-  })
-  const cached = queryClient.getQueryData<OpenCodeServerHealthCacheEntry>(queryKey)
-  const now = input.now?.() ?? Date.now()
-  if (cached && now - cached.time < HEALTH_CACHE_MS) return cached.promise
-
-  const sdk = createOpencodeClient({
-    baseUrl: input.url,
-    fetch: input.fetch,
-    signal: input.signal,
-  })
-  const promise = sdk.global
-    .health()
-    .then((x) => x.data?.healthy === true)
-    .catch(() => false)
-    .finally(() => {
-      const next = queryClient.getQueryData<OpenCodeServerHealthCacheEntry>(queryKey)
-      if (next?.promise !== promise) return
-      queryClient.setQueryData<OpenCodeServerHealthCacheEntry>(queryKey, {
-        promise,
-        time: input.now?.() ?? Date.now(),
-      })
-    })
-  queryClient.setQueryData<OpenCodeServerHealthCacheEntry>(queryKey, { time: now, promise })
-  return promise
 }
 
 export function serverName(conn?: ServerConnection.Any, ignoreDisplayName = false) {
@@ -299,31 +219,24 @@ const serverContextInput = {
       return ext.server.transformUrl?.(raw) ?? raw
     })
 
-    const check = (url: string) => {
-      // as-any: AbortSignal.timeout is newer than the bundled DOM lib in some targets.
-      const signal = (AbortSignal as unknown as { timeout?: (ms: number) => AbortSignal }).timeout?.(3000)
-      return checkOpenCodeServerHealthCached({
-        url,
-        fetch: platform.fetch,
-        signal,
-      })
-    }
-
     const healthQuery = useQuery(() => {
       const u = url()
+      const connection = current()
+      const server = {
+        ...(connection?.http ?? {}),
+        url: u ?? "",
+      }
       return {
-        queryKey: opencodeServerHealthPollQueryKey({
-          fetchKey: healthFetchKey(platform.fetch),
-          url: u ?? "",
-        }),
+        queryKey: serverHealthQueryKey(server),
         queryFn: async () => {
           if (!u) return { url: u, healthy: false }
           const quietDelay = fastSessionSwitchAnyQuietDelay()
           if (quietDelay > 0) await wait(quietDelay)
-          return { url: u, healthy: await check(u) }
+          const result = await checkServerHealthCached(server, platform.fetch ?? globalThis.fetch)
+          return { url: u, healthy: result.healthy }
         },
         enabled: isReady() && !!u && !props.disableHealthCheck,
-        staleTime: HEALTH_CACHE_MS,
+        staleTime: 750,
         refetchInterval: 10_000,
         refetchIntervalInBackground: true,
       }
