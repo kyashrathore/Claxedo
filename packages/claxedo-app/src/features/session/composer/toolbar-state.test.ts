@@ -19,6 +19,7 @@ function toolbar(input: {
       currentModelSource: () => input.model ? "selected" : undefined,
       hasSelectedModel: () => !!input.model,
       modelRestorePending: () => input.restorePending,
+      selectionCatalogPending: () => false,
       fallbackModel: () => undefined,
       harnessMode: () => false,
       isOpenCodeHarness: () => true,

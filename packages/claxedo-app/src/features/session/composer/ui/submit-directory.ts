@@ -1,5 +1,4 @@
-import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
-import { isFilesystemDirectory, localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
@@ -9,6 +8,7 @@ import type { SubmitDirectory } from "../../submit/index"
 import { resolveSubmitDirectory } from "../../submit/index"
 import {
   knownWorkspaceKind,
+  isRemoteWorkspaceKind,
   projectForDirectory,
   resolveWorkspaceSubmitPlan,
   type ProjectCatalogItem,
@@ -37,6 +37,7 @@ export type SubmitDirectoryProvisionInput = {
   readonly projects: readonly ProjectCatalogItem[]
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
   readonly workspaceForDirectory: (directory: SubmitDirectory) => { readonly kind?: string; readonly workspaceId: string } | undefined
+  readonly isWorkspaceReady: (workspaceId: string) => boolean
   readonly baseUrl: string
   readonly request: typeof fetch
   readonly events: RuntimeEvents
@@ -104,10 +105,10 @@ export async function resolvePreparedSubmitDirectory(input: SubmitDirectoryProvi
   // sometimes leak in as sdk.directory before the project catalog remaps them.
   // Only refuse unresolved association UUIDs — every other opaque key keeps the
   // historical pass-through (matches origin/dev submit behavior).
-  if (input.workspaceKind === "cloud" || input.workspaceKind === "user-hosted") return resolved
+  if (isRemoteWorkspaceKind(input.workspaceKind)) return resolved
   if (!localWorkspaceAssociationId(resolved.directory)) return resolved
   const filesystemDirectory = workspaceRouteIdentity(input.projects, resolved.directory)?.directory
-  if (filesystemDirectory && isFilesystemDirectory(filesystemDirectory)) {
+  if (filesystemDirectory) {
     return { directory: filesystemDirectory }
   }
   input.showToast({
@@ -190,7 +191,7 @@ function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisi
   readonly workspaceKind: string
   readonly runtimeWorkspaceRef: (directory: SubmitDirectory | undefined) => RuntimeWorkspaceRef | undefined
 }) {
-  if (input.workspaceKind !== "cloud" && input.workspaceKind !== "user-hosted") return undefined
+  if (!isRemoteWorkspaceKind(input.workspaceKind)) return undefined
   // Explicit "create new cloud sandbox" must provision — never reuse an existing
   // remote directory from the project catalog (see core-composer-hosted-chips e2e).
   if (input.worktreeSelection === "create") return undefined
@@ -198,10 +199,10 @@ function existingRemoteWorkspaceDirectoryForSubmit(input: SubmitDirectoryProvisi
   const remoteDirectory = (directory: SubmitDirectory | undefined) => {
     if (!directory) return undefined
     const ref = input.runtimeWorkspaceRef(directory)
-    if (ref?.kind === "cloud" || ref?.kind === "user-hosted") return directory
+    if (isRemoteWorkspaceKind(ref?.kind)) return directory
     const workspace = input.workspaceForDirectory(directory)
     const kind = knownWorkspaceKind(workspace?.kind)
-    if (workspace && (kind === "cloud" || kind === "user-hosted")) return directory
+    if (workspace && isRemoteWorkspaceKind(kind)) return directory
     return undefined
   }
 
@@ -295,7 +296,7 @@ async function prepareRemoteSubmitDirectory(input: SubmitDirectoryProvisionInput
   // The WorkspaceGate already drove relay-backed workspaces to `ready` before
   // the composer unlocked. Re-running provisioning on first send can treat a
   // stale resolve snapshot as not-ready and abort before POST .../session.
-  if (connectedWorkspaceId && workspaceConnection(connectedWorkspaceId)?.status === "ready") {
+  if (connectedWorkspaceId && input.isWorkspaceReady(connectedWorkspaceId)) {
     return true
   }
 

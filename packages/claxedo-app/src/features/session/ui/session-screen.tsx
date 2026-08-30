@@ -58,6 +58,7 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import { SessionConversationOwner } from "@/features/session/conversation/session-conversation-owner"
+import { resumeSessionScroll } from "@/features/session/ui/session-message-scroll-position"
 import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import {
   scheduleDirectorySessionHydration, shouldScheduleDirectorySessionHydration,
@@ -1041,23 +1042,11 @@ export default function SessionPage() {
   }
 
   const resumeScroll = () => {
-    setStore("messageId", undefined)
-    // Clear the hash BEFORE scrolling. `shouldAnchorBottom` is gated on
-    // `!paneLocation().hash`; leaving the hash up until after `scrollToEnd`
-    // meant late virtualizer size corrections (history just expanded) would not
-    // re-anchor, and the jump control stayed visible even though the user asked
-    // to return to the bottom.
-    clearMessageHash()
-    autoScroll.resume()
-    scrollToEnd()
-
     const el = scroller
-    if (el) scheduleScrollState(el)
-    // One more frame after layout: revealing older turns can grow scrollHeight
-    // after the first scrollToEnd, leaving the viewport short of the true bottom.
-    requestAnimationFrame(() => {
-      scrollToEnd()
-      if (el) scheduleScrollState(el)
+    resumeSessionScroll({
+      clearMessageSelection: () => setStore("messageId", undefined),
+      clearMessageHash, resumeAutoScroll: autoScroll.resume,
+      scrollToEnd, scheduleScrollState: () => { if (el) scheduleScrollState(el) },
     })
   }
 

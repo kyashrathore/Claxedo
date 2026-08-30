@@ -372,6 +372,7 @@ function resolveDirectory(overrides: Partial<ResolveDirectoryInput>) {
     projects: [],
     runtimeWorkspaceRef: () => undefined,
     workspaceForDirectory: () => undefined,
+    isWorkspaceReady: () => false,
     baseUrl: "http://127.0.0.1:3001",
     request: fetch,
     events: undefined,

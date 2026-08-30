@@ -36,4 +36,23 @@ describe("signed workspace lookup", () => {
       signedWorkspaceFromProjects(projects, "/tmp/project"),
     )
   })
+
+  test("normalizes nullable control-plane workspace fields at the inventory boundary", () => {
+    expect(signedWorkspaceFromProjects([{
+      workspaces: {
+        ws_nullable: {
+          id: null,
+          workspaceId: "ws_nullable",
+          kind: "user-hosted",
+          directory: null,
+          workspace_name: null,
+          workspaceName: null,
+        },
+      },
+    }], "ws_nullable")).toEqual({
+      workspaceId: "ws_nullable",
+      directory: "ws_nullable",
+      kind: "user-hosted",
+    })
+  })
 })

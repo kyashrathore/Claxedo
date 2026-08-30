@@ -19,6 +19,7 @@ import {
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
+import { selectRuntimeModel } from "../model-strategy"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string

@@ -82,6 +82,7 @@ const sessionThunks: Thunks<SessionAppPorts> = {
   useWorkspaceQuery: lazy("@/features/workspaces/data/use-workspace-query", "useWorkspaceQuery"),
   isWorkspaceReady: lazy("@/features/workspaces/data/workspace-connection", "isWorkspaceReady"),
   workspacePlacement: lazy("@/features/workspaces/data/workspace-connection", "workspacePlacement"),
+  createCloudWorkspace: lazy("@/features/workspaces/data/workspace-create-api", "createCloudWorkspace"),
   WorkspaceGate: lazy("@/features/workspaces/data/workspace-gate", "WorkspaceGate"),
   useWorkspaceScopeRegistryOptional: lazy(
     "@/features/workspaces/data/workspace-scope",

@@ -1,5 +1,9 @@
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceKey, type SessionRef } from "@/platform/identity/session-ref"
+import { reconcileUpdatedSessionListQueryData, upsertCreatedSessionListRow } from "../../data/query/session-list"
+import { projectForDirectory, projectId, type ProjectCatalogItem } from "../workspace-resolver"
+
+type SessionDirectory = string
 
 function publicWorkspaceId(value: string | undefined): string | undefined {
   return value && /^ws_/.test(value) ? value : undefined
@@ -24,4 +28,60 @@ export function resolveCreatedSessionListWorkspaceId(input: {
   const fromRoute = publicWorkspaceId(input.workspaceId)
   if (fromRoute) return fromRoute
   return publicWorkspaceId(workspaceIdFromRef(input.sessionDirectory))
+}
+
+export function bumpCreatedSessionRail(input: {
+  sessionId: string
+  title: string
+  directory: SessionDirectory
+  sessionRef: SessionRef | undefined
+  workspaceId: string | undefined
+  projects: readonly ProjectCatalogItem[]
+}) {
+  const workspaceId = resolveCreatedSessionListWorkspaceId({
+    sessionRef: input.sessionRef,
+    workspaceId: input.workspaceId,
+    sessionDirectory: input.directory,
+  })
+  const project = projectForDirectory(input.projects, input.directory)
+    ?? (workspaceId ? projectForDirectory(input.projects, workspaceId) : undefined)
+    ?? (workspaceId ? projectForDirectory(input.projects, `workspace:${workspaceId}`) : undefined)
+  const resolvedProjectId = projectId(project)
+  const createdAt = Date.now()
+  upsertCreatedSessionListRow({
+    row: {
+      sessionId: input.sessionId,
+      title: input.title,
+      directory: input.directory,
+      ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
+      createdAt,
+      updatedAt: createdAt,
+    },
+  })
+  reconcileUpdatedSessionListQueryData({
+    sessionId: input.sessionId,
+    directory: input.directory,
+    ...(workspaceId ? { workspaceId } : {}),
+    updatedAt: createdAt,
+  })
+}
+
+export function bumpExistingSessionRail(input: {
+  sessionId: string
+  directory: SessionDirectory
+  sessionRef: SessionRef | undefined
+  workspaceId: string | undefined
+}) {
+  const workspaceId = resolveCreatedSessionListWorkspaceId({
+    sessionRef: input.sessionRef,
+    workspaceId: input.workspaceId,
+    sessionDirectory: input.directory,
+  })
+  reconcileUpdatedSessionListQueryData({
+    sessionId: input.sessionId,
+    directory: input.directory,
+    ...(workspaceId ? { workspaceId } : {}),
+    updatedAt: Date.now(),
+  })
 }

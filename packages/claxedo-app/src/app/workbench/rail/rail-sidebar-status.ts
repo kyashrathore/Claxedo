@@ -1,7 +1,7 @@
 // Row time labels and the session-status batch bookkeeping, split from
 // rail-sidebar.tsx: standalone helpers with no component state, extracted to
 // keep the sidebar under its size-budget ceiling.
-import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { SessionStatus } from "@/features/session/data/sync/queries"
 import {
   railSessionStatusBatchKey,
   type RailSessionStatusTarget,

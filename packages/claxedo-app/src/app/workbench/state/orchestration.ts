@@ -24,7 +24,7 @@ import {
   sameSessionRef,
   type SessionRef,
 } from "@/platform/identity/session-ref"
-import { markRouteIntentClosed } from "./route-intent"
+import { markRouteIntentClosed } from "./route-bridge-resolution"
 
 type WorkspaceDirectoryRef = string
 

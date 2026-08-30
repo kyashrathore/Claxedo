@@ -2,46 +2,36 @@ import { createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
-import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
-import { useGlobalSDK } from "@/features/session/app-ports"
+import {
+  createCloudWorkspace, isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
+  useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
+} from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
-import { useLayout } from "@/features/session/app-ports"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { usePermission } from "@/features/session/providers/permission"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { useSDK } from "@/features/session/app-ports"
 import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
 import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/platform/api/api"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
-import { useClaxedoState } from "@/features/session/app-ports"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
-import { useClaxedoEventsOptional } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
-import { useGlobalBootstrapActions } from "@/features/session/app-ports"
-import {
-  addRegisteredConversationMessage,
-  removeRegisteredConversationMessage,
-} from "../../conversation/conversation-registry"
 import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
-import { useConfigOptional } from "@/features/session/app-ports"
-import { createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
 import {
   recordPromptSubmission,
   resolvePromptDispatchClient,
   resolveSubmitMode,
   resolveSubmittedConfig,
   setPromptSessionStatus,
-  type PromptTimelineOptimisticStore,
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../submit/index"
@@ -55,17 +45,16 @@ import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
-import { reconcileUpdatedSessionListQueryData, upsertCreatedSessionListRow } from "../../data/query/session-list"
-import { projectForDirectory, projectId as catalogProjectId } from "../workspace-resolver"
 import {
   parseExistingSessionConfig,
   preferAuthoritativeExistingSessionConfig,
   sameExistingSessionConfig,
 } from "./submit-session-config"
 import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
-import { resolveCreatedSessionListWorkspaceId } from "./submit-rail-workspace"
-import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
-import type { CommentItem, CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
+import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
+import { createSubmitCommentActions } from "./comment-routing"
+import { createSubmitOptimisticTimeline } from "./submit-ui-state"
+import type { CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
 
 export type { FollowupDraft } from "./submit-input"
 
@@ -118,45 +107,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     /* not in claxedo context */
   }
   const surfaceId = () => input.surfaceId?.()
-  const optimisticTimeline: PromptTimelineOptimisticStore = {
-    add: (item) => {
-      addRegisteredConversationMessage({
-        directory: item.directory,
-        sessionID: item.sessionID,
-        message: item.message,
-        parts: item.parts,
-      })
-    },
-    remove: (item) => {
-      removeRegisteredConversationMessage({
-        directory: item.directory,
-        sessionID: item.sessionID,
-        messageID: item.messageID,
-      })
-    },
-  }
+  const optimisticTimeline = createSubmitOptimisticTimeline()
 
   const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
 
-  const restoreCommentItems = (items: CommentItem[]) => {
-    for (const item of items) {
-      prompt.context.add({
-        type: "file",
-        path: item.path,
-        selection: item.selection,
-        comment: item.comment,
-        commentID: item.commentID,
-        commentOrigin: item.commentOrigin,
-        preview: item.preview,
-      })
-    }
-  }
-
-  const removeCommentItems = (items: { key: string }[]) => {
-    for (const item of items) {
-      prompt.context.remove(item.key)
-    }
-  }
+  const commentActions = createSubmitCommentActions(prompt.context)
 
   const transport = createSubmitTransportAdapter({
     serverUrl: getClaxedoServerUrl,
@@ -264,7 +219,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const workspaceId =
         input.workspaceId?.() ??
         workspaceRuntimeRef(projectDirectory ?? fallbackDirectory ?? sdk.directory)?.workspaceId
-      return workspaceId ? workspaceConnection(workspaceId)?.status === "ready" : false
+      return isWorkspaceReady(workspaceId)
     }
     const cloudStartup = createCloudStartupController({
       enabled: isNewSession && workspaceKind === "cloud" && !relayWorkspaceConnectionReady(),
@@ -287,6 +242,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       projects: projectCatalog(),
       runtimeWorkspaceRef: workspaceRuntimeRef,
       workspaceForDirectory: (directory) => typeof sdk.workspace === "function" ? sdk.workspace(directory) : undefined,
+      isWorkspaceReady,
       baseUrl: getClaxedoServerUrl(),
       request: platform.fetch ?? authFetch,
       events,
@@ -586,33 +542,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // Local inventory UUID associations must keep directory-scoped rail
       // rows — stamping them as workspaceId duplicates the row under both
       // `local:` and `workspace:` sessionRefs (tier-real local harness).
-      const listWorkspaceId = resolveCreatedSessionListWorkspaceId({
+      bumpCreatedSessionRail({
+        sessionId: session.id,
+        title: provisionalTitle ?? "New Session",
+        directory: sessionDirectory,
         sessionRef,
         workspaceId: input.workspaceId?.(),
-        sessionDirectory,
-      })
-      const catalog = projectCatalog()
-      const project = projectForDirectory(catalog, sessionDirectory)
-        ?? (listWorkspaceId ? projectForDirectory(catalog, listWorkspaceId) : undefined)
-        ?? (listWorkspaceId ? projectForDirectory(catalog, `workspace:${listWorkspaceId}`) : undefined)
-      const resolvedProjectId = catalogProjectId(project)
-      const createdAt = Date.now()
-      upsertCreatedSessionListRow({
-        row: {
-          sessionId: session.id,
-          title: provisionalTitle ?? "New Session",
-          directory: sessionDirectory,
-          ...(resolvedProjectId ? { projectId: resolvedProjectId } : {}),
-          ...(listWorkspaceId ? { workspaceId: listWorkspaceId } : {}),
-          createdAt,
-          updatedAt: createdAt,
-        },
-      })
-      reconcileUpdatedSessionListQueryData({
-        sessionId: session.id,
-        directory: sessionDirectory,
-        ...(listWorkspaceId ? { workspaceId: listWorkspaceId } : {}),
-        updatedAt: createdAt,
+        projects: projectCatalog(),
       })
     }
     const createdSessionHandoff = finalizedSessionTarget.handoffCreatedSession
@@ -828,21 +764,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         // rail remount cannot restore the draft (tier-real T2). Create turns already
         // wrote the optimistic row via bumpSessionRail.
         if (target.created) return
-        const listWorkspaceId = resolveCreatedSessionListWorkspaceId({
-          sessionRef,
-          workspaceId: input.workspaceId?.(),
-          sessionDirectory,
-        })
-        reconcileUpdatedSessionListQueryData({
+        bumpExistingSessionRail({
           sessionId: session.id,
           directory: sessionDirectory,
-          ...(listWorkspaceId ? { workspaceId: listWorkspaceId } : {}),
-          updatedAt: Date.now(),
+          sessionRef,
+          workspaceId: input.workspaceId?.(),
         })
       },
       restoreInput,
-      removeCommentItems,
-      restoreCommentItems,
+      removeCommentItems: commentActions.remove,
+      restoreCommentItems: commentActions.restore,
       applyCreatedSessionHandoff,
       publishCloudHandoff,
       showSendingFirstMessage,

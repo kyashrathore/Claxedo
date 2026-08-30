@@ -204,7 +204,6 @@ export function finalizeSubmitSessionTarget(input: {
   readonly model: { providerID: string; modelID: string }
   readonly variant: string | undefined
   readonly draftId: string | undefined
-  readonly provisionalTitle?: string
   readonly previousSessionId: string
   readonly shouldAutoAccept: boolean
   readonly harnessConfig: HarnessConfigPromoter | undefined

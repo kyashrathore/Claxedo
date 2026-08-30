@@ -23,6 +23,7 @@ import * as PaneID from "@/app/workbench/context/pane-id"
 import * as Workbench from "@/app/workbench/workbench"
 import * as WorkspaceQuery from "@/features/workspaces/data/use-workspace-query"
 import * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
+import * as WorkspaceCreate from "@/features/workspaces/data/workspace-create-api"
 import * as WorkspaceGateModule from "@/features/workspaces/data/workspace-gate"
 import * as WorkspaceScope from "@/features/workspaces/data/workspace-scope"
 import * as DirectoryScopeModule from "@/app/workbench/context/directory-scope"
@@ -108,6 +109,7 @@ configureSessionAppPorts({
   useWorkspaceQuery: WorkspaceQuery.useWorkspaceQuery,
   isWorkspaceReady: WorkspaceConnection.isWorkspaceReady,
   workspacePlacement: WorkspaceConnection.workspacePlacement,
+  createCloudWorkspace: WorkspaceCreate.createCloudWorkspace,
   WorkspaceGate: WorkspaceGateModule.WorkspaceGate,
   useWorkspaceScopeRegistryOptional: WorkspaceScope.useWorkspaceScopeRegistryOptional,
   DirectoryScope: DirectoryScopeModule.DirectoryScope,

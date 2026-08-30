@@ -3,6 +3,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
 
 const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 
@@ -19,6 +20,34 @@ export type ControlPlaneEventFetchInput = {
   liveSession: () => LiveSession | undefined
   setLiveSession: (session: LiveSession) => void
   fetch: typeof fetch
+}
+
+export function openCentralRuntimeEventResponse(input: {
+  request: typeof fetch
+  serverUrl: string
+  sessionId: string
+  lastEventId?: string
+  init: RequestInit
+  signal: AbortSignal
+}) {
+  if (!accountStreamAvailable()) {
+    return input.request(
+      new URL(
+        `/api/control/session/${encodeURIComponent(input.sessionId)}/runtime-events?parentSessionId=${encodeURIComponent(input.sessionId)}`,
+        input.serverUrl,
+      ),
+      input.init,
+    )
+  }
+  return openAccountStreamResponse({
+    operation: "session.runtimeEvents",
+    params: {
+      sessionId: input.sessionId,
+      parentSessionId: input.sessionId,
+      ...(input.lastEventId ? { lastEventId: input.lastEventId } : {}),
+    },
+    signal: input.signal,
+  })
 }
 
 function runtimeWorkspaceKind(input: unknown) {

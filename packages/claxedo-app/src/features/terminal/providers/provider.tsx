@@ -5,7 +5,7 @@ import { Persist, persisted, removePersisted } from "@/platform/persistence/pers
 import { scopeUrl } from "@/lib/url"
 import { clearInitialCommandMarker } from "@/features/terminal/core/terminal-recovery"
 import { pickPersistBufferEvictions } from "@/features/terminal/core/terminal-buffer"
-import { mergeCreatedTerminal, type LocalPTY } from "@/features/terminal/providers/shared"
+import { mergeCreatedTerminal, type LocalPTY, type NewTerminalInput } from "@/features/terminal/providers/shared"
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
 import { legacyTerminalPersistScopeKey, terminalScopeKey } from "@/platform/identity/session-view-key"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -25,14 +25,6 @@ const MAX_TERMINAL_SESSIONS = 20
 const SERVER_SCOPED_PERSIST = import.meta.env.VITE_SERVER_SCOPED_PERSIST === "true"
 
 type TerminalSession = ReturnType<typeof createTerminalSession>
-
-type NewTerminalInput = {
-  initialCommand?: string
-  title?: string
-  previousPtyId?: string
-  sessionId?: string
-  createRequestId?: string
-}
 
 type TerminalCacheEntry = {
   value: TerminalSession

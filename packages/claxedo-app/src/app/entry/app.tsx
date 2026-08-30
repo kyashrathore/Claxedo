@@ -49,6 +49,8 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider } from "@/platform/account/account-provider"
+import { browserAccountPort, type RunHostedOperation } from "@/platform/account/browser-account-port"
+import { accountBridge, electronAccountPort } from "@/platform/account/electron-account-port"
 import { queryClient } from "@/platform/query/query-client"
 import { installQueryPersister } from "@/platform/query/persister"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
@@ -394,7 +396,7 @@ function AuthenticatedProviders(props: ParentProps) {
     <PrincipalProvider authEnabled={config?.authEnabled === true}>
       {/* Inside PrincipalProvider so both read one session, and above every
           account surface so none of them reaches the session directly. */}
-      <AccountPortProvider>
+      <BoundAccountPortProvider>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       {/* Removes the hosted contribution set when the account signs out.
@@ -405,9 +407,20 @@ function AuthenticatedProviders(props: ParentProps) {
           <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
         </Show>
       </CloudAuthGate>
-      </AccountPortProvider>
+      </BoundAccountPortProvider>
     </PrincipalProvider>
   )
+}
+
+function BoundAccountPortProvider(props: ParentProps) {
+  const auth = useAuthSession()
+  const bridge = accountBridge()
+  const port = bridge ? electronAccountPort(bridge) : browserAccountPort(auth, unboundHostedOperation)
+  return <AccountPortProvider port={port}>{props.children}</AccountPortProvider>
+}
+
+const unboundHostedOperation: RunHostedOperation = async (operation) => {
+  throw new Error(`hosted operation "${operation}" has no transport bound in this build`)
 }
 
 function RoutedClaxedoEventsProvider(props: ParentProps) {
@@ -486,11 +499,11 @@ export function AppInterface(props: {
           // AuthenticatedProviders — LoginPage reads the account port, so the
           // route brings its own provider (self-sufficient: it reads the
           // module-bound auth session and the optional Electron bridge).
-          <AccountPortProvider>
+          <BoundAccountPortProvider>
             <Suspense fallback={<Loading />}>
               <LoginPage />
             </Suspense>
-          </AccountPortProvider>
+          </BoundAccountPortProvider>
         )}
       />
       <Route

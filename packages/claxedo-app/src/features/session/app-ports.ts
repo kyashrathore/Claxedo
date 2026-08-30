@@ -19,6 +19,7 @@ import type * as PaneID from "@/app/workbench/context/pane-id"
 import type * as Workbench from "@/app/workbench/workbench"
 import type * as WorkspaceQuery from "@/features/workspaces/data/use-workspace-query"
 import type * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
+import type * as WorkspaceCreate from "@/features/workspaces/data/workspace-create-api"
 import type * as WorkspaceGateModule from "@/features/workspaces/data/workspace-gate"
 import type * as WorkspaceScope from "@/features/workspaces/data/workspace-scope"
 import type * as DirectoryScopeModule from "@/app/workbench/context/directory-scope"
@@ -60,6 +61,7 @@ export type SessionAppPorts = {
   useWorkspaceQuery: typeof WorkspaceQuery.useWorkspaceQuery
   isWorkspaceReady: typeof WorkspaceConnection.isWorkspaceReady
   workspacePlacement: typeof WorkspaceConnection.workspacePlacement
+  createCloudWorkspace: typeof WorkspaceCreate.createCloudWorkspace
   WorkspaceGate: typeof WorkspaceGateModule.WorkspaceGate
   useWorkspaceScopeRegistryOptional: typeof WorkspaceScope.useWorkspaceScopeRegistryOptional
   DirectoryScope: typeof DirectoryScopeModule.DirectoryScope
@@ -141,6 +143,7 @@ export type PaneCtx = Workbench.PaneCtx
 export const useWorkspaceQuery = bind("useWorkspaceQuery")
 export const isWorkspaceReady = bind("isWorkspaceReady")
 export const workspacePlacement = bind("workspacePlacement")
+export const createCloudWorkspace = bind("createCloudWorkspace")
 export const WorkspaceGate = bind("WorkspaceGate")
 export const useWorkspaceScopeRegistryOptional = bind("useWorkspaceScopeRegistryOptional")
 export const DirectoryScope = bind("DirectoryScope")

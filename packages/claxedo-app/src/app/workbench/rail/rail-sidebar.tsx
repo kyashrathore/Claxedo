@@ -62,7 +62,7 @@ import { RailAccountMenu, RailAccountSubmenu } from "./rail-account-menu"
 import { RailOrgTeamSwitcher } from "./rail-org-team-switcher"
 import { getFilename } from "@/lib/path"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
-import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
+import { workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
 import { getTerminalCommands } from "../../../features/settings/ui/terminals"
 import {
   activateDisclosureFromKeyboard,
@@ -130,6 +130,7 @@ import {
 import { TerminalSurfaceNavigation } from "../../../features/terminal/ui/navigation/terminal-surface-navigation"
 export { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind, SessionItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
+import { projectWorkspaceInfo, railProjectDirectoryRefs } from "./rail-project-session-info"
 import { urlRoutingEnabled } from "@/lib/runtime-mode"
 import { nextSiblingAfterRemoval } from "@/features/session/ui/session-archive"
 import { createRailSessionMessagePrefetch } from "./rail-session-message-prefetch"
@@ -303,15 +304,6 @@ function workspaceSessionBacking(
     ...(session.workspaceId ? { workspaceId: session.workspaceId } : {}),
     ...(session.environment?.kind ? { environmentKind: session.environment.kind } : {}),
   })
-}
-
-function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
-  return project.workspaces?.[directory] ??
-    Object.values(project.workspaces ?? {}).find((workspace) =>
-      workspace.directory === directory ||
-      workspace.id === directory ||
-      workspace.workspaceId === directory
-    )
 }
 
 function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">, directory: string): RuntimeKind {
@@ -714,18 +706,7 @@ export function RailSidebar(props: RailSidebarProps) {
   }
 
   const dirs = (project: ProjectItem) => {
-    const all = new Set<string>(projectWorkspaceDirectories(project))
-    // Terminal surfaces opened from `/w/:workspaceId/...` keep the opaque id
-    // (or `workspace:<id>`) as `meta.directory`. `projectWorkspaceDirectories`
-    // collapses sandbox keys to filesystem paths, so without these identity
-    // keys the rail filters the open pane out of every project section.
-    for (const sandbox of project.sandboxes ?? []) all.add(sandbox)
-    for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      all.add(key)
-      if (workspace.id) all.add(workspace.id)
-      if (workspace.workspaceId) all.add(workspace.workspaceId)
-      if (workspace.directory) all.add(workspace.directory)
-    }
+    const all = railProjectDirectoryRefs(project)
     if (projectMatches(project) && props.activeDirectory) {
       all.add(projectWorkspaceInfo(project, props.activeDirectory)?.directory ?? props.activeDirectory)
     }

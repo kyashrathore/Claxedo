@@ -2,6 +2,9 @@ import { terminalSurfaceStatus } from "@/features/session/app-ports"
 import type { WORKBENCH_DRAG_MIME } from "@/features/session/app-ports"
 import type { ContentMeta, TerminalAgentStatus, TerminalLifecycleState } from "@/features/session/app-ports"
 import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import type { SessionOwner } from "@/features/session/data/query/types"
+
+type WorkspaceDirectory = string
 
 export type RowActivity = "idle" | "working" | "needs_input" | "done"
 
@@ -29,11 +32,7 @@ export type SessionNavigationRow = {
   environment?: { kind?: string; driver?: string }
   git?: { repo?: string; branch?: string; remote?: string }
   /** Session creator — owner favicon on shared/other-user rail rows. */
-  owner?: {
-    name?: string
-    avatarUrl?: string
-    publicId?: string
-  }
+  owner?: SessionOwner
 }
 
 export type TerminalSurfaceRow = {
@@ -85,7 +84,7 @@ export function terminalMetaMatchesPlacement(meta: ContentMeta, placement: strin
   return terminalSurfaceMatchesDirectory(meta, placement)
 }
 
-function terminalSurfaceMatchesDirectory(meta: ContentMeta, directory: string) {
+function terminalSurfaceMatchesDirectory(meta: ContentMeta, directory: WorkspaceDirectory) {
   // Fixture/bootstrap inventory often stores the macOS-realpath form
   // (`/private/var/...`) while the client launch path still carries `/var/...`.
   // Reuse the signed-workspace alias so rail placement matches the open pane.
@@ -109,7 +108,7 @@ export function deriveTerminalSurfaceRows(input: {
   lifecycle?: Record<string, TerminalLifecycleState | undefined>
 }): TerminalSurfaceRow[] {
   return input.metas
-    .filter((meta): meta is ContentMeta & { terminalId: string; directory: string } =>
+    .filter((meta): meta is ContentMeta & { terminalId: string; directory: WorkspaceDirectory } =>
       meta.type === "terminal" &&
       !!meta.terminalId &&
       !!meta.directory &&

@@ -15,6 +15,14 @@ import { controlSessionListUrl } from "@/platform/runtime/agent/workspace-contro
 import { applySessionFilter, type SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
 import { mapInventoryToSessions, signedInventoryItems, signedInventoryProjects } from "../query/inventory"
+import {
+  inventoryRecord as rec,
+  inventorySessionAttachments,
+  inventorySessionEnvironment,
+  inventorySessionGit,
+  inventoryText as txt,
+} from "./session-inventory"
+export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
 
 type ProjectDirectory = string
 type SignedWorkspaceKind = "cloud" | "user-hosted"
@@ -75,14 +83,6 @@ export async function listSignedWorkspaceRuntimeSessions(input: SignedRuntimeSes
 
 const CONTROL_SESSIONS_DEDUPE_MS = 3_000
 const SIGNED_WORKSPACE_SNAPSHOT_STALE_MS = 10_000
-
-function rec(input: unknown) {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
-function txt(input: unknown) {
-  return typeof input === "string" ? input : undefined
-}
 
 function inventoryServerUrl(serverUrl: string | undefined) {
   return normalizeUrl(serverUrl) ?? getClaxedoServerUrl()
@@ -237,43 +237,6 @@ export function controlPlaneSessionToItem(input: {
     },
     ...(lastTurn ? { lastTurn } : {}),
     time: { created, updated },
-  }
-}
-
-export function inventorySessionAttachments(input: unknown) {
-  if (!Array.isArray(input)) return []
-  return input.flatMap((item) => {
-    const row = rec(item)
-    const kind = txt(row?.kind)
-    const targetID = txt(row?.targetID) ?? txt(row?.target_id)
-    if (!kind || !targetID) return []
-    return [{ kind, targetID }]
-  })
-}
-
-export function inventorySessionEnvironment(input: unknown) {
-  const row = rec(input)
-  if (!row) return
-  const kind = txt(row.kind)
-  const driver = txt(row.driver) ?? txt(row.provider)
-  if (!kind && !driver) return
-  return {
-    ...(kind ? { kind } : {}),
-    ...(driver ? { driver } : {}),
-  }
-}
-
-export function inventorySessionGit(input: unknown) {
-  const row = rec(input)
-  if (!row) return
-  const repo = txt(row.repo)
-  const branch = txt(row.branch)
-  const remote = txt(row.remote)
-  if (!repo && !branch && !remote) return
-  return {
-    ...(repo ? { repo } : {}),
-    ...(branch ? { branch } : {}),
-    ...(remote ? { remote } : {}),
   }
 }
 

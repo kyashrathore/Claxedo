@@ -22,7 +22,6 @@ import {
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
-import type { SessionShareChangedEvent } from "../../features/session/data/session-share-changed-event"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
@@ -55,6 +54,16 @@ export type PtyInfo = {
   cwd: string
   status: "running" | "exited"
   pid: number
+}
+
+type SessionShareChangedEvent = {
+  type: "session.share.changed"
+  phase: "granted" | "revoked"
+  ownerUserId: string
+  sessionId: string
+  workspaceId: string
+  orgId?: string
+  ts: number
 }
 
 export type ClaxedoEvent =

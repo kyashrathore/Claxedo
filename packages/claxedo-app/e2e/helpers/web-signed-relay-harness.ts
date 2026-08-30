@@ -44,7 +44,7 @@
  * `CLAXEDO_TIER_REAL_BACKEND_PORT` convention) rather than this module
  * allocating one dynamically.
  */
-import { expect, test, type Locator, type Page } from "@playwright/test"
+import { expect, test, type Locator, type Page, type Request } from "@playwright/test"
 import { execFile, spawn, type ChildProcess } from "node:child_process"
 import * as fs from "node:fs/promises"
 import * as os from "node:os"
@@ -647,9 +647,9 @@ export async function submitDraft(page: Page): Promise<string> {
   await expect(submit, "no submit control").toBeVisible({ timeout: 10_000 })
   await expect(submit, "submit stayed disabled").toBeEnabled({ timeout: 10_000 })
   const postRequests: Array<{ url: string; status?: number }> = []
-  const onRequest = (request: { method(): string; url(): string }) => {
+  const onRequest = (request: Request) => {
     if (request.method() === "POST") {
-      const entry = { url: request.url() }
+      const entry: { url: string; status?: number } = { url: request.url() }
       postRequests.push(entry)
       void request.response().then((response) => {
         if (response) entry.status = response.status()

@@ -1,5 +1,7 @@
 import type { Event, Message, Part, ToolState } from "@opencode-ai/sdk/v2/client"
+export type { Message } from "@opencode-ai/sdk/v2/client"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
+import { preserveMessageFields, withPreservedAuthor } from "./conversation-snapshot"
 
 export type ConversationChatHandle = {
   messages: () => UIMessage[]
@@ -232,82 +234,6 @@ export function applyOpencodeConversationEvent(chat: ConversationChatHandle, eve
     )
   }
   return false
-}
-
-/**
- * How much a failed turn's error tells the user. A later view of the same turn
- * often carries less: a relay-summarized `UnknownError` can follow the engine's
- * `APIError` that had the provider's status and body. Last-write-wins made the
- * rich error flash and then revert to a generic card, so the richer error wins
- * regardless of arrival order.
- */
-function errorDetailRank(error: unknown) {
-  if (!error || typeof error !== "object") return 0
-  const data = (error as { data?: unknown }).data
-  if (!data || typeof data !== "object") return 1
-  const fields = data as { statusCode?: unknown; responseBody?: unknown; message?: unknown }
-  let rank = 1
-  if (typeof fields.message === "string" && fields.message.trim()) rank += 1
-  if (typeof fields.statusCode === "number") rank += 2
-  if (typeof fields.responseBody === "string" && fields.responseBody.trim()) rank += 2
-  return rank
-}
-
-/**
- * The error to keep for a turn. A turn that recovered (the incoming view has no
- * error at all) clears it — only a competing *error* is ranked, so a stale
- * failure can never pin itself to a since-succeeded turn.
- */
-function richestError(current: Message | undefined, next: Message | undefined) {
-  const incoming = next?.role === "assistant" ? next.error : undefined
-  if (!incoming) return undefined
-  const existing = current?.role === "assistant" ? current.error : undefined
-  if (!existing) return incoming
-  return errorDetailRank(existing) > errorDetailRank(incoming) ? existing : incoming
-}
-
-/**
- * Replaces a stored message, preserving the richest error seen for the turn.
- * Both write paths (`message.updated` events and snapshot merges) funnel
- * through here so neither can silently downgrade a rendered error.
- */
-function withPreservedError(current: Message | undefined, next: Message): Message {
-  if (next.role !== "assistant") return next
-  const error = richestError(current, next)
-  if (error === next.error) return next
-  if (!error) {
-    const { error: _dropped, ...rest } = next as Message & { error?: unknown }
-    return rest as Message
-  }
-  return { ...next, error } as Message
-}
-
-/**
- * OpenCode engine envelopes do not carry `claxedo.author`. A later
- * `message.updated` without author must not erase attribution that arrived on
- * the signed host's opening user-message event.
- */
-function withPreservedAuthor(current: Message | undefined, next: Message): Message {
-  if (next.role !== "user") return next
-  const currentAuthor = messageAuthorRecord(current)
-  if (!currentAuthor || messageAuthorRecord(next)) return next
-  const nextClaxedo = propertyRecord((next as { claxedo?: unknown }).claxedo) ?? {}
-  return {
-    ...next,
-    claxedo: {
-      ...nextClaxedo,
-      author: currentAuthor,
-    },
-  } as Message
-}
-
-function messageAuthorRecord(message: Message | undefined) {
-  if (!message || message.role !== "user") return
-  return propertyRecord(propertyRecord((message as { claxedo?: unknown }).claxedo)?.author)
-}
-
-function preserveMessageFields(current: Message | undefined, next: Message): Message {
-  return withPreservedAuthor(current, withPreservedError(current, next))
 }
 
 function storedMessage(message: UIMessage | undefined) {

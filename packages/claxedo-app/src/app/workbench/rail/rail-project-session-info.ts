@@ -10,7 +10,7 @@ import {
 } from "../../../features/session/data/sync/queries"
 import { queryClient } from "@/platform/query/query-client"
 import type { SessionInventoryRow } from "../../../features/session/data/query/types"
-import type { ProjectItem, WorkspaceItem } from "./domain-types"
+import type { ProjectItem, WorkspaceInfo, WorkspaceItem } from "./domain-types"
 import { parseOwnerRepo } from "./rail-git-remote"
 
 type SessionGitMetadata = {
@@ -48,6 +48,25 @@ export type RailWorktreeInfo = {
 
 export function railProjectDisplayName(project: ProjectItem, repoName?: string): string {
   return repoName ?? project.name ?? getFilename(project.worktree)
+}
+
+export function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
+  return project.workspaces?.[directory] ?? Object.values(project.workspaces ?? {}).find((workspace) =>
+    workspace.directory === directory || workspace.id === directory || workspace.workspaceId === directory
+  )
+}
+
+/** Every filesystem and opaque route identity that can place a surface under this project. */
+export function railProjectDirectoryRefs(project: ProjectItem) {
+  const refs = new Set<string>(projectWorkspaceDirectories(project))
+  for (const sandbox of project.sandboxes ?? []) refs.add(sandbox)
+  for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
+    refs.add(key)
+    refs.add(workspace.id)
+    if (workspace.workspaceId) refs.add(workspace.workspaceId)
+    if (workspace.directory) refs.add(workspace.directory)
+  }
+  return refs
 }
 
 export function useRailProjectSessionInfo(input: {

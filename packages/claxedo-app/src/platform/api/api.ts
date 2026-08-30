@@ -531,3 +531,33 @@ export const api = {
     })
   },
 }
+
+function loopbackHttpUrl(input: string | undefined) {
+  if (!input) return false
+  try {
+    const url = new URL(input)
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]")
+  } catch {
+    return false
+  }
+}
+
+export function isLoopbackHttpUrl(input: string | undefined) {
+  return loopbackHttpUrl(input)
+}
+
+export function usesUnsignedLocalTransport(input: string | undefined) {
+  return loopbackHttpUrl(input)
+}
+
+export function unsignedLocalFetch(input: string | URL | Request, init?: RequestInit) {
+  if (input instanceof Request) {
+    const headers = new Headers(init?.headers ?? input.headers)
+    headers.delete("Authorization")
+    return globalThis.fetch(new Request(input, { ...init, headers }))
+  }
+  const headers = new Headers(init?.headers)
+  headers.delete("Authorization")
+  return globalThis.fetch(input, { ...init, headers })
+}

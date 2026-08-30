@@ -10,6 +10,50 @@ import { routeSessionHarness } from "./route-session-harness"
 
 type RouteSessionDirectory = NonNullable<Parameters<typeof signedWorkspaceFromProjects>[1]>
 
+const CLOSED_ROUTE_TTL_MS = 10_000
+export const CLOSED_ROUTE_MAX = 256
+const closedRouteKeys = new Map<string, number>()
+
+function closedRouteKey(input: { workspaceId?: string; sessionId?: string }) {
+  return `${input.workspaceId ?? ""}\0${input.sessionId ?? ""}`
+}
+
+function sweepClosedRoutes(now: number) {
+  for (const [key, until] of closedRouteKeys) {
+    if (now > until) closedRouteKeys.delete(key)
+  }
+  while (closedRouteKeys.size > CLOSED_ROUTE_MAX) {
+    const oldest = closedRouteKeys.keys().next().value
+    if (oldest === undefined) break
+    closedRouteKeys.delete(oldest)
+  }
+}
+
+export function markRouteIntentClosed(input: { workspaceId?: string; sessionId?: string }) {
+  const now = Date.now()
+  closedRouteKeys.set(closedRouteKey(input), now + CLOSED_ROUTE_TTL_MS)
+  sweepClosedRoutes(now)
+}
+
+export function routeIntentClosedSizeForTest() {
+  return closedRouteKeys.size
+}
+
+export function isRouteIntentClosed(input: { workspaceId?: string; sessionId?: string }) {
+  const key = closedRouteKey(input)
+  const until = closedRouteKeys.get(key)
+  if (!until) return false
+  if (Date.now() > until) {
+    closedRouteKeys.delete(key)
+    return false
+  }
+  return true
+}
+
+export function resetRouteIntentClosedForTest() {
+  closedRouteKeys.clear()
+}
+
 export function settledWorkspaceSessionRedirect(input: {
   hash: string
   isFetching: boolean

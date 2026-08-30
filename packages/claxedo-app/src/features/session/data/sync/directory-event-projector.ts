@@ -15,6 +15,8 @@ type DirectoryEvent = {
   properties?: unknown
 }
 
+type WorkspaceDirectory = string
+
 function removeSessionShellQueries(sessionID: string) {
   queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
 }
@@ -72,7 +74,7 @@ function sessionIdFromDirectoryEvent(properties: unknown): string | undefined {
   return typeof sessionID === "string" && sessionID.length > 0 ? sessionID : undefined
 }
 
-function bumpSessionListActivity(input: { event: DirectoryEvent; directory: string; workspaceId?: string }) {
+function bumpSessionListActivity(input: { event: DirectoryEvent; directory: WorkspaceDirectory; workspaceId?: string }) {
   const sessionId = sessionIdFromDirectoryEvent(input.event.properties)
   if (!sessionId) return
   const eventWorkspaceId = input.workspaceId

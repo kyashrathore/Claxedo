@@ -52,8 +52,10 @@ export const desktopMainComposition: Policy = {
   // daemon discovery and lease owners. The app-exit fix adds the canonical
   // daemon-exit lifecycle owner. Account identity resolution (`account/identity.ts`,
   // reached through the lazy account composition the source walk includes)
-  // publishes display name/email after OAuth; keep the ceiling exact.
-  ceilings: { modules: 78, packages: 23 },
+  // publishes display name/email after OAuth. Account IPC and service timing
+  // share `account/account-perf.ts` as the single diagnostics owner; keep the
+  // measured closure ceiling exact with no headroom.
+  ceilings: { modules: 79, packages: 23 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

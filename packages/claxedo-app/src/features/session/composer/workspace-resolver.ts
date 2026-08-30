@@ -1,4 +1,8 @@
-import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspace"
+import {
+  sameWorkspaceDirectory,
+  type WorkspaceInventoryEntry,
+  type WorkspaceInventoryProject,
+} from "@/platform/runtime/agent/signed-workspace"
 import {
   sessionRefForWorkspaceSession,
   type HarnessRef,
@@ -15,21 +19,14 @@ const cloudWorkspaceKind = "cloud"
 const localWorkspaceKind = "local"
 const userHostedWorkspaceKind = "user-hosted"
 
-export type WorkspaceCatalogEntry = {
+export type WorkspaceCatalogEntry = WorkspaceInventoryEntry & {
   kind?: WorkspaceCatalogKind | string | null
-  id?: string | null
-  workspaceId?: string | null
-  directory?: string | null
-  workspace_name?: string | null
-  workspaceName?: string | null
 }
 
-export type ProjectCatalogItem = {
+export type ProjectCatalogItem = WorkspaceInventoryProject & {
   id?: string
   project_id?: string
   projectID?: string
-  worktree?: string
-  sandboxes?: string[]
   workspaces?: Record<string, WorkspaceCatalogEntry>
 }
 
@@ -274,7 +271,7 @@ function sameWorkspaceId(left: string | undefined, right: string | undefined) {
   return !!left && !!right && left === right
 }
 
-function isRemoteWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | ResolveWorkspaceSubmitPlanInput["workspaceKind"] | undefined) {
+export function isRemoteWorkspaceKind(kind: WorkspaceCatalogEntry["kind"] | ResolveWorkspaceSubmitPlanInput["workspaceKind"] | undefined) {
   return kind === cloudWorkspaceKind || kind === userHostedWorkspaceKind
 }
 

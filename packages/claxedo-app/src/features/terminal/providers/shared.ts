@@ -30,6 +30,14 @@ export type LocalPTY = {
   recreated?: boolean
 }
 
+export type NewTerminalInput = {
+  initialCommand?: string
+  title?: string
+  previousPtyId?: string
+  sessionId?: string
+  createRequestId?: string
+}
+
 function titleNum(title: string) {
   const m = title.match(/^Terminal (\d+)$/)
   if (!m) return undefined
