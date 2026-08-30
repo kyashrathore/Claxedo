@@ -52,6 +52,8 @@ export type CentralControlAppOptions = {
   mountPublicUsageRoute?: boolean
   /** Product-plane `deployment_mode` for turn metering; defaults to self-host. */
   productDeploymentMode?: ProductDeploymentMode
+  /** Deterministic model backend injection for tests and embedded deployments. */
+  modelBackend?: NonNullable<Parameters<typeof createCentralSessionRuntime>[1]>["modelBackend"]
   /** Injected by composition roots (local bus or hosted LiveSync). */
   sessionShareChangedSink?: SessionShareChangedSink
 }
@@ -167,6 +169,7 @@ export function createCentralControlApp(services: ControlPlaneServices, options:
     ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
     ...(options.onUsageTerminal ? { onUsageTerminal: options.onUsageTerminal } : {}),
     ...(options.productDeploymentMode ? { productDeploymentMode: options.productDeploymentMode } : {}),
+    ...(options.modelBackend ? { modelBackend: options.modelBackend } : {}),
   })
   const app = new Hono()
   const sessionRuntimeEvents = runtimeEventsHandler(runtime.eventHub, {

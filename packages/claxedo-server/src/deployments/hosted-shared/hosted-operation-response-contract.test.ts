@@ -1,10 +1,25 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { SignJWT, exportJWK, exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { createHostedApp } from "./hosted-app"
+import { createCentralControlApp } from "../../central-runtime"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
-import type { ControlPlaneServices } from "../../authority/services"
-import type { HostEnrollment } from "@claxedo/server-core/platform/auth/authority"
+import type { ControlPlaneCredentials, ControlPlaneServices } from "../../authority/services"
+import type { ProjectionStore } from "../../authority/projection-store"
+import type { RelayProvider } from "@claxedo/server-core/adapters/relay/index"
+import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
+import type { DocumentsRouteBackend } from "../../documents/routes/index"
+import type { DocumentIndexEntry } from "../../documents/index-store"
+import type { DocumentHandle, DocumentVersion, SnapshotID } from "../../documents/port"
+import type {
+  HostEnrollment,
+  OrgId,
+  WorkspaceAuthority,
+} from "@claxedo/server-core/platform/auth/authority"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
+import { requirePiModel } from "@claxedo/agent-sdk-runtime/adapters"
+import type { Attempts, IntegrationDeclaration, IntegrationImpl } from "@claxedo/connections"
+import type { BillingStore } from "../../billing/store"
+import type { PolarClientLike } from "../../billing/routes"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
 import {
   HOSTED_OPERATIONS as OPERATION_ROUTES,
@@ -27,7 +42,7 @@ import {
  * hand-written fixture. A fixture copied from a reading of the route agrees
  * with that reading forever, including when the route stops agreeing.
  *
- * So this file writes no response fixtures. For each of the sixteen named
+ * So this file writes no response fixtures. For every named
  * operations it takes the METHOD and PATH from the desktop's real table
  * (`claxedo-desktop/.../account/hosted-operations.ts`), drives the REAL hosted
  * app built by `createHostedApp`, and hands the body the route actually
@@ -63,7 +78,7 @@ const JWKS_URL = `${ISSUER}/jwks`
  * verifier through. The checkpoint and lifecycle routes do not: they build
  * their auth from `services.auth.config` alone, so an injected verifier never
  * runs and every call 401s. Signing a token the production verifier accepts
- * reaches all sixteen operations through the same door a browser uses, which is
+ * reaches every operation through the same door a browser uses, which is
  * the only door this file is allowed to care about.
  */
 const signing = {
@@ -105,6 +120,17 @@ function stubFetch() {
   globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
     const url = input instanceof Request ? input.url : String(input)
     if (url === JWKS_URL) return Response.json(signing.jwks)
+    const parsed = new URL(url)
+    if (parsed.origin === "https://relay.test") {
+      if (parsed.pathname.endsWith("/global/health")) return Response.json({ workspaceId: WORKSPACE_ID })
+      if (parsed.pathname.endsWith("/session/ses_1/message")) {
+        return Response.json({ messages: [], session: { id: "ses_1" }, maxEventOrdinal: 0 })
+      }
+      if (parsed.pathname.endsWith("/session/status")) return Response.json({ ses_1: { type: "idle" } })
+      if (parsed.pathname.endsWith("/session/ses_1")) {
+        return Response.json({ id: "ses_1", title: "Contract session", time: { created: 1_000, updated: 2_000 } })
+      }
+    }
     return new Response("{}", { headers: { "content-type": "application/json" } })
   }) as unknown as typeof globalThis.fetch
 }
@@ -133,6 +159,156 @@ function provisioningSandboxManager() {
   } as unknown as SandboxManager
 }
 
+function contractAuthority(): WorkspaceAuthority {
+  const orgId = "org_1" as OrgId
+  return {
+    usersMe: vi.fn(async () => ({
+      id: SUBJECT,
+      user_id: SUBJECT,
+      actor_id: SUBJECT,
+      actor_kind: "human",
+      actor_public_id: "usr_public_1",
+      actor_name: "Test User",
+      subject: SUBJECT,
+    })),
+    listOrgs: vi.fn(async () => [{ org_id: orgId, name: "Acme" }]),
+    resolveOrgId: vi.fn(async () => orgId),
+    projectRole: vi.fn(async (_auth, args) => ({ ok: true as const, role: "owner" as const, orgId: args.orgId ?? orgId })),
+    authorizeProject: vi.fn(async (_auth, args) => ({ ok: true as const, role: "owner" as const, orgId: args.orgId ?? orgId })),
+    authorizeChannelProject: vi.fn(async () => ({ ok: true as const, role: "owner" as const, orgId })),
+    authorizeChannelWorkspace: vi.fn(async () => ({ actorId: SUBJECT, actorKind: "human" as const })),
+    authorizeWorkspaceOpen: vi.fn(async () => undefined),
+    authorizeWorkspaceCreate: vi.fn(async () => undefined),
+    openWorkspace: vi.fn(async () => ({
+      allowed: true,
+      role: "owner",
+      workspace: {
+        workspace_id: WORKSPACE_ID,
+        org_id: orgId,
+        project_id: "proj_1",
+        access: "cloud",
+        backing: "cloud-vm",
+        home_region: "us-east",
+      },
+    })),
+    listWorkspaces: vi.fn(async () => [
+      {
+        workspace_id: WORKSPACE_ID,
+        org_id: orgId,
+        project_id: "proj_1",
+        access: "cloud",
+        backing: "cloud-vm",
+        display_name: "Widgets",
+        remote_directory: "/workspace",
+      },
+      {
+        workspace_id: USER_HOSTED_WORKSPACE_ID,
+        org_id: orgId,
+        project_id: "proj_2",
+        access: "user-hosted",
+        backing: "local-worktree",
+        display_name: "Laptop",
+        remote_directory: "/home/dev/widgets",
+      },
+    ]),
+    registerLocalForSharing: vi.fn(async () => ({ workspace_id: WORKSPACE_ID })),
+    createLocalHostLinkChallenge: vi.fn(async () => ({
+      challenge_id: "challenge_1",
+      nonce: "nonce_1",
+      expires_at: 9_999,
+    })),
+    registerLocalHostLink: vi.fn(async () => ({ workspace_id: WORKSPACE_ID, host_id: "host_1" })),
+    heartbeatLocalHostLink: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000 })),
+    pauseLocalHostLink: vi.fn(async () => ({ paused: true })),
+    activeLocalHostLink: vi.fn(async () => ({
+      active: true,
+      host_id: "host_1",
+      workspace_id: WORKSPACE_ID,
+      expires_at: 9_999,
+      last_seen_at: 1_000,
+    })),
+    createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 })),
+    enrollHost: vi.fn(async () => ENROLLMENT),
+    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000 })),
+    pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
+    activeHostEnrollment: vi.fn(async () => ({ active: true as const, ...ENROLLMENT })),
+    markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 1_000 })),
+    deleteWorkspace: vi.fn(async () => ({ deleted: true })),
+    createCloudWorkspace: vi.fn(async () => ({ workspace_id: WORKSPACE_ID })),
+    grantWorkspaceShare: vi.fn(async () => ({ granted: true })),
+    revokeWorkspaceShare: vi.fn(async () => ({ revoked: true })),
+    authorizeSessionRead: vi.fn(async () => undefined),
+    authorizeSessionWrite: vi.fn(async () => undefined),
+    authorizeRuntimeSession: vi.fn(async () => undefined),
+    registerRuntimeSession: vi.fn(async () => ({ registered: true })),
+    addSessionParticipant: vi.fn(async () => ({ added: true })),
+    removeSessionParticipant: vi.fn(async () => ({ removed: true })),
+    grantSessionShare: vi.fn(async () => ({ grant_id: "grant_1" })),
+    revokeSessionShare: vi.fn(async () => ({
+      revoked: true,
+      revokedTargets: [{ grantedToTokenIdentifier: "token_bob" }],
+    })),
+    listSessionShares: vi.fn(async () => ({ grants: [], participants: [] })),
+    createOrg: vi.fn(async (_auth, args) => ({ org_id: orgId, name: args.name })),
+    listTeams: vi.fn(async () => [{ team_id: "team_1", name: "Engineering" }]),
+    createTeamInOrg: vi.fn(async (_auth, args) => ({ team_id: "team_1", name: args.name })),
+    addTeamMember: vi.fn(async () => ({ added: true })),
+    removeTeamMember: vi.fn(async () => ({ removed: true })),
+    listTeamMembers: vi.fn(async () => []),
+    grantTeamProject: vi.fn(async () => ({ granted: true })),
+    revokeTeamProject: vi.fn(async () => ({ revoked: true })),
+    ensureDefaultTeam: vi.fn(async () => ({ team_id: "team_1" })),
+    listSessions: vi.fn(async () => [{
+      id: "ses_1",
+      workspace_id: WORKSPACE_ID,
+      project_id: "proj_1",
+      title: "Contract session",
+      time: { created: 1_000, updated: 2_000 },
+    }]),
+    resolveSession: vi.fn(async () => ({ session_id: "ses_1", workspace_id: WORKSPACE_ID })),
+    readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [] })),
+    syncSessionMessages: vi.fn(async () => ({ synced: true })),
+    upsertSessionVisibility: vi.fn(async () => ({ synced: true })),
+    replaceSessionVisibility: vi.fn(async () => ({ synced: true })),
+    deleteSessionVisibility: vi.fn(async () => ({ deleted: true })),
+    recordRuntimeAccessToken: vi.fn(async () => ({ recorded: true })),
+    recordRuntimeAccessTokenForService: vi.fn(async () => ({ recorded: true })),
+    runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
+    revokeRuntimeAccessToken: vi.fn(async () => ({ revoked: true })),
+    revokeRuntimeAccessTokensForWorkspaceUser: vi.fn(async () => ({ revoked: 1 })),
+    listWorkspaceAgentExtensions: vi.fn(async () => [{
+      desired: {
+        id: "extension_1",
+        package_name: "extension_1",
+        source: { type: "github", owner: "acme", repo: "extension_1" },
+        scope: "workspace",
+        enabled: false,
+        targets: ["codex"],
+        installed_at: 1_000,
+        updated_at: 1_000,
+      },
+      lock: {
+        source: { type: "github", owner: "acme", repo: "extension_1" },
+        resolved_sha: "abcdef1234567890",
+        manifest_digests: { package: "sha256:contract" },
+        component_digests: { package: "sha256:contract" },
+        targets: ["codex"],
+      },
+    }]),
+    listWorkspaceAgentExtensionsForRuntime: vi.fn(async () => []),
+    authorizeWorkspaceAgentExtensionsAdmin: vi.fn(async () => undefined),
+    upsertWorkspaceAgentExtension: vi.fn(async () => ({ installed: true })),
+    setWorkspaceAgentExtensionEnabled: vi.fn(async () => ({ updated: true })),
+    deleteWorkspaceAgentExtension: vi.fn(async () => ({ deleted: true })),
+    listAgentExtensionPolicyOverrides: vi.fn(async () => []),
+    listAgentExtensionPolicyOverridesForRuntime: vi.fn(async () => []),
+    setAgentExtensionPolicyOverride: vi.fn(async () => ({ updated: true })),
+    deleteAgentExtensionPolicyOverride: vi.fn(async () => ({ deleted: true })),
+    auditAllow: vi.fn(async () => undefined),
+    auditDeny: vi.fn(async () => undefined),
+  }
+}
+
 function fakeSandboxManager() {
   const lease = {
     workspaceId: WORKSPACE_ID,
@@ -153,23 +329,81 @@ function fakeSandboxManager() {
     stop: vi.fn(async () => ({ ok: true, status: "stopped" })),
     destroy: vi.fn(async () => ({ ok: true })),
     release: vi.fn(async () => ({ released: true })),
+    target: vi.fn(async () => lease),
   } as unknown as SandboxManager
 }
 
 /**
  * One hosted plane wired for every operation at once.
  *
- * Deliberately one plane rather than sixteen: a per-case plane is a per-case
+ * Deliberately one plane rather than one per operation: a per-case plane is a per-case
  * opportunity to shape the world until the assertion passes, which is the
  * fixture problem again wearing a different hat.
  */
 function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): HostedControlPlane {
+  const authority = contractAuthority()
+  type ContractSessionMeta = NonNullable<Awaited<ReturnType<ProjectionStore["session_meta"]>>>
+  const sessionMeta = new Map<string, ContractSessionMeta>()
+  sessionMeta.set("ses_1", {
+    sessionID: "ses_1",
+    host: "central",
+    workspaceID: WORKSPACE_ID,
+    directory: "/repo",
+    title: "Contract session",
+    createdAt: 1_000,
+    updatedAt: 2_000,
+    tags: [],
+    attachments: [],
+  })
+  const projectionStore = {
+    sync_session_meta: vi.fn(async () => undefined),
+    sync_session_metas: vi.fn(async () => undefined),
+    sync_session_messages: vi.fn(async () => undefined),
+    put_session_meta: vi.fn(async (id: string, input) => {
+      sessionMeta.set(id, {
+        sessionID: id,
+        host: input.host ?? "central",
+        ...(typeof input.workspaceID === "string" ? { workspaceID: input.workspaceID } : {}),
+        ...(typeof input.directory === "string" ? { directory: input.directory } : {}),
+        ...(typeof input.title === "string" ? { title: input.title } : {}),
+        ...(input.model ? { model: input.model } : {}),
+        createdAt: 1_000,
+        updatedAt: 2_000,
+        tags: input.tags ?? [],
+        attachments: [],
+      })
+    }),
+    delete_session_meta: vi.fn(async (id: string) => { sessionMeta.delete(id) }),
+    session_meta: vi.fn(async (id: string) => sessionMeta.get(id)),
+    session_metas: vi.fn(async (ids: string[]) =>
+      new Map(ids.flatMap((id) => sessionMeta.has(id) ? [[id, sessionMeta.get(id)!]] : []))),
+    list_session_metas: vi.fn(async () => [...sessionMeta.values()]),
+    list_session_navigation_metas: vi.fn(async () => [...sessionMeta.values()]),
+    tagged_session_metas: vi.fn(async () => []),
+    read_session_messages: vi.fn(() => []),
+    read_session_message_page: vi.fn(() => ({ messages: [] })),
+    read_session_max_event_ordinal: vi.fn(() => 0),
+  } satisfies ProjectionStore
+  const relayProvider = {
+    getRelayEndpoint: vi.fn(async () => "https://relay.test"),
+    mintHostTunnelToken: vi.fn(async () => ({ token: "host-token", expiresAt: 1_000_000, jti: "host-jti" })),
+    mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: 1_000_000, jti: "runtime-jti" })),
+    resolveTarget: vi.fn(async () => ({
+      workspaceId: WORKSPACE_ID,
+      hostId: "host_cloud_1",
+      baseUrl: "https://runtime.test/ws_1",
+      access: "cloud" as const,
+      backing: "cloud-vm" as const,
+    })),
+    drainWorkspace: vi.fn(async () => undefined),
+  } satisfies RelayProvider
   const services = {
     // No injected verifier on purpose — see `signing`.
     auth: { config: { enabled: true, issuer: ISSUER, jwksUrl: JWKS_URL } },
     relay: {
       relayUrl: "https://relay.test",
       resolverToken: "resolver-token",
+      provider: relayProvider,
       runtimeAccessTokenSigner: vi.fn(async () => ({
         runtimeAccessToken: "rat-token",
         tokenExpiresAt: 1_000_000,
@@ -178,55 +412,11 @@ function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): H
       hostTunnelTokenSigner: vi.fn(),
     },
     sandbox: { sandboxManager },
-    authority: {
-      usersMe: vi.fn(async () => ({
-        id: "user_1",
-        user_id: "user_1",
-        actor_id: "user_1",
-        actor_kind: "human",
-        actor_public_id: "usr_public_1",
-        actor_name: "Test User",
-        subject: "user_1",
-      })),
-      resolveOrgId: vi.fn(async () => "org_1"),
-      auditAllow: vi.fn(async () => ({})),
-      auditDeny: vi.fn(async () => ({})),
-      // One of each access kind. A single-kind authority cannot tell an
-      // operation that filters from one that returns everything, which is the
-      // difference the two list operations exist to make.
-      listWorkspaces: vi.fn(async () => [
-        { workspace_id: WORKSPACE_ID, access: "cloud", display_name: "Widgets", remote_directory: "/workspace" },
-        {
-          workspace_id: USER_HOSTED_WORKSPACE_ID,
-          access: "user-hosted",
-          display_name: "Laptop",
-          remote_directory: "/home/dev/widgets",
-        },
-      ]),
-      listSessions: vi.fn(async () => []),
-      openWorkspace: vi.fn(async () => ({
-        allowed: true,
-        role: "owner",
-        workspace: {
-          workspace_id: WORKSPACE_ID,
-          org_id: "org_1",
-          project_id: "project_1",
-          access: "cloud",
-          backing: "cloud-vm",
-          home_region: "us-east",
-        },
-      })),
-      authorizeWorkspaceOpen: vi.fn(async () => ({ allowed: true, role: "owner" })),
-      createCloudWorkspace: vi.fn(async () => ({ workspace_id: WORKSPACE_ID })),
-      recordRuntimeAccessToken: vi.fn(async () => ({})),
-      runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
-      createHostEnrollmentRequest: vi.fn(async () => ({
-        request_id: "req_1",
-        nonce: "nonce_1",
-        expires_at: 9_999,
-      })),
-      enrollHost: vi.fn(async () => ENROLLMENT),
-      heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000 })),
+    authority,
+    projectionStore,
+    durableSessionLog: {
+      persist_message_event: vi.fn(),
+      subscribe_message_replay: vi.fn(() => () => undefined),
     },
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: false },
@@ -259,8 +449,343 @@ function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): H
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signing.runtimeTokenKeys.privatePem,
       CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signing.runtimeTokenKeys.publicPem,
       CLAXEDO_CLI_ACCESS_TOKEN_TTL_SECONDS: "600",
+      CLAXEDO_POLAR_PRODUCT_MONTHLY: "product_monthly",
     },
   } as unknown as HostedControlPlane
+}
+
+function contractWorkGraphExecutor(): WorkGraphConvexExecutor {
+  return {
+    query: vi.fn(async (_fn, args) => {
+      if ("clerk_subject" in args || "clerk_org_id" in args) {
+        return { member: true, org_id: "org_1", user_id: SUBJECT }
+      }
+      if ("ownerUserId" in args && "orgId" in args && !("query" in args)) {
+        return [{
+          id: "connection_1",
+          integrationId: "github",
+          capabilities: ["code-host", "work-source"],
+          status: "connected",
+          fields: {},
+          tokenType: "bearer",
+        }]
+      }
+      if ("query" in args) {
+        return { snapshotCursor: "0", records: [], references: [], hasMore: false, capturedAt: 1 }
+      }
+      return null
+    }),
+    mutation: vi.fn(async (_fn, args) => {
+      if ("clerk_subject" in args && !("actor_type" in args)) {
+        return { member: true, org_id: "org_1", user_id: SUBJECT }
+      }
+      if ("actor_type" in args) {
+        return { ok: true, operationId: args.operation_id, cursor: "1", value: { streamId: "stream_1" } }
+      }
+      if ("connectionId" in args && "ownerUserId" in args) {
+        return { deleted: true, updated: true }
+      }
+      return { ok: true }
+    }),
+  }
+}
+
+function contractConnections() {
+  const declaration: IntegrationDeclaration = {
+    id: "github",
+    name: "GitHub",
+    methods: ["oauth", "key"],
+    capabilities: ["code-host", "work-source"],
+    keyTokenType: "bearer",
+  }
+  const implementation: IntegrationImpl = {
+    verify: async () => ({ ok: true, accountLabel: "acme" }),
+    listRepositories: async () => [{
+      id: "repo_1",
+      name: "widgets",
+      fullName: "acme/widgets",
+      cloneUrl: "https://github.com/acme/widgets.git",
+      private: true,
+      permissions: { read: true, write: true },
+    }],
+    device: {
+      start: async () => ({
+        deviceCode: "device_1",
+        userCode: "CONTRACT",
+        verificationUri: "https://github.com/login/device",
+        intervalMs: 1_000,
+        expiresAt: Date.now() + 60_000,
+      }),
+      poll: async () => ({ status: "complete", tokens: { accessToken: "github-token" } }),
+    },
+  }
+  const attempts: Attempts = {
+    create: async () => ({ state: "attempt_1", verifier: "verifier_1" }),
+    consume: async () => undefined,
+    peek: async () => undefined,
+    settle: async () => undefined,
+    expire: async () => undefined,
+    status: async () => ({ status: "complete", integrationId: "github", scope: "team" }),
+    sweep: async () => undefined,
+    dispose: () => undefined,
+  }
+  const secrets = new Map([["integration:connection_1", "github-token"]])
+  const credentials: ControlPlaneCredentials = {
+    listCredentials: async () => [],
+    getCredentialByProvider: async (providerId) => {
+      if (!secrets.has(providerId)) return undefined
+      return {
+        id: providerId,
+        provider_id: providerId,
+        kind: "api_key",
+        source: "managed",
+        label: null,
+        account_id: null,
+        secure_ref: `contract:${providerId}`,
+        status: "available",
+        expires_at: null,
+        last_validated_at: null,
+        last_error: null,
+        created_at: 1,
+        updated_at: 1,
+      }
+    },
+    resolveCredentialSecret: async (providerId) => secrets.get(providerId) ?? null,
+    putCredential: async (value) => {
+      secrets.set(value.provider_id, value.secret)
+      return (await credentials.getCredentialByProvider(value.provider_id))!
+    },
+    deleteCredential: async (id) => secrets.delete(id),
+    deleteCredentialsByProvider: async (providerId) => secrets.delete(providerId) ? 1 : 0,
+    updateCredentialStatus: async () => undefined,
+    syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+  }
+  return {
+    integrations: [{ decl: declaration, impl: implementation }],
+    credentials: () => credentials,
+    attempts,
+  }
+}
+
+function contractBilling(): { store: BillingStore; polar: PolarClientLike } {
+  return {
+    store: {
+      entitlementState: async () => ({ found: false }),
+      applyPolarState: async () => ({ results: [], unresolved: [] }),
+      checkoutContext: async () => ({
+        org_id: "org_1",
+        clerk_org_id: "org_1",
+        role: "owner",
+        member_count: 1,
+      }),
+      listReconcileFlagged: async () => [],
+      listDeletedWithSubscription: async () => [],
+    },
+    polar: {
+      checkouts: {
+        create: async () => ({ id: "checkout_1", url: "https://billing.test/checkout_1" }),
+      },
+      customerSessions: {
+        create: async () => ({ token: "portal_1", customerPortalUrl: "https://billing.test/portal_1" }),
+      },
+      customers: {
+        getState: async () => ({ id: "customer_1", activeSubscriptions: [] }),
+      },
+      subscriptions: {
+        revoke: async () => ({ revoked: true }),
+      },
+    },
+  }
+}
+
+type ContractDocumentHandle = DocumentHandle & { documentId: string }
+
+function contractDocumentsBackend(): DocumentsRouteBackend<ContractDocumentHandle> {
+  const version = (value: string) => value as DocumentVersion
+  const snapshotId = (value: string) => value as SnapshotID
+  const stamp = "2026-08-30T00:00:00.000Z"
+  const entries = new Map<string, DocumentIndexEntry>()
+  const content = new Map<string, { markdown: string; version: DocumentVersion }>()
+  const snapshots = new Map<string, Array<{
+    id: SnapshotID
+    sha256: string
+    size: number
+    reason: string
+    actor: { type: "user" | "agent" | "system"; id: string }
+    createdAt: number
+    pins: string[]
+  }>>()
+  const initial: DocumentIndexEntry = {
+    id: "doc_1",
+    org_id: "org_1",
+    project_id: "proj_1",
+    display_name: "Contract",
+    origin_kind: "managed",
+    placement_kind: "hosted",
+    placement_id: "hosted",
+    managed_relative_path: "documents/doc_1.md",
+    repository_id: null,
+    workspace_id: null,
+    repository_relative_path: null,
+    branch: null,
+    status: "draft",
+    session_id: "ses_1",
+    archived_at: null,
+    created_at: stamp,
+    updated_at: stamp,
+    last_opened_at: null,
+    last_known_file_version: version("revision_1"),
+  }
+  entries.set(initial.id, initial)
+  content.set(initial.id, { markdown: "# Contract", version: version("revision_1") })
+
+  const hash = async (markdown: string) =>
+    [...new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(markdown)))]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("")
+  const handle = (documentId: string): ContractDocumentHandle => ({
+    origin: entries.get(documentId)?.origin_kind ?? "managed",
+    placement: "hosted",
+    projectId: entries.get(documentId)?.project_id ?? "proj_1",
+    documentId,
+  })
+  const requireEntry = (documentId: string) => {
+    const entry = entries.get(documentId)
+    if (!entry) throw new Error(`missing contract document ${documentId}`)
+    return entry
+  }
+  const requireContent = (documentId: string) => {
+    const value = content.get(documentId)
+    if (!value) throw new Error(`missing contract document content ${documentId}`)
+    return value
+  }
+  const nextVersion = (current: DocumentVersion) => version(`${current}:next`)
+  const snapshot = async (documentId: string, id: SnapshotID, pins: string[] = []) => {
+    const current = requireContent(documentId)
+    return {
+      id,
+      sha256: await hash(current.markdown),
+      size: new TextEncoder().encode(current.markdown).byteLength,
+      reason: "contract",
+      actor: { type: "user" as const, id: SUBJECT },
+      createdAt: 1_000,
+      pins,
+    }
+  }
+  return {
+    index: {
+      list: async (scope) => [...entries.values()].filter((entry) =>
+        entry.org_id === scope.orgId && entry.project_id === scope.projectId),
+      find: async (orgId, documentId) => {
+        const entry = entries.get(documentId)
+        return entry?.org_id === orgId ? entry : undefined
+      },
+      findRepository: async (_scope, repositoryId) =>
+        [...entries.values()].find((entry) => entry.repository_id === repositoryId),
+      create: async (entry) => { entries.set(entry.id, entry); return entry },
+      remove: async (_scope, documentId) => { entries.delete(documentId); content.delete(documentId) },
+      update: async (_scope, documentId, input) => {
+        const updated = { ...requireEntry(documentId), ...input, updated_at: stamp }
+        entries.set(documentId, updated)
+        return updated
+      },
+      relocate: async (_scope, documentId, input) => {
+        const current = requireEntry(documentId)
+        if (current.origin_kind !== "repository") throw new Error(`contract document ${documentId} is not repository-backed`)
+        const updated: DocumentIndexEntry = { ...current, ...input, updated_at: stamp }
+        entries.set(documentId, updated)
+        return updated
+      },
+      archive: async (_scope, documentId) => {
+        const updated = { ...requireEntry(documentId), archived_at: stamp }
+        entries.set(documentId, updated)
+        return updated
+      },
+      restore: async (_scope, documentId) => {
+        const updated = { ...requireEntry(documentId), archived_at: null }
+        entries.set(documentId, updated)
+        return updated
+      },
+      listStatuses: async () => [{ id: "draft", name: "Draft", color: "gray", position: 0, transitions: [] }],
+      resolveLocalProjectId: async () => "proj_1",
+    },
+    workspace: {
+      resolve: async (entry) => handle(entry.documentId),
+      create: async (entry, request) => {
+        const created = { markdown: request.markdown, version: version("revision_1"), modifiedAt: 1_000 }
+        content.set(entry.documentId, created)
+        return created
+      },
+      read: async (value) => ({ ...requireContent(value.documentId), modifiedAt: 1_000 }),
+      write: async (value, request) => {
+        const next = { markdown: request.markdown, version: nextVersion(requireContent(value.documentId).version), modifiedAt: 2_000 }
+        content.set(value.documentId, next)
+        return next
+      },
+      snapshot: async (value) => {
+        const item = await snapshot(value.documentId, snapshotId("snapshot_1"))
+        snapshots.set(value.documentId, [item])
+        return item
+      },
+      listSnapshots: async (value) => {
+        if (!snapshots.has(value.documentId)) snapshots.set(value.documentId, [await snapshot(value.documentId, snapshotId("snapshot_1"))])
+        return snapshots.get(value.documentId)!
+      },
+      readSnapshot: async (value) => ({ ...requireContent(value.documentId), modifiedAt: 1_000 }),
+      restore: async (value) => ({ ...requireContent(value.documentId), modifiedAt: 2_000 }),
+      pinSnapshot: async (value, id, pin) => {
+        const existing = (snapshots.get(value.documentId) ?? [await snapshot(value.documentId, id)])
+          .find((item) => item.id === id) ?? await snapshot(value.documentId, id)
+        const pinned = { ...existing, pins: [...new Set([...existing.pins, pin])] }
+        snapshots.set(value.documentId, [pinned])
+        return pinned
+      },
+      unpinSnapshot: async (value, id, pin) => {
+        const existing = (snapshots.get(value.documentId) ?? [await snapshot(value.documentId, id)])
+          .find((item) => item.id === id) ?? await snapshot(value.documentId, id)
+        const unpinned = { ...existing, pins: existing.pins.filter((value) => value !== pin) }
+        snapshots.set(value.documentId, [unpinned])
+        return unpinned
+      },
+      collectSnapshots: async () => undefined,
+    },
+    managedRelativePath: ({ documentId }) => `documents/${documentId}.md`,
+    placement: "hosted",
+    placementId: "hosted",
+    repository: {
+      inspect: async (entry) => ({
+        identityKey: `repo:${entry.documentId}`,
+        relativePath: entry.relativePath,
+        availability: { state: "available", version: version("revision_1") },
+      }),
+      availability: async () => ({ state: "available", version: version("revision_1") }),
+      relocate: async (_entry, relativePath) => ({
+        identityKey: `repo:${relativePath}`,
+        relativePath,
+        version: version("revision_2"),
+      }),
+      gitSnapshot: async () => ({
+        repoRoot: "/repo", head: "abc", branch: "main", blobSha: "blob", tracked: true, dirty: false,
+      }),
+      commit: async () => ({ commit: "def", blobSha: "blob2", version: version("revision_2") }),
+    },
+    agentOpen: async () => ({ path: "/repo/Contract.md" }),
+    runtimeResolve: async () => ({ path: "/repo/Contract.md", version: "revision_1" }),
+    moveToRepository: async (entry, destination) => {
+      const moved: DocumentIndexEntry = {
+        ...entry,
+        origin_kind: "repository",
+        placement_id: destination.workspaceId,
+        managed_relative_path: null,
+        repository_id: `repo:${destination.relativePath}`,
+        workspace_id: destination.workspaceId,
+        repository_relative_path: destination.relativePath,
+        last_known_file_version: version("revision_2"),
+      }
+      entries.set(entry.id, moved)
+      return moved
+    },
+  }
 }
 
 /**
@@ -372,13 +897,13 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     fields: {},
     secret: "secret",
     confirmReplace: true,
-    scope: "account",
+    scope: "team",
   },
   "connections.attempt": { state: "attempt_1" },
   "connections.repositories": { id: "connection_1" },
   "connections.disconnect": { id: "connection_1" },
   "connections.reverify": { id: "connection_1" },
-  "documents.list": {},
+  "documents.list": { project_id: "proj_1" },
   "documents.get": { id: "doc_1" },
   "documents.create": {
     project_id: "proj_1",
@@ -386,7 +911,7 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     display_name: "Contract",
     markdown: "# Contract",
   },
-  "documents.update": { id: "doc_1", display_name: "Updated", status: "draft" },
+  "documents.update": { id: "doc_1", display_name: "Updated", session_id: "ses_1", ifMatch: "revision_1" },
   "documents.content.get": { id: "doc_1" },
   "documents.content.put": {
     id: "doc_1",
@@ -408,10 +933,10 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     work_source_id: "source_1",
     revision_id: "revision_1",
   },
-  "documents.statuses": {},
+  "documents.statuses": { project_id: "proj_1" },
   "documents.export": { id: "doc_1" },
   "documents.agentOpen": { id: "doc_1", session_id: "ses_1" },
-  "documents.runtimeConflictResolve": { id: "doc_1", session_id: "ses_1", choice: "runtime" },
+  "documents.runtimeConflictResolve": { id: "doc_1", session_id: "ses_1", choice: "durable" },
   "documents.moveToRepository": { id: "doc_1", workspace_id: WORKSPACE_ID, path: "docs/contract.md" },
   "documents.fromRepo": {
     project_id: "proj_1",
@@ -423,18 +948,50 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     session_id: "ses_1",
   },
   "agentConfig.extensions.read": { subpath: "" },
-  "agentConfig.extensions.write": { subpath: "", httpMethod: "POST", payload: { id: "extension_1" } },
+  "agentConfig.extensions.write": {
+    subpath: "extension_1/enable",
+    httpMethod: "POST",
+    payload: {},
+    scope: "workspace",
+    workspaceId: WORKSPACE_ID,
+  },
   "workgraph.snapshot": {},
-  "workgraph.command": { operationId: "operation_1", command: { type: "refresh" } },
+  "workgraph.command": {
+    operationId: "operation_1",
+    command: { version: 1, type: "create_stream", title: "Contract stream" },
+  },
   "workgraph.read": { subpath: "snapshot" },
-  "workgraph.write": { subpath: "commands", httpMethod: "POST", payload: { operationId: "operation_1" } },
-  "session.create": { workspaceId: WORKSPACE_ID, title: "Contract", directory: "/repo" },
+  "workgraph.write": {
+    subpath: "commands",
+    httpMethod: "POST",
+    payload: {
+      operationId: "operation_2",
+      command: { version: 1, type: "create_stream", title: "Contract stream" },
+    },
+  },
+  "session.create": {
+    mode: "hybrid",
+    workspaceId: WORKSPACE_ID,
+    title: "Contract",
+    directory: "/repo",
+    harness: "pi",
+    model: { providerID: "openai", modelID: "gpt-5" },
+    toolSandbox: { kind: "virtual" },
+  },
   "session.messages": { sessionId: "ses_1", workspaceId: WORKSPACE_ID },
   "session.gateway": { sessionId: "ses_1", workspaceId: WORKSPACE_ID },
   "billing.checkout": { plan: "monthly" },
   "billing.portal": {},
-  "hostLink.register": { id: WORKSPACE_ID, directory: "/repo", displayName: "Host" },
-  "usage.get": {},
+  "hostLink.register": {
+    id: WORKSPACE_ID,
+    hostId: "host_1",
+    publicKey: "-----BEGIN PUBLIC KEY-----",
+    challengeId: "challenge_1",
+    signature: "sig",
+    displayName: "Host",
+    ttlMs: 60_000,
+  },
+  "usage.get": { since: 1_700_000_000_000, until: 1_700_086_400_000, timezone: "UTC", view: "quota" },
   "usage.sync": {},
 }
 
@@ -448,25 +1005,81 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
  * without one.
  */
 async function callRequest(
-  request: { method: string; path: string; body?: Record<string, unknown> },
+  request: { method: string; path: string; body?: Record<string, unknown>; headers?: Record<string, string> },
   sandboxManager?: SandboxManager,
 ) {
   stubFetch()
   const plane = contractPlane(sandboxManager)
-  const app = createHostedApp(plane, { entitlementGate: async () => undefined })
+  const central = createCentralControlApp(plane.services, {
+    authConfig: plane.services.auth.config,
+    usageLedger: {
+      recordLlmTurn: vi.fn(async () => ({ activated: false })),
+      usageDashboard: vi.fn(async () => ({ totals: {}, daily: [] })),
+    },
+    productDeploymentMode: "cloud",
+    modelBackend: (input) => input.model
+      ? { model: requirePiModel(input.model), getApiKey: () => "contract-model-key" }
+      : undefined,
+  })
+  central.runtime.eventHub.publishRuntime({
+    directory: "ses_1",
+    sessionId: "ses_1",
+    payload: { type: "session-status", status: "idle" },
+  })
+  const app = createHostedApp(plane, {
+    centralSessionRuntime: true,
+    entitlementGate: async () => undefined,
+    connections: contractConnections(),
+    billing: contractBilling(),
+    workGraphExecutor: contractWorkGraphExecutor(),
+    documentsBackend: contractDocumentsBackend(),
+  })
+  app.route("/", central.app)
   const response = await app.fetch(
     new Request(`http://cp.test${request.path}`, {
       method: request.method,
-      headers: { authorization: `Bearer ${signing.bearer}`, "content-type": "application/json" },
+      headers: {
+        authorization: `Bearer ${signing.bearer}`,
+        "content-type": "application/json",
+        ...request.headers,
+      },
       ...(request.body ? { body: JSON.stringify(request.body) } : {}),
     }),
   )
+  const contentType = response.headers.get("content-type") ?? ""
+  if (contentType.includes("text/event-stream")) {
+    const reader = response.body!.getReader()
+    const chunk = await reader.read()
+    await reader.cancel()
+    const text = new TextDecoder().decode(chunk.value)
+    const data = text.split("\n").find((line) => line.startsWith("data:"))?.slice("data:".length).trim()
+    const parsed: unknown = data ? JSON.parse(data) : { type: "heartbeat" }
+    return { response, text, parsed }
+  }
   const text = await response.text()
-  return { response, text, parsed: text === "" ? undefined : (JSON.parse(text) as unknown) }
+  const parsed: unknown = text === "" || !contentType.includes("json") ? undefined : JSON.parse(text)
+  return { response, text, parsed }
+}
+
+function expectedSuccessStatus(name: HostedOperationName) {
+  switch (name) {
+    case "workspace.checkpoints.create":
+    case "documents.create":
+    case "documents.fromRepo":
+    case "session.create":
+      return 201
+    default:
+      return 200
+  }
 }
 
 async function callOperation(name: HostedOperationName, sandboxManager?: SandboxManager) {
-  return await callRequest(resolveHostedOperation(name, OPERATION_INPUT[name]), sandboxManager)
+  const result = await callRequest(resolveHostedOperation(name, OPERATION_INPUT[name]), sandboxManager)
+  if (name !== "documents.export") return result
+  const bytes = new TextEncoder().encode(result.text)
+  let binary = ""
+  for (const byte of bytes) binary += String.fromCharCode(byte)
+  return { ...result, parsed: { bytesBase64: btoa(binary), contentType: result.response.headers.get("content-type") } }
 }
 
 /** The `workspaces` envelope this route answers, as rows. */
@@ -532,7 +1145,7 @@ describe("hosted operation response contract", () => {
   for (const name of Object.keys(OPERATION_ROUTES) as HostedOperationName[]) {
     test(`${name} answers a body its decoder accepts`, async () => {
       const { response, text, parsed } = await callOperation(name)
-      expect(response.status, `${name} -> ${text.slice(0, 400)}`).toBe(200)
+      expect(response.status, `${name} -> ${text.slice(0, 400)}`).toBe(expectedSuccessStatus(name))
       expect(() => decodeHostedResult(name, parsed)).not.toThrow()
     })
   }
@@ -574,7 +1187,7 @@ describe("hosted operation response contract", () => {
   test("a decoder that stops matching its route fails", async () => {
     // Mutation check on the binding itself. Every assertion above is a
     // NEGATIVE — "does not throw" — and a decoder set that accepted anything
-    // would satisfy all sixteen. So take a real route body and hand it to a
+    // would satisfy every case. So take a real route body and hand it to a
     // different operation's decoder: if the bodies were not really reaching the
     // decoders, this would pass too.
     const { parsed } = await callOperation("workspace.list.cloud")

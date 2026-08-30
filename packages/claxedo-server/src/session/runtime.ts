@@ -883,11 +883,24 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     requireModel?: boolean
     admitToolSandbox?: boolean
   }) {
+    const sessionId = input.sessionId ?? randomUUID()
     if (input.model) {
       const invalid = validatePiPromptModel(input.model)
-      if (invalid) throw new Error(invalid.message)
+      // An injected/deployment backend is authoritative for credential
+      // availability. The process-global catalog cannot see credentials held
+      // behind that backend (for example a hosted org-scoped provider), so it
+      // may only veto an otherwise supported model when the backend agrees it
+      // is unavailable.
+      if (invalid && invalid.code !== "pi_model_credentials_missing") {
+        throw new Error(invalid.message)
+      }
+      if (options.modelBackend || invalid?.code === "pi_model_credentials_missing") {
+        const backend = await baseModelBackend({ sessionId, model: input.model })
+        if (!backend) {
+          throw new Error(invalid?.message ?? `Model backend unavailable for ${input.model.providerID}/${input.model.modelID}`)
+        }
+      }
     }
-    const sessionId = input.sessionId ?? randomUUID()
     const requestedToolSandbox = virtualToolSandbox(input.toolSandbox)
     const admitted = input.admitToolSandbox !== false && requestedToolSandbox.kind === "workspace-runtime" && options.admitWorkspaceSession
       ? await options.admitWorkspaceSession({

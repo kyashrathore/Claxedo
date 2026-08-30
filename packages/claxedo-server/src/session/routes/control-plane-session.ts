@@ -13,6 +13,7 @@ import {
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
+  type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -410,9 +411,9 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     })
     .post("/sessions", async (c) => {
       try {
+        let signedHostedAuth: SignedControlPlaneAuth | undefined
         if (!isLoopbackLocalRequest(c.req.raw)) {
-          await signedAuth(c.req.raw, options)
-          throw new ControlPlaneAuthError(400, "hybrid_loopback_only", "Hybrid session creation is only available on loopback")
+          signedHostedAuth = await signedAuth(c.req.raw, options)
         }
         const body = await sessionCreateBody(c.req.raw)
         if (body.mode !== "hybrid") {
@@ -424,6 +425,16 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const harness = hybridHarness(body.harness)
         const model = promptModel(body.model)
         const sessionId = optionalText(body.sessionId) ?? optionalText(body.session_id)
+        if (signedHostedAuth) {
+          if (!workspaceId) {
+            throw new ControlPlaneAuthError(
+              400,
+              "workspace_id_required",
+              "Signed hosted session creation requires workspaceId",
+            )
+          }
+          await requireAuthority(services).authorizeWorkspaceOpen(signedHostedAuth, { workspaceId })
+        }
         const session = options.createHybridSession
           ? await options.createHybridSession({
               ...(sessionId ? { sessionId } : {}),

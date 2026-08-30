@@ -159,6 +159,22 @@ async function eventually(fn: () => void) {
 }
 
 describe("createCentralSessionRuntime", () => {
+  test("uses the injected model backend as the credential authority for explicit session models", async () => {
+    const modelBackend = vi.fn(successfulModelBackend())
+    const runtime = createCentralSessionRuntime(services(), { modelBackend })
+
+    await expect(runtime.createHybridSession({
+      sessionId: "session-injected-model",
+      title: "Injected model",
+      model: { providerID: "openai", modelID: "gpt-5" },
+      requireModel: true,
+    })).resolves.toEqual({ id: "session-injected-model" })
+    expect(modelBackend).toHaveBeenCalledWith({
+      sessionId: "session-injected-model",
+      model: { providerID: "openai", modelID: "gpt-5" },
+    })
+  })
+
   test("admits a cloud worktree before binding and reuses exact retry identity", async () => {
     const svc = services()
     let meta: Awaited<ReturnType<typeof svc.projectionStore.session_meta>>

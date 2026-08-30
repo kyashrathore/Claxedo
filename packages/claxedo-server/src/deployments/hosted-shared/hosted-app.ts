@@ -60,7 +60,7 @@ import {
   type SharedRateLimitStore,
 } from "../../platform/auth/rate-limit"
 import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../platform/auth/request-guard"
-import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes } from "../../billing/routes"
+import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes, type BillingRouteOptions } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
@@ -101,6 +101,10 @@ export type HostedAppOverrides = {
   centralSessionRuntime?: boolean
   /** Test/custom composition seam; production composes Convex from env. */
   workgraph?: HostedWorkGraph
+  /** Test/custom seams for the canonical hosted Connections composition. */
+  connections?: Pick<Parameters<typeof createHostedConnectionsSetup>[0], "integrations" | "credentials" | "attempts">
+  /** Test/custom seams for the canonical hosted billing composition. */
+  billing?: Pick<BillingRouteOptions, "store" | "polar">
   /** Test/custom executor seam for the production WorkGraph composition. */
   workGraphExecutor?: WorkGraphConvexExecutor
   /** Test/custom seam for signed bootstrap owner activation. */
@@ -469,6 +473,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
     executor: workgraph.executor,
     serviceToken: workgraph.serviceToken,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+    ...overrides.connections,
     requireEntitlement: (clerkOrgId: string) => entitlementGate({ clerkOrgId }, "hosted-connections"),
   }
   const connectionsSetup = createHostedConnectionsSetup(connectionsSetupInput)
@@ -558,6 +563,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       ...(plane.env.npm_package_version ? { version: plane.env.npm_package_version } : {}),
       ...(services.authority ? { listWorkspaces: (auth) => services.authority!.listWorkspaces(auth) } : {}),
+      ...(services.authority ? { workspaceAgentExtensions: services.authority } : {}),
       ...(liveSyncRoom ? { liveSyncRoom } : {}),
       // The events route resolves the caller's AUTHORITY-INTERNAL org id at
       // connect so subscriber rooms + visibility share the namespace every
@@ -656,6 +662,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       env: plane.env,
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      ...overrides.billing,
     }),
   )
 

@@ -337,7 +337,8 @@ export const HOSTED_OPERATIONS = {
   "documents.update": {
     method: "PATCH",
     path: "/documents/:id",
-    body: ["display_name", "status"],
+    body: ["display_name", "session_id"],
+    headers: { ifMatch: "If-Match" },
   },
   "documents.content.get": { method: "GET", path: "/documents/:id/content" },
   "documents.content.put": {
@@ -388,7 +389,7 @@ export const HOSTED_OPERATIONS = {
   "session.create": {
     method: "POST",
     path: "/api/control/sessions",
-    body: ["workspaceId", "title", "directory"],
+    body: ["mode", "workspaceId", "title", "directory", "harness", "model", "toolSandbox"],
   },
   "session.messages": {
     method: "GET",
@@ -405,7 +406,7 @@ export const HOSTED_OPERATIONS = {
   "hostLink.register": {
     method: "POST",
     path: "/api/workspace/:id/user-hosted/register",
-    body: ["directory", "displayName"],
+    body: ["hostId", "publicKey", "challengeId", "signature", "displayName", "ttlMs"],
   },
   "usage.get": {
     method: "GET",
