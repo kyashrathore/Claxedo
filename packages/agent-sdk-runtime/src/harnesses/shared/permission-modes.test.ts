@@ -54,16 +54,7 @@ describe("the auto rung means full access with the danger tier gated", () => {
     }
   })
 
-  /*
-   * The rung is the classifier, not `acceptEdits`.
-   *
-   * This assertion used to say the opposite, on the reasoning that a classifier
-   * "can approve commands as well as edits". That inverted the definition:
-   * `acceptEdits` auto-accepts edits and then prompts on every Bash and MCP
-   * call, which is neither full access nor automatic, while the classifier
-   * approves the safe tiers and escalates genuinely risky ones — which is what
-   * the rung promises. It is also the mode Anthropic themselves call "auto".
-   */
+  /** The automatic rung approves safe tiers and escalates risky operations. */
   test("Claude's rung is the classifier, not acceptEdits", () => {
     expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.level === "auto")?.id).toBe("auto")
     expect(CLAUDE_PERMISSION_MODES.find((mode) => mode.id === "acceptEdits")?.level).toBeUndefined()
@@ -78,7 +69,6 @@ describe("the auto rung means full access with the danger tier gated", () => {
 
 describe("Codex encodings", () => {
   // `turn/start` takes a structured policy while `thread/start` takes the slug.
-  // The two call sites drifting apart is what pinned the old hardcoded policy.
   test("the sandbox slug becomes the structured policy turn/start expects", () => {
     expect(codexSandboxPolicy("read-only", "/w")).toEqual({ type: "readOnly" })
     expect(codexSandboxPolicy("danger-full-access", "/w")).toEqual({ type: "dangerFullAccess" })

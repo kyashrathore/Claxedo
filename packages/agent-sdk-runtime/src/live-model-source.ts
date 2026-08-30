@@ -1,63 +1,49 @@
-import { Log } from "./log"
-import { SDK_MODEL_CATALOG, type NativeSdkHarnessId, type SdkModelEntry } from "./sdk-model-catalog"
-
-const log = Log.create({ service: "live-model-source" })
+import type { SdkModelEntry } from "./sdk-model-catalog"
 
 const DEFAULT_TTL_MS = 10 * 60_000
+const DEFAULT_SCOPE = ""
 
-export type LiveModelSource = {
-  /** Live model list; serves the cache while fresh, refetches when stale, and falls back to the last good list or the static catalog. */
-  models(directory?: string): Promise<readonly SdkModelEntry[]>
-  /** Cached list without triggering a fetch; static catalog before the first successful fetch. */
-  peek(): readonly SdkModelEntry[]
+type CachedModels = {
+  models: readonly SdkModelEntry[]
+  fetchedAt: number
 }
 
-/**
- * Every SDK harness can serve its model list live (Claude SDK `supportedModels`,
- * Codex app-server `model/list`, Cursor `Cursor.models.list`), but each needs a
- * running process or a network call to answer. This wraps a harness fetcher with
- * the shared policy: TTL cache, single-flight, and fallback to the last good
- * list — then the static catalog — so the picker endpoint never fails just
- * because the harness is unreachable.
- */
+export type LiveModelSource = {
+  models(directory?: string): Promise<readonly SdkModelEntry[]>
+  peek(directory?: string): readonly SdkModelEntry[]
+  invalidate(): void
+}
+
 export function createLiveModelSource(input: {
-  harness: NativeSdkHarnessId
   fetchModels: (directory?: string) => Promise<SdkModelEntry[]>
   ttlMs?: number
-  /** When false, fetch failures propagate instead of serving the static catalog. */
-  fallbackToCatalog?: boolean
 }): LiveModelSource {
   const ttl = input.ttlMs ?? DEFAULT_TTL_MS
-  const fallbackToCatalog = input.fallbackToCatalog ?? true
-  let cached: readonly SdkModelEntry[] | null = null
-  let fetchedAt = 0
-  let inflight: Promise<SdkModelEntry[]> | null = null
+  const cache = new Map<string, CachedModels>()
+  const inflight = new Map<string, Promise<SdkModelEntry[]>>()
 
   async function models(directory?: string): Promise<readonly SdkModelEntry[]> {
-    if (cached && Date.now() - fetchedAt < ttl) return cached
-    inflight ??= input.fetchModels(directory).finally(() => {
-      inflight = null
-    })
-    try {
-      const list = await inflight
-      if (list.length > 0) {
-        cached = list
-        fetchedAt = Date.now()
-        return cached
-      }
-      log.warn("live model list came back empty; serving fallback", { harness: input.harness })
-    } catch (err) {
-      log.warn("live model list failed; serving fallback", { harness: input.harness, err })
-      if (!fallbackToCatalog) throw err
+    const scope = directory ?? DEFAULT_SCOPE
+    const cached = cache.get(scope)
+    if (cached && Date.now() - cached.fetchedAt < ttl) return cached.models
+    let request = inflight.get(scope)
+    if (!request) {
+      request = input.fetchModels(directory).finally(() => inflight.delete(scope))
+      inflight.set(scope, request)
     }
-    if (!fallbackToCatalog) return cached ?? []
-    return cached ?? SDK_MODEL_CATALOG[input.harness]
+    const next = await request
+    cache.set(scope, { models: next, fetchedAt: Date.now() })
+    return next
   }
 
-  function peek(): readonly SdkModelEntry[] {
-    if (!fallbackToCatalog && !cached) return []
-    return cached ?? (fallbackToCatalog ? SDK_MODEL_CATALOG[input.harness] : [])
+  function peek(directory?: string): readonly SdkModelEntry[] {
+    return cache.get(directory ?? DEFAULT_SCOPE)?.models ?? []
   }
 
-  return { models, peek }
+  function invalidate() {
+    cache.clear()
+    inflight.clear()
+  }
+
+  return { models, peek, invalidate }
 }

@@ -121,7 +121,7 @@ export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> 
       outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
       commit(payload, { dir: "out", method: "runtime.finish" })
     }
-    const finished = store.finishTurn?.({
+    const finished = store.finishTurn({
       sessionId,
       assistantMessageId: prompt.assistantMessageId,
       outcome: outcome ?? { status: "completed", completedAt: Date.now() },
@@ -147,7 +147,7 @@ export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> 
     })
   } catch (error) {
     const message = error instanceof Error ? error.message : "turn failed"
-    const finished = store.finishTurn?.({
+    const finished = store.finishTurn({
       sessionId,
       assistantMessageId: prompt.assistantMessageId,
       outcome: { status: "failed", completedAt: Date.now(), error: message },

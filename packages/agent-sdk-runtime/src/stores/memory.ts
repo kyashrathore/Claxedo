@@ -291,8 +291,8 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     const prev = this.sessions.get(input.sessionId)
-    if (!prev?.activeTurn) return
-    if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
+    if (!prev?.activeTurn) return { events: [] }
+    if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return { events: [] }
     const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
     const status = input.outcome.status === "failed" ? "error" : null
     const events: CompatEvent[] = []
@@ -618,104 +618,98 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   private applyEvent(sessionId: string, event: CompatEvent) {
-    if (event.type === "session.updated") {
-      const info = event.properties.info as unknown as {
-        id?: string
-        directory?: string
-        title?: string | null
-        time?: { created?: number; updated?: number; archived?: number }
-      }
-      const prev = this.sessions.get(info.id ?? sessionId)
-      if (!prev) return
-      this.sessions.set(prev.id, {
-        ...prev,
-        ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
-        ...(info.title !== undefined ? { title: info.title } : {}),
-        time: {
-          created: info.time?.created ?? prev.time.created,
-          updated: info.time?.updated ?? Date.now(),
-          ...(info.time?.archived !== undefined ? { archived: info.time.archived } : prev.time.archived !== undefined ? { archived: prev.time.archived } : {}),
-        },
-      })
-      return
+    switch (event.type) {
+      case "session.updated": return this.applySessionUpdated(sessionId, event)
+      case "message.updated": return this.applyMessageUpdated(sessionId, event)
+      case "message.part.updated": return this.applyPartUpdated(sessionId, event)
+      case "message.part.delta": return this.applyPartDelta(sessionId, event)
+      case "permission.asked": return this.applyPermissionAsked(sessionId, event)
+      case "permission.replied": return this.removePermission(event.properties.requestID)
+      case "question.asked": return this.applyQuestionAsked(sessionId, event)
+      case "question.replied":
+      case "question.rejected": return this.removeQuestion(event.properties.requestID)
+      case "todo.updated": return void this.todos.set(sessionId, event.properties.todos as Array<{ content: string; status: string; priority: string }>)
+      case "session.status": return this.applySessionStatus(sessionId, event)
+      case "session.idle": return this.touch(sessionId, null, null)
+      case "session.error": return this.touch(sessionId, "error", errorMessage(event.properties.error))
     }
-    if (event.type === "message.updated") {
-      const info = event.properties.info as unknown as Record<string, unknown>
-      const messageId = typeof info.id === "string" ? info.id : undefined
-      const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
-      const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
-      this.upsertMessage(sessionId, {
-        info: preservedInfo,
-        parts: previous?.parts ?? [],
-      })
-      return
+  }
+
+  private applySessionUpdated(sessionId: string, event: Extract<CompatEvent, { type: "session.updated" }>) {
+    const info = event.properties.info as unknown as {
+      id?: string
+      directory?: string
+      title?: string | null
+      time?: { created?: number; updated?: number; archived?: number }
     }
-    if (event.type === "message.part.updated") {
-      const part = event.properties.part as { id?: string; messageID?: string; text?: string; sessionID?: string }
-      const messageId = part.messageID
-      if (!messageId) return
-      const message = this.ensureMessage(sessionId, messageId)
-      const parts = message.parts.filter((item) => (item as { id?: string }).id !== part.id)
-      message.parts = [...parts, part]
-      this.upsertMessage(sessionId, message)
-      return
-    }
-    if (event.type === "message.part.delta") {
-      const messageId = event.properties.messageID
-      const partId = event.properties.partID
-      const message = this.ensureMessage(sessionId, messageId)
-      const parts = message.parts.filter((item) => (item as { id?: string }).id !== partId)
-      const prev = message.parts.find((item) => (item as { id?: string }).id === partId) as { text?: string } | undefined
-      message.parts = [...parts, {
-        id: partId,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "text",
-        text: `${prev?.text ?? ""}${event.properties.delta}`,
-      }]
-      this.upsertMessage(sessionId, message)
-      return
-    }
-    if (event.type === "permission.asked") {
-      const directory = this.sessions.get(sessionId)?.directory ?? ""
-      const rows = this.permissions.get(directory) ?? new Map()
-      rows.set(event.properties.id, event.properties as unknown as PermissionRow)
-      this.permissions.set(directory, rows)
-      return
-    }
-    if (event.type === "permission.replied") {
-      for (const rows of this.permissions.values()) rows.delete(event.properties.requestID)
-      return
-    }
-    if (event.type === "question.asked") {
-      const directory = this.sessions.get(sessionId)?.directory ?? ""
-      const rows = this.questions.get(directory) ?? new Map()
-      rows.set(event.properties.id, event.properties as unknown as QuestionRow)
-      this.questions.set(directory, rows)
-      return
-    }
-    if (event.type === "question.replied" || event.type === "question.rejected") {
-      for (const rows of this.questions.values()) rows.delete(event.properties.requestID)
-      return
-    }
-    if (event.type === "todo.updated") {
-      this.todos.set(sessionId, event.properties.todos as Array<{ content: string; status: string; priority: string }>)
-      return
-    }
-    if (event.type === "session.status") {
-      const status = chunk(event.properties.status)
-      this.touch(sessionId, status === "idle" ? null : status, status === "error" ? "session error" : undefined)
-      return
-    }
-    if (event.type === "session.idle") {
-      this.touch(sessionId, null, null)
-      return
-    }
-    if (event.type === "session.error") {
-      const message = errorMessage(event.properties.error)
-      this.touch(sessionId, "error", message)
-      return
-    }
+    const previous = this.sessions.get(info.id ?? sessionId)
+    if (!previous) return
+    this.sessions.set(previous.id, {
+      ...previous,
+      ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
+      ...(info.title !== undefined ? { title: info.title } : {}),
+      time: {
+        created: info.time?.created ?? previous.time.created,
+        updated: info.time?.updated ?? Date.now(),
+        ...(info.time?.archived !== undefined
+          ? { archived: info.time.archived }
+          : previous.time.archived !== undefined ? { archived: previous.time.archived } : {}),
+      },
+    })
+  }
+
+  private applyMessageUpdated(sessionId: string, event: Extract<CompatEvent, { type: "message.updated" }>) {
+    const info = event.properties.info as unknown as Record<string, unknown>
+    const messageId = typeof info.id === "string" ? info.id : undefined
+    const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
+    const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
+    this.upsertMessage(sessionId, { info: preservedInfo, parts: previous?.parts ?? [] })
+  }
+
+  private applyPartUpdated(sessionId: string, event: Extract<CompatEvent, { type: "message.part.updated" }>) {
+    const part = event.properties.part as { id?: string; messageID?: string; text?: string; sessionID?: string }
+    if (!part.messageID) return
+    const message = this.ensureMessage(sessionId, part.messageID)
+    message.parts = [...message.parts.filter((item) => (item as { id?: string }).id !== part.id), part]
+    this.upsertMessage(sessionId, message)
+  }
+
+  private applyPartDelta(sessionId: string, event: Extract<CompatEvent, { type: "message.part.delta" }>) {
+    const { messageID: messageId, partID: partId, delta } = event.properties
+    const message = this.ensureMessage(sessionId, messageId)
+    const previous = message.parts.find((item) => (item as { id?: string }).id === partId) as { text?: string } | undefined
+    message.parts = [
+      ...message.parts.filter((item) => (item as { id?: string }).id !== partId),
+      { id: partId, sessionID: sessionId, messageID: messageId, type: "text", text: `${previous?.text ?? ""}${delta}` },
+    ]
+    this.upsertMessage(sessionId, message)
+  }
+
+  private applyPermissionAsked(sessionId: string, event: Extract<CompatEvent, { type: "permission.asked" }>) {
+    const directory = this.sessions.get(sessionId)?.directory ?? ""
+    const rows = this.permissions.get(directory) ?? new Map()
+    rows.set(event.properties.id, event.properties as unknown as PermissionRow)
+    this.permissions.set(directory, rows)
+  }
+
+  private removePermission(requestId: string) {
+    for (const rows of this.permissions.values()) rows.delete(requestId)
+  }
+
+  private applyQuestionAsked(sessionId: string, event: Extract<CompatEvent, { type: "question.asked" }>) {
+    const directory = this.sessions.get(sessionId)?.directory ?? ""
+    const rows = this.questions.get(directory) ?? new Map()
+    rows.set(event.properties.id, event.properties as unknown as QuestionRow)
+    this.questions.set(directory, rows)
+  }
+
+  private removeQuestion(requestId: string) {
+    for (const rows of this.questions.values()) rows.delete(requestId)
+  }
+
+  private applySessionStatus(sessionId: string, event: Extract<CompatEvent, { type: "session.status" }>) {
+    const status = chunk(event.properties.status)
+    this.touch(sessionId, status === "idle" ? null : status, status === "error" ? "session error" : undefined)
   }
 
   private ensureMessage(sessionId: string, messageId: string): MessageRow {

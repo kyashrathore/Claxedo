@@ -12,7 +12,7 @@ export type AcpPermissionDecision = "allow_once" | "allow_always" | "deny" | "re
  * tool call: choosing "always allow" against such an agent cancelled the call
  * instead of allowing it.
  *
- * The fallbacks are deliberately ASYMMETRIC:
+ * Substitutions are deliberately asymmetric:
  *
  *   - NARROWING a grant (`allow_always` → `allow_once`) is safe: the user gets
  *     less access than they asked for, and the call proceeds.
@@ -53,15 +53,8 @@ export function selectPermissionOption(
 /**
  * The compat `permission.asked` payload for an ACP permission request.
  *
- * `permission` must be a CLASSIFICATION, because that is what every consumer keys
- * on: the app's auto-approve allowlist matches it, and the permission dock looks
- * up `settings.permissions.tool.<permission>.description` with it. This carried
- * `toolCall.title` — free-form prose like "Read file src/index.ts" — so the
- * allowlist matched nothing (auto-approve was inert on every ACP harness) and the
- * dock's i18n lookup always missed, discarding the title too.
- *
- * Extracted from the inline literal it used to be so the mapping is testable: the
- * old version was wrong while every test passed.
+ * `permission` is the protocol classification consumed by approval policy and
+ * UI descriptions. Human-readable tool detail remains in `metadata.title`.
  */
 export function acpPermissionRequest(input: {
   permId: string
@@ -75,12 +68,10 @@ export function acpPermissionRequest(input: {
   return {
     id: input.permId,
     sessionID: input.sessionId,
-    // `"other"` is a real `ToolKind` member and sits in the ask tier, so an
-    // unclassified request fails SAFE rather than inheriting whatever a prose
-    // title happened to spell.
+    // `"other"` routes unclassified requests through the ask tier.
     permission: input.kind ?? ("other" satisfies ToolKind),
     patterns: input.paths,
-    // The only human-readable description of what the agent wants to do. Keep it.
+    // Preserve the agent's human-readable description separately from policy.
     metadata: { title: input.tool },
     always: input.paths,
   }

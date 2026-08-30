@@ -27,8 +27,7 @@ describe("selectPermissionOption — exact matches", () => {
 })
 
 describe("selectPermissionOption — narrowing a grant is allowed", () => {
-  // The regression this exists for: an agent offering only `allow_once` used to
-  // make "always allow" answer `cancelled`, killing the tool call.
+  // A narrower grant keeps the tool call within the advertised option set.
   test("allow_always degrades to allow_once when the agent has no always option", () => {
     const selected = selectPermissionOption("allow_always", [option("allow_once"), option("reject_once")])
     expect(selected?.kind).toBe("allow_once")
@@ -109,8 +108,7 @@ describe("permissionOptionPreference", () => {
 describe("acpPermissionRequest — the classification, not the prose", () => {
   const base = { permId: "p1", sessionId: "s1", tool: "Read file src/index.ts", paths: ["/w/src/index.ts"] }
 
-  // The regression: `permission` used to be `toolCall.title`, so consumers matched
-  // against prose. It must be the protocol's ToolKind.
+  // Policy uses the protocol classification rather than human-readable prose.
   test("permission is the ToolKind, never the human title", () => {
     const req = acpPermissionRequest({ ...base, kind: "read" })
     expect(req.permission).toBe("read")

@@ -179,10 +179,8 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     return this.write(() => {
       const result = this.memory.finishTurn(input)
-      if (result) {
-        this.persistSession(input.sessionId)
-        if (input.outcome.status === "failed") this.persistMessage(input.sessionId, input.assistantMessageId)
-      }
+      this.persistSession(input.sessionId)
+      if (input.outcome.status === "failed") this.persistMessage(input.sessionId, input.assistantMessageId)
       return result
     })
   }

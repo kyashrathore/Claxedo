@@ -6,17 +6,17 @@ const root = path.resolve(import.meta.dirname)
 
 describe("agent-sdk-runtime architecture ratchets", () => {
   test("high-churn orchestration owners cannot grow", () => {
-    // Exact reviewed ceilings: lower these when responsibility moves to a
-    // dedicated owner. The harness ceilings include the reviewed handoff
-    // resource-release contract owned by each concrete adapter and the runtime
-    // ceiling includes wiring to the dedicated title-mutation coordinator.
+    // Exact reviewed ceilings. Runtime owns turn-input normalization and lease
+    // wiring; Pi owns its transport-specific message projection. ACP, Codex,
+    // OpenCode, and the shared SDK adapter delegate process/turn helpers to
+    // adjacent modules.
     const ceilings: Record<string, number> = {
-      "runtime.ts": 595,
-      "harnesses/acp/index.ts": 1698,
-      "harnesses/codex/driver.ts": 1079,
-      "harnesses/shared/sdk-runtime-adapter.ts": 954,
-      "harnesses/opencode/index.ts": 844,
-      "harnesses/pi/index.ts": 719,
+      "runtime.ts": 627,
+      "harnesses/acp/index.ts": 693,
+      "harnesses/codex/driver.ts": 961,
+      "harnesses/shared/sdk-runtime-adapter.ts": 917,
+      "harnesses/opencode/index.ts": 741,
+      "harnesses/pi/index.ts": 730,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
       const lines = fs.readFileSync(path.join(root, file), "utf8").split("\n").length - 1

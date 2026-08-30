@@ -176,6 +176,60 @@ function runtimeDirectory(directory: RuntimeDirectory) {
   return directory ?? CENTRAL_DIRECTORY
 }
 
+function turnPrompt(
+  turn: AgentRuntimeTurnStartInput,
+  config: SessionConfig,
+  userMessageId: string,
+  assistantMessageId: string,
+  handoff: string | undefined,
+): PromptInput {
+  return {
+    parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
+    userMessageId,
+    assistantMessageId,
+    agent: turn.agent ?? config?.agent ?? "build",
+    model: turn.model ?? resolveSessionModel(config),
+    ...(turn.tools ? { tools: turn.tools } : {}),
+    ...(turn.format ? { format: turn.format } : {}),
+    ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
+    ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
+    ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
+    ...(turn.author ? { author: turn.author } : {}),
+  }
+}
+
+function turnStartRecord(
+  turn: AgentRuntimeTurnStartInput,
+  prompt: PromptInput,
+  userMessageId: string,
+  assistantMessageId: string,
+  agentSessionId: string | undefined,
+) {
+  return {
+    sessionId: turn.sessionId,
+    ...(agentSessionId ? { agentSessionId } : {}),
+    userMessageId,
+    assistantMessageId,
+    agent: prompt.agent,
+    model: prompt.model,
+    parts: prompt.parts,
+    ...(turn.tools ? { tools: turn.tools } : {}),
+    ...(turn.format ? { format: turn.format } : {}),
+    ...(turn.system ? { system: turn.system } : {}),
+    ...(prompt.variant ? { variant: prompt.variant } : {}),
+    ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
+    ...(turn.author ? { author: turn.author } : {}),
+  }
+}
+
+function includesOpeningUserMessage(events: CompatEvent[], userMessageId: string) {
+  return events.some((payload) =>
+    payload.type === "message.updated"
+    && payload.properties.info.role === "user"
+    && payload.properties.info.id === userMessageId
+  )
+}
+
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = createRuntimeEventHub()
   const store = input.store as unknown as RuntimeStoreInternal
@@ -184,6 +238,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     key(factory),
     factory.create({ store, eventHub }),
   ]))
+  const resolvingAdapters = new Map<string, Promise<AgentHarnessAdapter>>()
   const subscribers = new Set<Subscriber>()
   const withTitleMutation = createTitleMutationCoordinator()
   const acquireTurnLease = (sessionId: string) => {
@@ -197,17 +252,24 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   }
 
   const adapterFor = async (harness: SessionHarness) => {
-    const existing = adapters.get(key(harness))
+    const harnessKey = key(harness)
+    const existing = adapters.get(harnessKey)
     if (existing) return existing
     if (!input.resolveHarness) throw new Error(`No harness registered for ${harness.id}:${harness.access}`)
-    const resolved = await input.resolveHarness(harness)
-    adapters.set(key(harness), resolved)
-    return resolved
+    const pending = resolvingAdapters.get(harnessKey)
+    if (pending) return await pending
+    const resolution = Promise.resolve(input.resolveHarness(harness))
+      .then((resolved) => {
+        adapters.set(harnessKey, resolved)
+        return resolved
+      })
+      .finally(() => resolvingAdapters.delete(harnessKey))
+    resolvingAdapters.set(harnessKey, resolution)
+    return await resolution
   }
 
   const adapterForSession = async (sessionId: string, directory: RuntimeDirectory) => {
     const config = store.getSessionConfig(sessionId)
-    if (!config && adapters.size === 1) return adapters.values().next().value!
     if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
     return await adapterFor(config.harness)
   }
@@ -362,43 +424,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
           const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
           const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
-          const prompt: PromptInput = {
-            parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
-            userMessageId,
-            assistantMessageId,
-            agent: turn.agent ?? config?.agent ?? "build",
-            model: turn.model ?? resolveSessionModel(config),
-            ...(turn.tools ? { tools: turn.tools } : {}),
-            ...(turn.format ? { format: turn.format } : {}),
-            ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
-            ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
-            ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
-            ...(turn.author ? { author: turn.author } : {}),
-          }
+          const prompt = turnPrompt(turn, config, userMessageId, assistantMessageId, handoff)
           const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
-          const started = store.startTurn({
-            sessionId: turn.sessionId,
-            ...(agentSessionId ? { agentSessionId } : {}),
-            userMessageId,
-            assistantMessageId,
-            agent: prompt.agent,
-            model: prompt.model,
-            parts: prompt.parts,
-            ...(turn.tools ? { tools: turn.tools } : {}),
-            ...(turn.format ? { format: turn.format } : {}),
-            ...(turn.system ? { system: turn.system } : {}),
-            ...(prompt.variant ? { variant: prompt.variant } : {}),
-            ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
-            ...(turn.author ? { author: turn.author } : {}),
-          })
-          for (const payload of started?.events ?? []) {
+          const started = store.startTurn(turnStartRecord(turn, prompt, userMessageId, assistantMessageId, agentSessionId))
+          for (const payload of started.events) {
             publish({ sessionId: turn.sessionId, directory, payload })
           }
-          const openingUserPublished = started?.events?.some((payload) =>
-            payload.type === "message.updated"
-            && payload.properties.info.role === "user"
-            && payload.properties.info.id === userMessageId
-          ) ?? false
+          const openingUserPublished = includesOpeningUserMessage(started.events, userMessageId)
           void runTurn(turn.sessionId, prompt, directory, adapter, openingUserPublished, !!handoff)
             .finally(() => releaseTurnLease(turn.sessionId, leaseId))
           return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
@@ -412,7 +444,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (!adapter.abort) throw new Error("This harness does not support abort")
         const result = await adapter.abort(sessionId, directory)
         if (result.ok && result.status === "cancelled") {
-          store.finishTurn?.({
+          store.finishTurn({
             sessionId,
             outcome: { status: "cancelled", completedAt: Date.now(), reason: "abort" },
           })

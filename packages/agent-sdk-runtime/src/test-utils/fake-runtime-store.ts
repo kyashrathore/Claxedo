@@ -3,8 +3,16 @@ import type {
   AgentRuntimeCommittedCompatOutput,
   AgentRuntimeStoreWithRecovery,
 } from "../harnesses/shared/runtime-store"
+import { MemoryRuntimeStore } from "../stores/memory"
 
-/** A commit receipt with exactly the fields the port promises — nothing invented. */
+/** Commits the standard opening events for a turn. */
+export function committedStartTurn(input: unknown) {
+  return new MemoryRuntimeStore().startTurn(
+    input as Parameters<MemoryRuntimeStore["startTurn"]>[0],
+  )
+}
+
+/** Creates the commit receipt used by focused store-port tests. */
 export function committedAppend(input: {
   sessionId: string
   agentSessionId?: string
@@ -19,20 +27,7 @@ export function committedAppend(input: {
   }
 }
 
-/**
- * An inert store that satisfies every *required* member of the runtime-store
- * port, so a test can override only the handful it cares about.
- *
- * Hand-rolled fakes drifted from the port repeatedly (the ACP and SDK fakes in
- * `store-lifecycle.test.ts` were both missing `listQuestions`, and several
- * adapter tests smuggled two-method objects past it with `as AcpRuntimeStore`).
- * Building on one base means adding a required member to the port breaks here
- * once instead of silently leaving every fake incomplete.
- *
- * Optional members (`finishTurn`, `close`, and the owner-key group) are left
- * absent unless overridden: adapters branch on their presence, so filling them in
- * would change what is under test.
- */
+/** A complete inert store whose individual operations can be replaced by a test. */
 export function fakeRuntimeStore(
   overrides: Partial<AgentRuntimeStoreWithRecovery> = {},
 ): AgentRuntimeStoreWithRecovery {
@@ -46,7 +41,8 @@ export function fakeRuntimeStore(
     getSessionConfig: () => null,
     deleteSession: () => {},
     getAgentSessionId: () => null,
-    startTurn: () => {},
+    startTurn: committedStartTurn,
+    finishTurn: () => ({ events: [] }),
     appendEvent: committedAppend,
     getMessages: () => [],
     getTodos: () => [],

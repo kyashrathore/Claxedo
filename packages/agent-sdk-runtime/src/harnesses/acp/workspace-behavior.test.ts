@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { AcpHarnessAdapter } from "./index"
+import { committedStartTurn } from "../../test-utils/fake-runtime-store"
 
 type BaseInternals = {
   busySessions: Set<string>
@@ -93,6 +94,7 @@ describe("AcpHarnessAdapter", () => {
       },
       startTurn(input) {
         calls.push({ name: "startTurn", args: [input] })
+        return committedStartTurn(input)
       },
       appendEvent(input) {
         seen.push(input.payload.type)
@@ -190,7 +192,7 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
@@ -336,6 +338,7 @@ describe("AcpHarnessAdapter", () => {
       },
       startTurn(input) {
         calls.push({ name: "startTurn", args: [input] })
+        return committedStartTurn(input)
       },
       appendEvent(input) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
@@ -425,7 +428,7 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return "ACP process restarted; pending interactive state must be rerun"
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
@@ -510,6 +513,7 @@ describe("AcpHarnessAdapter", () => {
       },
       startTurn(input) {
         calls.push({ name: "startTurn", args: [input] })
+        return committedStartTurn(input)
       },
       appendEvent(input) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
@@ -714,7 +718,7 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
@@ -805,7 +809,7 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },

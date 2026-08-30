@@ -12,7 +12,7 @@ import type {
   SDKAgent as CursorSDKAgent,
   SDKMessage,
 } from "@cursor/sdk"
-import type { AgentConfigOptionRow } from "../../index"
+import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { randomUUID } from "crypto"
@@ -63,26 +63,28 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   private agents = new Map<string, CursorEntry>()
   private processError: string | null = null
   private readonly modelSource = createLiveModelSource({
-    harness: "cursor",
     fetchModels: () => this.fetchModels(),
-    fallbackToCatalog: false,
   })
 
   constructor(private readonly host: SdkRuntimeDriverHost) {}
 
   setAuth(keys: SdkRuntimeAuth) {
+    const previous = this.auth.cursor
     this.auth = {
       ...this.auth,
       ...(keys.cursor !== undefined ? { cursor: keys.cursor || undefined } : {}),
     }
+    if (this.auth.cursor !== previous) this.modelSource.invalidate()
   }
 
   applyConfig(config: Record<string, unknown>) {
+    const previous = this.auth.cursor
     const auth = record(config.auth) as Record<string, string> | undefined
     this.auth = {
       cursor: auth?.["cursor-sdk"],
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    if (this.auth.cursor !== previous) this.modelSource.invalidate()
   }
 
   /**
@@ -209,16 +211,16 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     this.agents.clear()
   }
 
-  async configOptions(currentModel: string, _directory?: string): Promise<AgentConfigOptionRow[]> {
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
     this.requireCursorSdkAuth()
-    const models = await this.modelSource.models()
+    const models = await this.modelSource.models(directory)
     if (models.length === 0) throw new Error(CURSOR_SDK_AUTH_ERROR)
     return [modelConfigOption(models, currentModel)]
   }
 
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
+  peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
     if (!this.auth.cursor) return []
-    const models = this.modelSource.peek()
+    const models = this.modelSource.peek(directory)
     if (models.length === 0) return []
     return [modelConfigOption(models, currentModel)]
   }

@@ -12,7 +12,8 @@ npm install @claxedo/agent-sdk-runtime
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { claude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
+import { pi } from "@claxedo/agent-sdk-runtime/harnesses/pi"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 
 const runtime = createAgentRuntime({
@@ -47,7 +48,8 @@ inventory, HTTP route shape, and UI state.
 
 Coding agents and host integrators should start with
 [docs/agent.md](./docs/agent.md), then read
-[docs/concepts.md](./docs/concepts.md). Together they define the package job,
+[docs/concepts.md](./docs/concepts.md) and
+[docs/architecture.md](./docs/architecture.md). Together they define the package job,
 mental model, blessed imports, stability labels, boundaries, recipes, and
 public API surface.
 
@@ -124,10 +126,19 @@ The root import does not load SQLite or Convex.
 
 ### Harness Factories
 
-Harness factories live on `@claxedo/agent-sdk-runtime/harnesses`:
+Harness factories have individual entries and a convenience aggregate:
+
+- `@claxedo/agent-sdk-runtime/harnesses/acp`
+- `@claxedo/agent-sdk-runtime/harnesses/claude`
+- `@claxedo/agent-sdk-runtime/harnesses/codex`
+- `@claxedo/agent-sdk-runtime/harnesses/cursor`
+- `@claxedo/agent-sdk-runtime/harnesses/opencode`
+- `@claxedo/agent-sdk-runtime/harnesses/pi`
 
 ```ts
 import { acp, claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+// Smaller single-harness graph:
+import { claude as nativeClaude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
 ```
 
 Factories hide adapter class construction and let the runtime inject store and
@@ -146,9 +157,10 @@ access modes.
 `isAgentHarnessAccess()` centralize harness classification so callers do not
 infer behavior from strings.
 
-`src/sdk-model-catalog.ts` owns typed model catalogs for SDK transports that do
-not expose live model options. ACP transports should prefer live
-`configOptions` from the agent when available.
+Runtime model options come from live, directory-scoped harness queries. Query
+errors are returned to the caller and an empty result remains empty. The
+exported SDK model catalog is an explicit reference/validation API; it is not
+substituted for a failed live query.
 
 ### Subagent support matrix
 
@@ -284,8 +296,8 @@ session semantics in this layer.
 `src/harnesses/cursor` adapt native SDK or app-server streams into the
 shared runtime contract through the shared SDK adapter.
 
-These transports use the typed SDK model catalog because they do not expose the
-same live model configuration surface as ACP harnesses.
+These transports query their native SDK or app-server for model options and
+cache successful results per workspace directory.
 
 ### OpenCode
 
@@ -334,9 +346,8 @@ This package should stay focused on runtime contracts and transport execution.
 1. Add the harness to `AGENT_HARNESS_DEFINITIONS` in `src/harness-types.ts`.
 2. Decide whether it supports `access: "acp"`, `access: "native"`, or both.
 3. Implement an adapter under `src/harnesses/<harness>`.
-4. Expose explicit `HarnessCapabilities`; do not rely on fallback behavior.
-5. If the harness is SDK-backed and has no live model list, add a typed catalog
-   entry in `src/sdk-model-catalog.ts`.
+4. Expose explicit `HarnessCapabilities`; unsupported operations must be errors.
+5. Implement live model discovery when the harness exposes configurable models.
 6. Add focused adapter tests around session lifecycle, submit, abort, config,
    and event projection.
 7. Add or update the public factory in `src/harnesses/index.ts` when the

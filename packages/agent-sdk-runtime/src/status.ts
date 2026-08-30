@@ -31,16 +31,16 @@ export function chunk(status: StatusCompat): StatusChunk {
   return "error"
 }
 
-export function live(input: RetryRow, fallback: string, now = Date.now()): StatusCompat | undefined {
+export function live(input: RetryRow, defaultMessage: string, now = Date.now()): StatusCompat | undefined {
   if (input.status === "busy") return { type: "busy" }
   if (input.status === "recovering") {
-    return recovering(typeof input.message === "string" ? input.message : typeof input.recovery_error === "string" ? input.recovery_error : fallback)
+    return recovering(typeof input.message === "string" ? input.message : typeof input.recovery_error === "string" ? input.recovery_error : defaultMessage)
   }
   if (input.status !== "retry") return
   return {
     type: "retry",
     attempt: typeof input.attempt === "number" ? input.attempt : 1,
-    message: typeof input.message === "string" ? input.message : fallback,
+    message: typeof input.message === "string" ? input.message : defaultMessage,
     next: typeof input.next === "number" ? input.next : now,
   }
 }

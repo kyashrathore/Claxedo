@@ -1,7 +1,7 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
-import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
+import { committedStartTurn, fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 import { generateAITitle } from "./title"
@@ -786,7 +786,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent() {},
       bindSession() {},
     }
@@ -877,7 +877,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent() {},
       bindSession() {},
     }
@@ -976,7 +976,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn: committedStartTurn,
       appendEvent() {},
       bindSession() {},
     }

@@ -2,7 +2,7 @@
  * OpenCodeHarnessAdapter
  *
  * Manages an opencode server process and proxies HTTP requests to it.
- * If constructed with a URL, proxies to that existing server (backward compat).
+ * If constructed with a URL, proxies to that existing server.
  * If constructed without a URL, spawns `opencode serve` on demand.
  *
  * Session methods forward requests with x-opencode-directory header.
@@ -19,17 +19,16 @@ import {
   sessionError,
   sessionStatus as sessionStatusCompat,
   type CompatEvent,
-  type CompatPart,
 } from "../../compat-events"
 import type {
-  AgentAgentRow,
-  AgentCommandRow,
-  AgentConfigOptionRow,
-  AgentMessageRow,
-  AgentPermissionRow,
-  AgentQuestionRow,
+  AgentAgent,
+  AgentCommand,
+  AgentConfigOption,
+  AgentMessage,
+  AgentPermission,
+  AgentQuestion,
   AgentRuntimeStreamEvent,
-  AgentSessionRow,
+  AgentSession,
   PromptInput,
   SessionConfig,
   SessionConfigUpdate,
@@ -52,6 +51,7 @@ import { opencodeSubagentObservations } from "./subagent"
 import { opencodeAuthContent } from "./env"
 import { OpenCodeServerProcess, type OpenCodeServerConnection } from "./process"
 import type { ActivityLease } from "../shared/process-lifecycle"
+import { eventHasVisibleAssistantContent, eventIsError, promptParts } from "./prompt"
 import { randomUUID } from "crypto"
 import {
   observeAgentProcess,
@@ -78,92 +78,6 @@ export type OpenCodeRequestFn = (request: Request) => Promise<Response>
 // sees it verbatim and routes on path only.
 const OPENCODE_INTERNAL_BASE = "http://opencode.internal"
 
-function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
-}
-
-function dataUrl(mime: string, data: string) {
-  if (data.startsWith("data:")) return data
-  return `data:${mime};base64,${data}`
-}
-
-function extension(mime: string) {
-  const subtype = mime.split("/")[1]?.split(";")[0]
-  if (!subtype) return "bin"
-  if (subtype === "jpeg") return "jpg"
-  return subtype.replace(/[^a-z0-9]/gi, "") || "bin"
-}
-
-function promptParts(sessionId: string, messageId: string, parts: unknown[]): CompatPart[] {
-  return parts.flatMap((item, i) => {
-    const row = rec(item)
-    const type = typeof row?.type === "string" ? row.type : undefined
-    const id = `${String(i).padStart(6, "0")}_${messageId}-input`
-    if (type === "text") {
-      return [{
-        id,
-        sessionID: sessionId,
-        messageID: messageId,
-        type,
-        text: typeof row?.text === "string" ? row.text : "",
-      } satisfies CompatPart]
-    }
-    if ((type === "image" || type === "audio") && typeof row?.mimeType === "string" && typeof row?.data === "string") {
-      return [{
-        id,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "file",
-        mime: row.mimeType,
-        url: dataUrl(row.mimeType, row.data),
-        filename: `${type}.${extension(row.mimeType)}`,
-      } satisfies CompatPart]
-    }
-    if (type === "resource_link" && typeof row?.uri === "string") {
-      return [{
-        id,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "file",
-        mime: typeof row.mimeType === "string" ? row.mimeType : "application/octet-stream",
-        url: row.uri,
-        filename: typeof row.name === "string" ? row.name : typeof row.title === "string" ? row.title : "resource",
-      } satisfies CompatPart]
-    }
-    const resource = rec(row?.resource)
-    if (type === "resource" && typeof resource?.text === "string") {
-      return [{
-        id,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "text",
-        text: resource.text,
-      } satisfies CompatPart]
-    }
-    return [] as CompatPart[]
-  })
-}
-
-function visiblePartText(part: CompatPart) {
-  const row = part as { text?: unknown; content?: unknown }
-  return typeof row.text === "string" ? row.text : typeof row.content === "string" ? row.content : ""
-}
-
-function eventHasVisibleAssistantContent(event: CompatEvent) {
-  if (event.type === "message.part.updated") {
-    return visiblePartText(event.properties.part).trim().length > 0
-  }
-  if (event.type === "message.part.delta") {
-    const row = event.properties as { field?: unknown; delta?: unknown }
-    return (row.field === "text" || row.field === "content") && typeof row.delta === "string" && row.delta.trim().length > 0
-  }
-  return false
-}
-
-function eventIsError(event: CompatEvent) {
-  return event.type === "session.error"
-}
-
 export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["http-proxy"] as const
   private base: Headers
@@ -172,13 +86,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   private eventHub: RuntimeEventHub | undefined
   private server: OpenCodeServerProcess
 
-  // This flag gates the adapter's own MECHANISM — whether `listSessions` /
-  // `getStatusSnapshot` proxy to the opencode upstream or return local
-  // fallbacks. It is distinct from the workspace-runtime's root compat ROUTE
-  // SURFACE (/mcp, /provider, /vcs, /session/status), which is gated
-  // separately by the host. The three-state host option
-  // WorkspaceHostOptions.opencodeCompat maps `undefined`/`true` → mechanism on,
-  // `false` → mechanism off. Defaults on for direct adapter construction.
+  // Controls whether compatibility reads are delegated to the OpenCode server.
+  // Route exposure remains a host-level policy.
   private compat: boolean
   // Injected transport (host-embedded engine). When set, ALL adapter HTTP goes
   // through it and `OpenCodeServerProcess` is never consulted — nothing spawns.
@@ -188,11 +97,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   private mcpObservations: AgentProcessObserverHandle[] = []
   private rootOwnerId: string | undefined
   private processObserver: AgentProcessObserver | undefined
-  // Host-owned subagent persistence. The engine creates the child Session; the
-  // HOST owns the `(parentSessionId, subagentKey)` association that survives a
-  // reload, so the adapter never keeps subagent state of its own. Absent (a
-  // bare adapter with no host behind it) the rail degrades to no cards rather
-  // than to a fabricated association.
+  // The host owns durable parent/child associations; this adapter only admits
+  // observations when that persistence service is present.
   private subagents: SubagentAdmissionStore | undefined
   // Admissions assign monotonic per-subagent revisions, so they must not
   // interleave. One chain per adapter keeps them ordered without blocking the
@@ -398,23 +304,23 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return await request(OpenCodeHarnessAdapter.request(`/session/status`, { headers }))
   }
 
-  async listSessions(directory: string): Promise<AgentSessionRow[]> {
+  async listSessions(directory: string): Promise<AgentSession[]> {
     if (!this.compat) return []
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session`, {
       headers: this.headers(directory),
     }))
     if (!res.ok) return []
-    return res.json() as Promise<AgentSessionRow[]>
+    return res.json() as Promise<AgentSession[]>
   }
 
-  async getSession(id: string, directory: string): Promise<AgentSessionRow | null> {
+  async getSession(id: string, directory: string): Promise<AgentSession | null> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
       headers: this.headers(directory),
     }))
     if (!res.ok) return null
-    return res.json() as Promise<AgentSessionRow>
+    return res.json() as Promise<AgentSession>
   }
 
   async createSession(directory: string, title?: string, id?: string): Promise<{ id: string }> {
@@ -451,7 +357,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     await this.deleteSession(id, directory)
   }
 
-  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: string): Promise<AgentSessionRow | null> {
+  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: string): Promise<AgentSession | null> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
       method: "PATCH",
@@ -459,7 +365,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       body: JSON.stringify(updates),
     }))
     if (!res.ok) return null
-    return res.json() as Promise<AgentSessionRow>
+    return res.json() as Promise<AgentSession>
   }
 
   async getSessionConfig(_id: string, _directory: string): Promise<SessionConfig> {
@@ -489,16 +395,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   // ── Messaging ────────────────────────────────────────────────────────────────
 
-  /**
-   * A turn is a STREAM, and the lease has to cover all of it.
-   *
-   * The opening request only re-arms the idle countdown; between chunks the
-   * adapter is silent, so a tool call that runs longer than the grace period
-   * used to have its healthy child reaped mid-turn and surface as a hung
-   * session. Holding the lease here — the same thing the ACP adapter does for
-   * its prompt turn — is what makes the silence safe. The `finally` covers the
-   * error paths and a consumer that breaks out of the loop alike.
-   */
+  /** Holds the process lease for the complete stream, including quiet tool calls. */
   async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
     directory = requireWorkspaceDirectory(directory)
     const { request, lease } = await this.acquireRequestFn()
@@ -627,13 +524,13 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   // ── Remaining API methods ────────────────────────────────────────────────────
 
-  async getMessages(id: string, directory: string): Promise<AgentMessageRow[]> {
+  async getMessages(id: string, directory: string): Promise<AgentMessage[]> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}/message`, {
       headers: this.headers(directory),
     }))
     if (!res.ok) return []
-    return res.json() as Promise<AgentMessageRow[]>
+    return res.json() as Promise<AgentMessage[]>
   }
 
   async getMessagePage(
@@ -652,7 +549,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }))
     if (!res.ok) throw new AgentMessagePageError(res.status, `Failed to get message page: ${res.status}`)
 
-    const messages = await res.json() as AgentMessageRow[]
+    const messages = await res.json() as AgentMessage[]
     const nextCursor = res.headers.get("x-next-cursor")
     return {
       messages,
@@ -706,21 +603,21 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }))
   }
 
-  async listCommands(_directory: string): Promise<AgentCommandRow[]> {
+  async listCommands(_directory: string): Promise<AgentCommand[]> {
     return listCommands()
   }
 
-  async listAgents(_directory: string): Promise<AgentAgentRow[]> {
+  async listAgents(_directory: string): Promise<AgentAgent[]> {
     throw new Error("opencode does not expose live agent options")
   }
 
-  async listPermissions(directory: string): Promise<AgentPermissionRow[]> {
+  async listPermissions(directory: string): Promise<AgentPermission[]> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/permission`, {
       headers: this.headers(directory),
     }))
     if (!res.ok) return []
-    return res.json() as Promise<AgentPermissionRow[]>
+    return res.json() as Promise<AgentPermission[]>
   }
 
   async respondPermission(
@@ -742,13 +639,13 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }))
   }
 
-  async listQuestions(directory: string): Promise<AgentQuestionRow[]> {
+  async listQuestions(directory: string): Promise<AgentQuestion[]> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/question`, {
       headers: this.headers(directory),
     }))
     if (!res.ok) return []
-    return res.json() as Promise<AgentQuestionRow[]>
+    return res.json() as Promise<AgentQuestion[]>
   }
 
   async replyQuestion(qId: string, answer: string, directory: string): Promise<void> {
@@ -803,7 +700,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return Promise.resolve()
   }
 
-  async probeConfigOptions(_directory: string): Promise<AgentConfigOptionRow[]> {
+  async probeConfigOptions(_directory: string): Promise<AgentConfigOption[]> {
     throw new Error("opencode does not expose harness config options")
   }
 

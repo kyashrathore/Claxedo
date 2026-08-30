@@ -1,7 +1,7 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { AgentSession, PromptInput } from "../index"
 import { buildSession, sessionUpdated, type CompatEvent } from "../compat-events"
-import { extractPromptTitleText, fallbackSessionTitle, hasConcreteSessionTitle } from "../session-title"
+import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "../session-title"
 
 type AutomaticTitleStore = {
   getSession(sessionId: string): unknown | null
@@ -29,7 +29,7 @@ export async function tryUpdateAutomaticTitle(input: AutomaticTitleInput): Promi
   if (hasConcreteSessionTitle(session?.title)) return
   const text = extractPromptTitleText(input.prompt.parts)
   if (!text) return
-  const title = fallbackSessionTitle(text)
+  const title = deriveSessionTitle(text)
 
   try {
     const updated = await input.updateSession(input.sessionId, title, input.directory)

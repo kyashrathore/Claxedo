@@ -13,8 +13,7 @@ export function classifyFirstTurnError(error: unknown): FirstTurnErrorClass {
   const message = error instanceof Error ? error.message : typeof error === "string" ? error : JSON.stringify(error)
   if (usageLimit.test(message)) return "usage_limit"
   if (credential.test(message)) return "credential"
-  // session is tested before harness: a lost thread must route to session recovery,
-  // never be swallowed by the harness fallback (was previously mislabelled "workspace").
+  // Lost native conversations use session recovery, even when the message also names a harness.
   if (session.test(message)) return "session"
   if (harness.test(message)) return "harness"
   if (model.test(message)) return "model"

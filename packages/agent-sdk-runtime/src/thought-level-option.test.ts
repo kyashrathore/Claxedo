@@ -5,8 +5,7 @@ import { resolveTurnEffort, thoughtLevelConfigOption } from "./sdk-model-catalog
  * Shapes transcribed from the Claude Agent SDK's `ModelInfo` (sdk.d.ts):
  *   supportsEffort?: boolean
  *   supportedEffortLevels?: ('low'|'medium'|'high'|'xhigh'|'max')[]
- * Both already arrive from `query().supportedModels()`; the driver used to drop
- * them one statement after fetching. Effort is a PER-MODEL capability, so the
+ * Both arrive from `query().supportedModels()`. Effort is a per-model capability, so the
  * option is built from the currently selected model, not from the harness.
  */
 describe("thoughtLevelConfigOption", () => {

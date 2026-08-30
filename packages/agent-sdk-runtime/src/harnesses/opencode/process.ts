@@ -23,7 +23,7 @@ const log = Log.create({ service: "opencode-adapter" })
  * Was five minutes and measured from the last request START, so a long
  * response stream could be killed mid-flight. It is now a lease-based idle
  * grace: the countdown begins only after the last request, stream, or
- * subscription releases. U8-F4 puts the desktop default at 30 seconds.
+ * subscription releases. The desktop default is 30 seconds.
  */
 const IDLE_TIMEOUT_MS = (() => {
   const v = Number(process.env.CLAXEDO_OC_IDLE_TIMEOUT_MS)

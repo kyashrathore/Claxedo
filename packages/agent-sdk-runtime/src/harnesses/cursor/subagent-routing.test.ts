@@ -123,7 +123,7 @@ function cursorDriver(transcriptRegistrar?: Parameters<typeof ingestCursorSdkMes
 }
 
 describe("Cursor native subagent routing", () => {
-  test("U8: admits stable lifecycle identities with conditional opaque file transcripts", async () => {
+  test("admits stable lifecycle identities with conditional opaque file transcripts", async () => {
     const store = storeRows(createMemoryRuntimeStore())
     const eventHub = createRuntimeEventHub()
     const runtimeEvents: RuntimeEventEnvelope[] = []

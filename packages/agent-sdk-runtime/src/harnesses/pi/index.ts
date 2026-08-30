@@ -13,14 +13,14 @@ import {
   type HarnessCapabilityContext,
 } from "../../capabilities"
 import {
-  type AgentAgentRow,
-  type AgentCommandRow,
-  type AgentConfigOptionRow,
-  type AgentMessageRow,
-  type AgentPermissionRow,
-  type AgentQuestionRow,
+  type AgentAgent,
+  type AgentCommand,
+  type AgentConfigOption,
+  type AgentMessage,
+  type AgentPermission,
+  type AgentQuestion,
   type AgentRuntimeStreamEvent,
-  type AgentSessionRow,
+  type AgentSession,
   type PromptInput,
   type RuntimeDirectory,
   type SessionConfig,
@@ -62,7 +62,7 @@ type PiSession = {
   updated: number
   env: SessionEnv
   config: SessionConfig
-  messages: AgentMessageRow[]
+  messages: AgentMessage[]
   active?: AbortController
   /** Live pi Agent for model-backed turns; lazily created at first model turn. */
   agent?: Agent
@@ -118,7 +118,7 @@ function notImplemented(feature: string) {
   return new Error(`${feature} is not implemented for Pi central sessions yet`)
 }
 
-function row(session: PiSession): AgentSessionRow {
+function row(session: PiSession): AgentSession {
   return {
     id: session.id,
     ...(session.parentID ? { parentID: session.parentID } : {}),
@@ -148,11 +148,71 @@ function textPart(input: { sessionId: string; messageId: string; text: string; s
   }
 }
 
-function putMessage(session: PiSession, message: AgentMessageRow) {
+function putMessage(session: PiSession, message: AgentMessage) {
   session.messages = [
     ...session.messages.filter((item) => item.info.id !== message.info.id),
     message,
   ]
+}
+
+function piUserMessage(sessionId: string, input: PromptInput): {
+  info: ReturnType<typeof buildUserMessage>
+  parts: CompatPart[]
+} | undefined {
+  if (!input.userMessageId) return
+  const prompt = promptText(input.parts)
+  return {
+    info: buildUserMessage({
+      id: input.userMessageId,
+      sessionID: sessionId,
+      agent: input.agent,
+      model: input.model,
+      ...(input.author ? { author: input.author } : {}),
+      ...(input.tools ? { tools: input.tools } : {}),
+      ...(input.format ? { format: input.format } : {}),
+      ...(input.system ? { system: input.system } : {}),
+      ...(input.variant ? { variant: input.variant } : {}),
+    }),
+    parts: prompt ? [textPart({ sessionId, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
+  }
+}
+
+function completedPiMessage(input: {
+  sessionId: string
+  assistant: Parameters<typeof buildAssistantMessage>[0]
+  assistantText: string
+  assistantError?: string
+  assistantUsage?: PiUsage
+}): {
+  info: ReturnType<typeof buildAssistantMessage>
+  parts: CompatPart[]
+} {
+  const completed = Date.now()
+  const info = {
+    ...buildAssistantMessage({
+      ...input.assistant,
+      completed,
+      ...(input.assistantError
+        ? { error: { name: "UnknownError", data: firstTurnErrorData(input.assistantError) } }
+        : { finish: "stop" }),
+    }),
+    ...(input.assistantUsage
+      ? {
+          tokens: {
+            input: input.assistantUsage.input,
+            output: input.assistantUsage.output,
+            reasoning: 0,
+            cache: { read: input.assistantUsage.cacheRead, write: input.assistantUsage.cacheWrite },
+          },
+        }
+      : {}),
+  }
+  return {
+    info,
+    parts: input.assistantText
+      ? [textPart({ sessionId: input.sessionId, messageId: input.assistant.id, text: input.assistantText, suffix: "text" })]
+      : [],
+  }
 }
 
 function runtimeEvent(input: AgentRuntimeStreamEvent): input is AgentRuntimeEvent {
@@ -466,22 +526,8 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       ...(input.variant ? { variant: input.variant } : {}),
     }
     try {
-      if (input.userMessageId) {
-        const prompt = promptText(input.parts)
-        const user = {
-          info: buildUserMessage({
-          id: input.userMessageId,
-          sessionID: id,
-          agent: input.agent,
-          model: input.model,
-          ...(input.author ? { author: input.author } : {}),
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.format ? { format: input.format } : {}),
-          ...(input.system ? { system: input.system } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-          }),
-          parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
-        }
+      const user = piUserMessage(id, input)
+      if (user) {
         putMessage(session, user)
         yield emit(messageUpdated(user.info))
         if (user.parts[0]) yield emit(messagePartUpdated(user.parts[0]))
@@ -525,24 +571,6 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       session.active = undefined
       session.updated = Date.now()
     }
-    const completed = Date.now()
-    if (input.userMessageId) {
-      const prompt = promptText(input.parts)
-      putMessage(session, {
-        info: buildUserMessage({
-          id: input.userMessageId,
-          sessionID: id,
-          agent: input.agent,
-          model: input.model,
-          ...(input.author ? { author: input.author } : {}),
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.format ? { format: input.format } : {}),
-          ...(input.system ? { system: input.system } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-        }),
-        parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
-      })
-    }
     if (assistantUsage) {
       yield emit({
         type: "usage",
@@ -560,32 +588,15 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         },
       })
     }
-    const info = {
-      ...buildAssistantMessage({
-        ...assistant,
-        completed,
-        ...(assistantError
-          ? { error: { name: "UnknownError", data: firstTurnErrorData(assistantError) } }
-          : { finish: "stop" }),
-      }),
-      ...(assistantUsage
-        ? {
-            tokens: {
-              input: assistantUsage.input,
-              output: assistantUsage.output,
-              reasoning: 0,
-              cache: { read: assistantUsage.cacheRead, write: assistantUsage.cacheWrite },
-            },
-          }
-        : {}),
-    }
-    putMessage(session, {
-      info,
-      parts: assistantText
-        ? [textPart({ sessionId: id, messageId: input.assistantMessageId, text: assistantText, suffix: "text" })]
-        : [],
+    const completedMessage = completedPiMessage({
+      sessionId: id,
+      assistant,
+      assistantText,
+      ...(assistantError ? { assistantError } : {}),
+      ...(assistantUsage ? { assistantUsage } : {}),
     })
-    yield emit(messageUpdated(info))
+    putMessage(session, completedMessage)
+    yield emit(messageUpdated(completedMessage.info))
     if (assistantError) {
       yield emit({ type: "session-status", status: "error" })
       yield emit({ type: "error", error: assistantError })
@@ -623,11 +634,11 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     throw notImplemented("Commands")
   }
 
-  async listCommands(): Promise<AgentCommandRow[]> {
+  async listCommands(): Promise<AgentCommand[]> {
     return []
   }
 
-  async listAgents(): Promise<AgentAgentRow[]> {
+  async listAgents(): Promise<AgentAgent[]> {
     return []
   }
 
@@ -640,7 +651,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
    * `createVirtualSessionEnv` — so there is nothing to gate and no request to
    * raise. Both members stay because the port requires them.
    */
-  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermissionRow[]> {
+  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermission[]> {
     return []
   }
 
@@ -650,7 +661,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     _directory?: RuntimeDirectory,
   ) {}
 
-  async listQuestions(): Promise<AgentQuestionRow[]> {
+  async listQuestions(): Promise<AgentQuestion[]> {
     return []
   }
 
@@ -660,7 +671,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig() {}
 
-  async probeConfigOptions(): Promise<AgentConfigOptionRow[]> {
+  async probeConfigOptions(): Promise<AgentConfigOption[]> {
     throw new Error("pi does not expose harness config options")
   }
 

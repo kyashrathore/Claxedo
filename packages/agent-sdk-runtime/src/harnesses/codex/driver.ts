@@ -1,6 +1,5 @@
 import { createIdleReaper } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
-import fs from "fs"
 import os from "os"
 import path from "path"
 import {
@@ -12,7 +11,7 @@ import {
   codexCollabAgentCall,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import type { AgentConfigOptionRow, PromptInput } from "../../index"
+import type { AgentConfigOption, PromptInput } from "../../index"
 import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
@@ -45,11 +44,19 @@ import {
 } from "../shared/permission-modes"
 import {
   observeAgentProcess,
+  type AgentProcessObserver,
 } from "../../process-observer"
 import { requireCodexExecutable } from "./executable"
-import { CodexAppServerProcess, observeCodexAppServerProcess } from "./app-server-process"
-
-export { observeCodexAppServerProcess } from "./app-server-process"
+import { CodexAppServerProcess } from "./app-server-process"
+import {
+  accountIdFromClaims,
+  codexChatgptAuthTokens,
+  mergeCodexAuth,
+  readCodexAuthFile,
+  sourceAuthValue,
+  sourceCodexAuthValue,
+  writeCodexAuthFile,
+} from "./auth-file"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
@@ -75,12 +82,7 @@ export function isThreadNotFound(err: unknown): boolean {
   return /thread not found/i.test(errorMessage(err))
 }
 
-/**
- * Number of resume+retry cycles attempted after the first `thread not found`. Two cycles
- * (an initial resume and one further attempt) bound the recovery so a permanently-lost
- * thread terminates instead of looping — or, before this bound existed, propagating the
- * raw protocol string on the very next failure.
- */
+/** Two resume cycles bound recovery for a thread that is no longer available. */
 const MAX_THREAD_RESUME_ATTEMPTS = 2
 
 /**
@@ -173,16 +175,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private auth: SdkRuntimeAuth = {}
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
-  /**
-   * Reap the app-server when nothing is using it.
-   *
-   * Without this the process lives for the driver's lifetime, so an idle
-   * desktop holds a codex app-server it was asked for once. `ensureProcess`
-   * re-spawns transparently, which every caller already relies on.
-   *
-   * Restored after a merge took the upstream driver wholesale and dropped it —
-   * upstream never had one. `idle-reaping.test.ts` is what noticed.
-   */
+  /** Releases the app-server after its activity leases expire. */
   private readonly idleMs = codexIdleTimeoutMs()
   private readonly idle = createIdleReaper({
     idleMs: this.idleMs,
@@ -201,7 +194,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly codexHome: string
   private readonly modelSource = createLiveModelSource({
-    harness: "codex",
     fetchModels: (directory) => this.fetchModels(directory),
   })
 
@@ -209,8 +201,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     private readonly host: SdkRuntimeDriverHost,
     private readonly options: CodexDriverOptions,
   ) {
-    // Resolve the codex home once so auth reads/writes never fall back to the
-    // real `~/.codex` under test. Honors the same CODEX_HOME the CLI respects.
+    // Keep auth reads and writes on the same resolved Codex home for this driver.
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
   }
 
@@ -220,7 +211,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ...this.auth,
       ...(keys.openai !== undefined ? { openai: keys.openai || undefined } : {}),
     }
-    if (this.authSignature() !== previous) this.authRevision++
+    if (this.authSignature() !== previous) {
+      this.authRevision++
+      this.modelSource.invalidate()
+    }
   }
 
   async applyConfig(config: Record<string, unknown>) {
@@ -232,7 +226,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       openai: sourceAuthValue(source),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
-    if (this.authSignature() !== previous) this.authRevision++
+    if (this.authSignature() !== previous) {
+      this.authRevision++
+      this.modelSource.invalidate()
+    }
     const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
     if (proc?.alive) await this.syncProcessAuth(proc)
   }
@@ -243,15 +240,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.state(sessionId)
   }
 
-  /**
-   * Stores only — nothing is sent here.
-   *
-   * `thread/settings/update` exists and would let this land immediately, but
-   * both `thread/start` and `turn/start` already carry the policy on every
-   * request, so applying it at turn start reaches the same place with one code
-   * path instead of two that can disagree. The pinned-policy bug this replaces
-   * came precisely from those two call sites drifting apart.
-   */
+  /** Stores the selection applied by every subsequent thread and turn request. */
   async setPermissionMode(sessionId: string, modeId: string, _directory: string) {
     if (!CODEX_SETTINGS[modeId]) throw new Error(`Unknown Codex permission mode "${modeId}"`)
     return this.permissionSelection.set(sessionId, modeId)
@@ -341,7 +330,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
     const model = codexTurnModel(input.input, input.model)
     const effort = resolveSupportedEffort(
-      this.modelSource.peek(),
+      this.modelSource.peek(input.directory),
       codexAppServerModel(input.input.model.modelID),
       input.input.variant,
     )
@@ -512,15 +501,16 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     void this.processStartup?.then((proc) => proc.dispose(), () => {})
   }
 
-  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
     return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return this.buildConfigOptions(this.modelSource.peek(), currentModel)
+  peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
+    return this.buildConfigOptions(this.modelSource.peek(directory), currentModel)
   }
 
   private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string) {
+    if (models.length === 0) return []
     const effort = thoughtLevelConfigOption(models, codexAppServerModel(currentModel), undefined)
     return effort
       ? [modelConfigOption(models, currentModel), effort]
@@ -933,115 +923,7 @@ export function codexSpawnEnv(input: Record<string, string | undefined>) {
   return harnessSpawnEnv(input)
 }
 
-function sourceAuthValue(input: string | undefined) {
-  if (!input) return
-  try {
-    const value = JSON.parse(input) as JsonRecord
-    if (codexChatgptAuthTokens(value)) return
-    return text(value.OPENAI_API_KEY)
-  } catch {
-    return input
-  }
-}
-
-function sourceCodexAuthValue(input: string | undefined) {
-  if (!input) return
-  try {
-    const value = JSON.parse(input) as JsonRecord
-    if (value.type === "codex_auth" || value.auth_mode === "chatgpt" || codexChatgptAuthTokens(value)) return value
-  } catch {}
-}
-
-function readCodexAuthFile(home: string) {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")) as JsonRecord
-  } catch {
-    return
-  }
-}
-
-async function writeCodexAuthFile(home: string, input: JsonRecord | undefined) {
-  if (!input) return
-  await fs.promises.mkdir(home, { recursive: true, mode: 0o700 })
-  await fs.promises.writeFile(path.join(home, "auth.json"), JSON.stringify(input, null, 2) + "\n", { mode: 0o600 })
-}
-
-function codexChatgptAuthTokens(input: JsonRecord | undefined) {
-  if (!input) return
-  const tokens = record(input.tokens)
-  const oauth = record(input.oauth)
-  const access = text(input.access) ?? text(tokens?.access_token) ?? text(oauth?.access)
-  const refresh = text(input.refresh) ?? text(tokens?.refresh_token) ?? text(oauth?.refresh)
-  const idToken = text(input.id_token) ?? text(tokens?.id_token) ?? text(oauth?.id_token)
-  const accountId = text(input.account_id)
-    ?? text(input.accountId)
-    ?? text(tokens?.account_id)
-    ?? text(oauth?.account_id)
-    ?? accountIdFromClaims(input)
-  if (!access || !accountId) return
-  return {
-    access,
-    ...(refresh ? { refresh } : {}),
-    ...(idToken ? { idToken } : {}),
-    accountId,
-    ...(text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type)
-      ? { planType: text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type) }
-      : {}),
-  }
-}
-
-function mergeCodexAuth(input: JsonRecord | undefined, tokens: { access: string; refresh: string; accountId: string; idToken?: string; planType?: string }) {
-  const current = input ?? { type: "codex_auth", auth_mode: "chatgpt" }
-  const existingTokens = record(current.tokens) ?? {}
-  const existingOauth = record(current.oauth) ?? {}
-  // Codex (>=0.143) requires `tokens.id_token`; carry the refreshed one forward,
-  // falling back to any previously-stored value so the file never regresses to
-  // a shape the codex CLI refuses to parse.
-  const idToken = tokens.idToken ?? text(existingTokens.id_token) ?? text(existingOauth.id_token)
-  return {
-    ...current,
-    type: "codex_auth",
-    auth_mode: text(current.auth_mode) ?? "chatgpt",
-    tokens: {
-      ...existingTokens,
-      ...(idToken ? { id_token: idToken } : {}),
-      access_token: tokens.access,
-      refresh_token: tokens.refresh,
-      account_id: tokens.accountId,
-    },
-    access: tokens.access,
-    refresh: tokens.refresh,
-    account_id: tokens.accountId,
-    last_refresh: new Date().toISOString(),
-    oauth: {
-      ...existingOauth,
-      ...(idToken ? { id_token: idToken } : {}),
-      access: tokens.access,
-      refresh: tokens.refresh,
-      account_id: tokens.accountId,
-      ...(tokens.planType ? { plan_type: tokens.planType } : {}),
-    },
-  }
-}
-
-function accountIdFromClaims(input: JsonRecord | undefined) {
-  return accountIdFromJwt(text(input?.id_token) ?? text(record(input?.tokens)?.id_token))
-    ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(record(input?.tokens)?.access_token))
-}
-
-function accountIdFromJwt(token: string | undefined) {
-  if (!token) return
-  const payload = token.split(".")[1]
-  if (!payload) return
-  try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as JsonRecord
-    const openai = record(claims["https://api.openai.com/auth"])
-    return text(claims.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
-  } catch {
-    return
-  }
-}
-
+export { observeCodexAppServerProcess } from "./app-server-process"
 function codexUserInput(parts: unknown[]) {
   const textInput = extractTextFromParts(parts)
   if (!textInput) return [{ type: "text", text: "", text_elements: [] }]
@@ -1054,8 +936,8 @@ function codexAppServerModel(model: string | undefined) {
   return value
 }
 
-function codexTurnModel(input: PromptInput, fallback: string) {
-  return codexAppServerModel(text(input.model.modelID) ?? text(fallback))
+function codexTurnModel(input: PromptInput, configuredModel: string) {
+  return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
 }
 
 function questionIds(params: JsonRecord) {

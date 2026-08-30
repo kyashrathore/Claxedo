@@ -97,6 +97,48 @@
       "import": "./dist/harnesses/index.mjs",
       "default": "./dist/harnesses/index.mjs"
     },
+    "./harnesses/acp": {
+      "types": "./dist/harness-factories/acp.d.ts",
+      "bun": "./dist/harness-factories/acp.mjs",
+      "development": "./dist/harness-factories/acp.mjs",
+      "import": "./dist/harness-factories/acp.mjs",
+      "default": "./dist/harness-factories/acp.mjs"
+    },
+    "./harnesses/claude": {
+      "types": "./dist/harness-factories/claude.d.ts",
+      "bun": "./dist/harness-factories/claude.mjs",
+      "development": "./dist/harness-factories/claude.mjs",
+      "import": "./dist/harness-factories/claude.mjs",
+      "default": "./dist/harness-factories/claude.mjs"
+    },
+    "./harnesses/codex": {
+      "types": "./dist/harness-factories/codex.d.ts",
+      "bun": "./dist/harness-factories/codex.mjs",
+      "development": "./dist/harness-factories/codex.mjs",
+      "import": "./dist/harness-factories/codex.mjs",
+      "default": "./dist/harness-factories/codex.mjs"
+    },
+    "./harnesses/cursor": {
+      "types": "./dist/harness-factories/cursor.d.ts",
+      "bun": "./dist/harness-factories/cursor.mjs",
+      "development": "./dist/harness-factories/cursor.mjs",
+      "import": "./dist/harness-factories/cursor.mjs",
+      "default": "./dist/harness-factories/cursor.mjs"
+    },
+    "./harnesses/opencode": {
+      "types": "./dist/harness-factories/opencode.d.ts",
+      "bun": "./dist/harness-factories/opencode.mjs",
+      "development": "./dist/harness-factories/opencode.mjs",
+      "import": "./dist/harness-factories/opencode.mjs",
+      "default": "./dist/harness-factories/opencode.mjs"
+    },
+    "./harnesses/pi": {
+      "types": "./dist/harness-factories/pi.d.ts",
+      "bun": "./dist/harness-factories/pi.mjs",
+      "development": "./dist/harness-factories/pi.mjs",
+      "import": "./dist/harness-factories/pi.mjs",
+      "default": "./dist/harness-factories/pi.mjs"
+    },
     "./adapters": {
       "types": "./dist/adapters.d.ts",
       "bun": "./dist/adapters.mjs",
@@ -144,6 +186,9 @@
   },
   "scripts": {
     "build": "bun scripts/build.ts",
+    "check:api-manifest": "bun scripts/validate-api-manifest.ts",
+    "check:package": "bun scripts/check-package.ts",
+    "check:source-shape": "bun scripts/check-source-shape.ts && bunx oxlint -c scripts/oxlint.json --disable-nested-config --quiet src",
     "test:architecture": "bun test src/architecture-ratchets.test.ts",
     "prepublishOnly": "bun run verify:publish",
     "verify:public-api": "bun test src/public-api.test.ts",

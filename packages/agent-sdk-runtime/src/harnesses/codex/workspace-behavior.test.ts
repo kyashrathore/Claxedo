@@ -13,9 +13,7 @@ import { storeRows } from "../../test-utils/store-internals"
 
 const tempDirs: string[] = []
 
-// Global safety net: force every codex test onto a throwaway CODEX_HOME so a
-// refresh can never rewrite the developer's real ~/.codex/auth.json. A missing
-// guard here previously clobbered live credentials with mock tokens.
+// Isolate test credentials from the developer's Codex home.
 let previousCodexHome: string | undefined
 let codexHomeGuard: string | undefined
 beforeAll(() => {
@@ -33,12 +31,7 @@ afterEach(async () => {
   for (const dir of tempDirs.splice(0)) removeTestTempDir(dir)
 })
 
-/**
- * Session/config state the codex adapter actually round-trips, layered on the
- * shared inert base so the double stays a complete runtime store. (As a
- * hand-rolled class it implemented 7 of the port's members and the gap went
- * unnoticed while tests were outside the typecheck.)
- */
+/** Session/config state the Codex adapter round-trips through the complete test store. */
 function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   const sessions = new Map<string, { id: string; directory: string; title?: string }>()
   const configs = new Map<string, SessionConfig>()
@@ -486,8 +479,7 @@ describe("CodexHarnessAdapter", () => {
     const codexHome = path.join(fake.dir, "codex-home")
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
-      // Isolate the codex home so the refresh never rewrites the developer's real
-      // ~/.codex/auth.json (which previously clobbered live credentials on test runs).
+      // Isolate refresh writes from the developer's Codex home.
       codexHome,
       fetch: async (_url, init) => {
         refreshBodies.push(String(init?.body))
@@ -564,7 +556,7 @@ describe("CodexHarnessAdapter", () => {
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
   })
 
-  test("U6: routes Codex child threads through revisioned lifecycle admission into isolated stores", async () => {
+  test("routes Codex child threads through revisioned lifecycle admission into isolated stores", async () => {
     const fake = await makeFakeCodex({ subagent: true })
     const eventHub = createRuntimeEventHub()
     const runtimeEvents: RuntimeEventEnvelope[] = []

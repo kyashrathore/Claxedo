@@ -21,7 +21,7 @@ import {
   type SpawnOptions,
   type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentConfigOptionRow } from "../../index"
+import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { createLiveModelSource } from "../../live-model-source"
@@ -52,8 +52,7 @@ import {
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 const MODEL_LIST_TIMEOUT_MS = 30_000
 
-// The routed nested-turn fixture measures forwarded child frames and bytes
-// against the contract thresholds before this option is enabled.
+// Child text is forwarded because the routed nested-turn contract admits it.
 export const CLAUDE_FORWARD_SUBAGENT_TEXT = true
 
 export function claudeSystemPrompt(system?: string) {
@@ -71,7 +70,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private readonly modelSource = createLiveModelSource({
-    harness: "claude",
     fetchModels: (directory) => this.fetchModels(directory),
   })
 
@@ -95,18 +93,22 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
+    const previous = this.auth.anthropic
     this.auth = {
       ...this.auth,
       ...(keys.anthropic !== undefined ? { anthropic: keys.anthropic || undefined } : {}),
     }
+    if (this.auth.anthropic !== previous) this.modelSource.invalidate()
   }
 
   applyConfig(config: Record<string, unknown>) {
+    const previous = this.auth.anthropic
     const auth = record(config.auth) as Record<string, string> | undefined
     this.auth = {
       anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    if (this.auth.anthropic !== previous) this.modelSource.invalidate()
     // Held, not applied here: the SDK takes `effort` as a per-query option, so
     // it is read when the next session is created rather than pushed at the
     // running one. `undefined` means "let the model decide", which is not the
@@ -176,7 +178,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     }
 
     const turnEffort = resolveTurnEffort(
-      this.modelSource.peek(),
+      this.modelSource.peek(input.directory),
       input.input.model.modelID,
       input.input.variant,
     )
@@ -243,12 +245,12 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     return { status: "ok" }
   }
 
-  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
     return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return this.buildConfigOptions(this.modelSource.peek(), currentModel)
+  peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
+    return this.buildConfigOptions(this.modelSource.peek(directory), currentModel)
   }
 
   /**
@@ -256,7 +258,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * effort row is omitted rather than disabled for models without it — an inert
    * control that appears and disappears with the model reads as a glitch.
    */
-  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOptionRow[] {
+  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOption[] {
+    if (models.length === 0) return []
     const effort = thoughtLevelConfigOption(models, currentModel, this.currentEffort)
     return effort
       ? [modelConfigOption(models, currentModel), effort]
@@ -444,8 +447,8 @@ function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
   }))
 }
 
-function turnModel(input: string | undefined, fallback: string) {
-  const value = text(input) ?? text(fallback)
+function turnModel(input: string | undefined, configuredModel: string) {
+  const value = text(input) ?? text(configuredModel)
   if (!value || value === "default") return
   return value
 }

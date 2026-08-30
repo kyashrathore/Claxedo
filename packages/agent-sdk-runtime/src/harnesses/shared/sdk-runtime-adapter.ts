@@ -54,7 +54,7 @@ import {
   type SessionTurnLifecycle,
 } from "../shared/turn-lifecycle"
 import type { AgentRuntimeStore } from "../shared/runtime-store"
-import { hasConcreteSessionTitle } from "../../session-title"
+import { deriveSessionTitle, hasConcreteSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
 import type { AgentProcessObserver } from "../../process-observer"
@@ -63,6 +63,15 @@ import {
   createSubagentAdmissionBoundary,
   type SubagentObservation,
 } from "../../subagent-admission"
+import {
+  admissibleSubagentObservation,
+  childSessionIdFor,
+  openSubagentTranscript,
+  scopedSubagentKey,
+  subagentCorrelationKeys,
+  subagentOutcome,
+  transcriptText,
+} from "./subagent-transcript"
 
 export type SdkRuntimeRunnerType = NativeSdkHarnessId
 export type SdkRuntimeStore = AgentRuntimeStore
@@ -212,13 +221,6 @@ export function extractTextFromParts(parts: unknown[]) {
     if (!row) return []
     return text(row.text) ?? text(row.content) ?? []
   }).join("\n").trim()
-}
-
-function fallbackSessionTitle(input: string) {
-  const cleaned = input.replace(/\s+/g, " ").trim()
-  if (/^(hi|hello|hey|yo|greetings)[!. ]*$/i.test(cleaned)) return "Greeting"
-  const source = cleaned.replace(/^(please|can you|could you|would you)\s+/i, "").trim() || cleaned
-  return source.length > 72 ? source.slice(0, 72).trimEnd() + "..." : source
 }
 
 export class SdkRuntimeAdapter implements AgentHarnessAdapter {
@@ -534,30 +536,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       for (const runtimeEvent of result.events) router.project(runtimeEvent, source, route)
     }
     const observeSubagent: SdkRuntimeTurnInput["observeSubagent"] = async (observed) => {
-      const fileTranscript = observed.observation.transcript?.kind === "file" && observed.observation.transcript.ref
-        ? await this.options.transcriptRegistrar?.open?.({
-            parentSessionId: id,
-            handle: observed.observation.transcript.ref,
-          })
-        : undefined
-      const admittedObservation = observed.observation.transcript?.kind === "file" &&
-          (!fileTranscript || fileTranscript.state === "unavailable")
-        ? { ...observed.observation, transcript: { kind: "none" as const } }
-        : observed.observation
-      const correlationKeys = [...new Set([
-        ...(observed.correlationKeys ?? []),
-        admittedObservation.stableCorrelationId,
-        admittedObservation.providerId,
-      ].filter((key): key is string => !!key))]
+      const fileTranscript = await openSubagentTranscript(this.options.transcriptRegistrar, id, observed.observation)
+      const admittedObservation = admissibleSubagentObservation(observed.observation, fileTranscript)
+      const correlationKeys = subagentCorrelationKeys(observed.correlationKeys, admittedObservation)
       const existingChildKey = correlationKeys
         .map((key) => this.subagentChildByCorrelation.get(scopedSubagentKey(id, key)))
         .find((key): key is string => !!key)
       const existingChild = existingChildKey ? this.subagentChildren.get(existingChildKey) : undefined
-      const openable = admittedObservation.childSessionId !== undefined ||
-        admittedObservation.transcript?.kind === "live" ||
-        admittedObservation.transcript?.kind === "messages" ||
-        admittedObservation.transcript?.kind === "file" && fileTranscript !== undefined && fileTranscript.state !== "unavailable"
-      const childSessionId = admittedObservation.childSessionId ?? existingChild?.sessionId ?? (openable ? randomUUID() : undefined)
+      const childSessionId = childSessionIdFor(admittedObservation, fileTranscript, existingChild?.sessionId)
       const observation = {
         ...admittedObservation,
         ...(childSessionId ? { childSessionId } : {}),
@@ -634,15 +620,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         const text = transcriptText(fileTranscript.messages)
         if (text) router.project({ type: "text-delta", delta: text }, source, { kind: "child", correlationKey: fileCorrelation })
       }
-      if (observation.status === "completed" || observation.status === "failed" || observation.status === "killed" || observation.status === "interrupted") {
-        this.store.finishTurn?.({
+      const outcome = subagentOutcome(observation)
+      if (outcome) {
+        this.store.finishTurn({
           sessionId: child.sessionId,
           assistantMessageId: child.target.assistantMessageId,
-          outcome: observation.status === "failed"
-            ? { status: "failed", completedAt: Date.now(), error: observation.label ?? "Subagent failed" }
-            : observation.status === "completed"
-              ? { status: "completed", completedAt: Date.now() }
-              : { status: "cancelled", completedAt: Date.now(), reason: observation.status },
+          outcome,
         })
       }
       return { event, childSessionId: child.sessionId }
@@ -918,7 +901,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       slug: id,
       projectID: "",
       directory,
-      title: fallbackSessionTitle(text),
+      title: deriveSessionTitle(text),
       version: "local",
       time: { created: now, updated: now },
     })
@@ -931,24 +914,4 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return event
   }
 
-}
-
-function transcriptText(messages: unknown[]) {
-  return messages.flatMap((message) => readableTranscriptText(message)).filter(Boolean).join("\n\n")
-}
-
-function readableTranscriptText(value: unknown): string[] {
-  if (typeof value === "string") return value.trim() ? [value.trim()] : []
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return Array.isArray(value) ? value.flatMap(readableTranscriptText) : []
-  }
-  const record = value as Record<string, unknown>
-  if (typeof record.text === "string") return readableTranscriptText(record.text)
-  if (typeof record.content === "string" || Array.isArray(record.content)) return readableTranscriptText(record.content)
-  if (record.message) return readableTranscriptText(record.message)
-  return []
-}
-
-function scopedSubagentKey(parentSessionId: string, key: string) {
-  return `${parentSessionId}\0${key}`
 }

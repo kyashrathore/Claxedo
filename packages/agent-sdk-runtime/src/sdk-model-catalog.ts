@@ -1,4 +1,4 @@
-import type { AgentConfigOptionRow } from "./index"
+import type { AgentConfigOption } from "./index"
 import type { AgentHarnessId } from "./harness-types"
 
 export type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
@@ -27,7 +27,7 @@ export const SDK_MODEL_CATALOG = {
 export type SdkModelCatalog = typeof SDK_MODEL_CATALOG
 export type SdkModelId<T extends NativeSdkHarnessId> = SdkModelCatalog[T][number]["id"]
 
-/** A model entry servable to the picker — live-listed from the harness or from the static fallback catalog. */
+/** A model entry servable to the picker or the explicit static catalog API. */
 export type SdkModelEntry = {
   id: string
   name: string
@@ -115,7 +115,7 @@ export function thoughtLevelConfigOption(
   models: readonly SdkModelEntry[],
   currentModel: string | undefined,
   currentEffort: string | undefined,
-): AgentConfigOptionRow | undefined {
+): AgentConfigOption | undefined {
   // Same resolution `modelConfigOption` uses. `runtime.ts` maps the
   // "Default (recommended)" selection to `setModel("")`, so an empty current
   // model is the COMMON case, not an edge one — matching on id alone left the
@@ -155,18 +155,18 @@ function selectedEffortModel(models: readonly SdkModelEntry[], modelId: string |
   return models.find((item) => item.isDefault) ?? models[0]
 }
 
-export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOptionRow {
-  const fallback = models.find((item) => item.isDefault)?.id ?? models[0]?.id
+export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOption {
+  const defaultModel = models.find((item) => item.isDefault)?.id ?? models[0]?.id
   return {
     id: "model",
     name: "Model",
     category: "model",
     type: "select",
-    currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : fallback,
+    currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : defaultModel,
     selectOptions: models.map(({ isDefault: _isDefault, ...item }) => ({ ...item })),
   }
 }
 
-export function sdkModelConfigOption(harness: NativeSdkHarnessId, currentModel?: string): AgentConfigOptionRow {
+export function sdkModelConfigOption(harness: NativeSdkHarnessId, currentModel?: string): AgentConfigOption {
   return modelConfigOption(sdkModelOptions(harness), currentModel)
 }

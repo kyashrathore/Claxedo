@@ -46,9 +46,8 @@ export type ProcessLifecycleOptions<THandle> = {
   /**
    * How long a generation may sit with zero leases before teardown.
    *
-   * Desktop uses 30s (U8-F4). Long enough that a user reading a reply and
-   * typing a follow-up does not pay a cold start; short enough that an idle
-   * shell holds no harness process.
+   * Long enough for a follow-up turn to reuse the process while still releasing
+   * an inactive workspace promptly.
    */
   idleGraceMs?: number
   /** Upper bound on `stop()` before the generation is abandoned. */
@@ -288,9 +287,7 @@ export function createProcessLifecycle<THandle>(
     try {
       await withTimeout(async () => options.stop({ handle: active.handle, generation: stopped }), stopTimeoutMs, setTimer, clearTimer)
     } catch {
-      // A child that will not stop within the bound is abandoned rather than
-      // allowed to block shutdown. The alternative is a process that never
-      // exits because one adapter refused to.
+      // A bounded stop keeps shutdown progress independent of one child process.
     }
     settleState()
     emit({ type: "stopped", generation: stopped, reason })

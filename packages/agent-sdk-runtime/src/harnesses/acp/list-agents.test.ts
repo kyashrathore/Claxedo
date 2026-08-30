@@ -7,9 +7,9 @@ import { AcpHarnessAdapter } from "./index"
 type ProbedAgent = { name: string; description: string; mode: string }
 
 /**
- * `probeConfigOptions` is declared as returning `AgentConfigOptionRow[]`, but it
+ * `probeConfigOptions` is declared as returning `AgentConfigOption[]`, but it
  * hands back the ACP process cache verbatim (`cachedConfigOptions as
- * AgentConfigOptionRow[]`, index.ts:1464/1494/1514) and `listAgents` reads it back
+ * AgentConfigOption[]`, index.ts:1464/1494/1514) and `listAgents` reads it back
  * as `SessionConfigOption[]`. The stub therefore has to be ACP-shaped, and has to
  * override the declared signature rather than intersect with it.
  */

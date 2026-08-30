@@ -1,12 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createLiveModelSource } from "./live-model-source"
-import { SDK_MODEL_CATALOG } from "./sdk-model-catalog"
 
 describe("createLiveModelSource", () => {
   test("serves the live list and caches it within the TTL", async () => {
     let calls = 0
     const source = createLiveModelSource({
-      harness: "codex",
       fetchModels: async () => {
         calls++
         return [{ id: "gpt-5.6", name: "GPT-5.6" }]
@@ -15,32 +13,29 @@ describe("createLiveModelSource", () => {
     expect(await source.models("/work")).toEqual([{ id: "gpt-5.6", name: "GPT-5.6" }])
     expect(await source.models("/work")).toEqual([{ id: "gpt-5.6", name: "GPT-5.6" }])
     expect(calls).toBe(1)
-    expect(source.peek()).toEqual([{ id: "gpt-5.6", name: "GPT-5.6" }])
+    expect(source.peek("/work")).toEqual([{ id: "gpt-5.6", name: "GPT-5.6" }])
   })
 
-  test("falls back to the static catalog before any successful fetch", async () => {
+  test("propagates model-list failures without synthesizing a catalog", async () => {
     const source = createLiveModelSource({
-      harness: "codex",
       fetchModels: async () => {
         throw new Error("harness unreachable")
       },
     })
-    expect(source.peek()).toEqual(SDK_MODEL_CATALOG.codex)
-    expect(await source.models("/work")).toEqual(SDK_MODEL_CATALOG.codex)
+    expect(source.peek("/work")).toEqual([])
+    await expect(source.models("/work")).rejects.toThrow("harness unreachable")
   })
 
-  test("an empty live list never replaces the fallback", async () => {
+  test("preserves an authoritative empty model list", async () => {
     const source = createLiveModelSource({
-      harness: "claude",
       fetchModels: async () => [],
     })
-    expect(await source.models()).toEqual(SDK_MODEL_CATALOG.claude)
+    expect(await source.models()).toEqual([])
   })
 
-  test("keeps serving the last good list when a refetch fails", async () => {
+  test("does not hide a failed refresh behind stale model data", async () => {
     let calls = 0
     const source = createLiveModelSource({
-      harness: "cursor",
       ttlMs: 0,
       fetchModels: async () => {
         calls++
@@ -49,19 +44,26 @@ describe("createLiveModelSource", () => {
       },
     })
     expect(await source.models()).toEqual([{ id: "auto", name: "Auto" }])
-    expect(await source.models()).toEqual([{ id: "auto", name: "Auto" }])
-    expect(calls).toBe(2)
+    await expect(source.models()).rejects.toThrow("harness unreachable")
+    expect(source.peek()).toEqual([{ id: "auto", name: "Auto" }])
   })
 
-  test("can refuse the static catalog fallback when live listing fails", async () => {
+  test("isolates cached and in-flight lists by directory", async () => {
+    const calls: Array<string | undefined> = []
     const source = createLiveModelSource({
-      harness: "cursor",
-      fallbackToCatalog: false,
-      fetchModels: async () => {
-        throw new Error("auth required")
+      fetchModels: async (directory) => {
+        calls.push(directory)
+        return [{ id: directory ?? "central", name: directory ?? "Central" }]
       },
     })
-    expect(source.peek()).toEqual([])
-    await expect(source.models()).rejects.toThrow("auth required")
+
+    await expect(Promise.all([source.models("/one"), source.models("/two"), source.models("/one")])).resolves.toEqual([
+      [{ id: "/one", name: "/one" }],
+      [{ id: "/two", name: "/two" }],
+      [{ id: "/one", name: "/one" }],
+    ])
+    expect(calls).toEqual(["/one", "/two"])
+    expect(source.peek("/one")).toEqual([{ id: "/one", name: "/one" }])
+    expect(source.peek("/two")).toEqual([{ id: "/two", name: "/two" }])
   })
 })
