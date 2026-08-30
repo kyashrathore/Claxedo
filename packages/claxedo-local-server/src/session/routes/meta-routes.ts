@@ -27,11 +27,13 @@ import {
   sessionListStorePageFilter,
 } from "@claxedo/server-core/session/navigation-list"
 import { getProjectWorkspace, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 
 type Options = {
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
+  refreshSessionProjection?: (workspace: Workspace) => Promise<void>
 }
 
 async function workspace(c: {
@@ -179,6 +181,7 @@ export function SessionMetaRoutes(options: Options = {}) {
       if (authResult.error) return c.json(authResult.error, authResult.status)
       const resolved = await workspace(c).catch(() => undefined)
       await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
+      if (resolved) await options.refreshSessionProjection?.(resolved)
       const sessions = await listSessionMetas({
         ...(resolved?.id ? { workspaceID: resolved.id } : {}),
         ...(c.req.query("directory") ? { directory: c.req.query("directory") } : {}),
@@ -204,6 +207,7 @@ export function SessionMetaRoutes(options: Options = {}) {
         }
         const resolved = await workspace(c).catch(() => undefined)
         await authorizeWorkspaceRead(authResult.auth, options, resolved?.id)
+        if (resolved) await options.refreshSessionProjection?.(resolved)
         const canUseBoundedProjection = query.groupBy === "none" &&
           query.environment.length === 0 &&
           query.git.length === 0
