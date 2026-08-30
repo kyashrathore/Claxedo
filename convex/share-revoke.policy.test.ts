@@ -45,9 +45,18 @@ describe("Convex workspace share revoke policy", () => {
       const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token" }) as never)
       const otherId = await ctx.db.insert("users", stamped({ token_identifier: "other_token" }) as never)
+      const orgId = await ctx.db.insert(
+        "orgs",
+        stamped({ name: "Personal", kind: "personal", owner_user_id: ownerId }) as never,
+      )
+      await ctx.db.insert(
+        "org_memberships",
+        stamped({ org_id: orgId, user_id: ownerId, role: "owner" }) as never,
+      )
 
       const workspaceId = await ctx.db.insert("workspaces", stamped({
         workspace_id: "ws_1",
+        org_id: orgId,
         owner_user_id: ownerId,
         backing: "cloud-vm",
         access: "cloud",
@@ -116,8 +125,17 @@ describe("Convex workspace share revoke policy", () => {
     await t.run(async (ctx) => {
       const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token" }) as never)
+      const orgId = await ctx.db.insert(
+        "orgs",
+        stamped({ name: "Personal", kind: "personal", owner_user_id: ownerId }) as never,
+      )
+      await ctx.db.insert(
+        "org_memberships",
+        stamped({ org_id: orgId, user_id: ownerId, role: "owner" }) as never,
+      )
       const workspaceId = await ctx.db.insert("workspaces", stamped({
         workspace_id: "ws_1",
+        org_id: orgId,
         owner_user_id: ownerId,
         backing: "cloud-vm",
         access: "cloud",

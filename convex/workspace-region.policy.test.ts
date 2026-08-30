@@ -29,11 +29,20 @@ async function seedWorkspace(
   userId: string,
   overrides: Record<string, unknown>,
 ) {
-  return await t.run(async (ctx) =>
-    ctx.db.insert(
+  return await t.run(async (ctx) => {
+    const orgId = await ctx.db.insert(
+      "orgs",
+      stamped({ name: "Personal", kind: "personal", owner_user_id: userId }) as never,
+    )
+    await ctx.db.insert(
+      "org_memberships",
+      stamped({ org_id: orgId, user_id: userId, role: "owner" }) as never,
+    )
+    return await ctx.db.insert(
       "workspaces",
       stamped({
         workspace_id: "ws_1",
+        org_id: orgId,
         owner_user_id: userId,
         backing: "local-worktree",
         access: "user-hosted",
@@ -42,7 +51,7 @@ async function seedWorkspace(
         ...overrides,
       }) as never,
     )
-  )
+  })
 }
 
 async function seedCanonicalWorkspace(
@@ -186,10 +195,21 @@ describe("Convex workspace region policy", () => {
     expect(cloudProject).toMatchObject({ org_id: cloudOrg!._id, repo_key: "workspace:ws_cloud_new" })
   })
 
-  test("rejects a legacy workspace missing tenant identity instead of synthesizing authority", async () => {
+  test("fails closed for a legacy workspace missing tenant identity", async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t)
-    await seedWorkspace(t, userId, { workspace_id: "ws_legacy", home_region: undefined })
+    await t.run(async (ctx) =>
+      ctx.db.insert(
+        "workspaces",
+        stamped({
+          workspace_id: "ws_legacy",
+          owner_user_id: userId,
+          backing: "local-worktree",
+          access: "user-hosted",
+          display_name: "old",
+        }) as never,
+      )
+    )
     const asUser = t.withIdentity({ tokenIdentifier: "token_1" })
 
     await expect(
@@ -197,7 +217,7 @@ describe("Convex workspace region policy", () => {
         workspace_id: "ws_legacy",
         display_name: "new",
       } as never),
-    ).rejects.toThrow("workspace_tenant_missing")
+    ).rejects.toThrow("Workspace not found")
 
     const workspace = await t.run(async (ctx) =>
       ctx.db.query("workspaces").withIndex("by_workspace_id", (q) => q.eq("workspace_id", "ws_legacy")).unique()
