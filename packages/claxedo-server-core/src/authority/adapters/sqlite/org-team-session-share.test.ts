@@ -1,7 +1,12 @@
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
-import { closeAuthorityDatabases } from "./workspace-authority-store"
+import { closeAuthorityDatabases, openAuthorityDb, type SqliteAuthorityDb } from "./workspace-authority-store"
+
+const roots: string[] = []
 
 function signedAuth(subject: string): SignedControlPlaneAuth {
   return {
@@ -20,11 +25,30 @@ const bob = signedAuth("bob")
 
 afterEach(() => {
   closeAuthorityDatabases()
+  for (const root of roots.splice(0)) fs.rmSync(root, { recursive: true, force: true })
 })
+
+function setup() {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-org-team-share-"))
+  roots.push(root)
+  const file = path.join(root, "authority.sqlite")
+  return {
+    authority: createSqliteWorkspaceAuthority({ path: file }),
+    db: openAuthorityDb({ path: file }),
+  }
+}
+
+function addOrgMember(db: () => SqliteAuthorityDb, orgId: string, tokenIdentifier: string) {
+  const now = Date.now()
+  db().prepare(`
+    INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+    VALUES (?, ?, 'member', ?, ?)
+  `).run(orgId, tokenIdentifier, now, now)
+}
 
 describe("sqlite Org→Team + session share", () => {
   test("createOrg seeds default team; team session share unlocks list and revoke fans out", async () => {
-    const authority = createSqliteWorkspaceAuthority({ path: ":memory:" })
+    const { authority, db } = setup()
     await authority.usersMe(alice)
     await authority.usersMe(bob)
 
@@ -33,6 +57,7 @@ describe("sqlite Org→Team + session share", () => {
       default_team_id: string
     }
     expect(org.default_team_id).toMatch(/^team_/)
+    addOrgMember(db, org.org_id, bob.user.tokenIdentifier)
 
     const teams = await authority.listTeams!(alice, { orgId: org.org_id }) as Array<{
       team_id: string
@@ -135,7 +160,7 @@ describe("sqlite Org→Team + session share", () => {
   })
 
   test("personal org skips team CRUD; nested team create works on collaborative org", async () => {
-    const authority = createSqliteWorkspaceAuthority({ path: ":memory:" })
+    const { authority } = setup()
     await authority.usersMe(alice)
     const personal = await authority.resolveOrgId(alice)
     await expect(authority.createTeamInOrg!(alice, { orgId: personal, name: "Nope" }))
@@ -152,7 +177,7 @@ describe("sqlite Org→Team + session share", () => {
   })
 
   test("ensureDefaultTeam retargets org session and workspace shares onto the default team", async () => {
-    const authority = createSqliteWorkspaceAuthority({ path: ":memory:" })
+    const { authority, db } = setup()
     await authority.usersMe(alice)
     await authority.usersMe(bob)
 
@@ -160,6 +185,7 @@ describe("sqlite Org→Team + session share", () => {
       org_id: string
       default_team_id: string
     }
+    addOrgMember(db, org.org_id, bob.user.tokenIdentifier)
     await authority.addTeamMember!(alice, {
       teamId: org.default_team_id,
       tokenIdentifier: bob.user.tokenIdentifier,

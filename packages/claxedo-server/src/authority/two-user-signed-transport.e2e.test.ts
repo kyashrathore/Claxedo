@@ -104,6 +104,11 @@ describe("two-user signed app transport", () => {
       org_id: string
       default_team_id: string
     }
+    const membershipNow = Date.now()
+    inspectAuthority().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', ?, ?)
+    `).run(org.org_id, bobIdentity.token_identifier, membershipNow, membershipNow)
     await authority.createCloudWorkspace(aliceAuth, {
       workspaceId: "ws_signed_private",
       displayName: "Signed private workspace",

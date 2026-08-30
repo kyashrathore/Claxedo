@@ -31,13 +31,14 @@ export async function mintTeammate(
   fixture: RunningRelayFixture,
   subject: string,
   role: "editor" | "viewer" | "admin",
-  opts?: { name?: string; grantWorkspaceShare?: boolean },
+  opts?: { name?: string; grantWorkspaceShare?: boolean; joinOrg?: boolean },
 ): Promise<Teammate> {
   const url = new URL("/__fixture/authority-identity", fixture.info.backendUrl)
   url.searchParams.set("subject", subject)
   url.searchParams.set("role", role)
   if (opts?.name) url.searchParams.set("name", opts.name)
   if (opts?.grantWorkspaceShare === false) url.searchParams.set("grantWorkspaceShare", "0")
+  if (opts?.joinOrg) url.searchParams.set("joinOrg", "1")
   const response = await fetch(url)
   const body = await response.text()
   expect(response.ok, `mint ${subject} failed: ${response.status} ${body}`).toBe(true)

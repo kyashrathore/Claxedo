@@ -3,6 +3,7 @@ import {
   authedMutation,
   authedQuery,
   orgAdminForUser,
+  projectByPublicId,
   readUser,
   upsertUser,
   userByTokenIdentifier,
@@ -115,6 +116,7 @@ export async function ensureDefaultTeamProjectGrant(
     projectId: string
     creatorUserId: unknown
     now: number
+    reactivateRevoked?: boolean
   },
 ) {
   const org = await ctx.db.get(input.orgId)
@@ -130,6 +132,7 @@ export async function ensureDefaultTeamProjectGrant(
     role: "editor",
     creatorUserId: input.creatorUserId,
     now: input.now,
+    reactivateRevoked: input.reactivateRevoked ?? false,
   })
   return team
 }
@@ -142,6 +145,7 @@ async function upsertTeamProjectGrant(
     role: "viewer" | "editor" | "admin"
     creatorUserId: unknown
     now: number
+    reactivateRevoked?: boolean
   },
 ) {
   const existing = await ctx.db
@@ -158,6 +162,7 @@ async function upsertTeamProjectGrant(
       created_at: input.now,
     })
   }
+  if (keeper.revoked_at && input.reactivateRevoked === false) return keeper._id
   if (keeper.revoked_at || keeper.role !== input.role) {
     await ctx.db.patch(keeper._id, {
       role: input.role,
@@ -370,6 +375,8 @@ export const grantProject = authedMutation({
       .unique()
     if (!team || team.deleted_at) throw new Error("Team not found")
     const actor = await requireOrgAdmin(ctx, team.org_id)
+    const project = await projectByPublicId(ctx.db, args.project_id, team.org_id)
+    if (!project || project.deleted_at) throw new Error("Project not found")
     const now = Date.now()
     const grantId = await upsertTeamProjectGrant(ctx, {
       teamId: team._id,

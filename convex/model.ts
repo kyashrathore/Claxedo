@@ -353,6 +353,9 @@ async function teamProjectRole(
 
 export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }) {
   if (workspace.deleted_at) return
+  if (!workspace.org_id) return
+  const org = await ctx.db.get(workspace.org_id as never)
+  if (!org || org.deleted_at) return
   const project = typeof workspace.project_id === "string"
     ? await projectByPublicId(ctx.db, workspace.project_id, workspace.org_id)
     : undefined

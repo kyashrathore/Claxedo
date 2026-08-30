@@ -964,6 +964,7 @@ built.app.get("/__fixture/authority-identity", async (c) => {
   const role = c.req.query("role")
   const name = c.req.query("name")?.trim()
   const grantWorkspaceShare = c.req.query("grantWorkspaceShare") !== "0"
+  const joinOrg = c.req.query("joinOrg") === "1"
   if (!subject) return c.json({ error: "subject is required" }, 400)
   if (role !== "viewer" && role !== "editor" && role !== "admin") {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
@@ -981,6 +982,17 @@ built.app.get("/__fixture/authority-identity", async (c) => {
       issuer: jwksIssuer.issuer,
     },
   })
+  if (joinOrg) {
+    if (!collaborativeOrgName || fixtureOrgId === "personal") {
+      return c.json({ error: "joinOrg requires a collaborative fixture organization" }, 400)
+    }
+    const now = Date.now()
+    authorityDb().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', ?, ?)
+      ON CONFLICT (org_id, token_identifier) DO UPDATE SET role = 'member', updated_at = excluded.updated_at
+    `).run(fixtureOrgId, tokenIdentifier, now, now)
+  }
   if (name) {
     upsertUser(authorityDb(), {
       token_identifier: tokenIdentifier,

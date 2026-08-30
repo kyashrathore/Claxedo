@@ -63,6 +63,27 @@ function fixture(overrides: Partial<Fixture> = {}): Fixture {
 }
 
 describe("workspace role resolution", () => {
+  test.each([
+    ["missing", undefined],
+    ["deleted", { owner_user_id: "user_1", deleted_at: 1 }],
+  ])("denies every role when the owning organization is %s", async (_state, org) => {
+    const { db, calls } = roleDb(fixture({
+      documents: {
+        team_1: { org_id: "org_1" },
+        team_other_org: { org_id: "org_other" },
+        ...(org ? { org_1: org } : {}),
+      },
+    }))
+
+    await expect(workspaceRoleForUser(
+      { db: db as never },
+      { ...workspace, owner_user_id: "user_1" },
+      user,
+    )).resolves.toBeUndefined()
+
+    expect(calls.size).toBe(0)
+  })
+
   test("reuses one workspace-grant read across direct, org, and team shares", async () => {
     const { db, calls } = roleDb(fixture())
 

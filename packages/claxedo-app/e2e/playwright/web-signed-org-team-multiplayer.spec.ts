@@ -115,6 +115,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
 
     bob = await mintTeammate(fixture, "user_bob", "editor", {
       name: BOB_NAME,
+      joinOrg: true,
       // Team membership unlocks the session share; workspace share mirrors a
       // teammate who already has workspace authority via team project grants.
       grantWorkspaceShare: true,

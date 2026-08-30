@@ -89,6 +89,124 @@ describe("default-team provisioning", () => {
     })
   })
 
+  test("workspace provisioning never reactivates a revoked default-team project grant", async () => {
+    const t = convexTest(schema, modules)
+    const owner = t.withIdentity({ tokenIdentifier: "owner", subject: "owner" })
+    const org = await owner.mutation(api.orgs.createTeam, { name: "Acme" } as never)
+    await owner.mutation(api.workspaces.createCloud, {
+      workspace_id: "ws_before_revoke",
+      org_id: org.org_id,
+      project_id: "prj_revoked",
+      repo_url: "https://github.com/acme/repo.git",
+      display_name: "Before revoke",
+    } as never)
+    const defaultTeam = await t.run(async (ctx) =>
+      (await ctx.db.query("teams").collect()).find((candidate) => candidate.is_default),
+    )
+    expect(defaultTeam).toBeDefined()
+    await owner.mutation(api.teams.revokeProject, {
+      team_id: defaultTeam!.public_id,
+      project_id: "prj_revoked",
+    } as never)
+
+    await owner.mutation(api.workspaces.createCloud, {
+      workspace_id: "ws_after_revoke",
+      org_id: org.org_id,
+      project_id: "prj_revoked",
+      repo_url: "https://github.com/acme/repo.git",
+      display_name: "After revoke",
+    } as never)
+
+    await t.run(async (ctx) => {
+      const grant = await ctx.db
+        .query("team_project_grants")
+        .withIndex("by_team_project", (q) => q.eq("team_id", defaultTeam!._id).eq("project_id", "prj_revoked"))
+        .unique()
+      expect(grant?.revoked_at).toEqual(expect.any(Number))
+    })
+  })
+
+  test("project grants accept only live projects owned by the team's organization", async () => {
+    const t = convexTest(schema, modules)
+    const owner = t.withIdentity({ tokenIdentifier: "owner", subject: "owner" })
+    const primaryOrg = await owner.mutation(api.orgs.createTeam, { name: "Primary" } as never)
+    const otherOrg = await owner.mutation(api.orgs.createTeam, { name: "Other" } as never)
+    const fixture = await t.run(async (ctx) => {
+      const ownerUser = await ctx.db
+        .query("users")
+        .withIndex("by_token_identifier", (q) => q.eq("token_identifier", "owner"))
+        .unique()
+      const team = (await ctx.db.query("teams").collect()).find((candidate) => candidate.org_id === primaryOrg.org_id)
+      expect(ownerUser).toBeDefined()
+      expect(team).toBeDefined()
+      await ctx.db.insert(
+        "projects",
+        stamped({
+          project_id: "prj_primary",
+          org_id: primaryOrg.org_id,
+          owner_user_id: ownerUser!._id,
+        }) as never,
+      )
+      await ctx.db.insert(
+        "projects",
+        stamped({
+          project_id: "prj_other",
+          org_id: otherOrg.org_id,
+          owner_user_id: ownerUser!._id,
+        }) as never,
+      )
+      await ctx.db.insert(
+        "projects",
+        stamped({
+          project_id: "prj_deleted",
+          org_id: primaryOrg.org_id,
+          owner_user_id: ownerUser!._id,
+          deleted_at: 2,
+        }) as never,
+      )
+      return { teamPublicId: team!.public_id }
+    })
+
+    await expect(
+      owner.mutation(api.teams.grantProject, {
+        team_id: fixture.teamPublicId,
+        project_id: "prj_primary",
+        role: "editor",
+      } as never),
+    ).resolves.toMatchObject({ grant_id: expect.anything() })
+    await owner.mutation(api.teams.revokeProject, {
+      team_id: fixture.teamPublicId,
+      project_id: "prj_primary",
+    } as never)
+    await expect(
+      owner.mutation(api.teams.grantProject, {
+        team_id: fixture.teamPublicId,
+        project_id: "prj_primary",
+        role: "viewer",
+      } as never),
+    ).resolves.toMatchObject({ grant_id: expect.anything() })
+    await t.run(async (ctx) => {
+      const team = (await ctx.db.query("teams").collect()).find(
+        (candidate) => candidate.public_id === fixture.teamPublicId,
+      )
+      const grant = await ctx.db
+        .query("team_project_grants")
+        .withIndex("by_team_project", (q) => q.eq("team_id", team!._id).eq("project_id", "prj_primary"))
+        .unique()
+      expect(grant).toMatchObject({ role: "viewer" })
+      expect(grant).not.toHaveProperty("revoked_at")
+    })
+    for (const projectId of ["prj_missing", "prj_other", "prj_deleted"]) {
+      await expect(
+        owner.mutation(api.teams.grantProject, {
+          team_id: fixture.teamPublicId,
+          project_id: projectId,
+          role: "editor",
+        } as never),
+      ).rejects.toThrow("Project not found")
+    }
+  })
+
   test("the ledger backfill converges historical memberships, projects, and org shares", async () => {
     const t = convexTest(schema, modules)
     const orgId = await t.run(async (ctx) => {

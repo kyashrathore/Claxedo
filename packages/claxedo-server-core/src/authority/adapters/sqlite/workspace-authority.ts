@@ -842,20 +842,12 @@ export function createSqliteWorkspaceAuthority(
           const grant = db.prepare(`
             SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
           `).get(defaultTeam!.team_id, project.project_id) as { revoked_at: number | null } | undefined
-          if (grant && !grant.revoked_at) continue
-          if (grant) {
-            db.prepare(`
-              UPDATE team_project_grants
-              SET role = 'editor', revoked_at = NULL, created_by_token_identifier = ?
-              WHERE team_id = ? AND project_id = ?
-            `).run(who.token_identifier, defaultTeam!.team_id, project.project_id)
-          } else {
-            db.prepare(`
-              INSERT INTO team_project_grants (
-                team_id, project_id, role, created_by_token_identifier, created_at
-              ) VALUES (?, ?, 'editor', ?, ?)
-            `).run(defaultTeam!.team_id, project.project_id, who.token_identifier, now)
-          }
+          if (grant) continue
+          db.prepare(`
+            INSERT INTO team_project_grants (
+              team_id, project_id, role, created_by_token_identifier, created_at
+            ) VALUES (?, ?, 'editor', ?, ?)
+          `).run(defaultTeam!.team_id, project.project_id, who.token_identifier, now)
         }
 
         // D18: retarget interim org-scoped shares onto the default team.
@@ -935,6 +927,10 @@ export function createSqliteWorkspaceAuthority(
             ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
             : undefined
       if (!target) throw new Error("team_member_not_found")
+      const orgMembership = db.prepare(`
+        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(team.org_id, target.token_identifier)
+      if (!orgMembership) throw new Error("team_member_org_membership_required")
       const now = Date.now()
       const role = args.role ?? "member"
       db.prepare(`

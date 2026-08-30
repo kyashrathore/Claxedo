@@ -52,6 +52,7 @@ export async function backfillDefaultTeamProjectGrant(ctx: GenericMutationCtx<Da
     projectId: project.project_id ?? project._id,
     creatorUserId: project.owner_user_id,
     now: Date.now(),
+    reactivateRevoked: true,
   })
 }
 
