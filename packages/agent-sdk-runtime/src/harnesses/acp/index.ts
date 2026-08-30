@@ -19,41 +19,21 @@
  *   requestPermission  → compat permission request, resolved by respondPermission()
  */
 
-import { createHash, randomUUID } from "crypto"
+import { randomUUID } from "crypto"
 import {
-  type PermissionOptionKind,
-  type McpServer,
-  type StopReason,
   type SessionConfigOption,
 } from "@agentclientprotocol/sdk"
 import {
-  createAgentEventRuntime,
-} from "@claxedo/agent-event-runtime"
-import {
-  createAcpEventTranslator,
-  translateStopReason,
-} from "@claxedo/agent-event-runtime/harnesses/acp"
-import {
-  buildAssistantMessage,
-  buildUserMessage,
-  isTerminalCompatEvent,
-  messageUpdated,
-  permissionAsked,
   permissionReplied,
-  sessionError,
-  sessionStatus,
-  type CompatEvent,
 } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type {
-  AgentAgentRow,
-  AgentCommandRow,
-  AgentConfigOptionRow,
-  AgentMessageRow,
-  AgentPermissionRow,
-  AgentRuntimeStreamEvent,
-  AgentSessionRow,
-  PromptInput,
+  AgentAgent,
+  AgentCommand,
+  AgentConfigOption,
+  AgentMessage,
+  AgentPermission,
+  AgentSession,
   SessionConfig,
   SessionConfigUpdate,
 } from "../../index"
@@ -68,44 +48,25 @@ import type {
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { draftPermissionModes, extractAgents, rememberLiveModes } from "./session"
-import { acpPermissionRequest, permissionOptionPreference, selectPermissionOption } from "./permission-options"
+import { permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
-import { firstTurnErrorData } from "../../first-turn-error"
 import { Log } from "../../log"
-import { ACP_RECOVER } from "./recovery"
-import { recovering } from "../../status"
 import { toAcpMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
-import { createTurnEventProjector } from "../shared/turn-projection"
-import { createChildEventRouter } from "../shared/child-event-routing"
-import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { requireWorkspaceDirectory } from "../../target"
 import {
-  createStdioACPTransport,
   type ACPTransportEnv,
   type ACPTransportFactory,
 } from "./transport"
-import { ACPProcess, type SessionUpdate } from "./process"
 import {
   envFromConfig,
   errorMessage,
-  initializeTimeoutMs,
   mergeAcpEnv,
-  messageUsage,
-  missing,
-  newSessionTimeoutMs,
   probeTimeoutMs,
-  promptTimeoutMs,
-  runtimeUsage,
   sameAcpEnv,
   sameAcpMcp,
 } from "./helpers"
-import { maybeAutoTitle } from "./title"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
-import {
-  observeAgentProcess,
-  type AgentProcessObserver,
-  type AgentProcessObserverHandle,
-} from "../../process-observer"
+import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -144,516 +105,9 @@ export type {
   ACPWebSocketTransportFactoryOptions,
 } from "./transport"
 
-function missingStore(): AcpRuntimeStore {
-  throw new Error("AcpHarnessAdapter requires a runtime store from the host")
-}
-
-type ACPProcessKey = string
-type ProcEntry = {
-  key: ACPProcessKey
-  directory: string
-  proc: ACPProcess | null
-  init: Promise<{ proc: ACPProcess; isNew: boolean }> | null
-  sessionIds: Set<string>
-}
-type ProbeEntry = {
-  directory: string
-  proc: ACPProcess | null
-  init: Promise<ACPProcess> | null
-}
-type ActiveAcpTurn = {
-  drain(message: string): void
-}
-
-const activePromptCounts = new Map<string, number>()
-const activePromptWaiters = new Map<string, Set<() => void>>()
-
-function activePromptCount(harness: string) {
-  return activePromptCounts.get(harness) ?? 0
-}
-
-function enterActivePrompt(harness: string) {
-  activePromptCounts.set(harness, activePromptCount(harness) + 1)
-  return () => {
-    const next = activePromptCount(harness) - 1
-    if (next > 0) {
-      activePromptCounts.set(harness, next)
-      return
-    }
-    activePromptCounts.delete(harness)
-    for (const resolve of activePromptWaiters.get(harness) ?? []) resolve()
-    activePromptWaiters.delete(harness)
-  }
-}
-
-function waitForNoActivePrompts(harness: string) {
-  if (activePromptCount(harness) === 0) return Promise.resolve()
-  return new Promise<void>((resolve) => {
-    const waiters = activePromptWaiters.get(harness) ?? new Set<() => void>()
-    waiters.add(resolve)
-    activePromptWaiters.set(harness, waiters)
-  })
-}
-
-function root() {
-  return process.cwd()
-}
-
-function stable(input: unknown): unknown {
-  if (!input || typeof input !== "object") return input
-  if (Array.isArray(input)) return input.map(stable)
-  return Object.fromEntries(
-    Object.entries(input)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, value]) => [key, stable(value)]),
-  )
-}
-
-function stableKey(input: unknown) {
-  return JSON.stringify(stable(input))
-}
-
-function fingerprint(input: unknown) {
-  return `acp:${createHash("sha256").update(stableKey(input)).digest("hex")}`
-}
-
-function executableBasename(input: string) {
-  return input.split(/[\\/]/).at(-1) || "agent"
-}
-
-function unrestorable(err: unknown) {
-  return missing(err)
-}
-
-// ── AcpHarnessAdapter ────────────────────────────────────────────────────────────────
-
-export class AcpHarnessAdapter implements AgentHarnessAdapter {
+export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["runtime-config"] as const
   readonly commitsStreamEvents = true
-  private store: AcpRuntimeStore
-  private ownsStore = false
-  private storeClosed = false
-  private currentModel = ""
-  private currentEnv: ACPTransportEnv = {}
-  private currentMcp: McpServer[] = []
-  private turnLifecycle = createSessionTurnLifecycle<ActiveAcpTurn>()
-  private processes = new Map<ACPProcessKey, ProcEntry>()
-  private sessionProcesses = new Map<string, ACPProcessKey>()
-  private ignoreStoredProcessKeys = false
-  private permissionOwners = new Map<string, ACPProcess>()
-  private probe: ProbeEntry | null = null
-  private configRestartPending = false
-
-  constructor(private readonly options: AcpHarnessAdapterOptions) {
-    this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
-    this.ownsStore = !options.store
-    this.currentEnv = options.env ?? {}
-  }
-
-  private harnessId(): string {
-    return this.options.harness
-  }
-
-  private lifecycle(): SessionTurnLifecycle<ActiveAcpTurn> {
-    this.turnLifecycle ??= createSessionTurnLifecycle<ActiveAcpTurn>()
-    return this.turnLifecycle
-  }
-
-  private processMap() {
-    this.processes ??= new Map<ACPProcessKey, ProcEntry>()
-    return this.processes
-  }
-
-  private sessionProcessMap() {
-    this.sessionProcesses ??= new Map<string, ACPProcessKey>()
-    return this.sessionProcesses
-  }
-
-  private legacySessions() {
-    return (this as unknown as { sessions?: Map<string, { proc?: ACPProcess | null; directory?: string; init?: unknown }> }).sessions
-  }
-
-  private processEntries(): Iterable<{ proc?: ACPProcess | null }> {
-    const processes = this.processMap()
-    if (processes.size > 0) return processes.values()
-    return this.legacySessions()?.values() ?? []
-  }
-
-  private processKey(directory: string): ACPProcessKey {
-    const options = this.options ?? { binary: "" }
-    return fingerprint({
-      harness: this.harnessId(),
-      access: "acp",
-      directory,
-      binary: options.binary,
-      args: options.args ?? [],
-      transport: options.createTransport ? "custom" : "stdio",
-      env: this.currentEnv ?? {},
-      mcp: this.currentMcp ?? [],
-      model: this.currentModel || null,
-    })
-  }
-
-  private keyForSession(id: string, directory: string): ACPProcessKey {
-    const key = this.sessionProcessMap().get(id) ?? (this.ignoreStoredProcessKeys ? null : this.store.getSessionOwnerKey?.(id)) ?? this.processKey(directory)
-    this.sessionProcessMap().set(id, key)
-    return key
-  }
-
-  private process(key: ACPProcessKey, directory: string) {
-    const hit = this.processMap().get(key)
-    if (hit) {
-      hit.directory = directory
-      return hit
-    }
-    const next: ProcEntry = {
-      key,
-      directory,
-      proc: null,
-      init: null,
-      sessionIds: new Set(),
-    }
-    this.processMap().set(key, next)
-    return next
-  }
-
-  private forgetSessionProcessBindings() {
-    this.sessionProcessMap().clear()
-    this.ignoreStoredProcessKeys = true
-  }
-
-  private invalidateProcess(
-    key: ACPProcessKey,
-    message = ACP_RECOVER,
-    proc?: ACPProcess | null,
-    options?: { dispose?: boolean; recover?: boolean },
-  ) {
-    const entry = this.processMap().get(key)
-    const target = proc ?? entry?.proc ?? null
-    if (entry) {
-      if (!target || entry.proc === target) entry.proc = null
-      entry.init = null
-    }
-    if (target) {
-      for (const [permId, owner] of this.permissionOwnerMap()) {
-        if (owner !== target) continue
-        this.permissionOwnerMap().delete(permId)
-        this.store.stalePermission?.(permId)
-      }
-      if (options?.dispose !== false) target.dispose()
-    }
-    if (options?.recover === false) return
-    if (this.store.markSessionsInterruptedByOwner) {
-      this.store.markSessionsInterruptedByOwner(key, message)
-      return
-    }
-    for (const sessionId of entry?.sessionIds ?? []) {
-      if (this.store.getSession?.(sessionId)) this.store.markSessionInterrupted?.(sessionId, message)
-    }
-  }
-
-  private restartProcess(key: ACPProcessKey) {
-    const entry = this.processMap().get(key)
-    for (const id of entry?.sessionIds ?? []) {
-      this.lifecycle().drain(id, "ACP session process restarted")
-    }
-    entry?.proc?.dispose()
-    if (!entry) return
-    entry.proc = null
-    entry.init = null
-  }
-
-  private restartProbe() {
-    this.probe?.proc?.dispose()
-    if (!this.probe) return
-    this.probe.proc = null
-    this.probe.init = null
-  }
-
-  private restart() {
-    this.lifecycle().drainAll("ACP session process restarted")
-    for (const key of this.processMap().keys()) {
-      this.restartProcess(key)
-    }
-    this.restartProbe()
-  }
-
-  private closeStore() {
-    if (!this.ownsStore || this.storeClosed) return
-    this.storeClosed = true
-    this.store.close?.()
-  }
-
-  setModel(model: string): void {
-    if (this.currentModel === model) return
-    if (this.lifecycle().activeTurns.size > 0) {
-      throw new Error("ACP process config cannot change while a prompt is active")
-    }
-    this.currentModel = model
-    this.restart()
-    this.forgetSessionProcessBindings()
-    log.info("ACP model updated, ACP session processes disposed", {
-      model,
-      harness: this.harnessId(),
-      binary: this.options.binary,
-    })
-  }
-
-  setAuth(keys: ACPTransportEnv): void {
-    const next = mergeAcpEnv(this.currentEnv, keys)
-    if (sameAcpEnv(this.currentEnv, next)) return
-    if (this.lifecycle().activeTurns.size > 0) {
-      throw new Error("ACP process config cannot change while a prompt is active")
-    }
-    this.currentEnv = next
-    this.restart()
-    this.forgetSessionProcessBindings()
-    log.info("ACP env updated, ACP session processes disposed", {
-      harness: this.harnessId(),
-      binary: this.options.binary,
-    })
-  }
-
-  private make(directory: string, role: "harness" | "probe", dead: () => void = () => {}) {
-    const launch = { args: this.options.args ?? [], env: this.currentEnv }
-    const ownerId = `acp-${role}:${randomUUID()}`
-    const launchId = randomUUID()
-    return new ACPProcess(
-      root(),
-      this.options.binary,
-      launch.args,
-      this.currentModel,
-      () => this.currentMcp,
-      dead,
-      this.options.createTransport ?? createStdioACPTransport,
-      () => launch.env,
-      (transport) => this.observeProcess({
-        directory,
-        launchId,
-        ownerId,
-        role,
-        transport,
-      }),
-    )
-  }
-
-  private observeProcess(input: {
-    directory: string
-    launchId: string
-    ownerId: string
-    role: "harness" | "probe"
-    transport: { pid?: number; kind: "stdio" | "streamable-http" | "websocket" }
-  }): AgentProcessObserverHandle {
-    const local = input.transport.kind === "stdio"
-    const direct = local && input.transport.pid !== undefined
-    const handles = [
-      observeAgentProcess(this.options.processObserver, {
-        ownerId: input.ownerId,
-        launchId: input.launchId,
-        harnessId: this.harnessId(),
-        access: "acp",
-        role: input.role,
-        label: `${this.harnessId()} ACP ${input.role}`,
-        locality: local ? "local-process" : "remote",
-        confidence: direct ? "direct" : local ? "inferred" : "not-process-backed",
-        capabilities: {
-          resourceMetrics: local ? "process" : "none",
-          ownerActions: false,
-        },
-        ...(input.transport.pid ? { pid: input.transport.pid } : {}),
-        directory: input.directory,
-        ...(local ? { executableBasename: executableBasename(this.options.binary) } : {}),
-        transport: input.transport.kind,
-      }),
-      ...this.currentMcp.map((server) => observeAgentProcess(this.options.processObserver, {
-        ownerId: `acp-mcp:${randomUUID()}`,
-        launchId: randomUUID(),
-        harnessId: this.harnessId(),
-        access: "acp",
-        role: "mcp" as const,
-        label: `MCP ${server.name}`,
-        locality: "command" in server ? "local-process" as const : "remote" as const,
-        confidence: "command" in server ? "inferred" as const : "not-process-backed" as const,
-        capabilities: {
-          resourceMetrics: "command" in server ? "process" as const : "none" as const,
-          ownerActions: false,
-        },
-        parentOwnerId: input.ownerId,
-        directory: input.directory,
-        mcpName: server.name,
-        transport: "command" in server ? "stdio" as const : "streamable-http" as const,
-        ...("command" in server ? { executableBasename: executableBasename(server.command) } : {}),
-      })),
-    ]
-    return {
-      update(event) {
-        handles.forEach((handle) => handle.update(event))
-      },
-      exit(event) {
-        handles.forEach((handle) => handle.exit(event))
-      },
-    }
-  }
-
-  private async getOrSpawnProcessForKey(key: ACPProcessKey, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
-    const entry = this.process(key, directory)
-    const live = entry.proc
-    if (live?.alive) {
-      log.info("ACP getOrSpawnProcess: reusing shared process", {
-        key,
-        directory,
-        sessions: entry.sessionIds.size,
-        harness: this.harnessId(),
-      })
-      return { proc: live, isNew: false }
-    }
-    if (entry.init) return entry.init
-    const t0 = Date.now()
-    entry.init = (async () => {
-      const proc = this.make(directory, "harness", () => {
-        log.info("ACP process onDead callback: clearing shared process", {
-          key,
-          directory,
-          harness: this.harnessId(),
-        })
-        this.invalidateProcess(key, ACP_RECOVER, proc, { dispose: false })
-      })
-      try {
-        await this.initialize(proc)
-        entry.proc = proc
-        log.info("ACP getOrSpawnProcess: shared process ready", {
-          key,
-          directory,
-          harness: this.harnessId(),
-          ms: Date.now() - t0,
-        })
-        return { proc, isNew: true }
-      } catch (err) {
-        entry.proc = null
-        proc.dispose()
-        throw err
-      } finally {
-        if (entry.init) entry.init = null
-      }
-    })()
-    return entry.init
-  }
-
-  private async getOrSpawnProcess(id: string, directory: string): Promise<{ proc: ACPProcess; isNew: boolean }> {
-    const key = this.keyForSession(id, directory)
-    const entry = this.process(key, directory)
-    entry.sessionIds.add(id)
-    return this.getOrSpawnProcessForKey(key, directory)
-  }
-
-  private entryForSession(id: string) {
-    const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
-    return key ? this.processMap().get(key) : this.legacySessions()?.get(id)
-  }
-
-  private async getOrSpawnProbe(directory: string): Promise<ACPProcess> {
-    if (this.probe && this.probe.directory !== directory) {
-      this.restartProbe()
-      this.probe = null
-    }
-    this.probe ??= {
-      directory,
-      proc: null,
-      init: null,
-    }
-    this.probe.directory = directory
-    const live = this.probe.proc
-    if (live?.alive) return live
-    if (this.probe.init) return this.probe.init
-    const t0 = Date.now()
-    this.probe.init = (async () => {
-      const proc = this.make(directory, "probe", () => {
-        log.info("ACP probe process onDead callback: clearing probe process", {
-          directory,
-          harness: this.harnessId(),
-        })
-        if (!this.probe) return
-        if (this.probe.proc === proc) this.probe.proc = null
-        this.probe.init = null
-      })
-      try {
-        await this.initialize(proc)
-        this.probe!.proc = proc
-        log.info("ACP probe process ready", {
-          directory,
-          harness: this.harnessId(),
-          ms: Date.now() - t0,
-        })
-        return proc
-      } catch (err) {
-        if (this.probe?.proc === proc) this.probe.proc = null
-        proc.dispose()
-        throw err
-      } finally {
-        if (this.probe?.init) this.probe.init = null
-      }
-    })()
-    return this.probe.init
-  }
-
-  private async boot(
-    proc: {
-      newSession: (directory: string, title?: string) => Promise<string>
-      dispose: () => void
-    },
-    directory: string,
-    title?: string,
-    ms = newSessionTimeoutMs(),
-  ) {
-    let id: ReturnType<typeof setTimeout> | undefined
-    try {
-      return await Promise.race([
-        proc.newSession(directory, title),
-        new Promise<string>((_, reject) => {
-          id = setTimeout(() => reject(new Error(`ACP newSession timed out after ${ms}ms`)), ms)
-        }),
-      ])
-    } catch (err) {
-      log.warn("ACP newSession: failed", {
-        directory,
-        error: errorMessage(err),
-      })
-      proc.dispose()
-      throw err
-    } finally {
-      if (id) clearTimeout(id)
-    }
-  }
-
-  private async initialize(
-    proc: {
-      initialize: () => Promise<void>
-      dispose: () => void
-      failureDetail?: () => string
-    },
-    ms = initializeTimeoutMs(),
-  ) {
-    let id: ReturnType<typeof setTimeout> | undefined
-    try {
-      return await Promise.race([
-        proc.initialize(),
-        new Promise<void>((_, reject) => {
-          id = setTimeout(() => reject(new Error(`ACP initialize timed out after ${ms}ms`)), ms)
-        }),
-      ])
-    } catch (err) {
-      proc.dispose()
-      const message = errorMessage(err)
-      const detail = proc.failureDetail?.()
-      if (message === "ACP connection closed" && detail) {
-        throw new Error(`ACP connection closed: ${detail}`)
-      }
-      throw err
-    } finally {
-      if (id) clearTimeout(id)
-    }
-  }
-
   private cfg(model?: SessionConfig["model"]) {
     if (model) return model
     if (this.currentModel) {
@@ -698,13 +152,13 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     })
   }
 
-  async listSessions(directory: string): Promise<AgentSessionRow[]> {
+  async listSessions(directory: string): Promise<AgentSession[]> {
     directory = requireWorkspaceDirectory(directory)
-    return this.store.listSessions(directory) as AgentSessionRow[]
+    return this.store.listSessions(directory) as AgentSession[]
   }
 
-  async getSession(id: string, _directory: string): Promise<AgentSessionRow | null> {
-    return this.store.getSession(id) as AgentSessionRow | null
+  async getSession(id: string, _directory: string): Promise<AgentSession | null> {
+    return this.store.getSession(id) as AgentSession | null
   }
 
   async createSession(directory: string, title?: string, id: string = randomUUID()): Promise<{ id: string }> {
@@ -746,8 +200,8 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     return { id, agentSessionId, ownerKey: processKey }
   }
 
-  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
-    return this.store.updateSession(id, updates) as AgentSessionRow | null
+  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
+    return this.store.updateSession(id, updates) as AgentSession | null
   }
 
   async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
@@ -810,495 +264,8 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     this.store.deleteSession(id)
   }
 
-  async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
-    const t0 = Date.now()
-    log.info("sendMessage: start", { id, directory, partCount: input.parts.length })
-
-    const leaveBusy = this.lifecycle().enter(id)
-    if (!leaveBusy) {
-      log.info("sendMessage: session already busy, rejecting duplicate", { id })
-      yield sessionError("Session is already processing a message", id)
-      return
-    }
-    const leaveActivePrompt = enterActivePrompt(this.harnessId())
-
-    try {
-      yield* this._sendMessage(id, input, directory, t0)
-    } finally {
-      leaveActivePrompt()
-      leaveBusy()
-    }
-  }
-
-  async *_sendMessage(id: string, input: PromptInput, directory: string, t0: number): AsyncIterable<AgentRuntimeStreamEvent> {
-    const current = this.store.getAgentSessionId(id)
-    if (!current) {
-      log.error("sendMessage: session not found in DB", { id })
-      yield sessionError(`Session ${id} not found`, id)
-      return
-    }
-    let agentSessionId = current
-    const session = this.store.getSession(id) as { title?: string | null } | null
-    let created = Date.now()
-    log.info("sendMessage: found session in store", { id, agentSessionId })
-    if (input.model?.modelID) {
-      const nextModel = input.model.modelID === "default" ? "" : input.model.modelID
-      if ((this.currentModel || "") !== nextModel) this.setModel(nextModel)
-    }
-
-    let proc: ACPProcess
-    let fresh = false
-    try {
-      const result = await this.getOrSpawnProcess(id, directory)
-      proc = result.proc
-      fresh = result.isNew
-    } catch (err) {
-      log.error("sendMessage: failed to get/spawn ACP process", { err, directory })
-      yield sessionError(`Failed to start ACP process: ${err}`, id)
-      return
-    }
-    const processKey = this.sessionProcessMap().get(id) ?? this.keyForSession(id, directory)
-    if (this.store.getSessionOwnerKey && this.store.getSessionOwnerKey(id) !== processKey) {
-      this.store.bindSession({
-        sessionId: id,
-        directory,
-        title: session?.title ?? undefined,
-        agentSessionId,
-        ownerKey: processKey,
-      })
-    }
-
-    log.info("sendMessage: got ACP process, starting prompt", {
-      directory,
-      binary: this.options.binary,
-      agentSessionId,
-      msToHere: Date.now() - t0,
-    })
-
-    const recover = this.store.consumeRecoveryError(id)
-    const start: CompatEvent[] = []
-    if (recover) {
-      start.push(sessionStatus(id, recovering(recover)))
-    } else {
-      start.push(sessionStatus(id, { type: "busy" }))
-    }
-    if (input.userMessageId) {
-      start.push(messageUpdated(buildUserMessage({
-        id: input.userMessageId,
-        sessionID: id,
-        agent: input.agent,
-        model: input.model,
-        ...(input.tools ? { tools: input.tools } : {}),
-        ...(input.format ? { format: input.format } : {}),
-        ...(input.system ? { system: input.system } : {}),
-        ...(input.variant ? { variant: input.variant } : {}),
-      })))
-    }
-    start.push(messageUpdated(buildAssistantMessage({
-      id: input.assistantMessageId,
-      sessionID: id,
-      parentID: input.userMessageId ?? id,
-      agent: input.agent,
-      model: input.model,
-      directory,
-      created,
-    })))
-    const committedStart = this.store.startTurn({
-      sessionId: id,
-      agentSessionId,
-      userMessageId: input.userMessageId,
-      assistantMessageId: input.assistantMessageId,
-      agent: input.agent,
-      model: input.model,
-      parts: input.parts,
-      ...(input.tools ? { tools: input.tools } : {}),
-      ...(input.format ? { format: input.format } : {}),
-      ...(input.system ? { system: input.system } : {}),
-      ...(input.variant ? { variant: input.variant } : {}),
-    })
-
-    const queue: CompatEvent[] = [
-      ...(recover ? [start[0]].filter((event) => event !== undefined) : []),
-      ...((committedStart?.events ?? start).filter((event) =>
-        !recover || event.type !== "session.status"
-      )),
-    ]
-    let promptDone = false
-    let promptError: string | null = null
-    let promptPromise: Promise<void> = Promise.resolve()
-    const resolvers: Array<() => void> = []
-    let chunkCount = 0
-    let assistantMsgId = input.assistantMessageId
-    let drainTurn!: (err: Error) => void
-    let drained = false
-    const drainPromise = new Promise<never>((_, reject) => {
-      drainTurn = reject
-    })
-    drainPromise.catch(() => {})
-    const drain = (message: string) => {
-      if (drained) return
-      drained = true
-      promptError = message
-      promptDone = true
-      proc.cancel(agentSessionId).catch(() => {})
-      this.invalidateProcess(processKey, message, proc)
-      for (const r of resolvers.splice(0)) r()
-      drainTurn(new Error(message))
-    }
-    const turn = { drain }
-    this.lifecycle().set(id, turn)
-    const eventRuntime = createAgentEventRuntime({
-      harness: this.harnessId(),
-      threadId: agentSessionId,
-      adapter: createAcpEventTranslator({ client: this.harnessId() }),
-    })
-
-    const push = (event: CompatEvent) => {
-      chunkCount++
-      log.info("sendMessage: pushing chunk to stream", {
-        chunkType: event.type,
-        chunkN: chunkCount,
-        msFromStart: Date.now() - t0,
-      })
-      queue.push(event)
-      for (const r of resolvers.splice(0)) r()
-    }
-    const parentProjector = createTurnEventProjector({
-      store: this.store,
-      owner: {
-        sessionId: id,
-        getAgentSessionId: () => agentSessionId,
-      },
-      directory,
-      input,
-      assistantMessageId: assistantMsgId,
-      created,
-      onEvent: push,
-      onRuntimeEvent: this.options.eventHub?.publishRuntime,
-    })
-    const router = createChildEventRouter({
-      parent: parentProjector,
-      createChildProjector: (target) => createTurnEventProjector({
-        store: this.store,
-        owner: {
-          sessionId: target.sessionId,
-          getAgentSessionId: target.getAgentSessionId,
-        },
-        directory,
-        input: target.input,
-        assistantMessageId: target.assistantMessageId,
-        created: target.created,
-        onEvent: () => {},
-        onRuntimeEvent: this.options.eventHub?.publishRuntime,
-      }),
-      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
-        directory,
-        sessionId: id,
-        agentSessionId,
-        assistantMessageId: input.assistantMessageId,
-        payload,
-      }),
-    })
-    const wait = () =>
-      new Promise<void>((resolve) => {
-        if (queue.length > 0 || promptDone) resolve()
-        else resolvers.push(resolve)
-      })
-
-    const bound = async <T>(label: string, run: Promise<T>, timeoutMs?: number) => {
-      let id: ReturnType<typeof setTimeout> | undefined
-      const ms = timeoutMs ?? newSessionTimeoutMs()
-      try {
-        return await Promise.race([
-          run,
-          drainPromise,
-          new Promise<T>((_, reject) => {
-            id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-          }),
-        ])
-      } finally {
-        if (id) clearTimeout(id)
-      }
-    }
-    const replace = async () => {
-      log.info("sendMessage: ACP session missing, creating replacement session", {
-        id,
-        oldAgentSessionId: agentSessionId,
-      })
-      agentSessionId = await this.boot(proc, directory, session?.title ?? undefined)
-      this.store.bindSession({
-        sessionId: id,
-        directory,
-        title: session?.title ?? undefined,
-        agentSessionId,
-        ownerKey: this.keyForSession(id, directory),
-      })
-    }
-
-    try {
-      if (fresh) {
-        log.info("sendMessage: process is freshly spawned, restoring ACP session", {
-          id,
-          agentSessionId,
-        })
-        try {
-          await bound("ACP resume", proc.resumeSession(agentSessionId, directory))
-        } catch (err) {
-          if (!unrestorable(err)) throw err
-          await replace()
-        }
-      }
-      if (input.permissionMode) {
-        const applied = await bound("ACP permission mode", proc.setPermissionMode(agentSessionId, input.permissionMode))
-        if (applied.currentModeId !== input.permissionMode) {
-          throw new Error(`ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${input.permissionMode}`)
-        }
-      }
-      try {
-        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
-      } catch (err) {
-        if (!unrestorable(err)) throw err
-        await replace()
-        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
-      }
-    } catch (err) {
-      promptError = errorMessage(err)
-      proc.cancel(agentSessionId).catch(() => {})
-      this.invalidateProcess(processKey, promptError, proc)
-      promptDone = true
-      for (const r of resolvers.splice(0)) r()
-    }
-
-    if (!promptError) {
-      const forward = (update: SessionUpdate) => {
-        const result = eventRuntime.ingest({
-          source: "acp.jsonrpc",
-          method: "session/update",
-          payload: update,
-        })
-        for (const runtimeEvent of result.events) {
-          router.project(runtimeEvent, {
-            dir: "in",
-            method: "sessionUpdate",
-            frame: update,
-          }, { kind: "parent" })
-          if (runtimeEvent.type !== "step-start") continue
-          assistantMsgId = router.assistantMessageId()
-          created = router.created()
-        }
-      }
-      const install = () => {
-        proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
-          log.info("sendMessage: forwarding permission-request to stream", { permId, tool, kind })
-          this.permissionOwnerMap().set(permId, proc)
-          const event = permissionAsked(
-            acpPermissionRequest({ permId, sessionId: id, tool, kind, paths }),
-          )
-          this.store.appendEvent({
-            sessionId: id,
-            agentSessionId,
-            payload: event,
-            source: {
-              dir: "in",
-              method: "requestPermission",
-              frame: { tool, paths },
-            },
-          })
-          push(event)
-        })
-      }
-      const stop = (stopReason: StopReason) => {
-        log.info("sendMessage: prompt resolved", { stopReason, ms: Date.now() - t0 })
-        for (const runtimeEvent of translateStopReason(stopReason as Parameters<typeof translateStopReason>[0], id)) {
-          router.project(runtimeEvent, {
-            dir: "in",
-            method: "prompt.stop",
-            frame: { stopReason },
-          })
-        }
-      }
-      let retried = false
-      const run = async (): Promise<void> => {
-        install()
-        try {
-          // The PROMPT turn runs for as long as the model thinks/streams — it
-          // must use the prompt timeout (5 min default), NOT the 10s
-          // new-session handshake timeout, which cancelled every turn slower
-          // than 10s.
-          const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
-          // Prompt-result usage is the ONLY meterable usage on this rail:
-          // mid-turn `usage_update` notifications carry a context meter, not
-          // token categories. The ACP agent is authoritative for the final
-          // per-turn usage payload.
-          const usableUsage = result.usage && (
-            result.usage.totalTokens > 0 ||
-            result.usage.inputTokens > 0 ||
-            result.usage.outputTokens > 0 ||
-            (result.usage.thoughtTokens ?? 0) > 0 ||
-            (result.usage.cachedReadTokens ?? 0) > 0 ||
-            (result.usage.cachedWriteTokens ?? 0) > 0
-          )
-          if (!usableUsage && (result.stopReason === "end_turn" || result.stopReason === "max_tokens" || result.stopReason === "max_turn_requests")) {
-            // A completed turn with no usage silently settles "unavailable" in
-            // the usage ledger. That is a metering gap, not a normal outcome —
-            // make it loud so zero-token dashboards are diagnosable.
-            router.project({
-              type: "diagnostic",
-              diagnostic: {
-                code: "acp_prompt_usage_missing",
-                message: `ACP agent returned no token usage for a completed turn (stopReason: ${result.stopReason}); the turn meters as unavailable`,
-                severity: "warn",
-                source: "acp-adapter",
-              },
-            }, {
-              dir: "in",
-              method: "prompt.result.usage",
-              frame: { stopReason: result.stopReason },
-            })
-          }
-          if (result.usage && usableUsage) {
-            router.project(runtimeUsage(result.usage, agentSessionId), {
-              dir: "in",
-              method: "prompt.result.usage",
-              frame: { usage: result.usage },
-            })
-            const event = messageUpdated({
-              ...buildAssistantMessage({
-                id: assistantMsgId,
-                sessionID: id,
-                parentID: input.userMessageId ?? id,
-                agent: input.agent,
-                model: input.model,
-                directory,
-                created,
-                completed: Date.now(),
-                variant: input.variant,
-              }),
-              tokens: messageUsage(result.usage),
-            })
-            this.store.appendEvent({
-              sessionId: id,
-              agentSessionId,
-              payload: event,
-              source: {
-                dir: "in",
-                method: "prompt.result",
-                frame: { usage: result.usage },
-              },
-            })
-            push(event)
-          }
-          stop(result.stopReason)
-        } catch (err) {
-          proc.permissionPushers.delete(agentSessionId)
-          if (retried || !missing(err)) throw err
-          retried = true
-          await replace()
-          await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
-          return run()
-        }
-      }
-      promptPromise = Promise.race([run(), drainPromise])
-      .catch((err: unknown) => {
-        log.error("sendMessage: prompt rejected", { err, ms: Date.now() - t0 })
-        promptError = errorMessage(err)
-        proc.cancel(agentSessionId).catch(() => {})
-        this.invalidateProcess(processKey, promptError, proc)
-      })
-      .finally(() => {
-        proc.permissionPushers.delete(agentSessionId)
-        promptDone = true
-        for (const r of resolvers.splice(0)) r()
-      })
-    }
-
-    let titleEmitted = false
-    try {
-      while (true) {
-        await wait()
-        let event: CompatEvent | undefined
-        while ((event = queue.shift())) {
-          // Before yielding session.idle, emit auto-title if needed
-          if (event.type === "session.idle" && !titleEmitted) {
-            titleEmitted = true
-            const titleEvent = maybeAutoTitle({
-              store: this.store,
-              eventHub: this.options.eventHub,
-              getOrSpawnProcess: (sessionId, workdir) => this.getOrSpawnProcess(sessionId, workdir),
-              boot: (proc, workdir, title) => this.boot(proc, workdir, title),
-            }, id, agentSessionId, directory, input.parts)
-            if (titleEvent) yield titleEvent
-          }
-          yield event
-          if (isTerminalCompatEvent(event)) {
-            log.info("sendMessage: terminal chunk yielded, returning", {
-              chunkType: event.type,
-              totalChunks: chunkCount,
-              ms: Date.now() - t0,
-            })
-          }
-        }
-        if (promptDone) break
-      }
-    } finally {
-      await promptPromise
-      router.dispose()
-      this.lifecycle().delete(id, turn)
-    }
-
-    if (promptError) {
-      log.error("sendMessage: ending with error", { promptError, ms: Date.now() - t0 })
-      for (const event of router.terminalizeParent(promptError, {
-        dir: "in",
-        method: "prompt.error.open-tools",
-        frame: { message: promptError },
-      })) yield event
-      const updated = messageUpdated(buildAssistantMessage({
-        id: assistantMsgId,
-        sessionID: id,
-        parentID: input.userMessageId ?? id,
-        agent: input.agent,
-        model: input.model,
-        directory,
-        created,
-        completed: Date.now(),
-        error: {
-          name: "UnknownError",
-          data: firstTurnErrorData(promptError),
-        },
-        variant: input.variant,
-      }))
-      this.store.appendEvent({
-        sessionId: id,
-        agentSessionId,
-        payload: updated,
-        source: {
-          dir: "in",
-          method: "prompt.error",
-          frame: { message: promptError },
-        },
-      })
-      yield updated
-      const event = sessionError(promptError, id)
-      this.store.appendEvent({
-        sessionId: id,
-        agentSessionId,
-        payload: event,
-        source: {
-          dir: "in",
-          method: "prompt.error",
-          frame: { message: promptError },
-        },
-      })
-      yield event
-      return
-    }
-
-    log.info("sendMessage: finished successfully", { totalChunks: chunkCount, ms: Date.now() - t0 })
-  }
-
-  async getMessages(id: string, _directory: string): Promise<AgentMessageRow[]> {
-    return this.store.getMessages(id) as AgentMessageRow[]
+  async getMessages(id: string, _directory: string): Promise<AgentMessage[]> {
+    return this.store.getMessages(id) as AgentMessage[]
   }
 
   async abort(id: string, directory: string): Promise<AbortResult> {
@@ -1377,11 +344,11 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     return { id: newId }
   }
 
-  async listCommands(_directory: string): Promise<AgentCommandRow[]> {
+  async listCommands(_directory: string): Promise<AgentCommand[]> {
     return listCommands()
   }
 
-  async listAgents(directory: string): Promise<AgentAgentRow[]> {
+  async listAgents(directory: string): Promise<AgentAgent[]> {
     directory = requireWorkspaceDirectory(directory)
     for (const entry of this.processEntries()) {
       const proc = entry.proc
@@ -1449,7 +416,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     return this.store.getTodos(sessionId)
   }
 
-  async listPermissions(directory: string): Promise<AgentPermissionRow[]> {
+  async listPermissions(directory: string): Promise<AgentPermission[]> {
     directory = requireWorkspaceDirectory(directory)
     const rows = this.store.listPermissions(directory)
     const live = rows.filter((row) => {
@@ -1459,7 +426,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       return false
     })
     log.info("listPermissions", { count: rows.length, live: live.length })
-    return live as AgentPermissionRow[]
+    return live as AgentPermission[]
   }
 
   async respondPermission(
@@ -1541,14 +508,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  // The field is initialized at declaration, but test harnesses build the
-  // adapter via Object.create(AcpHarnessAdapter.prototype), which skips class field
-  // initializers — lazily ensure the map exists before use.
-  private permissionOwnerMap() {
-    this.permissionOwners ??= new Map<string, ACPProcess>()
-    return this.permissionOwners
-  }
-
   async applyConfig(config: Record<string, unknown>): Promise<void> {
     const mcp = config.mcp as Record<string, ResolvedMcpServer> | undefined
     // Gating here keeps `currentMcp` empty for the whole adapter lifetime:
@@ -1565,7 +524,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       })
       return
     }
-    if (this.lifecycle().activeTurns.size > 0 || activePromptCount(this.harnessId()) > 0) {
+    if (this.lifecycle().activeTurns.size > 0 || activeAcpPromptCount(this.harnessId()) > 0) {
       this.currentMcp = nextMcp
       this.currentEnv = nextEnv
       this.configRestartPending = true
@@ -1589,8 +548,8 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async waitForConfigReady(): Promise<void> {
-    while (this.configRestartPending && activePromptCount(this.harnessId()) > 0) {
-      await waitForNoActivePrompts(this.harnessId())
+    while (this.configRestartPending && activeAcpPromptCount(this.harnessId()) > 0) {
+      await waitForNoActiveAcpPrompts(this.harnessId())
     }
     if (!this.configRestartPending) return
     this.configRestartPending = false
@@ -1602,24 +561,24 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     })
   }
 
-  peekConfigOptions(_directory: string): AgentConfigOptionRow[] | null {
+  peekConfigOptions(_directory: string): AgentConfigOption[] | null {
     for (const entry of this.processEntries()) {
       const proc = entry.proc
-      if (proc?.alive && proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOptionRow[]
+      if (proc?.alive && proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOption[]
     }
     const proc = this.probe?.proc
-    if (proc?.alive && proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOptionRow[]
+    if (proc?.alive && proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOption[]
     return null
   }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOptionRow[]> {
+  async probeConfigOptions(directory: string): Promise<AgentConfigOption[]> {
     directory = requireWorkspaceDirectory(directory)
     const live = this.peekConfigOptions(directory)
     if (live) {
       log.info("probeConfigOptions: returning cached options from existing process")
       return live
     }
-    if (activePromptCount(this.harnessId()) > 0) {
+    if (activeAcpPromptCount(this.harnessId()) > 0) {
       throw new Error("ACP harness config options are temporarily unavailable while a prompt is active")
     }
     const wait = async <T>(label: string, run: Promise<T>) => {
@@ -1638,7 +597,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     }
     try {
       const proc = await wait("ACP mode probe", this.getOrSpawnProbe(directory))
-      if (proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOptionRow[]
+      if (proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOption[]
       await this.boot(proc, directory, undefined, probeTimeoutMs())
       if (!proc.cachedConfigOptions) {
         const ms = probeTimeoutMs()
@@ -1658,7 +617,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         }))
       }
       if (!proc.cachedConfigOptions) throw new Error("ACP harness did not return live config options")
-      return proc.cachedConfigOptions as AgentConfigOptionRow[]
+      return proc.cachedConfigOptions as AgentConfigOption[]
     } catch (err) {
       log.warn("probeConfigOptions: failed", {
         directory,

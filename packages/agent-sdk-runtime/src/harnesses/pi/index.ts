@@ -13,14 +13,14 @@ import {
   type HarnessCapabilityContext,
 } from "../../capabilities"
 import {
-  type AgentAgentRow,
-  type AgentCommandRow,
-  type AgentConfigOptionRow,
-  type AgentMessageRow,
-  type AgentPermissionRow,
-  type AgentQuestionRow,
+  type AgentAgent,
+  type AgentCommand,
+  type AgentConfigOption,
+  type AgentMessage,
+  type AgentPermission,
+  type AgentQuestion,
   type AgentRuntimeStreamEvent,
-  type AgentSessionRow,
+  type AgentSession,
   type PromptInput,
   type RuntimeDirectory,
   type SessionConfig,
@@ -62,7 +62,7 @@ type PiSession = {
   updated: number
   env: SessionEnv
   config: SessionConfig
-  messages: AgentMessageRow[]
+  messages: AgentMessage[]
   active?: AbortController
   /** Live pi Agent for model-backed turns; lazily created at first model turn. */
   agent?: Agent
@@ -118,7 +118,7 @@ function notImplemented(feature: string) {
   return new Error(`${feature} is not implemented for Pi central sessions yet`)
 }
 
-function row(session: PiSession): AgentSessionRow {
+function row(session: PiSession): AgentSession {
   return {
     id: session.id,
     ...(session.parentID ? { parentID: session.parentID } : {}),
@@ -148,7 +148,7 @@ function textPart(input: { sessionId: string; messageId: string; text: string; s
   }
 }
 
-function putMessage(session: PiSession, message: AgentMessageRow) {
+function putMessage(session: PiSession, message: AgentMessage) {
   session.messages = [
     ...session.messages.filter((item) => item.info.id !== message.info.id),
     message,
@@ -589,11 +589,11 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     throw notImplemented("Commands")
   }
 
-  async listCommands(): Promise<AgentCommandRow[]> {
+  async listCommands(): Promise<AgentCommand[]> {
     return []
   }
 
-  async listAgents(): Promise<AgentAgentRow[]> {
+  async listAgents(): Promise<AgentAgent[]> {
     return []
   }
 
@@ -606,7 +606,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
    * `createVirtualSessionEnv` — so there is nothing to gate and no request to
    * raise. Both members stay because the port requires them.
    */
-  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermissionRow[]> {
+  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermission[]> {
     return []
   }
 
@@ -616,7 +616,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     _directory?: RuntimeDirectory,
   ) {}
 
-  async listQuestions(): Promise<AgentQuestionRow[]> {
+  async listQuestions(): Promise<AgentQuestion[]> {
     return []
   }
 
@@ -626,7 +626,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig() {}
 
-  async probeConfigOptions(): Promise<AgentConfigOptionRow[]> {
+  async probeConfigOptions(): Promise<AgentConfigOption[]> {
     throw new Error("pi does not expose harness config options")
   }
 

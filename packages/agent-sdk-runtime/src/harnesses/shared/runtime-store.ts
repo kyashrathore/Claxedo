@@ -49,8 +49,8 @@ export type AgentRuntimeStoreCore = {
   getSessionConfig(id: string): SessionConfig | null | undefined
   deleteSession(id: string): void
   getAgentSessionId(id: string): string | null | undefined
-  startTurn(input: unknown): AgentRuntimeTurnStartOutput | void
-  finishTurn?(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput | void
+  startTurn(input: unknown): AgentRuntimeTurnStartOutput
+  finishTurn(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string

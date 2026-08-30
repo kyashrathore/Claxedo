@@ -79,7 +79,7 @@ function resolveWindowsNativeBinary(shim: string, arch: NodeJS.Architecture): st
     path.join(launcherDirectory, "node_modules", "@openai", "codex", "node_modules", ...platformPackageSegments),
     // Hoisted package-manager layout.
     path.join(launcherDirectory, "node_modules", ...platformPackageSegments),
-    // Fallback used by the official launcher when the platform binary is
+    // Candidate used by the official launcher when the platform binary is
     // copied into the main package.
     path.join(
       launcherDirectory,

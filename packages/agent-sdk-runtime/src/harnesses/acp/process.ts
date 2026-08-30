@@ -51,8 +51,7 @@ export function acpClientCapabilities(): ClientCapabilities {
 /**
  * `tool` is the agent's human-readable `toolCall.title` ("Read file src/index.ts");
  * `kind` is the protocol's machine-readable `ToolKind` classification. Both are
- * strings, so they are passed BY NAME — transposing them positionally would
- * silently reintroduce the bug this shape exists to prevent.
+ * strings, so the named payload keeps their meanings explicit.
  */
 export type PermissionPushPayload = {
   permId: string
@@ -269,13 +268,7 @@ export class ACPProcess {
     this.idle.touch()
   }
 
-  /**
-   * Hold this process open for work that spans time.
-   *
-   * A prompt turn can sit silent for minutes inside one tool call. Touching the
-   * deadline at each protocol message covers a chatty turn but not a quiet one,
-   * so a long build or test run used to race the idle reaper and lose.
-   */
+  /** Holds the process open while a prompt may be quiet inside a tool call. */
   private leaseIdle() {
     return this.idle.lease()
   }
@@ -518,11 +511,7 @@ export class ACPProcess {
     })
 
     const t0 = Date.now()
-    // A prompt turn is protocol-defined ACTIVE WORK for its whole duration
-    // (U8-F4). Touching the deadline on each incoming update covers a chatty
-    // turn but not a quiet one, so a turn sitting inside a single long build or
-    // test call used to race the idle reaper and lose — the harness died
-    // mid-turn and the user saw the transport drop, not a timeout.
+    // A prompt is active work for its whole duration, including quiet tool calls.
     const idleLease = this.leaseIdle()
     try {
       const prompt = blocks(input.parts, input.system, this.state(agentSessionId).prompt)

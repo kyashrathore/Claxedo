@@ -1,6 +1,6 @@
 {
   "package": "@claxedo/agent-sdk-runtime",
-  "version": "0.5.1",
+  "version": "0.7.0",
   "rootPolicy": "stable AgentRuntime facade and shared runtime types",
   "stabilityLabels": {
     "stable": "Intended public API for external hosts.",
@@ -18,6 +18,30 @@
     "@claxedo/agent-sdk-runtime/harnesses": {
       "status": "stable",
       "purpose": "Public harness factory functions."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses/acp": {
+      "status": "stable",
+      "purpose": "ACP harness factory without loading native harness adapters."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses/claude": {
+      "status": "stable",
+      "purpose": "Claude harness factory."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses/codex": {
+      "status": "stable",
+      "purpose": "Codex harness factory."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses/cursor": {
+      "status": "stable",
+      "purpose": "Cursor harness factory."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses/opencode": {
+      "status": "stable",
+      "purpose": "OpenCode harness factory."
+    },
+    "@claxedo/agent-sdk-runtime/harnesses/pi": {
+      "status": "stable",
+      "purpose": "Pi harness factory."
     },
     "@claxedo/agent-sdk-runtime/stores/memory": {
       "status": "stable",
@@ -62,6 +86,18 @@
     "@claxedo/agent-sdk-runtime/mcp-resolver": {
       "status": "integration",
       "purpose": "MCP config resolution helpers."
+    },
+    "@claxedo/agent-sdk-runtime/message-page": {
+      "status": "integration",
+      "purpose": "Bounded transcript-page contracts and projections."
+    },
+    "@claxedo/agent-sdk-runtime/status": {
+      "status": "compatibility",
+      "purpose": "Session status normalization helpers."
+    },
+    "@claxedo/agent-sdk-runtime/subagent-admission": {
+      "status": "integration",
+      "purpose": "Parent-scoped subagent observation admission."
     }
   },
   "docs": {

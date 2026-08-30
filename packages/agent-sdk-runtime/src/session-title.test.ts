@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { extractPromptTitleText, fallbackSessionTitle, hasConcreteSessionTitle } from "./session-title"
+import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } from "./session-title"
 
 describe("session title helpers", () => {
   test("treats generated placeholders as untitled", () => {
@@ -16,8 +16,8 @@ describe("session title helpers", () => {
     expect(hasConcreteSessionTitle("New session architecture notes")).toBe(true)
   })
 
-  test("builds fallback titles from prompt text", () => {
-    expect(fallbackSessionTitle("Please fix the terminal pane")).toBe("fix the terminal pane")
+  test("derives titles from prompt text", () => {
+    expect(deriveSessionTitle("Please fix the terminal pane")).toBe("fix the terminal pane")
     expect(extractPromptTitleText([{ type: "text", text: "hello" }])).toBe("hello")
     expect(extractPromptTitleText([{ type: "text", content: "from content" }])).toBe("from content")
   })

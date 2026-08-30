@@ -7,11 +7,7 @@ import {
   type ProcessLifecycleEvent,
 } from "./process-lifecycle"
 
-/**
- * A deterministic child fixture. No real process, no real timers — the point is
- * to pin the lifecycle contract before any adapter is connected to it, so a
- * failure here names the semantics rather than a spawn flake.
- */
+/** A deterministic child fixture for the process lifecycle contract. */
 function fixture(input: {
   start?: (generation: number) => Promise<string>
   stop?: (handle: string) => Promise<void> | void
@@ -188,9 +184,7 @@ describe("harness process lifecycle", () => {
   })
 
   test("an idle timer armed for an old generation cannot kill a newer one", async () => {
-    // A restart between arming and firing is exactly when this bites, and the
-    // symptom — a healthy child dying seconds after a restart — reads as a
-    // spawn bug rather than a timer bug.
+    // A timer belongs only to the generation that created it.
     const harness = fixture()
     await harness.lifecycle.ensure()   // generation 1 arms timer[0]
     await harness.lifecycle.stop("restart")
@@ -213,8 +207,7 @@ describe("harness process lifecycle", () => {
   })
 
   test("acquire holds its lease across a slow start", async () => {
-    // Without leasing before the await, a slow start arms the idle timer the
-    // instant it lands and the caller can watch the child die before using it.
+    // The lease covers startup and subsequent use as one activity interval.
     let resolveStart: ((handle: string) => void) | undefined
     const harness = fixture({ start: () => new Promise<string>((resolve) => { resolveStart = resolve }) })
 
@@ -260,11 +253,8 @@ describe("harness process lifecycle", () => {
   })
 
   test("a stop that lands after its replacement is ready leaves the replacement owning the state", async () => {
-    // Restart is stop-then-start, and the stop is asynchronous. Generation 1's
-    // `stop()` resolving after generation 2 is already `ready` used to write
-    // `absent` over a live child: `hasProcess` then reported false, and the
-    // next `restartSpawnedProcess()` refused to restart a server that was
-    // running.
+    // An asynchronous stop may resolve after its replacement becomes ready;
+    // only the owning generation may update lifecycle state.
     let releaseStop: (() => void) | undefined
     const harness = fixture({
       stop: (handle) => handle === "child-1"
@@ -395,9 +385,7 @@ describe("idle reaper", () => {
   })
 
   test("a lease suspends the countdown for its whole duration", () => {
-    // The behaviour ACP was missing. Touching on each protocol message covers a
-    // chatty turn; a turn sitting inside one long build call is silent, and
-    // used to race the reaper and lose.
+    // A lease covers quiet work that produces no protocol messages.
     const harness = reaperFixture()
     harness.reaper.touch()
     const lease = harness.reaper.lease()

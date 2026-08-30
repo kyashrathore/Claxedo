@@ -322,8 +322,9 @@ Next: persist enough state to survive reloads and process recovery.
 Use this when SDK or ACP harnesses need durable sessions, replay, recovery, or
 a mapping from your public session id to the harness-native session id.
 
-The package does not choose your database. The store boundary is intentionally
-host-owned.
+The host chooses the store implementation. The runtime uses it as the
+authoritative projection for public ids, configuration, normalized events,
+interactions, recovery, and handoff state.
 
 Minimum store responsibilities:
 
@@ -347,6 +348,10 @@ const convexStore = createConvexRuntimeStore({
   authority,
 })
 ```
+
+The SQLite store commits normalized rows synchronously. Harness-native storage
+may contain the provider conversation, but it does not contain the complete
+runtime projection listed above.
 
 Custom stores are advanced integration work. Start with a first-party store.
 

@@ -1,8 +1,5 @@
-import { spawn, type ChildProcess } from "child_process"
-import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-process"
 import { createIdleReaper } from "../shared/process-lifecycle"
 import { randomUUID } from "crypto"
-import fs from "fs"
 import os from "os"
 import path from "path"
 import {
@@ -14,7 +11,7 @@ import {
   codexCollabAgentCall,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import type { AgentConfigOptionRow, PromptInput } from "../../index"
+import type { AgentConfigOption, PromptInput } from "../../index"
 import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
@@ -48,9 +45,18 @@ import {
 import {
   observeAgentProcess,
   type AgentProcessObserver,
-  type AgentProcessObserverHandle,
 } from "../../process-observer"
 import { requireCodexExecutable } from "./executable"
+import { CodexAppServerProcess } from "./app-server-process"
+import {
+  accountIdFromClaims,
+  codexChatgptAuthTokens,
+  mergeCodexAuth,
+  readCodexAuthFile,
+  sourceAuthValue,
+  sourceCodexAuthValue,
+  writeCodexAuthFile,
+} from "./auth-file"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
@@ -76,12 +82,7 @@ export function isThreadNotFound(err: unknown): boolean {
   return /thread not found/i.test(errorMessage(err))
 }
 
-/**
- * Number of resume+retry cycles attempted after the first `thread not found`. Two cycles
- * (an initial resume and one further attempt) bound the recovery so a permanently-lost
- * thread terminates instead of looping — or, before this bound existed, propagating the
- * raw protocol string on the very next failure.
- */
+/** Two resume cycles bound recovery for a thread that is no longer available. */
 const MAX_THREAD_RESUME_ATTEMPTS = 2
 
 /**
@@ -143,14 +144,6 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
 
-function appServerCommand(binary: string) {
-  const args = ["app-server", "--listen", "stdio://"]
-  if (/\.(?:cjs|mjs|js)$/i.test(binary)) {
-    return { command: process.execPath, args: [binary, ...args] }
-  }
-  return { command: binary, args }
-}
-
 const CODEX_DYNAMIC_TOOLS = [{
   name: "spawn_agent",
   description: "Spawn a child Codex agent to execute one bounded task.",
@@ -182,16 +175,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private auth: SdkRuntimeAuth = {}
   private codexAuth: JsonRecord | undefined
   private process: CodexAppServerProcess | null = null
-  /**
-   * Reap the app-server when nothing is using it.
-   *
-   * Without this the process lives for the driver's lifetime, so an idle
-   * desktop holds a codex app-server it was asked for once. `ensureProcess`
-   * re-spawns transparently, which every caller already relies on.
-   *
-   * Restored after a merge took the upstream driver wholesale and dropped it —
-   * upstream never had one. `idle-reaping.test.ts` is what noticed.
-   */
+  /** Releases the app-server after its activity leases expire. */
   private readonly idleMs = codexIdleTimeoutMs()
   private readonly idle = createIdleReaper({
     idleMs: this.idleMs,
@@ -210,7 +194,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly codexHome: string
   private readonly modelSource = createLiveModelSource({
-    harness: "codex",
     fetchModels: (directory) => this.fetchModels(directory),
   })
 
@@ -218,8 +201,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     private readonly host: SdkRuntimeDriverHost,
     private readonly options: CodexDriverOptions,
   ) {
-    // Resolve the codex home once so auth reads/writes never fall back to the
-    // real `~/.codex` under test. Honors the same CODEX_HOME the CLI respects.
+    // Keep auth reads and writes on the same resolved Codex home for this driver.
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
   }
 
@@ -229,7 +211,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       ...this.auth,
       ...(keys.openai !== undefined ? { openai: keys.openai || undefined } : {}),
     }
-    if (this.authSignature() !== previous) this.authRevision++
+    if (this.authSignature() !== previous) {
+      this.authRevision++
+      this.modelSource.invalidate()
+    }
   }
 
   async applyConfig(config: Record<string, unknown>) {
@@ -241,7 +226,10 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       openai: sourceAuthValue(source),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
-    if (this.authSignature() !== previous) this.authRevision++
+    if (this.authSignature() !== previous) {
+      this.authRevision++
+      this.modelSource.invalidate()
+    }
     const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
     if (proc?.alive) await this.syncProcessAuth(proc)
   }
@@ -252,15 +240,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return this.permissionSelection.state(sessionId)
   }
 
-  /**
-   * Stores only — nothing is sent here.
-   *
-   * `thread/settings/update` exists and would let this land immediately, but
-   * both `thread/start` and `turn/start` already carry the policy on every
-   * request, so applying it at turn start reaches the same place with one code
-   * path instead of two that can disagree. The pinned-policy bug this replaces
-   * came precisely from those two call sites drifting apart.
-   */
+  /** Stores the selection applied by every subsequent thread and turn request. */
   async setPermissionMode(sessionId: string, modeId: string, _directory: string) {
     if (!CODEX_SETTINGS[modeId]) throw new Error(`Unknown Codex permission mode "${modeId}"`)
     return this.permissionSelection.set(sessionId, modeId)
@@ -345,7 +325,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
     const model = codexTurnModel(input.input, input.model)
     const effort = resolveSupportedEffort(
-      this.modelSource.peek(),
+      this.modelSource.peek(input.directory),
       codexAppServerModel(input.input.model.modelID),
       input.input.variant,
     )
@@ -516,15 +496,16 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     void this.processStartup?.then((proc) => proc.dispose(), () => {})
   }
 
-  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
     return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return this.buildConfigOptions(this.modelSource.peek(), currentModel)
+  peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
+    return this.buildConfigOptions(this.modelSource.peek(directory), currentModel)
   }
 
   private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string) {
+    if (models.length === 0) return []
     const effort = thoughtLevelConfigOption(models, codexAppServerModel(currentModel), undefined)
     return effort
       ? [modelConfigOption(models, currentModel), effort]
@@ -937,397 +918,7 @@ export function codexSpawnEnv(input: Record<string, string | undefined>) {
   return harnessSpawnEnv(input)
 }
 
-function executableBasename(input: string) {
-  return input.split(/[\\/]/).at(-1) || "codex"
-}
-
-function compositeObservation(handles: AgentProcessObserverHandle[]): AgentProcessObserverHandle {
-  let exited = false
-  return {
-    update(event) {
-      handles.forEach((handle) => handle.update(event))
-    },
-    exit(event) {
-      if (exited) return
-      exited = true
-      handles.forEach((handle) => handle.exit(event))
-    },
-  }
-}
-
-export function observeCodexAppServerProcess(input: {
-  observer?: AgentProcessObserver
-  binary: string
-  directory: string
-  pid?: number
-  mcp?: Record<string, ResolvedMcpServer>
-}): AgentProcessObserverHandle {
-  const ownerId = `codex-app-server:${randomUUID()}`
-  return compositeObservation([
-    observeAgentProcess(input.observer, {
-      ownerId,
-      launchId: randomUUID(),
-      harnessId: "codex",
-      access: "native",
-      role: "harness",
-      label: "Codex app server",
-      locality: "local-process",
-      confidence: input.pid ? "direct" : "inferred",
-      capabilities: {
-        resourceMetrics: "process",
-        ownerActions: false,
-      },
-      ...(input.pid ? { pid: input.pid } : {}),
-      directory: input.directory,
-      executableBasename: executableBasename(input.binary),
-    }),
-    ...Object.values(input.mcp ?? {}).map((server) => observeAgentProcess(input.observer, {
-      ownerId: `codex-mcp:${randomUUID()}`,
-      launchId: randomUUID(),
-      harnessId: "codex",
-      access: "native",
-      role: "mcp" as const,
-      label: `MCP ${server.name}`,
-      locality: server.transport === "stdio" ? "local-process" as const : "remote" as const,
-      confidence: server.transport === "stdio" ? "inferred" as const : "not-process-backed" as const,
-      capabilities: {
-        resourceMetrics: server.transport === "stdio" ? "process" as const : "none" as const,
-        ownerActions: false,
-      },
-      parentOwnerId: ownerId,
-      directory: input.directory,
-      mcpName: server.name,
-      transport: server.transport === "stdio" ? "stdio" as const : "streamable-http" as const,
-      ...(server.transport === "stdio"
-        ? { executableBasename: executableBasename(server.command) }
-        : {}),
-    })),
-  ])
-}
-
-class CodexAppServerProcess {
-  private proc: ChildProcess
-  private buffer = ""
-  private seq = 0
-  private disposed = false
-  private killTimer: ReturnType<typeof setTimeout> | undefined
-  private pending = new Map<number, {
-    resolve: (value: unknown) => void
-    reject: (err: Error) => void
-  }>()
-  private listeners = new Set<(message: JsonRecord) => void>()
-  private stderrListeners = new Set<(message: string) => void>()
-  private observation: AgentProcessObserverHandle
-  private observationExited = false
-
-  private constructor(
-    private readonly binary: string,
-    private readonly directory: string,
-    private readonly env: NodeJS.ProcessEnv,
-    private readonly requestHandler: (message: JsonRecord) => Promise<unknown>,
-    private readonly onClose: (err: Error) => void,
-    processObserver?: AgentProcessObserver,
-    mcp: Record<string, ResolvedMcpServer> = {},
-  ) {
-    const command = appServerCommand(binary)
-    // Shims must go through the shell (see isWindowsShimBinary); the quoting
-    // keeps a binary path with spaces intact through cmd.exe's tokenization.
-    const windowsShim = isWindowsShimBinary(command.command)
-    this.proc = spawn(windowsShim ? `"${command.command}"` : command.command, command.args, {
-      cwd: directory,
-      env,
-      stdio: ["pipe", "pipe", "pipe"],
-      ...(windowsShim ? { shell: true } : {}),
-    })
-    this.observation = observeCodexAppServerProcess({
-      observer: processObserver,
-      binary,
-      directory,
-      ...(this.proc.pid ? { pid: this.proc.pid } : {}),
-      mcp,
-    })
-    this.proc.stdout?.setEncoding("utf8")
-    this.proc.stderr?.setEncoding("utf8")
-    this.proc.stdout?.on("data", (chunk: string) => this.read(chunk))
-    this.proc.stderr?.on("data", (chunk: string) => {
-      const message = chunk.trim()
-      log.warn("codex app-server stderr", { message })
-      for (const listener of this.stderrListeners) listener(message)
-    })
-    this.proc.on("error", (cause) => {
-      if (this.killTimer) clearTimeout(this.killTimer)
-      const err = cause instanceof Error ? cause : new Error(String(cause))
-      this.exitObservation({ reason: "error" })
-      for (const item of this.pending.values()) item.reject(err)
-      this.pending.clear()
-      if (this.disposed) return
-      this.onClose(err)
-    })
-    this.proc.on("exit", (code, signal) => {
-      if (this.killTimer) clearTimeout(this.killTimer)
-      this.exitObservation({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
-      const err = new Error(`codex app-server exited (${signal ?? code ?? "unknown"})`)
-      for (const item of this.pending.values()) item.reject(err)
-      this.pending.clear()
-      if (this.disposed) return
-      this.onClose(err)
-    })
-  }
-
-  static async start(input: {
-    binary: string
-    directory: string
-    env: NodeJS.ProcessEnv
-    requestHandler: (message: JsonRecord) => Promise<unknown>
-    onClose?: (err: Error) => void
-    processObserver?: AgentProcessObserver
-    mcp?: Record<string, ResolvedMcpServer>
-    signal?: AbortSignal
-  }) {
-    const proc = new CodexAppServerProcess(
-      input.binary,
-      input.directory,
-      input.env,
-      input.requestHandler,
-      input.onClose ?? (() => {}),
-      input.processObserver,
-      input.mcp,
-    )
-    const onAbort = () => proc.dispose()
-    try {
-      if (input.signal?.aborted) throw new Error("Codex app-server startup was cancelled")
-      input.signal?.addEventListener("abort", onAbort, { once: true })
-      await proc.request("initialize", {
-        clientInfo: { name: "claxedo-workspace-runtime", version: "0.1.0" },
-        capabilities: {
-          experimentalApi: true,
-          requestAttestation: false,
-        },
-      })
-      proc.notify("initialized")
-      proc.observation.update({ lifecycle: "ready" })
-      return proc
-    } catch (cause) {
-      proc.dispose()
-      throw cause
-    } finally {
-      input.signal?.removeEventListener("abort", onAbort)
-    }
-  }
-
-  get alive() {
-    return this.proc.exitCode === null && !this.proc.killed
-  }
-
-  onMessage(listener: (message: JsonRecord) => void) {
-    this.listeners.add(listener)
-    return () => this.listeners.delete(listener)
-  }
-
-  onStderr(listener: (message: string) => void) {
-    this.stderrListeners.add(listener)
-    return () => this.stderrListeners.delete(listener)
-  }
-
-  request(method: string, params: unknown): Promise<unknown> {
-    const id = ++this.seq
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject })
-      this.write({ id, method, params })
-    })
-  }
-
-  notify(method: string, params?: unknown) {
-    this.write(params === undefined ? { method } : { method, params })
-  }
-
-  respond(id: unknown, result: unknown) {
-    this.write({ id, result })
-  }
-
-  dispose() {
-    if (this.disposed) return
-    this.disposed = true
-    this.exitObservation({ reason: "disposed" })
-    const err = new Error("codex app-server process was disposed")
-    for (const item of this.pending.values()) item.reject(err)
-    this.pending.clear()
-    if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
-    killHarnessProcess(this.proc, "SIGTERM")
-    this.killTimer = setTimeout(() => {
-      if (this.proc.exitCode !== null || this.proc.signalCode !== null) return
-      killHarnessProcess(this.proc, "SIGKILL")
-    }, 1_000)
-    this.killTimer.unref()
-  }
-
-  private exitObservation(input: { reason: "error" | "exited" | "disposed"; exitCode?: number }) {
-    if (this.observationExited) return
-    this.observationExited = true
-    this.observation.exit(input)
-  }
-
-  private write(message: JsonRecord) {
-    this.proc.stdin?.write(JSON.stringify(message) + "\n")
-  }
-
-  private read(chunk: string) {
-    this.buffer += chunk
-    while (true) {
-      const i = this.buffer.indexOf("\n")
-      if (i < 0) return
-      const line = this.buffer.slice(0, i).trim()
-      this.buffer = this.buffer.slice(i + 1)
-      if (!line) continue
-      this.handleLine(line)
-    }
-  }
-
-  private handleLine(line: string) {
-    let message: JsonRecord
-    try {
-      message = JSON.parse(line) as JsonRecord
-    } catch {
-      log.warn("codex app-server emitted non-json line", { line })
-      return
-    }
-    const method = text(message.method)
-    const id = typeof message.id === "number" ? message.id : undefined
-    if (id !== undefined && ("result" in message || "error" in message)) {
-      const pending = this.pending.get(id)
-      if (!pending) return
-      this.pending.delete(id)
-      const error = record(message.error)
-      if (error) {
-        pending.reject(new Error(text(error.message) ?? `codex app-server request ${id} failed`))
-        return
-      }
-      pending.resolve(message.result)
-      return
-    }
-    if (!method) return
-    if (message.id !== undefined) {
-      this.requestHandler(message)
-        .then((result) => this.respond(message.id, result))
-        .catch((err) => this.write({
-          id: message.id,
-          error: { message: errorMessage(err) },
-        }))
-      return
-    }
-    for (const listener of this.listeners) listener(message)
-  }
-}
-
-function sourceAuthValue(input: string | undefined) {
-  if (!input) return
-  try {
-    const value = JSON.parse(input) as JsonRecord
-    if (codexChatgptAuthTokens(value)) return
-    return text(value.OPENAI_API_KEY)
-  } catch {
-    return input
-  }
-}
-
-function sourceCodexAuthValue(input: string | undefined) {
-  if (!input) return
-  try {
-    const value = JSON.parse(input) as JsonRecord
-    if (value.type === "codex_auth" || value.auth_mode === "chatgpt" || codexChatgptAuthTokens(value)) return value
-  } catch {}
-}
-
-function readCodexAuthFile(home: string) {
-  try {
-    return JSON.parse(fs.readFileSync(path.join(home, "auth.json"), "utf8")) as JsonRecord
-  } catch {
-    return
-  }
-}
-
-async function writeCodexAuthFile(home: string, input: JsonRecord | undefined) {
-  if (!input) return
-  await fs.promises.mkdir(home, { recursive: true, mode: 0o700 })
-  await fs.promises.writeFile(path.join(home, "auth.json"), JSON.stringify(input, null, 2) + "\n", { mode: 0o600 })
-}
-
-function codexChatgptAuthTokens(input: JsonRecord | undefined) {
-  if (!input) return
-  const tokens = record(input.tokens)
-  const oauth = record(input.oauth)
-  const access = text(input.access) ?? text(tokens?.access_token) ?? text(oauth?.access)
-  const refresh = text(input.refresh) ?? text(tokens?.refresh_token) ?? text(oauth?.refresh)
-  const idToken = text(input.id_token) ?? text(tokens?.id_token) ?? text(oauth?.id_token)
-  const accountId = text(input.account_id)
-    ?? text(input.accountId)
-    ?? text(tokens?.account_id)
-    ?? text(oauth?.account_id)
-    ?? accountIdFromClaims(input)
-  if (!access || !accountId) return
-  return {
-    access,
-    ...(refresh ? { refresh } : {}),
-    ...(idToken ? { idToken } : {}),
-    accountId,
-    ...(text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type)
-      ? { planType: text(input.chatgptPlanType) ?? text(input.plan_type) ?? text(oauth?.plan_type) }
-      : {}),
-  }
-}
-
-function mergeCodexAuth(input: JsonRecord | undefined, tokens: { access: string; refresh: string; accountId: string; idToken?: string; planType?: string }) {
-  const current = input ?? { type: "codex_auth", auth_mode: "chatgpt" }
-  const existingTokens = record(current.tokens) ?? {}
-  const existingOauth = record(current.oauth) ?? {}
-  // Codex (>=0.143) requires `tokens.id_token`; carry the refreshed one forward,
-  // falling back to any previously-stored value so the file never regresses to
-  // a shape the codex CLI refuses to parse.
-  const idToken = tokens.idToken ?? text(existingTokens.id_token) ?? text(existingOauth.id_token)
-  return {
-    ...current,
-    type: "codex_auth",
-    auth_mode: text(current.auth_mode) ?? "chatgpt",
-    tokens: {
-      ...existingTokens,
-      ...(idToken ? { id_token: idToken } : {}),
-      access_token: tokens.access,
-      refresh_token: tokens.refresh,
-      account_id: tokens.accountId,
-    },
-    access: tokens.access,
-    refresh: tokens.refresh,
-    account_id: tokens.accountId,
-    last_refresh: new Date().toISOString(),
-    oauth: {
-      ...existingOauth,
-      ...(idToken ? { id_token: idToken } : {}),
-      access: tokens.access,
-      refresh: tokens.refresh,
-      account_id: tokens.accountId,
-      ...(tokens.planType ? { plan_type: tokens.planType } : {}),
-    },
-  }
-}
-
-function accountIdFromClaims(input: JsonRecord | undefined) {
-  return accountIdFromJwt(text(input?.id_token) ?? text(record(input?.tokens)?.id_token))
-    ?? accountIdFromJwt(text(input?.access_token) ?? text(input?.access) ?? text(record(input?.tokens)?.access_token))
-}
-
-function accountIdFromJwt(token: string | undefined) {
-  if (!token) return
-  const payload = token.split(".")[1]
-  if (!payload) return
-  try {
-    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as JsonRecord
-    const openai = record(claims["https://api.openai.com/auth"])
-    return text(claims.chatgpt_account_id) ?? text(openai?.chatgpt_account_id)
-  } catch {
-    return
-  }
-}
-
+export { observeCodexAppServerProcess } from "./app-server-process"
 function codexUserInput(parts: unknown[]) {
   const textInput = extractTextFromParts(parts)
   if (!textInput) return [{ type: "text", text: "", text_elements: [] }]
@@ -1340,8 +931,8 @@ function codexAppServerModel(model: string | undefined) {
   return value
 }
 
-function codexTurnModel(input: PromptInput, fallback: string) {
-  return codexAppServerModel(text(input.model.modelID) ?? text(fallback))
+function codexTurnModel(input: PromptInput, configuredModel: string) {
+  return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
 }
 
 function questionIds(params: JsonRecord) {

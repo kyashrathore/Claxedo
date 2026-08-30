@@ -41,6 +41,9 @@ function testHarness(options: {
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
   commitsStreamEvents?: boolean
+  onPermissionResponse?: () => void
+  onQuestionAnswer?: () => void
+  onQuestionReject?: () => void
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
     ...(options.commitsStreamEvents ? { commitsStreamEvents: true as const } : {}),
@@ -86,6 +89,19 @@ function testHarness(options: {
     async getMessages() {
       return []
     },
+    ...(options.onPermissionResponse
+      ? {
+          async listPermissions() { return [] },
+          async respondPermission() { options.onPermissionResponse?.() },
+        }
+      : {}),
+    ...(options.onQuestionAnswer || options.onQuestionReject
+      ? {
+          async listQuestions() { return [] },
+          async replyQuestion() { options.onQuestionAnswer?.() },
+          async rejectQuestion() { options.onQuestionReject?.() },
+        }
+      : {}),
     dispose() {},
     ...(options.abort ? { abort: options.abort } : {}),
   }
@@ -147,6 +163,145 @@ function handoffHarness(input: {
 }
 
 describe("createAgentRuntime", () => {
+  test("resolves one lazy adapter for concurrent callers", async () => {
+    let resolutions = 0
+    let targetAdapter: AgentHarnessAdapter | undefined
+    handoffHarness({ id: "claude", onAdapter: (adapter) => { targetAdapter = adapter } })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [handoffHarness({ id: "pi" })],
+      resolveHarness: async () => {
+        resolutions++
+        await tick()
+        if (!targetAdapter) throw new Error("target adapter was not created")
+        return targetAdapter
+      },
+    })
+
+    await Promise.all([
+      runtime.sessions.create({ id: "ses_lazy_a", directory: "/repo", harness: { id: "claude", access: "native" } }),
+      runtime.sessions.create({ id: "ses_lazy_b", directory: "/repo", harness: { id: "claude", access: "native" } }),
+    ])
+
+    expect(resolutions).toBe(1)
+    runtime.dispose()
+  })
+
+  test("ends a slow subscription with an explicit overflow notice", async () => {
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness()],
+      subscriberBufferSize: 1,
+    })
+    const session = await runtime.sessions.create({ directory: undefined, harness: { id: "pi", access: "native" } })
+    const iterator = runtime.events.subscribe({ sessionId: session.id })[Symbol.asyncIterator]()
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_overflow", text: "hello" })
+
+    await expect(iterator.next()).resolves.toMatchObject({
+      done: false,
+      value: {
+        sessionId: session.id,
+        payload: { type: "harness-notice", code: "runtime.subscription_overflow" },
+      },
+    })
+    await expect(iterator.next()).resolves.toEqual({ done: true, value: undefined })
+    runtime.dispose()
+  })
+
+  test("rejects unknown interactions without choosing a harness", async () => {
+    let permissionResponses = 0
+    let questionAnswers = 0
+    let questionRejects = 0
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        onPermissionResponse: () => permissionResponses++,
+        onQuestionAnswer: () => questionAnswers++,
+        onQuestionReject: () => questionRejects++,
+      })],
+    })
+
+    await expect(runtime.permissions.respond("perm_missing", "deny", "/repo")).rejects.toThrow("Permission perm_missing not found")
+    await expect(runtime.questions.answer("question_missing", "answer", "/repo")).rejects.toThrow("Question question_missing not found")
+    await expect(runtime.questions.reject("question_missing", "/repo")).rejects.toThrow("Question question_missing not found")
+    expect({ permissionResponses, questionAnswers, questionRejects }).toEqual({
+      permissionResponses: 0,
+      questionAnswers: 0,
+      questionRejects: 0,
+    })
+    runtime.dispose()
+  })
+
+  test("keeps the runtime inventory current after adapter-backed update and delete", async () => {
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [pi()],
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_inventory",
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+      title: "Before",
+    })
+
+    await expect(runtime.sessions.update(session.id, { title: "After" })).resolves.toMatchObject({ title: "After" })
+    await expect(runtime.sessions.list(undefined)).resolves.toMatchObject([{ id: session.id, title: "After" }])
+
+    await runtime.sessions.delete(session.id)
+    await expect(runtime.sessions.list(undefined)).resolves.toEqual([])
+    runtime.dispose()
+  })
+
+  test("persists adapter-accepted config updates through both public namespaces", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" })],
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_config",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.sessions.updateConfig(session.id, { variant: "high" }, "/repo")
+    expect(rows.getSessionConfig(session.id)?.variant).toBe("high")
+
+    await runtime.config.update(session.id, { agent: "review" }, "/repo")
+    expect(rows.getSessionConfig(session.id)).toMatchObject({ variant: "high", agent: "review" })
+    runtime.dispose()
+  })
+
+  test("routes harness changes from config.update through conversation handoff", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const handoffs: string[] = []
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({ id: "pi" }),
+        handoffHarness({ id: "claude", handoffs }),
+      ],
+    })
+    const session = await runtime.sessions.create({
+      id: "ses_config_handoff",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.config.update(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+
+    expect(handoffs).toEqual([session.id])
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "claude", access: "native" })
+    expect(rows.getSessionConfig(session.id)?.handoff).toMatchObject({
+      from: { id: "pi", access: "native" },
+      pending: true,
+    })
+    runtime.dispose()
+  })
+
   test("resolves a target harness lazily for conversation handoff", async () => {
     const store = createMemoryRuntimeStore()
     const rows = storeRows(store)
@@ -1174,25 +1329,13 @@ describe("createAgentRuntime", () => {
     }
   })
 
-  test("sqlite store coalesces event bursts into a single snapshot write", async () => {
+  test("sqlite commits each acknowledged mutation without waiting for close", () => {
     const root = tempRoot()
     try {
       const store = storeRows(createSqliteRuntimeStore({ root }))
-      const internals = store as unknown as {
-        persist(): void
-        bindSession(input: { sessionId: string; directory: string; agentSessionId: string }): void
-        appendEvent(input: { sessionId: string; payload: unknown }): unknown
-        close(): void
-      }
-      let persistCount = 0
-      const originalPersist = internals.persist.bind(internals)
-      internals.persist = () => {
-        persistCount++
-        originalPersist()
-      }
-      internals.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "ses_1" })
+      store.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "ses_1" })
       for (let i = 0; i < 100; i++) {
-        internals.appendEvent({
+        store.appendEvent({
           sessionId: "ses_1",
           payload: sessionUpdated(buildSession({
             id: "ses_1",
@@ -1201,11 +1344,6 @@ describe("createAgentRuntime", () => {
           })),
         })
       }
-      expect(persistCount).toBe(0)
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      expect(persistCount).toBe(1)
-      internals.close()
-      expect(persistCount).toBe(1)
 
       const reopened = createSqliteRuntimeStore({ root }) as unknown as {
         getSession(id: string): { title: string | null } | null
@@ -1213,6 +1351,7 @@ describe("createAgentRuntime", () => {
       }
       expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
       reopened.close()
+      store.close()
     } finally {
       removeTestTempDir(root)
     }

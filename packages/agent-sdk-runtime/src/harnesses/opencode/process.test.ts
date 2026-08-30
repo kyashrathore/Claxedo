@@ -111,7 +111,7 @@ describe("opencode server process", () => {
   })
 
   test("spawn mode reports itself as spawned and holds no process until asked", () => {
-    // U8-F3: loading the adapter selects no harness and starts nothing.
+    // Loading the adapter selects no harness and starts nothing.
     const server = new OpenCodeServerProcess(undefined, inputs)
 
     expect(server.mode).toBe("spawned")

@@ -292,18 +292,3 @@ export type AgentConfigOption = {
   }>
   harnessPayload?: unknown
 }
-
-/** @deprecated use AgentSession. */
-export type AgentSessionRow = AgentSession
-/** @deprecated use AgentMessage. */
-export type AgentMessageRow = AgentMessage
-/** @deprecated use AgentPermission. */
-export type AgentPermissionRow = AgentPermission
-/** @deprecated use AgentQuestion. */
-export type AgentQuestionRow = AgentQuestion
-/** @deprecated use AgentCommand. */
-export type AgentCommandRow = AgentCommand
-/** @deprecated use AgentAgent. */
-export type AgentAgentRow = AgentAgent
-/** @deprecated use AgentConfigOption. */
-export type AgentConfigOptionRow = AgentConfigOption

@@ -32,12 +32,12 @@ async function nextEvent<T extends { type: string }>(iterator: AsyncIterator<T>,
 }
 
 describe("PiHarnessAdapter", () => {
-  test("U4/U9: a bare Pi adapter does not advertise a subagent tool", async () => {
+  test("a bare Pi adapter does not advertise a subagent tool", async () => {
     const capabilities = await new PiHarnessAdapter().readHarnessCapabilities("/work")
     expect(capabilities.subagents).toBe(false)
   })
 
-  test("U9: subagents require a model-backed native tool extension", async () => {
+  test("subagents require a model-backed native tool extension", async () => {
     const model = getModel("anthropic", "claude-sonnet-4-5")
     const backend = {
       model,
@@ -299,14 +299,7 @@ describe("PiHarnessAdapter", () => {
     expect((await adapter.readHarnessCapabilities(session.id)).permissions).toBe(false)
   })
 
-  /*
-   * `permission:` is ordinary prompt text now.
-   *
-   * It used to be a magic prefix that raised a request and blocked the turn on an
-   * answer — a gate that only existed when the prompt happened to opt into it,
-   * while every other prompt ran unchecked. Pinned so the prefix cannot quietly
-   * regain meaning.
-   */
+  /** `permission:` is ordinary prompt text. */
   test("a prompt beginning with permission: is not a checkpoint", async () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")

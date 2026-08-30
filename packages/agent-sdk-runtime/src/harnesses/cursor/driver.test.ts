@@ -10,7 +10,7 @@ describe("Cursor SDK driver", () => {
       .toBe("continue")
   })
 
-  test("U8: admits Task lifecycle metadata before projecting a sanitized parent frame", async () => {
+  test("admits Task lifecycle metadata before projecting a sanitized parent frame", async () => {
     const observed: unknown[] = []
     const ingested: unknown[][] = []
     const rebound: string[] = []
@@ -96,7 +96,7 @@ describe("Cursor SDK driver", () => {
     expect(JSON.stringify({ observed, ingested })).not.toContain("private child transcript")
   })
 
-  test("U8: treats handle-free completion and error as valid lifecycle observations", async () => {
+  test("treats handle-free completion and error as valid lifecycle observations", async () => {
     const observed: unknown[] = []
     const ingested: unknown[][] = []
     const registrations: unknown[] = []

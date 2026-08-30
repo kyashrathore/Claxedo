@@ -51,6 +51,13 @@ describe("mcp resolver", () => {
     })
   })
 
+  test("reports malformed persisted state", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(path.join(root, "managed-mcp-overrides.json"), "not-json")
+
+    await expect(loadManagedMcpState(4310)).rejects.toBeInstanceOf(SyntaxError)
+  })
+
   test("does not derive MCP control from ambient OpenCode URL", () => {
     const value = process.env.OPENCODE_URL
     process.env.OPENCODE_URL = "http://ambient-opencode.test"

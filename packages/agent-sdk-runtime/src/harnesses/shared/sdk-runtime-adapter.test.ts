@@ -484,14 +484,7 @@ describe("SdkRuntimeAdapter", () => {
 })
 
 describe("SdkRuntimeAdapter busy lock", () => {
-  /**
-   * The lock must be released when the TURN settles, not when the generator
-   * finishes. Between those two moments the consumer still commits events and
-   * awaits an auto-title round-trip — ~515ms measured on a real failing run —
-   * and a prompt arriving in that window used to be refused with "Session is
-   * already processing a message" for a turn that had been over for half a
-   * second. One Tier R run missed the release by a single millisecond.
-   */
+  /** The busy lock follows turn lifetime rather than consumer iteration lifetime. */
   function lockProbeAdapter(events: unknown[]) {
     const adapter = new SdkRuntimeAdapter({
       store: storeRows(createMemoryRuntimeStore()),
@@ -532,7 +525,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
     for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
-      // The window that used to refuse: mid-drain, after the terminal event.
+      // Terminal emission releases admission during stream consumption.
       const leaveReplacement = lifecycle.enter("s1")
       expect(leaveReplacement).not.toBeNull()
       leaveReplacement?.()
