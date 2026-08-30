@@ -410,8 +410,8 @@ function updatedAtChanged(
   after: readonly SessionNavigationRow[],
   input: SessionListUpdate,
 ) {
-  const prev = before.find((row) => row.sessionId === input.sessionId && row.directory === input.directory)
-  const next = after.find((row) => row.sessionId === input.sessionId && row.directory === input.directory)
+  const prev = before.find((row) => matchesSessionListRow(row, input))
+  const next = after.find((row) => matchesSessionListRow(row, input))
   if (!prev || !next) return false
   return (prev.updatedAt ?? 0) !== (next.updatedAt ?? 0)
 }

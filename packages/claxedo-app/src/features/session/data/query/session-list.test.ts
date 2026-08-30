@@ -9,7 +9,6 @@ import {
   sessionListRequest,
   sessionListQueryOptions,
   upsertCreatedSessionListRow,
-  reconcileUpdatedSessionListQueryData,
   type SessionListResponse,
 } from "./session-list"
 
@@ -628,14 +627,16 @@ describe("upsertCreatedSessionListRow", () => {
     expect(queryClient.getQueryData<SessionListResponse>(archivedKey)?.items?.some((item) => item.sessionId === "ses_new")).toBe(false)
   })
 
-  test("bootstraps an in-flight query with no cached page yet", () => {
+  test("bootstraps an in-flight query with no cached page yet", async () => {
     const query = { scope: "workspace" as const, workspaceId: "ws_1", directory: "/repo", limit: 2 }
     const workspaceKey = key(query)
-    void queryClient.fetchQuery({
+    let resolveRequest!: (response: Response) => void
+    const request = new Promise<Response>((resolve) => { resolveRequest = resolve })
+    const pendingFetch = queryClient.fetchQuery({
       ...sessionListQueryOptions({
         baseUrl: "http://test.local",
         query,
-        request: () => new Promise<Response>(() => {}),
+        request: () => request,
       }),
     })
 
@@ -643,6 +644,9 @@ describe("upsertCreatedSessionListRow", () => {
 
     expect(queryClient.getQueryData<SessionListResponse>(workspaceKey)?.items?.[0]?.sessionId).toBe("ses_new")
     expect(queryClient.getQueryData<SessionListResponse>(workspaceKey)?.totalKnown).toBe(1)
+
+    resolveRequest(new Response(JSON.stringify(response())))
+    await pendingFetch
   })
 
   test("adopts project id from a sibling workspace row when create-time upsert omits it", () => {
