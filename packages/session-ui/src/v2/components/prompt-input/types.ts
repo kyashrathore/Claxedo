@@ -1,4 +1,4 @@
-import type { FilePartSource } from "@opencode-ai/sdk/v2/client"
+import type { AgentFilePartSource } from "@claxedo/agent-runtime-contract"
 
 type PromptInputV2PartBase = {
   content: string
@@ -17,7 +17,7 @@ export type PromptInputV2FilePart = PromptInputV2PartBase & {
   mime?: string
   filename?: string
   url?: string
-  source?: FilePartSource
+  source?: AgentFilePartSource
 }
 
 export type PromptInputV2AgentPart = PromptInputV2PartBase & {
@@ -35,10 +35,7 @@ export type PromptInputV2Attachment = {
 }
 
 export type PromptInputV2Prompt = (
-  | PromptInputV2TextPart
-  | PromptInputV2FilePart
-  | PromptInputV2AgentPart
-  | PromptInputV2Attachment
+  PromptInputV2TextPart | PromptInputV2FilePart | PromptInputV2AgentPart | PromptInputV2Attachment
 )[]
 
 export type PromptInputV2Model = {

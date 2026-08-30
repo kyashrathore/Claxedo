@@ -1,5 +1,3 @@
-import type { FileContent } from "@opencode-ai/sdk/v2"
-
 export type MediaKind = "image" | "audio" | "svg"
 
 const imageExtensions = new Set(["png", "jpg", "jpeg", "gif", "webp", "avif", "bmp", "ico", "tif", "tiff", "heic"])
@@ -7,14 +5,13 @@ const audioExtensions = new Set(["mp3", "wav", "ogg", "m4a", "aac", "flac", "opu
 
 type MediaValue = unknown
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value)
+}
+
 function mediaRecord(value: unknown) {
-  if (!value || typeof value !== "object") return
-  return value as Partial<FileContent> & {
-    content?: unknown
-    encoding?: unknown
-    mimeType?: unknown
-    type?: unknown
-  }
+  if (!isRecord(value)) return
+  return value
 }
 
 export function normalizeMimeType(type: string | undefined) {

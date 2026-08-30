@@ -15,7 +15,7 @@ import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
 import { checksum } from "@opencode-ai/core/util/encode"
 import { createEffect, createMemo, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { type FileContent, type SnapshotFileDiff, type VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { AgentFileContent, AgentReviewFileDiff, AgentSnapshotFileDiff } from "@claxedo/agent-runtime-contract"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { type SelectedLineRange } from "@pierre/diffs"
 import { Dynamic } from "solid-js/web"
@@ -62,10 +62,12 @@ export type SessionReviewCommentActions = {
 
 export type SessionReviewFocus = { file: string; id: string }
 
-type RawReviewDiff = (SnapshotFileDiff | VcsFileDiff) & {
+type RawReviewDiff = AgentSnapshotFileDiff & {
+  before?: string
+  after?: string
   preloaded?: PreloadMultiFileDiffResult<any>
 }
-type ReviewDiff = ((SnapshotFileDiff & { file: string }) | VcsFileDiff) & {
+type ReviewDiff = AgentReviewFileDiff & {
   preloaded?: PreloadMultiFileDiffResult<any>
 }
 type Item = ViewDiff & { preloaded?: PreloadMultiFileDiffResult<any> }
@@ -115,7 +117,7 @@ export interface SessionReviewProps {
   actions?: JSX.Element
   diffs: RawReviewDiff[]
   onViewFile?: (file: string) => void
-  readFile?: (path: string) => Promise<FileContent | undefined>
+  readFile?: (path: string) => Promise<AgentFileContent | undefined>
   lineCommentMention?: LineCommentEditorProps["mention"]
 }
 
@@ -522,7 +524,8 @@ export const SessionReview = (props: SessionReviewProps) => {
                                   <Show when={props.onViewFile && diffCanRender()}>
                                     <Tooltip value={openFileLabel()} placement="top" gutter={4}>
                                       <button
-                                        data-slot="session-review-view-button" class="ui-session-review-view-button"
+                                        data-slot="session-review-view-button"
+                                        class="ui-session-review-view-button"
                                         type="button"
                                         aria-label={openFileLabel()}
                                         onClick={(e) => {

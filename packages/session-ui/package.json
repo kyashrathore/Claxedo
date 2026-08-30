@@ -41,9 +41,9 @@
     "vite": "catalog:"
   },
   "dependencies": {
+    "@claxedo/agent-runtime-contract": "workspace:*",
     "@kobalte/core": "catalog:",
     "@opencode-ai/core": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
     "@opencode-ai/ui": "workspace:*",
     "@pierre/diffs": "catalog:",
     "@shikijs/stream": "catalog:",

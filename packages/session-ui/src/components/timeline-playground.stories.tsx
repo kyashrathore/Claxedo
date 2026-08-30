@@ -2,16 +2,16 @@
 import { createSignal, createMemo, createEffect, on, For, Show, batch } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import type {
-  Message,
-  UserMessage,
-  AssistantMessage,
-  Part,
-  TextPart,
-  ReasoningPart,
-  ToolPart,
-  FilePart,
-  AgentPart,
-} from "@opencode-ai/sdk/v2"
+  AgentPresentationMessage as Message,
+  AgentUserMessage as UserMessage,
+  AgentAssistantMessage as AssistantMessage,
+  AgentContentPart as Part,
+  AgentTextPart as TextPart,
+  AgentReasoningPart as ReasoningPart,
+  AgentToolPart as ToolPart,
+  AgentFilePart as FilePart,
+  AgentAgentPart as AgentPart,
+} from "@claxedo/agent-runtime-contract"
 import { DataProvider } from "../context/data"
 import { FileComponentProvider } from "@opencode-ai/ui/context/file"
 import { SessionTurn } from "./session-turn"

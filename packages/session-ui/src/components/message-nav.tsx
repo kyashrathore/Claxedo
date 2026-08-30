@@ -1,4 +1,4 @@
-import { UserMessage } from "@opencode-ai/sdk/v2"
+import type { AgentUserMessage } from "@claxedo/agent-runtime-contract"
 import { HoverCard, useHoverCardContext } from "@kobalte/core/hover-card"
 import {
   ComponentProps,
@@ -24,12 +24,12 @@ export type MessageNavPreview = {
 
 export function MessageNav(
   props: ComponentProps<"ul"> & {
-    messages: UserMessage[]
-    current?: UserMessage
+    messages: AgentUserMessage[]
+    current?: AgentUserMessage
     size: "normal" | "compact"
-    onMessageSelect: (message: UserMessage) => void
-    getLabel?: (message: UserMessage) => string | undefined
-    getPreview?: (message: UserMessage) => MessageNavPreview
+    onMessageSelect: (message: AgentUserMessage) => void
+    getLabel?: (message: AgentUserMessage) => string | undefined
+    getPreview?: (message: AgentUserMessage) => MessageNavPreview
   },
 ) {
   const i18n = useI18n()
@@ -43,7 +43,7 @@ export function MessageNav(
     "class",
   ])
   const [activePreview, setActivePreview] = createSignal<string>()
-  const [pendingPreview, setPendingPreview] = createSignal<UserMessage>()
+  const [pendingPreview, setPendingPreview] = createSignal<AgentUserMessage>()
   let previewSwitchTimer: number | undefined
 
   const cancelPreviewSwitch = () => {
@@ -59,11 +59,11 @@ export function MessageNav(
     return index >= 0 ? index : local.messages.length - 1
   }
 
-  const selectMessage = (message: UserMessage) => {
+  const selectMessage = (message: AgentUserMessage) => {
     local.onMessageSelect(message)
   }
 
-  const fallbackLabel = (message: UserMessage) =>
+  const fallbackLabel = (message: AgentUserMessage) =>
     local.getLabel?.(message) ?? message.summary?.title ?? i18n.t("ui.messageNav.newMessage")
 
   const activePreviewMessage = createMemo(() => {
@@ -99,7 +99,7 @@ export function MessageNav(
       closePreview()
     }))
 
-    const beginPreview = (message: UserMessage, trigger: HTMLButtonElement) => {
+    const beginPreview = (message: AgentUserMessage, trigger: HTMLButtonElement) => {
       hoverCard.cancelClosing()
 
       if (!hoverCard.isOpen()) {
@@ -124,14 +124,14 @@ export function MessageNav(
       }, 140)
     }
 
-    const cancelPendingPreview = (message: UserMessage) => {
+    const cancelPendingPreview = (message: AgentUserMessage) => {
       if (pendingPreview()?.id !== message.id) return
       cancelPreviewSwitch()
       hoverCard.cancelOpening()
       setPendingPreview(activePreviewMessage())
     }
 
-    const selectCompactMessage = (message: UserMessage) => {
+    const selectCompactMessage = (message: AgentUserMessage) => {
       closePreview()
       hoverCard.close()
       selectMessage(message)

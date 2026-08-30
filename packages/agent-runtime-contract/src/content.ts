@@ -5,6 +5,56 @@ export type AgentMessageError = {
   data: Record<string, unknown> & { message?: string }
 }
 
+export type AgentOutputFormat =
+  { type: "text" } | { type: "json_schema"; schema: Record<string, unknown>; retryCount?: number }
+
+export type AgentUserMessage = {
+  id: string
+  sessionID: string
+  role: "user"
+  time: { created: number }
+  format?: AgentOutputFormat
+  summary?: {
+    title?: string
+    body?: string
+    diffs: AgentSnapshotFileDiff[]
+  }
+  agent: string
+  model: { providerID: string; modelID: string; variant?: string }
+  system?: string
+  tools?: Record<string, boolean>
+  claxedo?: { author: AgentMessageAuthor }
+}
+
+export type AgentAssistantMessage = {
+  id: string
+  sessionID: string
+  role: "assistant"
+  time: { created: number; completed?: number }
+  error?: AgentMessageError
+  parentID: string
+  modelID: string
+  providerID: string
+  mode: string
+  agent: string
+  path: { cwd: string; root: string }
+  summary?: boolean
+  cost: number
+  tokens: {
+    total?: number
+    input: number
+    output: number
+    reasoning: number
+    cache: { read: number; write: number }
+  }
+  structured?: unknown
+  variant?: string
+  finish?: string
+}
+
+/** Message information rendered by transcript and navigation surfaces. */
+export type AgentPresentationMessage = AgentUserMessage | AgentAssistantMessage
+
 export type AgentMessageInfo = {
   id: string
   role: string
@@ -63,18 +113,77 @@ export type AgentReasoningPart = AgentPartBase<"reasoning"> & {
   metadata?: Record<string, unknown>
 }
 
+export type AgentFilePartSourceText = {
+  value: string
+  start: number
+  end: number
+}
+
+export type AgentFilePartRange = {
+  start: { line: number; character: number }
+  end: { line: number; character: number }
+}
+
+export type AgentFileSource = {
+  type: "file"
+  text: AgentFilePartSourceText
+  path: string
+}
+
+export type AgentSymbolSource = {
+  type: "symbol"
+  text: AgentFilePartSourceText
+  path: string
+  range: AgentFilePartRange
+  name: string
+  kind: number
+}
+
+export type AgentResourceSource = {
+  type: "resource"
+  text: AgentFilePartSourceText
+  clientName: string
+  uri: string
+}
+
+export type AgentFilePartSource = AgentFileSource | AgentSymbolSource | AgentResourceSource
+
 export type AgentFilePart = AgentPartBase<"file"> & {
   mime: string
   filename?: string
   url: string
-  source?: Record<string, unknown> & { type: "file" | "symbol" | "resource" }
+  source?: AgentFilePartSource
 }
+
+export type AgentTextPartInput = Omit<AgentTextPart, "id" | "sessionID" | "messageID"> & { id?: string }
+export type AgentFilePartInput = Omit<AgentFilePart, "id" | "sessionID" | "messageID"> & { id?: string }
+export type AgentAgentPartInput = Omit<AgentAgentPart, "id" | "sessionID" | "messageID"> & { id?: string }
 
 export type AgentToolState =
   | { status: "pending"; input: Record<string, unknown>; raw: string }
-  | { status: "running"; input: Record<string, unknown>; title?: string; metadata?: Record<string, unknown>; time: { start: number } }
-  | { status: "completed"; input: Record<string, unknown>; output: string; title: string; metadata: Record<string, unknown>; time: { start: number; end: number; compacted?: number }; attachments?: AgentFilePart[] }
-  | { status: "error"; input: Record<string, unknown>; error: string; metadata?: Record<string, unknown>; time: { start: number; end: number } }
+  | {
+      status: "running"
+      input: Record<string, unknown>
+      title?: string
+      metadata?: Record<string, unknown>
+      time: { start: number }
+    }
+  | {
+      status: "completed"
+      input: Record<string, unknown>
+      output: string
+      title: string
+      metadata: Record<string, unknown>
+      time: { start: number; end: number; compacted?: number }
+      attachments?: AgentFilePart[]
+    }
+  | {
+      status: "error"
+      input: Record<string, unknown>
+      error: string
+      metadata?: Record<string, unknown>
+      time: { start: number; end: number }
+    }
 
 export type AgentToolPart = AgentPartBase<"tool"> & {
   callID: string
@@ -83,20 +192,69 @@ export type AgentToolPart = AgentPartBase<"tool"> & {
   metadata?: Record<string, unknown>
 }
 
+export type AgentSubtaskPart = AgentPartBase<"subtask"> & {
+  prompt: string
+  description: string
+  agent: string
+  model?: { providerID: string; modelID: string }
+  command?: string
+}
+
+export type AgentStepStartPart = AgentPartBase<"step-start"> & { snapshot?: string }
+
+export type AgentStepFinishPart = AgentPartBase<"step-finish"> & {
+  reason: string
+  snapshot?: string
+  cost: number
+  tokens: {
+    total?: number
+    input: number
+    output: number
+    reasoning: number
+    cache: { read: number; write: number }
+  }
+}
+
+export type AgentSnapshotPart = AgentPartBase<"snapshot"> & { snapshot: string }
+export type AgentPatchPart = AgentPartBase<"patch"> & { hash: string; files: string[] }
+export type AgentAgentPart = AgentPartBase<"agent"> & {
+  name: string
+  source?: { value: string; start: number; end: number }
+}
+export type AgentRetryPart = AgentPartBase<"retry"> & {
+  attempt: number
+  error: AgentMessageError
+  time: { created: number }
+}
+export type AgentCompactionPart = AgentPartBase<"compaction"> & {
+  auto: boolean
+  overflow?: boolean
+  tail_start_id?: string
+}
+export type AgentHandoffPart = AgentPartBase<"handoff"> & {
+  from: { id: string; access: string; connection?: unknown }
+  to: { id: string; access: string; connection?: unknown }
+}
+
 export type AgentContentPart =
   | AgentTextPart
   | AgentReasoningPart
   | AgentFilePart
   | AgentToolPart
-  | (AgentPartBase<"subtask"> & { prompt: string; description: string; agent: string; model?: { providerID: string; modelID: string }; command?: string })
-  | (AgentPartBase<"step-start"> & { snapshot?: string })
-  | (AgentPartBase<"step-finish"> & { reason: string; snapshot?: string; cost: number; tokens: { total?: number; input: number; output: number; reasoning: number; cache: { read: number; write: number } } })
-  | (AgentPartBase<"snapshot"> & { snapshot: string })
-  | (AgentPartBase<"patch"> & { hash: string; files: string[] })
-  | (AgentPartBase<"agent"> & { name: string; source?: { value: string; start: number; end: number } })
-  | (AgentPartBase<"retry"> & { attempt: number; error: AgentMessageError; time: { created: number } })
-  | (AgentPartBase<"compaction"> & { auto: boolean; overflow?: boolean; tail_start_id?: string })
-  | (AgentPartBase<"handoff"> & { from: { id: string; access: string; connection?: unknown }; to: { id: string; access: string; connection?: unknown } })
+  | AgentSubtaskPart
+  | AgentStepStartPart
+  | AgentStepFinishPart
+  | AgentSnapshotPart
+  | AgentPatchPart
+  | AgentAgentPart
+  | AgentRetryPart
+  | AgentCompactionPart
+  | AgentHandoffPart
+
+export type AgentPromptResponse = {
+  info: AgentAssistantMessage
+  parts: AgentContentPart[]
+}
 
 export type AgentTodo = {
   content: string
@@ -104,15 +262,30 @@ export type AgentTodo = {
   priority: string
 }
 
+export type AgentQuestionOption = {
+  label: string
+  description: string
+}
+
+export type AgentQuestionInfo = {
+  question: string
+  header: string
+  options: AgentQuestionOption[]
+  multiple?: boolean
+  custom?: boolean
+}
+
+export type AgentQuestionAnswer = string[]
+
 export type AgentPermission = {
   id: string
   sessionID: string
-  tool?: string | { messageID: string; callID: string }
+  tool?: { messageID: string; callID: string }
   title?: string
-  permission?: string
-  patterns?: string[]
-  always?: string[]
-  metadata?: Record<string, unknown>
+  permission: string
+  patterns: string[]
+  always: string[]
+  metadata: Record<string, unknown>
   time?: { created?: number }
   harnessPayload?: unknown
 }
@@ -120,8 +293,8 @@ export type AgentPermission = {
 export type AgentQuestion = {
   id: string
   sessionID: string
-  questions?: unknown[]
-  tool?: unknown
+  questions: AgentQuestionInfo[]
+  tool?: { messageID: string; callID: string }
   harnessPayload?: unknown
 }
 

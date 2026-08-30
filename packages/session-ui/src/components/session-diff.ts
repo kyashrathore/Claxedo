@@ -5,21 +5,10 @@ import { parseDiffFromFile, parsePatchFiles, type FileDiffMetadata } from "@pier
 // callers hold resolved metadata without importing the renderer package.
 export type { FileDiffMetadata } from "@pierre/diffs"
 import { parsePatch } from "diff"
-import type { SnapshotFileDiff, VcsFileDiff } from "@opencode-ai/sdk/v2"
+import type { AgentReviewFileDiff } from "@claxedo/agent-runtime-contract"
 
-type LegacyDiff = {
-  file: string
-  patch?: string
-  before?: string
-  after?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-}
-
-type SnapshotDiff = SnapshotFileDiff & { file: string }
-type ReviewDiff = SnapshotDiff | VcsFileDiff | LegacyDiff
-export type DiffSource = Pick<LegacyDiff, "file" | "patch" | "before" | "after">
+type ReviewDiff = AgentReviewFileDiff
+export type DiffSource = Pick<AgentReviewFileDiff, "file" | "patch" | "before" | "after">
 
 export type ViewDiff = {
   file: string

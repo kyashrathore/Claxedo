@@ -1,5 +1,5 @@
 import { createMemo, For, Show } from "solid-js"
-import type { ToolPart } from "@opencode-ai/sdk/v2"
+import type { AgentToolPart } from "@claxedo/agent-runtime-contract"
 import { AgentGlyph } from "./agent-glyph"
 import { useData, type SubagentView } from "../context"
 
@@ -52,7 +52,7 @@ function statusLabel(status: ChipModel["status"]) {
 }
 
 export function SubagentChipRow(props: {
-  parts?: ToolPart[]
+  parts?: AgentToolPart[]
   subagents?: SubagentView[]
   onOpen?: (childSessionId: string, origin: HTMLButtonElement) => void
 }) {

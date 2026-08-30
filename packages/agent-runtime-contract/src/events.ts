@@ -27,7 +27,9 @@ export type RuntimeUsageObservation = {
 
 export type AgentPresentationEvent =
   | { id: string; type: "message.updated"; properties: { sessionID: string; info: AgentMessageInfo & { sessionID: string } } }
+  | { id: string; type: "message.removed"; properties: { sessionID: string; messageID: string } }
   | { id: string; type: "message.part.updated"; properties: { sessionID: string; part: AgentContentPart; time: number } }
+  | { id: string; type: "message.part.removed"; properties: { sessionID: string; messageID: string; partID: string } }
   | { id: string; type: "message.part.delta"; properties: { sessionID: string; messageID: string; partID: string; field: string; delta: string } }
   | { type: "message.completed"; properties: { sessionID: string; messageID: string } }
   | { id: string; type: "permission.asked"; properties: AgentPermission }
@@ -53,7 +55,9 @@ export type AgentPresentationEventType = AgentPresentationEvent["type"]
 
 export const AGENT_PRESENTATION_EVENT_TYPE_REGISTRY = {
   "message.updated": true,
+  "message.removed": true,
   "message.part.updated": true,
+  "message.part.removed": true,
   "message.part.delta": true,
   "message.completed": true,
   "permission.asked": true,

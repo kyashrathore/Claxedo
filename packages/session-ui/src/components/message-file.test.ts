@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
-import type { FilePart } from "@opencode-ai/sdk/v2"
+import type { AgentFilePart } from "@claxedo/agent-runtime-contract"
 import { attached, inline, kind, typeLabel } from "./message-file"
 
-function file(part: Partial<FilePart> = {}): FilePart {
+function file(part: Partial<AgentFilePart> = {}): AgentFilePart {
   return {
     id: "part_1",
     sessionID: "ses_1",

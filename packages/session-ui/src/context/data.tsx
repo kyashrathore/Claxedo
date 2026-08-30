@@ -1,9 +1,16 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@opencode-ai/sdk/v2"
+import type {
+  AgentContentPart,
+  AgentPresentationMessage,
+  AgentPresentationProvider,
+  AgentPresentationSession,
+  AgentRuntimeStatus,
+  AgentSnapshotFileDiff,
+} from "@claxedo/agent-runtime-contract"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
 export type NormalizedProviderListResponse = {
-  all: Map<string, Provider>
+  all: Map<string, AgentPresentationProvider>
   default: {
     [key: string]: string
   }
@@ -16,21 +23,21 @@ type Data = {
     color?: string
   }[]
   provider?: NormalizedProviderListResponse
-  session: Session[]
+  session: AgentPresentationSession[]
   session_status: {
-    [sessionID: string]: SessionStatus
+    [sessionID: string]: AgentRuntimeStatus
   }
   session_diff: {
-    [sessionID: string]: SnapshotFileDiff[]
+    [sessionID: string]: AgentSnapshotFileDiff[]
   }
   session_diff_preload?: {
     [sessionID: string]: PreloadMultiFileDiffResult<any>[]
   }
   message: {
-    [sessionID: string]: Message[]
+    [sessionID: string]: AgentPresentationMessage[]
   }
   part: {
-    [messageID: string]: Part[]
+    [messageID: string]: AgentContentPart[]
   }
   part_text_accum_delta?: {
     [partID: string]: string

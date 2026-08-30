@@ -1,10 +1,10 @@
-import {
-  AssistantMessage,
-  type SnapshotFileDiff,
-  Message as MessageType,
-  Part as PartType,
-} from "@opencode-ai/sdk/v2/client"
-import type { SessionStatus } from "@opencode-ai/sdk/v2"
+import type {
+  AgentAssistantMessage,
+  AgentContentPart,
+  AgentPresentationMessage,
+  AgentRuntimeStatus,
+  AgentSnapshotFileDiff,
+} from "@claxedo/agent-runtime-contract"
 import { useData } from "../context"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 
@@ -90,15 +90,15 @@ function list<T>(value: T[] | undefined | null, fallback: T[]) {
   return fallback
 }
 
-type SummaryDiff = SnapshotFileDiff & { file: string }
+type SummaryDiff = AgentSnapshotFileDiff & { file: string }
 
-function summaryDiff(value: SnapshotFileDiff): value is SummaryDiff {
+function summaryDiff(value: AgentSnapshotFileDiff): value is SummaryDiff {
   return typeof value.file === "string"
 }
 
 const hidden = new Set(["todowrite"])
 
-function partState(part: PartType, showReasoningSummaries: boolean) {
+function partState(part: AgentContentPart, showReasoningSummaries: boolean) {
   if (part.type === "tool") {
     if (hidden.has(part.tool)) return
     if (part.tool === "question" && (part.state.status === "pending" || part.state.status === "running")) return
@@ -153,13 +153,13 @@ export function SessionTurn(
   props: ParentProps<{
     sessionID: string
     messageID: string
-    messages?: MessageType[]
+    messages?: AgentPresentationMessage[]
     actions?: UserActions
     showReasoningSummaries?: boolean
     shellToolDefaultOpen?: boolean
     editToolDefaultOpen?: boolean
     active?: boolean
-    status?: SessionStatus
+    status?: AgentRuntimeStatus
     onUserInteracted?: () => void
     classes?: {
       root?: string
@@ -172,9 +172,9 @@ export function SessionTurn(
   const i18n = useI18n()
   const fileComponent = useFileComponent()
 
-  const emptyMessages: MessageType[] = []
-  const emptyParts: PartType[] = []
-  const emptyAssistant: AssistantMessage[] = []
+  const emptyMessages: AgentPresentationMessage[] = []
+  const emptyParts: AgentContentPart[] = []
+  const emptyAssistant: AgentAssistantMessage[] = []
   const emptyDiffs: SummaryDiff[] = []
   const idle = { type: "idle" as const }
 
@@ -208,7 +208,7 @@ export function SessionTurn(
     if (typeof props.active === "boolean") return
     const messages = allMessages() ?? emptyMessages
     return messages.findLast(
-      (item): item is AssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
+      (item): item is AgentAssistantMessage => item.role === "assistant" && typeof item.time.completed !== "number",
     )
   })
 
@@ -276,11 +276,11 @@ export function SessionTurn(
       const messages = allMessages() ?? emptyMessages
       if (messageIndex() < 0) return emptyAssistant
 
-      const result: AssistantMessage[] = []
+      const result: AgentAssistantMessage[] = []
       for (let i = 0; i < messages.length; i++) {
         const item = messages[i]
         if (!item) continue
-        if (item.role === "assistant" && item.parentID === msg.id) result.push(item as AssistantMessage)
+        if (item.role === "assistant" && item.parentID === msg.id) result.push(item)
       }
       return result
     },

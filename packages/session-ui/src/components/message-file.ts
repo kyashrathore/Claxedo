@@ -1,17 +1,17 @@
 import { bundledLanguagesInfo } from "shiki"
 import { getFilename } from "@opencode-ai/core/util/path"
-import type { FilePart } from "@opencode-ai/sdk/v2"
+import type { AgentFilePart } from "@claxedo/agent-runtime-contract"
 
-export function attached(part: FilePart) {
+export function attached(part: AgentFilePart) {
   return part.url.startsWith("data:")
 }
 
-export function inline(part: FilePart) {
+export function inline(part: AgentFilePart) {
   if (attached(part)) return false
   return part.source?.text?.start !== undefined && part.source?.text?.end !== undefined
 }
 
-export function kind(part: FilePart) {
+export function kind(part: AgentFilePart) {
   return part.mime.startsWith("image/") ? "image" : "file"
 }
 

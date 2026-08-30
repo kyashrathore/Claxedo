@@ -1,4 +1,5 @@
 import type { ExecutionAvailability } from "./availability"
+import type { AgentAgentPartInput, AgentFilePartInput, AgentTextPartInput } from "./content"
 
 export type AgentWorkspaceIdentity = {
   workspaceId: string
@@ -41,9 +42,32 @@ export type AgentSession = {
 }
 
 export type AgentPresentationSession = AgentSession & {
+  slug: string
+  projectID: string
+  workspaceID?: string
   directory: string
+  path?: string
+  parentID?: string
+  summary?: {
+    additions: number
+    deletions: number
+    files: number
+    diffs?: import("./content").AgentSnapshotFileDiff[]
+  }
+  cost?: number
+  tokens?: {
+    input: number
+    output: number
+    reasoning: number
+    cache: { read: number; write: number }
+  }
+  share?: { url: string }
   title: string
+  agent?: string
+  model?: { id: string; providerID: string; variant?: string }
   version: string
+  permission?: Array<{ permission: string; pattern: string; action: "allow" | "deny" | "ask" }>
+  revert?: { messageID: string; partID?: string; snapshot?: string; diff?: string }
   time: { created: number; updated: number; archived?: number }
 }
 
@@ -73,7 +97,7 @@ export type PromptFormat =
   | { type: string; provider_payload?: unknown; [key: string]: unknown }
 
 export type PromptInput = {
-  parts: unknown[]
+  parts: Array<AgentTextPartInput | AgentFilePartInput | AgentAgentPartInput>
   userMessageId?: string
   assistantMessageId: string
   agent: string
