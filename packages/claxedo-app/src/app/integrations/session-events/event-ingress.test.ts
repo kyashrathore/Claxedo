@@ -13,6 +13,12 @@ import { createGlobalSyncEventIngress } from "./event-ingress"
 import type { RoutableEvent } from "./event-router"
 import type { ClaxedoEvent } from "../claxedo-events"
 import type { SessionTitleProjectionApi } from "@/features/session/store/session-title-projection"
+import {
+  clearConversationChatRegistryForTest,
+  conversationEntryIdsForTest,
+  hydrateRegisteredConversationSnapshot,
+} from "@/features/session/conversation/conversation-registry"
+import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
 
 const noopSessionTitles: Pick<SessionTitleProjectionApi, "publishCanonical" | "remove"> = {
   publishCanonical: () => undefined,
@@ -477,6 +483,25 @@ describe("global sync event ingress", () => {
         loaded: true,
       },
     })
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo",
+      sessionID: "ses_shared",
+      messages: [],
+      parts: {},
+    })
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo-alias",
+      sessionID: "ses_shared",
+      messages: [],
+      parts: {},
+    })
+    hydrateRegisteredConversationSnapshot({
+      directory: "/repo",
+      sessionID: "ses_keep",
+      messages: [],
+      parts: {},
+    })
+    const revoked: Array<{ sessionId: string; workspaceId: string }> = []
     const dispose = createGlobalSyncEventIngress({
       globalEvents: globalEvents.source,
       claxedoEvents: claxedoEvents.source,
@@ -497,6 +522,7 @@ describe("global sync event ingress", () => {
       draftWasRolledBack: () => false,
       cacheSessions: () => undefined,
       sessionCacheLimit: (_directory, fallback) => fallback,
+      onSessionAccessRevoked: (event) => revoked.push(event),
     })
 
     claxedoEvents.emit({
@@ -527,10 +553,20 @@ describe("global sync event ingress", () => {
       ts: 2,
     })
 
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+    await Promise.resolve()
+
     expect(queryClient.getQueryData<SessionListResponse>(listKey)?.items).toEqual([])
     expect(readSessionInventoryQueryData<SessionInventoryRow>({
       baseUrl: "http://test.local",
     }).sessions).toEqual([])
+    expect(queryClient.getQueryData(conversationSnapshotKey({ directory: "/repo", sessionID: "ses_shared" }))).toBeUndefined()
+    expect(queryClient.getQueryData(conversationSnapshotKey({ directory: "/repo-alias", sessionID: "ses_shared" }))).toBeUndefined()
+    expect(conversationEntryIdsForTest()).toEqual(["/repo\0ses_keep"])
+    expect(revoked).toEqual([{ sessionId: "ses_shared", workspaceId: "ws_1" }])
     dispose()
+    clearConversationChatRegistryForTest()
   })
 })

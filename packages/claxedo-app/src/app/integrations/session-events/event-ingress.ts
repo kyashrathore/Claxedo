@@ -25,6 +25,7 @@ import type {
   SessionTitleProjectionApi,
   SessionTitleTarget,
 } from "@/features/session/store/session-title-projection"
+import { revokeRegisteredSessionConversation } from "@/features/session/conversation/conversation-registry"
 
 type GlobalEventSource = {
   listen: (handler: (event: { name: string; details: RoutableEvent }) => void) => () => void
@@ -47,6 +48,21 @@ type ClaxedoEventSource = {
     type: T,
     handler: (event: Extract<ClaxedoEvent, { type: T }>) => void,
   ) => (() => void) | undefined
+}
+
+export type SessionAccessRevokedEvent = { sessionId: string; workspaceId: string }
+
+export function createSessionAccessRevocationChannel() {
+  const listeners = new Set<(event: SessionAccessRevokedEvent) => void>()
+  return {
+    publish(event: SessionAccessRevokedEvent) {
+      for (const listener of listeners) listener(event)
+    },
+    subscribe(listener: (event: SessionAccessRevokedEvent) => void) {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+  }
 }
 
 type DirectoryChildren = {
@@ -73,6 +89,7 @@ type EventIngressInput = {
   draftWasRolledBack: (draftId: string) => boolean
   cacheSessions: (directory: DirectoryRef, value: Omit<DirectorySessionCacheValue, "at">) => void
   sessionCacheLimit: (directory: DirectoryRef, fallback: number) => number
+  onSessionAccessRevoked?: (event: SessionAccessRevokedEvent) => void
 }
 
 const claxedoDirectoryEventTypes = [
@@ -209,8 +226,20 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       removeSessionInventoryQueryData<SessionInventoryRow>({
         session: { id: event.sessionId, workspaceId: event.workspaceId },
       })
+      // Memory and query state disappear synchronously inside this call. Wait
+      // for IndexedDB deletion before closing the active surface so a reload
+      // started by navigation cannot race durable transcript cleanup.
+      void revokeRegisteredSessionConversation(event.sessionId)
+        .catch(() => undefined)
+        .then(() => input.onSessionAccessRevoked?.({
+          sessionId: event.sessionId,
+          workspaceId: event.workspaceId,
+        }))
+        .finally(() => invalidateSessionShareQueries())
+        .catch(() => undefined)
+      return
     }
-    void invalidateSessionShareQueries()
+    void invalidateSessionShareQueries().catch(() => undefined)
   })
   const unsubscribeClaxedoDirectoryEvents = claxedoDirectoryEventTypes
     .map((type) => input.claxedoEvents?.on(type, (event) => {

@@ -14,6 +14,7 @@ import {
   registeredConversationUserMessages as scopedConversationUserMessages,
   registerSessionConversationChat as registerScopedConversationChat,
   removeRegisteredConversationMessage as removeScopedConversationMessage,
+  revokeRegisteredSessionConversation,
   warmConversationMemorySnapshot,
 } from "./conversation-registry"
 
@@ -362,5 +363,33 @@ describe("conversation chat registry", () => {
     // Evicted data is not lost — its snapshot remains in the query cache.
     expect(queryClient.getQueryData<UIMessage[]>(conversationSnapshotKey({ directory: testDirectory, sessionID: "ses_0" }))).toBeDefined()
     release()
+  })
+
+  test("revokes every directory alias without disturbing another session", async () => {
+    hydrateScopedConversationSnapshot({
+      directory: "/repo/a",
+      sessionID: "ses_revoked",
+      messages: [message("msg_a", "ses_revoked")],
+      parts: {},
+    })
+    hydrateScopedConversationSnapshot({
+      directory: "/repo/b",
+      sessionID: "ses_revoked",
+      messages: [message("msg_b", "ses_revoked")],
+      parts: {},
+    })
+    hydrateScopedConversationSnapshot({
+      directory: "/repo/a",
+      sessionID: "ses_keep",
+      messages: [message("msg_keep", "ses_keep")],
+      parts: {},
+    })
+
+    await revokeRegisteredSessionConversation("ses_revoked")
+
+    expect(scopedConversationSnapshot("/repo/a", "ses_revoked").messages).toEqual([])
+    expect(scopedConversationSnapshot("/repo/b", "ses_revoked").messages).toEqual([])
+    expect(scopedConversationSnapshot("/repo/a", "ses_keep").messages.map((item) => item.id)).toEqual(["msg_keep"])
+    expect(conversationEntryIdsForTest()).toEqual([conversationScopeKey({ directory: "/repo/a", sessionID: "ses_keep" })])
   })
 })

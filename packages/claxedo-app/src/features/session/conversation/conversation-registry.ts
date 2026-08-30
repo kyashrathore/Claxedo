@@ -1,5 +1,5 @@
 import type { Event } from "@opencode-ai/sdk/v2/client"
-import { createMemo, createSignal, type Accessor } from "solid-js"
+import { createComputed, createMemo, createSignal, type Accessor } from "solid-js"
 import {
   applyOpencodeConversationEvent,
   mergeConversationSnapshot,
@@ -19,6 +19,12 @@ import {
 } from "./conversation-chat-client"
 import { queryClient } from "@/platform/query/query-client"
 import { estimateConversationMemory } from "./conversation-memory"
+import {
+  removePersistedSessionConversations,
+  setConversationPersistencePrincipal,
+} from "./conversation-persistence"
+import { shellDataKeys } from "@/platform/sync/keys"
+import type { Principal } from "@/platform/auth/identity-provider"
 
 /**
  * One canonical conversation store per session. The registry owns a TanStack
@@ -245,6 +251,63 @@ export function warmConversationMemorySnapshot() {
       messageCount: messages.length,
       buckets: estimateConversationMemory(messages),
     }
+  })
+}
+
+/**
+ * Revoke one session from every client-owned conversation layer before the
+ * shell redirects the user. This is deliberately broader than a single
+ * directory because signed workspaces can carry multiple runtime aliases.
+ */
+export async function revokeRegisteredSessionConversation(sessionID: string) {
+  for (const [key, entry] of entries) {
+    if (entry.sessionID !== sessionID) continue
+    entries.delete(key)
+    entry.unsubscribe?.()
+  }
+  for (const key of optimisticMessageKeys) {
+    if (key.includes(`\0${sessionID}\0`)) optimisticMessageKeys.delete(key)
+  }
+  queryClient.removeQueries({ queryKey: shellDataKeys.sessionId(sessionID) })
+  markTopologyChanged()
+  await removePersistedSessionConversations(sessionID)
+}
+
+/** Clear live/query state; durable state is isolated by the principal namespace. */
+export function clearRegisteredConversationState() {
+  for (const entry of entries.values()) entry.unsubscribe?.()
+  entries.clear()
+  optimisticMessageKeys.clear()
+  queryClient.removeQueries({ queryKey: ["shell", "session"] })
+  markTopologyChanged()
+}
+
+function principalConversationKey(principal: Principal) {
+  switch (principal.kind) {
+    case "anonymous": return "anonymous"
+    case "local": return `local:${principal.deviceId}`
+    case "signed": return `signed:${principal.userId}`
+    case "org-member": return `org-member:${principal.userId}:${principal.orgId}`
+  }
+}
+
+/** Keep live/query state and durable keys isolated across signed principals. */
+export function installConversationPrincipalIsolation(input: {
+  principal: Accessor<Principal>
+  clear?: () => void | Promise<void>
+}) {
+  let previousKey: string | undefined
+  createComputed(() => {
+    const nextKey = principalConversationKey(input.principal())
+    const namespaceChanged = setConversationPersistencePrincipal(nextKey.startsWith("local:") ? undefined : nextKey)
+    if (previousKey === undefined) {
+      previousKey = nextKey
+      if (namespaceChanged) void (input.clear ?? clearRegisteredConversationState)()
+      return
+    }
+    if (previousKey === nextKey) return
+    previousKey = nextKey
+    void (input.clear ?? clearRegisteredConversationState)()
   })
 }
 

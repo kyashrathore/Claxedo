@@ -57,7 +57,7 @@ import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtim
 import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
 import { bootstrapRequestPrefix, createBootstrapOrchestrator, globalBootstrapFreshKey, sessionLoadRequestKey, type QueryOptionsApi } from "../../boot/data/bootstrap-orchestrator"
-import { createGlobalSyncEventIngress } from "../../integrations/session-events/event-ingress"
+import { createGlobalSyncEventIngress, createSessionAccessRevocationChannel } from "../../integrations/session-events/event-ingress"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { bootstrapInitialShell } from "./shell-bootstrap"
 import {
@@ -90,6 +90,7 @@ function createGlobalSync() {
   // to an explicit relay-backed project, route, or non-loopback control plane.
   const hasSignedAccess = () => principalHasSignedAccess(principal())
   const claxedoEvents = useClaxedoEventsOptional()
+  const sessionAccessRevocations = createSessionAccessRevocationChannel()
 
   const sdkClientCacheOwner = Math.random().toString(36).slice(2, 7)
 
@@ -709,6 +710,7 @@ function createGlobalSync() {
     draftWasRolledBack: wasRolledBackDraft,
     cacheSessions,
     sessionCacheLimit,
+    onSessionAccessRevoked: sessionAccessRevocations.publish,
   }))
   onCleanup(() => {
     queue.dispose()
@@ -767,6 +769,7 @@ function createGlobalSync() {
     setFocusedDirectory(directory: string | undefined) {
       queue.setFocused(directory)
     },
+    onSessionAccessRevoked: sessionAccessRevocations.subscribe,
     inventoryActions: sessionInventoryActions,
   }
 }

@@ -1,6 +1,6 @@
 import type { ChatClientPersistence } from "@tanstack/ai-client"
 import type { UIMessage } from "@tanstack/ai"
-import { createStore, del, get, set, type UseStore } from "idb-keyval"
+import { createStore, del, get, keys, set, type UseStore } from "idb-keyval"
 import { compactConversationSnapshot } from "./conversation-snapshot"
 
 /**
@@ -18,6 +18,7 @@ import { compactConversationSnapshot } from "./conversation-snapshot"
  * swallows adapter errors, so storage problems never break chat.
  */
 let store: UseStore | undefined
+let principalNamespace = ""
 try {
   if (typeof indexedDB !== "undefined") {
     store = createStore("claxedo-conversations", "messages")
@@ -32,4 +33,35 @@ export const conversationPersistence: ChatClientPersistence = {
     : undefined,
   setItem: (id, messages) => (store ? set(id, compactConversationSnapshot(messages) ?? [], store) : undefined),
   removeItem: (id) => (store ? del(id, store) : undefined),
+}
+
+/** Local unsigned mode intentionally retains the historical unprefixed key. */
+export function setConversationPersistencePrincipal(namespace: string | undefined) {
+  const next = namespace ?? ""
+  if (next === principalNamespace) return false
+  principalNamespace = next
+  return true
+}
+
+export function conversationPersistenceKey(id: string) {
+  return principalNamespace ? `${principalNamespace}\0${id}` : id
+}
+
+export function conversationPersistenceKeyMatchesSession(key: IDBValidKey, sessionID: string) {
+  return typeof key === "string" && key.endsWith(`\0${sessionID}`)
+}
+
+/**
+ * Remove every directory alias for a revoked session from the durable owner.
+ * Enumerating IndexedDB is intentional: a cold tab can receive the revoke
+ * doorbell without having materialized the conversation in memory first.
+ */
+export async function removePersistedSessionConversations(sessionID: string) {
+  if (!store) return
+  const persistedKeys = await keys(store)
+  await Promise.all(
+    persistedKeys
+      .filter((key) => conversationPersistenceKeyMatchesSession(key, sessionID))
+      .map((key) => del(key, store)),
+  )
 }

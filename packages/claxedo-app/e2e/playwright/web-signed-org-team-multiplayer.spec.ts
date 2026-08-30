@@ -146,6 +146,8 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
     const aliceCtx = await openRecordedPage(browser, path.join(VIDEO_ROOT, "alice-raw"))
     const bobCtx = await openRecordedPage(browser, path.join(VIDEO_ROOT, "bob-raw"))
     const caseyCtx = await openRecordedPage(browser, path.join(VIDEO_ROOT, "casey-raw"))
+    const bobRevokePageErrors: string[] = []
+    const bobRevokeConsoleErrors: string[] = []
 
     const marker = `OT_${Date.now().toString(36)}`
     const alicePrompt = `please reply with exactly this one token, nothing else: ${marker}_ALICE`
@@ -285,6 +287,10 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       expect.soft(await sessionIdsOnRail(caseyCtx.page)).not.toContain(sessionId)
       await caseyCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "casey-denied-after.png"), fullPage: true })
 
+      bobCtx.page.on("pageerror", (error) => bobRevokePageErrors.push(error.message))
+      bobCtx.page.on("console", (message) => {
+        if (message.type() === "error") bobRevokeConsoleErrors.push(message.text())
+      })
       await revokeSessionShareTeam(fixture!, webApp!, sessionId, fixture!.info.defaultTeamId!)
       expect(
         await controlSessions(fixture!, webApp!, bob!.controlPlaneToken),
@@ -298,12 +304,13 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       // revalidate its canonical session inventory. No identity reset or
       // `openAs` is allowed here: that would prove only cold bootstrap denial.
       await expect(bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId))).toHaveCount(0, { timeout: 30_000 })
+      await expect(bobCtx.page.getByText(new RegExp(`${marker}_(?:ALICE|BOB)`))).toHaveCount(0, { timeout: 30_000 })
+      await expect(bobCtx.page).toHaveURL(new RegExp(`/w/${fixture!.info.workspaceId}(?:[?#].*)?$`))
 
       // Reload the currently open deep link as the same signed user and
       // observe the request made by the application itself. The canonical
-      // navigation producer must remain empty after a cold application read;
-      // a route-active shell may still render its last transcript while that
-      // deep link is open, but it cannot restore Bob to the session inventory.
+      // navigation producer and durable conversation owner must both remain
+      // empty after a cold application read.
       const reloadedSessionList = bobCtx.page.waitForResponse(
         (response) => {
           const url = new URL(response.url())
@@ -325,6 +332,13 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
       ].map((item) => item.sessionId)).not.toContain(sessionId)
       await gateReachesReady(bobCtx.page)
       await waitForWorkspaceRole(bobCtx.page, fixture!.info.workspaceId, "editor")
+      await expect(bobCtx.page.locator(RAIL_SELECTORS.sessionRow(sessionId))).toHaveCount(0)
+      await expect(bobCtx.page.getByText(new RegExp(`${marker}_(?:ALICE|BOB)`))).toHaveCount(0)
+      await expect(bobCtx.page).toHaveURL(new RegExp(`/w/${fixture!.info.workspaceId}(?:[?#].*)?$`))
+      expect(bobRevokePageErrors).toEqual([])
+      expect(
+        bobRevokeConsoleErrors.filter((message) => !message.startsWith("Failed to load resource:")),
+      ).toEqual([])
       await bobCtx.page.screenshot({ path: path.join(EVIDENCE_DIR, "bob-after-revoke.png"), fullPage: true })
 
       await aliceCtx.page.waitForTimeout(2_000)
