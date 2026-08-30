@@ -6,7 +6,7 @@ import type { UIMessage } from "@tanstack/ai"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { memoizeSuccessfulLoad, retry } from "@/lib/retry"
-import type { ConversationChatHandle } from "./opencode-conversation"
+import type { ConversationChatHandle } from "./agent-conversation"
 import { conversationPersistence, conversationPersistenceKey } from "./conversation-persistence"
 import { compactConversationSnapshot } from "./conversation-snapshot"
 import { scheduleSessionCacheCeiling } from "../data/sync/session-cache-cleanup"
@@ -32,7 +32,7 @@ export type ConversationChatEntry = {
   ready: Promise<void>
   /** Per-session reactivity. Bumps whenever this session's messages change. */
   version: Accessor<number>
-  /** `{messages,setMessages}` adapter so `opencode-conversation.ts` is unchanged. */
+  /** `{messages,setMessages}` adapter so `agent-conversation.ts` is unchanged. */
   handle: ConversationChatHandle
   /** Mount refcount; the client outlives any single mount (see owner cleanup). */
   refs: number

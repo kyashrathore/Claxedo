@@ -1,5 +1,5 @@
 import type { UIMessage } from "@tanstack/ai"
-import type { Message } from "./opencode-conversation"
+import type { Message } from "./agent-conversation"
 
 export function compactConversationSnapshot(messages: UIMessage[] | undefined) {
   if (!messages) return messages

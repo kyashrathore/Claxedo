@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test"
 import type { Event, Message, Part } from "@opencode-ai/sdk/v2/client"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
 import {
-  applyOpencodeConversationEvent,
+  applyAgentConversationEvent,
   mergeConversationSnapshot,
-  opencodeConversationSnapshot,
-  opencodeConversationProjection,
+  agentConversationSnapshot,
+  agentConversationProjection,
   type ConversationChatHandle,
-} from "./opencode-conversation"
+} from "./agent-conversation"
 
 function message(id: string, role: "user" | "assistant" = "assistant"): Message {
   if (role === "user") {
@@ -100,9 +100,9 @@ function chat(initial: UIMessage[] = []): ConversationChatHandle & { written: UI
   }
 }
 
-describe("opencode conversation chat adapter", () => {
-  test("hydrates TanStack UI messages from OpenCode message and part snapshots", () => {
-    expect(opencodeConversationSnapshot({
+describe("agent conversation chat adapter", () => {
+  test("hydrates TanStack UI messages from agent message and part snapshots", () => {
+    expect(agentConversationSnapshot({
       messages: [message("msg_user", "user"), message("msg_assistant")],
       parts: {
         msg_user: [textPart("part_prompt", "msg_user", "hello")],
@@ -117,7 +117,7 @@ describe("opencode conversation chat adapter", () => {
         id: "msg_user",
         role: "user",
         metadata: {
-          opencodeMessage: { system: "system prompt" },
+          agentMessage: { system: "system prompt" },
         },
         parts: [{ type: "text", content: "hello" }],
       },
@@ -125,7 +125,7 @@ describe("opencode conversation chat adapter", () => {
         id: "msg_assistant",
         role: "assistant",
         metadata: {
-          opencodeMessage: { cost: 0.25 },
+          agentMessage: { cost: 0.25 },
         },
         parts: [
           { type: "thinking", content: "thinking", stepId: "part_reason" },
@@ -137,7 +137,7 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("preserves @-mention agent parts through the round-trip projection", () => {
-    const snapshot = opencodeConversationSnapshot({
+    const snapshot = agentConversationSnapshot({
       messages: [message("msg_user", "user")],
       parts: {
         msg_user: [
@@ -154,20 +154,20 @@ describe("opencode conversation chat adapter", () => {
       { type: "text", content: "@reviewer take a look" },
     ])
 
-    // UIMessage -> OpenCode Part restores the AgentPart intact so the timeline
+    // UIMessage -> agent part restores the AgentPart intact so the timeline
     // renderer (session-ui) can highlight the mention span.
-    const projected = opencodeConversationProjection(snapshot)
+    const projected = agentConversationProjection(snapshot)
     expect(projected.parts.msg_user).toMatchObject([
       { id: "part_agent", type: "agent", name: "reviewer", messageID: "msg_user", source: { value: "@reviewer", start: 0, end: 9 } },
       { id: "part_prompt", type: "text", text: "@reviewer take a look" },
     ])
   })
 
-  test("reconstructs an AgentPart from carried name/source when no opencodePart is stored", () => {
+  test("reconstructs an AgentPart from carried name/source when no agentPart is stored", () => {
     // The path a freshly-composed optimistic user message takes before the
     // server echoes it: the agent part carries name/source but has no
-    // metadata.opencodePart, so the projection rebuilds the AgentPart from
-    // the carried fields (branch at opencode-conversation.ts:~387).
+    // metadata.agentPart, so the projection rebuilds the AgentPart from
+    // the carried fields (branch at agent-conversation.ts:~387).
     const optimistic: UIMessage = {
       id: "msg_optimistic",
       role: "user",
@@ -180,7 +180,7 @@ describe("opencode conversation chat adapter", () => {
       ],
     }
 
-    const projected = opencodeConversationProjection([optimistic])
+    const projected = agentConversationProjection([optimistic])
     expect(projected.parts.msg_optimistic).toEqual([
       {
         id: "msg_optimistic:agent",
@@ -194,12 +194,12 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("applies a streamed agent part through message.part.updated", () => {
-    const handle = chat(opencodeConversationSnapshot({
+    const handle = chat(agentConversationSnapshot({
       messages: [message("msg_user", "user")],
       parts: { msg_user: [textPart("part_prompt", "msg_user", "hey")] },
     }))
 
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
       part: agentPart("part_agent", "msg_user", "planner"),
     }))).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([
@@ -211,13 +211,13 @@ describe("opencode conversation chat adapter", () => {
   test("applies message and part events through chat setMessages", () => {
     const handle = chat()
 
-    expect(applyOpencodeConversationEvent(handle, event("message.updated", {
+    expect(applyAgentConversationEvent(handle, event("message.updated", {
       info: message("msg_assistant"),
     }))).toBe(true)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
       part: textPart("part_text", "msg_assistant", "hel"),
     }))).toBe(true)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.delta", {
+    expect(applyAgentConversationEvent(handle, event("message.part.delta", {
       messageID: "msg_assistant",
       partID: "part_text",
       delta: "lo",
@@ -235,11 +235,11 @@ describe("opencode conversation chat adapter", () => {
     const announced = message("msg_user_r")
     const final = message("msg_final")
 
-    expect(applyOpencodeConversationEvent(handle, event("message.updated", { info: announced }))).toBe(true)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+    expect(applyAgentConversationEvent(handle, event("message.updated", { info: announced }))).toBe(true)
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
       part: { ...toolPart("part_task", "msg_user_r", "running"), tool: "task" },
     }))).toBe(true)
-    expect(applyOpencodeConversationEvent(handle, event("message.updated", { info: final }))).toBe(true)
+    expect(applyAgentConversationEvent(handle, event("message.updated", { info: final }))).toBe(true)
 
     expect(handle.messages().map((item) => item.id)).toEqual(["msg_user_r", "msg_final"])
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "tool-call", name: "task" }])
@@ -252,15 +252,15 @@ describe("opencode conversation chat adapter", () => {
     // `000000_<msgId>-text`) for the same reply. The late part must not append
     // a second copy of the text.
     const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
-    const handle = chat(opencodeConversationSnapshot({
+    const handle = chat(agentConversationSnapshot({
       messages: [settled],
       parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
     }))
 
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
       part: textPart("000000_msg_assistant-text", "msg_assistant", ""),
     }))).toBe(false)
-    expect(applyOpencodeConversationEvent(handle, event("message.part.delta", {
+    expect(applyAgentConversationEvent(handle, event("message.part.delta", {
       messageID: "msg_assistant",
       partID: "000000_msg_assistant-text",
       delta: "hello",
@@ -268,7 +268,7 @@ describe("opencode conversation chat adapter", () => {
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello" }])
 
     // Updates to a part the settled message already has still apply.
-    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+    expect(applyAgentConversationEvent(handle, event("message.part.updated", {
       part: textPart("msg_assistant_text", "msg_assistant", "hello!"),
     }))).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "hello!" }])
@@ -279,11 +279,11 @@ describe("opencode conversation chat adapter", () => {
     // the completed REST row hydrates. The persisted part set wins; the
     // chat-only streamed twin is dropped instead of re-appended.
     const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [message("msg_assistant")],
       parts: { msg_assistant: [textPart("000000_msg_assistant-text", "msg_assistant", "hello")] },
     })
-    const fetched = opencodeConversationSnapshot({
+    const fetched = agentConversationSnapshot({
       messages: [settled],
       parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
     })
@@ -311,12 +311,12 @@ describe("opencode conversation chat adapter", () => {
       parentID: "msg_user",
       time: { created: 3, completed: 4 },
     } as Message
-    const handle = chat(opencodeConversationSnapshot({ messages: [user], parts: { msg_user: [] } }))
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: announced }))
-    applyOpencodeConversationEvent(handle, event("message.part.updated", {
+    const handle = chat(agentConversationSnapshot({ messages: [user], parts: { msg_user: [] } }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: announced }))
+    applyAgentConversationEvent(handle, event("message.part.updated", {
       part: { ...toolPart("part_task", "msg_user_r", "completed"), tool: "task" } as Part,
     }))
-    const surface = opencodeConversationSnapshot({
+    const surface = agentConversationSnapshot({
       messages: [user, final],
       parts: {
         msg_user: [],
@@ -332,11 +332,11 @@ describe("opencode conversation chat adapter", () => {
 
   test("snapshot merge advances a live tool call to its persisted terminal state", () => {
     const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [message("msg_assistant")],
       parts: { msg_assistant: [toolPart("part_tool", "msg_assistant", "running")] },
     })
-    const fetched = opencodeConversationSnapshot({
+    const fetched = agentConversationSnapshot({
       messages: [settled],
       parts: { msg_assistant: [toolPart("part_tool", "msg_assistant", "completed")] },
     })
@@ -355,14 +355,14 @@ describe("opencode conversation chat adapter", () => {
       ...message("msg_user_r"),
       time: { created: 4, completed: 5 },
     } as Message
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [first, second],
       parts: {
         msg_step_1: [{ ...toolPart("part_task", "msg_step_1", "completed"), tool: "task" } as Part],
         msg_step_2: [textPart("part_step_2", "msg_step_2", "continued")],
       },
     })
-    const fetched = opencodeConversationSnapshot({
+    const fetched = agentConversationSnapshot({
       messages: [announced],
       parts: { msg_user_r: [textPart("part_final", "msg_user_r", "finished")] },
     })
@@ -387,14 +387,14 @@ describe("opencode conversation chat adapter", () => {
       parentID: "msg_user",
       time: { created: 3, completed: 4 },
     } as Message
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [user, announced],
       parts: {
         msg_user: [textPart("part_prompt", "msg_user", "delegate")],
         msg_user_r: [{ ...toolPart("part_task", "msg_user_r", "running"), tool: "task" } as Part],
       },
     })
-    const fetched = opencodeConversationSnapshot({
+    const fetched = agentConversationSnapshot({
       messages: [user, announced, final],
       parts: {
         msg_user: [textPart("part_prompt", "msg_user", "delegate")],
@@ -411,14 +411,14 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("snapshot merge preserves chat-owned live deltas for matching parts", () => {
-    const snapshot = opencodeConversationSnapshot({
+    const snapshot = agentConversationSnapshot({
       messages: [message("msg_assistant")],
       parts: {
         msg_assistant: [textPart("part_text", "msg_assistant", "hel")],
       },
     })
     const handle = chat(snapshot)
-    applyOpencodeConversationEvent(handle, event("message.part.delta", {
+    applyAgentConversationEvent(handle, event("message.part.delta", {
       messageID: "msg_assistant",
       partID: "part_text",
       delta: "lo",
@@ -432,11 +432,11 @@ describe("opencode conversation chat adapter", () => {
 
   test("snapshot merge applies authoritative equal-length text changes", () => {
     const settled = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [settled],
       parts: { msg_assistant: [textPart("part_text", "msg_assistant", "hello")] },
     })
-    const fetched = opencodeConversationSnapshot({
+    const fetched = agentConversationSnapshot({
       messages: [settled],
       parts: { msg_assistant: [textPart("part_text", "msg_assistant", "world")] },
     })
@@ -448,7 +448,7 @@ describe("opencode conversation chat adapter", () => {
 
   test("snapshot merge confirms optimistic metadata even when content is identical", () => {
     const persisted = message("msg_user", "user")
-    const snapshot = opencodeConversationSnapshot({
+    const snapshot = agentConversationSnapshot({
       messages: [persisted],
       parts: { msg_user: [textPart("part_text", "msg_user", "hello")] },
     })
@@ -478,10 +478,10 @@ describe("opencode conversation chat adapter", () => {
     } } as Message
 
     const handle = chat()
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: detailed }))
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: generic }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: detailed }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: generic }))
 
-    const stored = (handle.messages()[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    const stored = (handle.messages()[0] as { metadata?: { agentMessage?: Message } }).metadata?.agentMessage
     expect(stored?.error).toMatchObject({
       name: "APIError",
       data: { message: "Unauthorized", statusCode: 401, responseBody: body },
@@ -496,10 +496,10 @@ describe("opencode conversation chat adapter", () => {
     const engine = message("msg_user", "user") as Message
 
     const handle = chat()
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: attributed }))
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: engine }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: attributed }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: engine }))
 
-    const stored = (handle.messages()[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    const stored = (handle.messages()[0] as { metadata?: { agentMessage?: Message } }).metadata?.agentMessage
     expect((stored as { claxedo?: { author?: { name?: string } } } | undefined)?.claxedo?.author).toEqual({
       id: "usr_alice",
       name: "Alice",
@@ -509,14 +509,14 @@ describe("opencode conversation chat adapter", () => {
 
   test("snapshot merge keeps the richest error when refetched history carries less", () => {
     const body = '{"type":"error","error":{"type":"authentication_error"}}'
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [{ ...message("msg_assistant"), error: {
         name: "APIError",
         data: { message: "Unauthorized", statusCode: 401, responseBody: body },
       } } as Message],
       parts: {},
     })
-    const refetched = opencodeConversationSnapshot({
+    const refetched = agentConversationSnapshot({
       messages: [{ ...message("msg_assistant"), error: {
         name: "UnknownError",
         data: { message: "Upstream request failed" },
@@ -525,7 +525,7 @@ describe("opencode conversation chat adapter", () => {
     })
 
     const merged = mergeConversationSnapshot(live, refetched)
-    const stored = (merged[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    const stored = (merged[0] as { metadata?: { agentMessage?: Message } }).metadata?.agentMessage
     expect(stored?.error).toMatchObject({ name: "APIError", data: { statusCode: 401 } })
   })
 
@@ -540,10 +540,10 @@ describe("opencode conversation chat adapter", () => {
     } } as Message
 
     const handle = chat()
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: thin }))
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: rich }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: thin }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: rich }))
 
-    const stored = (handle.messages()[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    const stored = (handle.messages()[0] as { metadata?: { agentMessage?: Message } }).metadata?.agentMessage
     expect(stored?.error).toMatchObject({ name: "APIError", data: { statusCode: 401 } })
   })
 
@@ -555,21 +555,21 @@ describe("opencode conversation chat adapter", () => {
     const ok = { ...message("msg_assistant"), time: { created: 2, completed: 3 } } as Message
 
     const handle = chat()
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: failed }))
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: ok }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: failed }))
+    applyAgentConversationEvent(handle, event("message.updated", { info: ok }))
 
-    const stored = (handle.messages()[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    const stored = (handle.messages()[0] as { metadata?: { agentMessage?: Message } }).metadata?.agentMessage
     expect(stored?.error).toBeUndefined()
   })
 
   test("snapshot merge adds fetched history without dropping live chat messages", () => {
-    const live = opencodeConversationSnapshot({
+    const live = agentConversationSnapshot({
       messages: [message("msg_live")],
       parts: {
         msg_live: [textPart("part_live", "msg_live", "live")],
       },
     })
-    const history = opencodeConversationSnapshot({
+    const history = agentConversationSnapshot({
       messages: [message("msg_old", "user")],
       parts: {
         msg_old: [textPart("part_old", "msg_old", "old")],
@@ -580,11 +580,11 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("canonical snapshots restore producer order without treating ids as ordinals", () => {
-    const current = opencodeConversationSnapshot({
+    const current = agentConversationSnapshot({
       messages: [message("assistant-aa"), message("user-zz", "user")],
       parts: {},
     })
-    const canonical = opencodeConversationSnapshot({
+    const canonical = agentConversationSnapshot({
       messages: [message("user-zz", "user"), message("assistant-aa")],
       parts: {},
     })
@@ -594,22 +594,22 @@ describe("opencode conversation chat adapter", () => {
   })
 
   test("resolved membership drops stale rows but retains explicitly unpersisted live events", () => {
-    const stale = opencodeConversationSnapshot({
+    const stale = agentConversationSnapshot({
       messages: [{ ...message("msg_stale"), time: { created: 2, completed: 3 } } as Message],
       parts: {},
     })
     expect(mergeConversationSnapshot(stale, [], { order: "snapshot", membership: "resolved" })).toEqual([])
 
     const handle = chat()
-    applyOpencodeConversationEvent(handle, event("message.updated", { info: message("msg_live") }))
-    const fragment = opencodeConversationSnapshot({ messages: [message("msg_live")], parts: {} })
+    applyAgentConversationEvent(handle, event("message.updated", { info: message("msg_live") }))
+    const fragment = agentConversationSnapshot({ messages: [message("msg_live")], parts: {} })
     const afterFragment = mergeConversationSnapshot(handle.messages(), fragment, { order: "snapshot", membership: "resolved" })
     expect(mergeConversationSnapshot(afterFragment, [], { order: "snapshot", membership: "resolved" }).map((item) => item.id))
       .toEqual(["msg_live"])
   })
 
   test("removes messages and parts from chat state", () => {
-    const handle = chat(opencodeConversationSnapshot({
+    const handle = chat(agentConversationSnapshot({
       messages: [message("msg_assistant")],
       parts: {
         msg_assistant: [
@@ -619,33 +619,33 @@ describe("opencode conversation chat adapter", () => {
       },
     }))
 
-    expect(applyOpencodeConversationEvent(handle, event("message.part.removed", {
+    expect(applyAgentConversationEvent(handle, event("message.part.removed", {
       messageID: "msg_assistant",
       partID: "part_tool",
     }))).toBe(true)
     expect(handle.messages()[0]?.parts).toMatchObject([{ type: "text", content: "answer" }])
 
-    expect(applyOpencodeConversationEvent(handle, event("message.removed", {
+    expect(applyAgentConversationEvent(handle, event("message.removed", {
       messageID: "msg_assistant",
     }))).toBe(true)
     expect(handle.messages()).toEqual([])
   })
 
-  test("projects chat messages back to OpenCode-shaped messages and live parts", () => {
-    const handle = chat(opencodeConversationSnapshot({
+  test("projects chat messages back to agent-contract messages and live parts", () => {
+    const handle = chat(agentConversationSnapshot({
       messages: [message("msg_user", "user"), message("msg_assistant")],
       parts: {
         msg_user: [textPart("part_prompt", "msg_user", "hello")],
         msg_assistant: [textPart("part_text", "msg_assistant", "hel")],
       },
     }))
-    applyOpencodeConversationEvent(handle, event("message.part.delta", {
+    applyAgentConversationEvent(handle, event("message.part.delta", {
       messageID: "msg_assistant",
       partID: "part_text",
       delta: "lo",
     }))
 
-    expect(opencodeConversationProjection(handle.messages())).toMatchObject({
+    expect(agentConversationProjection(handle.messages())).toMatchObject({
       messages: [
         { id: "msg_user", role: "user", system: "system prompt" },
         { id: "msg_assistant", role: "assistant", tokens: { input: 10 }, cost: 0.25 },
@@ -658,9 +658,9 @@ describe("opencode conversation chat adapter", () => {
   })
 })
 
-describe("opencodeConversationProjection caching", () => {
+describe("agentConversationProjection caching", () => {
   test("reuses projected output for messages whose reference is unchanged", () => {
-    const snapshot = opencodeConversationSnapshot({
+    const snapshot = agentConversationSnapshot({
       messages: [message("msg_1"), message("msg_2")],
       parts: {
         msg_1: [textPart("part_1", "msg_1", "hello")],
@@ -668,12 +668,12 @@ describe("opencodeConversationProjection caching", () => {
       },
     })
 
-    const first = opencodeConversationProjection(snapshot)
+    const first = agentConversationProjection(snapshot)
 
     // Simulate a streaming update: only msg_2 gets a new object reference, the
     // way the event-apply path replaces just the changed index.
     const updated = snapshot.map((m, index) => (index === 1 ? { ...m, parts: [...m.parts] } : m))
-    const second = opencodeConversationProjection(updated)
+    const second = agentConversationProjection(updated)
 
     // Unchanged message reuses its projected Message + parts by reference (no
     // re-projection), so a token append is O(changed), not O(all messages).

@@ -11,7 +11,7 @@ export type ConversationChatHandle = {
 
 type ConversationUIMessage = UIMessage & {
   metadata?: {
-    opencodeMessage?: Message
+    agentMessage?: Message
     optimistic?: boolean
   }
 }
@@ -24,18 +24,18 @@ const unpersistedLiveMessages = new WeakSet<UIMessage>()
 
 type ConversationMessagePart = MessagePart & {
   metadata?: {
-    opencodePartId?: string
-    opencodePart?: Part
+    agentPartId?: string
+    agentPart?: Part
     [key: string]: unknown
   }
 }
 
-export function opencodeConversationSnapshot(input: {
+export function agentConversationSnapshot(input: {
   messages: Message[]
   parts: Record<string, Part[] | undefined>
 }) {
   return input.messages.map((message) =>
-    opencodeMessageToChatMessage({
+    agentMessageToChatMessage({
       message,
       parts: input.parts[message.id] ?? [],
     })
@@ -44,20 +44,20 @@ export function opencodeConversationSnapshot(input: {
 
 // Incremental projection cache. Keyed by the UIMessage object, so an unchanged
 // message (stable reference — our event-apply path replaces only the changed
-// index) reuses its previously-projected OpenCode Message + Part[] instead of
+// index) reuses its previously-projected agent message + Part[] instead of
 // re-running the per-part mapping. During streaming only the last message has a
 // new reference, so projection cost is O(changed) rather than O(all messages)
 // per token. WeakMap → entries are GC'd when a message object is replaced.
 const projectionCache = new WeakMap<UIMessage, { message: Message; parts: Part[] }>()
 
-export function opencodeConversationProjection(messages: UIMessage[]) {
+export function agentConversationProjection(messages: UIMessage[]) {
   const parts: Record<string, Part[] | undefined> = {}
   const projected = messages.map((message) => {
     let entry = projectionCache.get(message)
     if (!entry) {
       entry = {
-        message: chatMessageToOpencodeMessage(message),
-        parts: message.parts.flatMap((part) => chatPartToOpencodePart(message, part)),
+        message: chatMessageToAgentMessage(message),
+        parts: message.parts.flatMap((part) => chatPartToAgentPart(message, part)),
       }
       projectionCache.set(message, entry)
     }
@@ -213,7 +213,7 @@ function sameSerializableValue(left: unknown, right: unknown) {
   }
 }
 
-export function applyOpencodeConversationEvent(chat: ConversationChatHandle, event: Event) {
+export function applyAgentConversationEvent(chat: ConversationChatHandle, event: Event) {
   if (event.type === "message.updated") {
     return upsertMessage(chat, propertyRecord(event.properties)?.info as Message | undefined)
   }
@@ -239,7 +239,7 @@ export function applyOpencodeConversationEvent(chat: ConversationChatHandle, eve
 }
 
 function storedMessage(message: UIMessage | undefined) {
-  return (message as ConversationUIMessage | undefined)?.metadata?.opencodeMessage
+  return (message as ConversationUIMessage | undefined)?.metadata?.agentMessage
 }
 
 function mergeChatMessage(
@@ -259,7 +259,7 @@ function mergeChatMessage(
       : preserveMessageFields(storedMessage(current), preserved)
     if (merged !== preserved) {
       const meta = (snapshot as ConversationUIMessage).metadata
-      snapshot = { ...snapshot, metadata: { ...meta, opencodeMessage: merged } } as UIMessage
+      snapshot = { ...snapshot, metadata: { ...meta, agentMessage: merged } } as UIMessage
     }
   }
   // Only a producer-marked canonical part list can remove omitted parts.
@@ -281,20 +281,20 @@ function mergeChatMessage(
  * parts, or the same logical content shows up twice under two part ids.
  */
 function settledAssistantMessage(message: UIMessage) {
-  const stored = (message as ConversationUIMessage).metadata?.opencodeMessage
+  const stored = (message as ConversationUIMessage).metadata?.agentMessage
   if (!stored || stored.role !== "assistant") return false
   return typeof (stored.time as { completed?: number } | undefined)?.completed === "number"
 }
 
 function hasChatPart(message: UIMessage, partID: string) {
-  return message.parts.some((part) => opencodePartId(part) === partID)
+  return message.parts.some((part) => agentPartId(part) === partID)
 }
 
 function mergeChatParts(current: MessagePart[], snapshot: MessagePart[]) {
   const next = [...snapshot]
   for (const part of current) {
-    const id = opencodePartId(part)
-    const index = id ? next.findIndex((item) => opencodePartId(item) === id) : -1
+    const id = agentPartId(part)
+    const index = id ? next.findIndex((item) => agentPartId(item) === id) : -1
     if (index === -1) {
       next.push(part)
       continue
@@ -334,7 +334,7 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
   const current = chat.messages()
   const index = assistantTurnIndex(current, message)
   const existing = index === -1 ? undefined : current[index]
-  const next = markUnpersistedLive(opencodeMessageToChatMessage({
+  const next = markUnpersistedLive(agentMessageToChatMessage({
     // A later event carrying a thinner error must not downgrade what the card
     // already rendered for this turn. Same for signed author chips: engine
     // envelopes omit `claxedo.author` and must not erase the host stamp.
@@ -416,7 +416,7 @@ function removeMessage(chat: ConversationChatHandle, messageID: string | undefin
 
 function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   if (!part?.messageID) return false
-  const mapped = opencodePartToChatParts(part)
+  const mapped = agentPartToChatParts(part)
   if (mapped.length === 0) return false
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === part.messageID)
@@ -440,7 +440,7 @@ function removePart(chat: ConversationChatHandle, messageID: string | undefined,
   const index = current.findIndex((message) => message.id === messageID)
   if (index === -1) return false
   const message = current[index]!
-  const nextParts = message.parts.filter((part) => opencodePartId(part) !== partID)
+  const nextParts = message.parts.filter((part) => agentPartId(part) !== partID)
   if (nextParts.length === message.parts.length) return false
   chat.setMessages(replaceAt(current, index, markUnpersistedLive({
     ...message,
@@ -475,7 +475,7 @@ function markUnpersistedLive(message: UIMessage): UIMessage {
   return message
 }
 
-function opencodeMessageToChatMessage(input: {
+function agentMessageToChatMessage(input: {
   message: Message
   parts: Array<Part | MessagePart>
 }): UIMessage {
@@ -483,17 +483,17 @@ function opencodeMessageToChatMessage(input: {
     id: input.message.id,
     role: input.message.role,
     createdAt: new Date(input.message.time.created),
-    metadata: { opencodeMessage: input.message },
-    parts: input.parts.flatMap((part) => isOpencodePart(part) ? opencodePartToChatParts(part) : [part]),
+    metadata: { agentMessage: input.message },
+    parts: input.parts.flatMap((part) => isAgentPart(part) ? agentPartToChatParts(part) : [part]),
   } as UIMessage
 }
 
-function opencodePartToChatParts(part: Part): MessagePart[] {
+function agentPartToChatParts(part: Part): MessagePart[] {
   if (part.type === "text") {
     return [{
       type: "text",
       content: part.text,
-      metadata: { opencodePartId: part.id, opencodePart: part },
+      metadata: { agentPartId: part.id, agentPart: part },
     }]
   }
   if (part.type === "reasoning") {
@@ -502,7 +502,7 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       stepId: part.id,
       content: part.text,
       signature: typeof part.metadata?.signature === "string" ? part.metadata.signature : undefined,
-      metadata: { opencodePartId: part.id, opencodePart: part },
+      metadata: { agentPartId: part.id, agentPart: part },
     } as MessagePart]
   }
   if (part.type === "file") {
@@ -515,13 +515,13 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       return [{
         type: "image",
         source,
-        metadata: { opencodePartId: part.id, opencodePart: part, filename: part.filename },
+        metadata: { agentPartId: part.id, agentPart: part, filename: part.filename },
       }]
     }
     return [{
       type: "document",
       source,
-      metadata: { opencodePartId: part.id, opencodePart: part, filename: part.filename },
+      metadata: { agentPartId: part.id, agentPart: part, filename: part.filename },
     }]
   }
   if (part.type === "tool") {
@@ -532,16 +532,16 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       arguments: JSON.stringify(part.state.input ?? {}),
       state: toolCallState(part.state),
       output: toolOutput(part.state),
-      metadata: { ...part.metadata, opencodePartId: part.id, opencodePart: part },
+      metadata: { ...part.metadata, agentPartId: part.id, agentPart: part },
     }]
   }
   if ((part.type as string) === "handoff") {
     return [{
-      // TanStack has no handoff part. Carry the canonical OpenCode part on an
+      // TanStack has no handoff part. Carry the canonical agent part on an
       // empty text envelope so it survives projection without rendering copy.
       type: "text",
       content: "",
-      metadata: { opencodePartId: part.id, opencodePart: part },
+      metadata: { agentPartId: part.id, agentPart: part },
     }]
   }
   // Compaction markers carry no payload beyond their type/id. TanStack's MessagePart
@@ -551,7 +551,7 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
   if (part.type === "compaction") {
     return [{
       type: "compaction",
-      metadata: { opencodePartId: part.id, opencodePart: part },
+      metadata: { agentPartId: part.id, agentPart: part },
       // as-any: MessagePart union has no "compaction" variant; carry it as a custom part.
     } as unknown as MessagePart]
   }
@@ -564,7 +564,7 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
       type: "agent",
       name: part.name,
       ...(part.source ? { source: part.source } : {}),
-      metadata: { opencodePartId: part.id, opencodePart: part },
+      metadata: { agentPartId: part.id, agentPart: part },
       // as-any: MessagePart union has no "agent" variant; carry it as a custom part (like "thinking").
     } as unknown as MessagePart]
   }
@@ -572,7 +572,7 @@ function opencodePartToChatParts(part: Part): MessagePart[] {
 }
 
 function upsertChatParts(current: MessagePart[], partID: string, next: MessagePart[]) {
-  const index = current.findIndex((part) => opencodePartId(part) === partID)
+  const index = current.findIndex((part) => agentPartId(part) === partID)
   if (index === -1) return [...current, ...next]
   return [
     ...current.slice(0, index),
@@ -582,11 +582,11 @@ function upsertChatParts(current: MessagePart[], partID: string, next: MessagePa
 }
 
 function appendTextDelta(parts: MessagePart[], partID: string, delta: string) {
-  const index = parts.findIndex((part) => opencodePartId(part) === partID)
+  const index = parts.findIndex((part) => agentPartId(part) === partID)
   if (index === -1) {
     return [
       ...parts,
-      { type: "text" as const, content: delta, metadata: { opencodePartId: partID } },
+      { type: "text" as const, content: delta, metadata: { agentPartId: partID } },
     ]
   }
   const part = parts[index]!
@@ -605,14 +605,14 @@ function appendTextDelta(parts: MessagePart[], partID: string, delta: string) {
   return parts
 }
 
-function opencodePartId(part: MessagePart) {
+function agentPartId(part: MessagePart) {
   if (part.type === "thinking") return part.stepId
   const metadata = propertyRecord((part as { metadata?: unknown }).metadata)
-  return text(metadata?.opencodePartId)
+  return text(metadata?.agentPartId)
 }
 
-function chatMessageToOpencodeMessage(message: UIMessage) {
-  const stored = ((message as ConversationUIMessage).metadata?.opencodeMessage)
+function chatMessageToAgentMessage(message: UIMessage) {
+  const stored = ((message as ConversationUIMessage).metadata?.agentMessage)
   if (stored) return {
     ...stored,
     role: message.role,
@@ -629,9 +629,9 @@ function chatMessageToOpencodeMessage(message: UIMessage) {
   } as Message
 }
 
-function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
+function chatPartToAgentPart(message: UIMessage, part: MessagePart) {
   const metadata = (part as ConversationMessagePart).metadata
-  const stored = metadata?.opencodePart
+  const stored = metadata?.agentPart
   if (stored && (stored.type as string) === "handoff") {
     return [{ ...stored, messageID: message.id }]
   }
@@ -642,7 +642,7 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
       messageID: message.id,
       text: part.content,
     } as Part : {
-      id: metadata?.opencodePartId ?? `${message.id}:text`,
+      id: metadata?.agentPartId ?? `${message.id}:text`,
       sessionID: chatMessageSessionId(message),
       messageID: message.id,
       type: "text",
@@ -676,25 +676,25 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
       messageID: message.id,
     }]
   }
-  // Compaction marker → OpenCode CompactionPart. Reuse the stored original when
+  // Compaction marker → agent compaction part. Reuse the stored original when
   // present (lossless); otherwise reconstruct the minimal envelope.
   if ((part.type as string) === "compaction") {
     return [stored ? { ...stored, messageID: message.id } : {
-      id: metadata?.opencodePartId ?? `${message.id}:compaction`,
+      id: metadata?.agentPartId ?? `${message.id}:compaction`,
       sessionID: chatMessageSessionId(message),
       messageID: message.id,
       type: "compaction",
       auto: false,
     } as Part]
   }
-  // Agent mention → OpenCode AgentPart. Reuse the stored original when present
+  // Agent mention → agent mention part. Reuse the stored original when present
   // (lossless); otherwise reconstruct from the carried name/source (the path a
   // freshly-composed optimistic user message takes before the server echoes it).
   if ((part.type as string) === "agent") {
     // as-any: read the custom "agent" MessagePart's carried fields (outside TanStack's union) to rebuild the AgentPart.
     const agent = part as unknown as { name?: string; source?: { value: string; start: number; end: number } }
     return [stored ? { ...stored, messageID: message.id } : {
-      id: metadata?.opencodePartId ?? `${message.id}:agent`,
+      id: metadata?.agentPartId ?? `${message.id}:agent`,
       sessionID: chatMessageSessionId(message),
       messageID: message.id,
       type: "agent",
@@ -706,7 +706,7 @@ function chatPartToOpencodePart(message: UIMessage, part: MessagePart) {
 }
 
 function chatMessageSessionId(message: UIMessage) {
-  const stored = (message as ConversationUIMessage).metadata?.opencodeMessage
+  const stored = (message as ConversationUIMessage).metadata?.agentMessage
   return stored?.sessionID ?? ""
 }
 
@@ -745,7 +745,7 @@ function partIdFromEvent(event: Event) {
     text(propertyRecord(props?.part)?.id)
 }
 
-function isOpencodePart(part: Part | MessagePart): part is Part {
+function isAgentPart(part: Part | MessagePart): part is Part {
   return "messageID" in part && "sessionID" in part
 }
 

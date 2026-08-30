@@ -11,7 +11,7 @@ import type { ConversationDirectory } from "./conversation-chat-client"
 
 /**
  * Keeps a session's canonical conversation store alive while mounted and feeds
- * it the upstream OpenCode snapshot. The registry owns the one `ChatClient`
+ * it the canonical agent snapshot. The registry owns the one `ChatClient`
  * (see conversation-registry.ts); this component holds a mount reference and
  * hydrates from `props.messages`/`props.parts`. It owns no conversation state
  * itself — no per-mount chat hook is created here.

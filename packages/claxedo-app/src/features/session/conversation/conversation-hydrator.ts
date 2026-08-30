@@ -105,7 +105,7 @@ export function resolveStoredParts<T extends { id: string }>(existing: T[] | und
  *     delivered moments ago is legitimately missing from it. Pruning then
  *     erases text the user is watching stream in.
  *
- * That last condition is the same boundary `opencode-conversation.ts`'s
+ * That last condition is the same boundary `agent-conversation.ts`'s
  * `settledAssistantMessage` draws for `mergeChatMessage`. This is deliberately
  * the same rule applied one layer earlier: `mergeChatMessage` can only judge
  * the part list it is handed, and by then the union below has already folded

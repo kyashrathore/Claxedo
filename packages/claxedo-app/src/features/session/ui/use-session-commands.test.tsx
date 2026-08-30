@@ -4,7 +4,7 @@ import {
   clearConversationChatRegistryForTest,
   registerSessionConversationChat,
 } from "../conversation/conversation-registry"
-import type { ConversationChatHandle } from "../conversation/opencode-conversation"
+import type { ConversationChatHandle } from "../conversation/agent-conversation"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "../data/sync/queries"
 import { workspaceSessionRoute } from "@/platform/identity/route"
@@ -83,7 +83,7 @@ function chat(messages: Array<{ id: string; role: "user" | "assistant" }> = []):
       messages.map((message) => ({
         ...message,
         parts: message.role === "user"
-          ? [{ type: "text" as const, content: `${message.id} prompt`, metadata: { opencodePartId: `${message.id}-text` } }]
+          ? [{ type: "text" as const, content: `${message.id} prompt`, metadata: { agentPartId: `${message.id}-text` } }]
           : [],
       })),
     setMessages: () => undefined,

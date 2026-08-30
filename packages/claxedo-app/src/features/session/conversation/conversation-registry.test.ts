@@ -188,7 +188,7 @@ describe("conversation chat registry", () => {
     expect(registeredConversationUserMessages("ses_1")).toEqual([{ id: "msg_user", role: "user" }])
   })
 
-  test("exposes a de-duplicated OpenCode-shaped snapshot from the owned client", () => {
+  test("exposes a de-duplicated agent-contract snapshot from the owned client", () => {
     registerSessionConversationChat("ses_1")
 
     applyRegisteredConversationEvent(event("message.updated", {

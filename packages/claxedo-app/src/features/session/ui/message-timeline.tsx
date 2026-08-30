@@ -480,7 +480,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
   // produces a new conversation snapshot + a new assistantMessagesByParent Map
   // every tick) only re-runs constructMessageRows for the message whose parts
   // actually changed. Message and Part[] identities are stable for unchanged
-  // messages (see opencodeConversationProjection's WeakMap cache), so the cheap
+  // messages (see agentConversationProjection's WeakMap cache), so the cheap
   // identity comparisons below turn wholesale per-tick recomputation into
   // O(changed turn) work.
   const statusType = createMemo(() => sessionStatus().type)

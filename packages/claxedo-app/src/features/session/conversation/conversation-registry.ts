@@ -1,12 +1,12 @@
 import type { AgentPresentationEvent as Event } from "@claxedo/agent-runtime-contract"
 import { createMemo, createSignal, type Accessor } from "solid-js"
 import {
-  applyOpencodeConversationEvent,
+  applyAgentConversationEvent,
   mergeConversationSnapshot,
-  opencodeConversationSnapshot,
-  opencodeConversationProjection,
+  agentConversationSnapshot,
+  agentConversationProjection,
   type ConversationChatHandle,
-} from "./opencode-conversation"
+} from "./agent-conversation"
 import type {
   AgentContentPart as Part,
   AgentPresentationMessage as Message,
@@ -49,7 +49,7 @@ const entries = new Map<string, ConversationChatEntry>()
 const optimisticMessageKeys = new Set<string>()
 const [topology, bumpTopology] = createSignal(0, { equals: false })
 const markTopologyChanged = () => bumpTopology((value) => value + 1)
-type ConversationProjection = ReturnType<typeof opencodeConversationProjection>
+type ConversationProjection = ReturnType<typeof agentConversationProjection>
 const projectedSnapshots = new WeakMap<UIMessage[], ConversationProjection>()
 
 // Bound the number of live in-memory ChatClients. The client deliberately
@@ -110,7 +110,7 @@ export function applyRegisteredConversationEvent(input: { directory: Conversatio
   // cached snapshot) so the global SSE firehose does not spawn clients for
   // background sessions the user never opened.
   if (!entries.get(conversationScopeKey(scope)) && !readConversationSnapshot(scope)) return false
-  const applied = applyOpencodeConversationEvent(ensureEntry(scope).handle, event)
+  const applied = applyAgentConversationEvent(ensureEntry(scope).handle, event)
   if (applied && (event.type === "message.updated" || event.type === "message.removed")) {
     const messageID = messageIdFromEvent(event)
     if (messageID) optimisticMessageKeys.delete(optimisticMessageKey({ ...scope, messageID }))
@@ -134,7 +134,7 @@ export function hydrateRegisteredConversationSnapshot(input: {
     optimisticMessageKeys.delete(optimisticMessageKey({ ...input, messageID }))
   }
   const entry = ensureEntry(input)
-  const snapshot = opencodeConversationSnapshot({
+  const snapshot = agentConversationSnapshot({
     messages: input.messages,
     parts: input.parts,
   })
@@ -158,7 +158,7 @@ export function addRegisteredConversationMessage(input: {
 }) {
   optimisticMessageKeys.add(optimisticMessageKey({ ...input, messageID: input.message.id }))
   const entry = ensureEntry(input)
-  const snapshot = opencodeConversationSnapshot({
+  const snapshot = agentConversationSnapshot({
     messages: [input.message],
     parts: { [input.message.id]: input.parts },
   }).map(markOptimistic)
@@ -212,7 +212,7 @@ export function registeredConversationSnapshot(directory: ConversationDirectory,
   const messages = conversationMessages(directory, sessionID)
   const cached = projectedSnapshots.get(messages)
   if (cached) return cached
-  const projected = opencodeConversationProjection(messages)
+  const projected = agentConversationProjection(messages)
   projectedSnapshots.set(messages, projected)
   return projected
 }
