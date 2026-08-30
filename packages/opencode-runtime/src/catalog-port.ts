@@ -1,9 +1,10 @@
 /**
  * Read-only workspace catalogs: agents, commands, models.
  *
- * These are the surfaces that returned empty 500s until the layer graph repair
- * (contract doc §2.3), so the port's contract about failure matters as much as
- * its shape: an unavailable SDK RAISES. It never answers with an empty list.
+ * These are the surfaces that returned empty 500s in the broken upstream
+ * beta-18314 build (contract doc §2.3), so the port's contract about failure
+ * matters as much as its shape: an unavailable SDK RAISES. It never answers
+ * with an empty list.
  * A fabricated empty catalog is indistinguishable in the UI from "this
  * workspace genuinely has no agents", and Unit 1 recorded that as the exact
  * failure mode to keep out (R8).

@@ -10,7 +10,7 @@
     "check:node-import": "node node-loadability.mjs"
   },
   "dependencies": {
-    "@opencode-ai/sdk": "0.0.0-beta-18314",
+    "@opencode-ai/sdk": "0.0.0-beta-18684",
     "playwright": "^1.62.1"
   }
 }

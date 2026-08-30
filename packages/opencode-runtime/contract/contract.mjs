@@ -21,11 +21,19 @@ export async function runContract(OpenCode) {
     results.push({ ok, section, name, actual, expected })
     console.log(`${ok ? "PASS" : "FAIL"}  §${section}  ${name}`)
     if (!ok) console.log(`      expected ${JSON.stringify(expected)}\n      actual   ${JSON.stringify(actual)}`)
-}
+  }
   function record(section, name, value) {
     results.push({ ok: true, section, name, actual: value, informational: true })
     console.log(`INFO  §${section}  ${name} = ${JSON.stringify(value)}`)
-}
+  }
+  async function checkResolves(section, name, run) {
+    try {
+      await run()
+      check(section, name, true, true)
+    } catch (error) {
+      check(section, name, error?.cause?.status ?? error?.name ?? String(error), true)
+    }
+  }
 
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-contract-"))
   const dbPath = path.join(root, "opencode.db")
@@ -66,7 +74,7 @@ export async function runContract(OpenCode) {
     } catch {
       /* aborted */
     }
-})()
+  })()
 
   // --- §4 Workspace isolation ------------------------------------------------
   const a = await oc.sessions.create({ location: { directory: wsA }, title: "contract-a" })
@@ -112,12 +120,24 @@ export async function runContract(OpenCode) {
   if (created) {
     check(5, "session.created carries a durable aggregate sequence", typeof created.durable?.seq, "number")
     check(5, "session.created carries a location", typeof created.location?.directory, "string")
-}
+  }
   if (connected) {
     // No durable sequence => cannot be checkpointed or replayed after reconnect.
     check(5, "server.connected has NO durable sequence", connected.durable, undefined)
     check(5, "every event still carries an id", typeof connected.id, "string")
-}
+  }
+
+  // --- §2.3 Upstream layer-graph regression ---------------------------------
+  // beta-18314 captured an undefined FileSystemSearch dependency at build
+  // time, making every location-resolving call return an empty 500. Keep the
+  // public calls as the permanent contract instead of reaching into core.
+  // Resolve the catalogs after event teardown so the durability probe keeps
+  // exercising the same subscription lifecycle independently of catalog init.
+  await checkResolves(2.3, "config.get resolves a location", () => oc.config.get({ location: { directory: wsA } }))
+  await checkResolves(2.3, "agent.list resolves a location", () => oc.agent.list({ location: { directory: wsA } }))
+  await checkResolves(2.3, "provider.list resolves a location", () =>
+    oc.provider.list({ location: { directory: wsA } }),
+  )
 
   // --- §5 Usage is snapshot-derived ------------------------------------------
   const sessionSnapshot = await oc.sessions.get({ sessionID: a.id })
@@ -138,6 +158,6 @@ export async function runContract(OpenCode) {
   if (failed.length) {
     console.log("\nA failure means the pinned SDK drifted from the cutover contract.")
     console.log("Stop and re-plan against a later exact beta - do not compensate in Claxedo code.")
-}
+  }
   return failed.length
 }

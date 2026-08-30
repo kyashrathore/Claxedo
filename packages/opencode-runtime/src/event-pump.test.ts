@@ -55,7 +55,7 @@ test("projects real SDK events and marks durability correctly", async () => {
   // session.created carries a durable aggregate sequence, so it is authoritative.
   expect(created!.durable?.seq).toBeNumber()
   expect(created!.hintOnly).toBe(false)
-  expect(created!.directory).toBe(workspace)
+  expect(created!.directory).toBe(fs.realpathSync(workspace))
 
   const connected = seen.find((event) => event.type === "server.connected")
   if (connected) {

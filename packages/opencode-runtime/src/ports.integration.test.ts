@@ -5,7 +5,7 @@
  * This is the test that would have caught the Unit 1 blocker on day one. Mocks
  * of `client.sessions.*` pass whether or not the SDK's layer graph resolves; a
  * real `OpenCode.create()` plus a real `prompt` does not. Everything here goes
- * through `createOpenCodeHost`, which is also what applies the core repair.
+ * through `createOpenCodeHost`, the product's public SDK entrypoint.
  *
  * No credentials are configured, so no turn actually runs. Admission,
  * projection, paging, revert staging and scope enforcement are all observable
@@ -145,8 +145,7 @@ describe("session port against a real host", () => {
 describe("catalog and interaction ports", () => {
   test("catalogs answer for a workspace instead of 500ing", async () => {
     // A bare workspace with no config has no agents or commands. The contract
-    // being tested is that the call RESOLVES: before the core layer-graph
-    // repair every one of these returned an empty 500.
+    // being tested is that the upstream-fixed SDK keeps each call resolvable.
     expect(Array.isArray(await catalog.agents(alpha))).toBe(true)
     expect(Array.isArray(await catalog.commands(alpha))).toBe(true)
     expect(Array.isArray(await catalog.models(alpha))).toBe(true)
@@ -165,8 +164,8 @@ describe("catalog and interaction ports", () => {
     await expect(
       interactions.replyForm(beta, { sessionID: mine.id, formID: "frm_x", answer: { a: "b" } }),
     ).rejects.toBeInstanceOf(WorkspaceScopeError)
-    await expect(
-      interactions.cancelForm(beta, { sessionID: mine.id, formID: "frm_x" }),
-    ).rejects.toBeInstanceOf(WorkspaceScopeError)
+    await expect(interactions.cancelForm(beta, { sessionID: mine.id, formID: "frm_x" })).rejects.toBeInstanceOf(
+      WorkspaceScopeError,
+    )
   })
 })
