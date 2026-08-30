@@ -148,7 +148,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       await services.projectionStore.sync_session_meta(workspace, session)
     },
     onSessionMetaSnapshot: async (workspace, sessions) => {
-      await Promise.all(sessions.map((session) => services.projectionStore.sync_session_meta(workspace, session)))
+      await services.projectionStore.sync_session_metas(workspace, sessions)
     },
   })
   configureAgentConfig({
