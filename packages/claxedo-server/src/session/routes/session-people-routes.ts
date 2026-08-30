@@ -13,7 +13,7 @@ import {
   peopleErrorResponse,
   type SessionShareChangedSink,
   type SessionShareFanoutTarget,
-} from "./session-people-contract"
+} from "../session-people-contract"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig

@@ -3390,13 +3390,13 @@ describe("workspace routes signed control plane authority", () => {
     await expect(grant.json()).resolves.toEqual({
       error: {
         code: "workspace_share_target_ambiguous",
-        message: "Share target must be exactly one user or org",
+        message: "Share target must be exactly one user, org, or team",
       },
     })
     await expect(revoke.json()).resolves.toEqual({
       error: {
         code: "workspace_share_target_ambiguous",
-        message: "Share revoke target must be exactly one grant, user, or org",
+        message: "Share revoke target must be exactly one grant, user, org, or team",
       },
     })
     expect(svc.authority?.grantWorkspaceShare).not.toHaveBeenCalled()

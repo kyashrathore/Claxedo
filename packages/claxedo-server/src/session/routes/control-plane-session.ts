@@ -24,7 +24,7 @@ import {
   sessionInventoryResponse,
 } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
-import type { SessionShareChangedSink } from "./session-people-contract"
+import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
 
 type Options = {

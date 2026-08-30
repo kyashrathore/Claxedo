@@ -372,43 +372,29 @@ describe("frontend API contract", () => {
     })
   })
 
-  test("serves the stale Cursor SDK catalog when the SDK API key is missing", async () => {
+  test("does not synthesize a Cursor SDK catalog when the SDK API key is missing", async () => {
     await agentConfigMod.saveUserConfig({ mcp: {}, auth: {} })
 
     const res = await createContractApp().request(
       "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
     )
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(502)
     await expect(res.json()).resolves.toMatchObject({
-      source: "catalog",
-      stale: true,
-      options: [
-        {
-          id: "model",
-          currentValue: "auto",
-        },
-      ],
+      error: { code: "harness_config_options_unavailable" },
     })
   })
 
-  test("serves the stale Cursor SDK catalog fallback when the runtime cannot live-list", async () => {
+  test("does not synthesize a Cursor SDK catalog when the runtime cannot live-list", async () => {
     await agentConfigMod.saveUserConfig({ mcp: {}, auth: { "cursor-sdk": "cursor-sdk-test-key" } })
 
     const res = await createContractApp().request(
       "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=cursor-sdk",
     )
 
-    expect(res.status).toBe(200)
+    expect(res.status).toBe(502)
     await expect(res.json()).resolves.toMatchObject({
-      source: "catalog",
-      stale: true,
-      options: [
-        {
-          id: "model",
-          currentValue: "auto",
-        },
-      ],
+      error: { code: "harness_config_options_unavailable" },
     })
   })
 })

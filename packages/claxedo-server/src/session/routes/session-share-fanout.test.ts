@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { OrgId } from "@claxedo/server-core/platform/auth/authority"
 import {
@@ -6,7 +6,7 @@ import {
   notifySessionShareChanged,
   resolveSessionShareRecipientSubjects,
   type SessionShareChangedSink,
-} from "./session-people-contract"
+} from "../session-people-contract"
 
 const aliceAuth = {
   mode: "signed",

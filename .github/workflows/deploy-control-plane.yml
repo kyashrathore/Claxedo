@@ -28,8 +28,8 @@ name: deploy-control-plane
 #                               (e.g. https://claxedo-control-plane-staging.<subdomain>.workers.dev)
 #   CLAXEDO_WORKSPACE_RELAY_URL — base URL of that environment's Cloudflare
 #                                 Workspace Relay Worker
-#   CLAXEDO_SANDBOX_BUILD_ID — content build ID emitted by the successful
-#                               claxedo-sandbox-image workflow for this release
+#   The sandbox build ID is produced inside this ordered workflow from the
+#   checked-out release SHA and passed to both control-plane deployments.
 #   WORKGRAPH_SMOKE_USER_A_ID / WORKGRAPH_SMOKE_USER_B_ID — distinct Clerk users
 #   WORKGRAPH_SMOKE_USER_A_EMAIL — primary email for user A's browser sign-in
 #   WORKGRAPH_SMOKE_ORGANIZATION_A_ID / WORKGRAPH_SMOKE_ORGANIZATION_B_ID
@@ -72,6 +72,13 @@ on:
       - packages/claxedo-connections/**
       - packages/workgraph/**
       - packages/agent-sdk-runtime/**
+      - packages/sandbox-contract/**
+      - packages/workspace-runtime/**
+      - packages/opencode/**
+      - packages/core/**
+      - packages/protocol/**
+      - packages/schema/**
+      - packages/server/**
       - packages/channels/**
       - packages/sandbox-manager/**
       - packages/wakes/**
@@ -100,7 +107,52 @@ permissions:
   contents: read
 
 jobs:
+  build_sandbox_runtime:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      build_id: ${{ steps.sandbox_identity.outputs.build_id }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Build sandbox dependencies
+        run: |
+          bun run --cwd packages/sandbox-contract build
+          bun run --cwd packages/sandbox-manager build
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+
+      - name: Build and push release sandbox image
+        run: bun run --cwd packages/claxedo-server sandbox:image --push
+
+      - name: Publish release sandbox identity
+        id: sandbox_identity
+        run: |
+          set -euo pipefail
+          info=packages/claxedo-server/scripts/sandbox/.build/build-info.json
+          [ -f "$info" ] || { echo "::error::sandbox build did not emit build-info.json"; exit 1; }
+          build_id=$(jq -r '.buildId // empty' "$info")
+          [ -n "$build_id" ] || { echo "::error::sandbox build-info.json has no buildId"; exit 1; }
+          echo "build_id=$build_id" >> "$GITHUB_OUTPUT"
+          echo "### Release sandbox identity" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          cat "$info" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
   deploy-staging:
+    needs: build_sandbox_runtime
     runs-on: ubuntu-latest
     environment: staging
     steps:
@@ -114,7 +166,7 @@ jobs:
           CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
-          SANDBOX_BUILD_ID: ${{ vars.CLAXEDO_SANDBOX_BUILD_ID }}
+          SANDBOX_BUILD_ID: ${{ needs.build_sandbox_runtime.outputs.build_id }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
@@ -244,7 +296,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
-          SANDBOX_BUILD_ID: ${{ vars.CLAXEDO_SANDBOX_BUILD_ID }}
+          SANDBOX_BUILD_ID: ${{ needs.build_sandbox_runtime.outputs.build_id }}
         run: >-
           bunx wrangler deploy --env staging
           --var "CLAXEDO_RELEASE:${GITHUB_SHA}"
@@ -392,7 +444,7 @@ jobs:
   # redeploys the SAME commit the staging smoke just validated.
   promote-production:
     if: github.event_name == 'workflow_dispatch' && inputs.promote
-    needs: deploy-app-staging
+    needs: [deploy-app-staging, build_sandbox_runtime]
     runs-on: ubuntu-latest
     environment: production
     steps:
@@ -406,7 +458,7 @@ jobs:
           CLAXEDO_RUNTIME_ADMIN_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
-          SANDBOX_BUILD_ID: ${{ vars.CLAXEDO_SANDBOX_BUILD_ID }}
+          SANDBOX_BUILD_ID: ${{ needs.build_sandbox_runtime.outputs.build_id }}
           WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
           WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
           WORKGRAPH_SMOKE_USER_B_ID: ${{ vars.WORKGRAPH_SMOKE_USER_B_ID }}
@@ -523,7 +575,7 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           WORKSPACE_RELAY_URL: ${{ vars.CLAXEDO_WORKSPACE_RELAY_URL }}
-          SANDBOX_BUILD_ID: ${{ vars.CLAXEDO_SANDBOX_BUILD_ID }}
+          SANDBOX_BUILD_ID: ${{ needs.build_sandbox_runtime.outputs.build_id }}
         run: >-
           bunx wrangler deploy --env ""
           --var "CLAXEDO_RELEASE:${GITHUB_SHA}"

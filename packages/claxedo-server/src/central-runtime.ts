@@ -23,7 +23,7 @@ import type { UsageLedger } from "./platform/telemetry/product/metering"
 import type { ProductDeploymentMode } from "./platform/telemetry/product/product"
 import type { UsageRevisionReader, UsageRevisionWriter } from "@claxedo/server-core/usage/contracts"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
-import type { SessionShareChangedSink } from "./session/routes/session-people-contract"
+import type { SessionShareChangedSink } from "./session/session-people-contract"
 
 export { createCentralSessionRuntime } from "./session/runtime"
 export { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"

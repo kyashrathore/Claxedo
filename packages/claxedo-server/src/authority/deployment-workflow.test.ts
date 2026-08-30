@@ -106,7 +106,7 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(production).toEqual([...production].sort((left, right) => left - right))
     expect(controlPlane).toContain("deploy-app-staging:\n    needs: smoke-staging")
     expect(controlPlane).toContain("promote-production:\n    if:")
-    expect(controlPlane).toContain("needs: deploy-app-staging")
+    expect(controlPlane).toContain("needs: [deploy-app-staging, build_sandbox_runtime]")
     expect(controlPlane).toContain("deploy-app-production:\n    if:")
     expect(controlPlane).toContain("needs: promote-production")
   })
@@ -209,10 +209,10 @@ describe("Claxedo Cloud deployment workflow", () => {
       "bun run --cwd packages/workspace-relay-protocol build",
       "bun run --cwd packages/workspace-relay build",
       "bun run --cwd packages/claxedo-connections build",
-      "bun run --cwd packages/sandbox-manager build",
     ]) {
       expect(controlPlane.match(new RegExp(command.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "g"))).toHaveLength(2)
     }
+    expect(controlPlane.match(/bun run --cwd packages\/sandbox-manager build/g)).toHaveLength(3)
     expect(appStaging).toContain('git cat-file -e "$BEFORE_SHA^{commit}"')
     expect(appStaging).toContain('git fetch --no-tags --depth=1 origin "$BEFORE_SHA"')
     expect(appStaging).toContain('git diff-tree --no-commit-id --name-only -r "$AFTER_SHA"')
@@ -246,7 +246,11 @@ describe("Claxedo Cloud deployment workflow", () => {
     expect(controlPlane).toContain('wrangler deploy --env staging --var "CLAXEDO_RELEASE:${GITHUB_SHA}"')
     expect(controlPlane.match(/--var "CLAXEDO_PUBLIC_URL:\$\{CONTROL_PLANE_URL\}"/g)).toHaveLength(2)
     expect(controlPlane).toContain('--var "CLAXEDO_WORKSPACE_RELAY_URL:${WORKSPACE_RELAY_URL}"')
-    expect(controlPlane.match(/SANDBOX_BUILD_ID: \$\{\{ vars\.CLAXEDO_SANDBOX_BUILD_ID \}\}/g)).toHaveLength(4)
+    expect(controlPlane).toContain("build_sandbox_runtime:")
+    expect(controlPlane).toContain("bun run --cwd packages/claxedo-server sandbox:image --push")
+    expect(controlPlane).toContain("build_id: ${{ steps.sandbox_identity.outputs.build_id }}")
+    expect(controlPlane.match(/SANDBOX_BUILD_ID: \$\{\{ needs\.build_sandbox_runtime\.outputs\.build_id \}\}/g)).toHaveLength(4)
+    expect(controlPlane).not.toContain("vars.CLAXEDO_SANDBOX_BUILD_ID")
     expect(controlPlane.match(/--var "CLAXEDO_SANDBOX_BUILD_ID:\$\{SANDBOX_BUILD_ID\}"/g)).toHaveLength(2)
     expect(controlPlane.match(/WORKSPACE_RELAY_URL SANDBOX_BUILD_ID/g)).toHaveLength(2)
     expect(controlPlane).toContain("- .github/actions/setup-bun/action.yml")
