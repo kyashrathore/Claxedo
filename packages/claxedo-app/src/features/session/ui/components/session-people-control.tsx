@@ -4,7 +4,6 @@ import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { showToast } from "@opencode-ai/ui/toast"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import {
-  addSessionParticipant,
   grantSessionShare,
   listSessionShares,
   listTeamsForActiveOrg,
@@ -59,16 +58,12 @@ export const SessionPeopleControl: Component<{
               onClick={async () => {
                 try {
                   const token = personToken().trim()
-                  await addSessionParticipant({
-                    sessionId: props.sessionId,
-                    workspaceId: props.workspaceId,
-                    participantTokenIdentifier: token,
-                  })
+                  if (!token) return
                   await grantSessionShare({
                     sessionId: props.sessionId,
                     workspaceId: props.workspaceId,
                     grantedToTokenIdentifier: token,
-                  }).catch(() => undefined)
+                  })
                   setPersonToken("")
                   await refetch()
                   showToast({ title: "Person added to session" })

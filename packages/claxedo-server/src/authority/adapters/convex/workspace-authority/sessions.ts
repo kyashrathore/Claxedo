@@ -1,4 +1,5 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { SessionShareRevokeResult } from "@claxedo/server-core/platform/auth/authority"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
@@ -162,7 +163,7 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         grantedToTeamPublicId?: string
       },
     ) {
-      return requireExecutor(input, auth).mutation(convexApi.sessionShares.revoke, {
+      return await requireExecutor(input, auth).mutation(convexApi.sessionShares.revoke, {
         session_id: args.sessionId,
         workspace_id: args.workspaceId,
         ...(args.grantId ? { grant_id: args.grantId as never } : {}),
@@ -173,7 +174,7 @@ export function sessionAuthority(input: ConvexAuthorityInput, serviceArgs: Servi
         ...(args.grantedToOrgId ? { granted_to_org_id: args.grantedToOrgId } : {}),
         ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
         ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
-      })
+      }) as SessionShareRevokeResult
     },
     async listSessionShares(
       auth: SignedControlPlaneAuth,

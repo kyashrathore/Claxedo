@@ -26,9 +26,10 @@ import {
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import {
   notifySessionShareChanged,
+  peopleErrorResponse,
   type SessionShareChangedSink,
   type SessionShareFanoutTarget,
-} from "./session-share-fanout"
+} from "./session-people-contract"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -510,8 +511,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           participantTokenIdentifier: body.participantTokenIdentifier,
         }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return peopleErrorResponse(c, err)
       }
     })
     .delete("/sessions/:sessionId/participants", async (c) => {
@@ -532,8 +532,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           participantTokenIdentifier: body.participantTokenIdentifier,
         }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return peopleErrorResponse(c, err)
       }
     })
     .get("/sessions/:sessionId/shares", async (c) => {
@@ -555,8 +554,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           workspaceId,
         }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return peopleErrorResponse(c, err)
       }
     })
     .post("/sessions/:sessionId/shares", async (c) => {
@@ -592,8 +590,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         })
         return c.json(result)
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return peopleErrorResponse(c, err)
       }
     })
     .delete("/sessions/:sessionId/shares", async (c) => {
@@ -619,19 +616,21 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           ...(typeof body.grantId === "string" ? { grantId: body.grantId } : {}),
           ...target,
         })
-        await notifySessionShareChanged({
-          auth,
-          authority,
-          phase: "revoked",
-          sessionId: c.req.param("sessionId"),
-          workspaceId,
-          target,
-          ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
-        })
-        return c.json(result)
+        for (const revokedTarget of result.revokedTargets) {
+          await notifySessionShareChanged({
+            auth,
+            authority,
+            phase: "revoked",
+            sessionId: c.req.param("sessionId"),
+            workspaceId,
+            target: revokedTarget,
+            ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
+          })
+        }
+        const { revokedTargets: _revokedTargets, ...response } = result
+        return c.json(response)
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return peopleErrorResponse(c, err)
       }
     })
     .get("/sessions/:sessionId/gateway", async (c) => {

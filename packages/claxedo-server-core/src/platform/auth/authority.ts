@@ -72,6 +72,27 @@ export type WorkspaceOpenResult = {
 }
 
 /**
+ * Canonical recipient identity resolved by the authority before a session
+ * share is revoked. Routes use this target for recipient doorbells, including
+ * grant-id-only revokes whose request body carries no recipient selector.
+ */
+export type SessionShareFanoutTarget = {
+  grantedToTokenIdentifier?: string
+  grantedToClerkSubject?: string
+  grantedToUserId?: string
+  grantedToClerkOrgId?: string
+  grantedToOrgId?: string
+  grantedToTeamId?: string
+  grantedToTeamPublicId?: string
+}
+
+export type SessionShareRevokeResult = {
+  revoked: boolean
+  runtime_tokens_revoked?: number
+  revokedTargets: SessionShareFanoutTarget[]
+}
+
+/**
  * Neutral authority capability. Every method mirrors a concrete route or
  * pull-flow call site; the shapes are the structural contract the core relies
  * on and the adapter must satisfy.
@@ -299,7 +320,7 @@ export type WorkspaceAuthority = {
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
     },
-  ) => Promise<unknown>
+  ) => Promise<SessionShareRevokeResult>
   listSessionShares?: (
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string },

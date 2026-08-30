@@ -1,6 +1,15 @@
+import type { Context } from "hono"
+import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type { SessionShareChangedEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import {
+  ControlPlaneAuthError,
+  controlPlaneAuthErrorBody,
+  type SignedControlPlaneAuth,
+} from "@claxedo/server-core/platform/auth/auth"
+import type {
+  SessionShareFanoutTarget,
+  WorkspaceAuthority,
+} from "@claxedo/server-core/platform/auth/authority"
 
 /**
  * Injected sink for `session.share.changed` doorbells.
@@ -10,14 +19,82 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
  */
 export type SessionShareChangedSink = (event: SessionShareChangedEvent) => unknown | Promise<unknown>
 
-export type SessionShareFanoutTarget = {
-  grantedToTokenIdentifier?: string
-  grantedToClerkSubject?: string
-  grantedToUserId?: string
-  grantedToClerkOrgId?: string
-  grantedToOrgId?: string
-  grantedToTeamId?: string
-  grantedToTeamPublicId?: string
+export type { SessionShareFanoutTarget } from "@claxedo/server-core/platform/auth/authority"
+
+type PeopleError = {
+  status: ContentfulStatusCode
+  code: string
+  message: string
+}
+
+function hasCode(message: string, code: string) {
+  return message === code || message.includes(code)
+}
+
+function peopleAuthorityError(error: unknown): PeopleError | undefined {
+  const message = error instanceof Error ? error.message : String(error)
+  if (message === "Session not found" || message.includes("Session not found")) {
+    return {
+      status: 404,
+      code: "session_not_found",
+      message: "This session is not on the control plane, so it cannot be shared from People yet.",
+    }
+  }
+  if (hasCode(message, "session_share_admin_required")) {
+    return {
+      status: 403,
+      code: "session_share_admin_required",
+      message: "Only the session creator or an org/team admin can manage People on this session.",
+    }
+  }
+  if (hasCode(message, "session_share_target_required")) {
+    return {
+      status: 400,
+      code: "session_share_target_required",
+      message: "Exactly one share target is required",
+    }
+  }
+  if (hasCode(message, "session_share_target_not_found")) {
+    return {
+      status: 404,
+      code: "session_share_target_not_found",
+      message: "Share target was not found",
+    }
+  }
+  if (hasCode(message, "session_participant_workspace_access_required")) {
+    return {
+      status: 403,
+      code: "session_participant_workspace_access_required",
+      message: "That person needs workspace access before they can be added to the session.",
+    }
+  }
+  if (hasCode(message, "session_share_team_org_mismatch")) {
+    return {
+      status: 400,
+      code: "session_share_team_org_mismatch",
+      message: "The team must belong to the session workspace organization.",
+    }
+  }
+  if (hasCode(message, "session_share_org_mismatch")) {
+    return {
+      status: 400,
+      code: "session_share_org_mismatch",
+      message: "The organization must own the session workspace.",
+    }
+  }
+  return undefined
+}
+
+/** Canonical HTTP envelope for People authority failures across all hosts. */
+export function peopleErrorResponse(c: Context, error: unknown): Response {
+  if (error instanceof ControlPlaneAuthError) {
+    return c.json(controlPlaneAuthErrorBody(error), error.status)
+  }
+  const mapped = peopleAuthorityError(error)
+  if (mapped) {
+    return c.json({ error: { code: mapped.code, message: mapped.message } }, mapped.status)
+  }
+  throw error
 }
 
 /**

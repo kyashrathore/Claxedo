@@ -5,15 +5,15 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
-  controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import {
   notifySessionShareChanged,
+  peopleErrorResponse,
   type SessionShareChangedSink,
   type SessionShareFanoutTarget,
-} from "./session-share-fanout"
+} from "./session-people-contract"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
@@ -23,45 +23,6 @@ type Options = {
 }
 
 const bodyLimitBytes = 16 * 1024
-
-function peopleAuthorityError(err: unknown): ControlPlaneAuthError | undefined {
-  if (err instanceof ControlPlaneAuthError) return err
-  const message = err instanceof Error ? err.message : String(err)
-  if (message === "Session not found" || message.includes("Session not found")) {
-    return new ControlPlaneAuthError(
-      404,
-      "session_not_found",
-      "This session is not on the control plane, so it cannot be shared from People yet.",
-    )
-  }
-  if (message === "session_share_admin_required" || message.includes("session_share_admin_required")) {
-    return new ControlPlaneAuthError(
-      403,
-      "session_share_admin_required",
-      "Only the session creator or an org/team admin can manage People on this session.",
-    )
-  }
-  if (message === "session_share_target_required" || message.includes("session_share_target_required")) {
-    return new ControlPlaneAuthError(400, "session_share_target_required", "Exactly one share target is required")
-  }
-  if (message === "session_share_target_not_found" || message.includes("session_share_target_not_found")) {
-    return new ControlPlaneAuthError(404, "session_share_target_not_found", "Share target was not found")
-  }
-  if (message === "session_participant_workspace_access_required" || message.includes("session_participant_workspace_access_required")) {
-    return new ControlPlaneAuthError(
-      403,
-      "session_participant_workspace_access_required",
-      "That person needs workspace access before they can be added to the session.",
-    )
-  }
-  return undefined
-}
-
-function peopleErrorResponse(c: { json: (body: unknown, status: number) => Response }, err: unknown) {
-  const mapped = peopleAuthorityError(err)
-  if (mapped) return c.json(controlPlaneAuthErrorBody(mapped), mapped.status)
-  throw err
-}
 
 async function signedAuth(req: Request, options: Options) {
   const auth = await controlPlaneAuthContext(req, {
@@ -239,16 +200,19 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
           ...(typeof body.grantId === "string" ? { grantId: body.grantId } : {}),
           ...target,
         })
-        await notifySessionShareChanged({
-          auth,
-          authority,
-          phase: "revoked",
-          sessionId: c.req.param("sessionId"),
-          workspaceId,
-          target,
-          ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
-        })
-        return c.json(result)
+        for (const revokedTarget of result.revokedTargets) {
+          await notifySessionShareChanged({
+            auth,
+            authority,
+            phase: "revoked",
+            sessionId: c.req.param("sessionId"),
+            workspaceId,
+            target: revokedTarget,
+            ...(options.sessionShareChangedSink ? { sink: options.sessionShareChangedSink } : {}),
+          })
+        }
+        const { revokedTargets: _revokedTargets, ...response } = result
+        return c.json(response)
       } catch (err) {
         return peopleErrorResponse(c, err)
       }

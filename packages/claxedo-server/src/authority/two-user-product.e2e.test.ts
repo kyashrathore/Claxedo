@@ -144,7 +144,7 @@ describe("two-user managed-product proof", () => {
     await expect(casey.query(api.sessions.resolve, { session_id: "ses_private" })).resolves.toBeNull()
     await expect(bob.query(api.sessions.list, { workspace_id: "ws_private" })).resolves.toEqual([])
 
-    await alice.mutation(api.sessionShares.grant, {
+    const sessionGrant = await alice.mutation(api.sessionShares.grant, {
       workspace_id: "ws_private",
       session_id: "ses_private",
       granted_to_team_public_id: org.default_team_id,
@@ -178,10 +178,14 @@ describe("two-user managed-product proof", () => {
       role: "editor",
       expires_at: Date.now() + 60_000,
     })
-    await alice.mutation(api.sessionShares.revoke, {
+    const revoke = await alice.mutation(api.sessionShares.revoke, {
       workspace_id: "ws_private",
       session_id: "ses_private",
-      granted_to_team_public_id: org.default_team_id,
+      grant_id: sessionGrant.grant_id,
+    })
+    expect(revoke).toMatchObject({
+      revoked: true,
+      revokedTargets: [{ grantedToTeamPublicId: org.default_team_id }],
     })
 
     await expect(bob.query(api.sessions.readMessages, {

@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { OrgId } from "@claxedo/server-core/platform/auth/authority"
 import {
   clerkSubjectFromIdentity,
   notifySessionShareChanged,
   resolveSessionShareRecipientSubjects,
   type SessionShareChangedSink,
-} from "./session-share-fanout"
+} from "./session-people-contract"
 
 const aliceAuth = {
   mode: "signed",
@@ -38,7 +39,7 @@ describe("resolveSessionShareRecipientSubjects", () => {
     const subjects = await resolveSessionShareRecipientSubjects({
       auth: aliceAuth,
       authority: {
-        resolveOrgId: async () => "org_internal",
+        resolveOrgId: async () => "org_internal" as OrgId,
         listTeamMembers: async () => [
           { token_identifier: "https://issuer.test|user_alice" },
           { token_identifier: "https://issuer.test|user_bob" },
@@ -56,7 +57,7 @@ describe("resolveSessionShareRecipientSubjects", () => {
     const subjects = await resolveSessionShareRecipientSubjects({
       auth: aliceAuth,
       authority: {
-        resolveOrgId: async () => "org_internal",
+        resolveOrgId: async () => "org_internal" as OrgId,
         listTeamMembers: async () => [],
         listTeams: async () => [],
       },
@@ -77,7 +78,7 @@ describe("notifySessionShareChanged", () => {
     await notifySessionShareChanged({
       auth: aliceAuth,
       authority: {
-        resolveOrgId: async () => "org_internal",
+        resolveOrgId: async () => "org_internal" as OrgId,
         listTeamMembers: async () => [
           { token_identifier: "https://issuer.test|user_bob" },
           { token_identifier: "https://issuer.test|user_fail" },
@@ -101,7 +102,7 @@ describe("notifySessionShareChanged", () => {
     await notifySessionShareChanged({
       auth: aliceAuth,
       authority: {
-        resolveOrgId: async () => "org_internal",
+        resolveOrgId: async () => "org_internal" as OrgId,
         listTeamMembers: async () => [{ token_identifier: "https://issuer.test|user_bob" }],
         listTeams: async () => [],
       },
@@ -110,5 +111,47 @@ describe("notifySessionShareChanged", () => {
       workspaceId: "ws_1",
       target: { grantedToTeamPublicId: "team_eng" },
     })
+  })
+
+  test("does not publish a malformed target", async () => {
+    const published: string[] = []
+    await notifySessionShareChanged({
+      auth: aliceAuth,
+      authority: {
+        resolveOrgId: async () => "org_internal" as OrgId,
+        listTeamMembers: async () => [],
+        listTeams: async () => [],
+      },
+      phase: "revoked",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      target: { grantedToTokenIdentifier: "not-a-clerk-subject" },
+      sink: async (event) => {
+        published.push(event.ownerUserId)
+      },
+    })
+    expect(published).toEqual([])
+  })
+
+  test("keeps a completed share mutation successful when recipient expansion fails", async () => {
+    const published: string[] = []
+    await expect(notifySessionShareChanged({
+      auth: aliceAuth,
+      authority: {
+        resolveOrgId: async () => "org_internal" as OrgId,
+        listTeamMembers: async () => {
+          throw new Error("membership resolver unavailable")
+        },
+        listTeams: async () => [],
+      },
+      phase: "revoked",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      target: { grantedToTeamPublicId: "team_eng" },
+      sink: async (event) => {
+        published.push(event.ownerUserId)
+      },
+    })).resolves.toBeUndefined()
+    expect(published).toEqual([])
   })
 })

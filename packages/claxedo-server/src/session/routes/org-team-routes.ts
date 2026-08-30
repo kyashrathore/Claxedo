@@ -31,7 +31,13 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
       ...options,
       requireSigned: true,
     }, services)
-    if ("error" in authResult) throw Object.assign(new ControlPlaneAuthError(authResult.status, "unauthorized", "Signed auth required"), { response: authResult })
+    if ("error" in authResult) {
+      const status = authResult.status ?? 401
+      throw Object.assign(
+        new ControlPlaneAuthError(status, "invalid_bearer_token", "Signed auth required"),
+        { response: authResult },
+      )
+    }
     if (!authResult.auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
     return authResult.auth
   }

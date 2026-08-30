@@ -168,6 +168,23 @@ function publicGrant(grant: any) {
   }
 }
 
+async function revokedFanoutTarget(ctx: any, grant: any) {
+  if (grant.granted_to_user_id) {
+    const user = await ctx.db.get(grant.granted_to_user_id)
+    if (user?.token_identifier) return { grantedToTokenIdentifier: user.token_identifier }
+    if (user?.clerk_subject) return { grantedToClerkSubject: user.clerk_subject }
+    if (user?.public_id) return { grantedToUserId: user.public_id }
+  }
+  if (grant.granted_to_team_id) {
+    const team = await ctx.db.get(grant.granted_to_team_id)
+    if (team?.public_id) return { grantedToTeamPublicId: team.public_id }
+  }
+  if (grant.granted_to_org_id) {
+    return { grantedToOrgId: String(grant.granted_to_org_id) }
+  }
+  return undefined
+}
+
 export const grant = authedMutation({
   args: {
     session_id: v.string(),
@@ -256,7 +273,9 @@ export const revoke = authedMutation({
           return false
         })
     const active = grants.filter((item: any) => item && !item.revoked_at)
-    if (active.length === 0) return { revoked: false, runtime_tokens_revoked: 0 }
+    if (active.length === 0) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+    const revokedTargets = (await Promise.all(active.map((grant: any) => revokedFanoutTarget(ctx, grant))))
+      .filter((target): target is NonNullable<typeof target> => !!target)
     const now = Date.now()
     for (const grant of active) await ctx.db.patch(grant._id, { revoked_at: now })
     const userIds = new Set<unknown>()
@@ -272,6 +291,7 @@ export const revoke = authedMutation({
     return {
       revoked: true,
       runtime_tokens_revoked: await revokeRuntimeTokensForUsers(ctx, access.workspace._id, [...userIds]),
+      revokedTargets,
     }
   },
 })

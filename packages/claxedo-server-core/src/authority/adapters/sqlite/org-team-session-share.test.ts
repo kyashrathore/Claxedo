@@ -102,10 +102,17 @@ describe("sqlite Org→Team + session share", () => {
       sessionId: "ses_private",
     })).resolves.toMatchObject({ allowed: true })
 
-    await authority.revokeSessionShare!(alice, {
+    const revoked = await authority.revokeSessionShare!(alice, {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
-      grantedToTeamId: org.default_team_id,
+      grantId: grant.grant_id,
+    }) as {
+      revoked: boolean
+      revokedTargets: Array<{ grantedToTeamPublicId?: string }>
+    }
+    expect(revoked).toMatchObject({
+      revoked: true,
+      revokedTargets: [{ grantedToTeamPublicId: org.default_team_id }],
     })
     expect(await authority.listSessions(bob, { workspaceId: "ws_team_share" })).toEqual([])
     await expect(authority.readSessionMessages(bob, {

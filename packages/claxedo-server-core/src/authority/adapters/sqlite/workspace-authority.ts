@@ -1,6 +1,13 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
-import type { HostEnrollment, OrgId, ProjectAction, ProjectRoleResult, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type {
+  HostEnrollment,
+  OrgId,
+  ProjectAction,
+  ProjectRoleResult,
+  SessionShareFanoutTarget,
+  WorkspaceAuthority,
+} from "@claxedo/server-core/platform/auth/authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
   authorizeProjectForUser,
@@ -2003,7 +2010,19 @@ export function createSqliteWorkspaceAuthority(
           return false
         }) as typeof grants
       }
-      if (grants.length === 0) return { revoked: false }
+      if (grants.length === 0) return { revoked: false, revokedTargets: [] }
+      const revokedTargets = grants.flatMap((grant): SessionShareFanoutTarget[] => {
+        if (grant.granted_to_user_token_identifier) {
+          return [{ grantedToTokenIdentifier: grant.granted_to_user_token_identifier }]
+        }
+        if (grant.granted_to_team_id) {
+          return [{ grantedToTeamPublicId: grant.granted_to_team_id }]
+        }
+        if (grant.granted_to_org_id) {
+          return [{ grantedToOrgId: grant.granted_to_org_id }]
+        }
+        return []
+      })
       const tokenIdentifiers = new Set<string>()
       for (const grant of grants) {
         db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`).run(now, grant.grant_id)
@@ -2024,6 +2043,7 @@ export function createSqliteWorkspaceAuthority(
       return {
         revoked: true,
         runtime_tokens_revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [...tokenIdentifiers]),
+        revokedTargets,
       }
     },
     async listSessionShares(auth: SignedControlPlaneAuth, args) {
