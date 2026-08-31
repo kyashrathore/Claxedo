@@ -8,6 +8,7 @@ import {
   canaryDeploymentPrewriteRollbackStatements,
   lockedDeploymentReleaseActivationStatement,
   lockedDeploymentReleaseCandidateStatements,
+  devOpenDeploymentReleaseStatements,
   lockedDeploymentPrewriteRollbackStatements,
   type DeploymentReleaseIdentity,
   type DeploymentReleaseTransition,
@@ -34,7 +35,7 @@ type PreparationCommand = {
 }
 
 export type BetterAuthD1PreparationMode = "register-candidate" | "activate-candidate" | "rollback-candidate"
-  | "rollback-canary"
+  | "rollback-canary" | "dev-open"
 
 function required(env: NodeJS.ProcessEnv, name: string) {
   const value = env[name]?.trim()
@@ -312,6 +313,17 @@ export async function betterAuthD1PreparationCommands(input: {
     args: ["d1", "execute", "CONTROL_PLANE_DB", "--remote", ...target, "--command", sql, ...(verify ? ["--json"] : [])],
     verify,
   })
+  if (input.mode === "dev-open") {
+    // Development staging only: skip the gate ceremony and serve the release
+    // open immediately. Refused for production so the certified pipeline
+    // stays the only road to an open production release.
+    if (!input.staging) throw new Error("dev-open is a development-staging convenience; production opens through evidence")
+    return [
+      execute(betterAuthDatabaseSchemaInspectionSql(), "schema"),
+      ...devOpenDeploymentReleaseStatements(identity, input.now).map((sql) => execute(sql)),
+      execute(devOpenVerificationSql(identity), "rollback"),
+    ]
+  }
   if (input.mode === "rollback-canary") {
     if (!transition) throw new Error("canary rollback requires a successor CAS contract")
     const operationId = required(input.env, "CLAXEDO_ROLLBACK_OPERATION_ID")
@@ -490,8 +502,20 @@ async function run(command: PreparationCommand) {
   }
 }
 
+function devOpenVerificationSql(identity: { deploymentId: string; releaseId: string }) {
+  const quote = (value: string) => `'${value.replaceAll("'", "''")}'`
+  return `select case when exists (
+    select 1 from "deploymentReleaseActive" as "active"
+    join "deploymentReleaseStateHistory" as "state"
+      on "state"."deploymentId" = "active"."deploymentId" and "state"."stateRevision" = "active"."stateRevision"
+    where "active"."singleton" = 1 and "active"."deploymentId" = ${quote(identity.deploymentId)}
+      and "state"."releaseId" = ${quote(identity.releaseId)} and "state"."phase" = 'open'
+      and "state"."operationId" = ${quote(`dev-open:${identity.releaseId}`)}
+  ) then 1 else 0 end as "rolledBack";`
+}
+
 async function main() {
-  const modes = ["register-candidate", "activate-candidate", "rollback-candidate", "rollback-canary"] as const
+  const modes = ["register-candidate", "activate-candidate", "rollback-candidate", "rollback-canary", "dev-open"] as const
   const selected = modes.filter((mode) => process.argv.includes(`--${mode}`))
   if (selected.length !== 1) throw new Error("select exactly one preparation mode")
   for (const command of await betterAuthD1PreparationCommands({

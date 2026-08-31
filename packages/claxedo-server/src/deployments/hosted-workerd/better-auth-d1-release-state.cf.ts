@@ -650,6 +650,57 @@ export function lockedDeploymentReleaseActivationStatement(
   return render(definitions(identity, now, transition)[2]!)
 }
 
+/**
+ * DEV DEPLOYMENTS ONLY: advance a freshly activated locked release straight to
+ * `open`, skipping canary/provider-sync/multiplayer ceremony.
+ *
+ * The certified pipeline exists so a production cutover cannot open without
+ * real evidence; a development staging loop re-deploying several times an
+ * hour gets no safety from that ceremony — only friction (every deploy left
+ * the app unable to even sign in until an operator walked the gates). The
+ * transition is honest in the ledger: `operationId` is `dev-open:<release>`,
+ * so an audit can always tell a developer opening from an evidenced one. The
+ * CALLER is responsible for refusing this outside development deployments —
+ * the release script only accepts it with `--staging`.
+ */
+export function devOpenDeploymentReleaseStatements(identity: DeploymentReleaseIdentity, now = new Date()) {
+  assertIdentity(identity)
+  const timestamp = now.toISOString()
+  const operationId = `dev-open:${identity.releaseId}`
+  return [
+    {
+      sql: `insert into "deploymentReleaseStateHistory" (
+  "deploymentId", "stateRevision", "operationId", "releaseId", "previousStateRevision",
+  "restoredStateRevision", "transitionKind", "phase", "phaseRevision", "firstTargetWriteAt", "createdAt"
+)
+select "current"."deploymentId", "current"."stateRevision" + 1, ?, "current"."releaseId",
+  "current"."stateRevision", null, 'phase_transition', 'open', "current"."phaseRevision" + 1, ?, ?
+from "deploymentReleaseActive" as "active"
+join "deploymentReleaseStateHistory" as "current"
+  on "current"."deploymentId" = "active"."deploymentId"
+  and "current"."stateRevision" = "active"."stateRevision"
+where "active"."singleton" = 1 and "active"."deploymentId" = ?
+  and "current"."releaseId" = ? and "current"."phase" = 'locked'
+on conflict do nothing`,
+      // The ledger requires an open row to carry firstTargetWriteAt; for a
+      // developer opening, the transition time IS the moment writes become
+      // possible, and the operationId already marks it as unevidenced.
+      values: [operationId, timestamp, timestamp, identity.deploymentId, identity.releaseId],
+    },
+    {
+      sql: `update "deploymentReleaseActive"
+set "stateRevision" = "stateRevision" + 1, "updatedAt" = ?
+where "singleton" = 1 and "deploymentId" = ?
+  and exists (
+    select 1 from "deploymentReleaseStateHistory"
+    where "deploymentId" = ? and "stateRevision" = "deploymentReleaseActive"."stateRevision" + 1
+      and "operationId" = ? and "releaseId" = ? and "phase" = 'open'
+  )`,
+      values: [timestamp, identity.deploymentId, identity.deploymentId, operationId, identity.releaseId],
+    },
+  ].map(render)
+}
+
 export function lockedDeploymentPrewriteRollbackStatements(input: DeploymentReleaseRollback, now = new Date()) {
   return rollbackDefinitions(input, now).map(render)
 }

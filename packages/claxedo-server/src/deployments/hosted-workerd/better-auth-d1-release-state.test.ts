@@ -11,6 +11,7 @@ import {
   activateLockedDeploymentReleaseCandidate,
   advanceDeploymentReleasePhase,
   lockedDeploymentReleaseProvisioningStatements,
+  devOpenDeploymentReleaseStatements,
   provisionLockedDeploymentReleaseState,
   recordDeploymentFirstTargetWriteBoundary,
   registerLockedDeploymentReleaseCandidate,
@@ -100,6 +101,26 @@ describe("persisted deployment release history", () => {
     expect(await requireDeploymentReleaseCandidate(db, identity)).toEqual(candidate)
     const active = await activateLockedDeploymentReleaseCandidate(db, identity, new Date("2026-08-28T00:01:00Z"))
     expect(active).toEqual(candidate)
+  })
+
+  test("dev-open advances a locked release straight to open, exactly once", async () => {
+    const db = await database()
+    await provisionLockedDeploymentReleaseState(db, identity, new Date("2026-08-28T00:00:00Z"))
+    for (const sql of devOpenDeploymentReleaseStatements(identity, new Date("2026-08-28T00:02:00Z"))) {
+      await db.prepare(sql.replace(/;$/, "")).run()
+    }
+    const opened = await requireDeploymentReleaseState(db, identity)
+    expect(opened).toMatchObject({ ...identity, phase: "open", stateRevision: 1 })
+    const row = await db
+      .prepare(`select "operationId" from "deploymentReleaseStateHistory" where "stateRevision" = 1`)
+      .first<{ operationId: string }>()
+    // Auditable: a developer opening never looks like an evidenced one.
+    expect(row?.operationId).toBe(`dev-open:${identity.releaseId}`)
+    // Idempotent: replaying against an already-open release changes nothing.
+    for (const sql of devOpenDeploymentReleaseStatements(identity, new Date("2026-08-28T00:03:00Z"))) {
+      await db.prepare(sql.replace(/;$/, "")).run()
+    }
+    expect(await requireDeploymentReleaseState(db, identity)).toMatchObject({ phase: "open", stateRevision: 1 })
   })
 
   test("initializes explicitly and retries the exact same release without new history", async () => {
