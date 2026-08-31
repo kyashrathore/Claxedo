@@ -25,6 +25,11 @@ export const BETTER_AUTH_SESSION_COOKIE = "__Secure-claxedo.session_token"
  */
 export const BETTER_AUTH_NATIVE_SCOPES = [
   "openid",
+  // Userinfo filters claims by scope: openid alone yields only `sub`, so the
+  // desktop resolved a real userId and still had no name to show. profile and
+  // email are what let a signed human appear as themselves.
+  "profile",
+  "email",
   "offline_access",
   "workspace:read",
   "workspace:write",
