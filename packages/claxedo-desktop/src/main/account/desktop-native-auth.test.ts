@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 
-import { createDesktopNativeAuth } from "./desktop-native-auth"
+import { createDesktopNativeAuth, revocationRejectedTheToken } from "./desktop-native-auth"
 import { REDIRECT_PATH, type OAuthSeams } from "./oauth-flow"
 import type { RefreshExchange } from "./electron-seams"
 
@@ -167,5 +167,33 @@ describe("descriptor-selected desktop native auth", () => {
     await expect(h.auth.refresh(signed.credential)).rejects.toThrow(/expired/)
     await expect(h.auth.revoke(signed.credential)).resolves.toMatchObject({ state: "uncertain" })
     expect(h.requests.filter((request) => request.url.endsWith("/oauth2/revoke"))).toEqual([])
+  })
+})
+
+describe("revocationRejectedTheToken", () => {
+  test("treats a server rejection of the token as revoked", async () => {
+    // Better Auth's answer for a token it does not recognize. Reading this as
+    // merely uncertain left a pending intent that could never confirm, and
+    // signIn refuses to start while one is pending.
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_request", error_description: "Invalid access token" }, { status: 400 }),
+      ),
+    ).toBe(true)
+    expect(
+      await revocationRejectedTheToken(Response.json({ error: "invalid_token" }, { status: 401 })),
+    ).toBe(true)
+  })
+
+  test("keeps every answer that says nothing about the credential uncertain", async () => {
+    expect(await revocationRejectedTheToken(Response.json({ error: "server_error" }, { status: 500 }))).toBe(false)
+    expect(await revocationRejectedTheToken(Response.json({ error: "slow_down" }, { status: 429 }))).toBe(false)
+    expect(await revocationRejectedTheToken(new Response("nope", { status: 400 }))).toBe(false)
+    // A 400 that blames OUR request, not the token, is our bug to fix.
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_request", error_description: "client_id is required" }, { status: 400 }),
+      ),
+    ).toBe(false)
   })
 })

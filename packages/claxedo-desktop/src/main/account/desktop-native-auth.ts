@@ -39,6 +39,27 @@ type SelectedDesktopAdapter = {
 const DESCRIPTOR_PATH = "/api/claxedo/auth/descriptor"
 const NETWORK_TIMEOUT_MS = 30_000
 
+/**
+ * Whether a failed revocation response says the token itself is not valid.
+ *
+ * Only a 400/401 naming the token counts. A 403, a 404, a 5xx, or a rate
+ * limit says nothing about the credential and must stay `uncertain`, because
+ * treating those as revoked would silently drop a live remote session.
+ */
+export async function revocationRejectedTheToken(response: Response) {
+  if (response.status !== 400 && response.status !== 401) return false
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => undefined)
+  if (!body || typeof body !== "object") return false
+  const record = body as { error?: unknown; error_description?: unknown }
+  const code = typeof record.error === "string" ? record.error : ""
+  const description = typeof record.error_description === "string" ? record.error_description : ""
+  if (code === "invalid_token" || code === "invalid_grant") return true
+  return code === "invalid_request" && /\b(invalid|unknown|expired|revoked)\b.*\btoken\b/i.test(description)
+}
+
 export function createDesktopNativeAuth(input: {
   coreOrigin: string
   seams: OAuthSeams
@@ -122,12 +143,19 @@ export function createDesktopNativeAuth(input: {
               redirect: "manual",
               signal: AbortSignal.timeout(timeoutMs),
             })
-            return response.ok
-              ? { state: "confirmed" }
-              : {
-                  state: "uncertain",
-                  detail: `Better Auth revocation request failed: ${response.status}`,
-                }
+            if (response.ok) return { state: "confirmed" }
+            // A token the authorization server refuses to recognize cannot
+            // still be live, so this IS the outcome revocation wanted. RFC 7009
+            // §2.2 asks for 200 on an unknown token; Better Auth answers 400
+            // `invalid_request` / "Invalid access token" instead. Reading that
+            // as merely "uncertain" left an intent that could never confirm,
+            // and `signIn` refuses to start while one is pending — a desktop
+            // whose token had already expired could never sign in again.
+            if (await revocationRejectedTheToken(response)) return { state: "confirmed" }
+            return {
+              state: "uncertain",
+              detail: `Better Auth revocation request failed: ${response.status}`,
+            }
           } catch (error) {
             return { state: "uncertain", detail: `Better Auth revocation could not be confirmed: ${String(error)}` }
           }
