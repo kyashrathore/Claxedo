@@ -183,6 +183,17 @@ describe("revocationRejectedTheToken", () => {
     expect(
       await revocationRejectedTheToken(Response.json({ error: "invalid_token" }, { status: 401 })),
     ).toBe(true)
+    // Both shapes observed live on the same deployment, in either word order.
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_request", error_description: "token not found" }, { status: 400 }),
+      ),
+    ).toBe(true)
+    expect(
+      await revocationRejectedTheToken(
+        Response.json({ error: "invalid_token", error_description: "refresh token not found" }, { status: 400 }),
+      ),
+    ).toBe(true)
   })
 
   test("keeps every answer that says nothing about the credential uncertain", async () => {

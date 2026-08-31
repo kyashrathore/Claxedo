@@ -177,11 +177,13 @@ describe("Better Auth D1 candidate Worker", () => {
 
   test("admits auth through the bound canary journey and lets multiplayer users establish identity", async () => {
     mocks.releaseState.mockResolvedValue(release("canary"))
-    const canaryDenied = await worker.fetch(
+    // Auth routes establish identity only, and a browser cannot header its own
+    // navigations — gating them would make the provider redirect impossible.
+    const canaryBrowserAuth = await worker.fetch(
       new Request("https://api.example.test/api/auth/sign-in/social", { method: "POST" }),
       env(),
     )
-    expect(await canaryDenied.json()).toEqual({ error: { code: "canary_journey_denied" } })
+    expect(await canaryBrowserAuth.json()).toEqual({ auth: true })
     const canaryAuth = await worker.fetch(
       new Request("https://api.example.test/api/auth/sign-in/social", {
         method: "POST",

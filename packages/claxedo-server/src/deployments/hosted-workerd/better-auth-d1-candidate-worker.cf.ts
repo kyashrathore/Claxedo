@@ -317,15 +317,15 @@ const handler = {
         }
         return await core.fetch(request, env, context)
       }
-      if (authRoute(url.pathname)) {
-        if (release.phase === "canary") {
-          const admission = await requireDeploymentCanaryAdmission(env.AUTH_DB, identity)
-          if (request.headers.get("x-claxedo-canary-journey-id") !== admission.journeyId) {
-            return unavailable(request, "canary_journey_denied")
-          }
-        }
-        return await selected.authHandler(request)
-      }
+      // Auth routes establish an identity; they grant no product access. A
+      // browser cannot put a header on its own navigations, so requiring the
+      // canary journey here made the provider redirect — the one step of
+      // sign-in the client does not control — answer canary_journey_denied,
+      // and no canary could be driven through the real product at all. The
+      // canary stays exclusive where it matters: every product request below
+      // still needs the journey header AND an authenticated principal whose
+      // identity hash equals the admitted canary identity.
+      if (authRoute(url.pathname)) return await selected.authHandler(request)
       const claimPresent = request.headers.has(USER_DEPLOYED_OWNER_CLAIM_HEADER)
       if (claimPresent && !unsafe(request.method)) return unavailable(request, "bootstrap_owner_claim_method_denied")
 

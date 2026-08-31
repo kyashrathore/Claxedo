@@ -46,6 +46,26 @@ const NETWORK_TIMEOUT_MS = 30_000
  * limit says nothing about the credential and must stay `uncertain`, because
  * treating those as revoked would silently drop a live remote session.
  */
+/**
+ * A short, credential-free summary of why a revocation failed.
+ *
+ * Never includes the response body verbatim: only the OAuth error code and a
+ * bounded description, both of which are protocol vocabulary, never token
+ * material.
+ */
+export async function revocationFailureSummary(response: Response) {
+  const body = await response
+    .clone()
+    .json()
+    .catch(() => undefined)
+  if (!body || typeof body !== "object") return ""
+  const record = body as { error?: unknown; error_description?: unknown }
+  const code = typeof record.error === "string" ? record.error : undefined
+  const description = typeof record.error_description === "string" ? record.error_description.slice(0, 80) : undefined
+  if (!code && !description) return ""
+  return ` (${[code, description].filter(Boolean).join(": ")})`
+}
+
 export async function revocationRejectedTheToken(response: Response) {
   if (response.status !== 400 && response.status !== 401) return false
   const body = await response
@@ -57,7 +77,15 @@ export async function revocationRejectedTheToken(response: Response) {
   const code = typeof record.error === "string" ? record.error : ""
   const description = typeof record.error_description === "string" ? record.error_description : ""
   if (code === "invalid_token" || code === "invalid_grant") return true
-  return code === "invalid_request" && /\b(invalid|unknown|expired|revoked)\b.*\btoken\b/i.test(description)
+  // Better Auth reports an unrecognized credential two ways, seen live on the
+  // same deployment: `invalid_token` / "refresh token not found" and
+  // `invalid_request` / "token not found". Match on the description naming the
+  // TOKEN as unusable, in either word order.
+  return (
+    code === "invalid_request" &&
+    /\btokens?\b/i.test(description) &&
+    /\b(invalid|unknown|expired|revoked|not found|unrecognized)\b/i.test(description)
+  )
 }
 
 export function createDesktopNativeAuth(input: {
@@ -154,7 +182,9 @@ export function createDesktopNativeAuth(input: {
             if (await revocationRejectedTheToken(response)) return { state: "confirmed" }
             return {
               state: "uncertain",
-              detail: `Better Auth revocation request failed: ${response.status}`,
+              // Name what the server said. A bare status left the one state a
+              // user cannot clear from the UI unexplainable from the outside.
+              detail: `Better Auth revocation request failed: ${response.status}${await revocationFailureSummary(response)}`,
             }
           } catch (error) {
             return { state: "uncertain", detail: `Better Auth revocation could not be confirmed: ${String(error)}` }
