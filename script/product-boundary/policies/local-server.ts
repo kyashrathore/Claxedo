@@ -101,7 +101,6 @@ export const localServer: Policy = {
     // outputs left behind by a developer's existing checkout.
     buildPackages: [
       { packageDir: "packages/agent-event-runtime" },
-      { packageDir: "packages/agent-extensions" },
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/workspace-relay" },

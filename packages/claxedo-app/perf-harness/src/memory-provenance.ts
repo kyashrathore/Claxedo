@@ -70,7 +70,6 @@ const MEMORY_RUNTIME_ENTRY_PACKAGES = ["@claxedo/app", "@opencode-ai/session-ui"
 
 /** Directory names aligned with the repository's generated/runtime ignores. */
 const GENERATED_DIRECTORIES = new Set([
-  ".agent-extensions",
   ".artifacts",
   ".astro",
   ".build",

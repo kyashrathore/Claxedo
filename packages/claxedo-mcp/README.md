@@ -139,5 +139,6 @@ claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
 
 `OPENCODE_API_DIR` and `CLAXEDO_SESSION_ID` provide the default project and
 session. The published package includes `skills/claxedo-documents/SKILL.md` so
-agent-extension installation can teach supported harnesses to resolve compact
-document references instead of copying absolute paths into prompts.
+an Agent Plugins collection or another harness-native skill mechanism can teach
+supported harnesses to resolve compact document references instead of copying
+absolute paths into prompts.

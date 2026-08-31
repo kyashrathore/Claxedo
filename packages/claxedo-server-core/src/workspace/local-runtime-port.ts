@@ -17,12 +17,6 @@ import type { Workspace } from "./store/index"
 export type LocalWorkspaceRuntimePort = {
   /** Dispatch a request into the workspace's embedded runtime. */
   fetch(ws: Workspace, request: Request): Promise<Response>
-  /** Push an Agent Extension snapshot to the workspace's embedded runtime. */
-  syncAgentExtensions(
-    workspaceId: string,
-    installs: unknown[],
-    options?: { policyOverrides?: unknown[] },
-  ): Promise<void>
 }
 
 let installed: LocalWorkspaceRuntimePort | undefined

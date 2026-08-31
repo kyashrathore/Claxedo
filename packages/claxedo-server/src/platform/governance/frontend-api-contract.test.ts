@@ -45,7 +45,6 @@ vi.mock("../../workspace/supervisor", () => ({
   getSupervisorSandboxTarget: vi.fn(() => undefined),
   getSandbox: vi.fn(() => undefined),
   discardSupervisorSandbox: vi.fn(async () => {}),
-  syncWorkspaceRuntimeAgentExtensions: vi.fn(async () => {}),
   broadcastRuntimeConfig: vi.fn(async () => {}),
   getSupervisorSandboxStatus: vi.fn(() => undefined),
   verifyWorkspaceRuntimeControlToken: vi.fn(() => false),

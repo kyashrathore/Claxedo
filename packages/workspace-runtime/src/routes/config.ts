@@ -30,17 +30,10 @@ export type RuntimeSnapshotV1 = {
   harness: RuntimeHarness
   model?: string
   auth: Record<string, string>
-  agent_extensions?: {
-    version: 1
-    installs: Array<{
-      desired: Record<string, unknown>
-      lock?: Record<string, unknown>
-      status?: string
-      components?: Array<Record<string, unknown>>
-    }>
-  }
   workspaceHarnessEnabled?: boolean
   commands?: RuntimeCommandItem[]
+  /** Opaque per-harness launch options; interpreted only by that harness. */
+  harnessLaunch?: Record<string, Record<string, unknown>>
 }
 
 export type RuntimeSnapshotV2 = Omit<RuntimeSnapshotV1, "version" | "harness"> & {
@@ -165,72 +158,44 @@ function validHarness(input: unknown): input is RuntimeHarness {
   return normalizeHarness(input) !== undefined
 }
 
-function agentExtensionsValidationProblem(input: unknown) {
-  if (!record(input) || input.version !== 1 || !Array.isArray(input.installs)) {
-    return {
-      code: "runtime_config_agent_extensions_malformed",
-      message: "Invalid runtime agent extension snapshot",
-    }
+function normalizeHarnessLaunch(input: unknown): Record<string, Record<string, unknown>> | undefined {
+  if (input === undefined) return {}
+  if (!record(input)) return
+  const rows: Record<string, Record<string, unknown>> = {}
+  for (const [harnessId, value] of Object.entries(input)) {
+    if (!isAgentHarnessId(harnessId) || !record(value)) return
+    rows[harnessId] = value
   }
-  for (const install of input.installs) {
-    if (
-      !record(install)
-      || !record(install.desired)
-      || (install.lock !== undefined && !record(install.lock))
-      || (install.status !== undefined && typeof install.status !== "string")
-      || (install.components !== undefined && (!Array.isArray(install.components) || !install.components.every(record)))
-    ) {
-      return {
-        code: "runtime_config_agent_extensions_malformed",
-        message: "Invalid runtime agent extension snapshot",
-      }
-    }
-    const source = install.desired.source
-    if (source === undefined && install.desired.enabled === false) continue
-    if (!record(source) || typeof source.type !== "string") {
-      return {
-        code: "runtime_config_agent_extensions_malformed",
-        message: "Invalid runtime agent extension snapshot",
-      }
-    }
-    if (source.type !== "github" && source.type !== "project") {
-      return {
-        code: "runtime_config_agent_extensions_unsupported_source",
-        message: "Unsupported runtime agent extension source",
-      }
-    }
-    if (
-      (source.type === "github" && (typeof source.owner !== "string" || typeof source.repo !== "string"))
-      || (source.package_path !== undefined && typeof source.package_path !== "string")
-      || (record(install.lock) && install.lock.resolved_sha !== undefined && typeof install.lock.resolved_sha !== "string")
-      || (install.desired.targets !== undefined && (!Array.isArray(install.desired.targets) || !install.desired.targets.every((item) => typeof item === "string")))
-    ) {
-      return {
-        code: "runtime_config_agent_extensions_malformed",
-        message: "Invalid runtime agent extension snapshot",
-      }
-    }
-  }
+  return rows
 }
 
-function normalizeAgentExtensions(input: unknown): RuntimeSnapshotV1["agent_extensions"] | undefined {
-  if (input === undefined) return
-  if (agentExtensionsValidationProblem(input)) return
-  return input as RuntimeSnapshotV1["agent_extensions"]
-}
+const RUNTIME_SNAPSHOT_KEYS = new Set([
+  "version",
+  "mcp",
+  "harness",
+  "harnesses",
+  "runner",
+  "runners",
+  "model",
+  "auth",
+  "workspaceHarnessEnabled",
+  "commands",
+  "harnessLaunch",
+])
 
 export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot | undefined {
   if (
     !record(input)
     || !record(input.mcp)
     || !stringRecord(input.auth)
+    || Object.keys(input).some((key) => !RUNTIME_SNAPSHOT_KEYS.has(key))
   ) return
+  const harnessLaunch = normalizeHarnessLaunch(input.harnessLaunch)
+  if (!harnessLaunch) return
 
   if (input.version === 1) {
     const harness = normalizeHarness((input as { harness?: unknown; runner?: unknown }).harness ?? (input as { runner?: unknown }).runner)
     if (!harness) return
-    const agentExtensions = normalizeAgentExtensions(input.agent_extensions)
-    if (input.agent_extensions !== undefined && !agentExtensions) return
     const snapshot = input as RuntimeSnapshotV1 | LegacyRuntimeSnapshotV1
     const legacyRunner = record((input as { runner?: unknown }).runner) ? (input as { runner: Record<string, unknown> }).runner : undefined
     // An already-normalized applied snapshot re-enters here (routes normalize,
@@ -247,9 +212,9 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
       ...(retained ? { harnesses: retained } : {}),
       ...(typeof input.model === "string" ? { model: input.model } : typeof legacyRunner?.model === "string" ? { model: legacyRunner.model } : {}),
       auth: snapshot.auth,
-      ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),
       ...(snapshot.workspaceHarnessEnabled !== undefined ? { workspaceHarnessEnabled: snapshot.workspaceHarnessEnabled } : {}),
       ...(snapshot.commands ? { commands: snapshot.commands } : {}),
+      ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     }
   }
 
@@ -263,8 +228,6 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
     const harnesses = list.map((row) => normalizeHarness(row)!)
     const harness = harnesses[0]
     if (!harness) return
-    const agentExtensions = normalizeAgentExtensions(input.agent_extensions)
-    if (input.agent_extensions !== undefined && !agentExtensions) return
     const snapshot = input as RuntimeSnapshotV2 | LegacyRuntimeSnapshotV2
     return {
       version: 1,
@@ -273,9 +236,9 @@ export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot
       harnesses,
       ...(typeof input.model === "string" ? { model: input.model } : {}),
       auth: snapshot.auth,
-      ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),
       ...(snapshot.workspaceHarnessEnabled !== undefined ? { workspaceHarnessEnabled: snapshot.workspaceHarnessEnabled } : {}),
       ...(snapshot.commands ? { commands: snapshot.commands } : {}),
+      ...(Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
     }
   }
 }
@@ -343,12 +306,6 @@ export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promis
         }, verdict.status)
       }
       const raw = await boundedJsonBody<RuntimeSnapshot | null>(c, null)
-      const agentExtensionsProblem = record(raw) && raw.agent_extensions !== undefined
-        ? agentExtensionsValidationProblem(raw.agent_extensions)
-        : undefined
-      if (agentExtensionsProblem) {
-        return c.json(errorBody(agentExtensionsProblem.code, agentExtensionsProblem.message), 400)
-      }
       const body = normalizeRuntimeSnapshot(raw)
       if (!body) {
         return c.json(errorBody("invalid_runtime_snapshot", "Invalid runtime snapshot"), 400)

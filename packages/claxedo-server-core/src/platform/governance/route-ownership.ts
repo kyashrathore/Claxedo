@@ -1,6 +1,6 @@
 export const RouteDomain = {
-  AgentExtensions: "agent-extensions",
-  // Agent Config Registry is a sibling of AgentExtensions covering canonical
+  AgentPlugins: "agent-plugins",
+  // Agent Config Registry is a sibling of Agent Plugins covering canonical
   // agent-config / credentials registry surfaces (MCP config, slash commands,
   // agent profile, secrets registry). Tests in `workspace/runtime-dispatch/route-ownership-contract.test.ts` classify
   // `/api/claxedo/agent-config`, `/api/claxedo/credentials`,

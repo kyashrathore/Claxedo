@@ -91,7 +91,10 @@ RUN set -eu; \
     stop_servers() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$runtime_pid" 2>/dev/null || true; python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$engine_pid" 2>/dev/null || true; }; \
     trap stop_servers EXIT; \
     ready=0; \
-    for attempt in $(seq 1 4800); do \
+    # A healthy image reaches this point in seconds. Keep the bound tight so a
+    # deterministic runtime contract failure prints both process logs instead
+    # of occupying a deployment worker for twenty minutes.
+    for attempt in $(seq 1 120); do \
       if curl -fsS -X POST \
         -H 'content-type: application/json' \
         -d "{\"id\":\"$smoke_id\",\"location\":{\"directory\":\"/tmp/opencode-session-v2-smoke\"}}" \

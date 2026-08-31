@@ -1086,7 +1086,7 @@ describe("workspace-supervisor", () => {
       })
     })
 
-    test("cloud runtime config uses shared credentials and workspace Agent Extension scope", async () => {
+    test("cloud runtime config uses shared credentials and workspace identity", async () => {
       store.set("ws-hosted-config", {
         ...workspace("ws-hosted-config"),
         remote_directory: "/remote/app",

@@ -51,6 +51,7 @@ import { createTransport } from "@/platform/runtime/transport"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { principalDataScope, principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { useAccountPort } from "@/platform/account/account-provider"
 import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
 import { sessionLoadMetaKey, setDirectorySessionCache, type DirectorySessionCacheRefreshOptions } from "../../../features/session/data/sync/directory-session-cache"
 import { useClaxedoEventsOptional } from "../../integrations/claxedo-events"
@@ -68,13 +69,14 @@ import {
   createSignedInventorySource,
   type InventoryGlobalSession,
   mergeWorkspaceGroups,
+  shouldDiscoverSignedWorkspaceSnapshot,
   shouldUseSignedControlPlaneInventory,
   shouldUseSignedProjectSessionInventory,
   shouldUseSignedSessionInventory,
   toSessionInventoryRow,
   workspaceGroupKey,
 } from "../../../features/session/data/sync/inventory-source"
-export { shouldUseSignedControlPlaneInventory, shouldUseSignedProjectSessionInventory, shouldUseSignedSessionInventory } from "../../../features/session/data/sync/inventory-source"
+export { shouldDiscoverSignedWorkspaceSnapshot, shouldUseSignedControlPlaneInventory, shouldUseSignedProjectSessionInventory, shouldUseSignedSessionInventory } from "../../../features/session/data/sync/inventory-source"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const PAGE = GLOBAL_SESSION_PAGE_SIZE
@@ -84,12 +86,17 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
   const platform = usePlatform()
   const language = useLanguage()
   const principal = usePrincipal()
+  const account = useAccountPort()
   const sessionTitles = useSessionTitleProjection()
   // A browser surface alone is not signed authority: local/mock browser lanes
   // are web too. Inventory predicates further narrow this principal capability
   // to an explicit relay-backed project, route, or non-loopback control plane.
   const hasSignedAccess = () => principalHasSignedAccess(principal())
   const principalScope = () => principalDataScope(principal())
+  // Account presence, not principal capability: hosted-workspace discovery is
+  // an account-port question and must stay answerable on loopback, where the
+  // signed-inventory predicates deliberately answer no.
+  const hasHostedAccount = () => account.state().status === "signed"
   const claxedoEvents = useClaxedoEventsOptional()
   const sessionAccessRevocations = createSessionAccessRevocationChannel()
   const sessionAuthorityRevision = createSessionAuthorityRevision()
@@ -202,11 +209,21 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       draft.loading = true
     })
     try {
-      const useSignedSnapshot = shouldUseSignedSessionInventory({
-        hasSignedAccess: hasSignedAccess(),
-        signedRoute: false,
-        baseUrl: globalSDK.url,
-      }) || signedWorkspaceProjects().length > 0
+      // Two independent reasons to take the hosted snapshot, kept as a union.
+      // The first two are session-read authority (a signed route, a non-loopback
+      // control plane, an already-known signed workspace). The third is plain
+      // hosted-workspace DISCOVERY, which must also run on loopback: session
+      // reads stay local there, but without it the first cloud workspace can
+      // never enter the project cache. The `!== "loopback"` guard below is what
+      // keeps the discovery-only case from taking over the local list.
+      const useSignedSnapshot =
+        shouldUseSignedSessionInventory({
+          hasSignedAccess: hasSignedAccess(),
+          signedRoute: false,
+          baseUrl: globalSDK.url,
+        }) ||
+        signedWorkspaceProjects().length > 0 ||
+        shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: hasHostedAccount() })
       const signedSnapshot = useSignedSnapshot
         ? await signedInventorySource.fetchSignedWorkspaceSnapshot()
         : { groups: [] as WorkspaceGroup[] }

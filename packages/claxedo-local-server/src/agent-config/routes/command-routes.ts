@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import { deleteCommand, getCommand, listCommands, saveCommand } from "@claxedo/server-core/agent-config/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { localAgentConfigAllowed } from "../local-auth"
-import type { AgentConfigRouteOptions } from "../extension-support"
+import type { AgentConfigRouteOptions } from "../route-options"
 
 export function agentConfigCommandRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()

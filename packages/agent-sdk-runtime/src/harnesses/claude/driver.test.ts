@@ -1,6 +1,7 @@
 import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 import { describe, expect, test } from "bun:test"
 import {
+  claudePluginConfigs,
   CLAUDE_FORWARD_SUBAGENT_TEXT,
   claudeSystemPrompt,
   claudeSpawnEnv,
@@ -18,6 +19,16 @@ function driver() {
 }
 
 describe("Claude SDK driver", () => {
+  test("projects opaque harness launch roots into Claude local plugin configs", () => {
+    expect(claudePluginConfigs({ pluginRoots: ["/plugins/one", "/plugins/one", "/plugins/two"] })).toEqual([
+      { type: "local", path: "/plugins/one" },
+      { type: "local", path: "/plugins/two" },
+    ])
+    expect(claudePluginConfigs({ pluginRoots: ["/plugins/one", 42] })).toEqual([
+      { type: "local", path: "/plugins/one" },
+    ])
+  })
+
   test("appends a handoff transcript to Claude Code's canonical system prompt", () => {
     expect(claudeSystemPrompt("prior conversation")).toEqual({
       type: "preset",

@@ -77,6 +77,51 @@ export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: 
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
 
+export type CodexPluginLaunch = {
+  marketplace: { name: string; source: string }
+  plugins: string[]
+}
+
+export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefined {
+  const config = record(record(launch)?.config)
+  if (!config || Object.keys(config).length === 0) return undefined
+  const marketplace = record(config.marketplace)
+  const name = text(marketplace?.name)
+  const source = text(marketplace?.source)
+  if (!name || !/^[A-Za-z0-9_-]+$/.test(name)) {
+    throw new Error("Codex Agent Plugins launch config contains an invalid marketplace name")
+  }
+  if (!source || !path.isAbsolute(source)) {
+    throw new Error("Codex Agent Plugins launch config contains an invalid marketplace source")
+  }
+  if (!Array.isArray(config.plugins) || config.plugins.length === 0) {
+    throw new Error("Codex Agent Plugins launch config contains no plugins")
+  }
+  const plugins = config.plugins.map((value) => {
+    if (typeof value !== "string" || !/^[A-Za-z0-9._-]+@[A-Za-z0-9_-]+$/.test(value) || !value.endsWith(`@${name}`)) {
+      throw new Error("Codex Agent Plugins launch config contains an invalid plugin id")
+    }
+    return value
+  })
+  if (new Set(plugins).size !== plugins.length) {
+    throw new Error("Codex Agent Plugins launch config contains duplicate plugin ids")
+  }
+  return { marketplace: { name, source }, plugins }
+}
+
+/**
+ * The argv a Codex app-server launch uses. Named so the Agent Plugins launch
+ * check can assert that activating a marketplace adds no argv overrides — the
+ * generated marketplace is read from the managed Codex home instead.
+ */
+export function codexAppServerCommand(binary: string) {
+  const args = ["app-server", "--listen", "stdio://"]
+  if (/\.(?:cjs|mjs|js)$/i.test(binary)) {
+    return { command: process.execPath, args: [binary, ...args] }
+  }
+  return { command: binary, args }
+}
+
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   private auth: SdkRuntimeAuth = {}
@@ -99,6 +144,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private disposed = false
   private processError: string | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private currentPluginLaunch: CodexPluginLaunch | undefined
   private activeThreads = new Map<string, CodexActiveThread>()
   private readonly goalController: CodexGoalController
   readonly goals: AgentGoalResource
@@ -139,6 +185,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   async applyConfig(config: Record<string, unknown>) {
+    const nextPluginLaunch = codexPluginLaunch(config.launch)
+    await this.applyPluginLaunch(nextPluginLaunch)
     const previous = this.authSignature()
     const auth = record(config.auth) as Record<string, string> | undefined
     const source = auth?.["codex-app-server"] ?? auth?.openai
@@ -153,6 +201,20 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
     const proc = this.process ?? (this.processStartup ? await this.processStartup : null)
     if (proc?.alive) await this.syncProcessAuth(proc)
+  }
+
+  private async applyPluginLaunch(launch: CodexPluginLaunch | undefined) {
+    if (JSON.stringify(launch) === JSON.stringify(this.currentPluginLaunch)) return
+    if (this.activeThreads.size > 0) {
+      throw new Error("Codex Agent Plugins cannot change while a Codex turn is active")
+    }
+    this.currentPluginLaunch = launch
+    this.lifecycleRevision++
+    this.processStartupAbort?.abort()
+    const startup = this.processStartup
+    this.process?.dispose()
+    this.process = null
+    if (startup) await startup.catch(() => undefined)
   }
 
   private readonly permissionSelection = new PermissionModeSelection(CODEX_PERMISSION_MODES, "next-turn")
@@ -611,3 +673,5 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
 }
 
 export { observeCodexAppServerProcess } from "./app-server-process"
+
+export { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"

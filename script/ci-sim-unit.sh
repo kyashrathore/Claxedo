@@ -28,7 +28,6 @@ SYNC_FLAG="--no-sync"
 bun install --frozen-lockfile >/dev/null 2>&1
 bun turbo build \
   --filter=@claxedo/agent-event-runtime \
-  --filter=@claxedo/agent-extensions \
   --filter=@claxedo/agent-sdk-runtime \
   --filter=@claxedo/channels \
   --filter=@claxedo/connections \

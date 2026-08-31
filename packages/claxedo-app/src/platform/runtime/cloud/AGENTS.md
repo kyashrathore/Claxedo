@@ -19,6 +19,6 @@ session routing) and from `context/` providers.
 {
   "owns": "Hosted cloud/user-hosted workspace startup (WorkspaceStartupPort implementation)",
   "writerOf": [],
-  "mustNotImport": ["@/claxedo-ui/*", "@claxedo/claxedo-ui/*", "../claxedo-ui/*", "@/pages/*", "../pages/*", "@opencode-ai/ui/*", "@/features/extensions/marketplace/*", "../marketplace/*"]
+  "mustNotImport": ["@/claxedo-ui/*", "@claxedo/claxedo-ui/*", "../claxedo-ui/*", "@/pages/*", "../pages/*", "@opencode-ai/ui/*", "@/features/agent-plugins/*"]
 }
 ```

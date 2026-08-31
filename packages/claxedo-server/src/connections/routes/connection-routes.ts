@@ -12,7 +12,6 @@ import { cloudConnectionInfo, localLoopbackCloudConnectionInfo } from "../cloud-
 import { userHostedConnectionInfo } from "../user-hosted-connection"
 import { signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { connectionRateLimitError } from "../../workspace/runtime-token-guards"
-import { syncWorkspaceAgentExtensionsForSignedUser } from "../../workspace/signed-access"
 
 const refreshConnectionBody = z.object({
   previousJti: z.string().optional(),
@@ -51,7 +50,6 @@ export function workspaceConnectionRoutes(
           ? await cloudConnectionInfo(services, options, auth, ws)
           : await userHostedConnectionInfo(services, options, auth, workspaceId)
         if ("error" in result) return c.json({ error: result.error }, result.status)
-        await syncWorkspaceAgentExtensionsForSignedUser(services, auth, workspaceId).catch(() => {})
         return c.json(result.connection)
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
@@ -86,7 +84,6 @@ export function workspaceConnectionRoutes(
           ? await cloudConnectionInfo(services, options, auth, ws, body.previousJti)
           : await userHostedConnectionInfo(services, options, auth, workspaceId, body.previousJti)
         if ("error" in result) return c.json({ error: result.error }, result.status)
-        await syncWorkspaceAgentExtensionsForSignedUser(services, auth, workspaceId).catch(() => {})
         return c.json(result.connection)
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)

@@ -38,7 +38,6 @@ function services(role = "admin"): ControlPlaneServicesContract {
     durableSessionLog: {} as never,
     auth: localOnlyAuthAdapter(),
     credentials: {} as never,
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },

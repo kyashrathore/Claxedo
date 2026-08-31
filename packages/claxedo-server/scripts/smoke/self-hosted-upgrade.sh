@@ -85,7 +85,7 @@ materialize_old_tree() {
   # them through package exports, so a missing dist is a boot-time
   # ERR_MODULE_NOT_FOUND rather than a type error. workspace-runtime is last
   # because its declaration emit reads the others' dist/*.d.ts.
-  for pkg in agent-extensions agent-event-runtime agent-sdk-runtime \
+  for pkg in agent-event-runtime agent-sdk-runtime \
              workspace-relay-protocol workspace-relay sandbox-manager wakes \
              claxedo-connections claxedo-channels claxedo-mcp workspace-runtime; do
     (cd "$OLD_TREE/packages/$pkg" && bun run build) >/dev/null 2>&1 \

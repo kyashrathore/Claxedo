@@ -82,6 +82,7 @@ const shikiThemesDist = normalizePath(
 )
 
 const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
+const agentPluginsEnabled = process.env.CLAXEDO_AGENT_PLUGINS?.trim() === "1"
 
 /**
  * Cloud-specific Vite configuration for Claxedo.
@@ -97,6 +98,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
   return {
     define: {
       __DEMO_ENABLED__: JSON.stringify(isDemoBuild || mode === "development"),
+      __CLAXEDO_AGENT_PLUGINS_ENABLED__: JSON.stringify(agentPluginsEnabled),
     },
     plugins: [solidPlugin(), tailwindcss(), bootChunkModulepreloadPlugin()],
     publicDir: "public",

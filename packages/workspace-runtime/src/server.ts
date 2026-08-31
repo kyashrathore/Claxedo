@@ -38,7 +38,7 @@ import {
   relayWorkspaceRuntimeExposure,
   type WorkspaceRuntimeExposure,
 } from "./exposure"
-import { runtimeEnvText } from "./env"
+import { runtimeEnvText, workspaceRuntimeStoreDir } from "./env"
 import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalSecrets } from "./internal-secrets"
 import type { ProcessObserver } from "./managed-processes/process-observer"
 import type { RuntimeEventAuthorization } from "./routes/events"
@@ -98,8 +98,6 @@ export type WorkspaceRuntimeServerOptions = {
   sessionAccessPolicy?: SessionAccessPolicy
   target?: WorkspaceTarget
   storeRoot?: string
-  /** Host-owned root for Agent Extension replay state. See {@link WorkspaceHostOptions.agentExtensionStateRoot}. */
-  agentExtensionStateRoot?: string
   /** Host-owned directory for opt-in config apply receipts. See {@link WorkspaceHostOptions.configApplyReceiptDir}. */
   configApplyReceiptDir?: string
   serviceExposure?: WorkspaceRuntimeServiceExposure
@@ -450,7 +448,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
-    ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),
     ...(options.configApplyReceiptDir ? { configApplyReceiptDir: options.configApplyReceiptDir } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     ...(options.onTurnOutcome ? { onTurnOutcome: options.onTurnOutcome } : {}),
@@ -617,6 +614,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     contributions: options.routeContributions ?? [],
     context: {
       workspaceId: options.target?.workspaceId ?? workspaceId(),
+      directory: options.target?.directory ?? workspaceDir(),
+      stateDirectory: options.storeRoot ?? workspaceRuntimeStoreDir(),
+      applyHarnessLaunch: (harnessLaunch) => host.applyHarnessLaunch(harnessLaunch),
       registerSessionTools: registerSessionToolGroup,
       unregisterSessionTools: unregisterSessionToolGroup,
     },

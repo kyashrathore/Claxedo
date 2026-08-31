@@ -76,6 +76,8 @@ export type RouteOwnership = ReturnType<typeof createRouteOwnership>
 /** The `app.route()` shape this wraps. */
 export type Mountable = { route: (prefix: string, sub: never) => unknown }
 
+const rawRoute = new WeakMap<object, Mountable["route"]>()
+
 /**
  * Wrap an app so every `route()` call is recorded against an owner.
  *
@@ -85,10 +87,24 @@ export type Mountable = { route: (prefix: string, sub: never) => unknown }
  * desktop package.
  */
 export function withRouteOwnership<T extends Mountable>(app: T, ownership: RouteOwnership, owner: string): T {
-  const original = app.route.bind(app)
+  const original = rawRoute.get(app) ?? app.route.bind(app)
+  rawRoute.set(app, original)
   app.route = ((prefix: string, sub: never) => {
     ownership.claim(prefix, owner)
     return original(prefix, sub)
   }) as T["route"]
   return app
+}
+
+/** Mount one explicitly composed contribution under its own route owner. */
+export function mountOwnedRoute<T extends Mountable>(
+  app: T,
+  ownership: RouteOwnership,
+  owner: string,
+  prefix: string,
+  sub: never,
+): void {
+  ownership.claim(prefix, owner)
+  const mount = rawRoute.get(app) ?? app.route.bind(app)
+  mount(prefix, sub)
 }

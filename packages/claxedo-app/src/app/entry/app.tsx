@@ -61,6 +61,7 @@ import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding/remote-access-marker"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
 import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
+import { WorkspaceConnectionAuthoritySync } from "@/app/composition/workspace-connection-authority-sync"
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 import { loadFileComponent } from "@/ui/session-kit-loaders"
 
@@ -435,6 +436,7 @@ function AuthenticatedProviders(props: ParentProps) {
       {/* Removes the hosted contribution set when the account signs out.
           Before this, hosted surfaces stayed registered until a reload. */}
       <HostedContributionSync />
+      <WorkspaceConnectionAuthoritySync />
       <RoutedClaxedoEventsProvider>
         <CloudAuthGate>
           <Show when={config?.authEnabled} fallback={props.children}>

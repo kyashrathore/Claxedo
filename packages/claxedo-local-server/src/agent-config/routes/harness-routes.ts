@@ -33,7 +33,7 @@ import {
   workspaceRuntimeHealthPath,
 } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
-import type { AgentConfigRouteOptions } from "../extension-support"
+import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
 import { validatePiPromptModel } from "@claxedo/server-core/credentials/pi-provider-catalog"
 

@@ -192,7 +192,6 @@ function fakeServices(authority: Partial<WorkspaceAuthority>): ControlPlaneServi
     durableSessionLog: {} as never,
     auth: {} as never,
     credentials: {} as never,
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() } as never,

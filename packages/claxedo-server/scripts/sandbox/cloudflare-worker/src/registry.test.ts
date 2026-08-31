@@ -14,9 +14,10 @@ const sandboxStub = {
   restoreBackup: vi.fn(async () => {}),
   containerFetch: vi.fn(async () => new Response("ok")),
 }
+const getSandboxMock = vi.fn(() => sandboxStub)
 
 vi.mock("@cloudflare/sandbox", () => ({
-  getSandbox: () => sandboxStub,
+  getSandbox: getSandboxMock,
   Sandbox: class {},
 }))
 
@@ -81,8 +82,23 @@ function ensureBody(labels: Record<string, string>) {
 
 describe("cloudflare sandbox Worker registry (W1.2)", () => {
   beforeEach(() => {
+    getSandboxMock.mockClear()
     sandboxStub.ensureWorkspaceRuntime.mockClear()
     sandboxStub.destroy.mockClear()
+  })
+
+  test("configures a cold-start budget that the Worker's own bounds do not preempt", async () => {
+    await call("/sandbox/claxedo-cold-start/ensure-runtime", env(), {
+      method: "POST",
+      body: ensureBody({ app: "claxedo", workspaceId: "cold-start", epoch: "1" }),
+    })
+
+    expect(getSandboxMock).toHaveBeenCalledWith(expect.anything(), "claxedo-cold-start", {
+      containerTimeouts: {
+        instanceGetTimeoutMS: 60_000,
+        portReadyTimeoutMS: 180_000,
+      },
+    })
   })
 
   test("ensure-runtime records the sandbox, and GET /sandboxes enumerates it", async () => {

@@ -30,27 +30,63 @@ const IDLE_TIMEOUT_MS = (() => {
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 30_000
 })()
 
+function record(input: unknown): input is Record<string, unknown> {
+  return !!input && typeof input === "object" && !Array.isArray(input)
+}
+
+function stringArray(input: unknown): string[] {
+  return Array.isArray(input) ? input.filter((item): item is string => typeof item === "string") : []
+}
+
+/**
+ * Merge one host-owned OpenCode projection with the caller's existing inline
+ * config. Agent Plugins currently contributes only `skills.paths` and `mcp`;
+ * those fields merge instead of replacing user configuration.
+ */
+export function mergeOpenCodeConfigContent(
+  configured: string | undefined,
+  contribution: Record<string, unknown>,
+  mcp: Record<string, ResolvedMcpServer> = {},
+) {
+  const parsed = configured?.trim() ? JSON.parse(configured) as unknown : {}
+  if (!record(parsed)) {
+    throw new Error("OPENCODE_CONFIG_CONTENT must contain a JSON object")
+  }
+  const base = parsed
+  const generated = toOpencodeConfig(mcp)
+  const generatedMcp = generated.mcp as Record<string, unknown> | undefined
+  const configuredMcp = record(base.mcp) ? base.mcp : undefined
+  const contributedMcp = record(contribution.mcp) ? contribution.mcp : undefined
+  const configuredSkills = record(base.skills) ? base.skills : undefined
+  const contributedSkills = record(contribution.skills) ? contribution.skills : undefined
+  const skillPaths = [...new Set([
+    ...stringArray(configuredSkills?.paths),
+    ...stringArray(contributedSkills?.paths),
+  ])]
+  return JSON.stringify({
+    ...base,
+    ...contribution,
+    ...generated,
+    ...(configuredSkills || contributedSkills
+      ? {
+          skills: {
+            ...(configuredSkills ?? {}),
+            ...(contributedSkills ?? {}),
+            ...(skillPaths.length ? { paths: skillPaths } : {}),
+          },
+        }
+      : {}),
+    ...(configuredMcp || contributedMcp || generatedMcp
+      ? { mcp: { ...(configuredMcp ?? {}), ...(contributedMcp ?? {}), ...(generatedMcp ?? {}) } }
+      : {}),
+  })
+}
+
 export function openCodeSpawnConfigContent(
   configured: string | undefined,
   mcp: Record<string, ResolvedMcpServer>,
 ) {
-  const parsed = configured?.trim() ? JSON.parse(configured) as unknown : {}
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("OPENCODE_CONFIG_CONTENT must contain a JSON object")
-  }
-  const base = parsed as Record<string, unknown>
-  const generated = toOpencodeConfig(mcp)
-  const generatedMcp = generated.mcp as Record<string, unknown> | undefined
-  const configuredMcp = base.mcp && typeof base.mcp === "object" && !Array.isArray(base.mcp)
-    ? base.mcp as Record<string, unknown>
-    : undefined
-  return JSON.stringify({
-    ...base,
-    ...generated,
-    ...(configuredMcp || generatedMcp
-      ? { mcp: { ...configuredMcp, ...generatedMcp } }
-      : {}),
-  })
+  return mergeOpenCodeConfigContent(configured, {}, mcp)
 }
 
 /** A running server plus the credential this launch requires. */
@@ -88,6 +124,7 @@ export class OpenCodeServerProcess {
     opencodeUrl: string | undefined,
     private readonly input: {
       config: () => Record<string, ResolvedMcpServer>
+      launchConfig?: () => Record<string, unknown>
       auth: () => Record<string, string>
       processObserver?: AgentProcessObserver
       /**
@@ -177,7 +214,11 @@ export class OpenCodeServerProcess {
     const auth = opencodeAuthContent(this.input.auth())
     const env = spawnEnv({
       ...process.env,
-      OPENCODE_CONFIG_CONTENT: openCodeSpawnConfigContent(process.env.OPENCODE_CONFIG_CONTENT, this.input.config()),
+      OPENCODE_CONFIG_CONTENT: mergeOpenCodeConfigContent(
+        process.env.OPENCODE_CONFIG_CONTENT,
+        this.input.launchConfig?.() ?? {},
+        this.input.config(),
+      ),
       // Through the environment, never argv — see `launchCredential`.
       OPENCODE_SERVER_PASSWORD: credential,
       ...(auth ? { OPENCODE_AUTH_CONTENT: auth } : {}),

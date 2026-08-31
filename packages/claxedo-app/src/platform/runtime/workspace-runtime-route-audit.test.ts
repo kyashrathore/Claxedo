@@ -36,6 +36,7 @@ const allowed = new Set([
 const runtimeGatewayBoundary = new Set([
   "platform/runtime/agent/workspace-relay-connection.ts",
   "platform/runtime/agent/workspace-runtime-request.ts",
+  "platform/runtime/agent/agent-runtime-urls.ts",
   "platform/api/credential-request.ts",
   "app/connection/server-health.ts",
   "features/workspaces/data/share-workspace.ts",
@@ -523,12 +524,6 @@ describe("workspace runtime route audit", () => {
 
   test("workspace mutation UIs are gated by backend-derived role policy", async () => {
     const networkPolicy = await Bun.file(path.join(root, networkPolicySettings)).text()
-    const serverPolicyTest = await Bun.file(
-      path.join(root, "..", "..", "claxedo-server/src/authority/adapters/d1/agent-extension-authority.test.ts"),
-    ).text()
-    const serverRouteTest = await Bun.file(
-      path.join(root, "..", "..", "claxedo-server/src/agent-config/routes/extensions.test.ts"),
-    ).text()
     const serverNetworkPolicyTest = await Bun.file(
       path.join(root, "..", "..", "claxedo-local-server/src/sandbox/network/network-policy-routes.test.ts"),
     ).text()
@@ -557,9 +552,6 @@ describe("workspace runtime route audit", () => {
     expect(can("manage.runners", placement("editor"))).toBe(false)
     expect(can("read.workspace", placement("viewer"))).toBe(true)
     expect(can("use.terminal", placement("viewer"))).toBe(false)
-    expect(serverPolicyTest).toMatch(/fails closed across tenant\/deployment boundaries/)
-    expect(serverPolicyTest).toMatch(/applies org, user, and workspace policy precedence/)
-    expect(serverRouteTest).toMatch(/authorizeWorkspaceAgentExtensionsAdmin/)
     expect(serverNetworkPolicyTest).toMatch(/signed workspace writes require admin authority/)
   })
 
@@ -2993,28 +2985,31 @@ describe("workspace runtime route audit", () => {
     expect(design).not.toMatch(/sync\.data\.vcs/)
   })
 
-  test("upstream MCP status surfaces read MCP, LSP, and plugin state from query caches", async () => {
-    const claxedoDialog = await Bun.file(path.join(root, "features/session/ui/dialogs/select-mcp.tsx")).text()
-    const claxedoLogic = await Bun.file(path.join(root, "features/extensions/marketplace/api.ts")).text()
+  test("MCP and LSP status is owned by the runtime backend, with no upstream status surface left", async () => {
     const backend = await Bun.file(path.join(root, "platform/runtime/http-backend.ts")).text()
+    const sessionPortsText = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
+    const claxedoSessionHeader = await Bun.file(path.join(root, sessionHeader)).text()
 
+    // Three retirements meet here. The override copies went with the shell
+    // rewrite; `app/connection/status-popover.tsx` went with it too; and the
+    // select-mcp dialog plus the marketplace API it read went with the agent
+    // plugins refactor. Nothing may reintroduce any of them, and session
+    // app-ports must not re-pin a type to a module that no longer exists.
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/status-popover.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "app/connection/status-popover.tsx")).exists()).toBe(false)
-    // The select-mcp dialog (session feature) reaches the marketplace API
-    // through session app-ports, whose types are pinned to the canonical
-    // @/features/extensions/marketplace/api owner — same-owner invariant.
-    const sessionPortsText = await Bun.file(path.join(root, "features/session/app-ports.ts")).text()
-    expect(claxedoDialog).toMatch(/loadMcpDialogData/)
-    expect(claxedoDialog).toMatch(/@\/features\/session\/app-ports/)
-    expect(sessionPortsText).toMatch(/import type \* as Marketplace from "@\/features\/extensions\/marketplace\/api"/)
+    expect(await Bun.file(path.join(root, "features/session/ui/dialogs/select-mcp.tsx")).exists()).toBe(false)
     expect(sessionPortsText).not.toMatch(/StatusPopover/)
-    expect(claxedoLogic).toMatch(/function mcpExtensionUrl/)
-    expect(claxedoLogic).not.toMatch(/RuntimeGateway\./)
+    expect(sessionPortsText).not.toMatch(/marketplace/)
+    expect(claxedoSessionHeader).not.toMatch(/StatusPopover/)
+    expect(claxedoSessionHeader).not.toMatch(/\.\.\/status-popover/)
+
+    // The status itself still has an owner: the runtime backend reads it per
+    // directory, so no UI surface grows its own directory-scoped query.
     expect(backend).toMatch(/getMcpStatus: async/)
     expect(backend).toMatch(/getLspStatus: async/)
-    expect(claxedoDialog).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
+    expect(claxedoSessionHeader).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
   })
 
   test("legacy SyncProvider bridge is deleted after DataProvider cutover", async () => {

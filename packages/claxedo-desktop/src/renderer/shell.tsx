@@ -64,6 +64,7 @@ type Platform = AppPlatform & {
 export type DesktopRendererOptions = {
   loadHostedContributions?: ReturnType<typeof getDefaultConfig>["loadHostedContributions"]
   serviceContributionLoaders?: ReturnType<typeof getDefaultConfig>["serviceContributionLoaders"]
+  loadAgentPluginContributions?: ReturnType<typeof getDefaultConfig>["loadAgentPluginContributions"]
 }
 
 export function startDesktopRenderer(options: DesktopRendererOptions = {}) {
@@ -166,6 +167,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
       baseConfig.accountSignInEnabled === true || options.loadHostedContributions !== undefined,
     loadHostedContributions: options.loadHostedContributions,
     serviceContributionLoaders: options.serviceContributionLoaders,
+    loadAgentPluginContributions: options.loadAgentPluginContributions,
   }
   initClaxedo(config)
 

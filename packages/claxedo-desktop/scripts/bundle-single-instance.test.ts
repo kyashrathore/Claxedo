@@ -73,6 +73,7 @@ describe("shipped claxedo-server bundle", () => {
       "better-auth": /betterAuth\(|better-auth\//,
       "Polar billing": /@polar-sh|PolarCore\b/,
       "Daytona driver": /@daytona\/sdk|DaytonaClient\b/,
+      "disabled Agent Plugins module": /\/api\/claxedo\/plugins|agent_plugin_activation_meta/,
     }
 
     expect(

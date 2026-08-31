@@ -204,13 +204,23 @@ describe("@claxedo/local-server closure", () => {
     // introduced; the package count falls back to 21 after that ownership move.
     // The tenant-aware runtime principal composer adds one local module while
     // keeping the package closure unchanged and gives every runtime proxy the
-    // same fail-closed identity path. A further rise means the desktop product
-    // gained surface, and a fall should lower the ceiling with it. The package
-    // number is the reach that matters — a rise is a new dependency the
-    // unsigned desktop now carries and is worth reading before it is bumped.
+    // same fail-closed identity path (measured 57). A further rise means the
+    // desktop product gained surface, and a fall should lower the ceiling with
+    // it. The package number is the reach that matters — a rise is a new
+    // dependency the unsigned desktop now carries and is worth reading before
+    // it is bumped.
+    //
     // The user-hosted serving surface (the machine-wide host tunnel: its
-    // routes, the serving loop, and the deny/root/workspace path map) and the
-    // user extension routes add four local modules with no new package.
+    // routes, the serving loop, and the deny/root/workspace path map) adds
+    // local modules with no new package: measured 61.
+    //
+    // Agent Plugins then adds its feature-owned modules — activation
+    // routes/store, retained artifact storage, composition, generation,
+    // materialization, plugin data, and the harness projections — reaching
+    // this package through the composition's route contributions. They use
+    // packages already present in this closure, so package reach remains 21.
+    // MEASURE the module ceiling rather than adding the two increments: the
+    // number below is the last measured value and must be re-run.
     const { modules, packages } = closure({ runtimeOnly: true })
     expect(modules.size).toBeLessThanOrEqual(61)
     expect(packages.size).toBeLessThanOrEqual(21)

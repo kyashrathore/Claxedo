@@ -36,6 +36,12 @@ import type { Hono } from "hono"
 export type WorkspaceRuntimeRouteContext = {
   /** Canonical ID of the workspace this runtime instance serves. */
   workspaceId: string
+  /** Canonical workspace root; contributed state must remain in its own namespace. */
+  directory: string
+  /** Per-workspace runtime state root owned by the host, outside the checkout. */
+  stateDirectory: string
+  /** Apply opaque launch metadata without replacing accepted model/auth/MCP state. */
+  applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>): Promise<void>
   /**
    * Register this contribution's tools for a session under a named group.
    *

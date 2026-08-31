@@ -380,16 +380,18 @@ function throttleInit(init: RequestInit | undefined, input: string | URL | Reque
  */
 export function getClaxedoServerUrl(): string {
   if (isDemoMode()) return normalized(window.location.origin) ?? window.location.origin
+  // Electron main owns the desktop sidecar selection and binds its exact URL
+  // after startup. That runtime fact must beat a build-time Vite value: local
+  // ports are dynamic, and a stale compiled port can silently send session
+  // creation to another running Claxedo process while events stay on the
+  // actual sidecar.
+  if (cfg.base) return cfg.base
   const envUrl = envString(import.meta.env.VITE_CLAXEDO_SERVER_URL)
   const remoteOrigin = sameOriginForRemoteLocalBackend(envUrl)
   if (remoteOrigin) return remoteOrigin
   const localOrigin = localBackendForCurrentHost(envUrl)
   if (localOrigin) return localOrigin
   if (envUrl?.trim()) return envUrl.trim().replace(/\/+$/, "")
-  // In desktop mode, claxedo-server runs on a dynamic port and the URL is
-  // set via configureApiRuntime() during init. Fall back to it before the
-  // hardcoded default so PTY/events/documents calls reach the right server.
-  if (cfg.base) return cfg.base
   return DEFAULT_LOCAL_CLAXEDO_SERVER_URL
 }
 

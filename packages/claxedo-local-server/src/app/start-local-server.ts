@@ -38,6 +38,7 @@ import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/sup
 import {
   configureOpenCodeEngine,
   configureOpenCodeEmbedPath,
+  applyOpenCodeManagedConfig,
   opencodeRequest,
 } from "@claxedo/server-core/opencode/engine"
 import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
@@ -73,6 +74,8 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
+  /** Opaque launch options supplied by an optional harness feature module. */
+  harnessLaunch?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["harnessLaunch"]
 }
 
 export type LocalServer = {
@@ -135,6 +138,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   configureOpencodeMcpSync({ enabled: opencodeCompat })
   configureEmbeddedWorkspaceRuntime({
     opencodeRequest,
+    ...(options.harnessLaunch ? { opencodeApplyLaunchConfig: applyOpenCodeManagedConfig } : {}),
     opencodeCompat,
     // The same `providerBody` the compat router serves unscoped, so a
     // workspace-scoped `/provider` (embedded dispatch, or a relayed request
@@ -162,6 +166,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     // Reuse the local product's canonical SQLite authority. Ambient hosted
     // configuration cannot replace a product-owned authority choice.
     ...(services.authority ? { workspaceAuthority: services.authority } : {}),
+    ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
 
   // Opened here so the first session-list request does not pay for migrations,

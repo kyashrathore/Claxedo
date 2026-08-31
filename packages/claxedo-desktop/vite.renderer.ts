@@ -35,6 +35,7 @@ export function createElectronRenderer(mode: string): UserConfig {
   return {
     define: {
       __DEMO_ENABLED__: "false",
+      __CLAXEDO_AGENT_PLUGINS_ENABLED__: JSON.stringify(process.env.CLAXEDO_AGENT_PLUGINS?.trim() === "1"),
       // Replaced before Rollup links the graph. A self-build (unset/false)
       // removes the dynamic import entirely; a release emits it as a hashed
       // chunk while keeping the base document and its startup path local.

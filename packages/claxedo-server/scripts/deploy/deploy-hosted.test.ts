@@ -133,4 +133,37 @@ describe("hosted deploy command selection", () => {
       }),
     ).toThrow(/custom API origin/)
   })
+
+  test("selects the whole Agent Plugins product profile with one build flag", () => {
+    const commands = hostedDeployCommands({
+      staging: true,
+      dryRun: true,
+      targets: ["central", "app", "cloudflare-sandbox"],
+      agentPlugins: true,
+      env: claxedoHostedEnv,
+    })
+
+    expect(commands.find((command) => command.name === "central.agent_plugins.profile")).toBeDefined()
+    expect(commands.find((command) => command.name === "central.agent_plugins.profile")?.args).toContain("--staging")
+    expect(commands.find((command) => command.name === "central.agent_plugins.convex_profile")?.args).toEqual([
+      "run",
+      "scripts/agent-plugins/build-convex-profile.ts",
+      "--enabled",
+    ])
+    expect(commands.find((command) => command.name === "central.agent_plugins.convex.dry_run")?.args).toContain(
+      "--dry-run",
+    )
+    expect(commands.findIndex((command) => command.name === "central.agent_plugins.convex.dry_run")).toBeLessThan(
+      commands.findIndex((command) => command.name === "central.worker.dry_run"),
+    )
+    expect(commands.find((command) => command.name === "central.worker.dry_run")?.args).toContain(
+      ".artifacts/agent-plugins-worker-profile/wrangler.toml",
+    )
+    expect(commands.find((command) => command.name === "app.assets.build")?.env).toMatchObject({
+      CLAXEDO_AGENT_PLUGINS: "1",
+    })
+    expect(commands.find((command) => command.name === "cloudflare_sandbox.bundle_host")?.args).toContain(
+      "--agent-plugins",
+    )
+  })
 })

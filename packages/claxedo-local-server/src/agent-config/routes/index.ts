@@ -3,12 +3,11 @@ import { getEffectiveConfig } from "@claxedo/server-core/agent-config/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { agentConfigAcpConnectionRoutes } from "./acp-connection-routes"
 import { agentConfigCommandRoutes } from "./command-routes"
-import { agentConfigExtensionRoutes } from "./extension-routes"
 import { agentConfigHarnessRoutes } from "./harness-routes"
 import { sandboxJson } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
 import { agentConfigMcpRoutes } from "./mcp-routes"
-import type { AgentConfigRouteOptions } from "../extension-support"
+import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptions } from "./harness-routes"
 
 export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
@@ -17,7 +16,6 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
     .route("/", agentConfigHarnessRoutes(options))
     .route("/", agentConfigMcpRoutes(options))
     .route("/", agentConfigCommandRoutes(options))
-    .route("/", agentConfigExtensionRoutes(options))
 
     .get("/", async (c) => {
       const localOnly = await localAgentConfigAllowed({

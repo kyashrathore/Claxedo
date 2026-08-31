@@ -74,6 +74,7 @@ async function installFakeBinary(dir: string, script: string): Promise<string> {
 
 async function makeFakeCodex(options: {
   requestRefresh?: boolean
+  mcpElicitation?: boolean
   auth401?: boolean
   models?: unknown[]
   subagent?: boolean
@@ -88,6 +89,7 @@ async function makeFakeCodex(options: {
 const fs = require("fs")
 const logPath = ${JSON.stringify(log)}
 const requestRefresh = ${JSON.stringify(options.requestRefresh === true)}
+const mcpElicitation = ${JSON.stringify(options.mcpElicitation === true)}
 const auth401 = ${JSON.stringify(options.auth401 === true)}
 const subagent = ${JSON.stringify(options.subagent === true)}
 const initializeDelayMs = ${JSON.stringify(options.initializeDelayMs ?? 0)}
@@ -126,7 +128,7 @@ process.stdin.on("data", (chunk) => {
     if (!line) continue
     const message = JSON.parse(line)
     if (message.id) append(message)
-    if (message.id === 900 && message.result) completeTurn()
+    if ((message.id === 900 || message.id === 901) && message.result) completeTurn()
     if (message.method === "initialize") {
       setTimeout(() => write({ id: message.id, result: { userAgent: "fake-codex" } }), initializeDelayMs)
     }
@@ -168,6 +170,8 @@ process.stdin.on("data", (chunk) => {
       }
       if (requestRefresh) {
         write({ id: 900, method: "account/chatgptAuthTokens/refresh", params: { reason: "unauthorized", previousAccountId: "acct-1" } })
+      } else if (mcpElicitation) {
+        write({ id: 901, method: "mcpServer/elicitation/request", params: { threadId: "thread-1", turnId: "turn-1", serverName: "composio", mode: "url", message: "Connect Gmail", elicitationId: "connect-1", url: "https://example.test/connect" } })
       } else {
         completeTurn()
       }
@@ -540,6 +544,47 @@ describe("CodexHarnessAdapter", () => {
     expect(persisted.tokens.id_token).toBe("fresh-id-token")
     expect(persisted.tokens.access_token).toBe("fresh-access-token")
     expect(persisted.tokens.refresh_token).toBe("fresh-refresh-token")
+  })
+
+  test("projects MCP URL elicitations as questions and returns the user's acceptance", async () => {
+    const fake = await makeFakeCodex({ mcpElicitation: true })
+    const store = storeRows(createMemoryRuntimeStore())
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      store,
+      storeRoot: path.join(fake.dir, "store"),
+    })
+    adapter.setModel("gpt-5.5")
+    const session = await adapter.createSession(fake.dir)
+    const turn = (async () => {
+      for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5"), fake.dir)) {}
+    })()
+
+    let question: Awaited<ReturnType<typeof adapter.listQuestions>>[number] | undefined
+    for (let attempt = 0; attempt < 200; attempt++) {
+      question = (await adapter.listQuestions(fake.dir)).find((item) => item.id === "901")
+      if (question) break
+      await Bun.sleep(5)
+    }
+    expect(question).toMatchObject({
+      id: "901",
+      sessionID: session.id,
+      questions: [{
+        header: expect.stringContaining("Connect Gmail"),
+        question: expect.stringContaining("https://example.test/connect"),
+        options: [{ label: "I've finished connecting" }],
+      }],
+    })
+
+    await adapter.replyQuestion("901", "I've finished connecting", fake.dir)
+    await turn
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      id?: number
+      result?: Record<string, unknown>
+    })
+    expect(requests.find((request) => request.id === 901 && request.result)?.result).toEqual({ action: "accept" })
   })
 
   test("fails Codex turns on provider auth 401 stderr instead of hanging", async () => {

@@ -158,10 +158,10 @@ export const ARCHITECTURE_OWNERSHIP = [
   },
   {
     area: "registry",
-    module: "../../claxedo-server-core/src/agent-config/extensions/catalog.ts",
+    module: "../../claxedo-server-core/src/agent-plugins/catalog/index-collection.ts",
     status: OwnershipStatus.Canonical,
-    owner: "agent extension catalog",
-    tests: ["../../claxedo-local-server/src/agent-config/extensions/scan.test.ts"],
+    owner: "Agent Plugins catalog indexer",
+    tests: ["../../claxedo-server-core/src/agent-plugins/catalog/index-collection.test.ts"],
   },
   {
     area: "host",

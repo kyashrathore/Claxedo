@@ -81,7 +81,6 @@ for box in "${BOXES[@]}"; do
       # ---- 4. DIST-RESOLVED WORKSPACE PACKAGES --------------------------------
       bun turbo build \
         --filter=@claxedo/agent-event-runtime \
-        --filter=@claxedo/agent-extensions \
         --filter=@claxedo/agent-sdk-runtime \
         --filter=@claxedo/channels \
         --filter=@claxedo/connections \

@@ -1,7 +1,7 @@
 /**
  * What a request path needs from the sandbox supervisor, and nothing more.
  *
- * Local request paths — runtime dispatch, agent-config fanout, agent-extension
+ * Local request paths — runtime dispatch and agent-config fanout
  * routes — must tell the supervisor when a cloud sandbox is in use, when a
  * stream is holding one open, and when configuration changed. Importing the
  * supervisor directly to say those six things pulled the whole cloud
@@ -14,9 +14,6 @@
  * no-op rather than a missing dependency.
  */
 
-import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/runtime-config"
-import type { WorkspaceAgentExtensionRecord } from "../hosts/agent-extensions/workspace"
-
 export type WorkspaceSupervisorPort = {
   /** A stream is open against this workspace; keep its sandbox alive. */
   hold(workspaceId: string): void
@@ -28,12 +25,6 @@ export type WorkspaceSupervisorPort = {
   touch(workspaceId: string): void
   /** Push the current runtime configuration to every ready sandbox. */
   broadcastRuntimeConfig(): Promise<void>
-  /** Push one workspace's Agent Extension snapshot to its sandbox runtime. */
-  syncAgentExtensions(
-    workspaceId: string,
-    installs: WorkspaceAgentExtensionRecord[],
-    options?: { policyOverrides?: AgentExtensionPolicyOverride[] },
-  ): Promise<void>
 }
 
 const NO_SUPERVISOR: WorkspaceSupervisorPort = {
@@ -42,7 +33,6 @@ const NO_SUPERVISOR: WorkspaceSupervisorPort = {
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
-  async syncAgentExtensions() {},
 }
 
 let installed: WorkspaceSupervisorPort | undefined

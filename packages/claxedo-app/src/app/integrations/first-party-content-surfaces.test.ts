@@ -20,8 +20,6 @@ beforeAll(async () => {
   mock.module("../../features/documents/ui/content/pages-index-content", () => ({
     PagesIndexContent: () => null,
   }))
-  mock.module("@/features/extensions/marketplace", () => ({
-    MarketplaceContent: () => null,
   }))
 
   mod = await import("./first-party-content-surfaces")

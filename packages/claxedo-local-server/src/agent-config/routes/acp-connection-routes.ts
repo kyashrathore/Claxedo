@@ -8,7 +8,7 @@ import {
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { fanOutConfig } from "../fanout"
 import { localAgentConfigAllowed } from "../local-auth"
-import type { AgentConfigRouteOptions } from "../extension-support"
+import type { AgentConfigRouteOptions } from "../route-options"
 
 /**
  * Operator-configured ACP connections: the trusted config surface that turns

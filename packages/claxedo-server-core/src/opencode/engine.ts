@@ -25,7 +25,10 @@ import fs from "fs"
 import { pathToFileURL } from "url"
 import { randomBytes } from "node:crypto"
 import { fork, type ChildProcess } from "node:child_process"
-import type { OpenCodeRequestFn } from "@claxedo/agent-sdk-runtime/adapters"
+import {
+  mergeOpenCodeConfigContent,
+  type OpenCodeRequestFn,
+} from "@claxedo/agent-sdk-runtime/adapters"
 import {
   createEmbeddedHost,
   type ApplicationToolRegistration,
@@ -52,6 +55,10 @@ type EngineConfig = { mode: "external-url"; url: string; headers?: HeadersInit }
 // composition root ever writes this.
 let config: EngineConfig = { mode: "embedded" }
 let applicationTools: (() => Promise<Readonly<Record<string, OpenCodeApplicationToolRegistration>>>) | undefined
+let managedConfigBaseCaptured = false
+let managedConfigBase: string | undefined
+let managedConfigCurrent: string | undefined
+let managedConfigTail = Promise.resolve()
 
 /**
  * Structured, actionable failure surfaced to consumers when the embedded engine
@@ -84,6 +91,54 @@ export function configureOpenCodeEngine(input: { url: string; headers?: HeadersI
 
 export function opencodeEngineMode(): OpenCodeEngineMode {
   return config.mode
+}
+
+/**
+ * Apply host-owned inline configuration to the embedded engine. The original
+ * caller-provided OPENCODE_CONFIG_CONTENT remains the base; plugin skills and
+ * MCP entries merge into it and an existing engine is drained before this
+ * resolves, so the next request cannot observe stale instance state.
+ */
+export function applyOpenCodeManagedConfig(contribution: Record<string, unknown>): Promise<void> {
+  const operation = managedConfigTail.then(async () => {
+    if (config.mode === "external-url") {
+      if (Object.keys(contribution).length) {
+        throw new Error("Claxedo cannot apply managed OpenCode configuration to an external engine URL")
+      }
+      return
+    }
+    if (!managedConfigBaseCaptured) {
+      managedConfigBaseCaptured = true
+      managedConfigBase = process.env.OPENCODE_CONFIG_CONTENT
+    }
+    const next = Object.keys(contribution).length
+      ? mergeOpenCodeConfigContent(managedConfigBase, contribution)
+      : managedConfigBase
+    if (next === managedConfigCurrent && process.env.OPENCODE_CONFIG_CONTENT === next) return
+    if (next === undefined) delete process.env.OPENCODE_CONFIG_CONTENT
+    else process.env.OPENCODE_CONFIG_CONTENT = next
+    managedConfigCurrent = next
+    await drainOpenCodeEngine()
+  })
+  // A rejected application must not poison every later config update.
+  managedConfigTail = operation.catch(() => {})
+  return operation
+}
+
+/** Release the managed overlay and restore the process's original config. */
+export function clearOpenCodeManagedConfig(): Promise<void> {
+  const operation = managedConfigTail.then(async () => {
+    if (!managedConfigBaseCaptured) return
+    if (managedConfigBase === undefined) delete process.env.OPENCODE_CONFIG_CONTENT
+    else process.env.OPENCODE_CONFIG_CONTENT = managedConfigBase
+    const changed = managedConfigCurrent !== managedConfigBase
+    managedConfigCurrent = undefined
+    managedConfigBase = undefined
+    managedConfigBaseCaptured = false
+    if (changed) await drainOpenCodeEngine()
+  })
+  managedConfigTail = operation.catch(() => {})
+  return operation
 }
 
 export type OpenCodeApplicationToolRegistration = ApplicationToolRegistration

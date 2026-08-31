@@ -265,6 +265,22 @@ describe("OpenCodeHarnessAdapter sendMessage", () => {
 })
 
 describe("OpenCodeHarnessAdapter injected-request transport", () => {
+  test("applies its opaque launch config through the injected engine hook", async () => {
+    const applied: Record<string, unknown>[] = []
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => Response.json({ ok: true }),
+      applyLaunchConfig: async (config) => { applied.push(config) },
+    })
+
+    await adapter.applyConfig({
+      mcp: {},
+      auth: {},
+      launch: { config: { skills: { paths: ["/plugin/skills"] } } },
+    })
+
+    expect(applied).toEqual([{ skills: { paths: ["/plugin/skills"] } }])
+  })
+
   test("forwards message page parameters and preserves the upstream cursor", async () => {
     const seen: Array<{ pathname: string; view: string | null; limit: string | null; before: string | null; directory: string | null }> = []
     const cursor = "opaque+/cursor== with spaces"

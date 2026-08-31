@@ -22,15 +22,20 @@ export function DialogConnectIntegration(props: {
   request: ConnectionsRequest
   onConnected?: () => void | Promise<void>
   personalScopeEnabled?: boolean
+  teamScopeEnabled?: boolean
   initialScope?: "team" | "personal"
+  oauthFields?: Readonly<Record<string, string>>
+  openUrl?: (url: string) => void
 }) {
   const dialog = useDialog()
   const flow = createConnectFlow({
     integration: props.integration,
     request: props.request,
     personalScopeEnabled: props.personalScopeEnabled,
+    teamScopeEnabled: props.teamScopeEnabled,
     initialScope: props.initialScope,
-    openUrl: (url) => window.open(url, "_blank", "noopener"),
+    oauthFields: props.oauthFields,
+    openUrl: props.openUrl ?? ((url) => window.open(url, "_blank", "noopener")),
     onConnected: async () => {
       await props.onConnected?.()
       dialog.close()
@@ -51,7 +56,7 @@ export function DialogConnectIntegration(props: {
   return (
     <Dialog title={`Connect ${props.integration.name}`} transition>
       <div class="flex flex-col gap-4">
-        <Show when={props.personalScopeEnabled}>
+        <Show when={props.personalScopeEnabled && props.teamScopeEnabled !== false}>
           <div class="flex flex-col gap-2">
             <span class="text-13-medium text-text-strong">Connection scope</span>
             <div class="flex flex-col gap-2 text-13-regular text-text-base" role="radiogroup" aria-label="Connection scope">

@@ -29,7 +29,6 @@ import type * as Navigation from "@/app/workbench/navigation/navigation-row"
 import type * as RailTypes from "@/app/workbench/rail/domain-types"
 import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
-import type * as Marketplace from "@/features/extensions/marketplace/api"
 import type * as ManageModels from "@/app/dialogs/manage-models"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
 import type { JSX } from "solid-js"
@@ -78,14 +77,6 @@ export type SessionAppPorts = {
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   loadManageModelsDialog: () => Promise<typeof ManageModels>
   openSettingsProviders: (dialog: { show: (element: () => JSX.Element) => unknown }) => Promise<void>
-  filterMcpCatalogEntries: typeof Marketplace.filterMcpCatalogEntries
-  installDisabledReasonForEntry: typeof Marketplace.installDisabledReasonForEntry
-  installMcpDialogEntry: typeof Marketplace.installMcpDialogEntry
-  isEntryInstalled: typeof Marketplace.isEntryInstalled
-  loadMcpDialogData: typeof Marketplace.loadMcpDialogData
-  sourceLabel: typeof Marketplace.sourceLabel
-  targetLabel: typeof Marketplace.targetLabel
-  uninstallMcpDialogEntry: typeof Marketplace.uninstallMcpDialogEntry
   listDocumentMentions: typeof DocumentMentions.listDocumentMentions
   documentMentionText: typeof DocumentMentions.documentMentionText
   useFirstTurnFunnel: () => {
@@ -165,17 +156,6 @@ export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
 export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
 export const loadManageModelsDialog = bind("loadManageModelsDialog")
 export const openSettingsProviders = bind("openSettingsProviders")
-export const filterMcpCatalogEntries = bind("filterMcpCatalogEntries")
-export const installDisabledReasonForEntry = bind("installDisabledReasonForEntry")
-export const installMcpDialogEntry = bind("installMcpDialogEntry")
-export const isEntryInstalled = bind("isEntryInstalled")
-export const loadMcpDialogData = bind("loadMcpDialogData")
-export const sourceLabel = bind("sourceLabel")
-export const targetLabel = bind("targetLabel")
-export const uninstallMcpDialogEntry = bind("uninstallMcpDialogEntry")
 export const listDocumentMentions = bind("listDocumentMentions")
 export const documentMentionText = bind("documentMentionText")
 export type DocumentMentionOption = DocumentMentions.DocumentMentionOption
-export type CatalogEntry = Marketplace.CatalogEntry
-export type InstalledRecord = Marketplace.InstalledRecord
-export type RequestFn = Marketplace.RequestFn

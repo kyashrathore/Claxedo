@@ -48,7 +48,7 @@ export async function sandboxDriverAuthAsync<T extends SandboxDriverID>(
 }
 
 // Decoder half of the sandbox-driver credential codec; `sandboxDriverManagedSecret`
-// in `routes/sandbox-driver-routes.ts` is the encoder.
+// in `sandbox-driver-routes.ts` is the encoder.
 //
 // This was seven hand-written per-driver branches, and it had already drifted
 // from the encoder: both named special cases, but not the SAME ones, so exe.dev

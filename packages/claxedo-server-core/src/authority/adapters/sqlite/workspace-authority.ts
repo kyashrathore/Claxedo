@@ -292,12 +292,6 @@ function object(input: unknown) {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
 }
 
-function sourceKey(input: unknown) {
-  const source = object(input)
-  if (!source) return
-  return JSON.stringify(Object.fromEntries(Object.entries(source).sort(([a], [b]) => a.localeCompare(b))))
-}
-
 function txt(input: unknown) {
   return typeof input === "string" && input.trim() ? input.trim() : undefined
 }
@@ -540,37 +534,6 @@ export function createSqliteWorkspaceAuthority(
     return revoked
   }
 
-  const policyRows = (db: SqliteAuthorityDb, input: {
-    workspace: WorkspaceRow
-    userKey?: string
-  }) => {
-    const keys: Array<{ scope: string; key: string }> = [
-      ...(input.workspace.org_id ? [{ scope: "org", key: input.workspace.org_id }] : []),
-      ...(input.userKey ? [{ scope: "user", key: input.userKey }] : []),
-      { scope: "workspace", key: input.workspace.workspace_id },
-    ]
-    return keys.flatMap(({ scope, key }) =>
-      db.prepare(`
-        SELECT extension_id, scope, enabled, reason FROM agent_extension_policy_overrides
-        WHERE scope = ? AND scope_key = ? AND deleted_at IS NULL
-      `).all(scope, key) as Array<{ extension_id: string; scope: string; enabled: number; reason: string | null }>,
-    ).map((row) => ({
-      id: row.extension_id,
-      scope: row.scope,
-      enabled: !!row.enabled,
-      ...(row.reason ? { reason: row.reason } : {}),
-    }))
-  }
-
-  const policyScopeKey = (db: SqliteAuthorityDb, who: AuthorityUser, workspace: WorkspaceRow, scope: "org" | "user" | "workspace") => {
-    if (scope === "org") {
-      if (!workspace.org_id) throw new Error("Workspace has no org")
-      return workspace.org_id
-    }
-    if (scope === "user") return who.token_identifier
-    return workspace.workspace_id
-  }
-
   const linkedChannelUser = (db: SqliteAuthorityDb, args: { channel: string; externalUserId: string }) => {
     const link = db.prepare(`
       SELECT token_identifier FROM channel_identities
@@ -680,20 +643,6 @@ export function createSqliteWorkspaceAuthority(
     if (!role || !project.org_id) return { ok: false }
     if (input.orgId && input.orgId !== project.org_id) return { ok: false }
     return { ok: true, role, orgId: project.org_id as OrgId }
-  }
-
-  const listAgentExtensions = (db: SqliteAuthorityDb, workspaceId: string) => {
-    const rows = db.prepare(`
-      SELECT desired, lock, enabled, updated_at FROM agent_extension_installs
-      WHERE workspace_id = ? AND deleted_at IS NULL
-      ORDER BY extension_id ASC
-    `).all(workspaceId) as Array<{ desired: string; lock: string | null; enabled: number; updated_at: number }>
-    return rows.map((row) => ({
-      desired: JSON.parse(row.desired) as unknown,
-      lock: row.lock === null ? undefined : JSON.parse(row.lock) as unknown,
-      enabled: !!row.enabled,
-      updated_at: row.updated_at,
-    }))
   }
 
   const privateSessions = createSqlitePrivateSessionAuthority({ database, principal: user })
@@ -2216,133 +2165,6 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "read")
       return { revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [who.token_identifier]) }
-    },
-
-    // --- agent extensions (extensions + policies) ----------------------------
-    async listWorkspaceAgentExtensions(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) return []
-      return listAgentExtensions(db, args.workspaceId)
-    },
-    async listWorkspaceAgentExtensionsForRuntime(args) {
-      // In-process trust boundary: the embedded runtime IS this server, so no
-      // service token exists to check (the hosted variant gates on one).
-      return listAgentExtensions(database(), args.workspaceId)
-    },
-    async authorizeWorkspaceAgentExtensionsAdmin(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "admin")) denied()
-    },
-    async upsertWorkspaceAgentExtension(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      requireWorkspace(db, who, args.workspaceId, "admin")
-      const now = Date.now()
-      // Only live rows guard the source: a soft-deleted row (uninstalled, or
-      // absorbed into the pinned catalog id by the install route) must not
-      // block a fresh install that legitimately reuses its id — the upsert
-      // below revives the row under the new source.
-      const existing = db.prepare(`SELECT desired FROM agent_extension_installs WHERE workspace_id = ? AND extension_id = ? AND deleted_at IS NULL`)
-        .get(args.workspaceId, args.extensionId) as { desired: string } | undefined
-      if (existing) {
-        const existingSource = sourceKey(object(JSON.parse(existing.desired))?.source)
-        const requestedSource = sourceKey(object(args.desired)?.source)
-        if (existingSource && requestedSource && existingSource !== requestedSource) {
-          throw new Error("Agent Extension is already installed from a different source")
-        }
-      }
-      db.prepare(`
-        INSERT INTO agent_extension_installs (workspace_id, extension_id, package_name, desired, lock, enabled, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (workspace_id, extension_id) DO UPDATE SET
-          package_name = excluded.package_name,
-          desired = excluded.desired,
-          lock = excluded.lock,
-          enabled = excluded.enabled,
-          updated_at = excluded.updated_at,
-          deleted_at = NULL
-      `).run(
-        args.workspaceId,
-        args.extensionId,
-        args.packageName,
-        jsonText(args.desired),
-        jsonText(args.lock),
-        object(args.desired)?.enabled ? 1 : 0,
-        now,
-        now,
-      )
-      return { extension_id: args.extensionId }
-    },
-    async setWorkspaceAgentExtensionEnabled(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      requireWorkspace(db, who, args.workspaceId, "admin")
-      const existing = db.prepare(`
-        SELECT desired, deleted_at FROM agent_extension_installs WHERE workspace_id = ? AND extension_id = ?
-      `).get(args.workspaceId, args.extensionId) as { desired: string; deleted_at: number | null } | undefined
-      if (!existing || existing.deleted_at) throw new Error("Agent Extension not found")
-      const now = Date.now()
-      const desired = { ...(object(JSON.parse(existing.desired)) ?? {}), enabled: args.enabled, updated_at: now }
-      db.prepare(`
-        UPDATE agent_extension_installs SET enabled = ?, desired = ?, updated_at = ?
-        WHERE workspace_id = ? AND extension_id = ?
-      `).run(args.enabled ? 1 : 0, jsonText(desired), now, args.workspaceId, args.extensionId)
-      return { extension_id: args.extensionId, enabled: args.enabled }
-    },
-    async deleteWorkspaceAgentExtension(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      requireWorkspace(db, who, args.workspaceId, "admin")
-      db.prepare(`
-        UPDATE agent_extension_installs SET deleted_at = ?, updated_at = ?
-        WHERE workspace_id = ? AND extension_id = ? AND deleted_at IS NULL
-      `).run(Date.now(), Date.now(), args.workspaceId, args.extensionId)
-      return { ok: true }
-    },
-    async listAgentExtensionPolicyOverrides(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) return []
-      return policyRows(db, { workspace, userKey: who.token_identifier })
-    },
-    async listAgentExtensionPolicyOverridesForRuntime(args) {
-      const db = database()
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace) return []
-      return policyRows(db, { workspace })
-    },
-    async setAgentExtensionPolicyOverride(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "admin")
-      const scopeKey = policyScopeKey(db, who, workspace, args.scope)
-      const now = Date.now()
-      db.prepare(`
-        INSERT INTO agent_extension_policy_overrides (scope, scope_key, extension_id, enabled, reason, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (scope, scope_key, extension_id) DO UPDATE SET
-          enabled = excluded.enabled,
-          reason = excluded.reason,
-          updated_at = excluded.updated_at,
-          deleted_at = NULL
-      `).run(args.scope, scopeKey, args.extensionId, args.enabled ? 1 : 0, args.reason ?? null, now, now)
-      return { extension_id: args.extensionId, scope: args.scope }
-    },
-    async deleteAgentExtensionPolicyOverride(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "admin")
-      const scopeKey = policyScopeKey(db, who, workspace, args.scope)
-      db.prepare(`
-        UPDATE agent_extension_policy_overrides SET deleted_at = ?, updated_at = ?
-        WHERE scope = ? AND scope_key = ? AND extension_id = ? AND deleted_at IS NULL
-      `).run(Date.now(), Date.now(), args.scope, scopeKey, args.extensionId)
-      return { ok: true }
     },
 
     // --- audit ---------------------------------------------------------------

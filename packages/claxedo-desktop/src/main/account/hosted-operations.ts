@@ -47,6 +47,8 @@ export type HostedOperation = {
    * Map of parameter name → HTTP header name (e.g. `{ ifMatch: "If-Match" }`).
    */
   headers?: Record<string, string>
+  /** Preserve status plus the canonical JSON body for callers with expected non-2xx outcomes. */
+  response?: "http"
 }
 
 export const HOSTED_OPERATIONS = {
@@ -62,6 +64,28 @@ export const HOSTED_OPERATIONS = {
   // renderer cannot reach it — see `RENDERER_WITHHELD_OPERATIONS` — and no
   // main-side caller exists.
   "account.cliExchange": { method: "POST", path: "/api/auth/cli/exchange", body: ["code"] },
+  "agentPlugins.catalog": { method: "GET", path: "/api/claxedo/plugins", response: "http" },
+  "agentPlugins.catalog.refresh": { method: "GET", path: "/api/claxedo/plugins/refresh", response: "http" },
+  "agentPlugins.catalog.project": { method: "GET", path: "/api/claxedo/plugins/projects/:projectId", response: "http" },
+  "agentPlugins.catalog.project.refresh": { method: "GET", path: "/api/claxedo/plugins/projects/:projectId/refresh", response: "http" },
+  "agentPlugins.activation": {
+    method: "POST",
+    path: "/api/claxedo/plugins/activation",
+    body: ["pluginInstanceId", "harnessIds", "choice", "expectedRevision", "target"],
+    response: "http",
+  },
+  "agentPlugins.organizationDefault": {
+    method: "POST",
+    path: "/api/claxedo/plugins/organization-default",
+    body: ["pluginInstanceId", "harnessIds", "choice", "expectedRevision"],
+    response: "http",
+  },
+  "agentPlugins.update": {
+    method: "POST",
+    path: "/api/claxedo/plugins/update",
+    body: ["pluginInstanceId", "expectedRevision", "authority"],
+    response: "http",
+  },
   // TWO operations, one per access kind, each with the access FIXED in the path.
   //
   // `GET /api/workspace` with no `?access=` is not a broader list — it is
@@ -301,7 +325,10 @@ export const HOSTED_OPERATIONS = {
   "connections.connect": {
     method: "POST",
     path: "/api/claxedo/integrations/:id/connect",
-    body: ["method", "fields", "secret", "confirmReplace", "scope"],
+    // `issuer` carries a tenant-specific OAuth authority for integrations that
+    // have one; declared here so the signed desktop path does not silently drop
+    // it the way an undeclared field would.
+    body: ["method", "fields", "secret", "confirmReplace", "scope", "issuer"],
   },
   "connections.attempt": {
     method: "GET",
@@ -434,19 +461,6 @@ export const HOSTED_OPERATIONS = {
     path: "/documents/from-repo",
     body: ["project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"],
   },
-  // Marketplace / agent-config extensions. `subpath` may be empty (list at
-  // `/extensions`) or a relative suffix (`catalog`, `:id`, `:id/enable`, …).
-  "agentConfig.extensions.read": {
-    method: "GET",
-    path: "/api/claxedo/agent-config/extensions/*",
-    optionalQuery: ["scope", "directory", "workspaceId"],
-  },
-  "agentConfig.extensions.write": {
-    method: "POST",
-    path: "/api/claxedo/agent-config/extensions/*",
-    body: ["payload"],
-    optionalQuery: ["scope", "directory", "workspaceId"],
-  },
 } as const satisfies Record<string, HostedOperation>
 
 export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
@@ -470,6 +484,8 @@ export type ResolvedRequest = {
   path: string
   body?: Record<string, unknown>
   headers?: Record<string, string>
+  /** Preserve status plus the canonical JSON body for callers with expected non-2xx outcomes. */
+  response?: "http"
 }
 
 export class UnknownHostedOperation extends Error {}
@@ -545,10 +561,15 @@ export function resolveHostedOperation(
     headers[headerName] = String(value)
   }
 
+  // Only carried when actually present, so a resolved request keeps the exact
+  // shape the operation declares — no empty `headers`, no absent `response`.
+  const extra: Pick<ResolvedRequest, "headers" | "response"> = {
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(operation.response ? { response: operation.response } : {}),
+  }
+
   if (!operation.body) {
-    return Object.keys(headers).length > 0
-      ? { method, path, headers }
-      : { method, path }
+    return { method, path, ...extra }
   }
 
   // Only the declared fields. A caller passing extra keys is not an error worth
@@ -568,17 +589,11 @@ export function resolveHostedOperation(
   if (name === "agentConfig.extensions.write") {
     const payload = body.payload
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return Object.keys(headers).length > 0
-        ? { method, path, body: {}, headers }
-        : { method, path, body: {} }
+      return { method, path, body: {}, ...extra }
     }
-    return Object.keys(headers).length > 0
-      ? { method, path, body: payload as Record<string, unknown>, headers }
-      : { method, path, body: payload as Record<string, unknown> }
+    return { method, path, body: payload as Record<string, unknown>, ...extra }
   }
-  return Object.keys(headers).length > 0
-    ? { method, path, body, headers }
-    : { method, path, body }
+  return { method, path, body, ...extra }
 }
 
 /** The IPC channel a named operation travels on. One per operation, by name. */

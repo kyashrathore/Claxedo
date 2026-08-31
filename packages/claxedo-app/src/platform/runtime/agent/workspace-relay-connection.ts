@@ -98,6 +98,21 @@ type Options = {
   provisioningMaxAttempts?: number
 }
 
+export type WorkspaceConnectionAuthority = {
+  mint: (workspaceId: string) => Promise<unknown>
+  refresh: (workspaceId: string) => Promise<unknown>
+}
+
+let configuredAuthority: WorkspaceConnectionAuthority | undefined
+
+/** Bind the signed account's closed mint/refresh operations for this renderer. */
+export function configureWorkspaceConnectionAuthority(authority: WorkspaceConnectionAuthority | undefined) {
+  if (configuredAuthority === authority) return
+  configuredAuthority = authority
+  queryClient.removeQueries({ queryKey: ["shell", "workspace-connection"] })
+  queryClient.removeQueries({ queryKey: ["shell", "workspace-runtime-relay"] })
+}
+
 const normalized = normalizeUrl
 const DEFAULT_PROVISIONING_MAX_ATTEMPTS = 30
 const PROVISIONING_RETRY_MIN_MS = 500
@@ -306,8 +321,17 @@ function normalizeConnectionFailure(err: unknown): never {
  * Mint or refresh a workspace connection body.
  *
  * Desktop signed mode: renderer has no bearer — named AccountPort ops reach the
- * hosted control plane through Electron main. `options.request` always wins so
- * tests (and any explicit override) keep the authFetch-shaped path.
+ * hosted control plane through Electron main.
+ *
+ * Precedence:
+ *  1. An explicitly configured authority (`configureWorkspaceConnectionAuthority`),
+ *     which the composed app installs only while the account is SIGNED. Installing
+ *     one is a statement that this renderer has no bearer at all, so it outranks
+ *     `options.request` — otherwise the injected seam could never be exercised.
+ *  2. The ambient desktop AccountPort (`accountRun()`), used when no request
+ *     override was supplied.
+ *  3. `options.request` (or `authFetch`), the authFetch-shaped HTTP path that an
+ *     explicit override keeps.
  */
 async function fetchConnectionBody(
   operation: "workspace.connection.mint" | "workspace.connection.refresh",
@@ -326,6 +350,12 @@ async function fetchConnectionBody(
         }),
       }
     : undefined
+
+  if (configuredAuthority) {
+    return operation === "workspace.connection.refresh"
+      ? configuredAuthority.refresh(params.id)
+      : configuredAuthority.mint(params.id)
+  }
 
   if (!options.request) {
     const run = await signedAccountRun()

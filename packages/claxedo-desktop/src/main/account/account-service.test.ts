@@ -590,6 +590,70 @@ describe("bound desktop account lifecycle", () => {
     expect(h.service.state()).toMatchObject({ status: "signed" })
   })
 
+  test("preserves status and canonical JSON for operations with expected non-success outcomes", async () => {
+    const body = { error: { code: "agent_plugins_revision_conflict", message: "revision changed" } }
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json(body, { status: 409 }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("agentPlugins.activation", {
+      pluginInstanceId: "claxedo/composio",
+      harnessIds: ["codex"],
+      choice: true,
+      expectedRevision: 1,
+      target: { scope: "all-projects" },
+    })).resolves.toEqual({ status: 409, body })
+    expect(h.store.held()).toBeDefined()
+  })
+
+  test("preserves a body-controlled cloud connection retry across the account boundary", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json({
+        error: {
+          code: "cloud_runtime_unavailable",
+          message: "Cloud runtime is unavailable",
+          retryAfterMs: 1_500,
+        },
+      }, { status: 409 }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("workspace.connection.mint", { id: "ws_1" })).resolves.toEqual({
+      status: "provisioning",
+      retryAfterMs: 1_500,
+    })
+  })
+
+  test("preserves a Retry-After cloud connection retry across the account boundary", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => new Response("slow down", { status: 429, headers: { "Retry-After": "2" } }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("workspace.connection.refresh", { id: "ws_1" })).resolves.toEqual({
+      status: "provisioning",
+      retryAfterMs: 2_000,
+    })
+  })
+
+  test("does not turn a terminal cloud connection conflict into a retry", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json({
+        error: { code: "runtime_prepare_failed", message: "plugin artifact is invalid" },
+      }, { status: 409 }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("workspace.connection.mint", { id: "ws_1" })).rejects.toThrow(
+      'failed: 409 (runtime_prepare_failed: plugin artifact is invalid)',
+    )
+  })
+
   test("envelopes binary exports without exposing the authenticated response", async () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),

@@ -16,3 +16,4 @@ mock.module("../session-ui/src/components/markdown-shiki.worker.ts?worker&url", 
 
 // Vite `define` constants — not available in Bun's test runner.
 ;(globalThis as Record<string, unknown>).__DEMO_ENABLED__ = false
+;(globalThis as Record<string, unknown>).__CLAXEDO_AGENT_PLUGINS_ENABLED__ = false

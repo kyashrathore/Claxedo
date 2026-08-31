@@ -81,7 +81,6 @@ vi.mock("../../workspace/supervisor", async () => {
       garbageCollect: async () => ({ destroyed: [], kept: [], skipped: [], failed: [] }),
       list: async () => [],
     }),
-    syncWorkspaceRuntimeAgentExtensions: async () => {},
     injectRuntime: (ws: { id: string }, url: string) => ({ ws, url, status: "ready" }),
     discardSupervisorSandbox: async () => {},
     ensureSupervisorSandbox: ensureMockSandbox,

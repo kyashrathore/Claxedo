@@ -19,8 +19,8 @@ lower-level packages into one per-workspace service.
 | Managed processes | The host manages repeatable workspace services such as dev servers and watchers. It supports process config CRUD, start, stop, restart, start-all, stop-all, diagnostics, termination diagnostics, port mapping, and log retrieval. |
 | Files | The host exposes workspace file discovery and reads: find files, read file metadata, read content, read raw bytes/text, inspect git-backed file status, and list all known files. |
 | Diff and VCS | The host exposes git-backed diff routes for targets, file diffs, refs, and VCS status. It also provides lightweight local VCS metadata such as branch/default branch when OpenCode-backed VCS data is unavailable. |
-| Runtime config apply | `/api/wr/config` applies a `RuntimeSnapshot` containing harnesses, model, auth, MCP, workspace harness, commands, and Agent Extension desired state. When harness id, access, or connection changes, the host replaces the active adapter. A v2 snapshot's `harnesses` list may also carry operator-configured ACP connections (`acp:<slug>` identities with process descriptors); the host retains them as the applied registry and resolves selections against it fail-closed. See [Operator-Configured ACP Connections](./acp-connections.md). |
-| Agent Extensions | During config apply, the host replays Agent Extensions and materializes supported package assets into harness-native locations. See [Agent Extensions](./agent-extensions.md). |
+| Runtime config apply | `/api/wr/config` applies a `RuntimeSnapshot` containing harnesses, model, auth, MCP, workspace harness, and commands. When harness id, access, or connection changes, the host replaces the active adapter. A v2 snapshot's `harnesses` list may also carry operator-configured ACP connections (`acp:<slug>` identities with process descriptors); the host retains them as the applied registry and resolves selections against it fail-closed. See [Operator-Configured ACP Connections](./acp-connections.md). |
+| Optional product contributions | A containing product may mount generic provisioning and route contributions. Claxedo's Agent Plugins module uses that seam without adding plugin lifecycle state to the public runtime contract. |
 | MCP compatibility | The host exposes MCP status/connect/disconnect compatibility routes for harness-hosted MCP config. |
 | Relay attachment | The host can attach itself to Workspace Relay as a host tunnel. In that mode the relay forwards HTTP/WebSocket traffic to the local runtime URL. See [Relay And Deployment](./relay-and-deployment.md). |
 | Health and capabilities | The host reports runtime health, active harness, workspace id, process counts, and a capability manifest. Embedders can also call `host.detail()` and `host.capabilities()` directly. |
@@ -170,7 +170,7 @@ The low-level host object exposes:
 | Method | Purpose |
 | --- | --- |
 | `mount(app, options)` | Mount session, provider, MCP, event, LSP, VCS, and compatibility routes. `options.exposure` is required; pass `options.core` to also mount PTY/process/file/diff/agent-hook/event routes as a unified host. |
-| `apply(snapshot)` | Apply harness/auth/MCP/Agent Extension config. |
+| `apply(snapshot)` | Apply harness, auth, MCP, commands, and workspace-harness config. |
 | `detail()` | Return host state, active harness, error, and harness status. |
 | `capabilities()` | Return the current runtime capability manifest. |
 | `dispose()` | Dispose the active adapter. |

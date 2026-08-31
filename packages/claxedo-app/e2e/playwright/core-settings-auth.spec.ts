@@ -399,8 +399,7 @@
  *   (`core-model-effort-agent-controls`); Terminals tab (not in this spec's
  *   assignment); harness/model/agent selection anywhere in the composer
  *   (`core-harness-ownership-local`, `core-model-effort-agent-controls`);
- *   marketplace/extensions install surfaces (`live-agent-extensions-
- *   materialization`); live hosted auth end-to-end
+ *   Agent Plugins activation surfaces; live hosted auth end-to-end
  *   (`live-user-hosted-*`); appearance
  *   font-field persistence and sound-effect playback wiring (owned by
  *   `src/context/settings.tsx`'s own tests, not a DOM contract this spec

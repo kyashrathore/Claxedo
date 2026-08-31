@@ -73,6 +73,11 @@ const DEFAULT_WORKSPACE_DIR = "/workspace"
 // self-configures from the injected WORKSPACE_RUNTIME_* env.
 const DEFAULT_RUNTIME_COMMAND = "/usr/local/bin/workspace-runtime"
 const DEFAULT_TIMEOUT_MS = 45_000
+// ensure-runtime includes Cloudflare's lazy container allocation (up to 60s),
+// port readiness (up to 180s), and the workspace-runtime health check. A 45s
+// caller deadline cancels the Durable Object RPC before its supported cold-
+// start budget can finish, causing every retry to restart the same boot.
+const DEFAULT_ENSURE_TIMEOUT_MS = 300_000
 const WORKSPACE_DIRECTORY_LABEL = "claxedo.workspaceDirectory"
 
 function deadlineSignal(timeoutMs: number) {
@@ -89,13 +94,10 @@ function deadlineSignal(timeoutMs: number) {
   }
 }
 
-// Agent Extension replay state (ownership ledger, lock, fetch cache) lives in
-// the runtime's app data dir, NOT in the workspace tree. Cloudflare is the only
-// driver with directory-scoped capture — every other driver snapshots the whole
-// filesystem or nothing — so it must name that directory explicitly, or a
-// restored sandbox comes back with materialized artifacts and no record of
-// owning them: stale components never get cleaned up and the cache symlinks
-// they point through dangle. Ledger and artifacts must share a lifetime.
+// Module-owned runtime state lives in the app data dir, NOT in the workspace
+// tree. Cloudflare is the only driver with directory-scoped capture, so it must
+// name that directory explicitly to keep durable runtime state and projected
+// workspace content on the same snapshot lifetime.
 //
 // Pinned via CLAXEDO_DATA_DIR rather than inferred from $HOME so the captured
 // path and the path the runtime actually writes cannot drift apart if the base
@@ -141,6 +143,7 @@ export function createCloudflareSandboxDriver(
   const runtimeCommand = options.runtimeCommand ?? DEFAULT_RUNTIME_COMMAND
   const workspaceDir = options.workspaceDir ?? DEFAULT_WORKSPACE_DIR
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS
+  const ensureTimeoutMs = options.timeoutMs ?? DEFAULT_ENSURE_TIMEOUT_MS
 
   const base = cleanUrl(options.workerUrl)
   const headers = {
@@ -155,7 +158,7 @@ export function createCloudflareSandboxDriver(
     method: "POST" | "DELETE" = "POST",
   ): Promise<{ status: number; data: T }> {
     const url = `${base}/sandbox/${encodeURIComponent(sandboxId)}${action ? `/${action}` : ""}`
-    const deadline = deadlineSignal(timeoutMs)
+    const deadline = deadlineSignal(action === "ensure-runtime" ? ensureTimeoutMs : timeoutMs)
     try {
       const res = await doFetch(url, {
         method,
@@ -246,7 +249,13 @@ export function createCloudflareSandboxDriver(
     })
     if (!response) return { provisioning: true as const, retryAfterMs: 2_000 }
     const { status, data } = response
-    if (status >= 500) return { provisioning: true as const, retryAfterMs: 2_000 }
+    // The sandbox Worker uses 503 for the one retryable readiness condition.
+    // Do not launder every server-side configuration or runtime failure into
+    // "provisioning": a missing broker binding, for example, will never heal
+    // by polling and must reach the caller as the authoritative error.
+    if (status === 503 && data?.error === "workspace-runtime did not become ready") {
+      return { provisioning: true as const, retryAfterMs: 2_000 }
+    }
     if (status >= 400 || !data?.url) {
       throw new Error(`Cloudflare ensure-runtime failed (${status}): ${data?.error ?? "no runtime url"}`)
     }

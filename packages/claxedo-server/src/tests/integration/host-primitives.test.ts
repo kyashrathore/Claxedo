@@ -99,7 +99,6 @@ describe("host primitives package surface", () => {
       recordRuntimeAccessToken: vi.fn(async () => {}),
       runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
       revokeRuntimeAccessToken: vi.fn(async () => {}),
-      listWorkspaceAgentExtensions: vi.fn(async () => []),
       listSessions: vi.fn(async () => []),
       readSessionMessages: vi.fn(async () => ({ messages: [] })),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -188,7 +187,6 @@ describe("host primitives package surface", () => {
           updateCredentialStatus: vi.fn(async () => {}),
           syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
         },
-        extensionPolicy: { agentExtensionPolicyOverrides: [] },
         relay: {
           relayUrl: "https://relay.example.test",
           resolverToken: "resolver",

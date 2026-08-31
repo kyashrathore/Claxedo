@@ -393,6 +393,22 @@ export type SandboxNetworkPolicy = {
   cidrs?: string[]
 }
 
+/** Brokered destinations are the minimum egress needed to use the credential. */
+export function sandboxNetworkPolicyWithBrokeredHosts(
+  policy: SandboxNetworkPolicy,
+  secrets: readonly SandboxBrokeredSecret[] | undefined,
+): SandboxNetworkPolicy {
+  if (policy.mode !== "restricted" || !secrets?.length) return policy
+  const hosts = [...new Set([
+    ...(policy.hosts ?? []),
+    ...secrets.flatMap((secret) => secret.hosts),
+  ])].toSorted()
+  return {
+    ...policy,
+    ...(hosts.length ? { hosts } : {}),
+  }
+}
+
 export type SandboxBootSource =
   | { kind: "image"; image: string }
   | { kind: "driver-snapshot"; snapshotId: string }
@@ -666,7 +682,9 @@ function ensureHostInput(input: {
     // that asked for no containment produces, so the throwing drivers take
     // their allow-all path and their throws stay intact for anyone who hands
     // them a policy directly.
-    ...(egress.action === "enforce" && input.managerInput?.net ? { net: input.managerInput.net } : {}),
+    ...(egress.action === "enforce" && input.managerInput?.net
+      ? { net: sandboxNetworkPolicyWithBrokeredHosts(input.managerInput.net, input.managerInput.secrets) }
+      : {}),
     snapshot: input.managerInput?.snapshot,
   }
 }

@@ -44,7 +44,6 @@ if ($Lane -eq "package" -or $Lane -eq "package-test") {
 
 bun turbo build `
   --filter=@claxedo/agent-event-runtime `
-  --filter=@claxedo/agent-extensions `
   --filter=@claxedo/agent-sdk-runtime `
   --filter=@claxedo/channels `
   --filter=@claxedo/connections `

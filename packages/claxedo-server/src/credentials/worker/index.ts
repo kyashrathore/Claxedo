@@ -18,8 +18,9 @@
  * OFF). With the flag on, composition FAILS CLOSED AT CONSTRUCTION TIME
  * unless the envelope KEK (CLAXEDO_CREDENTIALS_KEK, optional
  * CLAXEDO_CREDENTIALS_KEK_NEXT rotation slot) and the KV config
- * (CLAXEDO_CF_KV_URL / CLAXEDO_CF_KV_TOKEN) are all present — a hosted
- * deployment that cannot encrypt must be down, not open.
+ * plus either the Worker's native CLAXEDO_CREDENTIALS KV binding or the
+ * non-Worker REST KV config are present — a hosted deployment that cannot
+ * encrypt must be down, not open.
  *
  * The org-partitioned credential surface is
  * `hostedOrgCredentials(orgId, env)` — a per-org `ControlPlaneCredentials`
@@ -32,10 +33,16 @@
 
 import type { ControlPlaneCredentials } from "../../authority/services"
 import type { CredentialMetadata, CredentialWrite, SecretBackend } from "@claxedo/server-core/credentials/types"
-import { createEncryptedCloudflareBackend } from "@claxedo/server-core/credentials/backends/cloudflare"
+import {
+  createEncryptedCloudflareBackend,
+  createEncryptedCloudflareBindingBackend,
+  type CloudflareKvNamespaceBinding,
+} from "@claxedo/server-core/credentials/backends/cloudflare"
 import { envelopeKeyProviderFromEnv, type EnvelopeAdmin } from "@claxedo/server-core/credentials/envelope"
 
-type WorkerCredentialEnv = Record<string, string | undefined>
+type WorkerCredentialEnv = Record<string, unknown> & {
+  CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
+}
 type StoredCredential = { meta: CredentialMetadata; secret: string }
 
 export class HostedCredentialRecordError extends Error {
@@ -50,7 +57,7 @@ export class HostedCredentialRecordError extends Error {
 export const HOSTED_CREDENTIALS_FLAG = "CLAXEDO_HOSTED_CREDENTIALS_ENABLED"
 
 export function hostedCredentialsEnabled(env: WorkerCredentialEnv = process.env): boolean {
-  return env[HOSTED_CREDENTIALS_FLAG]?.trim() === "1"
+  return stringValue(env[HOSTED_CREDENTIALS_FLAG]) === "1"
 }
 
 /**
@@ -68,7 +75,10 @@ export function createHostedOrgSecretBackend(
   orgId: string,
   env: WorkerCredentialEnv = process.env,
 ): SecretBackend & EnvelopeAdmin {
-  return createEncryptedCloudflareBackend({ orgId, env })
+  const strings = stringEnvironment(env)
+  return env.CLAXEDO_CREDENTIALS
+    ? createEncryptedCloudflareBindingBackend({ orgId, binding: env.CLAXEDO_CREDENTIALS, env: strings })
+    : createEncryptedCloudflareBackend({ orgId, env: strings })
 }
 
 /**
@@ -76,13 +86,25 @@ export function createHostedOrgSecretBackend(
  * missing piece named. Used at composition time when the feature flag is on.
  */
 function assertHostedCredentialConfig(env: WorkerCredentialEnv) {
-  for (const name of ["CLAXEDO_CF_KV_URL", "CLAXEDO_CF_KV_TOKEN"] as const) {
-    if (!env[name]?.trim()) {
-      throw new Error(`${HOSTED_CREDENTIALS_FLAG}=1 but ${name} is not configured — refusing to start`)
+  if (!env.CLAXEDO_CREDENTIALS) {
+    for (const name of ["CLAXEDO_CF_KV_URL", "CLAXEDO_CF_KV_TOKEN"] as const) {
+      if (!stringValue(env[name])) {
+        throw new Error(`${HOSTED_CREDENTIALS_FLAG}=1 but ${name} is not configured — refusing to start`)
+      }
     }
   }
   // Throws naming CLAXEDO_CREDENTIALS_KEK when absent or malformed.
-  envelopeKeyProviderFromEnv(env)
+  envelopeKeyProviderFromEnv(stringEnvironment(env))
+}
+
+function stringValue(value: unknown): string | undefined {
+  return typeof value === "string" ? value.trim() || undefined : undefined
+}
+
+function stringEnvironment(env: WorkerCredentialEnv): Record<string, string | undefined> {
+  return Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+  )
 }
 
 export function workerCredentials(env: WorkerCredentialEnv = process.env): ControlPlaneCredentials {

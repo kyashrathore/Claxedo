@@ -60,7 +60,7 @@ export const archStages: ArchStage[] = [
     blurb: "Owns auth, routing, credentials, and policy; picks direct-or-relay. Deploy to Claxedo Cloud or your own Cloudflare.",
     packages: [
       { name: "claxedo-server", repo: true },
-      { name: "@claxedo/agent-extensions" },
+      { name: "Agent Plugins module" },
       { name: "@claxedo/wakes" },
       { name: "@claxedo/connections" },
       { name: "@claxedo/channels" },

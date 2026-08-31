@@ -490,8 +490,11 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         // Kick off provisioning. The lease state machine + driver.ensureHost are
         // idempotent and re-polled by the app via /connection, so this is
         // fire-and-forget: a slow cold-start must not block the create response.
-        void sandboxManager
-          .ensure(workspaceId, {
+        void Promise.resolve()
+          .then(async () => {
+            const runtimePreparation = await options.prepareRuntime?.(workspaceId)
+            const runtimeSecrets = runtimePreparation?.secrets ?? []
+            const result = await sandboxManager.ensure(workspaceId, {
             homeRegion,
             labels: {
               projectId,
@@ -501,7 +504,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // Clone token for connected private repos — rides the brokered
             // secret channel (fail-closed in the manager for drivers that
             // cannot broker), never labels or env.
-            ...(provisionSecrets?.length ? { secrets: provisionSecrets } : {}),
+            ...((provisionSecrets?.length || runtimeSecrets.length)
+              ? { secrets: [...(provisionSecrets ?? []), ...runtimeSecrets] }
+              : {}),
             // Security review 2026-07-27 §6.14 — this is the hosted, multi-tenant
             // create path, so the sandbox it provisions runs agent-authored code
             // over someone's private checkout. `net` was omitted here, and an
@@ -540,6 +545,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               source,
               ...(options.sandboxEgressExtraHosts ? { extraHosts: options.sandboxEgressExtraHosts } : {}),
             }),
+            })
+            return { result, runtimePreparation }
           })
           // The lease row exists once `ensure` has acquired it, so the tenant is
           // stamped here rather than before: the sandbox manager's acquire port
@@ -547,7 +554,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // point that holds both the verified tenant and a lease to attach it
           // to. Metering attribution never gates provisioning, so a deployment
           // with no workspace authority configured simply records nothing.
-          .then((result) => {
+          .then(async ({ result, runtimePreparation }) => {
+            if (result.status === "ready") await options.provisionRuntime?.(workspaceId, runtimePreparation)
             // Since the 2026-07-28 inversion the only refusal that can land here
             // is `sandbox_egress_policy_unenforceable`: a driver that DOES
             // enforce egress, handed an encoding it cannot express (hosts-only

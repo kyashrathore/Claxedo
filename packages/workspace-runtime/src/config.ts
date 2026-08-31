@@ -38,5 +38,3 @@ export {
   toOpencodeConfig,
   type ResolvedMcpServer,
 } from "./mcp-resolver"
-export type { AgentExtensionScope, HarnessTarget, MaterializedAgentExtensionScope, PackageSource }
-  from "@claxedo/agent-extensions"

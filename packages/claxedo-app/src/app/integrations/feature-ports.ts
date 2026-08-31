@@ -30,7 +30,6 @@ import * as SurfaceStatus from "@/app/workbench/compact-switcher/surface-status"
 import * as Navigation from "@/app/workbench/navigation/navigation-row"
 import * as LayoutActions from "@/app/workbench/actions/shared"
 import * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
-import * as Marketplace from "@/features/extensions/marketplace/api"
 import * as SessionScope from "@/features/session/ui/components/session-pane-scope"
 import * as SessionSync from "@/features/session/providers/session-sync"
 import * as MarkdownTab from "@/app/workbench/lib/open-markdown-page-tab"
@@ -121,14 +120,6 @@ configureSessionAppPorts({
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
   loadManageModelsDialog: () => import("@/app/dialogs/manage-models"),
   openSettingsProviders: (dialog) => showProvidersSettings(dialog, () => import("@/app/dialogs/settings")),
-  filterMcpCatalogEntries: Marketplace.filterMcpCatalogEntries,
-  installDisabledReasonForEntry: Marketplace.installDisabledReasonForEntry,
-  installMcpDialogEntry: Marketplace.installMcpDialogEntry,
-  isEntryInstalled: Marketplace.isEntryInstalled,
-  loadMcpDialogData: Marketplace.loadMcpDialogData,
-  sourceLabel: Marketplace.sourceLabel,
-  targetLabel: Marketplace.targetLabel,
-  uninstallMcpDialogEntry: Marketplace.uninstallMcpDialogEntry,
   listDocumentMentions: DocumentMentions.listDocumentMentions,
   documentMentionText: DocumentMentions.documentMentionText,
 })

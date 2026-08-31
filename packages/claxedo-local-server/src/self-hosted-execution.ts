@@ -24,7 +24,6 @@ export {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimes,
-  syncEmbeddedWorkspaceRuntimeAgentExtensions,
   connectEmbeddedWorkspacePty,
 } from "./deployments/local/embedded-workspace-runtime"
 

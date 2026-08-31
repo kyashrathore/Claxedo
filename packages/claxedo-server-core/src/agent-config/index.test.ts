@@ -1,6 +1,5 @@
 import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
-import { grantProjectExtensionTrust } from "@claxedo/agent-extensions"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
@@ -9,37 +8,17 @@ import { randomUUID } from "crypto"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
-const prevDeploymentMode = process.env.CLAXEDO_DEPLOYMENT_MODE
-const prevWorkspaceAuthorityUrl = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-const prevControlPlaneServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
 process.env.CLAXEDO_DATA_DIR = root
 
 const mod = await import("./index")
-const { ControlPlaneAuthError } = await import("@claxedo/server-core/platform/auth/auth")
 const { ClaxedoDB } = await import("../platform/db/db")
-const { closeAuthorityDatabases } = await import("../authority/adapters/sqlite/workspace-authority-store")
 
 /**
  * Release every sqlite file under the temp root before wiping it. ClaxedoDB
- * covers claxedo.db; the runtime-snapshot paths also memoize a local SQLite
- * workspace authority whose authority.db(-wal/-shm) stays open across tests —
- * Windows refuses the unlink with EBUSY while it does (run 361: 19 failures).
- * Both closes are registry resets, so the next use reopens cleanly.
+ * covers claxedo.db. Windows refuses the unlink with EBUSY while it is open.
  */
 function closeSqliteHandles() {
   ClaxedoDB.close()
-  closeAuthorityDatabases()
-}
-
-function unavailableWorkspaceAuthority() {
-  return {
-    listWorkspaceAgentExtensionsForRuntime: vi.fn(async () => {
-      throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
-    }),
-    listAgentExtensionPolicyOverridesForRuntime: vi.fn(async () => {
-      throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
-    }),
-  }
 }
 
 function cfgFile() {
@@ -69,12 +48,6 @@ describe("agent config", () => {
     mod.configureAgentConfig({})
     await fs.rm(root, { recursive: true, force: true })
     process.env.CLAXEDO_DATA_DIR = prev
-    if (prevDeploymentMode === undefined) delete process.env.CLAXEDO_DEPLOYMENT_MODE
-    else process.env.CLAXEDO_DEPLOYMENT_MODE = prevDeploymentMode
-    if (prevWorkspaceAuthorityUrl === undefined) delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    else process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = prevWorkspaceAuthorityUrl
-    if (prevControlPlaneServiceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
-    else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = prevControlPlaneServiceToken
   })
 
   // ── defaultHarness ────────────────────────────────────────────────────
@@ -326,53 +299,18 @@ describe("agent config", () => {
     expect(snap.harnesses[0]).toEqual({ id: "opencode", access: "native" })
   })
 
-  test("snapshot includes Agent Extensions replay metadata for a workspace directory", async () => {
-    const project = path.join(root, "project")
-    await fs.mkdir(project, { recursive: true })
-    await fs.mkdir(path.join(project, ".agent-extensions"), { recursive: true })
-    await fs.writeFile(
-      path.join(project, ".agent-extensions", "installed.json"),
-      JSON.stringify({
-        version: 1,
-        installs: [
-          {
-            id: "review",
-            package_name: "review",
-            source: { type: "github", owner: "acme", repo: "review" },
-            scope: "project",
-            enabled: true,
-            targets: ["cursor"],
-            installed_at: 1,
-            updated_at: 2,
-          },
-        ],
-      }),
-    )
+  test("snapshot obtains opaque harness launch options from the composition", async () => {
     await mod.saveUserConfig({ mcp: {}, auth: {} })
-
-    // Repo-shipped extension declarations are ignored until this host has
-    // recorded trust for the checkout (project-scope consent gate).
-    const unconsented = await mod.getRuntimeConfigSnapshot(undefined, { workspaceDir: project })
-    expect(unconsented.agent_extensions).toEqual({ version: 1, installs: [] })
-
-    await grantProjectExtensionTrust({
-      dataRoot: process.env.CLAXEDO_DATA_DIR!,
-      projectDir: project,
-      installIds: ["review"],
+    mod.configureAgentConfig({
+      harnessLaunch: async () => ({
+        claude: { pluginRoots: ["/runtime/plugins/review"] },
+      }),
     })
-
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, { workspaceDir: project })
-
-    expect(snap.agent_extensions).toMatchObject({
-      version: 1,
-      installs: [
-        {
-          desired: {
-            id: "review",
-          },
-        },
-      ],
+    const snap = await mod.getRuntimeConfigSnapshot()
+    expect(snap.harnessLaunch).toEqual({
+      claude: { pluginRoots: ["/runtime/plugins/review"] },
     })
+    expect(normalizeRuntimeSnapshot(snap)?.harnessLaunch).toEqual(snap.harnessLaunch)
   })
 
   // Forward wire contract: every snapshot the control plane pushes must be
@@ -405,153 +343,8 @@ describe("agent config", () => {
       secretScope: "shared",
       workspaceDir: project,
       workspaceId: "ws_1",
-      authority: unavailableWorkspaceAuthority(),
     })
     expect(normalizeRuntimeSnapshot(snap)).toBeDefined()
-  })
-
-  test("local workspace snapshot hydrates from SQLite despite an ambient the authority URL", async () => {
-    const project = path.join(root, "project")
-    await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
-    const deploymentMode = process.env.CLAXEDO_DEPLOYMENT_MODE
-    const authorityUrl = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    const serviceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
-    process.env.CLAXEDO_DEPLOYMENT_MODE = "local"
-    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "http://127.0.0.1:9"
-    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "test-service-token"
-    try {
-      const snap = await mod.getRuntimeConfigSnapshot(undefined, {
-        secretScope: "shared",
-        workspaceDir: project,
-        workspaceId: "ws_local",
-      })
-
-      expect(snap.agent_extensions).toMatchObject({
-        version: 1,
-        installs: [],
-      })
-    } finally {
-      if (deploymentMode === undefined) delete process.env.CLAXEDO_DEPLOYMENT_MODE
-      else process.env.CLAXEDO_DEPLOYMENT_MODE = deploymentMode
-      if (authorityUrl === undefined) delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-      else process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = authorityUrl
-      if (serviceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
-      else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = serviceToken
-    }
-  })
-
-  test("shared workspace Agent Extensions snapshot fails closed when Control Plane hydration is unavailable", async () => {
-    const project = path.join(root, "project")
-    await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
-
-    await expect(
-      mod.getRuntimeConfigSnapshot(undefined, {
-        secretScope: "shared",
-        workspaceDir: project,
-        workspaceId: "ws_1",
-        authority: unavailableWorkspaceAuthority(),
-        requireWorkspaceAgentExtensions: true,
-      }),
-    ).rejects.toMatchObject({
-      code: "workspace_authority_unavailable",
-    })
-  })
-
-  test("shared workspace Agent Extensions snapshot falls back to empty when service hydration is optional", async () => {
-    const project = path.join(root, "project")
-    await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
-
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, {
-      secretScope: "shared",
-      workspaceDir: project,
-      workspaceId: "ws_1",
-      authority: unavailableWorkspaceAuthority(),
-    })
-
-    expect(snap.agent_extensions).toMatchObject({
-      version: 1,
-      installs: [],
-    })
-  })
-
-  test("shared workspace Agent Extensions snapshot hydrates runtime policy overrides from Control Plane", async () => {
-    const project = path.join(root, "project")
-    await fs.mkdir(project, { recursive: true })
-    const listWorkspaceAgentExtensionsForRuntime = vi.fn(async () => [
-      {
-        desired: {
-          id: "review",
-          package_name: "review",
-          source: { type: "github", owner: "acme", repo: "review" },
-          scope: "workspace",
-          enabled: true,
-          targets: ["cursor"],
-          installed_at: 1,
-          updated_at: 1,
-        },
-        lock: {
-          source: { type: "github", owner: "acme", repo: "review" },
-          resolved_sha: "abcdef1234567890",
-          manifest_digests: { package: "abc" },
-          component_digests: { package: "abc" },
-          targets: ["cursor"],
-        },
-      },
-    ])
-    const listAgentExtensionPolicyOverridesForRuntime = vi.fn(async () => [
-      {
-        id: "review",
-        scope: "org" as const,
-        enabled: false,
-        reason: "blocked by org policy",
-      },
-    ])
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
-
-    const snap = await mod.getRuntimeConfigSnapshot(undefined, {
-      secretScope: "shared",
-      workspaceDir: project,
-      workspaceId: "ws_1",
-      authority: {
-        listWorkspaceAgentExtensionsForRuntime,
-        listAgentExtensionPolicyOverridesForRuntime,
-      },
-    })
-
-    expect(snap.agent_extensions?.installs).toEqual([{
-      desired: {
-        id: "review",
-        package_name: "review",
-        source: { type: "github", owner: "acme", repo: "review" },
-        scope: "workspace",
-        enabled: false,
-        targets: ["cursor"],
-        installed_at: 1,
-        updated_at: 1,
-      },
-      lock: {
-        source: { type: "github", owner: "acme", repo: "review" },
-        resolved_sha: "abcdef1234567890",
-        manifest_digests: { package: "abc" },
-        component_digests: { package: "abc" },
-        targets: ["cursor"],
-      },
-      effective: {
-        enabled: false,
-        source: "org",
-        reason: "blocked by org policy",
-      },
-      components: [],
-    }])
-    expect(listWorkspaceAgentExtensionsForRuntime).toHaveBeenCalledWith({
-      workspaceId: "ws_1",
-    })
-    expect(listAgentExtensionPolicyOverridesForRuntime).toHaveBeenCalledWith({
-      workspaceId: "ws_1",
-    })
   })
 
   // ── getEffectiveConfig ──────────────────────────────────────────────

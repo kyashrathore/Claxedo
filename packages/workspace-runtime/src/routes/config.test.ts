@@ -36,6 +36,34 @@ async function configHarness(apply: Parameters<typeof ConfigRoutes>[0]) {
 }
 
 describe("runtime config route", () => {
+  test("preserves only known harness-owned opaque launch options", async () => {
+    let seen: unknown
+    const { app, headers } = await configHarness(async (snapshot) => { seen = snapshot })
+    const body = {
+      version: 2,
+      mcp: {},
+      harnesses: [{ id: "claude", access: "native" }],
+      auth: {},
+      harnessLaunch: {
+        claude: { pluginRoots: ["/runtime/plugins/review"] },
+      },
+    }
+    const accepted = await app.request("http://localhost/api/wr/config", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(body),
+    })
+    expect(accepted.status).toBe(200)
+    expect(seen).toMatchObject({ harnessLaunch: body.harnessLaunch })
+
+    const rejected = await app.request("http://localhost/api/wr/config", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, harnessLaunch: { arbitrary: {} } }),
+    })
+    expect(rejected.status).toBe(400)
+  })
+
   test("normalizes legacy runner snapshots before applying", async () => {
     let seen: unknown
     const { app, headers } = await configHarness(async (snapshot) => {
@@ -62,19 +90,6 @@ describe("runtime config route", () => {
           model: "default",
         },
         auth: {},
-        agent_extensions: {
-          version: 1,
-          installs: [{
-            desired: {
-              id: "review",
-              source: { type: "project", package_path: "agent-extensions/review" },
-              targets: ["codex"],
-            },
-            lock: { resolved_sha: "abcdef1234567890" },
-            status: "applied",
-            components: [],
-          }],
-        },
       }),
     })
 
@@ -99,19 +114,6 @@ describe("runtime config route", () => {
       },
       model: "default",
       auth: {},
-      agent_extensions: {
-        version: 1,
-        installs: [{
-          desired: {
-            id: "review",
-            source: { type: "project", package_path: "agent-extensions/review" },
-            targets: ["codex"],
-          },
-          lock: { resolved_sha: "abcdef1234567890" },
-          status: "applied",
-          components: [],
-        }],
-      },
     })
   })
 
@@ -396,65 +398,28 @@ describe("runtime config route", () => {
     })
   })
 
-  test("rejects malformed and unsupported agent extension snapshots with stable codes", async () => {
+  test("rejects unknown runtime snapshot fields instead of silently ignoring them", async () => {
     let applied = false
-    const malformedHarness = await configHarness(async () => {
+    const { app, headers } = await configHarness(async () => {
       applied = true
     })
-    const malformed = await malformedHarness.app.request("http://localhost/api/wr/config", {
+    const response = await app.request("http://localhost/api/wr/config", {
       method: "POST",
-      headers: malformedHarness.headers,
+      headers,
       body: JSON.stringify({
         version: 1,
         mcp: {},
         runner: { type: "opencode" },
         auth: {},
-        agent_extensions: {
-          version: 1,
-          installs: [{ desired: "not-an-object" }],
-        },
+        unexpected: { value: true },
       }),
     })
 
-    expect(malformed.status).toBe(400)
-    await expect(malformed.json()).resolves.toEqual({
+    expect(response.status).toBe(400)
+    await expect(response.json()).resolves.toEqual({
       error: {
-        code: "runtime_config_agent_extensions_malformed",
-        message: "Invalid runtime agent extension snapshot",
-      },
-    })
-    expect(applied).toBe(false)
-
-    const unsupportedHarness = await configHarness(async () => {
-      applied = true
-    })
-    const unsupported = await unsupportedHarness.app.request("http://localhost/api/wr/config", {
-      method: "POST",
-      headers: unsupportedHarness.headers,
-      body: JSON.stringify({
-        version: 1,
-        mcp: {},
-        runner: { type: "opencode" },
-        auth: {},
-        agent_extensions: {
-          version: 1,
-          installs: [{
-            desired: {
-              id: "registry-ext",
-              source: { type: "registry", name: "@acme/review" },
-              enabled: true,
-            },
-            components: [],
-          }],
-        },
-      }),
-    })
-
-    expect(unsupported.status).toBe(400)
-    await expect(unsupported.json()).resolves.toEqual({
-      error: {
-        code: "runtime_config_agent_extensions_unsupported_source",
-        message: "Unsupported runtime agent extension source",
+        code: "invalid_runtime_snapshot",
+        message: "Invalid runtime snapshot",
       },
     })
     expect(applied).toBe(false)

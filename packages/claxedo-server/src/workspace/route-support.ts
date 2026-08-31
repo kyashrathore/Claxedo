@@ -16,6 +16,14 @@ import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/s
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
+
+export type WorkspaceRuntimePreparation = {
+  /** Existing sandbox-manager channel; values never enter runtime config or files. */
+  secrets?: SandboxBrokeredSecret[]
+  /** Feature-private immutable plan, passed back only to the matching provision hook. */
+  state?: unknown
+}
 
 /** The owner-side facts one local workspace share carries to `assignWorkspaceHost`. */
 export type LocalWorkspaceShare = {
@@ -68,6 +76,10 @@ export type WorkspaceRouteOptions = {
   hostTunnelTokenSigner?: HostTunnelTokenSigner
   connectionRateLimiter?: ConnectionRateLimiter
   controlPlaneRateLimiter?: ConnectionRateLimiter
+  /** Resolve feature state before ensure, including brokered secrets needed by the driver. */
+  prepareRuntime?: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
+  /** Build-composed feature provisioning that must settle before a cloud runtime is handed to the caller. */
+  provisionRuntime?: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
   /**
    * Entitlement choke point (ADR 014 §5, adversarial review): hosted
    * cloud-workspace capability is paid at BOTH

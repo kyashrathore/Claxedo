@@ -50,9 +50,6 @@ const DialogSelectFile = lazyDialog(() => import("@/features/session/ui/dialogs/
 const DialogSelectModel = lazyDialog(() => import("@/features/session/ui/model/select-model").then((module) => ({
   default: module.DialogSelectModel,
 })))
-const DialogSelectMcp = lazyDialog(() => import("@/features/session/ui/dialogs/select-mcp").then((module) => ({
-  default: module.DialogSelectMcp,
-})))
 const DialogFork = lazyDialog(() => import("@/features/session/ui/dialogs/fork").then((module) => ({
   default: module.DialogFork,
 })))
@@ -218,7 +215,6 @@ export const useSessionCommands = (args: SessionCommandContext) => {
   const viewCommand = withCategory(language.t("command.category.view"))
   const terminalCommand = withCategory(language.t("command.category.terminal"))
   const modelCommand = withCategory(language.t("command.category.model"))
-  const mcpCommand = withCategory(language.t("command.category.mcp"))
   const agentCommand = withCategory(language.t("command.category.agent"))
   const permissionsCommand = withCategory(language.t("command.category.permissions"))
 
@@ -471,16 +467,6 @@ export const useSessionCommands = (args: SessionCommandContext) => {
       slash: "model",
       onSelect: () => {
         dialog.show(() => <DialogSelectModel model={pickerModel()} surface="command_palette" />)
-      },
-    }),
-    mcpCommand({
-      id: "mcp.toggle",
-      title: language.t("command.mcp.toggle"),
-      description: language.t("command.mcp.toggle.description"),
-      keybind: "mod+;",
-      slash: "mcp",
-      onSelect: () => {
-        dialog.show(() => <DialogSelectMcp />)
       },
     }),
     agentCommand({

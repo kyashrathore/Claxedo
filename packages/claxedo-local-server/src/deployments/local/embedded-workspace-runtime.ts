@@ -12,15 +12,12 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
-import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
 import { opencodeRequest as defaultOpencodeRequest, type OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
-import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
 import { createClaxedoRuntimeExposure } from "../../hosts/workspace-runtime/exposure"
 import { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 import { createClaxedoAppliedRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
@@ -51,6 +48,7 @@ const hosts = new Map<string, EmbeddedRuntime>()
 // external-URL mode). In embedded mode this is the in-process engine handler; in
 // external-URL mode it rewrites onto the configured URL.
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
+let configuredOpencodeApplyLaunchConfig: ((config: Record<string, unknown>) => Promise<void>) | undefined
 let configuredOpencodeCompat = true
 let configuredProviderCatalog: WorkspaceRuntimeServerOptions["providerCatalog"] | undefined
 let configuredPiModelBackend: PiModelBackendResolver | undefined
@@ -124,6 +122,7 @@ export function embeddedWorkspaceRuntimeSessionAuthority() {
 
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
+  opencodeApplyLaunchConfig?: (config: Record<string, unknown>) => Promise<void>
   opencodeCompat?: boolean
   /**
    * The host's provider catalog for non-opencode harnesses, so a
@@ -146,6 +145,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
     engineSessionEvents = undefined
   }
   configuredOpencodeRequest = input.opencodeRequest
+  configuredOpencodeApplyLaunchConfig = input.opencodeApplyLaunchConfig
   configuredOpencodeCompat = input.opencodeCompat ?? true
   configuredProviderCatalog = input.providerCatalog
   configuredPiModelBackend = input.piModelBackend
@@ -185,15 +185,6 @@ export function cursorTranscriptRoot(workspaceDirectory: string, cursorDataRoot 
     .replace(/-+/g, "-")
     .replace(/^-+|-+$/g, "")
   return path.join(cursorDataRoot || path.join(os.homedir(), ".cursor"), "projects", project, "agent-transcripts")
-}
-
-// Agent Extension replay bookkeeping (ownership ledger, lock, fetch cache)
-// lives under Claxedo's data dir keyed by workspace id — NOT in the user's
-// checkout. Generated skills/MCP/plugins still materialize into the workspace;
-// only the record of what we own moves here, so a workspace the user moves or
-// re-clones keeps its ownership history and `git status` stays clean.
-function extensionStateRoot(ws: Workspace) {
-  return agentExtensionStateRoot({ scope: "workspace", workspaceId: ws.id, dataRoot: dataDir() })
 }
 
 const embeddedRuntimeGuard = () => true
@@ -250,6 +241,9 @@ function options(
 } {
   return {
     opencodeRequest,
+    ...(configuredOpencodeApplyLaunchConfig
+      ? { opencodeApplyLaunchConfig: configuredOpencodeApplyLaunchConfig }
+      : {}),
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
@@ -286,7 +280,6 @@ function options(
       authorizeParent: (_context, parentSessionId) => sessionAccess.exists(parentSessionId),
       resolveParentSessionId: (event) => sessionAccess.parentSessionIdFor(event.sessionId),
     },
-    agentExtensionStateRoot: extensionStateRoot(ws),
     corsOrigin: claxedoCorsOrigin,
     // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
     // from the composition root (this module stays ambient-env-free).
@@ -345,13 +338,6 @@ configureLocalWorkspaceRuntime({
   async fetch(workspace: Workspace, request: Request) {
     const runtime = await ensureEmbeddedWorkspaceRuntime(workspace)
     return runtime.app.fetch(request)
-  },
-  async syncAgentExtensions(workspaceId, installs, options) {
-    await syncEmbeddedWorkspaceRuntimeAgentExtensions(
-      workspaceId,
-      installs as WorkspaceAgentExtensionRecord[],
-      (options ?? {}) as { policyOverrides?: AgentExtensionPolicyOverride[] },
-    )
   },
 })
 
@@ -433,21 +419,6 @@ export async function connectEmbeddedWorkspacePty(
 
 export async function syncEmbeddedWorkspaceRuntimes() {
   await Promise.allSettled([...hosts.values()].map((runtime) => configure(runtime)))
-}
-
-export async function syncEmbeddedWorkspaceRuntimeAgentExtensions(
-  workspaceId: string,
-  installs: WorkspaceAgentExtensionRecord[],
-  options: { policyOverrides?: AgentExtensionPolicyOverride[] } = {},
-) {
-  const runtime = hosts.get(workspaceId)
-  if (!runtime) return
-  await runtime.host.apply(await createClaxedoAppliedRuntimeConfig({
-    workspaceDir: runtime.workspace.directory,
-    workspaceId,
-    workspaceInstalls: installs,
-    ...(options.policyOverrides ? { policyOverrides: options.policyOverrides } : {}),
-  }))
 }
 
 export function shutdownEmbeddedWorkspaceRuntimes() {

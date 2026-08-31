@@ -2201,10 +2201,14 @@ describe("session prompt route", () => {
   it("publishes question reply with the pending question session id", async () => {
     const directory = process.cwd()
     const seen: CompatEvent[] = []
+    const replies: string[] = []
     const app = createSessionRoutes({
       resolveAdapter: async () => ({
         ...adapter({}),
         listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
+        replyQuestion: async (_id, answer) => {
+          replies.push(answer)
+        },
       }),
       resolveDirectory: async () => directory,
       sessionBus: {
@@ -2221,10 +2225,11 @@ describe("session prompt route", () => {
     const res = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answer: "Continue" }),
+      body: JSON.stringify({ answers: [["Continue"]] }),
     })
 
     expect(res.status).toBe(200)
+    expect(replies).toEqual(["Continue"])
     expect(seen).toEqual([{
       id: "question.replied:q1",
       type: "question.replied",

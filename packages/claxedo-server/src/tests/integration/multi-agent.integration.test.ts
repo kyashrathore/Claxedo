@@ -15,7 +15,7 @@
  *  - Config persistence format stability
  *  - Bootstrap response shape for both opencode and ACP modes
  *  - Runner model setting at global and session level
- *  - Global dispose shim returns true
+ *  - Global dispose reaches the configured OpenCode engine
  */
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest"
@@ -99,6 +99,7 @@ const upstreamConfig = { model: "upstream/up-model", provider: {}, mcp: {} }
 
 let upstreamPort = 0
 let serverPort = 0
+let upstreamDisposeRequests = 0
 let upstream: import("@hono/node-server").ServerType
 let server: ReturnType<typeof serverMod.startServer>
 
@@ -177,7 +178,10 @@ describe("multi-agent integration", () => {
         if (pathname === "/config/providers")
           return json({ providers: upstreamProvider.all, default: upstreamProvider.default })
         if (pathname === "/config" || pathname === "/global/config") return json(upstreamConfig)
-        if (pathname === "/global/dispose" && req.method === "POST") return json(true)
+        if (pathname === "/global/dispose" && req.method === "POST") {
+          upstreamDisposeRequests += 1
+          return json(true)
+        }
         return json({ error: "not found" }, 404)
       },
     })
@@ -192,6 +196,7 @@ describe("multi-agent integration", () => {
     delete process.env.ANTHROPIC_API_KEY
     delete process.env.OPENAI_API_KEY
     delete process.env.CURSOR_API_KEY
+    upstreamDisposeRequests = 0
     await agent.saveUserConfig({
       mcp: {},
       auth: {},
@@ -709,12 +714,13 @@ describe("multi-agent integration", () => {
     expect(body.config.model).toBe("")
   })
 
-  // ── Global dispose shim ────────────────────────────────────────────
+  // ── Global dispose ─────────────────────────────────────────────────
 
-  test("POST /global/dispose returns the engine disposal result", async () => {
+  test("POST /global/dispose reaches the configured OpenCode engine", async () => {
     const res = await fetch(`${base()}/global/dispose`, { method: "POST" })
     expect(res.status).toBe(200)
     expect(await res.json()).toBe(true)
+    expect(upstreamDisposeRequests).toBe(1)
   })
 
   // ── /global/health ─────────────────────────────────────────────────

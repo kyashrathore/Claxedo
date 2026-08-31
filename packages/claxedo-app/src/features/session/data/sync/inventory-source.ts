@@ -607,6 +607,21 @@ export function shouldUseSignedSessionInventory(input: {
   })
 }
 
+/**
+ * Should hosted-workspace DISCOVERY run, independent of where session reads go?
+ *
+ * Deliberately separate from `shouldUseSignedSessionInventory`: on loopback the
+ * session reads stay local (Local Personal Mode), but a hosted account still has
+ * to learn which cloud/user-hosted workspaces exist — otherwise the first cloud
+ * workspace can never enter the project cache and the sidebar never offers it.
+ * Signed account presence is the whole condition; the transport decides only
+ * whether the snapshot becomes the authoritative list or is merged into a local
+ * one.
+ */
+export function shouldDiscoverSignedWorkspaceSnapshot(input: { hasHostedAccount: boolean }) {
+  return input.hasHostedAccount
+}
+
 export function shouldUseSignedProjectSessionInventory(input: {
   hasSignedAccess: boolean
   baseUrl: string

@@ -5,7 +5,7 @@ become one running product. Three roles, three directories:
 
 | dir | role | contents |
 | --- | --- | --- |
-| `hosts/` | we **host** these packages | `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
+| `hosts/` | we **host** these packages | `wakes/`, `workspace-runtime/` — one dir per hosted `@claxedo/<pkg>` |
 | `adapters/` | we **adapt** these backends | `central-store/` — each adapts exactly one external thing. The Relay adapter moved to `@claxedo/server-core/adapters/relay`, which both products use. |
 | `platform/` | layer-organized shared machinery | `auth/`, `db/`, `http/`, `runtime/`, `telemetry/`, `governance/` |
 | `deployments/` | we **compose** these modes | `self-hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |

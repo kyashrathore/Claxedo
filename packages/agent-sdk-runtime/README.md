@@ -377,7 +377,7 @@ Host packages are responsible for:
 - persisting sessions, config, and event history
 - publishing global/session events beyond the current process
 - exposing product-specific HTTP routes
-- materializing agent extensions, skills, and MCP config outside this package
+- materializing Agent Plugins, skills, and MCP config outside this package
 
 This package should stay focused on runtime contracts and transport execution.
 

@@ -16,6 +16,12 @@ import {
   type ClaxedoDaemonDiscovery,
 } from "../src/main/server-daemon-discovery"
 
+const agentPlugins = process.env.CLAXEDO_AGENT_PLUGINS_BUILD === "1"
+  ? await import("@claxedo/local-server/agent-plugins/local-composition")
+      .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition())
+  : undefined
+await agentPlugins?.ready
+
 // The V8 compile cache is already enabled and already seeded by the time this
 // module is COMPILED, let alone evaluated: `claxedo-server-boot.ts` is the
 // bundle's entry and reaches this file through a dynamic import. It cannot be
@@ -51,6 +57,8 @@ const server = startLocalServer({
   opencodePassword: startup.opencodePassword,
   ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
+  ...(agentPlugins ? { routeContributions: agentPlugins.routeContributions } : {}),
+  ...(agentPlugins ? { harnessLaunch: agentPlugins.harnessLaunch } : {}),
 })
 const discovery: ClaxedoDaemonDiscovery = {
   service: CLAXEDO_DAEMON_SERVICE,

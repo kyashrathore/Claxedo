@@ -73,7 +73,6 @@ function services() {
       updateCredentialStatus: async () => {},
       syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
     },
-    extensionPolicy: {},
     localExecution: { enabled: true },
     telemetry: { capture: vi.fn() },
     projectionStore: {

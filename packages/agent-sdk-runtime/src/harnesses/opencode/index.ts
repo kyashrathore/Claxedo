@@ -68,6 +68,7 @@ import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publishe
 import { errorMessage } from "../shared/sdk-runtime-values"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 export { opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./env"
+export { mergeOpenCodeConfigContent, openCodeSpawnConfigContent } from "./process"
 
 const log = Log.create({ service: "opencode-adapter" })
 
@@ -97,6 +98,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   private base: Headers
   private cfg: Record<string, ResolvedMcpServer> = {}
   private auth: Record<string, string> = {}
+  private launchConfig: Record<string, unknown> = {}
+  private applyLaunchConfig: ((config: Record<string, unknown>) => Promise<void>) | undefined
   private eventHub: RuntimeEventHub | undefined
   private server: OpenCodeServerProcess
 
@@ -143,6 +146,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     request?: OpenCodeRequestFn
     processObserver?: AgentProcessObserver
     subagents?: SubagentAdmissionStore
+    /** Apply inline config to an injected host-owned OpenCode engine. */
+    applyLaunchConfig?: (config: Record<string, unknown>) => Promise<void>
   }) {
     this.compat = input?.compat ?? true
     this.base = new Headers(input?.headers)
@@ -154,8 +159,10 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     this.injectedRequest = input?.request
     this.processObserver = input?.processObserver
     this.subagents = input?.subagents
+    this.applyLaunchConfig = input?.applyLaunchConfig
     this.server = new OpenCodeServerProcess(opencodeUrl, {
       config: () => this.cfg,
+      launchConfig: () => this.launchConfig,
       auth: () => this.auth,
       processObserver: input?.processObserver,
     })
@@ -846,22 +853,29 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return res.json() as Promise<Array<{ content: string; status: string; priority: string }>>
   }
 
-  applyConfig(config: Record<string, unknown>): Promise<void> {
+  async applyConfig(config: Record<string, unknown>): Promise<void> {
     this.cfg = (config.mcp as Record<string, ResolvedMcpServer> | undefined) ?? {}
     this.auth = (config.auth as Record<string, string> | undefined) ?? {}
+    const launch = config.launch
+    this.launchConfig = launch && typeof launch === "object" && !Array.isArray(launch)
+      && "config" in launch && launch.config && typeof launch.config === "object" && !Array.isArray(launch.config)
+      ? launch.config as Record<string, unknown>
+      : {}
     this.syncNonSpawnedMcpObservations()
+    if (this.injectedRequest && this.applyLaunchConfig) {
+      await this.applyLaunchConfig(this.launchConfig)
+    }
     if (this.server.restartSpawnedProcess()) {
       log.info("applyConfig: restarting spawned opencode to apply config", {
         hasAuth: !!opencodeAuthContent(this.auth),
       })
-      return Promise.resolve()
+      return
     }
     log.info("applyConfig: opencode config cached", {
       mode: this.injectedRequest ? "injected" : this.server.mode,
       mcp: Object.keys(this.cfg),
       hasAuth: !!opencodeAuthContent(this.auth),
     })
-    return Promise.resolve()
   }
 
   async probeConfigOptions(_directory: string): Promise<never> {

@@ -60,7 +60,6 @@ export type ClaxedoPackage = {
 export const claxedoPackages: readonly ClaxedoPackage[] = [
   // Tier 0
   { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime", runtimeFamily: true },
-  { name: "@claxedo/agent-extensions", dir: "packages/agent-extensions", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime", runtimeFamily: false },
   // Tier 1

@@ -298,31 +298,6 @@ describe("architecture boundaries", () => {
   })
 
 
-  test("keeps package Agent Extension lifecycle modules free of server dependencies", () => {
-    const root = path.resolve(import.meta.dirname, "../../../../agent-extensions/src")
-    const lifecycleFiles = [
-      "cache.ts",
-      "facade.ts",
-      "fetch.ts",
-      "install.ts",
-      "manifest.ts",
-      "runtime-config.ts",
-      "source.ts",
-      "state.ts",
-      "lock.ts",
-      "storage.ts",
-      "workspace.ts",
-    ]
-    const forbidden = ["../paths", "agent-config/fanout", "workspace/supervisor", "ControlPlane", "WorkspaceAuthority", "Hono"]
-    const leaks = lifecycleFiles.flatMap((file) => {
-      const text = fs.readFileSync(path.join(root, file), "utf-8")
-      return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))
-    })
-
-    expect(leaks).toEqual([])
-  })
-
-
   test("keeps test-support/ out of production modules", () => {
     // test-support/ is the ONE home for test-only in-process helpers. A
     // production module importing it would drag test doubles into runtime

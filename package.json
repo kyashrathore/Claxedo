@@ -11,7 +11,7 @@
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
-    "test:architecture-ratchets": "bun ./script/product-boundary/verify.ts --all --source-only",
+    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts && bun ./script/product-boundary/verify.ts --all --source-only",
     "prepush": "bun run typecheck && bun run test:architecture-ratchets",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
     "postinstall": "bun script/apply-dependency-patches.ts && bun packages/core/script/fix-node-pty.ts",
@@ -24,9 +24,7 @@
     "examples:verify": "bun ./script/verify-examples.ts",
     "examples:smoke:hosted-team": "bun ./script/smoke-hosted-team-example.ts",
     "examples:smoke:local": "bun ./script/smoke-local-examples.ts",
-    "examples:smoke:extension-client": "bun ./script/smoke-extension-client-example.ts",
     "examples:smoke:runtime-only-host": "bun ./script/smoke-runtime-only-host.ts",
-    "agent-extensions:smoke-package": "bun ./script/smoke-agent-extensions-package.ts",
     "diagnostics:verify": "bun --cwd packages/claxedo-desktop run test:diagnostics-release && bun --cwd packages/claxedo-app run test:diagnostics-release && bun --cwd packages/claxedo-app/perf-harness test"
   },
   "workspaces": {

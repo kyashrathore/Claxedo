@@ -9,6 +9,7 @@ const serverRoot = path.resolve(import.meta.dirname, "../..")
 const repoRoot = path.resolve(serverRoot, "../..")
 const sandboxScriptsRoot = path.join(serverRoot, "scripts/sandbox")
 const cloudflareSandboxRoot = path.join(sandboxScriptsRoot, "cloudflare-worker")
+const agentPluginsConvexProfileRoot = path.join(serverRoot, ".artifacts/agent-plugins-convex-profile")
 
 type Target = "central" | "cloudflare-sandbox"
 type Command = {
@@ -42,6 +43,7 @@ export function hostedDeployCommands(input: {
   staging: boolean
   dryRun: boolean
   targets: Target[]
+  agentPlugins?: boolean
   env?: NodeJS.ProcessEnv
 }): Command[] {
   const env = input.env ?? process.env
@@ -53,6 +55,44 @@ export function hostedDeployCommands(input: {
     if (target === "central") {
       betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production")
       return [
+        // The Agent Plugins product is one build profile, not a runtime flag:
+        // its Convex component schema, its Worker bindings, and the browser
+        // build all come from the same `--agent-plugins` selection below.
+        ...(input.agentPlugins
+          ? [
+              {
+                name: "central.agent_plugins.convex_profile",
+                cwd: serverRoot,
+                cmd: "bun",
+                args: ["run", "scripts/agent-plugins/build-convex-profile.ts", "--enabled"],
+              },
+              {
+                name: input.dryRun
+                  ? "central.agent_plugins.convex.dry_run"
+                  : "central.agent_plugins.convex.deploy",
+                cwd: agentPluginsConvexProfileRoot,
+                cmd: "bunx",
+                args: [
+                  "convex",
+                  "deploy",
+                  "--typecheck-components",
+                  ...(input.dryRun ? ["--dry-run"] : []),
+                  "--message",
+                  "Claxedo Agent Plugins deployment profile",
+                ],
+              },
+              {
+                name: "central.agent_plugins.profile",
+                cwd: serverRoot,
+                cmd: "bun",
+                args: [
+                  "run",
+                  "scripts/agent-plugins/build-worker-profile.ts",
+                  ...(input.staging ? ["--staging"] : []),
+                ],
+              },
+            ]
+          : []),
         {
           name: input.dryRun ? "better_auth_d1.release.preflight" : "better_auth_d1.release.deploy",
           cwd: serverRoot,
@@ -77,7 +117,13 @@ export function hostedDeployCommands(input: {
         name: "cloudflare_sandbox.bundle_host",
         cwd: sandboxScriptsRoot,
         cmd: "npx",
-        args: ["tsx", "build-sandbox-image.ts", "--bundle-only", `--out=${path.join(cloudflareSandboxRoot, ".build")}`],
+        args: [
+          "tsx",
+          "build-sandbox-image.ts",
+          "--bundle-only",
+          ...(input.agentPlugins ? ["--agent-plugins"] : []),
+          `--out=${path.join(cloudflareSandboxRoot, ".build")}`,
+        ],
       }
       return input.dryRun
         ? [
@@ -160,6 +206,7 @@ async function main() {
     staging: process.argv.includes("--staging"),
     dryRun,
     targets: requestedTargets,
+    agentPlugins: process.argv.includes("--agent-plugins"),
   })
   for (const command of commands) {
     await run(command)

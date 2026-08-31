@@ -19,8 +19,15 @@ import {
   type VerifyResult,
 } from "./types.js"
 
-function declaredNonSecretFields(decl: IntegrationDeclaration, fields: ConnectionFields): ConnectionFields {
-  const allowed = new Set((decl.prompts ?? []).filter((prompt) => !prompt.secret).map((prompt) => prompt.id))
+function declaredNonSecretFields(
+  decl: IntegrationDeclaration,
+  fields: ConnectionFields,
+  canonicalFieldIds: readonly string[] = [],
+): ConnectionFields {
+  const allowed = new Set([
+    ...(decl.prompts ?? []).filter((prompt) => !prompt.secret).map((prompt) => prompt.id),
+    ...canonicalFieldIds,
+  ])
   return Object.fromEntries(Object.entries(fields).filter(([key]) => allowed.has(key)))
 }
 
@@ -35,11 +42,12 @@ function declaredNonSecretFields(decl: IntegrationDeclaration, fields: Connectio
  */
 function canonicalFields(
   decl: IntegrationDeclaration,
+  canonicalFieldIds: readonly string[] | undefined,
   fields: ConnectionFields,
   verified: ConnectionFields | undefined,
 ): ConnectionFields {
   if (!verified) return fields
-  return { ...fields, ...declaredNonSecretFields(decl, verified) }
+  return { ...fields, ...declaredNonSecretFields(decl, verified, canonicalFieldIds) }
 }
 
 function requirePersonalOwner(input: { owner?: string; scope?: ConnectionScope }) {
@@ -292,7 +300,7 @@ export function createConnectionsService(deps: {
       await storeConnection({
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
-        fields: canonicalFields(entry.decl, fields, verified.fields),
+        fields: canonicalFields(entry.decl, entry.impl.canonicalFields, fields, verified.fields),
         ...(verified.accountLabel !== undefined ? { accountLabel: verified.accountLabel } : {}),
         kind: "api_key",
         secret: input.secret,
@@ -304,6 +312,7 @@ export function createConnectionsService(deps: {
       integrationId: string
       owner?: string
       teamOwner?: string
+      attemptRouting?: Record<string, string>
       confirmReplace?: boolean
     }): Promise<
       | { ok: true; url: string; attemptId: string; userCode?: string; intervalMs?: number }
@@ -329,6 +338,7 @@ export function createConnectionsService(deps: {
           ...(input.owner !== undefined ? { owner: input.owner } : {}),
           scope,
           deviceCode: grant.deviceCode,
+          ...(input.attemptRouting ? { routing: { ...input.attemptRouting } } : {}),
         })
         return {
           ok: true,
@@ -343,6 +353,8 @@ export function createConnectionsService(deps: {
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
         scope,
+        ...(entry.impl.attemptContext ? { context: { ...entry.impl.attemptContext } } : {}),
+        ...(input.attemptRouting ? { routing: { ...input.attemptRouting } } : {}),
       })
       const url = await entry.impl.authorize!(attempt.state, attempt.verifier)
       return { ok: true, url: url.toString(), attemptId: attempt.state }
@@ -396,7 +408,7 @@ export function createConnectionsService(deps: {
       return attempts.status(state)
     },
 
-    async handleCallback(state: string, code: string | undefined): Promise<{ ok: boolean }> {
+    async handleCallback(state: string, code: string | undefined, response?: { issuer?: string }): Promise<{ ok: boolean }> {
       const pending = await attempts.consume(state)
       if (!pending) return { ok: false }
       if (code === undefined) {
@@ -409,11 +421,11 @@ export function createConnectionsService(deps: {
         return { ok: false }
       }
       try {
-        const oauthTokens = await entry.impl.callback(code, pending.verifier)
-        await storeConnection({
-          integrationId: pending.integrationId,
-          ...(pending.owner !== undefined ? { owner: pending.owner } : {}),
-          fields: {},
+      const oauthTokens = await entry.impl.callback(code, pending.verifier, pending.context, response)
+      await storeConnection({
+        integrationId: pending.integrationId,
+        ...(pending.owner !== undefined ? { owner: pending.owner } : {}),
+        fields: canonicalFields(entry.decl, entry.impl.canonicalFields, {}, oauthTokens.fields),
           kind: "oauth_token",
           secret: JSON.stringify({
             access: oauthTokens.accessToken,
@@ -478,7 +490,7 @@ export function createConnectionsService(deps: {
         // repair path for a row stored before an impl started returning
         // canonical values. Only write when the canonical form actually
         // differs, so a healthy reverify stays a status-only update.
-        const canonical = canonicalFields(entry.decl, row.fields, verified.fields)
+        const canonical = canonicalFields(entry.decl, entry.impl.canonicalFields, row.fields, verified.fields)
         if (JSON.stringify(canonical) !== JSON.stringify(row.fields)) {
           await deps.connections.upsert({ ...row, fields: canonical, updatedAt: now() })
         }

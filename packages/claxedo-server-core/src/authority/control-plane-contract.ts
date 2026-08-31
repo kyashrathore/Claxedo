@@ -14,8 +14,7 @@
 
 import type { SessionProjectionStore } from "./session-projection"
 import type { RelayProvider } from "../adapters/relay-port"
-import type { AgentExtensionPolicyOverride } from "../hosts/agent-extensions/runtime-config"
-import type { ControlPlaneAuthAdapter, SignedControlPlaneAuth } from "../platform/auth/auth"
+import type { ControlPlaneAuthAdapter } from "../platform/auth/auth"
 import type { WorkspaceAuthority } from "../platform/auth/authority"
 import type { ControlPlaneTelemetry } from "../platform/telemetry/ports"
 import type { DurableSessionLog } from "../platform/auth/durable-session-log"
@@ -44,15 +43,6 @@ export class ControlPlaneCompositionError extends Error {
   ) {
     super(message)
   }
-}
-
-export type ControlPlaneExtensionPolicy = {
-  agentExtensionPolicyOverrides?: AgentExtensionPolicyOverride[] | ((input: {
-    scope: "project" | "machine" | "workspace"
-    workspaceId?: string
-    directory?: string
-    auth?: SignedControlPlaneAuth
-  }) => AgentExtensionPolicyOverride[] | Promise<AgentExtensionPolicyOverride[]>)
 }
 
 export type ControlPlaneSandbox = {
@@ -124,7 +114,6 @@ export type ControlPlaneServicesContract = {
   sessionWriteMode?: () => SessionWriteMode
   auth: ControlPlaneAuthAdapter
   credentials: ControlPlaneCredentials
-  extensionPolicy: ControlPlaneExtensionPolicy
   sandbox: ControlPlaneSandbox
   telemetry: ControlPlaneTelemetry
   localExecution: ControlPlaneLocalExecution

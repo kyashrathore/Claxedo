@@ -197,7 +197,7 @@ describe("codexAppServerAdapter", () => {
     agent.ingest({
       source: "codex.app-server",
       method: "item/commandExecution/outputDelta",
-      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "total 0\n.agent-extensions" },
+      payload: { threadId: "thread-1", turnId: "turn-1", itemId: "cmd-1", delta: "total 0\n.generated" },
     })
 
     // Codex streams stdout via outputDelta and then completes with aggregatedOutput: null.
@@ -222,7 +222,7 @@ describe("codexAppServerAdapter", () => {
 
     const event = events.find((item) => item.type === "tool-output")
     const output = event && "output" in event ? event.output : undefined
-    expect(output).toBe("total 0\n.agent-extensions")
+    expect(output).toBe("total 0\n.generated")
   })
 
   test("maps lower-level command output streams to running tool content", () => {

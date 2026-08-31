@@ -8,8 +8,6 @@
   "app/workbench/state/route-session-harness.ts",
   "features/session/composer/ui/submit-create-session.test.ts",
   "app/providers/global-sync/bootstrap.test.ts",
-  "features/extensions/marketplace/install-flow.test.ts",
-  "features/extensions/marketplace/install-flow.ts",
   "features/session/ui/use-session-commands.tsx",
   "features/session/composer/model-strategy.test.ts",
   "features/session/harness/profile.test.ts",

@@ -146,8 +146,20 @@ async function resolveEgressSecret(env: Env, sandboxId: string, host: string) {
 const WORKSPACE_RUNTIME_PORT = 2593
 const TRACE_ID_HEADER = "x-claxedo-trace-id"
 const CONTAINER_OPERATION_TIMEOUT_MS = 10_000
+const SANDBOX_INSTANCE_TIMEOUT_MS = 60_000
+const SANDBOX_PORT_TIMEOUT_MS = 180_000
+// The first listProcesses() call is also the lazy container cold start. Its
+// caller-side bound must cover both SDK startup phases plus a small RPC margin.
+const SANDBOX_PROCESS_LOOKUP_TIMEOUT_MS = SANDBOX_INSTANCE_TIMEOUT_MS + SANDBOX_PORT_TIMEOUT_MS + 10_000
 const RUNTIME_READY_TIMEOUT_MS = 30_000
 const RUNTIME_PROCESS_ID = "claxedo-workspace-runtime"
+
+const SANDBOX_OPTIONS = {
+  containerTimeouts: {
+    instanceGetTimeoutMS: SANDBOX_INSTANCE_TIMEOUT_MS,
+    portReadyTimeoutMS: SANDBOX_PORT_TIMEOUT_MS,
+  },
+} as const
 
 interface SandboxProcess {
   id: string
@@ -220,7 +232,11 @@ async function runtimeReady(process: SandboxProcess, port: number, timeout = RUN
 }
 
 async function runtimeProcess(sandbox: SandboxOperations) {
-  return bounded(sandbox.listProcesses(), "workspace-runtime process lookup")
+  return bounded(
+    sandbox.listProcesses(),
+    "workspace-runtime process lookup",
+    SANDBOX_PROCESS_LOOKUP_TIMEOUT_MS,
+  )
     .then((processes) => processes.find((process) => process.id === RUNTIME_PROCESS_ID) ?? null)
 }
 
@@ -305,7 +321,7 @@ export default {
     // control actions below (ensure-runtime/touch-runtime/destroy).
     if (parts[0] === "sandbox" && parts[1] && parts[2] === "proxy") {
       const startedAt = performance.now()
-      const sandbox = getSandbox(env.Sandbox, parts[1])
+      const sandbox = getSandbox(env.Sandbox, parts[1], SANDBOX_OPTIONS)
       const target = new URL(request.url)
       target.pathname = "/" + parts.slice(3).join("/")
       // Rewritten Request inherits method, headers (incl. the relay's RHT) and
@@ -379,7 +395,7 @@ export default {
 
     const sandboxId = parts[1]
     const action = parts[2] || ""
-    const sandbox = getSandbox(env.Sandbox, sandboxId) as ReturnType<typeof getSandbox> & ManagedSandbox
+    const sandbox = getSandbox(env.Sandbox, sandboxId, SANDBOX_OPTIONS) as ReturnType<typeof getSandbox> & ManagedSandbox
 
     try {
       // DELETE /sandbox/:id

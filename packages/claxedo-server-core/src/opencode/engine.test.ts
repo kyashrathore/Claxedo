@@ -4,6 +4,8 @@ import os from "os"
 import path from "path"
 import {
   __setOpenCodeEmbedLoaderForTests,
+  applyOpenCodeManagedConfig,
+  clearOpenCodeManagedConfig,
   configureOpenCodeApplicationTools,
   configureOpenCodeEmbedPath,
   configureOpenCodeWorkerPath,
@@ -19,8 +21,12 @@ import {
 import { configureOpenCodeAuth } from "./auth"
 
 const originalFetch = globalThis.fetch
+const originalOpenCodeConfigContent = process.env.OPENCODE_CONFIG_CONTENT
 
-afterEach(() => {
+afterEach(async () => {
+  await clearOpenCodeManagedConfig()
+  if (originalOpenCodeConfigContent === undefined) delete process.env.OPENCODE_CONFIG_CONTENT
+  else process.env.OPENCODE_CONFIG_CONTENT = originalOpenCodeConfigContent
   globalThis.fetch = originalFetch
   configureOpenCodeEmbedPath(undefined)
   configureOpenCodeWorkerPath(undefined)
@@ -89,6 +95,40 @@ describe("opencode-engine URL mode", () => {
 })
 
 describe("opencode-engine embedded mode", () => {
+  test("merges managed plugin config into the caller config and drains stale instances", async () => {
+    process.env.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      skills: { paths: ["/user/skill"] },
+      mcp: { user: { type: "remote", url: "https://user.example" } },
+    })
+    const dispose = vi.fn(async () => {})
+    __setOpenCodeEmbedLoaderForTests(async () => ({
+      Server: { Default: () => ({ app: { fetch: async () => Response.json({ ok: true }) } }) },
+      InstanceRuntime: { disposeAllInstances: dispose },
+    }) as never)
+
+    await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
+    await applyOpenCodeManagedConfig({
+      skills: { paths: ["/plugins/review/skills"] },
+      mcp: { review: { type: "remote", url: "https://plugin.example" } },
+    })
+
+    expect(dispose).toHaveBeenCalledTimes(1)
+    expect(JSON.parse(process.env.OPENCODE_CONFIG_CONTENT!)).toEqual({
+      skills: { paths: ["/user/skill", "/plugins/review/skills"] },
+      mcp: {
+        user: { type: "remote", url: "https://user.example" },
+        review: { type: "remote", url: "https://plugin.example" },
+      },
+    })
+    expect(opencodeEngineLoaded()).toBe(false)
+  })
+
+  test("fails closed instead of pretending to configure an external engine", async () => {
+    configureOpenCodeEngine({ url: "https://opencode.example" })
+    await expect(applyOpenCodeManagedConfig({ skills: { paths: ["/plugin/skills"] } }))
+      .rejects.toThrow("external engine URL")
+  })
+
   test("rejects with a structured, actionable error when the engine artifact fails to load", async () => {
     configureOpenCodeEngine({ embedded: true })
     expect(opencodeEngineMode()).toBe("embedded")

@@ -8,7 +8,6 @@ export const runtimePackages = [
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay" },
   { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime" },
   { name: "@claxedo/agent-sdk-runtime", dir: "packages/agent-sdk-runtime" },
-  { name: "@claxedo/agent-extensions", dir: "packages/agent-extensions" },
   { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime" },
 ] as const
 

@@ -1,5 +1,4 @@
 import type { ControlPlaneTelemetry } from "@claxedo/server-core/platform/telemetry/ports"
-import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "@claxedo/server-core/credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "@claxedo/server-core/credentials/operations/discovery"
@@ -10,7 +9,6 @@ import type { ProjectionStore } from "./projection-store"
 import {
   ControlPlaneCompositionError,
   type ControlPlaneCredentials,
-  type ControlPlaneExtensionPolicy,
   type ControlPlaneLocalExecution,
   type ControlPlaneSandbox,
   type ControlPlaneServicesContract,
@@ -28,7 +26,6 @@ export type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 export {
   ControlPlaneCompositionError,
   type ControlPlaneCredentials,
-  type ControlPlaneExtensionPolicy,
   type ControlPlaneLocalExecution,
   type ControlPlaneSandbox,
   type CredentialSyncResult,
@@ -67,7 +64,6 @@ export type ControlPlaneServicesOptions = {
   authority?: WorkspaceAuthority | null
   auth?: ControlPlaneAuthAdapter
   credentials?: ControlPlaneCredentials
-  extensionPolicy?: ControlPlaneExtensionPolicy
   relay?: ControlPlaneRelay
   sandbox?: HostedControlPlaneSandbox
   telemetry?: ControlPlaneTelemetry
@@ -77,11 +73,10 @@ export type ControlPlaneServicesOptions = {
 
 export type HostedControlPlaneServicesOptions = Omit<
   ControlPlaneServicesOptions,
-  "auth" | "credentials" | "extensionPolicy" | "relay" | "sandbox" | "telemetry" | "authority"
+  "auth" | "credentials" | "relay" | "sandbox" | "telemetry" | "authority"
 > & {
   auth: ControlPlaneAuthAdapter
   credentials: ControlPlaneCredentials
-  extensionPolicy: ControlPlaneExtensionPolicy
   relay: ControlPlaneRelay
   sandbox: HostedControlPlaneSandbox
   telemetry: ControlPlaneTelemetry
@@ -122,7 +117,6 @@ function validateHostedServices(input: HostedCentralStorePorts, options: HostedC
   }
   requiredHostedDependency(options.authority, "workspace authority")
   requiredHostedDependency(options.credentials, "shared credentials")
-  requiredHostedDependency(options.extensionPolicy, "Agent Extension policy")
   requiredHostedDependency(options.relay?.relayUrl, "hosted relay URL")
   requiredHostedDependency(options.relay?.resolverToken, "Relay resolver token")
   requiredHostedDependency(options.relay?.runtimeAccessTokenSigner, "Runtime Access Token signer")
@@ -139,7 +133,6 @@ export function createControlPlaneServices(
   const durableSessionLog = input.durableSessionLog
   const auth = options.auth ?? { config: { enabled: false as const, mode: "local-only" as const, reason: "no auth adapter configured" } }
   const credentials = options.credentials ?? defaultControlPlaneCredentials()
-  const extensionPolicy = options.extensionPolicy ?? {}
   const relay = options.relay ?? {}
   const sandbox = options.sandbox ?? {}
   const telemetry = options.telemetry ?? { capture: () => {} }
@@ -151,7 +144,6 @@ export function createControlPlaneServices(
     ...(input.sessionWriteMode ? { sessionWriteMode: input.sessionWriteMode } : {}),
     auth,
     credentials,
-    extensionPolicy,
     relay,
     sandbox,
     telemetry,

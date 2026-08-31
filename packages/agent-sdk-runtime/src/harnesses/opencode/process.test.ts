@@ -4,7 +4,7 @@ import { EventEmitter } from "events"
 import fs from "fs"
 import os from "os"
 import path from "path"
-import { OpenCodeServerProcess, redact } from "./process"
+import { mergeOpenCodeConfigContent, OpenCodeServerProcess, redact } from "./process"
 
 const inputs = { config: () => ({}), auth: () => ({}) }
 
@@ -80,6 +80,29 @@ afterEach(async () => {
 })
 
 describe("opencode server process", () => {
+  test("merges plugin skills and MCP without replacing caller inline config", () => {
+    const merged = mergeOpenCodeConfigContent(
+      JSON.stringify({
+        model: "openai/gpt-5",
+        skills: { paths: ["/user/skills"] },
+        mcp: { user: { type: "remote", url: "https://user.example" } },
+      }),
+      {
+        skills: { paths: ["/plugin/skills", "/user/skills"] },
+        mcp: { plugin: { type: "remote", url: "https://plugin.example" } },
+      },
+    )
+
+    expect(JSON.parse(merged)).toEqual({
+      model: "openai/gpt-5",
+      skills: { paths: ["/user/skills", "/plugin/skills"] },
+      mcp: {
+        user: { type: "remote", url: "https://user.example" },
+        plugin: { type: "remote", url: "https://plugin.example" },
+      },
+    })
+  })
+
   test("external-URL mode neither spawns nor invents a credential", async () => {
     // An operator-supplied server is not ours to authenticate. Its credential,
     // if any, arrives through the caller's own headers.

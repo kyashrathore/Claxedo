@@ -218,11 +218,12 @@ describe("the unsigned desktop renderer entry", () => {
     for (const [name, pattern] of Object.entries(BINDINGS)) {
       expect(pattern.test(entry), `the unsigned entry must not bind ${name}`).toBe(false)
     }
-    // `startDesktopRenderer()` with no argument is what makes the platform
-    // descriptor omit `getAuthToken` and `authEnabled` resolve false; an
-    // argument here would compose hosted contributions in a build with no
-    // provider to sign into.
-    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions,\s*serviceContributionLoaders\s*\}\)/)
+    // Every value is an optional build-composition loader. In the unsigned,
+    // feature-disabled artifact the compile-time defines make them undefined;
+    // none of them is an identity port or carries a bearer.
+    expect(entry).toMatch(
+      /startDesktopRenderer\(\{\s*loadHostedContributions,\s*serviceContributionLoaders,\s*loadAgentPluginContributions\s*\}\)/,
+    )
   })
 })
 

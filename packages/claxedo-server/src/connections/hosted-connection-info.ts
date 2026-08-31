@@ -94,7 +94,19 @@ export async function hostedConnectionInfo(
     },
   })
 
-  const ensured = await hostManager.ensure(workspaceId, { homeRegion })
+  let preparation
+  try {
+    preparation = await options.prepareRuntime?.(workspaceId)
+  } catch (cause) {
+    return {
+      error: apiError("runtime_prepare_failed", cause instanceof Error ? cause.message : "Runtime preparation failed"),
+      status: 409,
+    } as const
+  }
+  const ensured = await hostManager.ensure(workspaceId, {
+    homeRegion,
+    ...(preparation?.secrets?.length ? { secrets: preparation.secrets } : {}),
+  })
   captureWorkspaceTelemetry({
     services,
     auth,
@@ -146,6 +158,18 @@ export async function hostedConnectionInfo(
       error: apiError("cloud_runtime_unavailable", "Cloud runtime is unavailable", {
         retryAfterMs: ensured.retryAfterMs,
       }),
+      status: 409,
+    } as const
+  }
+
+  // The sandbox process being healthy is not the product-ready boundary.
+  // Build-selected runtime contributions materialize their authoritative
+  // state here; failure prevents token minting instead of exposing a partial VM.
+  try {
+    await options.provisionRuntime?.(workspaceId, preparation)
+  } catch (cause) {
+    return {
+      error: apiError("runtime_provision_failed", cause instanceof Error ? cause.message : "Runtime provisioning failed"),
       status: 409,
     } as const
   }

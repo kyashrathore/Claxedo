@@ -7,7 +7,8 @@
 import * as fs from "fs"
 import * as os from "os"
 import * as path from "path"
-import { materializeAgentHooks, OPENCODE_DOC_AGENT_FILE } from "@claxedo/agent-extensions"
+import { materializeAgentHooks } from "./materialize-status-hooks"
+import { OPENCODE_DOC_AGENT_FILE } from "./opencode/doc-agent"
 import { Log } from "../log"
 import {
   BIN_DIR,

@@ -51,7 +51,6 @@ const mocks = {
   getSupervisorSandboxTarget: vi.fn(() => undefined),
   holdSupervisorSandbox: vi.fn(),
   releaseSupervisorSandbox: vi.fn(),
-  syncWorkspaceRuntimeAgentExtensions: vi.fn(async () => {}),
   broadcastRuntimeConfig: vi.fn(async () => {}),
   configureWorkspaceSupervisor: vi.fn(),
   shutdownWorkspaceSupervisor: vi.fn(async () => {}),
@@ -140,9 +139,6 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   deleteWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.delete(directory)),
 }))
 
-// Agent-extension sync reaches the supervisor through the composed port now,
-// so the same spy is installed there. Mocking the module alone would leave the
-// assertion below passing against a call nothing makes.
 const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 configureWorkspaceSupervisorPort({
   hold() {},
@@ -150,7 +146,6 @@ configureWorkspaceSupervisorPort({
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
-  syncAgentExtensions: async (...args) => { await mocks.syncWorkspaceRuntimeAgentExtensions(...(args as unknown as [])) },
 })
 
 vi.mock("../../workspace/supervisor", () => ({
@@ -164,7 +159,6 @@ vi.mock("../../workspace/supervisor", () => ({
   getSupervisorSandboxTarget: mocks.getSupervisorSandboxTarget,
   holdSupervisorSandbox: mocks.holdSupervisorSandbox,
   releaseSupervisorSandbox: mocks.releaseSupervisorSandbox,
-  syncWorkspaceRuntimeAgentExtensions: mocks.syncWorkspaceRuntimeAgentExtensions,
   broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
   configureWorkspaceSupervisor: mocks.configureWorkspaceSupervisor,
   shutdownWorkspaceSupervisor: mocks.shutdownWorkspaceSupervisor,
@@ -217,7 +211,6 @@ function services(): ControlPlaneServices {
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
     },
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },
@@ -300,16 +293,6 @@ function services(): ControlPlaneServices {
       runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
       revokeRuntimeAccessToken: vi.fn(async () => ({})),
       revokeRuntimeAccessTokensForWorkspaceUser: vi.fn(async () => ({})),
-      listWorkspaceAgentExtensions: vi.fn(async () => []),
-      listWorkspaceAgentExtensionsForRuntime: vi.fn(async () => []),
-      authorizeWorkspaceAgentExtensionsAdmin: vi.fn(async () => {}),
-      upsertWorkspaceAgentExtension: vi.fn(async () => ({})),
-      setWorkspaceAgentExtensionEnabled: vi.fn(async () => ({})),
-      deleteWorkspaceAgentExtension: vi.fn(async () => ({})),
-      listAgentExtensionPolicyOverrides: vi.fn(async () => []),
-      listAgentExtensionPolicyOverridesForRuntime: vi.fn(async () => []),
-      setAgentExtensionPolicyOverride: vi.fn(async () => ({})),
-      deleteAgentExtensionPolicyOverride: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => {}),
       auditAllow: vi.fn(async () => {}),
     },
@@ -1807,35 +1790,6 @@ describe("workspace routes signed control plane authority", () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
-    svc.authority!.listWorkspaceAgentExtensions = vi.fn(async () => [
-      {
-        desired: {
-          id: "review",
-          package_name: "review",
-          source: { type: "github", owner: "acme", repo: "review" },
-          scope: "workspace",
-          enabled: true,
-          targets: ["cursor"],
-          installed_at: 1,
-          updated_at: 1,
-        },
-        lock: {
-          source: { type: "github", owner: "acme", repo: "review" },
-          resolved_sha: "abcdef1234567890",
-          manifest_digests: { package: "abc" },
-          component_digests: { package: "abc" },
-          targets: ["cursor"],
-        },
-      },
-    ])
-    svc.authority!.listAgentExtensionPolicyOverrides = vi.fn(async () => [
-      {
-        id: "review",
-        scope: "user" as const,
-        enabled: false,
-        reason: "disabled by user",
-      },
-    ])
     const signer = vi.fn(async () => ({
       runtimeAccessToken: "rat_123",
       tokenExpiresAt: 123_000,
@@ -1911,24 +1865,6 @@ describe("workspace routes signed control plane authority", () => {
           hostId: "ws_1",
           expiresAt: 123_000,
         },
-      },
-    )
-    expect(mocks.syncWorkspaceRuntimeAgentExtensions).toHaveBeenCalledWith(
-      "ws_1",
-      [
-        expect.objectContaining({
-          desired: expect.objectContaining({ id: "review" }),
-        }),
-      ],
-      {
-        policyOverrides: [
-          {
-            id: "review",
-            scope: "user",
-            enabled: false,
-            reason: "disabled by user",
-          },
-        ],
       },
     )
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "control_plane.auth.signed", {

@@ -1850,13 +1850,14 @@ export function createSessionRoutes(opts: Opts) {
       if (admitted.rejected) return admitted.rejected
       const { id, directory, adapter, sessionId } = admitted
       const body = (await c.req.json().catch(() => ({}))) as { answer?: string; answers?: string[][] }
-      const result = await adapter.replyQuestion!(id, body.answer ?? "", directory)
+      const answer = body.answer ?? body.answers?.[0]?.[0] ?? ""
+      const result = await adapter.replyQuestion!(id, answer, directory)
       publishInteractionEvents(
         opts.publishGlobal,
         directory,
         sessionId,
         result?.events,
-        questionReplied(sessionId, id, body.answers ?? [[body.answer ?? ""]]),
+        questionReplied(sessionId, id, body.answers ?? [[answer]]),
       )
       return c.json({ ok: true })
     })

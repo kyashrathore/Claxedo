@@ -148,10 +148,6 @@ mock.module("@/features/session/ui/model/select-model", () => ({
   },
 }))
 
-mock.module("@/features/session/ui/dialogs/select-mcp", () => ({
-  DialogSelectMcp: () => undefined,
-}))
-
 mock.module("@/features/session/ui/dialogs/fork", () => ({
   DialogFork: () => undefined,
 }))

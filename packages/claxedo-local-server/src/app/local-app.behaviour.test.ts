@@ -3,7 +3,9 @@ import { mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync } from "node
 import { execFileSync } from "node:child_process"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { Hono } from "hono"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { claxedoBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalDaemonLifecycle } from "./local-daemon-lifecycle"
@@ -54,7 +56,6 @@ function services(overrides: Record<string, unknown> = {}) {
       updateCredentialStatus: async () => {},
       syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
     },
-    extensionPolicy: {},
     localExecution: { enabled: true },
     telemetry: { capture: vi.fn() },
     projectionStore: {
@@ -148,6 +149,44 @@ describe("local composition — sandbox driver settings", () => {
 })
 
 describe("local composition — health and telemetry", () => {
+  test("serves the dedicated control-plane event stream", async () => {
+    const controller = new AbortController()
+    const response = await app().request("http://127.0.0.1/api/claxedo/events", {
+      signal: controller.signal,
+    })
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("text/event-stream")
+
+    const reader = response.body!.getReader()
+    const decoder = new TextDecoder()
+    let received = ""
+    while (!received.includes("local-event-stream-probe")) {
+      const next = await reader.read()
+      if (next.done) break
+      received += decoder.decode(next.value, { stream: true })
+      if (!received.includes("local-event-stream-probe")) {
+        claxedoBus.publish({
+          type: "document.changed",
+          documentId: "local-event-stream-probe",
+          orgId: "local-test-org",
+          projectId: "local-test-project",
+          ts: 1,
+        })
+      }
+    }
+    controller.abort()
+
+    expect(received).toContain('"type":"document.changed"')
+    expect(received).toContain("local-event-stream-probe")
+    expect(received).not.toContain('"payload":{"type":"document.changed"')
+  }, 10_000)
+
+  test("disabled composition does not own the optional Agent Plugins API", async () => {
+    const local = app()
+    expect((await local.request("http://localhost/api/claxedo/plugins")).status).toBe(404)
+  })
+
   test("health reports the fields the shell reads", async () => {
     const body = await (await app().request("http://localhost/api/claxedo/health")).json() as Record<string, unknown>
 
@@ -271,6 +310,22 @@ describe("local composition — health and telemetry", () => {
 
     expect(response.status).toBe(200)
     expect(capture).toHaveBeenCalledWith("d", "e", { a: 1 })
+  })
+})
+
+describe("local composition — optional route contributions", () => {
+  test("mounts no agent-plugin route unless the product explicitly contributes it", async () => {
+    expect((await app().request("http://localhost/api/claxedo/agent-plugins")).status).toBe(404)
+  })
+
+  test("mounts a supplied contribution through the generic composition seam", async () => {
+    const routes = new Hono().get("/", (c) => c.json({ feature: "agent-plugins" }))
+    const response = await app({
+      routeContributions: [{ id: "agent-plugins", path: "/api/claxedo/agent-plugins", routes }],
+    }).request("http://localhost/api/claxedo/agent-plugins")
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ feature: "agent-plugins" })
   })
 })
 

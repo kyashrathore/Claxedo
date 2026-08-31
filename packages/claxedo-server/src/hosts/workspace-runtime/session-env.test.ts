@@ -20,7 +20,6 @@ configureLocalWorkspaceRuntime({
     const runtime = await mocks.ensureEmbeddedWorkspaceRuntime(ws)
     return runtime.app.fetch(request)
   },
-  async syncAgentExtensions() {},
 })
 
 vi.mock("@claxedo/server-core/workspace/store/index", () => ({

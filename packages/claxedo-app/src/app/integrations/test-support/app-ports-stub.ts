@@ -103,14 +103,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
     const { openSettingsProviders } = require("@/features/settings/open-settings-providers") as typeof import("@/features/settings/open-settings-providers")
     return openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
   },
-  filterMcpCatalogEntries: lazy("@/features/extensions/marketplace/api", "filterMcpCatalogEntries"),
-  installDisabledReasonForEntry: lazy("@/features/extensions/marketplace/api", "installDisabledReasonForEntry"),
-  installMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "installMcpDialogEntry"),
-  isEntryInstalled: lazy("@/features/extensions/marketplace/api", "isEntryInstalled"),
-  loadMcpDialogData: lazy("@/features/extensions/marketplace/api", "loadMcpDialogData"),
-  sourceLabel: lazy("@/features/extensions/marketplace/api", "sourceLabel"),
-  targetLabel: lazy("@/features/extensions/marketplace/api", "targetLabel"),
-  uninstallMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "uninstallMcpDialogEntry"),
   listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
   documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),
 }

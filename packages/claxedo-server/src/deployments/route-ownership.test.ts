@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest"
 import { Hono } from "hono"
-import { DuplicateRouteOwner, createRouteOwnership, withRouteOwnership } from "./route-ownership"
+import { DuplicateRouteOwner, createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "./route-ownership"
 
 /**
  * The guard, and the behaviour it exists to make impossible.
@@ -122,5 +122,33 @@ describe("withRouteOwnership", () => {
     expect(() =>
       withRouteOwnership(app, ownership, "self-hosted-node").route("/api/claxedo/documents", new Hono() as never),
     ).toThrow(/signed-control-plane.*self-hosted-node/)
+  })
+})
+
+describe("mountOwnedRoute", () => {
+  test("mounts a contribution under its own owner after the core wrapper is installed", async () => {
+    const ownership = createRouteOwnership()
+    const app = withRouteOwnership(new Hono(), ownership, "core")
+    app.route("/api/core", new Hono().get("/", (c) => c.text("core")) as never)
+
+    mountOwnedRoute(
+      app,
+      ownership,
+      "feature:agent-plugins",
+      "/api/agent-plugins",
+      new Hono().get("/", (c) => c.text("plugins")) as never,
+    )
+
+    expect(await (await app.request("/api/agent-plugins")).text()).toBe("plugins")
+    expect(ownership.owner("/api/agent-plugins")).toBe("feature:agent-plugins")
+  })
+
+  test("rejects a contribution that claims a core prefix", () => {
+    const ownership = createRouteOwnership()
+    const app = withRouteOwnership(new Hono(), ownership, "core")
+    app.route("/api/core", new Hono() as never)
+
+    expect(() => mountOwnedRoute(app, ownership, "feature", "/api/core", new Hono() as never))
+      .toThrow(DuplicateRouteOwner)
   })
 })

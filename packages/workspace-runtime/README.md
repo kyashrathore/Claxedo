@@ -133,10 +133,9 @@ Relay host helpers are intentionally exposed from
 `hostTunnelFromEnv`, `relayHostAuthFromEnv`, and
 `workspaceRelayRuntimeOptionsFromEnv`.
 
-The runtime root does not export Claxedo control-plane clients or
-agent-extension materializers. Hosts that need projection, metadata sync, or
-extension installation should compose those concerns outside the OSS runtime
-boundary.
+The runtime root does not export Claxedo control-plane clients or Agent Plugins
+materializers. Products that need catalog, activation, retained artifacts, or
+projection compose those concerns outside the OSS runtime boundary.
 
 ## Routes
 

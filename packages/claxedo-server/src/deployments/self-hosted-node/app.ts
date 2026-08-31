@@ -31,6 +31,10 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
+import {
+  mountControlPlaneRouteContributions,
+  type ControlPlaneRouteContribution,
+} from "@claxedo/server-core/platform/http/route-contribution"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
@@ -101,7 +105,7 @@ import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
-import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
+import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -702,6 +706,8 @@ export function createSelfHostedApp(
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
     connectionRateLimiter?: ConnectionRateLimiter
+    /** Explicit build/composition contributions; absent in the disabled product. */
+    routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -1122,7 +1128,6 @@ export function createSelfHostedApp(
       updateCentralSessionModel: centralControl.runtime.updateSessionModel,
       invalidateCentralSession: centralControl.runtime.invalidateSession,
       ...authRouteOptions(services),
-      agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
     }),
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
@@ -1240,6 +1245,17 @@ export function createSelfHostedApp(
     runtime: centralControl.runtime,
     includeFake: true,
     channels: controlPlaneChannels,
+  })
+
+  mountControlPlaneRouteContributions({
+    contributions: options.routeContributions ?? [],
+    mount: (contribution) => mountOwnedRoute(
+      app,
+      routeOwnership,
+      `feature:${contribution.id}`,
+      contribution.path,
+      contribution.routes as never,
+    ),
   })
 
   // Web UI parity: serve a built claxedo-app bundle from the box when

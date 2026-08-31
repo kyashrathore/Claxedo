@@ -7,11 +7,17 @@ const ROOT = path.resolve(import.meta.dirname, "..")
 const SERVER_SRC = path.resolve(ROOT, "../claxedo-server/src")
 
 describe("@claxedo/local-server/self-hosted-execution", () => {
-  it("is the only path @claxedo/server's PRODUCTION code takes into this package", () => {
+  it("keeps @claxedo/server production imports on the two declared composition boundaries", () => {
     // A host reaching a deep module path pins an internal layout this package
     // should be free to change. Tests are exempt on purpose: a test of a moved
     // module names it directly, and forcing those through a public facade would
     // either bloat the facade or stop the module being tested at all.
+    const allowed = new Set([
+      "@claxedo/local-server/self-hosted-execution",
+      // Optional VM image entry: it needs the filesystem materializer without
+      // pulling the complete self-hosted server into a cloud workspace image.
+      "@claxedo/local-server/agent-plugins/runtime/runtime-contribution",
+    ])
     const offenders: string[] = []
     const walk = (dir: string): string[] =>
       fs.readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
@@ -24,12 +30,16 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
     for (const file of walk(SERVER_SRC)) {
       for (const match of fs.readFileSync(file, "utf8").matchAll(/["'](@claxedo\/local-server(?:\/[\w./-]+)?)["']/g)) {
         const specifier = match[1]!
-        if (specifier === "@claxedo/local-server/self-hosted-execution") continue
+        if (allowed.has(specifier)) continue
         offenders.push(`${path.relative(SERVER_SRC, file)} -> ${specifier}`)
       }
     }
 
     expect(offenders).toEqual([])
+    expect(fs.readFileSync(path.join(
+      SERVER_SRC,
+      "hosts/workspace-runtime/host-entry.agent-plugins.ts",
+    ), "utf8")).toContain('from "@claxedo/local-server/agent-plugins/runtime/runtime-contribution"')
   })
 
   it("names nothing about Electron, a hosted capability, or who is signed in", () => {

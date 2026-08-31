@@ -619,6 +619,76 @@ describe("workspace runtime auth helpers", () => {
     expect(authCalls.at(-1)).toEqual({})
   })
 
+  test("passes only the selected harness opaque launch options to its adapter", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-harness-launch-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const applied: Record<string, unknown>[] = []
+    const adapter = {
+      adapterCapabilities: ["runtime-config"] as const,
+      setModel() {},
+      setAuth() {},
+      async applyConfig(config: Record<string, unknown>) { applied.push(config) },
+      async probeConfigOptions() { return [] },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "claude", access: "acp" },
+      harnesses: [{
+        match: (runner) => runner.id === "claude" && runner.access === "acp",
+        create: () => adapter,
+      }],
+    })
+    const response = await pushRuntimeConfig(app, {
+      version: 1,
+      harness: { id: "claude", access: "acp" },
+      auth: {},
+      mcp: {},
+      harnessLaunch: {
+        claude: { pluginRoots: ["/runtime/plugins/review"] },
+        codex: { pluginRoots: ["/runtime/plugins/other"] },
+      },
+    })
+    expect(response.status).toBe(200)
+    await app.request(`http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=claude-acp`)
+    expect(applied.at(-1)?.launch).toEqual({ pluginRoots: ["/runtime/plugins/review"] })
+  })
+
+  test("applies OpenCode launch config through the host-owned injected engine seam", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-opencode-launch-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const applied: Record<string, unknown>[] = []
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "opencode", access: "native" },
+      opencodeRequest: async (request) => {
+        return new URL(request.url).pathname === "/session/status"
+          ? Response.json({})
+          : Response.json([])
+      },
+      opencodeApplyLaunchConfig: async (config) => { applied.push(config) },
+    })
+
+    const response = await pushRuntimeConfig(app, {
+      version: 1,
+      harness: { id: "opencode", access: "native" },
+      auth: {},
+      mcp: {},
+      harnessLaunch: {
+        opencode: { config: { skills: { paths: ["/runtime/plugins/review/skills"] } } },
+      },
+    })
+    expect(response.status).toBe(200)
+
+    const sessions = await app.request(
+      `http://localhost/session?directory=${encodeURIComponent(dir)}&harness=opencode`,
+    )
+    expect(sessions.status).toBe(200)
+    expect(applied.at(-1)).toEqual({ skills: { paths: ["/runtime/plugins/review/skills"] } })
+  })
+
   test("harness config options probes a generic ACP's live session options", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-codex-live-"))
     tempDirs.push(dir)
@@ -783,6 +853,41 @@ describe("workspace runtime auth helpers", () => {
       fs.promises.mkdir = originalMkdir
       fs.promises.writeFile = originalWrite
     }
+  })
+
+  test("a feature launch update preserves the accepted harness, model, MCP, and auth state", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-launch-config-"))
+    tempDirs.push(dir)
+    const receiptDir = path.join(dir, "runtime-config")
+    const host = createWorkspaceHost({
+      harness: { id: "pi", access: "native" },
+      configApplyReceiptDir: receiptDir,
+    })
+    await host.apply({
+      version: 1,
+      mcp: { durable: { type: "stdio", command: "server" } },
+      runner: { type: "pi", model: "provider/model" },
+      auth: { openai: "secret-reference" },
+    })
+
+    await host.applyHarnessLaunch({ opencode: { config: { skills: { paths: ["/plugins"] } } } })
+
+    const receipt = JSON.parse(await fs.promises.readFile(path.join(receiptDir, "accepted-snapshot.json"), "utf8")) as {
+      snapshot: {
+        harness: { id: string; access: string }
+        model?: string
+        mcp: { keys: string[] }
+        auth: { keys: string[] }
+        harnessLaunch: { keys: string[] }
+      }
+    }
+    expect(receipt.snapshot).toMatchObject({
+      harness: { id: "pi", access: "native" },
+      model: "provider/model",
+      mcp: { keys: ["durable"] },
+      auth: { keys: ["openai"] },
+      harnessLaunch: { keys: ["opencode"] },
+    })
   })
 
   test("runner replacement aborts and drains active turns before disposing the old adapter", async () => {
@@ -2598,131 +2703,6 @@ describe("workspace runtime auth helpers", () => {
     })
   })
 
-  test("runtime config push replays agent_extensions snapshot", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-ext-replay-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-
-    // Host-owned state roots: both live OUTSIDE the workspace at `dir`, which
-    // is the point — a runtime apply must leave the user's checkout untouched.
-    const stateRoot = path.join(dir, "host-state", "agent-extensions")
-    const receiptDir = path.join(dir, "host-state", "runtime-config")
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      agentExtensionStateRoot: stateRoot,
-      configApplyReceiptDir: receiptDir,
-    })
-
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: { "openai": "sk-secret-runtime-config" },
-      mcp: {},
-      agent_extensions: {
-        version: 1,
-        installs: [],
-      },
-    })
-    expect(config.status).toBe(200)
-
-    const installed = await fs.promises.readFile(
-      path.join(stateRoot, "installed.json"),
-      "utf8",
-    )
-    expect(JSON.parse(installed)).toEqual({ version: 1, installs: [] })
-
-    const materialized = await fs.promises.readFile(
-      path.join(stateRoot, "materialized.json"),
-      "utf8",
-    )
-    expect(JSON.parse(materialized)).toMatchObject({ version: 1, packages: {} })
-
-    // The workspace itself stays clean — no generated state directories.
-    await expect(fs.promises.stat(path.join(dir, ".agent-extensions"))).rejects.toThrow()
-    await expect(fs.promises.stat(path.join(dir, ".workspace-runtime"))).rejects.toThrow()
-
-    const applyStatus = JSON.parse(await fs.promises.readFile(
-      path.join(receiptDir, "apply-status.json"),
-      "utf8",
-    ))
-    expect(applyStatus).toMatchObject({
-      state: "applied",
-      revision: 1,
-      harness: { id: "opencode", access: "native" },
-    })
-
-    const accepted = await fs.promises.readFile(
-      path.join(receiptDir, "accepted-snapshot.json"),
-      "utf8",
-    )
-    expect(accepted).not.toContain("sk-secret-runtime-config")
-    expect(JSON.parse(accepted)).toMatchObject({
-      revision: 1,
-      snapshot: {
-        mcp: { keys: [] },
-        auth: { keys: ["openai"] },
-        agent_extensions: {
-          version: 1,
-          installCount: 0,
-          installIds: [],
-        },
-      },
-    })
-  })
-
-  test("runtime config push is idempotent — repeated apply does not duplicate state", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-ext-idempotent-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-
-    const stateRoot = path.join(dir, "host-state", "agent-extensions")
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      agentExtensionStateRoot: stateRoot,
-    })
-
-    const snapshot = JSON.stringify({
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-      agent_extensions: { version: 1, installs: [] },
-    })
-
-    for (let i = 0; i < 3; i++) {
-      const res = await pushRuntimeConfig(app, JSON.parse(snapshot))
-      expect(res.status).toBe(200)
-    }
-
-    const installed = JSON.parse(await fs.promises.readFile(
-      path.join(stateRoot, "installed.json"),
-      "utf8",
-    )) as { installs: unknown[] }
-    expect(installed.installs).toEqual([])
-
-    const lock = JSON.parse(await fs.promises.readFile(
-      path.join(stateRoot, "lock.json"),
-      "utf8",
-    )) as { packages: Record<string, unknown> }
-    expect(lock.packages).toEqual({})
-
-    // Receipts are opt-in and this host did not ask for them, so three applies
-    // leave no receipt files anywhere in the workspace.
-    await expect(fs.promises.stat(path.join(dir, ".workspace-runtime"))).rejects.toThrow()
-  })
-
   test("re-applying an identical snapshot is a no-op that does not bump the revision", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-apply-noop-"))
     tempDirs.push(dir)
@@ -2735,7 +2715,6 @@ describe("workspace runtime auth helpers", () => {
     const host = mountTestHost(app, {
       opencodeUrl: "http://opencode.test",
       opencodeCompat: true,
-      agentExtensionStateRoot: path.join(dir, "host-state", "agent-extensions"),
     })
 
     const snapshot = {
@@ -2743,7 +2722,6 @@ describe("workspace runtime auth helpers", () => {
       runner: { type: "opencode" },
       auth: { openai: "sk-test" },
       mcp: { docs: { type: "stdio", command: "docs" } },
-      agent_extensions: { version: 1, installs: [] },
     }
 
     expect((await pushRuntimeConfig(app, snapshot)).status).toBe(200)
@@ -2755,7 +2733,6 @@ describe("workspace runtime auth helpers", () => {
     expect((await pushRuntimeConfig(app, {
       mcp: { docs: { command: "docs", type: "stdio" } },
       auth: { openai: "sk-test" },
-      agent_extensions: { installs: [], version: 1 },
       runner: { type: "opencode" },
       version: 1,
     })).status).toBe(200)
@@ -2767,121 +2744,6 @@ describe("workspace runtime auth helpers", () => {
       mcp: { docs: { type: "stdio", command: "docs-v2" } },
     })).status).toBe(200)
     expect(host.detail().configApply.revision).toBe(2)
-  })
-
-  test("a failed apply does not poison the signature — retrying the same snapshot re-applies", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-apply-retry-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-
-    const app = new Hono()
-    const host = mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      agentExtensionStateRoot: path.join(dir, "host-state", "agent-extensions"),
-    })
-
-    // Missing resolved_sha ⇒ replay fails.
-    const broken = {
-      version: 1 as const,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-      agent_extensions: {
-        version: 1,
-        installs: [{
-          desired: {
-            id: "broken",
-            package_name: "broken",
-            source: { type: "github", owner: "acme", repo: "broken" },
-            enabled: true,
-            targets: ["cursor"],
-          },
-          components: [],
-        }],
-      },
-    }
-
-    expect((await pushRuntimeConfig(app, broken)).status).toBe(500)
-    expect(host.detail().configApply.state).toBe("failed")
-
-    // The identical snapshot must be retried, not skipped as "already applied".
-    expect((await pushRuntimeConfig(app, broken)).status).toBe(500)
-    expect(host.detail().configApply.revision).toBe(2)
-  })
-
-  test("runtime config push returns 500 when agent extension replay fails", async () => {
-    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-ext-replay-fail-"))
-    tempDirs.push(dir)
-
-    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-
-    const receiptDir = path.join(dir, "host-state", "runtime-config")
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      opencodeCompat: true,
-      agentExtensionStateRoot: path.join(dir, "host-state", "agent-extensions"),
-      configApplyReceiptDir: receiptDir,
-    })
-
-    // An install with no resolved_sha is invalid; replay must surface
-    // the error to the caller instead of silently swallowing it.
-    const config = await pushRuntimeConfig(app, {
-      version: 1,
-      runner: { type: "opencode" },
-      auth: {},
-      mcp: {},
-      agent_extensions: {
-        version: 1,
-        installs: [{
-          desired: {
-            id: "broken",
-            package_name: "broken",
-            source: { type: "github", owner: "acme", repo: "broken" },
-            enabled: true,
-            targets: ["cursor"],
-          },
-          components: [],
-        }],
-      },
-    })
-    expect(config.status).toBe(500)
-    const body = await config.text()
-    expect(body).not.toContain("broken")
-    expect(body).not.toContain("acme")
-    expect(JSON.parse(body)).toEqual({
-      error: {
-        code: "runtime_config_agent_extensions_apply_failed",
-        message: "Runtime agent extension snapshot replay failed",
-        details: {
-          reason: "missing_resolved_sha",
-        },
-      },
-    })
-
-    const applyStatus = JSON.parse(await fs.promises.readFile(
-      path.join(receiptDir, "apply-status.json"),
-      "utf8",
-    ))
-    expect(applyStatus).toMatchObject({
-      state: "failed",
-      revision: 1,
-      harness: { id: "opencode", access: "native" },
-      error: {
-        code: "runtime_config_agent_extensions_apply_failed",
-        message: "Runtime agent extension snapshot replay failed",
-        details: {
-          reason: "missing_resolved_sha",
-        },
-      },
-    })
   })
 
   test("runtime config push does not materialize central slash commands", async () => {

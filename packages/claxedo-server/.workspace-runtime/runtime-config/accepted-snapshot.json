@@ -16,11 +16,6 @@
         "codex-app-server",
         "openai"
       ]
-    },
-    "agent_extensions": {
-      "version": 1,
-      "installCount": 0,
-      "installIds": []
     }
   }
 }

@@ -74,7 +74,6 @@ function hostedOptions(
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
     },
-    extensionPolicy: { agentExtensionPolicyOverrides: vi.fn(() => []) },
     relay: {
       relayUrl: "https://relay.example.test",
       resolverToken: "resolver-secret",
@@ -117,16 +116,6 @@ function fakeAuthority(): WorkspaceAuthority {
     runtimeAccessTokenActive: fn(),
     revokeRuntimeAccessToken: fn(),
     revokeRuntimeAccessTokensForWorkspaceUser: fn(),
-    listWorkspaceAgentExtensions: fn(),
-    listWorkspaceAgentExtensionsForRuntime: fn(),
-    authorizeWorkspaceAgentExtensionsAdmin: fn(),
-    upsertWorkspaceAgentExtension: fn(),
-    setWorkspaceAgentExtensionEnabled: fn(),
-    deleteWorkspaceAgentExtension: fn(),
-    listAgentExtensionPolicyOverrides: fn(),
-    listAgentExtensionPolicyOverridesForRuntime: fn(),
-    setAgentExtensionPolicyOverride: fn(),
-    deleteAgentExtensionPolicyOverride: fn(),
     auditAllow: fn(),
     auditDeny: fn(),
   })
@@ -178,7 +167,7 @@ describe("control-plane services", () => {
   test("an injected authority is returned unchanged by service composition", () => {
     // Plain composition passthrough: whatever authority bag is injected comes
     // back on `services.authority` by identity, regardless of env.
-    const authority = { listWorkspaceAgentExtensions: vi.fn() } as never
+    const authority = { getWorkspace: vi.fn() } as never
     const services = createControlPlaneServices(fakePorts(), {
       authority: authority,
     })
@@ -205,10 +194,9 @@ describe("control-plane services", () => {
     })
   })
 
-  test("accepts explicit store, credentials, policy, relay, sandbox, and telemetry inputs", () => {
+  test("accepts explicit store, credentials, relay, sandbox, and telemetry inputs", () => {
     const base = createControlPlaneServices(fakePorts(), { authority: null })
     const capture = vi.fn()
-    const agentExtensionPolicyOverrides = vi.fn(() => [])
     const credentials = {} as never
     const runtimeAccessTokenSigner = vi.fn() as never
     const hostTunnelTokenSigner = vi.fn() as never
@@ -216,7 +204,6 @@ describe("control-plane services", () => {
       { projectionStore: base.projectionStore, durableSessionLog: base.durableSessionLog },
       {
       credentials,
-      extensionPolicy: { agentExtensionPolicyOverrides },
       relay: {
         relayUrl: "https://relay.example.test",
         resolverToken: "resolver-secret",
@@ -230,7 +217,6 @@ describe("control-plane services", () => {
     expect(services.projectionStore).toBe(base.projectionStore)
     expect(services.durableSessionLog).toBe(base.durableSessionLog)
     expect(services.credentials).toBe(credentials)
-    expect(services.extensionPolicy.agentExtensionPolicyOverrides).toBe(agentExtensionPolicyOverrides)
     expect(services.relay).toMatchObject({
       relayUrl: "https://relay.example.test",
       resolverToken: "resolver-secret",
@@ -246,7 +232,7 @@ describe("control-plane services", () => {
     const previous = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     try {
-      const fakeAuthority = { listWorkspaceAgentExtensions: vi.fn() } as never
+      const fakeAuthority = { getWorkspace: vi.fn() } as never
       const services = createControlPlaneServices(fakePorts(), {
         authority: fakeAuthority,
       })
@@ -256,14 +242,13 @@ describe("control-plane services", () => {
     }
   })
 
-  test("creates a hosted stack from explicit auth, store, credentials, relay, runtime host, policy, and telemetry", () => {
+  test("creates a hosted stack from explicit auth, store, credentials, relay, runtime host, and telemetry", () => {
     const sync = fakeSync()
     const options = hostedOptions()
     const services = createHostedControlPlaneServices(fakePorts(sync), options)
 
     expect(services.auth).toBe(options.auth)
     expect(services.credentials).toBe(options.credentials)
-    expect(services.extensionPolicy).toBe(options.extensionPolicy)
     expect(services.relay).toBe(options.relay)
     expect(services.sandbox).toBe(options.sandbox)
     expect(services.telemetry).toBe(options.telemetry)
@@ -286,10 +271,6 @@ describe("control-plane services", () => {
       {
         options: () => ({ ...hostedOptions(), credentials: null as never }),
         message: "Hosted Control Plane requires shared credentials",
-      },
-      {
-        options: () => ({ ...hostedOptions(), extensionPolicy: null as never }),
-        message: "Hosted Control Plane requires Agent Extension policy",
       },
       {
         options: () => ({ ...hostedOptions(), relay: { ...hostedOptions().relay, relayUrl: undefined } }),
@@ -433,7 +414,6 @@ describe("control-plane services", () => {
     expect(text).toContain("services.durableSessionLog.subscribe_message_replay(globalBus)")
     expect(text).toContain("services.telemetry.capture(parsed.data.distinctId")
     expect(text).toContain("authConfig: services.auth.config")
-    expect(text).toContain("agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides")
     // Prefix match: the credential routes gained an options argument
     // (bearer gate) in the parallel creds work; the composition contract
     // here is only that the routes are constructed from services.credentials.

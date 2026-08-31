@@ -78,6 +78,17 @@ export type HostedOperationName =
   | "account.mode"
   | "account.compatibility"
   | "account.cliExchange"
+  | "agentPlugins.catalog"
+  | "agentPlugins.catalog.refresh"
+  | "agentPlugins.catalog.project"
+  | "agentPlugins.catalog.project.refresh"
+  | "agentPlugins.activation"
+  | "agentPlugins.organizationDefault"
+  | "agentPlugins.update"
+  | "connections.list"
+  | "connections.connect"
+  | "connections.attempt"
+  | "connections.disconnect"
   // One per access kind, because the hosted list route answers rows only for
   // `cloud` or `user-hosted` and the access-less call is always empty. See the
   // rows in `claxedo-desktop/src/main/account/hosted-operations.ts`.
@@ -138,8 +149,6 @@ export type HostedOperationName =
   | "documents.runtimeConflictResolve"
   | "documents.moveToRepository"
   | "documents.fromRepo"
-  | "agentConfig.extensions.read"
-  | "agentConfig.extensions.write"
   | "session.create"
   | "session.messages"
   | "session.gateway"

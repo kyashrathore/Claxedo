@@ -2,7 +2,7 @@ import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ConnectionsService } from "./service.js"
 import type { ConnectionScope, IntegrationCapability } from "./types.js"
-import { ConnectionsUnavailableError } from "./types.js"
+import { ConnectionsUnavailableError, connectionScopeOf } from "./types.js"
 
 export type RouteGate = (c: Context) => Promise<Response | null> | Response | null
 export type RouteOwnerResolver = (c: Context) => string | undefined
@@ -10,6 +10,10 @@ export type RouteOwnerResolver = (c: Context) => string | undefined
 export type IntegrationsRouteOptions = {
   gate?: RouteGate
   tokenGate?: RouteGate
+  /** Host authorization for organization/team mutations; personal writes do not use it. */
+  teamWriteGate?: RouteGate
+  /** Host-owned, non-secret callback routing frozen into OAuth attempts. */
+  attemptRouting?: (context: Context) => Record<string, string>
   // Hosts resolve an authenticated subject to this opaque owner key. No
   // resolver means unsigned-local and therefore the team partition only.
   owner?: RouteOwnerResolver
@@ -32,7 +36,7 @@ export type IntegrationsRouteOptions = {
   ownerlessRows?: "team" | "refuse"
 }
 
-const CAPABILITIES: IntegrationCapability[] = ["docs", "work-source", "channel", "code-host"]
+const CAPABILITIES: IntegrationCapability[] = ["docs", "work-source", "channel", "code-host", "mcp"]
 
 const CALLBACK_PAGE = (ok: boolean) =>
   `<!doctype html><html><body style="font-family:sans-serif;padding:2rem"><h2>${
@@ -144,6 +148,10 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     }
     const scope = scopeFrom(body)
     if (!scope) return c.json({ ok: false, code: "invalid_connection_scope" }, 422)
+    if (scope === "team") {
+      const denied = await options.teamWriteGate?.(c)
+      if (denied) return denied
+    }
     const owner = connectOwner(c, scope)
     if (!owner.ok) return c.json({ ok: false, code: owner.code }, 422)
     const teamKey = options.teamOwner?.(c)
@@ -152,6 +160,7 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
         integrationId,
         ...(owner.owner !== undefined ? { owner: owner.owner } : {}),
         ...(teamKey !== undefined ? { teamOwner: teamKey } : {}),
+        ...(options.attemptRouting ? { attemptRouting: options.attemptRouting(c) } : {}),
         ...(body.confirmReplace !== undefined ? { confirmReplace: body.confirmReplace } : {}),
       })
       if (!result.ok) return c.json(result, result.code === "connection_exists" ? 409 : 404)
@@ -177,7 +186,8 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
   app.get("/callback", async (c) => {
     const state = c.req.query("state") ?? ""
     const code = c.req.query("code")
-    const outcome = state ? await service.handleCallback(state, code) : { ok: false }
+    const issuer = c.req.query("iss")
+    const outcome = state ? await service.handleCallback(state, code, issuer === undefined ? undefined : { issuer }) : { ok: false }
     return c.html(CALLBACK_PAGE(outcome.ok), outcome.ok ? 200 : 400)
   })
 
@@ -197,6 +207,10 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (denied) return denied
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
+    if (connectionScopeOf(row.owner, managementKeys(c).team) === "team") {
+      const denied = await options.teamWriteGate?.(c)
+      if (denied) return denied
+    }
     await service.remove(row.id)
     return c.json({ ok: true })
   })
@@ -206,6 +220,10 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     if (denied) return denied
     const row = await visibleConnection(c.req.param("id"), managementKeys(c))
     if (!row) return c.json({ code: "connection_not_found" }, 404)
+    if (connectionScopeOf(row.owner, managementKeys(c).team) === "team") {
+      const denied = await options.teamWriteGate?.(c)
+      if (denied) return denied
+    }
     const result = await service.reverify(row.id)
     return c.json(result, result.ok ? 200 : 422)
   })
@@ -226,6 +244,8 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const selected = await visibleTeamConnection(c.req.param("id"), managementKeys(c))
     if (selected.state === "missing") return c.json({ code: "connection_not_found" }, 404)
     if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
+    const deniedTeamWrite = await options.teamWriteGate?.(c)
+    if (deniedTeamWrite) return deniedTeamWrite
     const body = await c.req.json().catch(() => undefined) as { secret?: unknown } | undefined
     if (typeof body?.secret !== "string" || !body.secret.trim()) {
       return c.json({ ok: false, code: "invalid_webhook_secret" }, 422)
@@ -245,6 +265,8 @@ export function createIntegrationsRoutes(service: ConnectionsService, options: I
     const selected = await visibleTeamConnection(c.req.param("id"), managementKeys(c))
     if (selected.state === "missing") return c.json({ code: "connection_not_found" }, 404)
     if (selected.state === "personal") return c.json({ code: "team_connection_required" }, 403)
+    const deniedTeamWrite = await options.teamWriteGate?.(c)
+    if (deniedTeamWrite) return deniedTeamWrite
     try {
       const result = await service.removeWebhookSigningSecret(selected.row.id)
       return c.json(result, result.ok ? 200 : 422)

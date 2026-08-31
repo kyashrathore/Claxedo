@@ -25,6 +25,11 @@ on:
         required: false
         type: boolean
         default: true
+      agent_plugins:
+        description: "Include the optional Agent Plugins runtime materializer"
+        required: false
+        type: boolean
+        default: false
   # Uncomment to auto-deploy on worker changes merged to dev:
   # push:
   #   branches: [dev]
@@ -59,8 +64,13 @@ jobs:
       # The image ships the in-repo workspace-runtime host bundle (COPY .build/)
       # instead of npm-installing @claxedo/workspace-runtime — publishing is a
       # separate release concern and no longer gates image builds.
-      - name: Bundle workspace-runtime host into the wrangler build context
+      - name: Bundle workspace-runtime host without Agent Plugins
+        if: ${{ !inputs.agent_plugins }}
         run: npx tsx ../build-sandbox-image.ts --bundle-only --out=.build
+
+      - name: Bundle Agent Plugins workspace-runtime host into the wrangler build context
+        if: ${{ inputs.agent_plugins }}
+        run: npx tsx ../build-sandbox-image.ts --agent-plugins --bundle-only --out=.build
 
       # The bundle step also writes scripts/sandbox/.build/build-info.json with
       # the content build-id / snapshot name. Surface it so operators can wire

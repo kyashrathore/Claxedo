@@ -2,12 +2,14 @@ import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "@claxedo/sandbox-manager"
+import { workspaceRuntimeRoot } from "../../../src/hosts/workspace-runtime/startup"
 import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
   OPENCODE_BINARY_FILENAME,
   WORKSPACE_RUNTIME_VERSION_FILENAME,
   hostBundleDependencies,
+  hostBundlePackageRoots,
   sandboxImageBuildArgs,
   validateBuildFlags,
   writeWorkspaceRuntimeVersion,
@@ -77,7 +79,7 @@ describe("build-sandbox-image", () => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
       return packages[key]!
-    })
+    }, [workspaceRuntimeRoot()])
     expect(deps).toEqual({
       "better-sqlite3": "12.10.0",
       "@lydell/node-pty": "1.2.0-beta.14",
@@ -91,6 +93,52 @@ describe("build-sandbox-image", () => {
       .toThrow("missing image dependency")
   })
 
+  test("standalone image dependencies resolve workspace catalog specifiers", () => {
+    const deps = hostBundleDependencies(() => ({
+      name: "@claxedo/catalog-fixture",
+      dependencies: {
+        "better-sqlite3": "12.10.0",
+        "@lydell/node-pty": "1.2.0-beta.14",
+        "@agentclientprotocol/claude-agent-acp": "0.15.1",
+        "@agentclientprotocol/codex-acp": "0.17.1",
+        "drizzle-orm": "catalog:",
+      },
+    }), [workspaceRuntimeRoot()], { "drizzle-orm": "1.0.0-rc.2" })
+    expect(deps["drizzle-orm"]).toBe("1.0.0-rc.2")
+  })
+
+  test("standalone image dependencies omit monorepo-only workspace specifiers", () => {
+    const deps = hostBundleDependencies(() => ({
+      name: "@claxedo/workspace-fixture",
+      dependencies: {
+        "better-sqlite3": "12.10.0",
+        "@lydell/node-pty": "1.2.0-beta.14",
+        "@agentclientprotocol/claude-agent-acp": "0.15.1",
+        "@agentclientprotocol/codex-acp": "0.17.1",
+        "@opencode-ai/sdk-next": "workspace:*",
+        opencode: "workspace:*",
+      },
+    }), [workspaceRuntimeRoot()])
+    expect(deps).not.toHaveProperty("@opencode-ai/sdk-next")
+    expect(deps).not.toHaveProperty("opencode")
+    expect(Object.values(deps).some((version) => version.startsWith("workspace:"))).toBe(false)
+  })
+
+  test("a missing workspace catalog pin fails before Docker or npm", () => {
+    expect(() => hostBundleDependencies(() => ({
+      name: "@claxedo/catalog-fixture",
+      dependencies: {
+        "better-sqlite3": "12.10.0",
+        "@lydell/node-pty": "1.2.0-beta.14",
+        "@agentclientprotocol/claude-agent-acp": "0.15.1",
+        "@agentclientprotocol/codex-acp": "0.17.1",
+        "drizzle-orm": "catalog:",
+      },
+    }), [workspaceRuntimeRoot()], {})).toThrow(
+      "workspace catalog has no concrete version for image dependency: drizzle-orm",
+    )
+  })
+
   test("real workspace-runtime package.json satisfies the image dependency pins", () => {
     const deps = hostBundleDependencies()
     expect(Object.keys(deps)).toEqual(expect.arrayContaining([
@@ -99,6 +147,25 @@ describe("build-sandbox-image", () => {
     ]))
     expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.220")
     expect(deps.zod).toBe("4.4.3")
+  })
+
+  test("the enabled image adds the feature package root while the disabled image does not", () => {
+    const disabled = hostBundlePackageRoots(false)
+    const enabled = hostBundlePackageRoots(true)
+    expect(disabled.some((root) => root.endsWith("claxedo-local-server"))).toBe(false)
+    expect(enabled.filter((root) => root.endsWith("claxedo-local-server"))).toHaveLength(1)
+    expect(enabled).toHaveLength(disabled.length + 1)
+  })
+
+  test("the Cloudflare deployment workflow selects the VM materializer before image bundling", () => {
+    const workflow = fs.readFileSync(
+      path.resolve(import.meta.dirname, "../../../../../.github/workflows/deploy-cloudflare-sandbox-worker.yml"),
+      "utf8",
+    )
+    expect(workflow).toContain("agent_plugins:")
+    expect(workflow).toContain("if: ${{ !inputs.agent_plugins }}")
+    expect(workflow).toContain("if: ${{ inputs.agent_plugins }}")
+    expect(workflow).toContain("build-sandbox-image.ts --agent-plugins --bundle-only --out=.build")
   })
 
   test("production image starts the checkout-built workspace-runtime host", () => {
@@ -241,7 +308,7 @@ describe("build-sandbox-image", () => {
     expect(index("workspace-runtime")).toBeGreaterThanOrEqual(0)
 
     // workspace-runtime's known @claxedo deps are all present and precede it.
-    for (const dep of ["agent-event-runtime", "agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay", "agent-extensions"]) {
+    for (const dep of ["agent-event-runtime", "agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay"]) {
       expect(index(dep), dep).toBeGreaterThanOrEqual(0)
       expect(index(dep), dep).toBeLessThan(index("workspace-runtime"))
     }

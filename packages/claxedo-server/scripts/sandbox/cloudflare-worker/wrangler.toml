@@ -76,6 +76,9 @@ bucket_name = "claxedo-sandbox-backups"
 # namespace (`wrangler kv namespace create EGRESS_SECRETS`) and set the signing
 # secret (`wrangler secret put EGRESS_SIGNING_SECRET`). Brokering stays off
 # until both are configured.
-# Add an EGRESS_SECRETS KV binding here only after creating a real namespace.
-# The Worker keeps credential brokering disabled when this optional binding or
-# EGRESS_SIGNING_SECRET is absent.
+[[kv_namespaces]]
+binding = "EGRESS_SECRETS"
+id = "47926e0723e54c8d825cae7af8bcc60f"
+
+# The Worker keeps credential brokering disabled when this binding or the
+# EGRESS_SIGNING_SECRET Worker secret is absent.

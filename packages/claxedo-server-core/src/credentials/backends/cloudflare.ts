@@ -1,8 +1,9 @@
 /**
  * Cloudflare secret backend — stores secrets in Cloudflare Workers KV.
  *
- * Used for hosted or cloud-deployed Claxedo where secrets should not
- * live on disk. Requires CLAXEDO_CF_KV_URL and CLAXEDO_CF_KV_TOKEN env vars.
+ * Used for hosted or cloud-deployed Claxedo where secrets should not live on
+ * disk. A Worker should use its native KV namespace binding; a non-Worker
+ * hosted adapter may use CLAXEDO_CF_KV_URL and CLAXEDO_CF_KV_TOKEN.
  *
  * SECURITY (invariant I-5): KV is a BYTE STORE ONLY. The raw
  * KV backend is deliberately NOT exported — every value that reaches KV must
@@ -24,6 +25,18 @@ import {
 const log = Log.create({ service: "credentials-cloudflare" })
 
 type EnvLike = Record<string, string | undefined>
+
+/** The narrow Workers KV surface needed by the credential byte store. */
+export type CloudflareKvNamespaceBinding = Readonly<{
+  put(key: string, value: string): Promise<void>
+  get(key: string, type?: "text"): Promise<string | null>
+  delete(key: string): Promise<void>
+  list(options?: { prefix?: string; limit?: number; cursor?: string }): Promise<{
+    keys: ReadonlyArray<{ name: string }>
+    list_complete: boolean
+    cursor?: string
+  }>
+}>
 
 function kvHeaders(env: EnvLike) {
   const token = env.CLAXEDO_CF_KV_TOKEN?.trim()
@@ -107,6 +120,31 @@ function createCloudflareKvByteStore(env: EnvLike): SecretBackend {
   }
 }
 
+/** Native Workers KV byte store. Kept private so it cannot bypass encryption. */
+function createCloudflareKvBindingByteStore(binding: CloudflareKvNamespaceBinding): SecretBackend {
+  return {
+    async put(id, secret) {
+      const ref = `cf:${id}`
+      await binding.put(ref, secret)
+      return ref
+    },
+    async get(ref) {
+      return binding.get(ref, "text")
+    },
+    async delete(ref) {
+      await binding.delete(ref)
+    },
+    async probe() {
+      try {
+        await binding.list({ limit: 1 })
+        return true
+      } catch {
+        return false
+      }
+    },
+  }
+}
+
 /**
  * The ONLY way to obtain a Cloudflare KV secret backend: envelope encryption
  * composed over the raw byte store, partitioned to one org via HKDF subkey
@@ -132,6 +170,22 @@ export function createEncryptedCloudflareBackend(opts: {
   }
   const keys = opts.keyProvider ?? envelopeKeyProviderFromEnv(env)
   return encryptedSecretBackend(createCloudflareKvByteStore(env), keys, { orgId: opts.orgId })
+}
+
+/**
+ * Worker-native encrypted credential backend. The Worker does not need a
+ * Cloudflare account API token to access its own bound namespace, and the
+ * namespace still receives ciphertext only.
+ */
+export function createEncryptedCloudflareBindingBackend(opts: {
+  orgId: string
+  binding: CloudflareKvNamespaceBinding
+  env?: EnvLike
+  keyProvider?: EnvelopeKeyProvider
+}): SecretBackend & EnvelopeAdmin {
+  const env = opts.env ?? process.env
+  const keys = opts.keyProvider ?? envelopeKeyProviderFromEnv(env)
+  return encryptedSecretBackend(createCloudflareKvBindingByteStore(opts.binding), keys, { orgId: opts.orgId })
 }
 
 /**

@@ -147,11 +147,23 @@ describe("CloudflareSandboxDriver", () => {
     })
   })
 
-  test("cold container (5xx) is reported as provisioning, not a failure", async () => {
-    const { fetch } = harness(() => ({ status: 503, json: { error: "container booting" } }))
+  test("the Worker's explicit readiness 503 is reported as provisioning", async () => {
+    const { fetch } = harness(() => ({
+      status: 503,
+      json: { error: "workspace-runtime did not become ready" },
+    }))
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
     const result = await driver.ensureHost(createInput)
     expect(result).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+  })
+
+  test("permanent Worker configuration failures are not hidden as provisioning", async () => {
+    const { fetch } = harness(() => ({
+      status: 503,
+      json: { error: "egress broker not configured (set EGRESS_SIGNING_SECRET + EGRESS_SECRETS)" },
+    }))
+    const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+    await expect(driver.ensureHost(createInput)).rejects.toThrow(/egress broker not configured/)
   })
 
   test("timed-out ensure is reported as provisioning so callers can retry", async () => {
@@ -163,6 +175,19 @@ describe("CloudflareSandboxDriver", () => {
     const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch, timeoutMs: 5 })
 
     expect(await driver.ensureHost(createInput)).toEqual({ provisioning: true, retryAfterMs: 2_000 })
+  })
+
+  test("the default ensure deadline spans the provider cold-start budget", async () => {
+    const timeout = vi.spyOn(globalThis, "setTimeout")
+    try {
+      const { fetch } = harness(() => ({ status: 200, json: { ready: true, url: "https://r/" } }))
+      const driver = createCloudflareSandboxDriver({ ...baseOptions, fetch })
+      await driver.ensureHost(createInput)
+
+      expect(timeout.mock.calls.some(([, delay]) => delay === 300_000)).toBe(true)
+    } finally {
+      timeout.mockRestore()
+    }
   })
 
   test("4xx or missing url throws (real failure, not retried as provisioning)", async () => {
@@ -208,10 +233,8 @@ describe("CloudflareSandboxDriver", () => {
       bootSource: { kind: "driver-snapshot", snapshotId: "backup-1" },
     })
 
-    // The runtime data dir is captured alongside the workspace: it holds the
-    // Agent Extension ownership ledger for artifacts materialized INTO the
-    // workspace, so restoring one without the other would bring back generated
-    // files with no record of owning them.
+    // The runtime data dir is captured alongside the workspace so restoring a
+    // sandbox cannot split durable runtime state from projected content.
     expect(calls.find((call) => call.url.endsWith("/backup"))?.body).toEqual({
       directories: ["/workspace", "/var/lib/claxedo"],
     })

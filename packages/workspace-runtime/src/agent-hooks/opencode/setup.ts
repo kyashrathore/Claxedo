@@ -1,6 +1,6 @@
 import * as fs from "fs"
 import * as path from "path"
-import { materializeOpenCodeDocAgent } from "@claxedo/agent-extensions"
+import { materializeOpenCodeDocAgent } from "./doc-agent"
 import type { StatusHooksManifest } from "../core/setup"
 import { writeIfChanged } from "../core/utils"
 import { OPENCODE_PLUGIN, opencodeAgentDir, opencodeConfigDir, opencodePluginDir } from "./constants"

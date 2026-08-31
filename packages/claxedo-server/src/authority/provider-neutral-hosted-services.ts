@@ -338,7 +338,6 @@ export function composeProviderNeutralHostedControlPlane(
     durableSessionLog: unusedStore<DurableSessionLog>("Durable session log"),
     auth: bindings.auth,
     credentials: workerCredentials(env),
-    extensionPolicy: {},
     relay: {
       relayUrl,
       relayUrls,

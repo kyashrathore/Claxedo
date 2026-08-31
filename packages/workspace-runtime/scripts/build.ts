@@ -26,8 +26,6 @@ type PublicEntry = typeof PUBLIC_ENTRIES[number]
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
-  "@claxedo/agent-extensions",
-  "@claxedo/agent-extensions/*",
   "@claxedo/agent-sdk-runtime",
   "@claxedo/agent-sdk-runtime/*",
   "@claxedo/agent-event-runtime",

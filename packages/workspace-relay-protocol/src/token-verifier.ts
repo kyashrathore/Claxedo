@@ -1,7 +1,7 @@
 /**
  * Unified token-verifier interface (P-shared).
  *
- * Each of the four Claxedo boundaries (relay/tunnel, agent extension,
+ * Each of the four Claxedo boundaries (relay/tunnel, optional modules,
  * SDK runner, workspace host) historically defined its own ad-hoc
  * verifier shape. This module is the single seam every downstream user
  * can swap a custom implementation through.

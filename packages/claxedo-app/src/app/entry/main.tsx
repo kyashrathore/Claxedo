@@ -130,6 +130,9 @@ const config = {
   // Supplying the loader here lets Rollup remove the dynamic chunk entirely
   // from local.tsx instead of merely leaving it dormant at runtime.
   serviceContributionLoaders: hostedServiceContributionLoaders,
+  loadAgentPluginContributions: __CLAXEDO_AGENT_PLUGINS_ENABLED__
+    ? async () => (await import("@/app/composition/agent-plugin-contribution-loader")).agentPluginContributions()
+    : undefined,
 }
 initClaxedo(config)
 

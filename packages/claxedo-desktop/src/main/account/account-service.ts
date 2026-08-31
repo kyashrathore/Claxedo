@@ -70,6 +70,37 @@ type Credential = { ok: true; token: string } | { ok: false; detail: string }
  */
 const REFRESH_FAILURE_COOLDOWN_MS = 20_000
 
+function connectionRetryResult(name: HostedOperationName, response: Response, value: unknown) {
+  if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return
+  if (response.status !== 409 && response.status !== 429) return
+  const error = value && typeof value === "object" && !Array.isArray(value) && "error" in value
+    ? value.error
+    : undefined
+  const bodyDelay = error && typeof error === "object" && !Array.isArray(error) && "retryAfterMs" in error
+    ? error.retryAfterMs
+    : undefined
+  if (typeof bodyDelay === "number" && Number.isFinite(bodyDelay)) {
+    return { status: "provisioning" as const, retryAfterMs: bodyDelay }
+  }
+  const header = response.headers.get("Retry-After")?.trim()
+  if (header && /^\d+$/.test(header)) {
+    return { status: "provisioning" as const, retryAfterMs: Number(header) * 1_000 }
+  }
+}
+
+function operationFailure(name: HostedOperationName, status: number, value: unknown) {
+  const error = value && typeof value === "object" && !Array.isArray(value) && "error" in value
+    ? value.error
+    : undefined
+  if (!error || typeof error !== "object" || Array.isArray(error)) {
+    return new Error(`operation "${name}" failed: ${status}`)
+  }
+  const code = "code" in error && typeof error.code === "string" ? error.code.trim() : ""
+  const message = "message" in error && typeof error.message === "string" ? error.message.trim() : ""
+  const detail = [code, message].filter(Boolean).join(": ")
+  return new Error(`operation "${name}" failed: ${status}${detail ? ` (${detail})` : ""}`)
+}
+
 export type AccountServiceOptions = {
   auth: DesktopNativeAuth
   store: CredentialStore
@@ -640,12 +671,27 @@ export function createAccountService(options: AccountServiceOptions) {
         }
         // Recovered: fall through to the normal response handling below.
       }
+      if (request.response === "http") {
+        // Some reviewed operations have expected non-2xx outcomes (OAuth
+        // replacement confirmation, optimistic revision conflict). Preserve
+        // only status and JSON body; headers and the account credential remain
+        // in main.
+        const value = await response.json().catch(() => undefined)
+        if (startedIn !== era) throw new Error("not signed in")
+        return { status: response.status, ...(value !== undefined ? { body: value } : {}) }
+      }
       if (!response.ok) {
         const body = await response.json().catch(() => undefined) as {
           error?: { code?: string; message?: string }
           code?: string
           message?: string
         } | undefined
+        if (startedIn !== era) throw new Error("not signed in")
+        // A cloud connection still provisioning answers 409/429 with a delay.
+        // That is a wait, not a failure, so it crosses the boundary as a value
+        // the caller can poll on rather than an error it would have to parse.
+        const retry = connectionRetryResult(name, response, body)
+        if (retry) return retry
         if (name === "session.shares.list" && response.status >= 500) {
           throw new Error(
             "Could not load session people. This session may only exist locally — People shares a control-plane session.",
@@ -653,10 +699,11 @@ export function createAccountService(options: AccountServiceOptions) {
         }
         // Status + body must survive Electron IPC (Error properties do not).
         // Callers that need 409 bodies (connections.connect) parse this prefix.
-        const detail = body?.error?.message ?? body?.message
+        // `detail` is the fallback those callers show when the body is absent,
+        // so it names the operation, the status, and the server's code+message.
         throw new Error(
           `HOSTED_HTTP ${response.status} ${JSON.stringify({
-            detail: detail ?? `operation "${name}" failed: ${response.status}`,
+            detail: operationFailure(name, response.status, body).message,
             body: body ?? null,
           })}`,
         )

@@ -3,7 +3,7 @@
 This page shows the value of the Claxedo package family as one composable app
 stack. It is for builders who want to run terminal coding agents, expose them
 to users or teams, and keep the product surface stable while swapping harness,
-workspace, deployment, and extension backends underneath.
+workspace, and deployment backends underneath.
 
 ## What This Lets You Build
 
@@ -12,7 +12,7 @@ workspace, deployment, and extension backends underneath.
 | Talk to many agent harnesses through one surface | Your app talks to the `AgentRuntime` facade from [Agent SDK Runtime](./agent-sdk-runtime.md), not directly to each harness. Today that covers OpenCode, ACP harnesses, native SDK harnesses, and Pi. New harnesses fit by adding a harness factory and event translation path. |
 | Normalize harness output once | [Agent Event Runtime](./agent-event-runtime.md) turns harness-specific streams into canonical `AgentRuntimeEvent`s and compatibility projections, so UI/session replay does not branch for every harness. |
 | Run terminal coding-agent infrastructure | [Workspace Runtime](./workspace-runtime.md) gives you sessions, PTYs, managed processes, files, diffs, runtime events, health, capabilities, config apply, and harness lifecycle next to the project directory. |
-| Install capabilities once and materialize them for many harnesses | [Agent Extensions](./agent-extensions.md) let users discover a package, install it into workspace desired state, and materialize its skills, MCP configs, and harness plugin assets into OpenCode, Claude, Codex, and Cursor targets. |
+| Enable standard plugins for selected harnesses | The optional Agent Plugins product module catalogs Agent Plugins v1 directories, retains immutable artifacts, stores user/project/harness activation, and projects them into OpenCode, Claude, Codex, and Cursor. |
 | Host a team app on your own system | Put your own control plane in front for auth, org policy, credentials, workspace routing, and marketplace policy. The Workspace Host stays the execution boundary; your server decides who can reach it. |
 | Let others reach a local worktree through Relay | A workspace can be backed by a local worktree on a user's machine and still be accessed by teammates through [Workspace Relay](./relay-and-deployment.md), when your control plane authorizes and routes that access. |
 | Support local, container, and cloud VM workspaces | The runtime only needs to run next to the project directory. That directory can live on a laptop, inside Docker/a container, or on a real cloud VM. |
@@ -33,9 +33,9 @@ workspace, deployment, and extension backends underneath.
 | Piece | Responsibility |
 | --- | --- |
 | Product UI | Workspace/session/process/file/browser experience. |
-| Product control plane | Auth, org policy, credentials, workspace routing, extension policy, audit, and team access. |
+| Product control plane | Auth, credentials, workspace routing, optional plugin activation, audit, and team access. |
 | Workspace Runtime | Per-workspace execution host. |
-| Agent Extensions | Package discovery, desired/lock state, policy, materialization, and runtime replay. |
+| Agent Plugins module | Optional product-owned catalog, activation, retained artifacts, MCP adaptation, and runtime projection. |
 | Agent SDK Runtime | Runtime facade, harness factories, stores, turns, events, and capability checks. |
 | Agent Event Runtime | Canonical event model and projections. |
 | Workspace Relay | Remote access to cloud or user-hosted runtime hosts. |
@@ -63,9 +63,8 @@ startServer(4096, {
 })
 ```
 
-Then push the user's selected harness, auth, MCP config, and Agent Extension
-desired state (the initial harness can also be passed at boot via the `harness`
-server option):
+Then push the user's selected harness, auth, and MCP config (the initial harness
+can also be passed at boot via the `harness` server option):
 
 ```ts
 await fetch("http://127.0.0.1:4096/api/wr/config", {
@@ -81,10 +80,6 @@ await fetch("http://127.0.0.1:4096/api/wr/config", {
       "codex-app-server": process.env.OPENAI_API_KEY,
     },
     mcp: {},
-    agent_extensions: {
-      version: 1,
-      installs: [],
-    },
     workspaceHarnessEnabled: true,
   }),
 })
@@ -239,8 +234,8 @@ startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
 | --- | --- | --- | --- |
 | Product UI | Browser, desktop app, CLI, or MCP client | User-facing workspace, session, terminal, process, file, and settings screens | Your app |
 | Product control plane | Local server, self-hosted server, or hosted service | User auth, org/workspace authorization, credential storage, marketplace policy, workspace routing | Product code; Claxedo server package in this repo |
-| Workspace Host | Next to the project directory the agent should work on | Harness lifecycle, sessions, terminals, processes, files, diffs, runtime events, config apply, Agent Extensions | `@claxedo/workspace-runtime` |
-| Agent Extensions | In the product server and Workspace Host | Discovery, install lifecycle, lock state, effective policy, and materialized harness files | `@claxedo/agent-extensions` |
+| Workspace Host | Next to the project directory the agent should work on | Harness lifecycle, sessions, terminals, processes, files, diffs, runtime events, config apply, and generic provisioning contributions | `@claxedo/workspace-runtime` |
+| Agent Plugins module | In Agent-Plugins-enabled Claxedo product builds | Catalog, activation metadata, retained artifacts, MCP adaptation, and harness projections | `packages/claxedo-{server,local-server,server-core}/src/agent-plugins` |
 | Agent SDK Runtime | Inside the Workspace Host | One `AgentRuntime` facade over OpenCode, ACP harnesses, native SDK harnesses, and Pi | `@claxedo/agent-sdk-runtime` |
 | Event runtime | Inside adapters/host projections | Canonical `AgentRuntimeEvent` stream and compatibility projections | `@claxedo/agent-event-runtime` |
 | Relay | Separate relay process | Bidirectional tunnel between gateway/browser traffic and workspace-runtime hosts | `@claxedo/workspace-relay` |
@@ -345,97 +340,25 @@ app needs:
 | Watch session/runtime events | `/global/event` and `/api/wr/runtime-events`. |
 | Check host state | `/api/wr/health` and `/api/wr/capabilities`. |
 
-## User Action: Install Agent Extensions
+## User Action: Enable Agent Plugins
 
-Agent Extensions give your product a package lifecycle:
+In a build that includes the optional module, the user opens the plugin catalog,
+chooses one or more supported harnesses, and selects **Enable**. The acquisition
+boundary validates the standard plugin directory, retains its exact bytes by
+digest, and records the user choice. **Disable** changes activation only;
+**Refresh** is read-only; **Update** explicitly acquires new bytes.
 
-```text
-discover -> install -> sync effective snapshot -> materialize into harnesses
-```
+Unsigned desktop choices are machine-wide per harness. Signed choices may be
+project-specific or an all-projects default; Claxedo and organization defaults
+are positive-only and an explicit user choice wins. Before a selected harness
+starts, the product resolves the effective digest and contributes the immutable
+plugin tree to an atomic runtime generation. The public Workspace Runtime never
+receives an install record or owns catalog state.
 
-A package can be made discoverable to users, installed into workspace desired
-state, and then materialized by every connected runtime that receives that
-workspace's effective snapshot. The install records choose targets such as
-OpenCode, Claude, Codex, and Cursor; the runtime turns the package contents into
-harness-native files.
-
-Your product can use `@claxedo/agent-extensions` directly for package lifecycle
-and policy primitives:
-
-```ts
-import {
-  installGitHubAgentExtension,
-  getRuntimeAgentExtensionsSnapshot,
-} from "@claxedo/agent-extensions"
-```
-
-For many workspaces, the control plane stores or derives desired state per
-workspace and syncs each connected runtime. That is how a team can make the
-same extension available across workspaces while still letting a workspace or
-user turn it off.
-
-```json
-{
-  "agent_extensions": {
-    "version": 1,
-    "installs": [
-      {
-        "desired": {
-          "id": "review-tools",
-          "package_name": "review-tools",
-          "scope": "workspace",
-          "enabled": true,
-          "targets": ["opencode", "claude", "codex", "cursor"],
-          "source": {
-            "type": "github",
-            "owner": "acme",
-            "repo": "agent-extensions",
-            "ref": "main",
-            "package_path": "packages/review-tools"
-          }
-        },
-        "lock": { "resolved_sha": "abc123" },
-        "components": []
-      }
-    ]
-  }
-}
-```
-
-The host materializes supported assets such as `SKILL.md`, `mcp.json`, and
-Cursor plugin files into harness-native locations.
-
-Activation is separate from package resolution. The same package can be
-installed but disabled for a workspace:
-
-```json
-{
-  "desired": {
-    "id": "review-tools",
-    "scope": "workspace",
-    "enabled": false,
-    "targets": ["opencode", "claude", "codex"]
-  }
-}
-```
-
-Or it can be filtered by effective policy before the runtime snapshot is
-produced:
-
-```json
-{
-  "id": "review-tools",
-  "scope": "user",
-  "enabled": false,
-  "reason": "User disabled this extension"
-}
-```
-
-`@claxedo/agent-extensions` supports local project/machine installs, workspace
-install records, workspace enable/disable, and user/workspace/org policy
-override records. Org activation as a full product workflow belongs in the
-control plane; the runtime materializer only applies the enabled snapshot it
-receives. `workspace-runtime` calls this package during config replay.
+Protected remote MCP declarations are presented through the existing
+Connections UI. Connections owns the OAuth attempt and encrypted tokens; a
+cloud runtime receives only a short-lived gateway capability through the
+sandbox driver's secret-brokering channel.
 
 ## Local App Composition
 
@@ -490,7 +413,6 @@ the relay server implementation.
 - [Workspace Runtime](./workspace-runtime.md)
 - [Agent SDK Runtime](./agent-sdk-runtime.md)
 - [Agent Event Runtime](./agent-event-runtime.md)
-- [Agent Extensions](./agent-extensions.md)
 - [Relay And Deployment](./relay-and-deployment.md)
 - [MCP](./mcp.md)
 - [Supported Surfaces](./supported-surfaces.md)

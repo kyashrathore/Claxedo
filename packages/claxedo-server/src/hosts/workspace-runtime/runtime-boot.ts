@@ -5,6 +5,7 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { RuntimeRunner } from "@claxedo/workspace-runtime"
+import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { workspaceDir, workspaceId } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
@@ -112,6 +113,7 @@ export function claxedoRuntimeRunnerFromEnv(env: NodeJS.ProcessEnv = process.env
  */
 export async function claxedoWorkspaceRuntimeBootFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  input: { routeContributions?: readonly WorkspaceRuntimeRouteContribution[] } = {},
 ): Promise<ClaxedoWorkspaceRuntimeBoot> {
   const rawPort = text(env, "WORKSPACE_RUNTIME_PORT") ?? "3002"
   if (!/^\d+$/.test(rawPort)) throw new Error(`WORKSPACE_RUNTIME_PORT must be an integer: ${rawPort}`)

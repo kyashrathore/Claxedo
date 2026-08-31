@@ -209,6 +209,18 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `connections.disconnect` | `features/settings/ui/connections.tsx` | `DELETE /api/claxedo/integrations/connections/:id` | unary | safe | |
 | `connections.reverify` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/connections/:id/reverify` | unary | unsafe | Re-checks stored credentials. |
 
+### Agent Plugins
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `agentPlugins.catalog` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins` | unary | safe | Cross-project effective defaults from the signed durable authority. |
+| `agentPlugins.catalog.refresh` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/refresh` | unary | safe | Explicit source refresh; never mutates activation state. |
+| `agentPlugins.catalog.project` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/projects/:projectId` | unary | safe | Effective state for one authorized project. |
+| `agentPlugins.catalog.project.refresh` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/projects/:projectId/refresh` | unary | safe | Project view plus explicit source refresh. |
+| `agentPlugins.activation` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/activation` | unary | unsafe | Writes user all-project or explicit-project choices at an optimistic revision. |
+| `agentPlugins.organizationDefault` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/organization-default` | unary | unsafe | Organization-admin positive default mutation. |
+| `agentPlugins.update` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/update` | unary | unsafe | Explicitly acquires and pins changed bytes. |
+
 ### Provisioning and sandbox
 
 Sandbox driver configuration (`/api/workspace/drivers*`) is local-sidecar-only —

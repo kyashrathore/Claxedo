@@ -59,6 +59,8 @@ export type WorkspaceHost = {
   hasSession: (sessionId: string) => boolean
   parentSessionIdFor: (sessionId: string) => string | undefined
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
+  /** Replace only host-composed launch metadata while preserving the accepted runtime configuration. */
+  applyHarnessLaunch: (harnessLaunch: Record<string, Record<string, unknown>>) => Promise<void>
   detail: () => {
     state: "ready" | "applying" | "error"
     healthStatus: "ok" | "degraded" | "unavailable"
