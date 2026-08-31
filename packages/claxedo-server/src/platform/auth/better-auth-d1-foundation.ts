@@ -15,7 +15,16 @@ import {
 } from "./better-auth-token-hash"
 
 export const BETTER_AUTH_SESSION_COOKIE = "__Secure-claxedo.session_token"
+/**
+ * `openid` is what makes the signed-in human have a NAME.
+ *
+ * Better Auth's userinfo endpoint refuses any token whose scope set omits it
+ * (`Missing required scope`), and without it no `id_token` is issued either —
+ * so a desktop that authenticated successfully still had no display identity
+ * and every account surface fell back to the literal label "Account".
+ */
 export const BETTER_AUTH_NATIVE_SCOPES = [
+  "openid",
   "offline_access",
   "workspace:read",
   "workspace:write",

@@ -32,6 +32,7 @@ import {
   For,
   type JSX,
   lazy,
+  onMount,
   type ParentProps,
   Show,
   Suspense,
@@ -486,13 +487,28 @@ function AuthenticatedLayout(
   }
 
   const defaultServer = ServerConnection.Key.make(resolveDefaultUrl())
+  // Whether the shell has been on screen once in this layout's lifetime. Owned
+  // here because the only consumer is the root Suspense fallback below.
+  const [shellRevealed, setShellRevealed] = createSignal(false)
+  const ShellRevealed = () => {
+    onMount(() => setShellRevealed(true))
+    return null
+  }
 
   return (
     <ServerProvider defaultServer={defaultServer} servers={props.servers}>
       <AuthenticatedProviders>
         <ConnectionGate>
-          <Suspense fallback={<BootSplash />}>
-            <RuntimeProviders>{props.children}</RuntimeProviders>
+          {/* Boot-only. This boundary wraps the WHOLE shell, so reusing the
+              full-page splash for later suspensions replaced the entire app
+              with a loading logo mid-session — signing in did exactly that.
+              After the shell has revealed once, a later suspension keeps the
+              window quiet instead of announcing a fresh boot. */}
+          <Suspense fallback={shellRevealed() ? <Loading /> : <BootSplash />}>
+            <RuntimeProviders>
+              <ShellRevealed />
+              {props.children}
+            </RuntimeProviders>
           </Suspense>
         </ConnectionGate>
       </AuthenticatedProviders>
