@@ -1,4 +1,4 @@
-import { statSync } from "node:fs"
+import { readFileSync, statSync } from "node:fs"
 import { basename, join } from "node:path"
 
 /**
@@ -14,8 +14,10 @@ import { basename, join } from "node:path"
  * the app name gains a suffix, the icon is tinted a hue hashed from the label,
  * and userData gets a matching suffix so instances run side by side.
  *
- * The MAIN checkout stays unlabeled on purpose — its name, icon, and existing
- * dev profile are exactly what they were before this file existed.
+ * The MAIN checkout is labeled by its CURRENT BRANCH instead — name and tint
+ * follow the branch so it is also tellable at a glance — but its userData stays
+ * the unsuffixed dev profile: branches change too often to fragment state and
+ * locks over, and the main checkout has no side-by-side twin of itself.
  */
 export type DevIdentity = {
   /** Worktree label, or null for the main checkout / packaged builds. */
@@ -38,24 +40,48 @@ function labelHue(label: string): number {
   return hash % 360
 }
 
-/** A linked worktree has a `.git` FILE (pointer); the main checkout has a directory. */
-export function linkedWorktreeLabel(repoRoot: string, env: NodeJS.ProcessEnv = process.env): string | null {
+export type DevLabelProbe = {
+  label: string | null
+  /** Only worktree labels isolate userData; a branch label rides the shared profile. */
+  isolateProfile: boolean
+}
+
+/**
+ * A linked worktree has a `.git` FILE (pointer) and is labeled by its directory
+ * name; the main checkout has a `.git` directory and is labeled by its branch.
+ */
+export function probeDevLabel(repoRoot: string, env: NodeJS.ProcessEnv = process.env): DevLabelProbe {
   const explicit = env.CLAXEDO_DEV_LABEL?.trim()
-  if (explicit) return explicit
+  if (explicit) return { label: explicit, isolateProfile: true }
   try {
-    return statSync(join(repoRoot, ".git")).isFile() ? basename(repoRoot) : null
+    if (statSync(join(repoRoot, ".git")).isFile()) {
+      return { label: basename(repoRoot), isolateProfile: true }
+    }
+    return { label: gitHeadLabel(join(repoRoot, ".git", "HEAD")), isolateProfile: false }
+  } catch {
+    return { label: null, isolateProfile: false }
+  }
+}
+
+/** "ref: refs/heads/dev" → "dev"; a detached HEAD shows its short commit. */
+export function gitHeadLabel(headFile: string): string | null {
+  try {
+    const head = readFileSync(headFile, "utf8").trim()
+    if (head.startsWith("ref: ")) return head.slice("ref: ".length).replace(/^refs\/heads\//, "")
+    return /^[0-9a-f]{40}$/.test(head) ? head.slice(0, 8) : null
   } catch {
     return null
   }
 }
 
-/** Pure derivation from an already-resolved label. */
-export function deriveDevIdentity(label: string | null): DevIdentity {
+/** Pure derivation from an already-resolved probe. */
+export function deriveDevIdentity(probe: DevLabelProbe): DevIdentity {
+  const { label } = probe
   if (!label) return { label: null, name: "Claxedo Dev", userDataSuffix: "", hue: null }
   return {
     label,
     name: `Claxedo Dev (${label})`,
-    userDataSuffix: `.${slugify(label)}`,
+    userDataSuffix: probe.isolateProfile ? `.${slugify(label)}` : "",
     hue: labelHue(label),
   }
 }

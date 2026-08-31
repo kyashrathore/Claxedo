@@ -126,11 +126,18 @@ async function patchDevBundleMetadata() {
   // has its own node_modules/electron bundle, so the patches never collide.
   // Mirrors resolveDevIdentity in src/main/dev-identity.ts: a linked worktree
   // (.git is a file) is labeled with its directory name.
-  const gitPointer = (() => {
-    try { return fs.statSync(path.resolve(PACKAGE_DIR, "../../.git")).isFile() } catch { return false }
+  // Mirrors probeDevLabel in src/main/dev-identity-policy.ts: a linked
+  // worktree (.git is a file) is labeled with its directory name; the main
+  // checkout is labeled with its current branch.
+  const repoRoot = path.resolve(PACKAGE_DIR, "../..")
+  const label = process.env.CLAXEDO_DEV_LABEL?.trim() || (() => {
+    try {
+      if (fs.statSync(path.join(repoRoot, ".git")).isFile()) return path.basename(repoRoot)
+      const head = fs.readFileSync(path.join(repoRoot, ".git", "HEAD"), "utf8").trim()
+      if (head.startsWith("ref: ")) return head.slice("ref: ".length).replace(/^refs\/heads\//, "")
+      return /^[0-9a-f]{40}$/.test(head) ? head.slice(0, 8) : null
+    } catch { return null }
   })()
-  const label = process.env.CLAXEDO_DEV_LABEL?.trim()
-    || (gitPointer ? path.basename(path.resolve(PACKAGE_DIR, "../..")) : null)
   const displayName = label ? `Claxedo Dev (${label})` : "Claxedo Dev"
   changes.push(
     await setKey("CFBundleName", displayName),

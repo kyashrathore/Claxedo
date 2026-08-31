@@ -2,7 +2,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import type { NativeImage } from "electron"
 import { nativeImage } from "electron"
-import { deriveDevIdentity, linkedWorktreeLabel, tintBitmap, type DevIdentity } from "./dev-identity-policy"
+import { deriveDevIdentity, probeDevLabel, tintBitmap, type DevIdentity } from "./dev-identity-policy"
 
 export type { DevIdentity } from "./dev-identity-policy"
 
@@ -13,7 +13,8 @@ function repoRoot(): string {
 }
 
 export function resolveDevIdentity(packaged: boolean): DevIdentity {
-  return deriveDevIdentity(packaged ? null : linkedWorktreeLabel(repoRoot()))
+  if (packaged) return deriveDevIdentity({ label: null, isolateProfile: false })
+  return deriveDevIdentity(probeDevLabel(repoRoot()))
 }
 
 /**
