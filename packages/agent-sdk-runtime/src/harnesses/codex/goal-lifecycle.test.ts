@@ -1,12 +1,24 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import fs from "fs"
+import os from "os"
 import path from "path"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createRuntimeEventHub } from "../../runtime-event-hub"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { committedStartTurn } from "../../test-utils/fake-runtime-store"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import { installFakeCodexAppServer } from "../../test-utils/fake-codex-app-server"
+import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
+import type {
+  ActiveTurn,
+  JsonRecord,
+  SdkRuntimeDriverHost,
+  SdkRuntimeTurnInput,
+} from "../shared/sdk-runtime-adapter"
+import type { CodexAppServerProcess } from "./app-server-process"
+import { CodexGoalController, type CodexGoalControllerHost } from "./goal"
+import type { CodexActiveThread } from "./protocol"
 import { CodexHarnessAdapter } from "./index"
 import type { PromptInput } from "../../index"
 
@@ -27,11 +39,109 @@ function store(turns: { started: number; children: number }): AgentRuntimeStoreW
     },
     getSession: (id) => sessions.get(id) ?? null,
     getAgentSessionId: (id) => agentSessionIds.get(id),
+    deleteSession(id) {
+      sessions.delete(id)
+      agentSessionIds.delete(id)
+    },
     startTurn(input) {
       turns.started++
       return committedStartTurn(input)
     },
   })
+}
+
+const THREAD_ID = "thread-1"
+
+/**
+ * Drives `CodexGoalController` against a scripted app-server so a test can feed
+ * exact provider frames in exact order, which the process-level fake cannot.
+ */
+function goalControllerHarness() {
+  const directory = path.resolve(os.tmpdir(), "codex-goal-controller")
+  const published: Array<{ sessionId: string; directory: string; goal: RuntimeGoalSnapshot | null }> = []
+  const projected: Array<{ threadId: string; method: string; payload: JsonRecord }> = []
+  const providerTurns: Array<Promise<boolean>> = []
+  const activeThreads = new Map<string, CodexActiveThread>()
+  let goal: JsonRecord | null = null
+  const proc = {
+    alive: true,
+    async request(method: string, params: unknown) {
+      const input = (params ?? {}) as { objective?: string; status?: string }
+      if (method === "thread/goal/set") {
+        goal = {
+          threadId: THREAD_ID,
+          objective: input.objective ?? (goal?.objective as string | undefined) ?? "",
+          status: input.status ?? "active",
+          createdAt: 1,
+          updatedAt: 2,
+        }
+        return { goal }
+      }
+      if (method === "thread/goal/get") return { goal }
+      if (method === "thread/goal/clear") {
+        const cleared = goal !== null
+        goal = null
+        return { cleared }
+      }
+      return {}
+    },
+  }
+  const appServer = proc as unknown as CodexAppServerProcess
+  const unusedSubagent: SdkRuntimeTurnInput["observeSubagent"] = async () => {
+    throw new Error("subagent observation is not exercised by this test")
+  }
+  const lifecycle = createSessionTurnLifecycle<ActiveTurn>()
+  const driverHost: SdkRuntimeDriverHost = {
+    lifecycle: () => lifecycle,
+    pendingPermissions: new Map(),
+    pendingQuestions: new Map(),
+    bindSession: () => {},
+    getAgentSessionId: () => THREAD_ID,
+    getSessionConfig: () => null,
+    publishGoal: (input) => published.push(input),
+    runProviderTurn: (binding, execute) => {
+      const turn = execute({
+        sessionId: binding.sessionId,
+        getAgentSessionId: () => THREAD_ID,
+        input: prompt(),
+        directory: binding.directory,
+        abort: new AbortController(),
+        ingest: () => {},
+        associateChild: () => {},
+        observeSubagent: unusedSubagent,
+        rebindAgentSession: () => {},
+        model: "default",
+      }).then(() => true)
+      providerTurns.push(turn)
+      return turn
+    },
+  }
+  const host: CodexGoalControllerHost = {
+    driverHost,
+    ensureProcess: async () => appServer,
+    liveProcess: () => appServer,
+    lease: () => ({ release: () => {} }),
+    activeThreads,
+    projectThreadNotification: async (_input, threadId, method, params) => {
+      projected.push({ threadId, method, payload: params })
+    },
+  }
+  return {
+    directory,
+    published,
+    projected,
+    activeThreads,
+    activeThread: (sessionId: string): CodexActiveThread => ({
+      sessionId,
+      agentSessionId: THREAD_ID,
+      directory,
+      process: appServer,
+      project: () => {},
+      observeSubagent: unusedSubagent,
+    }),
+    host,
+    settle: () => Promise.all(providerTurns),
+  }
 }
 
 async function installFakeCodex() {
@@ -116,20 +226,50 @@ describe("Codex Goal lifecycle", () => {
       store: runtimeStore,
       codexHome: path.join(fake.directory, "codex-home"),
     })
+    expect(await third.goals!.read(session.id, fake.directory)).toMatchObject({ status: "paused" })
     await third.deleteSession(session.id, fake.directory)
 
     expect(fs.existsSync(fake.goalFile)).toBe(false)
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line))
       .filter((request) => request.method.startsWith("thread/goal") || request.method === "thread/resume")
-    expect(requests.slice(-6).map((request) => request.method)).toEqual([
+    expect(requests.slice(-7).map((request) => request.method)).toEqual([
       "thread/goal/set",
       "thread/resume",
       "thread/goal/set",
-      "thread/goal/clear",
+      "thread/goal/get",
       "thread/resume",
+      "thread/goal/get",
       "thread/goal/clear",
     ])
     third.dispose()
+  })
+
+  test("deletes a session without spawning an app-server when the Codex binary is broken", async () => {
+    const fake = await installFakeCodex()
+    const runtimeStore = store({ started: 0, children: 0 })
+    const live = new CodexHarnessAdapter({
+      binary: fake.binary,
+      store: runtimeStore,
+      codexHome: path.join(fake.directory, "codex-home"),
+    })
+    const session = await live.createSession(fake.directory, undefined, "session-broken-binary")
+    await live.goals!.start(session.id, { objective: "Outlive the binary" }, fake.directory)
+    live.dispose()
+    const requestsBeforeDelete = fs.readFileSync(fake.log, "utf8")
+
+    const broken = new CodexHarnessAdapter({
+      binary: path.join(fake.directory, "codex-that-does-not-exist"),
+      store: runtimeStore,
+      codexHome: path.join(fake.directory, "codex-home"),
+    })
+    await broken.deleteSession(session.id, fake.directory)
+
+    expect(runtimeStore.getSession(session.id)).toBeNull()
+    // No process was spawned to clean the Goal up, so the provider Goal
+    // survives — deletion of local state must not depend on it.
+    expect(fs.readFileSync(fake.log, "utf8")).toBe(requestsBeforeDelete)
+    expect(fs.existsSync(fake.goalFile)).toBe(true)
+    broken.dispose()
   })
 
   test("uses structured Goal operations and publishes each accepted state once", async () => {
@@ -212,6 +352,69 @@ describe("Codex Goal lifecycle", () => {
     expect(events.filter((event) => (event as { type?: string }).type === "finish")).toHaveLength(1)
     expect(await adapter.goals!.read(session.id, fake.directory)).toMatchObject({ status: "paused" })
     adapter.dispose()
+  })
+
+  test("a child agent finishing does not end the parent Goal turn", async () => {
+    const harness = goalControllerHarness()
+    const controller = new CodexGoalController(harness.host)
+    expect(await controller.resource.start("session-child-frames", { objective: "Ship" }, harness.directory))
+      .toMatchObject({ ok: true, goal: { status: "active" } })
+
+    controller.handleProcessMessage({
+      method: "turn/started",
+      params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "inProgress" } },
+    })
+    controller.handleProcessMessage({
+      method: "thread/started",
+      params: { thread: { id: "child-1", parentThreadId: THREAD_ID, status: { type: "active" } } },
+    })
+    controller.handleProcessMessage({
+      method: "turn/completed",
+      params: { threadId: "child-1", turn: { id: "child-turn-1", status: "completed" } },
+    })
+    controller.handleProcessMessage({
+      method: "item/agentMessage/delta",
+      params: { threadId: THREAD_ID, turnId: "goal-turn-1", itemId: "item-1", delta: "after the child" },
+    })
+    controller.handleProcessMessage({
+      method: "turn/completed",
+      params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "completed" } },
+    })
+    await harness.settle()
+
+    expect(harness.projected.map((event) => event.method)).toEqual([
+      "turn/started",
+      "thread/started",
+      "turn/completed",
+      "item/agentMessage/delta",
+      "turn/completed",
+    ])
+  })
+
+  test("reconciles Goal routing for a live thread no goals call has armed", async () => {
+    const harness = goalControllerHarness()
+    const controller = new CodexGoalController(harness.host)
+    // A restarted driver holds no Goal binding: the thread it resumed for a
+    // turn is the only thing that still identifies the session.
+    harness.activeThreads.set(THREAD_ID, harness.activeThread("session-restarted"))
+
+    controller.handleProcessMessage({
+      method: "thread/goal/updated",
+      params: {
+        threadId: THREAD_ID,
+        goal: { threadId: THREAD_ID, objective: "Survive restart", status: "active", createdAt: 1, updatedAt: 2 },
+      },
+    })
+
+    expect(harness.published).toEqual([{
+      sessionId: "session-restarted",
+      directory: harness.directory,
+      goal: expect.objectContaining({
+        sessionId: "session-restarted",
+        objective: "Survive restart",
+        status: "active",
+      }),
+    }])
   })
 
   test("pause interrupts an in-flight Goal turn instead of stranding it busy", async () => {

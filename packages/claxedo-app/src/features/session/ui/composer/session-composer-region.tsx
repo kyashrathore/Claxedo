@@ -98,6 +98,7 @@ export function SessionComposerRegion(props: {
   goalController?: {
     goal: () => RuntimeGoalSnapshot | null | undefined
     goalCapabilities: () => AgentRuntimeGoalCapabilities | undefined
+    refreshGoal: (opts?: { force?: boolean }) => Promise<boolean>
     pauseGoal: () => Promise<unknown>
     resumeGoal: () => Promise<unknown>
     stopGoal: () => Promise<unknown>
@@ -363,6 +364,7 @@ export function SessionComposerRegion(props: {
                       activeTurn={props.activeTurn}
                       goal={props.goalController?.goal}
                       goalCapabilities={props.goalController?.goalCapabilities}
+                      refreshGoal={props.goalController?.refreshGoal}
                       stopGoal={props.goalController?.stopGoal}
                       registerRetry={props.registerRetry}
                     />

@@ -7,6 +7,7 @@ import { shouldAcceptSessionTransportResult } from "./session-history-activation
 import { leasedQueryRequest } from "./leased-query-request"
 import {
   sessionResourceAuthorityKey,
+  sessionResourceAuthorityScope,
   type SessionResourceAuthorityScope,
 } from "./session-resource-authority"
 import {
@@ -35,11 +36,11 @@ export { sessionGoalKey, setSessionGoalData, type SessionGoalData } from "./sess
 export type SessionGoalMutation = "pause" | "resume" | "stop" | "delete"
 
 function transportAuthority(input: SessionGoalTransportScope) {
-  return sessionResourceAuthorityKey(goalAuthorityScope(input))
+  return sessionResourceAuthorityKey(sessionGoalAuthorityScope(input))
 }
 
-function goalAuthorityScope(input: SessionGoalTransportScope): SessionResourceAuthorityScope {
-  return {
+export function sessionGoalAuthorityScope(input: SessionGoalTransportScope): SessionResourceAuthorityScope {
+  return sessionResourceAuthorityScope({
     sessionID: input.sessionID,
     directory: input.directory,
     serverUrl: input.claxedoServerUrl,
@@ -47,7 +48,7 @@ function goalAuthorityScope(input: SessionGoalTransportScope): SessionResourceAu
     workspaceId: input.workspaceId,
     workspaceKind: input.workspaceKind,
     sessionRef: input.sessionRef,
-  }
+  })
 }
 
 function requestScope(input: SessionGoalTransportScope) {
@@ -68,7 +69,7 @@ export async function syncSessionGoalData(input: {
   signal?: AbortSignal
 }) {
   try {
-    const scope = goalAuthorityScope(input.request)
+    const scope = sessionGoalAuthorityScope(input.request)
     const revision = sessionGoalRevision(scope)
     const data = await leasedQueryRequest({
       scopeKey: requestScope(input.request),
@@ -104,7 +105,7 @@ export async function mutateSessionGoalData(input: {
   request: SessionGoalTransportScope
   mutation: SessionGoalMutation
 }) {
-  const scope = goalAuthorityScope(input.request)
+  const scope = sessionGoalAuthorityScope(input.request)
   const current = queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))
   if (!current) throw new Error("Goal state must be synchronized before it can be changed")
   if (!current.capabilities.available || !current.capabilities.implemented) {
@@ -163,4 +164,25 @@ export function applySessionGoalRuntimeEvent(input: {
 
 export function invalidateSessionGoalData(scope: SessionResourceAuthorityScope) {
   return queryClient.invalidateQueries({ queryKey: sessionGoalKey(scope), exact: true })
+}
+
+/**
+ * Call `onInvalidate` whenever this Goal authority's cache entry is invalidated.
+ *
+ * The pane's Goal query is a cache MIRROR (`skipToken` + `enabled: false`) fed by
+ * `syncSessionGoalData`, so `invalidateQueries` can never refetch it on its own:
+ * the invalidation only marks the entry stale. The mounted controller turns that
+ * mark into a real re-read; an unmounted one leaves the mark for the next
+ * activation's `sync()` to honour.
+ */
+export function observeSessionGoalInvalidation(
+  scope: SessionResourceAuthorityScope,
+  onInvalidate: () => void,
+) {
+  const queryHash = queryClient.defaultQueryOptions({ queryKey: sessionGoalKey(scope) }).queryHash
+  return queryClient.getQueryCache().subscribe((event) => {
+    if (event.type !== "updated" || event.action.type !== "invalidate") return
+    if (event.query.queryHash !== queryHash) return
+    onInvalidate()
+  })
 }

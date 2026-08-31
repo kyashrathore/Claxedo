@@ -121,6 +121,25 @@ describe("OpenCode session Goal aggregate", () => {
     }),
   )
 
+  it.instance("reports only sessions whose durable Goal is still active", () =>
+    Effect.gen(function* () {
+      const sessions = yield* Session.Service
+      const goals = yield* SessionGoal.Service
+      const active = yield* sessions.create({ title: "Active Goal" })
+      const paused = yield* sessions.create({ title: "Paused Goal" })
+      const none = yield* sessions.create({ title: "No Goal" })
+
+      yield* goals.start({ sessionID: active.id, objective: "Keep going" })
+      yield* goals.start({ sessionID: paused.id, objective: "Stop here" })
+      yield* goals.pause(paused.id)
+
+      const ids = yield* goals.pending()
+      expect(ids).toContain(active.id)
+      expect(ids).not.toContain(paused.id)
+      expect(ids).not.toContain(none.id)
+    }),
+  )
+
   it.instance("requires explicit deletion before replacing a completed Goal", () =>
     Effect.gen(function* () {
       const sessions = yield* Session.Service

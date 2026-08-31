@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -187,9 +188,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   private ownsGoalStore = false
   private evaluateGoal: PiGoalEvaluator
   private goalGeneration = new Map<string, number>()
-  private publishedGoals = new Map<string, string>()
 
   readonly goals: AgentGoalResource
+  private readonly goalPublisher: GoalPublisher
 
   constructor(options: PiAdapterOptions = {}) {
     this.createEnv = options.createEnv ?? (() => createVirtualSessionEnv())
@@ -202,6 +203,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     this.goalStore = options.goalStore ?? options.createStore?.(options.storeRoot)
     this.ownsGoalStore = !options.goalStore && !!this.goalStore
     this.evaluateGoal = options.evaluateGoal ?? evaluatePiGoal
+    this.goalPublisher = createGoalPublisher(this.eventHub)
     this.goals = this.goalResource()
   }
 
@@ -326,18 +328,18 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   private publishGoal(session: PiSession, goal: RuntimeGoalSnapshot | null) {
-    const signature = JSON.stringify(goal)
-    if (this.publishedGoals.get(session.id) === signature) return
-    this.publishedGoals.set(session.id, signature)
-    session.goal = goal
-    this.goalStore?.setGoal?.(session.id, goal)
-    this.eventHub?.publishRuntime({
-      directory: session.directory ?? session.id,
+    this.goalPublisher.publish({
+      // '' is the canonical central scope (see bindSession): a Session id is
+      // never a directory and would make central Pi sessions' goal events
+      // invisible to central-scope subscribers.
+      directory: session.directory ?? "",
       sessionId: session.id,
       agentSessionId: session.id,
-      payload: goal
-        ? agentRuntimeEvent.goalUpdated({ sessionId: session.id, goal })
-        : agentRuntimeEvent.goalCleared({ sessionId: session.id }),
+      goal,
+      applyState: (next) => {
+        session.goal = next
+        this.goalStore?.setGoal?.(session.id, next)
+      },
     })
   }
 

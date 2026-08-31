@@ -46,12 +46,8 @@ import { requireWorkspaceDirectory } from "../../target"
 import { toOpencodeConfig, type ResolvedMcpServer } from "../../mcp-resolver"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { createSubagentAdmissionBoundary, type SubagentAdmissionStore } from "../../subagent-admission"
-import {
-  createLegacyOpenCodeRuntimePublisher,
-  drainEventStream,
-  openEventStream,
-  type OpenCodeEventStreamHandle,
-} from "./events"
+import { createLegacyOpenCodeRuntimePublisher, drainEventStream, openEventStream } from "./events"
+import { OpenCodeGoalMonitors } from "./goal-monitor"
 import { opencodeSubagentObservations } from "./subagent"
 import { opencodeAuthContent } from "./env"
 import { OpenCodeServerProcess, type OpenCodeServerConnection } from "./process"
@@ -116,9 +112,21 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   // event stream the turn is draining.
   private subagentAdmissions = Promise.resolve()
   private publishedGoals = new Map<string, string>()
-  private goalMonitorGeneration = new Map<string, number>()
-  private goalStreams = new Map<string, OpenCodeEventStreamHandle>()
-  private goalRetryWaiters = new Map<string, { timer: ReturnType<typeof setTimeout>; cancel: () => void }>()
+  // One watcher for the whole server; every Goal session shares its event stream.
+  private goalMonitors = new OpenCodeGoalMonitors({
+    request: () => this.requestFn(),
+    streamHeaders: (directory) => this.headers(directory, false),
+    readGoal: (sessionId, directory) => this.goals.read(sessionId, directory),
+    publishGoal: (sessionId, directory, goal) => this.publishGoal(sessionId, directory, goal),
+    observe: (event, sessionId, directory) => this.observeSubagents(event, sessionId, directory),
+    publisher: (sessionId, directory) =>
+      createLegacyOpenCodeRuntimePublisher({
+        directory,
+        sessionId,
+        assistantMessageId: randomUUID(),
+        eventHub: this.eventHub,
+      }),
+  })
   readonly goals: AgentGoalResource
 
   constructor(opencodeUrl?: string, input?: {
@@ -191,6 +199,14 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
         }
       }
     }
+    // Pause and Stop are the same upstream transition: the engine's /pause
+    // endpoint settles the Goal and cancels its run. They stay separate actions
+    // in the contract because callers mean different things by them.
+    const suspend = async (sessionId: string, directory: string | undefined) => {
+      const result = await mutate<RuntimeGoalSnapshot>(sessionId, directory, "/pause", { method: "POST" })
+      if (result.ok) this.goalMonitors.stop(sessionId)
+      return result
+    }
     return {
       readCapabilities: async (sessionId, directory) => {
         try {
@@ -213,28 +229,20 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
           method: "POST",
           body: JSON.stringify({ objective: input.objective }),
         })
-        if (result.ok) this.monitorGoal(sessionId, required)
+        if (result.ok) this.goalMonitors.start(sessionId, required)
         return result
       },
-      pause: async (sessionId, directory) => {
-        const result = await mutate<RuntimeGoalSnapshot>(sessionId, directory, "/pause", { method: "POST" })
-        if (result.ok) this.stopGoalMonitor(sessionId)
-        return result
-      },
-      stop: async (sessionId, directory) => {
-        const result = await mutate<RuntimeGoalSnapshot>(sessionId, directory, "/pause", { method: "POST" })
-        if (result.ok) this.stopGoalMonitor(sessionId)
-        return result
-      },
+      pause: suspend,
+      stop: suspend,
       resume: async (sessionId, directory) => {
         const required = requireWorkspaceDirectory(directory)
         const result = await mutate<RuntimeGoalSnapshot>(sessionId, required, "/resume", { method: "POST" })
-        if (result.ok) this.monitorGoal(sessionId, required)
+        if (result.ok) this.goalMonitors.start(sessionId, required)
         return result
       },
       delete: async (sessionId, directory) => {
         const result = await mutate<null>(sessionId, directory, "", { method: "DELETE" })
-        if (result.ok) this.stopGoalMonitor(sessionId)
+        if (result.ok) this.goalMonitors.stop(sessionId)
         return result
       },
     }
@@ -253,83 +261,9 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     })
   }
 
-  private stopGoalMonitor(sessionId: string) {
-    this.goalMonitorGeneration.set(sessionId, (this.goalMonitorGeneration.get(sessionId) ?? 0) + 1)
-    this.goalStreams.get(sessionId)?.close()
-    this.goalStreams.delete(sessionId)
-    this.goalRetryWaiters.get(sessionId)?.cancel()
-    this.goalRetryWaiters.delete(sessionId)
-  }
-
   private cleanupGoalSession(sessionId: string) {
-    this.stopGoalMonitor(sessionId)
+    this.goalMonitors.stop(sessionId)
     this.publishedGoals.delete(sessionId)
-    this.goalMonitorGeneration.delete(sessionId)
-  }
-
-  private monitorGoal(sessionId: string, directory: string) {
-    this.stopGoalMonitor(sessionId)
-    const generation = this.goalMonitorGeneration.get(sessionId) ?? 0
-    void (async () => {
-      let failures = 0
-      try {
-        while (this.goalMonitorGeneration.get(sessionId) === generation) {
-          let receivedEvent = false
-          try {
-            const request = await this.requestFn()
-            const goal = await this.goals.read(sessionId, directory)
-            this.publishGoal(sessionId, directory, goal)
-            if (!goal || goal.status !== "active") return
-            const stream = openEventStream(request, this.headers(directory, false))
-            this.goalStreams.set(sessionId, stream)
-            const publishRuntime = createLegacyOpenCodeRuntimePublisher({
-              directory,
-              sessionId,
-              assistantMessageId: randomUUID(),
-              eventHub: this.eventHub,
-            })
-            for await (const event of drainEventStream(stream, sessionId)) {
-              if (this.goalMonitorGeneration.get(sessionId) !== generation) return
-              receivedEvent = true
-              this.observeSubagents(event, sessionId, directory)
-              publishRuntime(event)
-              if (event.type !== "session.updated") continue
-              const current = await this.goals.read(sessionId, directory)
-              this.publishGoal(sessionId, directory, current)
-              if (!current || current.status !== "active") return
-            }
-            if (this.goalStreams.get(sessionId) === stream) this.goalStreams.delete(sessionId)
-          } catch (error) {
-            log.warn("OpenCode Goal monitor will reconnect after failure", { sessionId, error })
-          }
-          failures = receivedEvent ? 1 : failures + 1
-          if (!(await this.waitForGoalMonitorRetry(sessionId, generation, failures))) return
-        }
-      } finally {
-        if (this.goalMonitorGeneration.get(sessionId) === generation) {
-          this.goalMonitorGeneration.delete(sessionId)
-          this.goalStreams.delete(sessionId)
-        }
-      }
-    })()
-  }
-
-  private waitForGoalMonitorRetry(sessionId: string, generation: number, failures: number) {
-    const delay = Math.min(100 * 2 ** Math.min(failures - 1, 6), 5_000)
-    return new Promise<boolean>((resolve) => {
-      const finish = (current: boolean) => {
-        if (this.goalRetryWaiters.get(sessionId)?.timer === timer) this.goalRetryWaiters.delete(sessionId)
-        resolve(current)
-      }
-      const timer = setTimeout(() => finish(this.goalMonitorGeneration.get(sessionId) === generation), delay)
-      this.goalRetryWaiters.set(sessionId, {
-        timer,
-        cancel: () => {
-          clearTimeout(timer)
-          finish(false)
-        },
-      })
-    })
   }
 
   // ── Server lifecycle ─────────────────────────────────────────────────────────
@@ -880,8 +814,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   }
 
   dispose(): void {
-    const goalSessions = new Set([...this.goalMonitorGeneration.keys(), ...this.goalStreams.keys()])
-    for (const sessionId of goalSessions) this.cleanupGoalSession(sessionId)
+    this.goalMonitors.dispose()
+    this.publishedGoals.clear()
     this.transportObservation?.exit({ reason: "disposed" })
     this.mcpObservations.forEach((handle) => handle.exit({ reason: "disposed" }))
     this.mcpObservations = []

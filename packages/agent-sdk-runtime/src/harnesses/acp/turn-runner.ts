@@ -35,6 +35,11 @@ const log = Log.create({ service: "acp-turn-runner" })
 const activePromptCounts = new Map<string, number>()
 const activePromptWaiters = new Map<string, Set<() => void>>()
 
+type GoalRuntime = {
+  agentSessionId: string
+  runtime: ReturnType<typeof createAgentEventRuntime>
+}
+
 type GoalProjection = {
   agentSessionId: string
   directory: string
@@ -79,10 +84,37 @@ function unrestorable(error: unknown) {
 
 export abstract class AcpTurnRunner extends AcpProcessManager {
   private goalProjections = new Map<string, GoalProjection>()
+  private goalRuntimes = new Map<string, GoalRuntime>()
 
   private goalProjectionMap() {
     this.goalProjections ??= new Map<string, GoalProjection>()
     return this.goalProjections
+  }
+
+  private goalRuntimeMap() {
+    this.goalRuntimes ??= new Map<string, GoalRuntime>()
+    return this.goalRuntimes
+  }
+
+  /**
+   * The event runtime that translates one Goal turn's ACP updates.
+   *
+   * Cached per local session, NOT per projection: the projection only exists
+   * once a translated event has been produced, so a runtime owned by the
+   * projection would be rebuilt — and its accumulated translator state thrown
+   * away — on every update until then. Dropped by `finishGoalProjection` so the
+   * next Goal turn starts from a clean translator.
+   */
+  private goalRuntime(sessionId: string, agentSessionId: string) {
+    const cached = this.goalRuntimeMap().get(sessionId)
+    if (cached?.agentSessionId === agentSessionId) return cached.runtime
+    const runtime = createAgentEventRuntime({
+      harness: this.harnessId(),
+      threadId: agentSessionId,
+      adapter: createAcpEventTranslator({ client: this.harnessId() }),
+    })
+    this.goalRuntimeMap().set(sessionId, { agentSessionId, runtime })
+    return runtime
   }
 
   protected observeGoalSessionUpdate(
@@ -93,22 +125,21 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     update: SessionUpdate,
   ) {
     if (this.store.getGoal?.(sessionId)?.status !== "active") return
-    let projection = this.goalProjectionMap().get(sessionId)
-    const runtime = projection?.agentSessionId === agentSessionId
-      ? projection.runtime
-      : createAgentEventRuntime({
-          harness: this.harnessId(),
-          threadId: agentSessionId,
-          adapter: createAcpEventTranslator({ client: this.harnessId() }),
-        })
+    // Retire a projection bound to a replaced ACP session BEFORE the runtime is
+    // resolved, so the cached runtime it drops is the stale one.
+    const stale = this.goalProjectionMap().get(sessionId)
+    if (stale && stale.agentSessionId !== agentSessionId) {
+      this.finishGoalProjection(sessionId, "ACP Goal session binding changed")
+    }
+    const runtime = this.goalRuntime(sessionId, agentSessionId)
     const result = runtime.ingest({
       source: "acp.jsonrpc",
       method: "session/update",
       payload: update,
     })
     if (result.events.length === 0) return
-    if (!projection || projection.agentSessionId !== agentSessionId) {
-      if (projection) this.finishGoalProjection(sessionId, "ACP Goal session binding changed")
+    let projection = this.goalProjectionMap().get(sessionId)
+    if (!projection) {
       const started = this.startGoalProjection(sessionId, agentSessionId, directory, proc, runtime)
       if (!started) return
       projection = started
@@ -123,6 +154,9 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
   }
 
   protected finishGoalProjection(sessionId: string, error?: string) {
+    // Unconditional: updates can accumulate translator state before any
+    // projection starts, and that runtime must not outlive the Goal turn.
+    this.goalRuntimeMap().delete(sessionId)
     const projection = this.goalProjectionMap().get(sessionId)
     if (!projection) return
     this.goalProjectionMap().delete(sessionId)

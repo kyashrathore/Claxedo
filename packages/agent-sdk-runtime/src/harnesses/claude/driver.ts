@@ -11,8 +11,6 @@ import {
 import { randomUUID } from "crypto"
 import { spawn } from "child_process"
 import {
-  importSessionToStore,
-  InMemorySessionStore,
   query,
   type CanUseTool,
   type McpServerConfig,
@@ -34,6 +32,7 @@ import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
+  errorMessage,
   extractTextFromParts,
   record,
   text,
@@ -42,6 +41,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { requireClaudeExecutable } from "./executable"
 import { harnessSpawnEnv } from "../shared/spawn-env"
@@ -78,10 +78,6 @@ export function claudeSystemPrompt(system?: string) {
     : undefined
 }
 
-export function claudeGoalCommand(objective: string) {
-  return `/goal ${objective}`
-}
-
 export function claudeGoalSnapshot(
   sessionId: string,
   message: SDKActiveGoalMessage,
@@ -101,19 +97,35 @@ export function claudeGoalSnapshot(
   }
 }
 
+/**
+ * The single reader of Claude's Goal progress, and the only place coupled to
+ * its format.
+ *
+ * FORMAT COUPLING: the SDK has no typed Goal-progress message. The CLI reports
+ * every iteration by writing an UNTYPED `goal_status` attachment entry to the
+ * session store — `{ type, met, condition, reason?, iterations? }` — so this
+ * helper sniffs it out of `SessionStoreEntry.attachment`. Every field is read
+ * defensively: it runs inside the SDK's `sessionStore.append`, where a throw
+ * would fail the very turn that carries the Goal, so an entry shape that no
+ * longer matches must degrade to "no Goal update" (`undefined`) instead.
+ *
+ * Returns the new snapshot, `null` when the Goal is met (clear it), or
+ * `undefined` when the entry says nothing about a Goal.
+ */
 export function claudeTranscriptGoalSnapshot(
   sessionId: string,
   entry: SessionStoreEntry,
   previous?: RuntimeGoalSnapshot,
 ): RuntimeGoalSnapshot | null | undefined {
-  if (entry.type !== "attachment") return undefined
-  const attachment = record(entry.attachment)
+  const row = record(entry)
+  if (!row || row.type !== "attachment") return undefined
+  const attachment = record(row.attachment)
   if (text(attachment?.type) !== "goal_status") return undefined
   if (attachment?.met === true) return null
   if (attachment?.met !== false) return undefined
   const objective = text(attachment.condition)
   if (!objective) return undefined
-  const timestamp = typeof entry.timestamp === "string" ? Date.parse(entry.timestamp) : Number.NaN
+  const timestamp = typeof row.timestamp === "string" ? Date.parse(row.timestamp) : Number.NaN
   const updatedAt = Number.isFinite(timestamp) ? timestamp : Date.now()
   return {
     sessionId,
@@ -129,7 +141,6 @@ export function claudeTranscriptGoalSnapshot(
 export type ClaudeSdkDriverOptions = {
   query?: typeof query
   executable?: () => string
-  importSession?: typeof importSessionToStore
 }
 
 export function createClaudeSdkDriver(
@@ -141,7 +152,7 @@ export function createClaudeSdkDriver(
 
 class ClaudeSdkDriver implements SdkRuntimeDriver {
   readonly type = "claude" as const
-  private goalBySession = new Map<string, RuntimeGoalSnapshot>()
+  private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
     // Delete is NOT advertised: the Goal lives in the Claude CLI session and no
     // provider clear operation exists, so a resumed session would re-emit a
@@ -153,15 +164,9 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       recovery: "blocked",
       optionalFields: ["iteration", "lastReason"],
     }),
-    read: async (sessionId) => this.goalBySession.get(sessionId) ?? null,
-    run: (input, objective, onGoal) => this.runQuery(input, claudeGoalCommand(objective), onGoal),
-    stop: async (sessionId) => {
-      const goal = this.goalBySession.get(sessionId)
-      if (!goal) return null
-      const stopped = { ...goal, status: "paused" as const, updatedAt: Date.now() }
-      this.goalBySession.set(sessionId, stopped)
-      return stopped
-    },
+    read: (sessionId) => this.goalStore.read(sessionId),
+    run: (input, objective, onGoal) => this.runQuery(input, nativeGoalCommand(objective), onGoal),
+    stop: (sessionId) => this.goalStore.stop(sessionId),
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
@@ -225,7 +230,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   deleteAgentSession(sessionId: string) {
-    this.goalBySession.delete(sessionId)
+    this.goalStore.forget(sessionId)
   }
 
   createRuntime(threadId: string): AgentEventRuntime {
@@ -246,37 +251,41 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     onGoal?: (goal: RuntimeGoalSnapshot | null) => void,
   ) {
     const applyGoal = (goal: RuntimeGoalSnapshot | null) => {
-      if (goal) this.goalBySession.set(input.sessionId, goal)
-      else this.goalBySession.delete(input.sessionId)
+      this.goalStore.apply(input.sessionId, goal)
       onGoal?.(goal)
       this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
     }
     let goalSessionStore: SessionStore | undefined
     if (onGoal) {
-      const mirror = new InMemorySessionStore()
-      const agentSessionId = input.getAgentSessionId()
-      if (!agentSessionId.startsWith(CLAUDE_PENDING_PREFIX)) {
-        await (this.driverOptions.importSession ?? importSessionToStore)(agentSessionId, mirror, {
-          dir: input.directory,
-          includeSubagents: true,
-        })
-      }
+      /**
+       * A WRITE-ONLY observer, not a storage adapter: this store exists solely
+       * because `append` is the only channel on which the CLI reports Goal
+       * progress. It deliberately keeps nothing.
+       *
+       * Storing (or importing) a transcript here would be worse than useless.
+       * The subprocess keeps writing its own complete local JSONL — this is a
+       * secondary copy — and the SDK redirects resume at the store only when
+       * `load()` answers with entries, which it materializes into a temporary
+       * CLAUDE_CONFIG_DIR and resumes the CLI from INSTEAD of that local
+       * transcript. Answering with nothing keeps the CLI on its own history;
+       * answering with a mirror would cost an O(transcript) import per Goal
+       * turn and, since ordinary turns run without a `sessionStore` and never
+       * reach here, would eventually resume from a copy missing them.
+       */
       goalSessionStore = {
-        append: async (key, entries) => {
-          await mirror.append(key, entries)
+        append: async (_key, entries) => {
           for (const entry of entries) {
             const goal = claudeTranscriptGoalSnapshot(
               input.sessionId,
               entry,
-              this.goalBySession.get(input.sessionId),
+              this.goalStore.peek(input.sessionId),
             )
             if (goal !== undefined) applyGoal(goal)
           }
         },
-        load: (key) => mirror.load(key),
-        listSessions: (projectKey) => mirror.listSessions(projectKey),
-        listSessionSummaries: (projectKey) => mirror.listSessionSummaries(projectKey),
-        listSubkeys: (key) => mirror.listSubkeys(key),
+        load: async () => null,
+        listSessions: async () => [],
+        listSubkeys: async () => [],
       }
     }
     const requestPermission: CanUseTool = async (toolName, toolInput, options) => {
@@ -377,12 +386,27 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       abort: input.abort,
       close: () => q.close(),
     })
-    for await (const message of q as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
-      if (message.type === "active_goal") {
-        applyGoal(claudeGoalSnapshot(input.sessionId, message))
-        continue
+    try {
+      for await (const message of q as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
+        if (message.type === "active_goal") {
+          applyGoal(claudeGoalSnapshot(input.sessionId, message))
+          continue
+        }
+        await ingestClaudeSdkMessage(input, message)
       }
-      await ingestClaudeSdkMessage(input, message)
+    } catch (cause) {
+      // This query carried the Goal: if it died, no iteration is left to report
+      // progress, so the Goal must not stay `active` — that state is what makes
+      // the composer offer a Stop for work that is already gone.
+      if (!onGoal) throw cause
+      const settled = this.goalStore.settleUnfinished(
+        input.sessionId,
+        input.abort.signal.aborted
+          ? { status: "paused" }
+          : { status: "blocked", reason: errorMessage(cause) },
+      )
+      if (settled) applyGoal(settled)
+      throw cause
     }
   }
 

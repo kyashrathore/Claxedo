@@ -631,31 +631,69 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return context
   }
 
+  // One fan-out for every Goal state a subscriber may observe, whichever side
+  // produced it: a mutation this runtime performed, or a provider-originated
+  // update that reached the event hub. Deduping by snapshot signature — the
+  // same policy adapters apply on the hub side — keeps a mutation that is also
+  // mirrored onto the hub from publishing the same state twice.
+  const publishedGoalSignatures = new Map<string, string>()
+
+  const publishGoalSnapshot = (
+    sessionId: string,
+    directory: RuntimeDirectory,
+    goal: RuntimeGoalSnapshot | null,
+  ) => {
+    const signature = JSON.stringify(goal ?? null)
+    if (publishedGoalSignatures.get(sessionId) === signature) return
+    publishedGoalSignatures.set(sessionId, signature)
+    publish({
+      sessionId,
+      directory,
+      payload: goal
+        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
+        : agentRuntimeEvent.goalCleared({ sessionId }),
+    })
+  }
+
   const publishGoalResult = (
     sessionId: string,
     directory: RuntimeDirectory,
     result: AgentGoalMutationResult,
   ) => {
     if (!result.ok) return
-    const payload = result.goal
-      ? agentRuntimeEvent.goalUpdated({ sessionId, goal: result.goal })
-      : agentRuntimeEvent.goalCleared({ sessionId })
-    publish({ sessionId, directory, payload })
+    publishGoalSnapshot(sessionId, directory, result.goal ?? null)
   }
 
-  const runGoalAction = async (
+  const unsubscribeGoalBridge = eventHub.subscribeRuntime((event) => {
+    if (event.payload.type !== "goal-updated" && event.payload.type !== "goal-cleared") return
+    const session = store.getSession(event.sessionId) as { directory?: string } | null
+    publishGoalSnapshot(
+      event.sessionId,
+      session ? session.directory ?? undefined : event.directory,
+      event.payload.type === "goal-updated" ? event.payload.goal : null,
+    )
+  })
+
+  /**
+   * The single Goal mutation path. `stop` is deliberately ungated: it is the
+   * safety valve that must end a running Goal even on a harness that offers no
+   * pause/resume/delete, so it is not one of `GOAL_ACTIONS`.
+   */
+  const runGoalMutation = async (
     sessionId: string,
-    action: GoalAction,
+    mutation: GoalAction | "stop",
     requestedDirectory?: RuntimeDirectory,
   ): Promise<AgentGoalMutationResult> => {
     const context = await availableGoalContext(sessionId, requestedDirectory)
-    try {
-      requireGoalAction(context.capabilities, action)
-    } catch (error) {
-      const message = error instanceof GoalCapabilityError ? error.message : `Goal action '${action}' is unavailable`
-      throw new AgentRuntimeGoalError("goal_action_unavailable", message)
+    if (mutation !== "stop") {
+      try {
+        requireGoalAction(context.capabilities, mutation)
+      } catch (error) {
+        const message = error instanceof GoalCapabilityError ? error.message : `Goal action '${mutation}' is unavailable`
+        throw new AgentRuntimeGoalError("goal_action_unavailable", message)
+      }
     }
-    const result = await context.resource[action](sessionId, context.directory) as AgentGoalMutationResult
+    const result = await context.resource[mutation](sessionId, context.directory) as AgentGoalMutationResult
     publishGoalResult(sessionId, context.directory, result)
     return result
   }
@@ -712,6 +750,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const adapter = await adapterForSession(sessionId)
         await adapter.deleteSession(sessionId, directory)
         store.deleteSession(sessionId)
+        publishedGoalSignatures.delete(sessionId)
       },
     },
     turns: {
@@ -823,19 +862,16 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         })
       },
       async pause(sessionId: string, directory?: RuntimeDirectory) {
-        return await runGoalAction(sessionId, "pause", directory)
+        return await runGoalMutation(sessionId, "pause", directory)
       },
       async resume(sessionId: string, directory?: RuntimeDirectory) {
-        return await runGoalAction(sessionId, "resume", directory)
+        return await runGoalMutation(sessionId, "resume", directory)
       },
       async stop(sessionId: string, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult> {
-        const context = await availableGoalContext(sessionId, directory)
-        const result = await context.resource.stop(sessionId, context.directory)
-        publishGoalResult(sessionId, context.directory, result)
-        return result
+        return await runGoalMutation(sessionId, "stop", directory)
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
-        return await runGoalAction(sessionId, "delete", directory) as AgentGoalMutationResult<null>
+        return await runGoalMutation(sessionId, "delete", directory) as AgentGoalMutationResult<null>
       },
     },
     events: {
@@ -931,6 +967,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     dispose() {
       activeTurnAdmissions.clear()
       goalStartAdmissions.clear()
+      publishedGoalSignatures.clear()
+      unsubscribeGoalBridge()
       for (const subscriber of subscribers) subscriber.close()
       for (const adapter of adapters.values()) adapter.dispose()
       store.close?.()

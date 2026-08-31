@@ -195,6 +195,7 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
       proc: {
         alive: true,
         supportsForkSession: (agentSessionId?: string) => !agentSessionId || agentSessionId === "agent_1",
+        goalCapabilities: () => ({ implemented: false, available: false, actions: [], optionalFields: [] }),
       },
     })
 

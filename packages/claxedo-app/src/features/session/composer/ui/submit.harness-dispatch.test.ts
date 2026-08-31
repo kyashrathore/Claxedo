@@ -87,6 +87,34 @@ describe("Harness + demo dispatch and abort", () => {
     expect(promptCalls.reset.length).toBeGreaterThan(0)
   })
 
+  test("a typed Goal conflict surfaces its message instead of the raw HTTP body", async () => {
+    promptValue.splice(0, promptValue.length, {
+      type: "text",
+      content: "/goal Ship Goal support",
+      start: 0,
+      end: 23,
+    })
+    state.localSessionConfig = {
+      harness: { id: "opencode", access: "native" },
+      agent: "agent",
+      model: { providerID: "provider", modelID: "model" },
+    }
+    // The runtime answers this with HTTP 409 (see the harness's
+    // `goalMutationResponse`), so only a client that decodes the typed failure
+    // body can report the message rather than the serialized envelope.
+    state.goalMutation = { ok: false, status: "conflict", message: "A Goal is already active" }
+    const submit = createSubmit({
+      info: () => ({ id: "session-1", config: state.localSessionConfig }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await waitForSubmitEffect(() => toasts.length > 0)
+
+    expect(toasts.map((toast) => toast.description)).toContain("A Goal is already active")
+  })
+
   test("failed armed Goal keeps its created session and restores an explicit retry draft", async () => {
     promptValue.splice(0, promptValue.length, {
       type: "text",

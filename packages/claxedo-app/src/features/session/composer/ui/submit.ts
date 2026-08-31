@@ -47,7 +47,7 @@ import { knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolv
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { composerHarnessId, isComposerHarnessMode } from "../mode"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
-import { createPromptAbort } from "./submit-abort"
+import { createGoalAwareAbort, createPromptAbort } from "./submit-abort"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef } from "./submit-create-session"
 import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
@@ -191,18 +191,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           : sdk.createClient({ directory, throwOnError: true }),
     usesSignedControlPlane,
   })
-  // Goal Stop is a provider mutation, not a local abort: a relay failure means
-  // the Goal is still running, so surface it and keep the dock visible for
-  // retry instead of letting the rejection vanish into a voided promise.
-  const abort = () => input.hasActiveGoal?.() && input.stopGoal
-    ? Promise.resolve(input.stopGoal()).catch((err) => {
-        showToast({
-          title: language.t("prompt.toast.goalStopFailed.title"),
-          description: errorMessage(err),
-          variant: "error",
-        })
+  const abort = createGoalAwareAbort({
+    hasActiveGoal: input.hasActiveGoal,
+    stopGoal: input.stopGoal,
+    promptAbort,
+    onStopGoalError: (err) => {
+      showToast({
+        title: language.t("prompt.toast.goalStopFailed.title"),
+        description: errorMessage(err),
+        variant: "error",
       })
-    : promptAbort()
+    },
+  })
 
   const globalProjects = () =>
     queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey) ?? []

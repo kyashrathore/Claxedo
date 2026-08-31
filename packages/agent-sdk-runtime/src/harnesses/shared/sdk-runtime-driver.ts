@@ -119,6 +119,16 @@ export type SdkRuntimeDriver = {
       onGoal: (goal: RuntimeGoalSnapshot | null) => void,
     ): Promise<void>
     stop(sessionId: string, directory: string): Promise<RuntimeGoalSnapshot | null>
+    /**
+     * Clear the Goal at the provider, for the drivers whose provider has such
+     * an operation — only they may advertise the `delete` action.
+     *
+     * Optional because most native harnesses keep the Goal inside a provider
+     * session with no clear operation at all: deleting locally would lie,
+     * because resuming that session re-emits the Goal. `false` means the
+     * provider had nothing to clear.
+     */
+    delete?(sessionId: string, directory: string): Promise<boolean>
   }
   setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>

@@ -215,7 +215,11 @@ describe("session Goal authority", () => {
     const pause = mutateSessionGoalData({ request, mutation: "pause" })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
     expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))?.goal).toEqual(activeGoal)
-    harness.pending[0]!.resolve(Response.json({ ok: false, status: "failed", message: "provider refused" }))
+    // The runtime serializes a `failed` mutation result with HTTP 502
+    // (`workspace-runtime` `routes/session-core.ts:goalMutationResponse`), so
+    // the fake must too — a 200 here would exercise a transport the server
+    // never produces.
+    harness.pending[0]!.resolve(Response.json({ ok: false, status: "failed", message: "provider refused" }, { status: 502 }))
 
     await expect(pause).rejects.toMatchObject({ name: "SessionGoalMutationError", status: "failed" })
     expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))?.goal).toEqual(activeGoal)

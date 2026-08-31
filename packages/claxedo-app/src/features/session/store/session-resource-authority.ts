@@ -11,6 +11,37 @@ export type SessionResourceAuthorityScope = {
   sessionRef?: SessionRef
 }
 
+/**
+ * The single builder for a session-resource authority scope.
+ *
+ * The workspace identity belongs to the authority only when the signed control
+ * plane routes the request; an unsigned/loopback transport addresses the runtime
+ * directly and folding a workspace id into its key names an authority nothing
+ * reads. Every producer — the pane query keys, the goal read/mutation transport,
+ * and the live event stream — builds its scope here so the reader and the writer
+ * of a cache entry can never disagree about that gate.
+ */
+export function sessionResourceAuthorityScope(input: {
+  sessionID: string
+  directory: AgentRuntimeDirectory
+  serverUrl?: string
+  signedControlPlane?: boolean
+  workspaceId?: string
+  workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
+}): SessionResourceAuthorityScope {
+  const signedControlPlane = input.signedControlPlane === true
+  return {
+    sessionID: input.sessionID,
+    directory: input.directory,
+    ...(input.serverUrl === undefined ? {} : { serverUrl: input.serverUrl }),
+    signedControlPlane,
+    ...(signedControlPlane && input.workspaceId ? { workspaceId: input.workspaceId } : {}),
+    ...(signedControlPlane && input.workspaceKind ? { workspaceKind: input.workspaceKind } : {}),
+    ...(input.sessionRef ? { sessionRef: input.sessionRef } : {}),
+  }
+}
+
 function sandboxAuthority(ref: SessionRef) {
   const sandbox = ref.toolSandbox
   if (!sandbox) return null

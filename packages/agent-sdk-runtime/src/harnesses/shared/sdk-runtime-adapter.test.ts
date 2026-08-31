@@ -1,9 +1,10 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
-import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./sdk-runtime-adapter"
+import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { createCodexAppServerDriver } from "../codex/driver"
+import type { CodexGoalController } from "../codex/goal"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import { storeRows } from "../../test-utils/store-internals"
@@ -27,6 +28,32 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     readRuntimeHealth: () => ({ status: "ok" }),
     configOptions: async () => [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "default", selectOptions: [{ id: "default", name: "Default" }] }],
     peekConfigOptions: () => [{ id: "model", name: "Model", category: "model", type: "select", currentValue: "default", selectOptions: [{ id: "default", name: "Default" }] }],
+  }
+}
+
+/** A native Goal driver that holds nothing — the state a process restart leaves. */
+function nativeGoalStub(): NonNullable<SdkRuntimeDriver["nativeGoal"]> {
+  return {
+    capabilities: () => ({
+      implemented: true,
+      available: true,
+      actions: [],
+      recovery: "blocked",
+      optionalFields: [],
+    }),
+    read: async () => null,
+    run: async () => {},
+    stop: async () => null,
+  }
+}
+
+function projectedGoal() {
+  return {
+    sessionId: "session-1",
+    objective: "Ship safely",
+    status: "active" as const,
+    createdAt: 1,
+    updatedAt: 1,
   }
 }
 
@@ -85,21 +112,73 @@ describe("SdkRuntimeAdapter", () => {
     adapter.dispose()
   })
 
-  test("deletes a native Goal only after stopping and aborting its active turn", async () => {
-    const order: string[] = []
-    const activeGoal = () => ({
-      sessionId: "session-1",
-      objective: "Ship safely",
-      status: "active" as const,
-      createdAt: 1,
-      updatedAt: 1,
-    })
-    let goal: ReturnType<typeof activeGoal> | null = activeGoal()
+  test("refuses to delete a live native Goal the provider would re-emit", async () => {
     const adapter = new SdkRuntimeAdapter({
       store: storeRows(createMemoryRuntimeStore()),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
         nativeGoal: {
+          ...nativeGoalStub(),
+          read: async () => projectedGoal(),
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+
+    await expect(adapter.goals?.delete(session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      ok: false,
+      status: "unsupported",
+    })
+    adapter.dispose()
+  })
+
+  // A native Goal lives in a provider process: after a restart the driver has
+  // nothing to stop while the store still projects the Goal as `blocked`.
+  // Clearing that projection is the only way it can leave the session.
+  test.each(["stop", "delete"] as const)("%s clears a native Goal the driver lost across a restart", async (action) => {
+    const store = storeRows(createMemoryRuntimeStore())
+    const eventHub = createRuntimeEventHub()
+    const runtime: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtime.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: nativeGoalStub(),
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+    store.setGoal!(session.id, projectedGoal())
+
+    await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      objective: "Ship safely",
+      status: "blocked",
+    })
+    await expect(adapter.goals?.[action](session.id, path.resolve("/repo"))).resolves.toEqual({
+      ok: true,
+      goal: null,
+    })
+    expect(store.getGoal!(session.id)).toBeNull()
+    expect(runtime.map((event) => event.payload.type)).toContain("goal-cleared")
+    await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toBeNull()
+    // Nothing left to clear reports the absence rather than a second success.
+    await expect(adapter.goals?.[action](session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      ok: false,
+      status: "not_found",
+    })
+    adapter.dispose()
+  })
+
+  test("deletes a live native Goal through a driver that can clear it at the provider", async () => {
+    const order: string[] = []
+    let live: ReturnType<typeof projectedGoal> | null = projectedGoal()
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: {
+          ...nativeGoalStub(),
           capabilities: () => ({
             implemented: true,
             available: true,
@@ -107,15 +186,14 @@ describe("SdkRuntimeAdapter", () => {
             recovery: "blocked",
             optionalFields: [],
           }),
-          read: async () => goal,
-          run: async () => {},
+          read: async () => live,
           stop: async () => {
             order.push("stop")
-            return goal && { ...goal, status: "paused" as const, updatedAt: 2 }
+            return live && { ...live, status: "paused" as const }
           },
           delete: async () => {
             order.push("delete")
-            goal = null
+            live = null
             return true
           },
         },
@@ -127,8 +205,53 @@ describe("SdkRuntimeAdapter", () => {
       ok: true,
       goal: null,
     })
+    // Continuation is disabled before the provider clears the Goal: deleting
+    // first would let the next iteration re-report a Goal that is already gone.
     expect(order).toEqual(["stop", "delete"])
     await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toBeNull()
+    adapter.dispose()
+  })
+
+  test("exposes one Goal resource per adapter rather than rebuilding it per access", async () => {
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({ ...minimalSdkRuntimeDriver(), nativeGoal: nativeGoalStub() }),
+    })
+
+    expect(adapter.goals).toBeDefined()
+    expect(adapter.goals).toBe(adapter.goals)
+    adapter.dispose()
+  })
+
+  test("forgets a deleted session's Goal publication so a reused id is not deduped away", async () => {
+    const eventHub = createRuntimeEventHub()
+    const runtime: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtime.push(event))
+    let host: SdkRuntimeDriverHost | undefined
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      eventHub,
+      driver: (driverHost) => {
+        host = driverHost
+        return { ...minimalSdkRuntimeDriver(), nativeGoal: nativeGoalStub() }
+      },
+    })
+    const directory = path.resolve("/repo")
+    const goalUpdates = () => runtime.filter((event) => event.payload.type === "goal-updated")
+    await adapter.createSession(directory, undefined, "session-1")
+
+    host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
+    host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
+    // One accepted state publishes once, however often the driver reports it.
+    expect(goalUpdates()).toHaveLength(1)
+
+    await adapter.deleteSession("session-1", directory)
+    await adapter.createSession(directory, undefined, "session-1")
+    host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
+
+    // The dedupe entry is per session, so a session recreated under the same id
+    // must publish its Goal again instead of having it swallowed forever.
+    expect(goalUpdates()).toHaveLength(2)
     adapter.dispose()
   })
 
@@ -422,21 +545,23 @@ describe("SdkRuntimeAdapter", () => {
       runProviderTurn: async () => false,
     }
     const driver = createCodexAppServerDriver(host as never) as WithInternals<SdkRuntimeDriver, {
-      goalBindings: Map<string, { sessionId: string; directory: string }>
-      goalStatusByThread: Map<string, string>
-      goalTurnQueues: Map<string, unknown>
-      handleProcessMessage: (message: unknown) => void
+      goalController: WithInternals<CodexGoalController, {
+        bindings: Map<string, { sessionId: string; directory: string }>
+        statusByThread: Map<string, string>
+        turnQueues: Map<string, unknown>
+      }>
     }>
-    driver.goalBindings.set("thread-1", { sessionId: "session-1", directory: path.resolve("/repo") })
-    driver.goalStatusByThread.set("thread-1", "active")
+    const goalController = driver.goalController
+    goalController.bindings.set("thread-1", { sessionId: "session-1", directory: path.resolve("/repo") })
+    goalController.statusByThread.set("thread-1", "active")
 
-    driver.handleProcessMessage({
+    goalController.handleProcessMessage({
       method: "turn/started",
       params: { threadId: "thread-1", turn: { id: "goal-turn-1" } },
     })
     await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(driver.goalTurnQueues.size).toBe(0)
+    expect(goalController.turnQueues.size).toBe(0)
     driver.dispose?.()
   })
 

@@ -2,6 +2,7 @@ import type { RawHarnessEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-
 import { codexStartedSubagent } from "@claxedo/agent-event-runtime/harnesses/codex"
 import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-contract"
 import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
+import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"
 import {
   errorMessage,
@@ -20,11 +21,17 @@ import {
 } from "./protocol"
 
 const CODEX_SOURCE = "codex.app-server"
+const log = Log.create({ service: "codex-goal-controller" })
 
 /** The narrow slice of the Codex driver the Goal controller runs against. */
 export type CodexGoalControllerHost = {
   driverHost: SdkRuntimeDriverHost
   ensureProcess(directory: string): Promise<CodexAppServerProcess>
+  /**
+   * The app-server only if one is already running. Session deletion cleans the
+   * provider Goal up opportunistically and must never spawn a process for it.
+   */
+  liveProcess(): CodexAppServerProcess | null
   /** Holds the app-server resident while a Goal is active. */
   lease(): { release(): void }
   /** Shared with the driver: a thread with a live prompt turn owns its frames. */
@@ -151,7 +158,7 @@ export class CodexGoalController {
     return result
   }
 
-  async clear(
+  private async clear(
     sessionId: string,
     directory: string,
   ): Promise<AgentGoalMutationResult<null>> {
@@ -175,55 +182,107 @@ export class CodexGoalController {
     }
   }
 
+  /**
+   * Best-effort provider cleanup for a session the runtime is deleting.
+   *
+   * Deleting local state must always succeed: it neither spawns an app-server
+   * (a broken or missing Codex binary would otherwise make sessions
+   * undeletable) nor propagates a provider failure. The provider Goal is only
+   * cleared when a process is already running to clear it on.
+   */
+  async clearOnSessionDelete(sessionId: string, agentSessionId: string, directory: string) {
+    const proc = this.host.liveProcess()
+    if (proc?.alive) {
+      try {
+        await this.requestWithThreadRecovery(proc, agentSessionId, directory, "thread/goal/clear", {
+          threadId: agentSessionId,
+        })
+      } catch (error) {
+        log.warn("codex goal cleanup failed while deleting session; deleting local state anyway", {
+          sessionId,
+          threadId: agentSessionId,
+          error: errorMessage(error),
+        })
+      }
+    }
+    this.releaseSession(sessionId, agentSessionId)
+  }
+
   private async interruptTurn(sessionId: string) {
     const interrupted = this.host.driverHost.lifecycle().abort(sessionId)
     if (interrupted) await this.host.driverHost.lifecycle().whenIdle(sessionId)
   }
 
   /** Session-scoped cleanup when the driver deletes an agent session. */
-  releaseSession(sessionId: string, agentSessionId: string) {
+  private releaseSession(sessionId: string, agentSessionId: string) {
     this.bindings.delete(agentSessionId)
     this.statusByThread.delete(agentSessionId)
     this.leases.get(sessionId)?.release()
     this.leases.delete(sessionId)
     this.turnQueues.get(agentSessionId)?.queue.end()
-    this.turnQueues.delete(agentSessionId)
+    this.releaseGoalTurn(agentSessionId)
+  }
+
+  /** Drops a Goal turn and the child ownership that only routed into it. */
+  private releaseGoalTurn(threadId: string) {
+    this.turnQueues.delete(threadId)
     for (const [childId, ownerId] of this.childOwners) {
-      if (ownerId === agentSessionId) this.childOwners.delete(childId)
+      if (ownerId === threadId) this.childOwners.delete(childId)
     }
   }
 
-  private handleGoalNotification(message: JsonRecord) {
-    const method = text(message.method)
-    if (method !== "thread/goal/updated" && method !== "thread/goal/cleared") return
-    const params = record(message.params) ?? {}
+  /**
+   * Goal routing must survive a driver restart. `bindings` is armed by
+   * `goals.*` calls only, so a provider notification for a thread this driver
+   * is already running (an interactive turn resumed it after restart) would
+   * otherwise be dropped even though the capability advertises
+   * recovery: "reconcile". Recover the session from the live thread and re-arm
+   * the binding so every later frame routes without the lookup.
+   */
+  private resolveBinding(threadId: string) {
+    const known = this.bindings.get(threadId)
+    if (known) return known
+    const active = this.host.activeThreads.get(threadId)
+    if (!active) return
+    const binding = { sessionId: active.sessionId, directory: active.directory }
+    this.bindings.set(threadId, binding)
+    return binding
+  }
+
+  private handleGoalNotification(method: string, params: JsonRecord) {
     const threadId = text(params.threadId) ?? text(record(params.goal)?.threadId)
-    const binding = threadId ? this.bindings.get(threadId) : undefined
+    if (!threadId) return
+    const binding = this.resolveBinding(threadId)
     if (!binding) return
     const goal = method === "thread/goal/cleared"
       ? null
       : codexGoalSnapshot(binding.sessionId, params.goal)
-    if (goal) this.statusByThread.set(threadId!, goal.status)
-    else this.statusByThread.delete(threadId!)
+    if (goal) this.statusByThread.set(threadId, goal.status)
+    else this.statusByThread.delete(threadId)
     this.reconcileLease(binding.sessionId, goal)
     this.host.driverHost.publishGoal({ ...binding, goal })
   }
 
   handleProcessMessage(message: JsonRecord) {
-    this.handleGoalNotification(message)
     const method = text(message.method)
-    if (!method || method === "thread/goal/updated" || method === "thread/goal/cleared") return
+    if (!method) return
     const params = record(message.params) ?? {}
+    if (method === "thread/goal/updated" || method === "thread/goal/cleared") {
+      this.handleGoalNotification(method, params)
+      return
+    }
     const directThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
+    if (!directThreadId) return
     const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
-    if (startedSubagent?.parentThreadId) this.childOwners.set(startedSubagent.id, startedSubagent.parentThreadId)
-    const threadId = directThreadId
-      ? this.turnQueues.has(directThreadId)
-        ? directThreadId
-        : this.childOwners.get(directThreadId) ?? directThreadId
-      : undefined
-    if (!threadId || (this.host.activeThreads.has(threadId) && !this.turnQueues.has(threadId))) return
-    const binding = this.bindings.get(threadId)
+    // A child only needs an owner while that owner has a Goal turn to route
+    // its frames into; recording every parented thread grew the map for the
+    // driver's whole life.
+    if (startedSubagent?.parentThreadId && this.turnQueues.has(startedSubagent.parentThreadId)) {
+      this.childOwners.set(startedSubagent.id, startedSubagent.parentThreadId)
+    }
+    const threadId = this.childOwners.get(directThreadId) ?? directThreadId
+    if (this.host.activeThreads.has(threadId) && !this.turnQueues.has(threadId)) return
+    const binding = this.resolveBinding(threadId)
     if (!binding) return
     const raw: RawHarnessEvent = { source: CODEX_SOURCE, method, payload: params }
     if (method === "turn/started" && directThreadId === threadId && !this.turnQueues.has(threadId)) {
@@ -233,7 +292,7 @@ export class CodexGoalController {
       // otherwise pausing mid-turn strands the runtime turn busy forever.
       if (this.statusByThread.get(threadId) !== "active") return
       const turnId = text(record(params.turn)?.id)
-      if (!turnId || this.turnQueues.has(threadId)) return
+      if (!turnId) return
       const queue = new GoalTurnEventQueue()
       this.turnQueues.set(threadId, { turnId, queue })
       void this.host.driverHost.runProviderTurn(binding, async (input) => {
@@ -270,12 +329,12 @@ export class CodexGoalController {
         } finally {
           input.abort.signal.removeEventListener("abort", onAbort)
           this.host.activeThreads.delete(threadId)
-          this.turnQueues.delete(threadId)
+          this.releaseGoalTurn(threadId)
         }
       }).then((admitted) => {
         if (admitted || this.turnQueues.get(threadId)?.queue !== queue) return
         queue.end()
-        this.turnQueues.delete(threadId)
+        this.releaseGoalTurn(threadId)
       })
       queue.push(raw)
       return
@@ -283,7 +342,11 @@ export class CodexGoalController {
     const active = this.turnQueues.get(threadId)
     if (!active) return
     active.queue.push(raw)
-    if (method === "turn/completed") active.queue.end()
+    // Only the Goal thread's OWN turn ends the Goal turn. A child agent
+    // completing routes through its owner, and ending the queue on it would
+    // drop every remaining parent frame — the same guard the interactive turn
+    // applies through `parentOwned`.
+    if (method === "turn/completed" && directThreadId === threadId) active.queue.end()
   }
 
   dispose() {

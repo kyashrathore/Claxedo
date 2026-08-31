@@ -29,6 +29,13 @@ export type Run = {
 
 export interface Interface {
   readonly get: (sessionID: SessionID) => Effect.Effect<Snapshot | null, Session.NotFound>
+  /**
+   * Every session in this instance's workspace directory whose durable Goal is
+   * still `active`. This is what restart recovery reconciles against: the
+   * aggregate knows which Goals were mid-flight when the process died, so
+   * recovery never has to wait for a client to touch a session.
+   */
+  readonly pending: () => Effect.Effect<SessionID[]>
   readonly restore: (sessionID: SessionID) => Effect.Effect<Run | null, Session.NotFound>
   readonly start: (input: { sessionID: SessionID; objective: string }) => Effect.Effect<Run, Session.NotFound | Conflict>
   readonly pause: (sessionID: SessionID) => Effect.Effect<Snapshot, Session.NotFound | Missing | Conflict>
@@ -61,11 +68,14 @@ const layer = Layer.effect(
     const controllers = new Map<SessionID, { generation: number; abort: AbortController }>()
     const generations = new Map<SessionID, number>()
 
+    const decode = (candidate: unknown) =>
+      Schema.decodeUnknownEffect(Snapshot)(candidate).pipe(Effect.orElseSucceed(() => null))
+
     const readStored = Effect.fn("SessionGoal.readStored")(function* (sessionID: SessionID) {
       const current = yield* sessions.get(sessionID)
       const candidate = current.metadata?.[metadataKey]
       if (!candidate) return null
-      return yield* Schema.decodeUnknownEffect(Snapshot)(candidate).pipe(Effect.orElseSucceed(() => null))
+      return yield* decode(candidate)
     })
 
     const write = Effect.fn("SessionGoal.write")(function* (sessionID: SessionID, goal: Snapshot | null) {
@@ -78,6 +88,18 @@ const layer = Layer.effect(
 
     const get = Effect.fn("SessionGoal.get")(function* (sessionID: SessionID) {
       return yield* readStored(sessionID)
+    })
+
+    const pending = Effect.fn("SessionGoal.pending")(function* () {
+      const rows = yield* sessions.listByMetadataKey(metadataKey)
+      const ids: SessionID[] = []
+      for (const row of rows) {
+        const candidate = row.metadata?.[metadataKey]
+        if (!candidate) continue
+        const goal = yield* decode(candidate)
+        if (goal?.status === "active") ids.push(row.id)
+      }
+      return ids
     })
 
     const install = (sessionID: SessionID) => {
@@ -180,7 +202,7 @@ const layer = Layer.effect(
       return current?.status === "active" && controllers.get(sessionID)?.generation === generation
     })
 
-    return Service.of({ get, restore, start, pause, resume, delete: remove, update, canContinue })
+    return Service.of({ get, pending, restore, start, pause, resume, delete: remove, update, canContinue })
   }),
 )
 

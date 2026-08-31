@@ -1,9 +1,11 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createEffect, createMemo, onCleanup, type Accessor } from "solid-js"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { createActivePaneProjection } from "./active-pane-projection"
 import {
   mutateSessionGoalData,
+  observeSessionGoalInvalidation,
+  sessionGoalAuthorityScope,
   sessionGoalKey,
   syncSessionGoalData,
   type SessionGoalData,
@@ -46,15 +48,11 @@ export function createSessionGoalController(input: {
   const sync = async (sessionID: string, opts?: { force?: boolean; signal?: AbortSignal }) => {
     if (input.suppressed(sessionID)) return false
     const transport = request(sessionID, opts?.signal)
-    if (queryClient.getQueryData(sessionGoalKey({
-      sessionID,
-      directory: transport.directory,
-      serverUrl: transport.claxedoServerUrl,
-      signedControlPlane: transport.signedControlPlane,
-      workspaceId: transport.workspaceId,
-      workspaceKind: transport.workspaceKind,
-      sessionRef: transport.sessionRef,
-    })) && !opts?.force) return true
+    // A cached entry short-circuits the read, but only while it is still
+    // TRUSTED. An SSE replay gap invalidates the entry, and skipping the refetch
+    // there is what left a stale Goal status pinned until reload.
+    const cached = queryClient.getQueryState<SessionGoalData>(sessionGoalKey(sessionGoalAuthorityScope(transport)))
+    if (cached?.data !== undefined && !cached.isInvalidated && !opts?.force) return true
     return syncSessionGoalData({
       request: transport,
       currentSessionID: input.sessionID,
@@ -62,6 +60,21 @@ export function createSessionGoalController(input: {
       signal: opts?.signal,
     })
   }
+  const refreshGoal = (opts?: { force?: boolean; signal?: AbortSignal }) => {
+    const sessionID = input.sessionID()
+    return !sessionID || sessionID === "new" ? Promise.resolve(false) : sync(sessionID, opts)
+  }
+  // Give `invalidateSessionGoalData` something to actually re-read: the pane's
+  // Goal query is a cache mirror, so invalidation on its own never refetches.
+  createEffect(() => {
+    if (!input.active()) return
+    const sessionID = input.sessionID()
+    if (!sessionID || sessionID === "new") return
+    onCleanup(observeSessionGoalInvalidation(
+      sessionGoalAuthorityScope(request(sessionID)),
+      () => { void sync(sessionID, { force: true }) },
+    ))
+  })
   const mutate = async (mutation: SessionGoalMutation) => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") throw new Error("A session is required to change a Goal")
@@ -73,10 +86,7 @@ export function createSessionGoalController(input: {
     actions: {
       goal: createMemo(() => data()?.goal),
       goalCapabilities: createMemo(() => data()?.capabilities),
-      refreshGoal: (opts?: { force?: boolean; signal?: AbortSignal }) => {
-        const sessionID = input.sessionID()
-        return !sessionID || sessionID === "new" ? Promise.resolve(false) : sync(sessionID, opts)
-      },
+      refreshGoal,
       pauseGoal: () => mutate("pause"),
       resumeGoal: () => mutate("resume"),
       stopGoal: () => mutate("stop"),

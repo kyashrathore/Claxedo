@@ -28,6 +28,7 @@ import {
 } from "@/platform/runtime/agent/placement-table"
 import { centralRuntimePath } from "./central-runtime-path"
 import { createAgentRuntimeGoalClient } from "./agent-runtime-goal-client"
+import { readRuntimeJson as readJson } from "./agent-runtime-json"
 import {
   agentRuntimeBaseUrl,
   agentRuntimeEventsUrl as claxedoEventsUrl,
@@ -153,11 +154,6 @@ export const DEFAULT_AGENT_RUNTIME_CAPABILITIES: SessionTransportCapabilities = 
 
 export function agentRuntimeWorkspaceTargetQueryKey(input: { serverUrl?: string; directory: AgentRuntimeDirectory }) {
   return ["shell", "agent-runtime-workspace-target", normalizedAgentRuntimeServerUrl(input.serverUrl), input.directory] as const
-}
-
-async function readJson<T>(res: Response): Promise<T> {
-  if (res.ok) return await res.json()
-  throw new Error((await res.text()) || `Request failed: ${res.status}`)
 }
 
 function ordinal(data: unknown, response: Response) {

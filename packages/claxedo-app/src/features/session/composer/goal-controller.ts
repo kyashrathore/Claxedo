@@ -17,6 +17,14 @@ export function createComposerGoalController(input: {
   workspaceKind: Accessor<CapabilityRequest["workspaceKind"]>
   sessionRef: Accessor<CapabilityRequest["sessionRef"]>
   sessionCapabilities: Accessor<AgentRuntimeGoalCapabilities | undefined>
+  /**
+   * Forced re-read of the session's Goal state, owned by `sessionController`.
+   * Goal capabilities arrive through DEFERRED secondary hydration, so the toggle
+   * has to be able to pull them itself — `/goal <objective>` already does
+   * (`dispatchGoalSubmit` fetches capabilities before starting), and the two
+   * entry paths must not disagree about whether Goals are available.
+   */
+  refreshGoal?: (opts?: { force?: boolean }) => Promise<boolean>
   armed: Accessor<boolean>
   setArmed: (armed: boolean) => void
   unavailable: (reason?: string) => void
@@ -55,20 +63,33 @@ export function createComposerGoalController(input: {
   const available = createMemo(() => input.isNewSession()
     ? draftCapabilities.data?.goals === true
     : input.sessionCapabilities()?.available === true)
-  const arm = () => {
-    if (!available()) {
-      input.unavailable(input.sessionCapabilities()?.unavailableReason)
-      return
-    }
+  // An existing session whose capabilities have not hydrated yet is UNKNOWN, not
+  // unavailable: refusing here is what made the toggle disagree with `/goal x`.
+  const capabilitiesUnknown = () => !input.isNewSession() && input.sessionCapabilities() === undefined
+  const armNow = () => {
     input.setArmed(true)
     input.normalizeMode()
     requestAnimationFrame(input.focus)
+  }
+  const arm = async () => {
+    if (available()) {
+      armNow()
+      return
+    }
+    if (capabilitiesUnknown() && input.refreshGoal) {
+      await input.refreshGoal({ force: true }).catch(() => false)
+      if (available()) {
+        armNow()
+        return
+      }
+    }
+    input.unavailable(input.sessionCapabilities()?.unavailableReason)
   }
   const disarm = () => {
     input.setArmed(false)
     requestAnimationFrame(input.focus)
   }
-  const toggle = () => input.armed() ? disarm() : arm()
+  const toggle = () => input.armed() ? Promise.resolve(disarm()) : arm()
   return {
     available,
     armed: input.armed,

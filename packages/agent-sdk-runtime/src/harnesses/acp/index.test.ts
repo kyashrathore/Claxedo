@@ -399,7 +399,6 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         listSessionsByOwnerKey: (key: string) => string[]
         deleteSession: (id: string) => void
       }
-      publishedGoals: Map<string, string>
       processes: Map<string, { key: string; directory: string; proc: { dispose: () => void }; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
     }>
@@ -428,7 +427,6 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
-    item.publishedGoals = new Map()
 
     await item.deleteSession("s1", path.resolve("/work"))
 
@@ -445,7 +443,6 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         listSessionsByOwnerKey: (key: string) => string[]
         deleteSession: (id: string) => void
       }
-      publishedGoals: Map<string, string>
       processes: Map<string, { key: string; directory: string; proc: { dispose: () => void }; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
     }>
@@ -474,7 +471,6 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
-    item.publishedGoals = new Map()
 
     await item.deleteSession("s1", path.resolve("/work"))
 

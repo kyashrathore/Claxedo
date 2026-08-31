@@ -140,4 +140,37 @@ describe("Pi owned Goal lifecycle", () => {
     })
     second.dispose()
   })
+
+  test("a central session's Goal update publishes with the canonical central directory scope", async () => {
+    const model = getModel("openai-codex", "gpt-5.1-codex-mini")
+    const eventHub = createRuntimeEventHub()
+    const goalScopes: string[] = []
+    eventHub.subscribeRuntime((event) => {
+      if (event.payload.type === "goal-updated" || event.payload.type === "goal-cleared") {
+        goalScopes.push(event.directory)
+      }
+    })
+    const adapter = new PiHarnessAdapter({
+      eventHub,
+      modelBackend: () => ({
+        model,
+        getApiKey: () => "test-key",
+        streamFn: piWorkerStream(["verified result"], []),
+      }),
+      evaluateGoal: async ({ work }) =>
+        work === "verified result" ? { met: true, reason: "Evidence is present" } : { met: false, reason: "Missing" },
+    })
+    // A central Pi session is bound with no directory, mirroring bindSession's
+    // canonical '' scope (a Session id is never a directory).
+    await adapter.bindSession({ id: "central-session" })
+    await adapter.updateSessionConfig("central-session", {
+      model: { providerID: "openai-codex", modelID: "gpt-5.1-codex-mini" },
+    }, "")
+
+    await adapter.goals.start("central-session", { objective: "Ship centrally" }, "")
+    await waitUntil(() => goalScopes.length > 0, "central Goal publish")
+
+    expect(goalScopes.every((scope) => scope === "")).toBe(true)
+    adapter.dispose()
+  })
 })

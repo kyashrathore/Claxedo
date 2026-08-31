@@ -4,7 +4,10 @@ import {
   applySessionGoalRuntimeEvent,
   invalidateSessionGoalData,
 } from "@/features/session/store/session-goal-query"
-import type { SessionResourceAuthorityScope } from "@/features/session/store/session-resource-authority"
+import {
+  sessionResourceAuthorityScope,
+  type SessionResourceAuthorityScope,
+} from "@/features/session/store/session-resource-authority"
 import { USER_HOSTED_WORKSPACE_KIND } from "./live-session"
 
 function goalWorkspaceKind(input: unknown) {
@@ -12,6 +15,12 @@ function goalWorkspaceKind(input: unknown) {
   return kind === "local" ? undefined : kind
 }
 
+/**
+ * The event side must key Goal state exactly the way the read/write side does.
+ * `sessionResourceAuthorityScope` owns that gate (notably: the workspace
+ * identity counts only under the signed control plane) — building the scope
+ * inline here is what let goal events write to a key nobody reads.
+ */
 export function liveSessionGoalScope(input: {
   live?: LiveSession
   serverUrl?: string
@@ -19,7 +28,7 @@ export function liveSessionGoalScope(input: {
 }): SessionResourceAuthorityScope | undefined {
   const live = input.live
   if (!live?.directory) return
-  return {
+  return sessionResourceAuthorityScope({
     sessionID: live.sessionID,
     directory: live.directory,
     serverUrl: input.serverUrl,
@@ -27,7 +36,7 @@ export function liveSessionGoalScope(input: {
     workspaceId: live.workspaceId,
     workspaceKind: goalWorkspaceKind(live.workspaceKind),
     sessionRef: live.sessionRef,
-  }
+  })
 }
 
 export function applyLiveSessionGoalEvent(input: {

@@ -301,6 +301,102 @@ describe("opencode adapter", () => {
     adapter.dispose()
   })
 
+  test("shares one server event stream across Goals and reads each Goal at turn boundaries", async () => {
+    type Snapshot = {
+      sessionId: string
+      objective: string
+      status: "active" | "complete"
+      createdAt: number
+      updatedAt: number
+      iteration: number
+    }
+    const encoder = new TextEncoder()
+    const stored = new Map<string, Snapshot>()
+    const goalReads: string[] = []
+    const completed: string[] = []
+    let streamOpens = 0
+    let feed: ReadableStreamDefaultController<Uint8Array> | undefined
+
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => {
+      if (event.payload.type === "goal-updated" && event.payload.goal.status === "complete") {
+        completed.push(event.payload.goal.sessionId)
+      }
+    })
+
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      eventHub,
+      request: async (request) => {
+        const url = new URL(request.url)
+        if (url.pathname === "/global/event") {
+          streamOpens += 1
+          return new Response(
+            new ReadableStream<Uint8Array>({
+              start(next) {
+                feed = next
+              },
+            }),
+            { status: 200, headers: { "Content-Type": "text/event-stream" } },
+          )
+        }
+        const sessionId = url.pathname.match(/^\/session\/([^/]+)\/goal$/)?.[1]
+        if (sessionId && request.method === "POST") {
+          const { objective } = (await request.json()) as { objective: string }
+          const goal: Snapshot = {
+            sessionId,
+            objective,
+            status: "active",
+            createdAt: 1,
+            updatedAt: 1,
+            iteration: 0,
+          }
+          stored.set(sessionId, goal)
+          return Response.json(goal)
+        }
+        if (sessionId && request.method === "GET") {
+          goalReads.push(sessionId)
+          return Response.json(stored.get(sessionId) ?? null)
+        }
+        throw new Error(`unexpected request: ${request.method} ${url.pathname}`)
+      },
+    })
+
+    const until = async (predicate: () => boolean, what: string) => {
+      const deadline = Date.now() + 2_000
+      while (!predicate() && Date.now() < deadline) await new Promise((resolve) => setTimeout(resolve, 5))
+      if (!predicate()) throw new Error(`timed out waiting for ${what}`)
+    }
+    const push = (payload: unknown) => feed!.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
+    const sessionUpdated = (id: string) => ({
+      type: "session.updated",
+      properties: { sessionID: id, info: { id, title: "t", directory: "/repo" } },
+    })
+
+    try {
+      expect(await adapter.goals.start("goal-a", { objective: "A" }, "/repo")).toMatchObject({ ok: true })
+      await until(() => streamOpens === 1 && feed !== undefined, "the shared event stream")
+      expect(await adapter.goals.start("goal-b", { objective: "B" }, "/repo")).toMatchObject({ ok: true })
+      await until(() => goalReads.includes("goal-b"), "the second Goal's first read")
+
+      // Mid-turn churn must not re-read the Goal: only the trailing boundary does.
+      const readsBefore = goalReads.length
+      for (let i = 0; i < 3; i += 1) push(sessionUpdated("goal-a"))
+      for (let i = 0; i < 3; i += 1) push(sessionUpdated("goal-b"))
+      push({ type: "session.idle", properties: { sessionID: "goal-b" } })
+      await until(() => goalReads.length > readsBefore, "the boundary read")
+      await new Promise((resolve) => setTimeout(resolve, 25))
+      expect(goalReads.slice(readsBefore)).toEqual(["goal-b"])
+
+      // One Goal finishing leaves the other one's stream untouched.
+      stored.set("goal-a", { ...stored.get("goal-a")!, status: "complete" })
+      push({ type: "session.idle", properties: { sessionID: "goal-a" } })
+      await until(() => completed.includes("goal-a"), "the completed Goal")
+      expect(streamOpens).toBe(1)
+    } finally {
+      adapter.dispose()
+    }
+  })
+
   test("builds OpenCode auth content from raw api keys", () => {
     expect(opencodeAuthContent({ openai: "sk-openai-managed" })).toBe(JSON.stringify({
       openai: {

@@ -24,6 +24,10 @@ import {
   shouldAcceptCompatEvent,
   workspaceEventTransport,
 } from "@/app/providers/global-sdk/provider"
+import {
+  runtimeContractMismatch,
+  runtimeContractMismatchEvents,
+} from "@/app/providers/global-sdk/runtime-envelope"
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -428,6 +432,51 @@ describe("global sdk event fetch", () => {
       sessionId: "runtime-session-1",
       payload: { type: "text-delta", delta: "hello" },
     })).toBeUndefined()
+  })
+
+  test("names the incompatible contract version a dropped envelope came from", () => {
+    const older = {
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION - 1,
+      directory: "/repo/main",
+      sessionId: "runtime-session-1",
+      payload: { type: "text-delta", delta: "hello" },
+    }
+    expect(runtimeEnvelope(older)).toBeUndefined()
+    expect(runtimeContractMismatch(older)).toEqual({
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION - 1,
+    })
+    expect(runtimeContractMismatch({
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+      directory: "/repo/main",
+      sessionId: "runtime-session-1",
+      payload: { type: "text-delta", delta: "hello" },
+    })).toBeUndefined()
+    // Heartbeats and compat frames carry no contract version and must not be
+    // reported as an incompatible runtime.
+    expect(runtimeContractMismatch({ type: "heartbeat" })).toBeUndefined()
+    expect(runtimeContractMismatch({
+      type: "session.idle",
+      properties: { sessionID: "runtime-session-1" },
+    })).toBeUndefined()
+  })
+
+  test("surfaces an incompatible runtime as a visible session error", () => {
+    const events = runtimeContractMismatchEvents({
+      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION - 1,
+      sessionID: "runtime-session-1",
+    })
+
+    expect(events.map((event) => event.type)).toEqual(["runtime.diagnostic", "session.error"])
+    const diagnostic = events[0]!.properties as { code?: string; severity?: string; message?: string }
+    expect(diagnostic.code).toBe("runtime.contract_version_mismatch")
+    expect(diagnostic.severity).toBe("error")
+    expect(diagnostic.message).toContain("incompatible version")
+    const sessionError = events[1]!.properties as {
+      sessionID?: string
+      error?: { data?: { message?: string } }
+    }
+    expect(sessionError.sessionID).toBe("runtime-session-1")
+    expect(sessionError.error?.data?.message).toContain(`requires v${AGENT_RUNTIME_EVENT_CONTRACT_VERSION}`)
   })
 
   test("projects normalized runtime event envelopes into OpenCode-shaped events", () => {

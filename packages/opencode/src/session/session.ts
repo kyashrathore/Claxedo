@@ -414,6 +414,15 @@ export type NotFound = NotFoundError
 
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
+  /**
+   * Every session in THIS instance's workspace directory whose metadata carries
+   * `key`, unpaginated. Metadata is opaque JSON owned by whoever writes it, so
+   * this answers only "who holds this key" — the caller decodes the value and
+   * decides what a hit means. Restart reconciliation needs the complete set for
+   * the instance that can act on it, which is why this shares neither
+   * {@link list}'s recency window nor its project-wide default scope.
+   */
+  readonly listByMetadataKey: (key: string) => Effect.Effect<Info[]>
   readonly listGlobal: (input?: GlobalListInput) => Effect.Effect<GlobalInfo[]>
   readonly create: (input?: {
     parentID?: SessionID
@@ -552,6 +561,23 @@ const layer: Layer.Layer<
         experimentalWorkspaces: flags.experimentalWorkspaces,
         ...input,
       })
+    })
+
+    const listByMetadataKey = Effect.fn("Session.listByMetadataKey")(function* (key: string) {
+      const ctx = yield* InstanceState.context
+      const rows = yield* db
+        .select()
+        .from(SessionTable)
+        .where(
+          and(
+            eq(SessionTable.project_id, ctx.project.id),
+            eq(SessionTable.directory, ctx.directory),
+            sql`json_extract(${SessionTable.metadata}, ${`$."${key}"`}) is not null`,
+          ),
+        )
+        .all()
+        .pipe(Effect.orDie)
+      return rows.map(fromRow)
     })
 
     const listGlobal = Effect.fn("Session.listGlobal")(function* (input?: GlobalListInput) {
@@ -907,6 +933,7 @@ const layer: Layer.Layer<
 
     return Service.of({
       list,
+      listByMetadataKey,
       listGlobal,
       create,
       fork,

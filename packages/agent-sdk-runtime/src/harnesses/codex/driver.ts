@@ -118,6 +118,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.goalController = new CodexGoalController({
       driverHost: this.host,
       ensureProcess: (directory) => this.ensureProcess(directory),
+      liveProcess: () => this.process,
       lease: () => this.idle.lease(),
       activeThreads: this.activeThreads,
       projectThreadNotification: (input, threadId, method, params, frame) =>
@@ -196,10 +197,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     })
   }
 
+  /**
+   * Deleting a session drops local state whatever the provider does: it never
+   * spawns an app-server just to clean a Goal up, and never fails because the
+   * cleanup failed.
+   */
   async deleteAgentSession(sessionId: string, agentSessionId: string, directory: string) {
-    const result = await this.goalController.clear(sessionId, directory)
-    if (!result.ok && result.status !== "not_found") throw new Error(result.message)
-    this.goalController.releaseSession(sessionId, agentSessionId)
+    await this.goalController.clearOnSessionDelete(sessionId, agentSessionId, directory)
   }
 
   /**

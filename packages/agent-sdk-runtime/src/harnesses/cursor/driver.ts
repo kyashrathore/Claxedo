@@ -26,6 +26,7 @@ import {
   cursorPermissionOptions,
 } from "../shared/permission-modes"
 import {
+  errorMessage,
   extractTextFromParts,
   record,
   text,
@@ -35,6 +36,7 @@ import {
   type SdkRuntimeTranscriptRegistrar,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import {
   observeAgentProcess,
   type AgentProcessObserverHandle,
@@ -65,13 +67,9 @@ export function cursorTurnPrompt(parts: unknown[], system?: string) {
   return system ? `${system}\n\n${prompt}` : prompt
 }
 
-export function cursorGoalCommand(objective: string) {
-  return `/goal ${objective}`
-}
-
 class CursorSdkDriver implements SdkRuntimeDriver {
   readonly type = "cursor" as const
-  private goalBySession = new Map<string, RuntimeGoalSnapshot>()
+  private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
     capabilities: () => {
       const available = !!this.auth.cursor
@@ -87,15 +85,9 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         optionalFields: [],
       })
     },
-    read: async (sessionId) => this.goalBySession.get(sessionId) ?? null,
+    read: (sessionId) => this.goalStore.read(sessionId),
     run: (input, objective, onGoal) => this.runGoal(input, objective, onGoal),
-    stop: async (sessionId) => {
-      const goal = this.goalBySession.get(sessionId)
-      if (!goal) return null
-      const stopped = { ...goal, status: "paused" as const, updatedAt: Date.now() }
-      this.goalBySession.set(sessionId, stopped)
-      return stopped
-    },
+    stop: (sessionId) => this.goalStore.stop(sessionId),
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
@@ -232,24 +224,26 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     objective: string,
     onGoal: (goal: RuntimeGoalSnapshot | null) => void,
   ) {
+    const applyGoal = (goal: RuntimeGoalSnapshot) => {
+      this.goalStore.apply(input.sessionId, goal)
+      onGoal(goal)
+      this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
+    }
     const agent = await this.ensureAgent(input.sessionId, input.getAgentSessionId(), input.directory)
     const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
-    const run = await agent.send(cursorGoalCommand(objective), {
+    const run = await agent.send(nativeGoalCommand(objective), {
       ...(model ? { model } : {}),
       ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
       local: { force: false },
     })
     const now = Date.now()
-    const active: RuntimeGoalSnapshot = {
+    applyGoal({
       sessionId: input.sessionId,
       objective,
       status: "active",
       createdAt: now,
       updatedAt: now,
-    }
-    this.goalBySession.set(input.sessionId, active)
-    onGoal(active)
-    this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal: active })
+    })
     const onAbort = () => run.cancel().catch(() => {})
     input.abort.signal.addEventListener("abort", onAbort, { once: true })
     this.host.lifecycle().set(input.sessionId, {
@@ -262,23 +256,32 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         await ingestCursorSdkMessage(input, message, this.host.transcriptRegistrar)
       }
       const result = await run.wait()
-      const current = this.goalBySession.get(input.sessionId) ?? active
+      const current = this.goalStore.peek(input.sessionId)
       const status = result.status === "finished"
         ? "complete"
         : result.status === "cancelled"
         ? "paused"
         : "blocked"
-      const settled = { ...current, status, updatedAt: Date.now() } satisfies RuntimeGoalSnapshot
-      this.goalBySession.set(input.sessionId, settled)
-      onGoal(settled)
-      this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal: settled })
+      if (current) applyGoal({ ...current, status, updatedAt: Date.now() })
+    } catch (cause) {
+      // The run carried the Goal: if it died, nothing is left to advance it, so
+      // the Goal must not stay `active` and unstoppable. A cancelled run settles
+      // the same way `run.wait()` reports one.
+      const settled = this.goalStore.settleUnfinished(
+        input.sessionId,
+        input.abort.signal.aborted
+          ? { status: "paused" }
+          : { status: "blocked", reason: errorMessage(cause) },
+      )
+      if (settled) applyGoal(settled)
+      throw cause
     } finally {
       input.abort.signal.removeEventListener("abort", onAbort)
     }
   }
 
   deleteAgentSession(sessionId: string, agentSessionId: string) {
-    this.goalBySession.delete(sessionId)
+    this.goalStore.forget(sessionId)
     const entry = this.agents.get(agentSessionId)
     entry?.observation.exit({ reason: "disposed" })
     entry?.agent.close()

@@ -17,6 +17,7 @@ import { paneQueryOptions, parkedPaneQueryOptions } from "./pane-query-observer"
 import { sessionGoalKey, type SessionGoalData } from "./session-goal-query"
 import {
   sessionResourceAuthorityKey,
+  sessionResourceAuthorityScope,
   type SessionResourceAuthorityScope,
 } from "./session-resource-authority"
 
@@ -70,38 +71,27 @@ export function createSessionPaneQueries(input: {
       queryFn: skipToken,
       enabled: false,
     })))
-  const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) => {
-    const signedControlPlane = input.signedControlPlane?.() ?? false
-    return paneQueryOptions<SessionTransportCapabilities>({
-      queryKey: sessionCapabilitiesKey({
-        sessionID,
-        directory: input.directory(),
-        serverUrl: input.serverUrl?.(),
-        signedControlPlane,
-        workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
-        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
-        sessionRef: input.sessionRef?.(),
-      }),
+  const authorityScope = (sessionID: string) => sessionResourceAuthorityScope({
+    sessionID,
+    directory: input.directory(),
+    serverUrl: input.serverUrl?.(),
+    signedControlPlane: input.signedControlPlane?.() ?? false,
+    workspaceId: input.workspaceId?.(),
+    workspaceKind: input.workspaceKind?.(),
+    sessionRef: input.sessionRef?.(),
+  })
+  const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) =>
+    paneQueryOptions<SessionTransportCapabilities>({
+      queryKey: sessionCapabilitiesKey(authorityScope(sessionID)),
       queryFn: skipToken,
       enabled: false,
-    })
-  }))
-  const goalQuery = useQuery<SessionGoalData>(() => session("session-goal", (sessionID) => {
-    const signedControlPlane = input.signedControlPlane?.() ?? false
-    return paneQueryOptions<SessionGoalData>({
-      queryKey: sessionGoalKey({
-        sessionID,
-        directory: input.directory(),
-        serverUrl: input.serverUrl?.(),
-        signedControlPlane,
-        workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
-        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
-        sessionRef: input.sessionRef?.(),
-      }),
+    })))
+  const goalQuery = useQuery<SessionGoalData>(() => session("session-goal", (sessionID) =>
+    paneQueryOptions<SessionGoalData>({
+      queryKey: sessionGoalKey(authorityScope(sessionID)),
       queryFn: skipToken,
       enabled: false,
-    })
-  }))
+    })))
   const directorySessionCacheQuery = useWorkspaceQuery(() => {
     if (!input.active()) return {
       ...parkedPaneQueryOptions<DirectorySessionCacheValue>("directory-session", "inactive"),

@@ -141,6 +141,22 @@ function getChildStoreEntry(directory: string): ChildStoreEntry {
   return entry
 }
 
+/**
+ * Fake the goal-mutation transport the way the real runtime answers it.
+ *
+ * `workspace-runtime` `routes/session-core.ts:goalMutationResponse` serializes a
+ * typed `{ ok: false, status, message }` body under 404 (`not_found`), 502
+ * (`failed`), and 409 (everything else) — never 200. Serving those failures with
+ * `Response.json(body)` (HTTP 200) is what let the client's `ok: false` branch
+ * pass here while being unreachable through the real transport.
+ */
+export function goalMutationResponse(body: unknown) {
+  const row = body && typeof body === "object" ? body as Record<string, unknown> : undefined
+  if (!row || row.ok !== false) return Response.json(body)
+  const status = row.status === "not_found" ? 404 : row.status === "failed" ? 502 : 409
+  return Response.json(body, { status })
+}
+
 // --- Mutable scalar state written by individual tests via `state.x = ...`. ---
 export const state: {
   localCurrentModel: { id: string; provider: { id: string } } | undefined
@@ -439,7 +455,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       return Response.json(state.goalCapabilities)
     }
     if (/\/session\/[^/]+\/goal$/.test(url.pathname) && request.method === "POST") {
-      return Response.json(state.goalMutation)
+      return goalMutationResponse(state.goalMutation)
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -614,7 +630,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         return Response.json(state.goalCapabilities)
       }
       if (/\/session\/[^/]+\/goal$/.test(new URL(request.url).pathname) && request.method === "POST") {
-        return Response.json(state.goalMutation)
+        return goalMutationResponse(state.goalMutation)
       }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
@@ -647,7 +663,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
           return Response.json(state.goalCapabilities)
         }
         if (/^\/session\/[^/]+\/goal(?:\?|$)/.test(path) && init?.method === "POST") {
-          return Response.json(state.goalMutation)
+          return goalMutationResponse(state.goalMutation)
         }
         if (path.includes("/prompt_async") || (path.includes("/message") && init?.method === "POST")) {
           if (state.transportPromptAsyncError) {

@@ -81,7 +81,6 @@ async function claudeHarness(): Promise<ConformanceHarness> {
     driver: (host) => createClaudeSdkDriver(host, {
       query: fakeQuery,
       executable: () => "/fake/claude",
-      importSession: async () => {},
     }),
   })
   const session = await adapter.createSession("/repo", undefined, "session-conformance")

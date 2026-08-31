@@ -7,6 +7,8 @@ import { createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory, AgentRuntimeAbortResult } from "./runtime"
 import type { AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
 import { goalCapabilities } from "./capabilities"
+import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeEventHub } from "./runtime-event-hub"
 import { claude, pi } from "./harnesses"
 import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
@@ -57,6 +59,7 @@ function testHarness(options: {
   onPermissionResponse?: () => void
   onQuestionAnswer?: () => void
   onQuestionReject?: () => void
+  onCreate?: (context: { eventHub: RuntimeEventHub }) => void
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
     ...(options.commitsStreamEvents ? { commitsStreamEvents: true as const } : {}),
@@ -120,8 +123,32 @@ function testHarness(options: {
   return {
     id: "pi",
     access: "native",
-    create: () => adapter,
+    create: (context: { eventHub: RuntimeEventHub }) => {
+      options.onCreate?.(context)
+      return adapter
+    },
   } as unknown as AgentHarnessFactory
+}
+
+const GOAL_HARNESS_CAPABILITIES = {
+  harness: "pi",
+  abort: false,
+  reconnect: false,
+  replay: true,
+  permissions: false,
+  questions: false,
+  todos: false,
+  commands: false,
+  fork: false,
+  revert: false,
+  unrevert: false,
+  configOptions: false,
+  subagents: false,
+  goals: true,
+} as const
+
+function goalPayloads(events: Array<{ type: string }>) {
+  return events.filter((payload) => payload.type === "goal-updated" || payload.type === "goal-cleared")
 }
 
 function handoffHarness(input: {
@@ -256,6 +283,128 @@ describe("createAgentRuntime", () => {
     expect(calls).toEqual(["read", "start:Ship safely", "pause", "resume", "stop", "delete"])
     expect(messagesSent).toBe(0)
     runtime.dispose()
+  })
+
+  test("delivers provider-originated Goal updates to runtime subscribers exactly once", async () => {
+    let eventHub: RuntimeEventHub | undefined
+    let goal: RuntimeGoalSnapshot | null = null
+    const mirrorToHub = (sessionId: string, next: RuntimeGoalSnapshot | null) => {
+      eventHub?.publishRuntime({
+        directory: "/repo",
+        sessionId,
+        payload: next
+          ? agentRuntimeEvent.goalUpdated({ sessionId, goal: next })
+          : agentRuntimeEvent.goalCleared({ sessionId }),
+      })
+    }
+    const unusedMutation = { ok: false, status: "failed", message: "not exercised" } as const
+    const goals: AgentGoalResource = {
+      readCapabilities: () => goalCapabilities({
+        implemented: true,
+        available: true,
+        actions: ["pause", "resume", "delete"],
+        recovery: "reconcile",
+        optionalFields: [],
+      }),
+      read: async () => goal,
+      start: async (sessionId, startInput) => {
+        goal = { sessionId, objective: startInput.objective, status: "active", createdAt: 1, updatedAt: 1 }
+        // Adapters mirror an accepted mutation onto the hub as well; the
+        // subscriber must still see that state exactly once.
+        mirrorToHub(sessionId, goal)
+        return { ok: true, goal }
+      },
+      pause: async () => unusedMutation,
+      resume: async () => unusedMutation,
+      stop: async () => unusedMutation,
+      delete: async () => ({ ok: true, goal: null }),
+    }
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        goals,
+        readHarnessCapabilities: () => GOAL_HARNESS_CAPABILITIES,
+        onCreate: (context) => { eventHub = context.eventHub },
+      })],
+    })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+    const subscription = runtime.events.subscribe({ sessionId: session.id })
+
+    await runtime.goals.start({ sessionId: session.id, objective: "Ship" }, "/repo")
+    // A provider-driven transition never passes through a runtime mutation.
+    goal = { ...goal!, status: "paused", updatedAt: 2 }
+    mirrorToHub(session.id, goal)
+    runtime.dispose()
+
+    const payloads: Array<{ type: string }> = []
+    for await (const event of subscription) payloads.push(event.payload)
+    expect(goalPayloads(payloads)).toMatchObject([
+      { type: "goal-updated", goal: { status: "active", updatedAt: 1 } },
+      { type: "goal-updated", goal: { status: "paused", updatedAt: 2 } },
+    ])
+  })
+
+  test("routes every Goal mutation through one path and never gates stop", async () => {
+    const calls: string[] = []
+    let goal: RuntimeGoalSnapshot | null = null
+    const goals: AgentGoalResource = {
+      readCapabilities: () => goalCapabilities({
+        implemented: true,
+        available: true,
+        // A harness that implements Goal but offers no pause/resume/delete.
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      }),
+      read: async () => goal,
+      start: async (sessionId, startInput) => {
+        calls.push("start")
+        goal = { sessionId, objective: startInput.objective, status: "active", createdAt: 1, updatedAt: 1 }
+        return { ok: true, goal }
+      },
+      pause: async () => {
+        calls.push("pause")
+        return { ok: true, goal: goal! }
+      },
+      resume: async () => {
+        calls.push("resume")
+        return { ok: true, goal: goal! }
+      },
+      stop: async () => {
+        calls.push("stop")
+        goal = { ...goal!, status: "paused", updatedAt: 2 }
+        return { ok: true, goal }
+      },
+      delete: async () => {
+        calls.push("delete")
+        return { ok: true, goal: null }
+      },
+    }
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({ goals, readHarnessCapabilities: () => GOAL_HARNESS_CAPABILITIES })],
+    })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+    const subscription = runtime.events.subscribe({ sessionId: session.id })
+
+    await runtime.goals.start({ sessionId: session.id, objective: "Ship" }, "/repo")
+    for (const action of ["pause", "resume", "delete"] as const) {
+      await expect(runtime.goals[action](session.id, "/repo"))
+        .rejects.toMatchObject({ code: "goal_action_unavailable" })
+    }
+    await expect(runtime.goals.stop(session.id, "/repo")).resolves.toMatchObject({
+      ok: true,
+      goal: { status: "paused" },
+    })
+    expect(calls).toEqual(["start", "stop"])
+    runtime.dispose()
+
+    const payloads: Array<{ type: string }> = []
+    for await (const event of subscription) payloads.push(event.payload)
+    expect(goalPayloads(payloads)).toMatchObject([
+      { type: "goal-updated", goal: { status: "active" } },
+      { type: "goal-updated", goal: { status: "paused" } },
+    ])
   })
 
   test("serializes concurrent Goal starts per session", async () => {

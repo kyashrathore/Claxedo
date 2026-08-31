@@ -115,7 +115,11 @@ export const appLocal: Policy = {
   // authority cache/query/controller, runtime client/event ingress, and the
   // active-Goal dock. The reviewed closure is 902 + 10 = 912 modules with no
   // new package edge.
-  ceilings: { modules: 912, packages: 41 },
+  // The review-fix pass adds two focused owners on the same session path:
+  // the shared runtime JSON response reader (agent-runtime-json.ts) and the
+  // Stop fallback (submit-abort.ts): 912 + 2 = 914 modules, no new package
+  // edge.
+  ceilings: { modules: 914, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

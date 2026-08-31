@@ -115,6 +115,13 @@ export interface Interface {
     SessionGoal.Conflict | SessionGoal.Missing | Session.NotFound
   >
   readonly getGoal: (sessionID: SessionID) => Effect.Effect<SessionGoal.Snapshot | null, Session.NotFound>
+  /**
+   * Relaunch execution for every Goal this instance left active when it stopped.
+   * `InstanceBootstrap` calls it once per instance so recovery does not depend on
+   * a client reading a session; `SessionGoal.restore` is the double-launch guard,
+   * so calling it again is a no-op for Goals already running.
+   */
+  readonly reconcileGoals: () => Effect.Effect<void>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
 }
 
@@ -1481,10 +1488,25 @@ const layer = Layer.effect(
       return run.goal
     })
 
+    // Reading a Goal never starts one. Recovery is owned by reconcileGoals below,
+    // which runs at instance bootstrap, so an active Goal resumes whether or not
+    // anybody looks at the session.
     const getGoal = Effect.fn("SessionPrompt.getGoal")(function* (sessionID: SessionID) {
-      const run = yield* goals.restore(sessionID)
-      if (run) yield* launchGoal(run)
       return yield* goals.get(sessionID)
+    })
+
+    const reconcileGoals = Effect.fn("SessionPrompt.reconcileGoals")(function* () {
+      const sessionIDs = yield* goals.pending()
+      if (sessionIDs.length === 0) return
+      yield* Effect.logInfo("reconciling goals", { count: sessionIDs.length })
+      yield* Effect.forEach(
+        sessionIDs,
+        Effect.fnUntraced(function* (sessionID) {
+          const run = yield* goals.restore(sessionID).pipe(Effect.orElseSucceed(() => null))
+          if (run) yield* launchGoal(run)
+        }),
+        { discard: true },
+      )
     })
 
     const resumeGoal = Effect.fn("SessionPrompt.resumeGoal")(function* (sessionID: SessionID) {
@@ -1520,7 +1542,18 @@ const layer = Layer.effect(
           noReply: true,
           parts: [{ type: "text", text: `/goal ${objective}` }],
         })
-        yield* startGoal({ sessionID: input.sessionID, objective }).pipe(Effect.orDie)
+        // A session that already owns a Goal is a recoverable user mistake, not a
+        // defect: surface it the way an unknown command is surfaced — a session
+        // error the client renders — and still return the invocation message.
+        yield* startGoal({ sessionID: input.sessionID, objective }).pipe(
+          Effect.catchTag("SessionGoal.Conflict", (conflict) =>
+            events.publish(Session.Event.Error, {
+              sessionID: input.sessionID,
+              error: new NamedError.Unknown({ message: conflict.message }).toObject(),
+            }),
+          ),
+          Effect.orDie,
+        )
         yield* events.publish(Command.Event.Executed, {
           name: input.command,
           sessionID: input.sessionID,
@@ -1659,6 +1692,7 @@ const layer = Layer.effect(
       startGoal,
       resumeGoal,
       getGoal,
+      reconcileGoals,
       resolvePromptParts,
     })
   }),

@@ -71,6 +71,12 @@ export interface PromptInputProps {
   activeTurn?: () => boolean
   goal?: () => RuntimeGoalSnapshot | null | undefined
   goalCapabilities?: () => AgentRuntimeGoalCapabilities | undefined
+  /**
+   * Forced re-read of the session's Goal state. The composer calls this when the
+   * Goal toggle is pressed before the session owner's deferred hydration has
+   * filled `goalCapabilities`, so arming never refuses on unknown capabilities.
+   */
+  refreshGoal?: (opts?: { force?: boolean }) => Promise<boolean>
   stopGoal?: () => void | Promise<unknown>
   /** Registers the mounted composer's retry action for an in-timeline recovery surface. */
   registerRetry?: (retry?: PromptRetryAction) => void

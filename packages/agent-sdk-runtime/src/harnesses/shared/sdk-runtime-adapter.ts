@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto"
-import { agentRuntimeEvent, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { createGoalPublisher, type GoalPublisher } from "./goal-publisher"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -122,9 +123,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }>()
   private hydratedFileTranscripts = new Set<string>()
   private subagentChildByCorrelation = new Map<string, string>()
-  private publishedGoals = new Map<string, string>()
+  private goalPublisher: GoalPublisher
+  readonly goals: AgentGoalResource | undefined
 
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
+    this.goalPublisher = createGoalPublisher(options.eventHub)
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
     this.driver = options.driver({
@@ -139,6 +142,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
     })
+    this.goals = this.createGoalResource()
   }
 
   private lifecycle(): SessionTurnLifecycle<ActiveTurn> {
@@ -173,7 +177,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     })
   }
 
-  get goals(): AgentGoalResource | undefined {
+  /** One resource per adapter: the driver it wraps never changes. */
+  private createGoalResource(): AgentGoalResource | undefined {
     const goals = this.driver.goals
     if (!goals) return this.nativeGoalResource()
     const publish = async <T extends RuntimeGoalSnapshot | null>(
@@ -219,8 +224,34 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       status: "unsupported" as const,
       message: `${this.driver.type} does not advertise Goal ${action}`,
     })
+    const notFound = { ok: false as const, status: "not_found" as const, message: "No Goal exists" }
+    /**
+     * Recovery outcome for a Goal the driver no longer holds.
+     *
+     * A native Goal lives in a provider process, so a restart leaves the driver
+     * with nothing to stop while the store still projects the Goal — which
+     * `read` surfaces as `blocked`. There is no live work to interrupt, so
+     * clearing the projection is both the honest result and the only way the
+     * Goal can ever leave the session: without it the projected Goal is
+     * permanently unstoppable and undeletable.
+     */
+    const clearProjectedGoal = (sessionId: string, directory: string) => {
+      if (!this.store.getGoal?.(sessionId)) return notFound
+      this.publishGoal(sessionId, directory, null)
+      return { ok: true as const, goal: null }
+    }
     return {
-      readCapabilities: (sessionId, directory) => native.capabilities(sessionId, requireWorkspaceDirectory(directory)),
+      // The resource can delete beyond what the driver advertises: a Goal the
+      // driver no longer holds is cleared from the projection, and a driver
+      // `delete` clears a live one. Only a live Goal on a driver without
+      // `delete` is truly undeletable, so advertise per-session honesty.
+      readCapabilities: async (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        const capabilities = await native.capabilities(sessionId, required)
+        if (capabilities.actions.includes("delete")) return capabilities
+        const deletable = !!native.delete || !(await native.read(sessionId, required))
+        return deletable ? { ...capabilities, actions: [...capabilities.actions, "delete"] } : capabilities
+      },
       read: async (sessionId, directory) => {
         const required = requireWorkspaceDirectory(directory)
         const live = await native.read(sessionId, required)
@@ -235,15 +266,29 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       start: (sessionId, input, directory) => this.startNativeGoal(sessionId, input.objective, requireWorkspaceDirectory(directory)),
       pause: () => unsupported("Pause"),
       resume: () => unsupported("Resume"),
-      // No native driver has a provider clear operation: local-map deletion
-      // would lie, because a resumed provider session re-emits the Goal.
-      delete: () => unsupported("Delete"),
+      delete: async (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        // Only the leftover projection of a Goal the driver has lost can be
+        // cleared without the provider.
+        if (!await native.read(sessionId, required)) return clearProjectedGoal(sessionId, required)
+        // Deleting a LIVE Goal locally would lie: a resumed provider session
+        // re-emits it. Only a driver whose provider has a clear operation may
+        // do it, and then in the same order as `stop` — disable continuation,
+        // interrupt the turn, and clear only once nothing can re-report it.
+        if (!native.delete) return unsupported("Delete")
+        await native.stop(sessionId, required)
+        this.lifecycle().abort(sessionId)
+        await this.lifecycle().whenIdle(sessionId)
+        if (!await native.delete(sessionId, required)) return notFound
+        this.publishGoal(sessionId, required, null)
+        return { ok: true, goal: null }
+      },
       stop: async (sessionId, directory) => {
         const required = requireWorkspaceDirectory(directory)
         const goal = await native.read(sessionId, required)
-        if (!goal) return { ok: false, status: "not_found", message: "No Goal exists" }
+        if (!goal) return clearProjectedGoal(sessionId, required)
         const stopped = await native.stop(sessionId, required)
-        if (!stopped) return { ok: false, status: "not_found", message: "No Goal exists" }
+        if (!stopped) return notFound
         this.publishGoal(sessionId, required, stopped)
         this.lifecycle().abort(sessionId)
         await this.lifecycle().whenIdle(sessionId)
@@ -296,17 +341,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
-    const signature = JSON.stringify(goal)
-    if (this.publishedGoals.get(sessionId) === signature) return
-    this.publishedGoals.set(sessionId, signature)
-    this.store.setGoal?.(sessionId, goal)
-    this.options.eventHub?.publishRuntime({
-      directory,
+    this.goalPublisher.publish({
       sessionId,
+      directory,
       agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
-      payload: goal
-        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
-        : agentRuntimeEvent.goalCleared({ sessionId }),
+      goal,
+      applyState: (next) => this.store.setGoal?.(sessionId, next),
     })
   }
 
@@ -414,6 +454,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const agentSessionId = this.store.getAgentSessionId(id)
     if (agentSessionId) await this.driver.deleteAgentSession?.(id, agentSessionId, directory)
     this.store.deleteSession(id)
+    this.goalPublisher.forget(id)
   }
 
   /** Holds the busy lock until terminal emission and releases it on every exit path. */

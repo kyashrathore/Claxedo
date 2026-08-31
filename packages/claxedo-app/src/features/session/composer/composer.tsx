@@ -255,7 +255,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
     workspaceId: () => props.workspaceId?.(), workspaceKind: () => props.workspaceKind?.(),
     sessionRef: () => props.sessionRef?.(),
-    sessionCapabilities: () => props.goalCapabilities?.(),
+    sessionCapabilities: () => props.goalCapabilities?.(), refreshGoal: props.refreshGoal,
     armed: prompt.goal.armed,
     setArmed: prompt.goal.setArmed,
     unavailable: (reason) => {

@@ -87,6 +87,22 @@ export function openEventStream(request: OpenCodeRequestFn, baseHeaders: Headers
   return handle
 }
 
+/**
+ * The end of one turn on a session: the engine has stopped producing assistant
+ * output and any durable per-turn state it owns (a Goal snapshot, todos) is
+ * settled. A per-turn drain stops here; a long-lived watcher re-reads here.
+ */
+export function isTurnBoundaryCompatEvent(event: CompatEvent): boolean {
+  if (isTerminalCompatEvent(event)) return true
+  return (
+    event.type === "message.updated"
+    && event.properties.info.role === "assistant"
+    && "finish" in event.properties.info
+    && Boolean(event.properties.info.finish)
+  )
+}
+
+/** One session's slice of the server feed, ending at that session's turn boundary. */
 export async function* drainEventStream(
   handle: OpenCodeEventStreamHandle,
   sessionId: string,
@@ -98,15 +114,36 @@ export async function* drainEventStream(
   }
 
   try {
-    yield* subscribeGlobalEventsFromReader(handle.reader, sessionId)
+    for await (const event of readCompatEvents(handle.reader)) {
+      const evtSessionId = eventSessionId(event)
+      if (evtSessionId && evtSessionId !== sessionId) continue
+      yield event
+      if (isTurnBoundaryCompatEvent(event)) return
+    }
+    yield sessionError(INCOMPLETE_EVENT_STREAM_MESSAGE, sessionId)
   } finally {
     handle.close()
   }
 }
 
-async function* subscribeGlobalEventsFromReader(
+/**
+ * The whole server feed, unfiltered and open until the server closes it. Callers
+ * that watch several sessions at once share ONE of these instead of opening a
+ * copy of `/global/event` each; a connection failure surfaces as a throw so the
+ * caller owns its own reconnect policy.
+ */
+export async function* drainServerEventStream(handle: OpenCodeEventStreamHandle): AsyncIterable<CompatEvent> {
+  await handle.ready
+  if (!handle.reader) throw new Error(handle.err ?? "Failed to connect to opencode event stream")
+  try {
+    yield* readCompatEvents(handle.reader)
+  } finally {
+    handle.close()
+  }
+}
+
+async function* readCompatEvents(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  sessionId: string,
 ): AsyncIterable<CompatEvent> {
   const decoder = new TextDecoder()
   let buffer = ""
@@ -114,10 +151,7 @@ async function* subscribeGlobalEventsFromReader(
   try {
     while (true) {
       const { done, value } = await reader.read()
-      if (done) {
-        yield sessionError(INCOMPLETE_EVENT_STREAM_MESSAGE, sessionId)
-        return
-      }
+      if (done) return
       buffer += decoder.decode(value, { stream: true })
       const lines = buffer.split("\n")
       buffer = lines.pop() ?? ""
@@ -125,27 +159,18 @@ async function* subscribeGlobalEventsFromReader(
         if (!line.startsWith("data: ")) continue
         const raw = line.slice(6).trim()
         if (!raw) continue
+        let event: CompatEvent | null = null
         try {
           const raw_data = JSON.parse(raw) as {
             payload?: unknown
             type?: string
             properties?: Record<string, unknown>
           }
-          const event = toCompatEvent(raw_data.payload ?? raw_data)
-          if (!event) continue
-          const evtSessionId = eventSessionId(event)
-          if (evtSessionId && evtSessionId !== sessionId) continue
-          yield event
-          if (
-            event.type === "message.updated"
-            && event.properties.info.role === "assistant"
-            && "finish" in event.properties.info
-            && event.properties.info.finish
-          ) return
-          if (isTerminalCompatEvent(event)) return
+          event = toCompatEvent(raw_data.payload ?? raw_data)
         } catch {
-          // ignore
+          // A malformed frame is not a stream failure; skip it.
         }
+        if (event) yield event
       }
     }
   } finally {

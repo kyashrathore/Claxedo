@@ -58,6 +58,7 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
     this.db.exec("PRAGMA synchronous = FULL")
     this.db.exec("PRAGMA busy_timeout = 5000")
     this.createSchema()
+    this.migrateLegacySnapshot()
     this.hydrate()
   }
 
@@ -211,6 +212,58 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
         PRIMARY KEY (parent_session_id, observation_id)
       );
     `)
+  }
+
+  /**
+   * Import the pre-normalization store, which kept the entire state as one
+   * `runtime_store_snapshot` JSON row, into the per-row tables.
+   *
+   * Every database written before the normalized schema still carries that
+   * table and none of the new ones, so hydrating only the new tables would open
+   * an existing `agent-runtime.db` as an empty runtime and then overwrite it.
+   * Dropping the legacy table after the import makes this run exactly once. A
+   * file that already holds normalized sessions is past the migration, so its
+   * (stale) snapshot row is discarded rather than replayed over live rows.
+   */
+  private migrateLegacySnapshot() {
+    const legacy = this.get<{ name: string }>(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'runtime_store_snapshot'",
+    )
+    if (!legacy) return
+    const snapshot = this.get<{ data_json: string }>("SELECT data_json FROM runtime_store_snapshot WHERE id = 'state'")
+    const normalized = this.get<{ count: number }>("SELECT COUNT(*) AS count FROM runtime_sessions")
+    this.commit(() => {
+      if (snapshot && (normalized?.count ?? 0) === 0) {
+        this.importSnapshot(JSON.parse(snapshot.data_json) as Partial<MemoryRuntimeStoreSnapshot>)
+        this.persistAll()
+      }
+      this.db.exec("DROP TABLE runtime_store_snapshot")
+    })
+  }
+
+  private persistAll() {
+    const sessionIds = new Set<string>([
+      ...this.sessions.keys(),
+      ...this.configs.keys(),
+      ...this.messages.keys(),
+      ...this.todos.keys(),
+      ...this.recoveryErrors.keys(),
+      ...this.seq.keys(),
+    ])
+    for (const sessionId of sessionIds) {
+      this.persistSession(sessionId)
+      this.persistConfig(sessionId)
+      this.persistSequence(sessionId)
+      this.persistRecoveryError(sessionId)
+      this.persistTodos(sessionId)
+      for (const message of this.messages.get(sessionId) ?? []) {
+        this.persistMessage(sessionId, String(message.info.id))
+      }
+    }
+    this.persistInteractions()
+    for (const row of this.subagents) {
+      this.persistSubagent(row.parentSessionId, row.observation.observationId)
+    }
   }
 
   private hydrate() {
@@ -382,6 +435,15 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
     const statement = this.db.prepare(sql)
     try {
       statement.run(...params)
+    } finally {
+      statement.finalize()
+    }
+  }
+
+  private get<T>(sql: string, ...params: unknown[]) {
+    const statement = this.db.prepare(sql)
+    try {
+      return statement.get(...params) as T | null
     } finally {
       statement.finalize()
     }

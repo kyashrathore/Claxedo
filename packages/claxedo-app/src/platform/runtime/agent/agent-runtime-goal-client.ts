@@ -1,4 +1,5 @@
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { readRuntimeJson } from "./agent-runtime-json"
 import type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 
 export type AgentRuntimeGoalAction = "pause" | "resume" | "delete"
@@ -33,9 +34,60 @@ type FetchRuntimeSession = (input: {
   init?: RequestInit
 }) => Promise<Response>
 
-async function readJson<T>(response: Response): Promise<T> {
+type AgentRuntimeGoalMutationFailure = Extract<AgentRuntimeGoalMutationResult, { ok: false }>
+
+function isGoalMutationFailureStatus(status: string): status is AgentRuntimeGoalMutationFailure["status"] {
+  return status === "unsupported" ||
+    status === "unavailable" ||
+    status === "not_found" ||
+    status === "conflict" ||
+    status === "failed"
+}
+
+/**
+ * HTTP statuses the runtime uses to carry a TYPED goal-mutation failure body.
+ *
+ * `workspace-runtime` `routes/session-core.ts:goalMutationResponse` serializes
+ * `{ ok: false, status, message }` under 404 (`not_found`), 502 (`failed`), and
+ * 409 (everything else). Treating those as transport errors would make the
+ * whole `ok: false` branch of `AgentRuntimeGoalMutationResult` unreachable, so
+ * the client decodes them instead. Other statuses — and 404/409 bodies from
+ * `goalRuntimeErrorResponse`, which are `{ error: { code, message } }` rather
+ * than a mutation result — still throw.
+ */
+function carriesGoalMutationFailure(status: number) {
+  return status === 404 || status === 409 || status === 502
+}
+
+function goalMutationFailure(body: unknown): AgentRuntimeGoalMutationFailure | undefined {
+  if (!body || typeof body !== "object" || Array.isArray(body)) return
+  const row = body as Record<string, unknown>
+  if (row.ok !== false) return
+  const status = row.status
+  if (typeof status !== "string" || !isGoalMutationFailureStatus(status)) return
+  return {
+    ok: false,
+    status,
+    message: typeof row.message === "string" ? row.message : `Goal request failed: ${status}`,
+  }
+}
+
+async function readGoalMutation(response: Response): Promise<AgentRuntimeGoalMutationResult> {
   if (response.ok) return await response.json()
-  throw new Error((await response.text()) || `Request failed: ${response.status}`)
+  const text = await response.text()
+  if (carriesGoalMutationFailure(response.status)) {
+    const failure = goalMutationFailure(parseJsonBody(text))
+    if (failure) return failure
+  }
+  throw new Error(text || `Request failed: ${response.status}`)
+}
+
+function parseJsonBody(text: string): unknown {
+  try {
+    return JSON.parse(text)
+  } catch {
+    return undefined
+  }
 }
 
 function mutation(method: "POST" | "DELETE", signal?: AbortSignal, body?: unknown): RequestInit {
@@ -57,21 +109,21 @@ export function createAgentRuntimeGoalClient(fetchSession: FetchRuntimeSession) 
     method: "POST" | "DELETE"
     signal?: AbortSignal
     body?: unknown
-  }) => readJson<AgentRuntimeGoalMutationResult>(await fetchSession({
+  }) => readGoalMutation(await fetchSession({
     ...input,
     init: mutation(input.method, input.signal, input.body),
   }))
 
   return {
     async getGoalCapabilities(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
-      return readJson<AgentRuntimeGoalCapabilities>(await fetchSession({
+      return readRuntimeJson<AgentRuntimeGoalCapabilities>(await fetchSession({
         ...input,
         suffix: "/goal/capabilities",
         init: { cache: "no-store", headers: { Accept: "application/json" }, signal: input.signal },
       }))
     },
     async getGoal(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
-      return readJson<RuntimeGoalSnapshot | null>(await fetchSession({
+      return readRuntimeJson<RuntimeGoalSnapshot | null>(await fetchSession({
         ...input,
         suffix: "/goal",
         init: { cache: "no-store", headers: { Accept: "application/json" }, signal: input.signal },
