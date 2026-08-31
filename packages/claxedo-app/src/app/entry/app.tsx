@@ -136,6 +136,23 @@ function BootSplash() {
   )
 }
 
+/**
+ * Whether this WINDOW has shown the shell at least once.
+ *
+ * Signing in deliberately remounts the provider subtree (data isolation
+ * between accounts) and switches the active server, so both boot boundaries
+ * would replay their full-page splash as a flash on every account transition.
+ * The window carries the fact across those remounts; per-window, never
+ * persisted.
+ */
+function shellRevealedOnce() {
+  return (window as { __claxedoShellRevealed?: boolean }).__claxedoShellRevealed === true
+}
+
+function markShellRevealed() {
+  ;(window as { __claxedoShellRevealed?: boolean }).__claxedoShellRevealed = true
+}
+
 function UiI18nBridge(props: ParentProps) {
   const language = useLanguage()
   return <I18nProvider value={{ locale: language.locale, t: language.t }}>{props.children}</I18nProvider>
@@ -205,7 +222,10 @@ function ConnectionGate(props: ParentProps) {
   const location = useLocation()
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
-  const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
+  // First boot blocks behind the splash; any LATER remount (sign-in switches
+  // the active server and rebuilds this gate) checks health in the background
+  // instead of replaying the boot logo over a shell the user already had.
+  const [mode, setMode] = createSignal<"blocking" | "background">(shellRevealedOnce() ? "background" : "blocking")
 
   const [startup, actions] = createResource(async () => {
     const layoutReady = preloadClaxedoAppShell()
@@ -487,17 +507,10 @@ function AuthenticatedLayout(
   }
 
   const defaultServer = ServerConnection.Key.make(resolveDefaultUrl())
-  // Whether the shell has been on screen once in this WINDOW. Signing in
-  // changes the principal's data scope, which deliberately remounts the
-  // provider subtree (data isolation between accounts) — and a component- or
-  // module-scoped flag would reset with it, replaying the boot splash as a
-  // flash on every account transition. The window carries the fact across
-  // those remounts; it is per-window, never persisted, and read once here.
-  const windowState = window as { __claxedoShellRevealed?: boolean }
-  const [shellRevealed, setShellRevealed] = createSignal(windowState.__claxedoShellRevealed === true)
+  const [shellRevealed, setShellRevealed] = createSignal(shellRevealedOnce())
   const ShellRevealed = () => {
     onMount(() => {
-      windowState.__claxedoShellRevealed = true
+      markShellRevealed()
       setShellRevealed(true)
     })
     return null
