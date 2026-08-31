@@ -96,6 +96,14 @@ export type BetterAuthD1UserDeployedComposition = {
   /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
   authHandler(request: Request): Promise<Response>
   verifyIdentity(request: Request): Promise<AuthIdentity>
+  /**
+   * Settles when Better Auth's async initialization completes. A Worker must
+   * not REUSE this composition across requests before then: the promise is
+   * born on the constructing request's I/O context, and workerd retires that
+   * context with the request, so a canceled constructor request would leave
+   * every later caller awaiting it forever (see settled-composition-cache.ts).
+   */
+  authReady: Promise<void>
   serviceInstallations: D1ServiceInstallationStore
   product: (typeof STATIC_PRODUCT_DESCRIPTORS)["user-deployed"]
   billing: "absent"
@@ -224,6 +232,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),
+    authReady: foundation.$context.then(() => undefined),
     serviceInstallations,
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     billing: "absent",

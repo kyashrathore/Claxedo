@@ -132,6 +132,7 @@ describe("Better Auth D1 candidate Worker", () => {
       options: { authentication: { authenticate: mocks.authenticate } },
       authHandler: mocks.authHandler,
       verifyIdentity: mocks.verifyIdentity,
+      authReady: Promise.resolve(),
     })
   })
 

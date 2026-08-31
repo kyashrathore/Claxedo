@@ -38,6 +38,7 @@ import {
   requireDeploymentReleaseCandidateAtRevision,
   requireDeploymentReleaseState,
 } from "./better-auth-d1-release-state.cf"
+import { settledCompositionCache } from "./settled-composition-cache"
 import { requirePairedD1RecoveryEpoch } from "./paired-d1-recovery.cf"
 import {
   assertOperatorSecretIsolation,
@@ -66,8 +67,6 @@ export type BetterAuthD1CandidateWorkerEnv = HostedCoreWorkerEnv &
     CLAXEDO_AUTH_INTROSPECTION_SECRET?: string
   }
 
-const compositionByEnvironment = new WeakMap<object, BetterAuthD1UserDeployedComposition>()
-
 function stringEnvironment(env: BetterAuthD1CandidateWorkerEnv): HostedWorkerEnv {
   return Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
@@ -80,34 +79,34 @@ function futureTimestamp(value: string | undefined, name: string) {
   return parsed
 }
 
-function composition(env: BetterAuthD1CandidateWorkerEnv) {
-  const key = env as object
-  const existing = compositionByEnvironment.get(key)
-  if (existing) return existing
-  const created = composeBetterAuthD1UserDeployedControlPlane({
-    env: stringEnvironment(env),
-    authDatabase: env.AUTH_DB,
-    controlPlaneDatabase: env.CONTROL_PLANE_DB,
-    environmentId: requiredReleaseIdentifier(env.CLAXEDO_ENVIRONMENT_ID, "CLAXEDO_ENVIRONMENT_ID"),
-    descriptorExpiresAt: futureTimestamp(env.CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT, "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT"),
-    product: {
-      kind: "user-deployed",
-      organization: {
-        id: requiredReleaseIdentifier(
-          env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID,
-          "CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID",
-        ),
-        name: requiredReleaseIdentifier(
-          env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME,
-          "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME",
-        ),
+// Reused across requests only once Better Auth's init has settled; until
+// then every request builds its own instance so a canceled first request
+// cannot wedge the isolate (see settled-composition-cache.ts).
+const composition = settledCompositionCache(
+  (env: BetterAuthD1CandidateWorkerEnv): BetterAuthD1UserDeployedComposition =>
+    composeBetterAuthD1UserDeployedControlPlane({
+      env: stringEnvironment(env),
+      authDatabase: env.AUTH_DB,
+      controlPlaneDatabase: env.CONTROL_PLANE_DB,
+      environmentId: requiredReleaseIdentifier(env.CLAXEDO_ENVIRONMENT_ID, "CLAXEDO_ENVIRONMENT_ID"),
+      descriptorExpiresAt: futureTimestamp(env.CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT, "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT"),
+      product: {
+        kind: "user-deployed",
+        organization: {
+          id: requiredReleaseIdentifier(
+            env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID,
+            "CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID",
+          ),
+          name: requiredReleaseIdentifier(
+            env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME,
+            "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME",
+          ),
+        },
+        ownerBootstrap: "one-use-claim",
       },
-      ownerBootstrap: "one-use-claim",
-    },
-  })
-  compositionByEnvironment.set(key, created)
-  return created
-}
+    }),
+  (created) => created.authReady,
+)
 
 const core = createHostedCoreWorker<BetterAuthD1CandidateWorkerEnv>((env) => {
   const selected = composition(env)

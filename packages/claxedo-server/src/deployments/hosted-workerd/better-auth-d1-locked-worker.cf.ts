@@ -29,6 +29,7 @@ import {
   requiredReleaseIdentifier,
 } from "./better-auth-d1-release-identity.cf"
 import { assertOperatorSecretIsolation, operatorResponse } from "./better-auth-d1-operator.cf"
+import { settledCompositionCache } from "./settled-composition-cache"
 
 type RateLimitBinding = {
   limit(input: { key: string }): Promise<{ success: boolean }>
@@ -64,8 +65,6 @@ export type BetterAuthD1LockedWorkerEnv = {
   CF_VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string }
 }
 
-const authenticationByDatabase = new WeakMap<object, ReturnType<typeof createBetterAuthD1Foundation>>()
-
 const requiredIdentifier = requiredReleaseIdentifier
 
 async function releaseIdentity(
@@ -94,18 +93,20 @@ function configuration(env: BetterAuthD1LockedWorkerEnv) {
   })
 }
 
-function authentication(env: BetterAuthD1LockedWorkerEnv) {
-  const existing = authenticationByDatabase.get(env.AUTH_DB as object)
-  if (existing) return existing
-  const configured = configuration(env)
-  const created = createBetterAuthD1Foundation({
-    database: env.AUTH_DB,
-    configuration: configured,
-    resource: betterAuthNativeResource(configured.public.apiOrigin),
-  })
-  authenticationByDatabase.set(env.AUTH_DB as object, created)
-  return created
-}
+// Reused across requests only once Better Auth's init has settled; until
+// then every request builds its own instance so a canceled first request
+// cannot wedge the isolate (see settled-composition-cache.ts).
+const authentication = settledCompositionCache(
+  (env: BetterAuthD1LockedWorkerEnv) => {
+    const configured = configuration(env)
+    return createBetterAuthD1Foundation({
+      database: env.AUTH_DB,
+      configuration: configured,
+      resource: betterAuthNativeResource(configured.public.apiOrigin),
+    })
+  },
+  (created) => created.$context.then(() => undefined),
+)
 
 function json(request: Request, body: unknown, status: number, appOrigin?: string) {
   return secure(request, withCors(request, Response.json(body, { status }), appOrigin))
