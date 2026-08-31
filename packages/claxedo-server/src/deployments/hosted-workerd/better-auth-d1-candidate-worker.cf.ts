@@ -305,16 +305,17 @@ const handler = {
       // The same bootstrap cycle the multiplayer_validation branch documents,
       // for the phase that comes before it: a canary client must read the
       // descriptor to learn how to authenticate, and the shell probes health
-      // before it mounts a login route — so requiring an authenticated
-      // principal here made canary sign-in impossible and left the real app
-      // cycling Sign in → Signing… → Sign in. The exclusive journey still
-      // gates both routes, and neither exposes product data: the descriptor
-      // is a public deployment contract and health is a liveness probe.
+      // before it mounts a login route — so gating these made canary sign-in
+      // impossible and left the real app cycling Sign in → Signing… → Sign in,
+      // then the consent page reporting "Claxedo failed to start".
+      //
+      // Deliberately NOT journey-gated, unlike product routes: the OAuth leg
+      // runs in a browser, and a browser cannot put a header on a navigation
+      // or on the consent page's own bootstrap. Neither route exposes product
+      // data — the descriptor is a public deployment contract and health is a
+      // liveness probe — and every product request below still requires the
+      // journey header AND the admitted canary identity.
       if (release.phase === "canary" && (authDescriptorRoute(url.pathname) || healthProbeRoute(url.pathname))) {
-        const admission = await requireDeploymentCanaryAdmission(env.AUTH_DB, identity)
-        if (request.headers.get("x-claxedo-canary-journey-id") !== admission.journeyId) {
-          return unavailable(request, "canary_journey_denied")
-        }
         return await core.fetch(request, env, context)
       }
       // Auth routes establish an identity; they grant no product access. A

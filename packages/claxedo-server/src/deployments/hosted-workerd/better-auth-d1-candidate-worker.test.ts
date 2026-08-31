@@ -217,12 +217,17 @@ describe("Better Auth D1 candidate Worker", () => {
     expect(await health.json()).toEqual({ core: true })
     expect(mocks.authenticate).not.toHaveBeenCalled()
 
-    // Still exclusive to the admitted journey.
-    const denied = await worker.fetch(
-      new Request("https://api.example.test/api/claxedo/auth/descriptor"),
+    // Served without the journey header too: the OAuth leg runs in a browser,
+    // which cannot header a navigation or the consent page's own bootstrap.
+    const browserProbe = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/health"),
       env(),
     )
-    expect(await denied.json()).toEqual({ error: { code: "canary_journey_denied" } })
+    expect(await browserProbe.json()).toEqual({ core: true })
+
+    // Product routes stay exclusive to the admitted journey.
+    const product = await worker.fetch(new Request("https://api.example.test/api/workspaces"), env())
+    expect(await product.json()).toEqual({ error: { code: "canary_journey_denied" } })
   })
 
   test("multiplayer validation exposes only OAuth bootstrap, health, and CORS preflight without operation admission", async () => {
