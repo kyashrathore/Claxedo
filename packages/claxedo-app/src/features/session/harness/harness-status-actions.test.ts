@@ -117,6 +117,8 @@ describe("harness status actions", () => {
   })
 
   test("does not fetch options or refresh directory for failed existing-session status", async () => {
+    state.optionsLoading = true
+
     await actions().applyStatus("session:ses_1", {
       type: "claude-acp",
       activeType: "claude-acp",
@@ -131,21 +133,17 @@ describe("harness status actions", () => {
     expect(optionFetches).toEqual([])
     expect(ensures).toEqual([])
     expect(refreshes).toEqual([])
+    expect(patches.at(-1)).toMatchObject({ optionsLoading: false })
   })
 
-  test("fetches model options without refreshing the directory for a healthy existing session", async () => {
+  test("hydrates a healthy existing session without fetching model options or refreshing the directory", async () => {
     await actions().applyStatus("session:ses_1", {
       type: "codex-app-server",
       activeType: "codex-app-server",
       model: "gpt-5.6-sol",
     }, { directory: "/repo", sessionId: "ses_1" })
 
-    expect(optionFetches).toEqual([{
-      scope: "session:ses_1",
-      type: "codex-app-server",
-      directory: "/repo",
-      sessionId: "ses_1",
-    }])
+    expect(optionFetches).toEqual([])
     expect(ensures).toEqual([])
     expect(refreshes).toEqual([])
   })

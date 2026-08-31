@@ -24,10 +24,10 @@ const SRC = "packages/claxedo-app/src"
  *    WorkGraph/Documents renderer chunk. A small shared contract/data seam is
  *    still reachable today: two modules under `features/workgraph/`, seven
  *    under `features/documents/`, the unbound cloud workspace port module,
- *    anonymous auth-session abstraction, and login route. Unit 10 was to move
- *    those remaining hosted contracts into `@claxedo/cloud-app` and is
- *    DEFERRED, so forbidding their whole roots here would fail on real code
- *    rather than gate anything. The exact ceiling keeps that seam shrinking.
+ *    anonymous auth-session abstraction, and login route. Those files stay
+ *    co-located in this package; forbidding their whole roots here would fail
+ *    on real code rather than gate anything. The exact ceiling keeps that
+ *    seam shrinking.
  *
  * What IS enforced is the part that was actually finished: no identity
  * provider, no Convex, and no module route to `auth-client.ts` — the four
@@ -53,10 +53,6 @@ export const appLocal: Policy = {
     `${SRC}/app/integrations/hosted-content-surfaces.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
-  // User extensions are served from a validated loopback URL at runtime; the
-  // source walker cannot resolve that URL to repository code. Keep the one
-  // intentional opaque edge exact so any second opaque import still fails.
-  permittedOpaqueImports: [`${SRC}/platform/extensions/user-extensions.ts -> import(url)`],
 
   control: {
     // The local entry is the whole shared app shell; a walk that read only the
@@ -86,10 +82,8 @@ export const appLocal: Policy = {
   // Usage adds the chart, breakdown, quota view, and shared provider-brand
   // module to the local UI; all other dependencies were already in the
   // renderer closure.
-  // The idle user-extension view host is local-only and adds no Clerk/Convex
-  // edge; record its reviewed source closure with no additional headroom.
-  // Five reviewed local owners entered after the user-extension baseline:
-  // live-session/project ownership, rail status, first-fold prefetch, and the
+  // Five reviewed local owners entered after the 2026-08 local-entry
+  // baseline: live-session/project ownership, rail status, first-fold prefetch, and the
   // deferred message navigator. The session-switch performance campaign adds
   // another twenty-five narrow owners for reactive route snapshots, title and
   // pane projection, memory accounting, bounded prefetch, first-fold/history
@@ -126,8 +120,10 @@ export const appLocal: Policy = {
   // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
   // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
   // modules. Provider-settings translations are split into one lazy feature
-  // dictionary per non-English locale: 923 + 16 = 939, still no package edge.
-  ceilings: { modules: 939, packages: 41 },
+  // dictionary per non-English locale: 923 + 16 = 939. Removing the retired
+  // local UI extension view, registry, and loader subtracts three modules:
+  // 939 - 3 = 936, still no package edge.
+  ceilings: { modules: 936, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

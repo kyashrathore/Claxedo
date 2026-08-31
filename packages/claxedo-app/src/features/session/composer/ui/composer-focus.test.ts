@@ -71,6 +71,67 @@ describe("focusComposerWhenReady", () => {
     expect(fallbackCalls).toBe(0)
   })
 
+  test("allows the navigation control that initiated the handoff to retain focus while the composer mounts", () => {
+    const queue: Array<() => void> = []
+    composerFocus.schedule = (run) => queue.push(run)
+    const origin = document.createElement("button")
+    document.body.appendChild(origin)
+    origin.focus()
+
+    focusComposerWhenReady({ origin })
+    queue.shift()?.()
+    expect(document.activeElement).toBe(origin)
+
+    const editor = mountEditor()
+    queue.shift()?.()
+
+    expect(document.activeElement).toBe(editor)
+  })
+
+  test("waits for the destination composer instead of focusing the outgoing session", () => {
+    const queue: Array<() => void> = []
+    composerFocus.schedule = (run) => queue.push(run)
+    const origin = document.createElement("button")
+    const outgoingSurface = document.createElement("div")
+    outgoingSurface.dataset.sessionId = "old"
+    const outgoingEditor = mountEditor()
+    outgoingSurface.append(outgoingEditor)
+    document.body.append(origin, outgoingSurface)
+    origin.focus()
+
+    focusComposerWhenReady({ origin, sessionId: "new" })
+    queue.shift()?.()
+
+    expect(document.activeElement).toBe(origin)
+    expect(queue).toHaveLength(1)
+
+    const destinationSurface = document.createElement("div")
+    destinationSurface.dataset.sessionId = "new"
+    const destinationEditor = mountEditor()
+    destinationSurface.append(destinationEditor)
+    document.body.append(destinationSurface)
+    queue.shift()?.()
+
+    expect(document.activeElement).toBe(destinationEditor)
+  })
+
+  test("does not steal focus after the user moves away from the navigation control", () => {
+    const queue: Array<() => void> = []
+    composerFocus.schedule = (run) => queue.push(run)
+    const origin = document.createElement("button")
+    const other = document.createElement("button")
+    document.body.append(origin, other)
+    origin.focus()
+
+    focusComposerWhenReady({ origin })
+    other.focus()
+    mountEditor()
+    queue.shift()?.()
+
+    expect(document.activeElement).toBe(other)
+    expect(queue).toHaveLength(0)
+  })
+
   test("runs the fallback when the composer never mounts", () => {
     composerFocus.schedule = (run) => run() // synchronous exhaustion
 

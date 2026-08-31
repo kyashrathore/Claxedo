@@ -136,7 +136,7 @@ export const serverWorkerd: Policy = {
   ],
 
   control: cloudControl(`${SRC}/deployments/hosted-workerd/worker.ts`),
-  // Usage, user-extension gating, runtime-target resolution, and authoritative
+  // Usage, runtime-target resolution, and authoritative
   // message paging remain Worker-safe shared owners with no package growth.
   // Tenant-aware runtime session authority is Worker-safe shared owner:
   // 112 + 1 = 113 modules, still no package edge.

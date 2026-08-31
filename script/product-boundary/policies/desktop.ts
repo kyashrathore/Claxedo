@@ -166,7 +166,6 @@ export const desktopRendererUnsigned: Policy = {
     `${DESKTOP}/renderer/index.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
-  permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
 
   control: {
     minModules: 700,
@@ -213,8 +212,10 @@ export const desktopRendererUnsigned: Policy = {
   // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
   // documents/WorkGraph) + 1 (control-plane fetch) + 1 (SSE stream) + 1
   // (agent-config extensions) = 1007. The 16 lazy provider-settings locale
-  // dictionaries shared with app-local bring this to 1023, with no package edge.
-  ceilings: { modules: 1023, packages: 62 },
+  // dictionaries shared with app-local bring this to 1023. Removing the retired
+  // local UI extension view, registry, and loader subtracts three modules:
+  // 1023 - 3 = 1020, with no package edge.
+  ceilings: { modules: 1020, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -251,7 +252,6 @@ export const desktopHostedContribution: Policy = {
     `${DESKTOP}/main`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
-  permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
   control: {
     minModules: 250,
     requiredModules: [
@@ -273,8 +273,10 @@ export const desktopHostedContribution: Policy = {
   // 304 + 1 = 305 modules, still no package edge.
   // AccountPort SSE stream adapter for central `session.events`:
   // 305 + 1 = 306. The 16 lazy provider-settings locale dictionaries shared
-  // with app-local bring this to 322, still no package edge.
-  ceilings: { modules: 322, packages: 40 },
+  // with app-local bring this to 322. Removing the two retired UI extension
+  // owners reachable from hosted contributions leaves 320 modules, still no
+  // package edge.
+  ceilings: { modules: 320, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,

@@ -91,6 +91,7 @@ import {
   railSessionStatusTargetChain,
 } from "./rail-session-status-target"
 import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
+import { focusComposerWhenReady } from "@/features/session/composer/ui/composer-focus"
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
 import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
 import { Can, can } from "@/platform/auth/role"
@@ -1240,6 +1241,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const afterVisibleActivation = (task: () => void) => setTimeout(task, fastSessionSwitchAnyQuietDelay({ baseDelay: 80 }) + 100)
   const activateSession = (session: Row) => {
     const measure = measureRendererPhase
+    const focusOrigin = typeof document === "undefined" ? undefined : document.activeElement
     const directory = sessionDirectory(session)
     abortSidebarSessionStatusBatches()
     // A click-owned read has no reason to survive a different activation. Do
@@ -1269,6 +1271,7 @@ export function RailSidebar(props: RailSidebarProps) {
       sessionRef: sessionWorkbenchRef(session),
     }))
     measure("sessionActivate.replaceUrl", () => replaceSessionUrl(session))
+    focusComposerWhenReady({ origin: focusOrigin, sessionId: session.id })
     afterVisibleActivation(() => {
       if (serial !== sessionActivationSerial) return
       scheduleSidebarStatusPrime(session.id)

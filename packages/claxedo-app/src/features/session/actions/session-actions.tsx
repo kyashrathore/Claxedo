@@ -33,6 +33,7 @@ import { sameWorkspaceDirectory } from "@/platform/runtime/agent/signed-workspac
 import { workspaceRouteId as resolveWorkspaceRouteId } from "@/platform/identity/workspace-route"
 import { cancelArchiveProjectionReads } from "../data/sync/archive-projection-boundary"
 import { flushQueryPersistence } from "@/platform/query/persister"
+import { focusComposerWhenReady } from "../composer/ui/composer-focus"
 
 const directorySessionCacheEnsureTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const DIRECTORY_SESSION_CACHE_ENSURE_DELAY_MS = 8_000
@@ -216,6 +217,8 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
   }
 
   const handleNewSession = async (workspaceDir?: string, _paneId?: string, selectedRouteId?: string) => {
+    const focusOrigin = typeof document === "undefined" ? undefined : document.activeElement
+    const handOffComposerFocus = () => focusComposerWhenReady({ origin: focusOrigin, sessionId: "new" })
     props.flowLog("new session click", {
       workspaceDir: workspaceDir ?? null,
       routeDir: props.activeDirectory(),
@@ -246,6 +249,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
       nav(workspaceSessionRoute(routeId), "new-session", {
         workspaceDir: providerDirectory,
       })
+      handOffComposerFocus()
       return
     }
 
@@ -271,6 +275,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
         workspaceDir,
         created,
       })
+      handOffComposerFocus()
     })) return
 
     const routeId = selectedRouteId ?? props.workspaceRouteId(workspaceDir)
@@ -299,6 +304,7 @@ export function createSessionActions(props: ActionProps, nav: Nav) {
     nav(workspaceSessionRoute(routeId), wsInfo?.isCloud ? "new-session:cloud" : "new-session", {
       workspaceDir,
     })
+    handOffComposerFocus()
   }
 
   const handleNewReview = async (workspaceDir: string) => {

@@ -35,6 +35,7 @@ import { unsignedLocalRequestGuard, deploymentMode } from "@claxedo/server-core/
 import { controlPlaneAuthContext, ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { getHarnessMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeProxyOptions } from "../workspace/runtime-dispatch/internals"
 import { createWorkspaceRuntimeProxy } from "../workspace/runtime-dispatch/middleware"
@@ -51,7 +52,6 @@ import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/ser
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
-import { UserExtensionRoutes } from "../extensions/user-extension-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
 
 /**
@@ -90,6 +90,7 @@ export type LocalAppOptions = {
   onError?: Parameters<Hono["onError"]>[0]
   updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
   invalidateCentralSession?: (sessionId: string) => void
+  refreshSessionProjection?: (workspace: Workspace) => Promise<void>
   env?: NodeJS.ProcessEnv
   usage?: Parameters<typeof LocalUsageRoutes>[0]
   /** Machine-local daemon control surface. Never exposed to the renderer. */
@@ -304,7 +305,11 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     ...authRouteOptions(services),
     agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
   }))
-  app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
+  app.route("/", SessionMetaRoutes({
+    services,
+    ...authRouteOptions(services),
+    ...(options.refreshSessionProjection ? { refreshSessionProjection: options.refreshSessionProjection } : {}),
+  }))
   const localWorkspaceRoutes = LocalWorkspaceRoutes(authRouteOptions(services))
   const sandboxDriverSettingsRoutes = SandboxDriverSettingsRoutes({
     credentials: services.credentials,
@@ -319,11 +324,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/workspace", localWorkspaceRoutes)
   app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
-  // User-extension manifests and modules from `dataDir()/extensions`. The
-  // route family disables itself on hosted/signed deployments; mounting it
-  // unconditionally keeps that decision in one place (the routes) instead of
-  // duplicating the environment check here.
-  app.route("/api/claxedo/extensions", UserExtensionRoutes({ env }))
 
   return { injectWebSocket }
 }
