@@ -180,7 +180,16 @@ export function controlPlaneBearerFromTokenPayload(payload: {
  */
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000
 
-async function postToTokenEndpoint(
+/**
+ * How long the first attempt may sit without response headers before it is
+ * abandoned for a fresh-connection retry. Divided budgets keep the retry
+ * meaningful when a caller passes a small overall timeout.
+ */
+const TOKEN_REQUEST_STALL_RETRY_MS = 8_000
+
+class TokenEndpointTimeoutError extends Error {}
+
+async function postToTokenEndpointOnce(
   fetchImpl: typeof fetch,
   tokenUrl: string,
   form: Record<string, string>,
@@ -201,9 +210,11 @@ async function postToTokenEndpoint(
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
 
   let handle: ReturnType<typeof setTimeout> | undefined
+  let timedOut: TokenEndpointTimeoutError | undefined
   const timeout = new Promise<never>((_resolve, reject) => {
     handle = setTimeout(() => {
-      const error = new Error(`token endpoint timed out after ${String(timeoutMs)}ms`)
+      const error = new TokenEndpointTimeoutError(`token endpoint timed out after ${String(timeoutMs)}ms`)
+      timedOut = error
       controller.abort(error)
       reject(error)
     }, timeoutMs)
@@ -227,9 +238,51 @@ async function postToTokenEndpoint(
       timeout,
       aborted,
     ])
+  } catch (error) {
+    // The abort dispatched by OUR timer can surface as the transport's own
+    // rejection before the timeout promise settles. The caller classifies a
+    // stall by this error type, so keep the translation here.
+    throw timedOut ?? error
   } finally {
     if (handle) clearTimeout(handle)
     parentSignal?.removeEventListener("abort", abortFromParent)
+  }
+}
+
+/**
+ * The token transport: one request, plus one fresh-connection retry when the
+ * first attempt stalls without response headers.
+ *
+ * Live Cloudflare deployments intermittently stall a POST whose keep-alive
+ * connection previously served a GET: the edge delivers the request headers to
+ * the Worker but withholds the body, so the endpoint waits forever and the
+ * fetch never resolves — while the same POST on a fresh connection completes
+ * in under a second. The desktop always fetches the auth descriptor moments
+ * before exchanging a code, so sign-in rides exactly that warm GET connection.
+ *
+ * Aborting the stalled attempt destroys its socket, which both forces the
+ * retry onto a new connection and guarantees the authorization server can
+ * never process the first attempt's grant — its request body never arrived —
+ * so resending the same one-use code or refresh token cannot trigger replay
+ * revocation of the retry's tokens. Only OUR stall timeout retries; a parent
+ * cancellation or any answered request propagates unchanged.
+ */
+async function postToTokenEndpoint(
+  fetchImpl: typeof fetch,
+  tokenUrl: string,
+  form: Record<string, string>,
+  timeoutMs: number,
+  parentSignal?: AbortSignal,
+) {
+  const stallBudgetMs = Math.min(Math.ceil(timeoutMs / 3), TOKEN_REQUEST_STALL_RETRY_MS)
+  const startedAt = Date.now()
+  try {
+    return await postToTokenEndpointOnce(fetchImpl, tokenUrl, form, stallBudgetMs, parentSignal)
+  } catch (error) {
+    if (!(error instanceof TokenEndpointTimeoutError) || parentSignal?.aborted) throw error
+    const remainingMs = timeoutMs - (Date.now() - startedAt)
+    if (remainingMs <= 0) throw error
+    return await postToTokenEndpointOnce(fetchImpl, tokenUrl, form, remainingMs, parentSignal)
   }
 }
 
