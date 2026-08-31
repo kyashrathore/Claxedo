@@ -1,6 +1,6 @@
 {
   "package": "@claxedo/agent-sdk-runtime",
-  "version": "0.5.1",
+  "version": "0.7.0",
   "rootPolicy": "stable AgentRuntime facade and shared runtime types",
   "stabilityLabels": {
     "stable": "Intended public API for external hosts.",
@@ -51,6 +51,10 @@
       "status": "compatibility",
       "purpose": "OpenCode-compatible event bridge."
     },
+    "@claxedo/agent-sdk-runtime/status": {
+      "status": "compatibility",
+      "purpose": "Status normalization helpers for compatibility hosts."
+    },
     "@claxedo/agent-sdk-runtime/runtime-event-hub": {
       "status": "integration",
       "purpose": "In-process runtime event fanout."
@@ -62,6 +66,14 @@
     "@claxedo/agent-sdk-runtime/mcp-resolver": {
       "status": "integration",
       "purpose": "MCP config resolution helpers."
+    },
+    "@claxedo/agent-sdk-runtime/subagent-admission": {
+      "status": "advanced",
+      "purpose": "Durable subagent identity and lifecycle admission primitives."
+    },
+    "@claxedo/agent-sdk-runtime/message-page": {
+      "status": "advanced",
+      "purpose": "Bounded message page contracts for custom adapters."
     }
   },
   "docs": {
@@ -70,6 +82,46 @@
     "stableApi": "docs/api.md",
     "boundaries": "docs/boundaries.md",
     "recipes": "docs/recipes.md"
+  },
+  "declarationHashes": {
+    "@claxedo/agent-sdk-runtime": "2bf66f8547ad3185f8912fd1f18dac73a2da00c6786980494a666cb8b179e048",
+    "@claxedo/agent-sdk-runtime/compat-events": "dee3117e87e935a536217c9703b6c6c5b9b8e0150acb28951533e07beb8ebf4f",
+    "@claxedo/agent-sdk-runtime/status": "7a15e8cab91dc8c8dec2048c736aefc6d6179cd39a37d529a407a75a90d3b5e6",
+    "@claxedo/agent-sdk-runtime/capabilities": "2bf66f8547ad3185f8912fd1f18dac73a2da00c6786980494a666cb8b179e048",
+    "@claxedo/agent-sdk-runtime/runtime-event-hub": "c6b5f9a6e87d512de92f3feae1217680284d02f6da443e786bf399a01c4057e1",
+    "@claxedo/agent-sdk-runtime/sse": "bbb71767f0a9f6a46336f5f11ddafc79b94eb8302460681d26c1f3f5028b9757",
+    "@claxedo/agent-sdk-runtime/mcp-resolver": "dc567840f0e58a920b0deacd22dcacba7ee3c6efe8e75abb66f2952c50f17ebb",
+    "@claxedo/agent-sdk-runtime/subagent-admission": "5c5cec5b601e47bac897cb489b9ad2ec54ddd1568662ea062aa8f9c9c174c956",
+    "@claxedo/agent-sdk-runtime/session-env": "e93591203b0878939aa033e43705be4e1dd24083aad41e111ba752242aae2c65",
+    "@claxedo/agent-sdk-runtime/virtual-session-env": "912497932792ab10107c08c93d1a5b0ff869702ea9075d892edf494493fe7501",
+    "@claxedo/agent-sdk-runtime/harnesses": "9862478927484ce861e5c22c0d60fee20657cf9a10a05123c2584d7b59b19aa3",
+    "@claxedo/agent-sdk-runtime/adapters": "7e0a2d1d7235647db8c0690762688ec1012019d0a62a99484dd78d34153daf4e",
+    "@claxedo/agent-sdk-runtime/message-page": "2bf66f8547ad3185f8912fd1f18dac73a2da00c6786980494a666cb8b179e048",
+    "@claxedo/agent-sdk-runtime/stores/memory": "ce38be7484d0000adcd1b6c8fa3037eed6697f2bb5010c9c5393777dbd26c6ca",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "6ae49f8db808361fc0f2f4d1dac68d42341a187dd553b3dd898c82b5fb1b4c48",
+    "@claxedo/agent-sdk-runtime/stores/convex": "9d7ee66ab5ca758099ca7824a1265d9071dc6957d4736e97b5ccf5c9d393b365"
+  },
+  "valueExports": {
+    "@claxedo/agent-sdk-runtime": [
+      "AGENT_HARNESS_ACCESSES", "AGENT_HARNESS_DEFINITIONS", "AGENT_HARNESS_IDS", "AGENT_HARNESS_KEYS",
+      "AGENT_PROCESS_ATTRIBUTION_SCENARIOS", "AGENT_RUNTIME_TURN_CONFLICT_CODE", "AgentRuntimeTurnAdmissionError",
+      "AgentRuntimeTurnConflictError", "FIRST_TURN_ERROR_CLASSES", "SDK_MODEL_CATALOG", "chunk",
+      "classifyFirstTurnError", "createAgentRuntime", "createLiveModelSource", "createMemoryRunStore",
+      "createMemorySubagentAdmissionStore", "createSubagentAdmissionBoundary", "createVirtualSessionEnv",
+      "defaultSessionModel", "firstTurnErrorData", "harnessCapabilities", "harnessDefinition", "harnessKey",
+      "isAcpConnectionId", "isAgentHarnessAccess", "isAgentHarnessId", "isAgentRuntimeTurnAdmissionError",
+      "isAgentRuntimeTurnConflictError", "isSdkModelId", "live", "modelConfigOption", "normalizeAgentHarnessTransport",
+      "normalizeHarnessIdentity", "observeAgentProcess", "recovering", "requireSdkModelId", "resolveSessionModel",
+      "safeAgentProcessDescriptor", "sdkModelConfigOption", "sdkModelOptions"
+    ],
+    "@claxedo/agent-sdk-runtime/harnesses": [
+      "ProcessLifecycleDisposedError", "acp", "claude", "codex", "createProcessLifecycle", "cursor", "opencode", "pi",
+      "terminateOnParentLoss"
+    ],
+    "@claxedo/agent-sdk-runtime/stores/memory": ["MemoryRuntimeStore", "createMemoryRuntimeStore"],
+    "@claxedo/agent-sdk-runtime/stores/sqlite": [
+      "RuntimeStoreCorruptionError", "SqliteRuntimeStore", "UnsupportedRuntimeStoreSchemaError", "createSqliteRuntimeStore"
+    ]
   },
   "symbols": {
     "createAgentRuntime": {
@@ -130,13 +182,31 @@
       "status": "stable",
       "import": "@claxedo/agent-sdk-runtime/harnesses",
       "kind": "function",
-      "purpose": "Register Claude as a native or ACP harness."
+      "purpose": "Register the native Claude SDK harness."
     },
     "codex": {
       "status": "stable",
       "import": "@claxedo/agent-sdk-runtime/harnesses",
       "kind": "function",
-      "purpose": "Register Codex as a native or ACP harness."
+      "purpose": "Register the native Codex app-server harness."
+    },
+    "cursor": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register the native Cursor SDK harness."
+    },
+    "opencode": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register the native OpenCode harness."
+    },
+    "acp": {
+      "status": "stable",
+      "import": "@claxedo/agent-sdk-runtime/harnesses",
+      "kind": "function",
+      "purpose": "Register an explicit operator-configured ACP connection."
     },
     "pi": {
       "status": "stable",

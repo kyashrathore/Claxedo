@@ -12,7 +12,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) removeTestTempDir(root)
 })
 
-function admit(store: MemoryRuntimeStore) {
+function admit(store: Pick<MemoryRuntimeStore, "admit">) {
   return store.admit({
     parentSessionId: "parent",
     observation: {
@@ -75,7 +75,7 @@ describe("runtime subagent admission stores", () => {
     }])
   })
 
-  test("sqlite snapshots preserve admission across reopen", () => {
+  test("sqlite rows preserve admission across reopen", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "agent-runtime-subagent-"))
     roots.push(root)
     const firstStore = new SqliteRuntimeStore({ root })

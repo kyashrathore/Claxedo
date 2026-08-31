@@ -49,6 +49,7 @@ Kind: Functions
 - `cursor`
 - `opencode`
 - `pi`
+- `acp(id, options)` for an explicit operator-configured ACP connection
 
 Use factories with `createAgentRuntime()` instead of constructing adapter
 classes directly.
@@ -67,6 +68,8 @@ integration.
 Exports include:
 
 - `AgentHarnessAdapter`
+- `AgentHandoffSessionOptions`
+- `AgentPreparedHandoffSession`
 - `AcpHarnessAdapter`
 - `ClaudeHarnessAdapter`
 - `CodexHarnessAdapter`
@@ -77,6 +80,12 @@ Exports include:
 - `AgentRuntimeStoreWithRecovery`
 
 This is a real public API surface, but it is not the recommended starting point.
+
+Custom adapters that support harness switching implement `createHandoffSession`
+as a prepare step. It returns an idempotent `rollback()` that releases only the
+new target resources. After a successful commit, `releaseHandoffSource` may
+release the old provider-native session. A target that already owns the same
+logical session id must reject preparation rather than delete that session.
 
 ## Prompt And Config Types
 

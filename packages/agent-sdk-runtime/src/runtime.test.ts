@@ -3,6 +3,7 @@ import { removeTestTempDir } from "./harnesses/shared/test-temp-dir"
 import { tmpdir } from "os"
 import path from "path"
 import { describe, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory, AgentRuntimeAbortResult } from "./runtime"
 import type { AgentHarnessAdapter } from "./adapter-contract"
@@ -11,7 +12,7 @@ import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
-import type { AgentMessage, SessionConfig } from "./index"
+import type { AgentMessage, AgentSession, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
@@ -38,6 +39,7 @@ function lastTurnOf(rows: { getSession(id: string): unknown }, id: string) {
 
 function testHarness(options: {
   sendMessage?: AgentHarnessAdapter["sendMessage"]
+  updateSession?: AgentHarnessAdapter["updateSession"]
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
   commitsStreamEvents?: boolean
@@ -64,9 +66,7 @@ function testHarness(options: {
       options.runtimeConfigCalls?.push("createSession")
       return { id: "ses_test" }
     },
-    async updateSession() {
-      return null
-    },
+    updateSession: options.updateSession ?? (async () => null),
     async getSessionConfig() {
       return { harness: { id: "pi", access: "native" } }
     },
@@ -101,6 +101,9 @@ function handoffHarness(input: {
   prompts?: string[]
   handoffs?: string[]
   handoffSystems?: string[]
+  rollbacks?: string[]
+  rollbackError?: string
+  sourceCleanups?: string[]
   messages?: AgentMessage[]
   turnError?: string
   configError?: string
@@ -114,8 +117,19 @@ function handoffHarness(input: {
     async createHandoffSession(_directory, _title, id, options) {
       input.handoffs?.push(id)
       input.handoffSystems?.push(options.system)
-      return { id, agentSessionId: `${input.id}-native-thread` }
+      let rolledBack = false
+      return {
+        id,
+        agentSessionId: `${input.id}-native-thread`,
+        rollback: async () => {
+          if (rolledBack) return
+          rolledBack = true
+          input.rollbacks?.push(id)
+          if (input.rollbackError) throw new Error(input.rollbackError)
+        },
+      }
     },
+    async releaseHandoffSource(id) { input.sourceCleanups?.push(id) },
     async updateSession() { return null },
     async getSessionConfig() { return config },
     async updateSessionConfig(_id, update) {
@@ -337,9 +351,10 @@ describe("createAgentRuntime", () => {
   test("restores the source binding when target-harness configuration fails", async () => {
     const store = createMemoryRuntimeStore()
     const rows = storeRows(store)
+    const rollbacks: string[] = []
     const runtime = createAgentRuntime({
       store,
-      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", configError: "configuration failed" })],
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude", configError: "configuration failed", rollbacks })],
     })
     const session = await runtime.sessions.create({ id: "ses_rollback", directory: "/repo", harness: { id: "pi", access: "native" } })
 
@@ -352,6 +367,58 @@ describe("createAgentRuntime", () => {
     expect(rows.getAgentSessionId(session.id)).toBe("ses_rollback")
     expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "pi", access: "native" })
     expect(rows.getSessionConfig(session.id)?.handoff).toBeNull()
+    expect(rollbacks).toEqual([session.id])
+    runtime.dispose()
+  })
+
+  test("does not roll back the target-native session after a successful handoff", async () => {
+    const rollbacks: string[] = []
+    const sourceCleanups: string[] = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [handoffHarness({ id: "pi", sourceCleanups }), handoffHarness({ id: "claude", rollbacks })],
+    })
+    const session = await runtime.sessions.create({ id: "ses_commit", directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+
+    expect(rollbacks).toEqual([])
+    expect(sourceCleanups).toEqual([session.id])
+    runtime.dispose()
+  })
+
+  test("reports rollback failure without hiding the original handoff failure", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [
+        handoffHarness({ id: "pi" }),
+        handoffHarness({ id: "claude", configError: "configuration failed", rollbackError: "cleanup failed" }),
+      ],
+    })
+    const session = await runtime.sessions.create({ id: "ses_rollback_failure", directory: "/repo", harness: { id: "pi", access: "native" } })
+    const diagnostic = runtime.events.subscribe({ sessionId: session.id })[Symbol.asyncIterator]().next()
+
+    let thrown: unknown
+    try {
+      await runtime.sessions.updateConfig(session.id, { harness: { id: "claude", access: "native" } }, "/repo")
+    } catch (error) {
+      thrown = error
+    }
+
+    expect(thrown).toMatchObject({
+      name: "HandoffRollbackError",
+      code: "session_handoff_rollback_failed",
+      handoffError: { message: "configuration failed" },
+      rollbackError: { message: "cleanup failed" },
+    })
+    expect((await diagnostic).value?.payload).toMatchObject({
+      type: "diagnostic",
+      diagnostic: { code: "session_handoff_rollback_failed" },
+    })
+    expect(rows.getAgentSessionId(session.id)).toBe("ses_rollback_failure")
+    expect(rows.getSessionConfig(session.id)?.harness).toEqual({ id: "pi", access: "native" })
     runtime.dispose()
   })
 
@@ -949,6 +1016,9 @@ describe("createAgentRuntime", () => {
         sendMessage: async function* (id) {
           yield sessionIdle(id)
         },
+        async updateSession(id, updates) {
+          return buildSession({ id, directory: "", title: updates.title ?? "" })
+        },
       })],
     })
     const session = await runtime.sessions.create({
@@ -964,6 +1034,117 @@ describe("createAgentRuntime", () => {
       title: "fix the terminal pane",
       lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
     })
+    runtime.dispose()
+  })
+
+  test("keeps a completed turn authoritative when automatic title metadata fails", async () => {
+    const store = createMemoryRuntimeStore()
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) {
+          yield sessionIdle(id)
+        },
+        async updateSession() {
+          throw new Error("title provider unavailable")
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+      title: "New session - 2026-07-08T09:09:30.378Z",
+    })
+    const receivedPromise = (async () => {
+      const received: Array<{ payload: { type: string; diagnostic?: { code?: string } } }> = []
+      for await (const event of runtime.events.subscribe({ sessionId: session.id })) {
+        received.push(event as never)
+        if (event.payload.type === "diagnostic") return received
+      }
+      return received
+    })()
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "Please fix the terminal pane" })
+    await tick()
+
+    const received = await receivedPromise
+    expect(lastTurnOf(storeRows(store), session.id)).toMatchObject({ status: "completed" })
+    expect(received.some((event) => event.payload.type === "session.error")).toBe(false)
+    expect(received.some((event) =>
+      event.payload.type === "diagnostic"
+      && event.payload.diagnostic?.code === "automatic_title_update_failed"
+    )).toBe(true)
+    runtime.dispose()
+  })
+
+  test("does not publish an automatic title when the harness rejects it with null", async () => {
+    const store = createMemoryRuntimeStore()
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) { yield sessionIdle(id) },
+        async updateSession() { return null },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+      title: "New session - 2026-07-08T09:09:30.378Z",
+    })
+    const diagnostic = (async () => {
+      for await (const event of runtime.events.subscribe({ sessionId: session.id })) {
+        if (event.payload.type === "diagnostic") return event
+      }
+    })()
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "Please fix the terminal pane" })
+    await tick()
+
+    expect((await diagnostic)?.payload).toMatchObject({
+      type: "diagnostic",
+      diagnostic: { code: "automatic_title_update_failed" },
+    })
+    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
+      title: "New session - 2026-07-08T09:09:30.378Z",
+      lastTurn: { status: "completed" },
+    })
+    runtime.dispose()
+  })
+
+  test("keeps an explicit rename authoritative while automatic titling is in flight", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    let markAutomaticStarted!: () => void
+    let releaseAutomatic!: () => void
+    const automaticStarted = new Promise<void>((resolve) => { markAutomaticStarted = resolve })
+    const automaticGate = new Promise<void>((resolve) => { releaseAutomatic = resolve })
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id) { yield sessionIdle(id) },
+        async updateSession(id, updates) {
+          if (updates.title === "fix the terminal pane") {
+            markAutomaticStarted()
+            await automaticGate
+          }
+          const updated = rows.updateSession(id, updates)
+          return updated as AgentSession | null
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+      title: "New session - 2026-07-08T09:09:30.378Z",
+    })
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_1", text: "Please fix the terminal pane" })
+    await automaticStarted
+    const renamed = runtime.sessions.update(session.id, { title: "Release debugging" })
+    releaseAutomatic()
+    await renamed
+
+    expect(rows.getSession(session.id)).toMatchObject({ title: "Release debugging" })
     runtime.dispose()
   })
 
@@ -1242,25 +1423,21 @@ describe("createAgentRuntime", () => {
     }
   })
 
-  test("sqlite store coalesces event bursts into a single snapshot write", async () => {
+  test("sqlite store persists only the session changed by an event burst", () => {
     const root = tempRoot()
     try {
       const store = storeRows(createSqliteRuntimeStore({ root }))
-      const internals = store as unknown as {
-        persist(): void
-        bindSession(input: { sessionId: string; directory: string; agentSessionId: string }): void
-        appendEvent(input: { sessionId: string; payload: unknown }): unknown
-        close(): void
-      }
-      let persistCount = 0
-      const originalPersist = internals.persist.bind(internals)
-      internals.persist = () => {
-        persistCount++
-        originalPersist()
-      }
-      internals.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "ses_1" })
+      store.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "ses_1" })
+      store.bindSession({ sessionId: "ses_2", directory: "/repo", agentSessionId: "ses_2" })
+      const db = new Database(path.join(root, "agent-runtime.db"))
+      db.exec(`
+        CREATE TRIGGER reject_unrelated_session_update
+        BEFORE UPDATE ON runtime_sessions
+        WHEN OLD.id = 'ses_2'
+        BEGIN SELECT RAISE(ABORT, 'unrelated session rewritten'); END;
+      `)
       for (let i = 0; i < 100; i++) {
-        internals.appendEvent({
+        store.appendEvent({
           sessionId: "ses_1",
           payload: sessionUpdated(buildSession({
             id: "ses_1",
@@ -1269,17 +1446,17 @@ describe("createAgentRuntime", () => {
           })),
         })
       }
-      expect(persistCount).toBe(0)
-      await new Promise((resolve) => setTimeout(resolve, 400))
-      expect(persistCount).toBe(1)
-      internals.close()
-      expect(persistCount).toBe(1)
+      expect(db.query("SELECT name FROM sqlite_master WHERE name = 'runtime_store_snapshot'").get()).toBeNull()
+      expect(db.query("SELECT COUNT(*) AS count FROM runtime_sessions").get()).toEqual({ count: 2 })
+      db.close()
+      store.close()
 
       const reopened = createSqliteRuntimeStore({ root }) as unknown as {
         getSession(id: string): { title: string | null } | null
         close(): void
       }
       expect(reopened.getSession("ses_1")).toMatchObject({ title: "Streamed 99" })
+      expect(reopened.getSession("ses_2")).toMatchObject({ id: "ses_2" })
       reopened.close()
     } finally {
       removeTestTempDir(root)

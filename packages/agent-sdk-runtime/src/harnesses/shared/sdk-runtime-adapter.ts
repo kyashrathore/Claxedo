@@ -151,7 +151,7 @@ export type SdkRuntimeDriver = {
   createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
-  deleteAgentSession?(sessionId: string, agentSessionId: string): void
+  deleteAgentSession(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
   dispose?(): void
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]>
@@ -325,7 +325,22 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     directory = requireWorkspaceDirectory(directory)
     const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
     this.store.bindSession({ sessionId, directory, title, agentSessionId })
-    return { id: sessionId, agentSessionId, ownerKey: null }
+    let rolledBack = false
+    return {
+      id: sessionId,
+      agentSessionId,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.driver.deleteAgentSession(sessionId, agentSessionId, directory)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(sessionId: string, agentSessionId: string, _ownerKey: string | null, directory: string) {
+    this.lifecycle().abort(sessionId)
+    await this.driver.deleteAgentSession(sessionId, agentSessionId, directory)
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
@@ -357,10 +372,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       const childSessionId = (child as { childSessionId?: string }).childSessionId
       if (!childSessionId) continue
       const agentSessionId = this.store.getAgentSessionId(childSessionId)
-      if (agentSessionId) this.driver.deleteAgentSession?.(childSessionId, agentSessionId)
+      if (agentSessionId) await this.driver.deleteAgentSession(childSessionId, agentSessionId, _directory)
     }
     const agentSessionId = this.store.getAgentSessionId(id)
-    if (agentSessionId) this.driver.deleteAgentSession?.(id, agentSessionId)
+    if (agentSessionId) await this.driver.deleteAgentSession(id, agentSessionId, _directory)
     this.store.deleteSession(id)
   }
 

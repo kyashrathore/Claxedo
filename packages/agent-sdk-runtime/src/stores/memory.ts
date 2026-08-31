@@ -69,6 +69,17 @@ export type MemoryRuntimeStoreSnapshot = {
   }>
 }
 
+/** Targeted state used by durable stores without serializing unrelated sessions. */
+export type MemoryRuntimeSessionPersistenceState = {
+  session: SessionRow | null
+  config: SessionConfig | null
+  messages: MessageRow[]
+  todos: Array<{ content: string; status: string; priority: string }>
+  recoveryError: string | null
+  seq: number | null
+  subagents: MemoryRuntimeStoreSnapshot["subagents"]
+}
+
 /** @internal */
 export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private sessions = new Map<string, SessionRow>()
@@ -472,6 +483,34 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   close() {}
 
+  /** @internal */
+  readPersistenceState(sessionId: string): MemoryRuntimeSessionPersistenceState {
+    return {
+      session: this.sessions.get(sessionId) ?? null,
+      config: this.configs.get(sessionId) ?? null,
+      messages: this.messages.get(sessionId) ?? [],
+      todos: this.todos.get(sessionId) ?? [],
+      recoveryError: this.recoveryErrors.get(sessionId) ?? null,
+      seq: this.seq.get(sessionId) ?? null,
+      subagents: this.subagents.filter((row) => row.parentSessionId === sessionId),
+    }
+  }
+
+  /** @internal */
+  readDirectoryInteractions(directory: string) {
+    return {
+      permissions: [...(this.permissions.get(directory)?.values() ?? [])],
+      questions: [...(this.questions.get(directory)?.values() ?? [])],
+    }
+  }
+
+  /** @internal */
+  listChildSessionIds(parentSessionId: string): string[] {
+    return [...this.sessions.values()]
+      .filter((session) => session.parentID === parentSessionId)
+      .map((session) => session.id)
+  }
+
   exportSnapshot(): MemoryRuntimeStoreSnapshot {
     return {
       sessions: [...this.sessions.values()],
@@ -688,10 +727,14 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   private upsertMessage(sessionId: string, message: MessageRow) {
     const rows = this.messages.get(sessionId) ?? []
-    this.messages.set(sessionId, [
-      ...rows.filter((row) => row.info.id !== message.info.id),
-      message,
-    ])
+    const ordinal = rows.findIndex((row) => row.info.id === message.info.id)
+    if (ordinal < 0) {
+      this.messages.set(sessionId, [...rows, message])
+      return
+    }
+    const next = [...rows]
+    next[ordinal] = message
+    this.messages.set(sessionId, next)
   }
 
   private deleteSessionInteractions(sessionId: string) {

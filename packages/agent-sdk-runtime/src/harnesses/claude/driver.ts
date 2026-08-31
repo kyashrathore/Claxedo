@@ -123,6 +123,11 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     return `${CLAUDE_PENDING_PREFIX}${randomUUID()}`
   }
 
+  deleteAgentSession() {
+    // Claude's pending resume id owns no provider or process resource until a
+    // turn starts, so a prepared handoff has nothing external to release.
+  }
+
   createRuntime(threadId: string): AgentEventRuntime {
     return createAgentEventRuntime({
       harness: this.type,
