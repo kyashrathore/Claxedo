@@ -16,6 +16,7 @@ import { createAccountService, type AccountState } from "./account-service"
 import { createCredentialStore } from "./credential-store"
 import { credentialFile, loopbackListener, nodeTimer, refreshExchange, tokenExchange } from "./electron-seams"
 import { createDesktopNativeAuth } from "./desktop-native-auth"
+import { noConnectionReuseFetch } from "./no-reuse-fetch"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
 import type { OAuthSeams } from "./oauth-flow"
@@ -82,17 +83,19 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
   })
 
   const releaseValidationOperation = config.releaseValidationOperation
-  const controlPlaneFetch: typeof fetch = releaseValidationOperation
-    ? (request, init) => {
-        const next = new Request(request, init)
-        if (new URL(next.url).origin !== config.coreOrigin) return fetch(next)
-        const headers = new Headers(next.headers)
-        if (!headers.has("x-claxedo-multiplayer-validation-operation")) {
-          headers.set("x-claxedo-multiplayer-validation-operation", releaseValidationOperation)
-        }
-        return fetch(new Request(next, { headers }))
-      }
-    : fetch
+  // Core-origin traffic never reuses a connection (see no-reuse-fetch.ts for
+  // the poisoned keep-alive pool this removes); anything else keeps the
+  // platform fetch.
+  const controlPlaneFetch: typeof fetch = (request, init) => {
+    const next = new Request(request, init)
+    if (new URL(next.url).origin !== config.coreOrigin) return fetch(next)
+    if (!releaseValidationOperation) return noConnectionReuseFetch(next)
+    const headers = new Headers(next.headers)
+    if (!headers.has("x-claxedo-multiplayer-validation-operation")) {
+      headers.set("x-claxedo-multiplayer-validation-operation", releaseValidationOperation)
+    }
+    return noConnectionReuseFetch(new Request(next, { headers }))
+  }
 
   const seams: OAuthSeams = {
     // The system browser, never an in-app window: an embedded window rendering
