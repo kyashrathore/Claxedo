@@ -24,7 +24,7 @@ describe("runner resolution", () => {
     else process.env.CLAXEDO_DATA_DIR = prev
   })
 
-  test("resolves ACP session harness from saved session config", async () => {
+  test("resolves a configured connection from saved session config", async () => {
     const directory = "/workspace"
     const ws = await workspace.ensureWorkspace({
       workspaceId: "ws_1",
@@ -35,7 +35,7 @@ describe("runner resolution", () => {
     expect(ws?.id).toBe("ws_1")
 
     sessionHarness.setSessionConfig("ws_1", "ses_1", {
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "team-agent", access: "connection" },
       agent: "build",
       model: { providerID: "claude", modelID: "claude-opus-4-6" },
       variant: null,
@@ -47,12 +47,14 @@ describe("runner resolution", () => {
       sessionId: "ses_1",
     })
 
-    expect(runner).toMatchObject({ id: "claude", access: "acp" })
+    expect(runner).toMatchObject({ id: "team-agent", access: "connection" })
   })
 
-  test("accepts native harnesses from request inputs", () => {
-    expect(resolution.parseHarness({ type: "claude" })).toEqual({ id: "claude", access: "native" })
-    expect(resolution.parseHarness({ type: "codex" })).toEqual({ id: "codex", access: "native" })
+  test("fails closed when no session, request, or explicit runtime selection exists", async () => {
+    await expect(resolution.resolveHarnessForRequest()).rejects.toMatchObject({
+      code: "harness_selection_required",
+      message: "An explicit harness selection is required",
+    })
   })
 
   test("resolves the workspace host when harness state cannot be resolved", async () => {

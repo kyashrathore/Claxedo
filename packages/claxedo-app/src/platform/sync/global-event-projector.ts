@@ -20,13 +20,9 @@ export function applyGlobalProjectEvent(input: {
   if (input.event.type !== "project.updated") return
   const properties = input.event.properties as Project
   const result = Binary.search(input.project, properties.id, (item) => item.id)
-  // The embedded OpenCode engine emits `project.updated` for the same worktree
-  // the control plane already owns, but under its own hashed project id. That
-  // never matches on id, so it used to be inserted as a *second* project for
-  // one worktree — and because it carries no `name` and no `workspaces`, any
-  // consumer keying by worktree (the rail's project catalog does) could pick it
-  // and render the worktree basename with no sessions. The control-plane entry
-  // is authoritative for a worktree; the engine's payload adds nothing to it.
+  // Workspace and control-plane streams can report the same worktree under
+  // different project ids. Keep the existing authoritative worktree row rather
+  // than inserting a duplicate that cannot own the rail's session inventory.
   if (
     !result.found &&
     !!properties.worktree &&

@@ -325,7 +325,7 @@ describe("workspaceRuntimeProxy startup wait", () => {
     const req = (globalThis.fetch as any).mock.calls[0][0] as Request
     expect(req.url).toBe("https://relay.eu.test/workspaces/ws_1/file/content?workspaceId=ws_1&directory=%2Flocal")
     expect(req.headers.get("authorization")).toBe("Bearer relay-runtime-token")
-    expect(req.headers.get("x-opencode-directory")).toBe("workspace:ws_1")
+    expect(req.headers.get("x-claxedo-directory")).toBe("workspace:ws_1")
     expect(req.headers.get("X-Daytona-Skip-Preview-Warning")).toBeNull()
   })
 })
@@ -335,7 +335,6 @@ describe("embedded workspace runtime config hydration", () => {
     for (const path of [
       "/api/wr/health",
       "/api/wr/capabilities",
-      "/global/event",
       "/event",
       "/api/wr/runtime-events",
       "/file/content",

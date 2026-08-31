@@ -8,11 +8,10 @@ export type {
   AppliedRuntimeSnapshot,
   ConfigRouteOptions,
   RuntimeCommandItem,
-  RuntimeHarness,
-  RuntimeRunner,
+  RuntimeConnectionDescriptor,
+  RuntimeHarnessSelection,
+  RuntimeNativeHarnessId,
   RuntimeSnapshot,
-  RuntimeSnapshotV1,
-  RuntimeSnapshotV2,
 }
   from "./routes/config"
 export {
@@ -35,7 +34,6 @@ export {
   mcpControl,
   resolveEffectiveMcp,
   resolveUserMcp,
-  toOpencodeConfig,
   type ResolvedMcpServer,
 } from "./mcp-resolver"
 export type { AgentExtensionScope, HarnessTarget, MaterializedAgentExtensionScope, PackageSource }

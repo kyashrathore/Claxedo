@@ -39,16 +39,13 @@ import {
 /**
  * Tool tiers Claxedo's own Auto mode uses. Shared with permission-auto-respond.
  *
- * TWO VOCABULARIES land in the same `permission` field and both must be covered:
- *   - opencode sends its own permission keys (`read`, `glob`, `grep`, `bash`, …).
- *   - ACP harnesses send the protocol's `ToolKind` (`read`, `edit`, `delete`,
+ * ACP harnesses send the protocol's `ToolKind` (`read`, `edit`, `delete`,
  *     `move`, `search`, `execute`, `think`, `fetch`, `switch_mode`, `other`).
- * The names that appear in both (`read`, `edit`) mean the same thing, so they are
- * safe to share; the rest are additive. Anything unlisted asks.
+ * Anything unlisted asks.
  */
 export const SAFE_READ_PERMISSIONS = ["read", "glob", "grep", "list", "lsp"] as const
 
-/** ACP `ToolKind` values that are safe, beyond the ones opencode already names. */
+/** Additional ACP `ToolKind` values that are safe. */
 export const ACP_SAFE_TOOL_KINDS = ["search", "think"] as const
 
 /**
@@ -72,8 +69,8 @@ export const DANGER_GATED_PERMISSIONS = [
 
 /**
  * Generic bucket for `permission_decided` telemetry. NEVER the raw permission
- * string itself: opencode's permission namespace has an open tail — MCP tool
- * names, subagent ids, and the shell tool id are all dynamic — so forwarding it
+ * string itself: connection permission namespaces have an open tail — MCP tool
+ * names, subagent ids, and shell tool ids are dynamic — so forwarding it
  * verbatim risks leaking a connection or tool name into an analytics event.
  * Anything this table does not recognize, including every dynamic id above,
  * buckets to "other" rather than being forwarded raw.
@@ -150,31 +147,6 @@ export type PermissionModeDelivery =
        */
       respondWith: "once" | "always"
     }
-  | {
-      kind: "opencode-session-ruleset"
-      /**
-       * ORDERED, and the order is load-bearing: `Permission.evaluate` takes the
-       * LAST wildcard-matching rule, so the catch-all comes first and the specific
-       * grants after it. This is an array rather than the `Record` this used to be
-       * precisely because object key order is an implementation detail to rely on
-       * and array order is not.
-       *
-       * Always the COMPLETE set, never a partial patch: the session handler MERGES
-       * (`Permission.merge(current, incoming)`) rather than replacing, so a partial
-       * update would leave a previous mode's rule still in the array and, being
-       * earlier, still reachable by `findLast` only if the new set does not cover
-       * the same permission. Sending every key makes the write order-independent.
-       */
-      ruleset: readonly { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[]
-      /**
-       * Takes effect at the START OF THE NEXT TURN, not mid-turn: `runLoop`
-       * snapshots the session row once at entry (`session/prompt.ts`) and reuses it
-       * for every step. The write itself is harmless mid-turn — it just will not be
-       * observed by the turn already running. The UI must say so rather than
-       * implying the change is live.
-       */
-      appliesFrom: "next-turn"
-    }
   /**
    * ONE delivery for every harness that has a real mode surface — ACP, Claude,
    * Codex and Cursor alike.
@@ -239,64 +211,6 @@ const CLAXEDO_LOCAL_AUTO: PermissionModeDelivery = {
   respondWith: "always",
 }
 
-/**
- * Auto expressed in opencode's own rule vocabulary.
- *
- * Order matters and is the reason this is a list: `Permission.evaluate` collects
- * every rule whose `permission`/`pattern` match and takes the LAST one, so the
- * catch-all must come FIRST and every grant after it.
- *
- * `pattern: "*"` on each entry means "any argument to this tool". That is
- * deliberately as far as this goes for `bash`: the engine already tree-sitter-parses
- * shell and generalises commands via `BashArity` (`git checkout main` becomes
- * `git checkout *`), so pattern-scoped bash grants ARE expressible — but choosing
- * which command patterns are safe is the shell-classification problem the owner
- * ruled out of scope. So `bash` stays in the ask tier rather than shipping a
- * half-guessed allowlist.
- *
- * The danger tier is listed explicitly even though `*` already denies it by
- * default. Two reasons: it states the intent where a reader will look for it, and
- * because the session handler MERGES rulesets, an explicit late `ask` cannot be
- * outranked by an `allow` for the same permission left behind by a previous mode.
- */
-function opencodeAutoRuleset(): readonly { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[] {
-  const allow = (keys: readonly string[]) =>
-    keys.map((permission) => ({ permission, pattern: "*", action: "allow" as const }))
-  return [
-    { permission: "*", pattern: "*", action: "ask" },
-    ...allow(SAFE_READ_PERMISSIONS),
-    ...allow(INTERACTIVE_PERMISSIONS),
-    ...allow(IN_PROJECT_WRITE_PERMISSIONS),
-    ...DANGER_GATED_PERMISSIONS.map((permission) => ({ permission, pattern: "*", action: "ask" as const })),
-  ]
-}
-
-/**
- * Withdraw everything the permissive opencode ruleset granted.
- *
- * Required, not optional. Granting writes rules into the engine's PERSISTED
- * ruleset, so the way back has to withdraw them — otherwise the control is
- * one-way and the engine stays permissive after the user has visibly changed it.
- * That is a security regression, and it is invisible from the UI because the
- * picker would read "ask for everything" while the stored rules still say allow.
- *
- * Withdrawal works BECAUSE the handler merges rather than replaces: the incoming
- * rules land after the existing ones and `Permission.evaluate` takes the last
- * match, so a later `ask` beats an earlier `allow`. No endpoint deletes rules,
- * which makes this the only way to revoke.
- */
-function opencodeAskRuleset(): readonly { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[] {
-  const ask = (keys: readonly string[]) =>
-    keys.map((permission) => ({ permission, pattern: "*", action: "ask" as const }))
-  return [
-    { permission: "*", pattern: "*", action: "ask" },
-    ...ask(SAFE_READ_PERMISSIONS),
-    ...ask(INTERACTIVE_PERMISSIONS),
-    ...ask(IN_PROJECT_WRITE_PERMISSIONS),
-    ...ask(DANGER_GATED_PERMISSIONS),
-  ]
-}
-
 export const CLAXEDO_ALLOW_SAFE_ID = "claxedo-allow-safe"
 export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
 
@@ -340,52 +254,7 @@ export function claxedoPermissionModes(input: {
   // render memo, and a render-time throw blanks the whole shell.
   const reportedModes = input.report?.modes
   if (Array.isArray(reportedModes) && reportedModes.length > 0) return []
-  return [claxedoAutoOption(input), claxedoAskOption(input.harness, input.hasSession)]
-}
-
-/**
- * The next-turn caveat, or nothing on a draft.
- *
- * opencode's ruleset lands at the START of the next turn — `runLoop` snapshots
- * the session row once at entry — so on a live session the warning is real and
- * load-bearing. On a DRAFT it is neither: there is no turn running to keep its
- * current rules, and the first message creates the session and runs under
- * exactly this ruleset. Saying "applies from your next message" there tells the
- * user their choice will be ignored for the very turn it actually governs.
- *
- * Same shape as the `next-session` caveat cursor gets, and suppressed for the
- * same reason — a caveat about an existing session cannot be stated before one
- * exists.
- */
-function nextTurnCaveat(hasSession: boolean | undefined) {
-  if (hasSession === false) return {}
-  return { caveat: "Applies from your next message; the turn already running keeps its current rules" }
-}
-
-/**
- * Auto, for a harness that reported no modes of its own.
- *
- * Two mechanisms only, because this is never reached when the harness has a
- * policy surface: opencode writes a session-scoped ruleset to the engine, and
- * everything else falls to Claxedo answering the safe permissions itself. The
- * caveat saying nothing is enforced therefore appears exactly where it is true.
- */
-function claxedoAutoOption(input: { harness: HarnessId; hasSession?: boolean }): PermissionModeOption {
-  if (permissionMechanism(input.harness).kind === "opencode-session-ruleset") {
-    return {
-      id: CLAXEDO_ALLOW_SAFE_ID,
-      name: "Auto",
-      origin: "claxedo" as const,
-      // Auto means full access with the DANGER TIER still gated. The ruleset
-      // below is that shape in opencode's vocabulary: a catch-all `ask`, then
-      // grants for everything safe, leaving bash/network/out-of-project asking.
-      description: "Everything runs without asking except shell, network and anything outside the project",
-      ...nextTurnCaveat(input.hasSession),
-      delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAutoRuleset(), appliesFrom: "next-turn" },
-    }
-  }
-
-  return localAnswerAutoOption()
+  return [localAnswerAutoOption(), localAnswerAskOption()]
 }
 
 /**
@@ -423,21 +292,6 @@ function localAnswerAutoOption(): PermissionModeOption {
  */
 export function unidentifiedHarnessModes(): readonly PermissionModeOption[] {
   return [localAnswerAutoOption(), localAnswerAskOption()]
-}
-
-/** The off switch, manufactured only where the harness supplies none. */
-function claxedoAskOption(harness: HarnessId, hasSession?: boolean): PermissionModeOption {
-  if (permissionMechanism(harness).kind === "opencode-session-ruleset") {
-    return {
-      id: CLAXEDO_ASK_ALWAYS_ID,
-      name: "Ask for everything",
-      description: "Every tool call waits for you",
-      origin: "claxedo",
-      ...nextTurnCaveat(hasSession),
-      delivery: { kind: "opencode-session-ruleset", ruleset: opencodeAskRuleset(), appliesFrom: "next-turn" },
-    }
-  }
-  return localAnswerAskOption()
 }
 
 /** The off switch where Claxedo, not the harness, is the one answering. */
@@ -564,11 +418,8 @@ export function permissionModeOptions(input: {
   // Exactly one of these is non-empty. `claxedoPermissionModes` returns nothing
   // once the harness has reported modes of its own, so the picker never renders
   // a Claxedo row above a list that already contains the mode it would apply.
-  // Loading/unreadable reports are a rendering state, not a delivery contract:
-  // native OpenCode policy delivery also calls `claxedoPermissionModes` before
-  // a report exists. Suppress fallback rows only at this picker boundary so the
-  // delivery path keeps its canonical ruleset.
-  // Non-opencode harnesses must never flash Claxedo rows while their own list
+  // Loading/unreadable reports are a rendering state, not a delivery contract.
+  // Harnesses must never flash Claxedo rows while their own list
   // is still loading or empty — an empty `modes: []` report is not permission
   // to paraphrase Codex/Claude modes as Claxedo "Ask for everything".
   const claxedo =

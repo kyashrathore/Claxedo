@@ -260,7 +260,7 @@ describe("session metadata routes", () => {
       {
         headers: {
           Authorization: "Bearer user_1",
-          "x-opencode-directory": "workspace:ws_signed_navigation",
+          "x-claxedo-directory": "workspace:ws_signed_navigation",
         },
       },
     )

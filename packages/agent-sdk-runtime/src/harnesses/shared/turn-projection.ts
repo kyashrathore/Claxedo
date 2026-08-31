@@ -1,5 +1,5 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import {
   buildAssistantMessage,
   messageUpdated,
@@ -49,7 +49,7 @@ export function createTurnEventProjector(options: {
   let assistantMessageId = options.assistantMessageId
   let created = options.created
   const runtimeProjectionMessageId = options.assistantMessageId
-  const projection = createOpencodeCompatProjection({
+  const projection = createClientPresentationProjection({
     sessionId: options.owner.sessionId,
     directory: options.directory,
     assistantMessageId,

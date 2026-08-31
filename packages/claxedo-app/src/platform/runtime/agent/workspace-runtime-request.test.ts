@@ -138,7 +138,7 @@ describe("workspace runtime request", () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/workspaces/ws_direct/api/wr/health") {
         expect(req.headers.get("authorization")).toBeNull()
@@ -165,7 +165,7 @@ describe("workspace runtime request", () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_signed_loopback/connection") {
         expect(req.headers.get("authorization")).toBe("Bearer signed-browser-token")
@@ -181,7 +181,7 @@ describe("workspace runtime request", () => {
       }
       if (url.toString() === "https://relay.loopback.test/workspaces/ws_signed_loopback/session/ses_1/prompt_async") {
         expect(req.headers.get("authorization")).toBe("Bearer rat_signed_loopback")
-        expect(req.headers.get("x-opencode-directory")).toBeNull()
+        expect(req.headers.get("x-claxedo-directory")).toBeNull()
         return Response.json({ ok: true })
       }
       throw new Error(`unexpected request: ${req.method} ${req.url}`)
@@ -481,7 +481,7 @@ describe("workspace runtime request", () => {
       directory: "ws_1",
       request: (async (input: string | URL | Request, init?: RequestInit) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
-        calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+        calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
         if (new URL(req.url).pathname !== "/workspaces/ws_1/provider") throw new Error(`unexpected request: ${req.url}`)
         return Response.json({ ok: true })
       }) as typeof fetch,

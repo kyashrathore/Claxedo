@@ -67,7 +67,7 @@ host app
 
 The canonical event contract comes from `@claxedo/agent-event-runtime`.
 Adapters either emit canonical `AgentRuntimeEvent` values directly or emit
-OpenCode-compatible `CompatEvent` values when bridging an existing OpenCode
+Claxedo client-presentation `CompatEvent` values when bridging an existing OpenCode
 surface.
 
 ## Session Liveness And Turn Outcome
@@ -190,6 +190,8 @@ access modes.
 - ACP connections: `acp(id, { binary, ... })` with `access: "acp"`.
 - Native harnesses: `claude`, `codex`, `cursor`, `opencode`, and `pi` with
   `access: "native"`.
+- Configured providers, including ACP, use an opaque connection id with
+  `access: "connection"`; they are not added to the native id catalog.
 
 `harnessDefinition()`, `harnessKey()`, `isAgentHarnessId()`, and
 `isAgentHarnessAccess()` centralize harness classification so callers do not
@@ -210,13 +212,10 @@ paths by the UI.
 
 | Harness | Discovery | Transcript | Child Session |
 | --- | --- | --- | --- |
-| OpenCode native | native task/session lifecycle | live | openable |
 | Claude native | `Agent` tool lifecycle | messages | openable after host materialization |
-| Claude ACP | Claude subagent metadata plus parent-tool correlation | messages | openable after host materialization |
 | Codex native | collab thread lifecycle | live | openable |
-| Codex ACP | Start/Interact/Interrupt activity | unavailable | not openable |
 | Cursor native | `Task` result carrying a valid transcript reference | file | conditionally openable after host materialization |
-| Cursor ACP | `Task: Subagent task` lifecycle | unavailable | not openable |
+| Configured ACP | negotiated ACP lifecycle | provider-dependent | capability-dependent |
 | Pi model-backed | foreground or background child lifecycle | live | openable |
 | Pi bare adapter | no subagent capability | none | no subagent row |
 
@@ -238,7 +237,7 @@ are attached, so one parent cannot observe another parent's child lifecycle.
 - `HarnessCapabilities` is the per-harness session feature matrix returned to
   hosts and UI.
 - `AdapterCapability` marks implementation abilities that are not part of the
-  normal session contract, such as `http-proxy` and `runtime-config`.
+  normal session contract, currently `runtime-config`.
 - `hasAdapterCapability()` is the safe narrowing helper for optional adapter
   extensions.
 
@@ -339,26 +338,17 @@ shared runtime contract through the shared SDK adapter.
 These transports query their native SDK or app-server for model options and
 cache successful results per workspace directory.
 
-### OpenCode
+### Configured connections
 
-`src/harnesses/opencode` bridges an OpenCode engine into the shared runtime
-facade through one of three transports — which one is always the HOST's
-decision, never this package's:
+External agents are installed through `ConnectionProvider` implementations.
+The runtime resolves an explicit connection identity to a trusted descriptor,
+materializes host-owned secret leases at execution time, and persists only the
+full `AgentExecutionBinding` needed to address the session. Unknown, disabled,
+or stale connections fail closed; there is no built-in external-server default.
 
-- **Injected handler** — construct with `{ request: OpenCodeRequestFn }`; all
-  HTTP (sessions, status, `/mcp` sync, the `/global/event` SSE stream) goes
-  through the host-supplied `(request: Request) => Promise<Response>` handler.
-  Nothing spawns, no socket. This is how a host embeds the engine in-process
-  (the host imports the engine; this package never does — see
-  `engine-boundary.test.ts`).
-- **External URL** — construct with an explicit `opencodeUrl`; requests go to
-  that server, whose lifecycle the host owns.
-- **Supervised spawn** — construct with neither; the adapter spawns
-  `opencode serve` as a supervised child on demand (idle-reaped).
-
-It keeps OpenCode-specific environment and event compatibility code isolated so
-the rest of the runtime can operate through the same harness factory and event
-projection path as ACP and SDK transports.
+ACP is one connection provider. The external OpenCode server protocol lives in
+the separate `@claxedo/opencode-server-adapter` package and is composed by host
+applications like any other installed provider.
 
 ### Pi
 

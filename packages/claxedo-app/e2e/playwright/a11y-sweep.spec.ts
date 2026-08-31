@@ -92,7 +92,7 @@ async function seedNoProjects(page: Page) {
     // Same-origin fix as core-boot-deep-links-home.spec.ts's seedNoProjects: without
     // this, server URL resolution falls through to the hardcoded cross-origin default
     // (127.0.0.1:3001) and the resulting fetch fails as a cross-origin CORS preflight.
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
     }
   })
@@ -101,12 +101,12 @@ async function seedNoProjects(page: Page) {
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },

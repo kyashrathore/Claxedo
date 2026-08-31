@@ -45,14 +45,14 @@ describe("prompt machine", () => {
         ABORT: "rolledBack:abortActivePrompt,restoreSnapshot",
         CREATE_FAILED: "preparing:",
         DISPATCHED: "preparing:",
-        PROVISIONED: "creating:createOpencodeSession",
+        PROVISIONED: "creating:createRuntimeSession",
         PROVISION_FAILED: "rolledBack:restoreSnapshot",
         RECONCILED: "preparing:",
         RETRY: "preparing:",
         SEND_FAILED: "preparing:",
         SESSION_CREATED: "preparing:",
         SUBMIT: "preparing:",
-        TARGET_RESOLVED: "creating:createOpencodeSession",
+        TARGET_RESOLVED: "creating:createRuntimeSession",
       },
       creating: {
         ABORT: "rolledBack:abortActivePrompt,restoreSnapshot",
@@ -166,7 +166,7 @@ describe("prompt machine", () => {
   test("create failure rolls back once with the original snapshot retained", () => {
     const failed = transitionPromptMachine({
       s: "creating",
-      via: "opencode",
+      via: "runtime",
       snapshot: snapshot({ bodyMd: "ship it", comments: ["comment_a"] }),
       mode: {
         kind: "draft",
@@ -382,7 +382,7 @@ function promptMachineStateFixtures(): PromptMachineState[] {
     },
     {
       s: "creating",
-      via: "opencode",
+      via: "runtime",
       snapshot: fixtureSnapshot(),
       mode: fixtureDraftMode(),
     },

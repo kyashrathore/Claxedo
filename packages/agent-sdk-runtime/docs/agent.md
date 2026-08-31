@@ -25,7 +25,7 @@ own those concerns.
 | Host/runtime boundary | [boundaries.md](./boundaries.md) | no import |
 | Harness factories | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/harnesses` |
 | In-memory or virtual session environment | [recipes.md](./recipes.md) | `@claxedo/agent-sdk-runtime/virtual-session-env` |
-| OpenCode compatibility events | [api.md](./api.md) | `@claxedo/agent-sdk-runtime/compat-events` |
+| Claxedo client-presentation events | [api.md](./api.md) | `@claxedo/agent-sdk-runtime/compat-events` |
 | Copy-paste examples | [recipes.md](./recipes.md) | depends on recipe |
 
 ## Stability Labels

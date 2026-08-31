@@ -1,27 +1,14 @@
 import type { AgentMessage } from "./index"
-import {
-  LATEST_SURFACE_MAX_INFO_BYTES as SCHEMA_LATEST_SURFACE_MAX_INFO_BYTES,
-  LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES as SCHEMA_LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
-  LATEST_SURFACE_MAX_PART_BYTES as SCHEMA_LATEST_SURFACE_MAX_PART_BYTES,
-  LATEST_SURFACE_MAX_PARTS_BYTES as SCHEMA_LATEST_SURFACE_MAX_PARTS_BYTES,
-  LATEST_SURFACE_MAX_TEXT_BYTES as SCHEMA_LATEST_SURFACE_MAX_TEXT_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PART_BYTES as SCHEMA_LATEST_SURFACE_MAX_TEXT_PART_BYTES,
-  LATEST_SURFACE_MAX_TEXT_PARTS as SCHEMA_LATEST_SURFACE_MAX_TEXT_PARTS,
-  latestSurfaceJSONBytes as schemaLatestSurfaceJSONBytes,
-  projectLatestSurfaceInfo as schemaProjectLatestSurfaceInfo,
-  selectLatestSurfaceTextCandidates,
-} from "@opencode-ai/schema/session-message-surface"
 
-// These contract values are deliberately exported as declaration-local
-// constants. The public runtime bundles their private workspace implementation;
-// npm consumers must not need the private @opencode-ai/schema package.
-export const LATEST_SURFACE_MAX_INFO_BYTES = SCHEMA_LATEST_SURFACE_MAX_INFO_BYTES
-export const LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES = SCHEMA_LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES
-export const LATEST_SURFACE_MAX_PART_BYTES = SCHEMA_LATEST_SURFACE_MAX_PART_BYTES
-export const LATEST_SURFACE_MAX_PARTS_BYTES = SCHEMA_LATEST_SURFACE_MAX_PARTS_BYTES
-export const LATEST_SURFACE_MAX_TEXT_BYTES = SCHEMA_LATEST_SURFACE_MAX_TEXT_BYTES
-export const LATEST_SURFACE_MAX_TEXT_PART_BYTES = SCHEMA_LATEST_SURFACE_MAX_TEXT_PART_BYTES
-export const LATEST_SURFACE_MAX_TEXT_PARTS = SCHEMA_LATEST_SURFACE_MAX_TEXT_PARTS
+// Claxedo owns the latency-bounded presentation contract. Keeping these limits
+// here prevents the runtime's public API from depending on a provider schema.
+export const LATEST_SURFACE_MAX_TEXT_PART_BYTES = 48 * 1024
+export const LATEST_SURFACE_MAX_PART_BYTES = 56 * 1024
+export const LATEST_SURFACE_MAX_TEXT_BYTES = 64 * 1024
+export const LATEST_SURFACE_MAX_PARTS_BYTES = 80 * 1024
+export const LATEST_SURFACE_MAX_TEXT_PARTS = 16
+export const LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES = 8 * 1024
+export const LATEST_SURFACE_MAX_INFO_BYTES = 16 * 1024
 
 export type LatestSurfaceTextBudgetCandidate = Readonly<{
   textBytes: number
@@ -71,11 +58,30 @@ function utf8Bytes(value: string) {
 
 /** The byte measure producers must mirror at the persistence boundary. */
 export function latestSurfaceJSONBytes(value: unknown) {
-  return schemaLatestSurfaceJSONBytes(value)
+  try {
+    const encoded = JSON.stringify(value)
+    return encoded === undefined ? Number.POSITIVE_INFINITY : utf8Bytes(encoded)
+  } catch {
+    return Number.POSITIVE_INFINITY
+  }
 }
 
 function projectLatestSurfaceInfo<TInfo extends Record<string, unknown>>(input: TInfo): TInfo | undefined {
-  return schemaProjectLatestSurfaceInfo(input)
+  const info: Record<string, unknown> = { ...input }
+  if (info.role === "user") {
+    delete info.summary
+    delete info.system
+    delete info.tools
+  }
+  if (
+    info.role === "assistant" &&
+    "error" in info &&
+    latestSurfaceJSONBytes(info.error) > LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES
+  ) {
+    delete info.error
+  }
+  if (latestSurfaceJSONBytes(info) > LATEST_SURFACE_MAX_INFO_BYTES) return undefined
+  return info as TInfo
 }
 
 type SurfaceTextCandidate = {
@@ -93,7 +99,20 @@ type SurfaceTextCandidate = {
 export function selectLatestSurfaceTextCandidateIndexes(
   candidates: readonly LatestSurfaceTextBudgetCandidate[],
 ) {
-  return selectLatestSurfaceTextCandidates(candidates).indexes
+  const selected: number[] = []
+  let textBytes = 0
+  let partBytes = 0
+  for (const [index, candidate] of candidates.entries()) {
+    if (selected.length >= LATEST_SURFACE_MAX_TEXT_PARTS) break
+    if (candidate.textBytes > LATEST_SURFACE_MAX_TEXT_PART_BYTES) continue
+    if (candidate.partBytes > LATEST_SURFACE_MAX_PART_BYTES) continue
+    if (textBytes + candidate.textBytes > LATEST_SURFACE_MAX_TEXT_BYTES) continue
+    if (partBytes + candidate.partBytes > LATEST_SURFACE_MAX_PARTS_BYTES) continue
+    selected.push(index)
+    textBytes += candidate.textBytes
+    partBytes += candidate.partBytes
+  }
+  return selected
 }
 
 function surfaceTextCandidate(part: unknown, messageIndex: number, partIndex: number): SurfaceTextCandidate | undefined {

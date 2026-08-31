@@ -58,9 +58,8 @@ export interface PromptInputProps {
    * composer's approval control, and is the same capability the
    * `permissions.autoaccept` command gates on. Defaults to `true`.
    *
-   * NOTE: every harness adapter shipped today reports `true` (acp/index.ts,
-   * shared/sdk-runtime-adapter.ts, pi/index.ts, opencode/index.ts all declare
-   * `permissions: true`) — an older comment in use-session-commands.tsx claiming
+   * NOTE: every current connection/native adapter reports `true`; an older
+   * comment in use-session-commands.tsx claiming
    * an ACP agent lacks a permission surface is stale. In practice this is false only
    * for the pending-harness placeholder while readiness is still polling.
    */

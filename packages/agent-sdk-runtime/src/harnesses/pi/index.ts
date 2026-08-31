@@ -468,14 +468,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return session.agent
   }
 
-  async listSessions(directory: RuntimeDirectory) {
-    return [...this.sessions.values()]
-      .filter((session) => session.directory === directory)
-      .map(row)
-  }
-
-  async getSession(id: string, _directory: RuntimeDirectory) {
-    const session = this.sessions.get(id)
+  async getSession(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
+    const session = this.sessions.get(binding.sessionId)
     return session ? row(session) : null
   }
 
@@ -592,8 +587,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: RuntimeDirectory) {
-    const session = this.sessions.get(id)
+  async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }) {
+    assertAgentExecutionBinding(binding)
+    const session = this.sessions.get(binding.sessionId)
     if (!session) return null
     session.title = updates.title ?? session.title
     if (updates.time?.archived !== undefined) {
@@ -701,10 +697,10 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
 
   executeTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeStreamEvent> {
     assertAgentExecutionBinding(binding)
-    return this.sendMessage(binding.sessionId, input, binding.directory)
+    return this.executeTurnStream(binding.sessionId, input, binding.directory)
   }
 
-  async *sendMessage(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {
+  private async *executeTurnStream(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {
     const session = this.sessions.get(id)
     if (!session) {
       yield sessionError(`Session ${id} not found`, id)
@@ -867,31 +863,37 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     yield emit({ type: "finish", sessionId: id })
   }
 
-  async getMessages(id: string, _directory: RuntimeDirectory) {
-    return this.sessions.get(id)?.messages ?? []
+  async getMessages(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
+    return this.sessions.get(binding.sessionId)?.messages ?? []
   }
 
-  async abort(id: string, _directory: RuntimeDirectory): Promise<AbortResult> {
-    const session = this.sessions.get(id)
+  async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
+    assertAgentExecutionBinding(binding)
+    const session = this.sessions.get(binding.sessionId)
     if (!session?.active) return { ok: true, status: "already_idle" }
     session.active.abort()
     session.active = undefined
     return { ok: true, status: "cancelled" }
   }
 
-  async revert() {
+  async revert(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
     throw notImplemented("Revert")
   }
 
-  async unrevert() {
+  async unrevert(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
     throw notImplemented("Unrevert")
   }
 
-  async forkSession(): Promise<{ id: string }> {
+  async forkSession(binding: AgentExecutionBinding, _messageId: string): Promise<{ id: string }> {
+    assertAgentExecutionBinding(binding)
     throw notImplemented("Fork")
   }
 
-  async executeCommand() {
+  async executeCommand(binding: AgentExecutionBinding, _command: string) {
+    assertAgentExecutionBinding(binding)
     throw notImplemented("Commands")
   }
 
@@ -903,7 +905,8 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return []
   }
 
-  async getTodos() {
+  async getTodos(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
     return []
   }
 
@@ -917,18 +920,22 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async respondPermission(
+    binding: AgentExecutionBinding,
     _permId: string,
     _decision: "allow_once" | "allow_always" | "deny" | "reject_always",
-    _directory?: RuntimeDirectory,
-  ) {}
+  ) { assertAgentExecutionBinding(binding) }
 
   async listQuestions(): Promise<AgentQuestion[]> {
     return []
   }
 
-  async replyQuestion() {}
+  async replyQuestion(binding: AgentExecutionBinding, _questionId: string, _answer: string) {
+    assertAgentExecutionBinding(binding)
+  }
 
-  async rejectQuestion() {}
+  async rejectQuestion(binding: AgentExecutionBinding, _questionId: string) {
+    assertAgentExecutionBinding(binding)
+  }
 
   async applyConfig() {}
 

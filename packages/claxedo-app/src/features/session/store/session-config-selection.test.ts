@@ -162,22 +162,20 @@ describe("session config selection", () => {
     })).toEqual({ agent: "build" })
   })
 
-  test("builds an opencode session-config patch from an explicit local selection", () => {
+  test("builds a session-config patch from an explicit local selection without changing its harness", () => {
     expect(sessionConfigPatchFromLocalSelection({
       agent: "build",
       model: { providerID: "deepseek", modelID: "deepseek-v4" },
       variant: null,
     })).toEqual({
-      harness: { id: "opencode", access: "native" },
       agent: "build",
       model: { providerID: "deepseek", modelID: "deepseek-v4" },
       variant: null,
     })
   })
 
-  test("uses null model and variant when clearing explicit opencode selection", () => {
+  test("uses null model and variant when clearing an explicit selection", () => {
     expect(sessionConfigPatchFromLocalSelection({ agent: "build" })).toEqual({
-      harness: { id: "opencode", access: "native" },
       agent: "build",
       model: null,
       variant: null,

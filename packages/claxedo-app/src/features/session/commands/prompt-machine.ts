@@ -22,7 +22,7 @@ export type PromptMachineState =
   }
   | {
     readonly s: "creating"
-    readonly via: "opencode" | "harness-claim"
+    readonly via: "runtime" | "harness-claim"
     readonly snapshot: PromptSnapshot
     readonly mode: ComposerMode
   }
@@ -63,7 +63,7 @@ export type PromptMachineEvent =
 export type PromptEffectName =
   | "abortActivePrompt"
   | "resolveDraftTarget"
-  | "createOpencodeSession"
+  | "createRuntimeSession"
   | "claimHarnessSession"
   | "recordPromptSubmission"
   | "applyOptimisticPromptHandoff"
@@ -124,8 +124,8 @@ export function transitionPromptMachine(
   if (state.s === "preparing") {
     if (event.t === "TARGET_RESOLVED" || event.t === "PROVISIONED") {
       return {
-        next: { s: "creating", via: "opencode", snapshot: state.snapshot, mode: state.mode },
-        effects: effects("createOpencodeSession"),
+        next: { s: "creating", via: "runtime", snapshot: state.snapshot, mode: state.mode },
+        effects: effects("createRuntimeSession"),
       }
     }
     if (event.t === "PROVISION_FAILED") {

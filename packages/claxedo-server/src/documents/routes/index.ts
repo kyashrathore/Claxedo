@@ -140,7 +140,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     .get("/statuses", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),
-        directory: context.req.query("directory") ?? context.req.header("x-opencode-directory"),
+        directory: context.req.query("directory") ?? context.req.header("x-claxedo-directory"),
       })
       return context.json(await documents().listStatuses(scope.projectId))
     })
@@ -165,7 +165,7 @@ export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRout
     .get("/", async (context) => {
       const scope = await routeScope(context.req.raw, options, "read", {
         projectId: context.req.query("project_id"),
-        directory: context.req.query("directory") ?? context.req.header("x-opencode-directory"),
+        directory: context.req.query("directory") ?? context.req.header("x-claxedo-directory"),
       })
       const archived = context.req.query("archived")
         ? queryAs(z.enum(["active", "archived", "all"]), context.req.query("archived"))

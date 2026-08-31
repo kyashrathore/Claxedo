@@ -180,7 +180,6 @@ describe("route ownership", () => {
       "/api/wr/runtime-events",
       "/api/wr/hook",
       "/api/wr/hook/agent-lifecycle",
-      "/global/event",
       "/lsp",
       "/vcs",
     ]
@@ -191,6 +190,13 @@ describe("route ownership", () => {
         handler: RouteHandler.SandboxRuntime,
       })
     }
+  })
+
+  test("global event stream is owned by the central control plane", () => {
+    expect(classify("/global/event")).toMatchObject({
+      domain: RouteDomain.ClaxedoControlPlane,
+      handler: RouteHandler.CentralServer,
+    })
   })
 
   test("Agent hook routes are Sandbox Runtime domain and handled by workspace runtime", () => {

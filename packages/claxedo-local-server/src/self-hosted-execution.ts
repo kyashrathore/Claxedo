@@ -32,7 +32,7 @@ export {
 export { AgentConfigRoutes } from "./agent-config/routes/index"
 export { SessionMetaRoutes } from "./session/routes/meta-routes"
 export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
-export { OpenCodeCompatRoutes } from "./opencode/compat-routes/index"
+export { ShellRoutes } from "./shell/routes"
 export { CredentialRoutes } from "./credentials/routes/credential"
 export { ProviderAuthRoutes } from "./credentials/routes/provider-auth"
 export { NetworkPolicyRoutes } from "./sandbox/network/network-policy-routes"
@@ -48,13 +48,6 @@ export { createUsageOutboxSync, type UsageOutboxSync } from "./usage/outbox-sync
 export { LocalUsageRoutes, UsageRoutes, type UsageLedger } from "@claxedo/server-core/usage/routes"
 
 // ── Local execution services ────────────────────────────────────────────────
-export { resolveHarnessId } from "./opencode/compat-routes/provider-config"
-export { configureOpencodeMcpSync } from "./opencode/mcp-sync"
-export {
-  createOpencodeEvents,
-  type OpencodeEvent,
-  type OpencodeEventsHandle,
-} from "./opencode/events"
 export {
   provisionRegisteredWorktree,
   releaseRegisteredWorktree,

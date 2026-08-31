@@ -13,10 +13,10 @@ export type CredentialResolution = {
   defaultModel: CredentialResolvedModel | undefined
 }
 
-const anthropicProviders = ["anthropic", "claude-sdk"]
+const anthropicProviders = ["anthropic", "claude"]
 const openAIProviders = ["openai"]
-const codexProviders = ["openai-codex", "codex", "codex-app-server"]
-const cursorProviders = ["cursor", "cursor-sdk"]
+const codexProviders = ["openai-codex", "codex"]
+const cursorProviders = ["cursor"]
 
 export function resolveVerifiedCredentials(input: {
   credentials: readonly VerifiedCredentialInput[]
@@ -30,25 +30,22 @@ export function resolveVerifiedCredentials(input: {
   const runnable = new Set<HarnessId>()
 
   if (anthropic) {
-    runnable.add("claude-sdk")
+    runnable.add("claude")
   }
   if (openai || codex) {
-    runnable.add("codex-app-server")
-    runnable.add("opencode")
+    runnable.add("codex")
   }
   if (cursor) {
-    runnable.add("cursor-sdk")
+    runnable.add("cursor")
   }
   if (anthropic || openai || codex) runnable.add("pi")
 
-  const preferred = openai
-    ? { harness: "opencode" as const, providerID: "openai" }
-    : codex
-      ? { harness: "codex-app-server" as const, providerID: "openai-codex" }
+  const preferred = openai || codex
+    ? { harness: "codex" as const, providerID: codex ? "openai-codex" : "openai" }
       : anthropic
-        ? { harness: "claude-sdk" as const, providerID: "anthropic" }
+        ? { harness: "claude" as const, providerID: "anthropic" }
         : cursor
-          ? { harness: "cursor-sdk" as const, providerID: "cursor" }
+          ? { harness: "cursor" as const, providerID: "cursor" }
           : undefined
   const modelID = preferred ? input.providerDefaults[preferred.providerID] : undefined
 

@@ -37,9 +37,10 @@ they are not two views onto the same stream:
 
 - **`RuntimeEventHub`** ([`src/runtime-event-hub.ts`](../src/runtime-event-hub.ts))
   is the primary hub for session/runtime events. Session routes publish
-  OpenCode-compatible `CompatEnvelope` events to its global channel; this is
-  what `GET /global/event` (SSE) and `GET /api/wr/runtime-events` (SSE, raw
-  `AgentRuntimeEvent` payloads via `mountWorkspaceCore()`) serve from.
+  Claxedo client-presentation `CompatEnvelope` events to its internal observer
+  channel for metadata projection. UI conversation delivery uses only
+  `GET /api/wr/runtime-events` (SSE, raw `AgentRuntimeEvent` payloads via
+  `mountWorkspaceCore()`). Workspace Runtime does not expose `/global/event`.
 - **`workspaceRuntimeBus`** ([`src/bus.ts`](../src/bus.ts)) is intentionally
   process-global runtime state, used by PTY, process, and agent-hook code
   that already lives inside the workspace-runtime process. `GET /event` and

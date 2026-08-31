@@ -88,16 +88,8 @@ function acpConfigOptions(proc: ACPProcess): AgentConfigOptions {
 export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
 export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
-  binary: string
+  connection: ACPConnection
   harness: string
-  args?: string[]
-  env?: ACPTransportEnv
-  /**
-   * `false` keeps MCP servers out of everything offered to this agent —
-   * session requests, process fingerprints, and process observation. See
-   * `ProcessHarnessConnection.supportsMcpServers`.
-   */
-  supportsMcpServers?: boolean
   storeRoot?: string
   store?: AcpRuntimeStore
   createStore?: (storeRoot?: string) => AcpRuntimeStore
@@ -106,18 +98,21 @@ export type AcpHarnessAdapterOptions = AgentHarnessAdapterProcessOptions & {
 }
 
 export {
-  createHttpACPTransportFactory,
+  createACPTransportFactory,
   createStreamableHttpACPTransportFactory,
   createWebSocketACPTransportFactory,
 } from "./transport"
 export type {
-  ACPHttpTransportFactoryOptions,
+  ACPConnection,
+  ACPProcessConnection,
+  ACPStreamableHttpConnection,
   ACPTransport,
   ACPTransportEnv,
   ACPTransportFactory,
   ACPTransportFactoryInput,
   ACPStreamableHttpTransportFactoryOptions,
   ACPWebSocketTransportFactoryOptions,
+  ACPWebSocketConnection,
 } from "./transport"
 
 export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdapter {
@@ -327,7 +322,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   async createSession(directory: string, title?: string, id: string = randomUUID()): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
-    log.info("createSession: start", { directory, title, binary: this.options.binary })
+    log.info("createSession: start", { directory, title, transport: this.connection().kind })
     if (this.store.getSession(id)) return { id }
     const processKey = this.processKey(directory)
     this.sessionProcessMap().set(id, processKey)
@@ -344,7 +339,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     this.store.updateSessionConfig(id, {
       harness: {
         id: this.harnessId(),
-        access: "acp",
+        access: "connection",
       },
       ...(this.currentModel ? { model: this.cfg() } : {}),
       variant: null,
@@ -374,15 +369,17 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
   }
 
-  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
-    return this.store.updateSession(id, updates) as AgentSession | null
+  async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null> {
+    assertAgentExecutionBinding(binding)
+    return this.store.updateSession(binding.sessionId, updates) as AgentSession | null
   }
 
-  async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
-    return this.store.getSessionConfig(id) ?? {
+  async getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getSessionConfig(binding.sessionId) ?? {
       harness: {
         id: this.harnessId(),
-        access: "acp",
+        access: "connection",
       },
       ...(this.currentModel ? { model: this.cfg() } : {}),
       variant: null,
@@ -434,12 +431,15 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
   }
 
-  async getMessages(id: string, _directory: string): Promise<AgentMessage[]> {
-    return this.store.getMessages(id) as AgentMessage[]
+  async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getMessages(binding.sessionId) as AgentMessage[]
   }
 
-  async abort(id: string, directory: string): Promise<AbortResult> {
-    directory = requireWorkspaceDirectory(directory)
+  async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
+    assertAgentExecutionBinding(binding)
+    const { sessionId: id } = binding
+    const directory = requireWorkspaceDirectory(binding.directory)
     log.info("abort: called", { id, directory })
     const agentSessionId = this.store.getAgentSessionId(id)
     if (!agentSessionId) {
@@ -479,8 +479,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   async forkSession(id: string, _messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
     log.info("forkSession: called", { id, directory })
-    const row = this.getSession(id, directory) as Promise<{ agent_session_id?: string; title?: string | null } | null>
-    const session = await row
+    const session = this.store.getSession(id) as { agent_session_id?: string; title?: string | null } | null
     const agentSessionId = this.store.getAgentSessionId(id)
     if (!session || !agentSessionId) throw new Error(`Session ${id} not found`)
 
@@ -553,8 +552,15 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
    * that this reports NO modes and NO `unsupported` — the caller renders that as
    * "not reported yet", which is the truth, rather than as "this agent has none".
    */
-  async listPermissionModes(sessionId: string, directory: string): Promise<AgentPermissionModeState> {
-    directory = requireWorkspaceDirectory(directory)
+  async listDraftPermissionModes(directory: string): Promise<AgentPermissionModeState> {
+    requireWorkspaceDirectory(directory)
+    return draftPermissionModes(this.harnessId())
+  }
+
+  async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
+    assertAgentExecutionBinding(binding)
+    const { sessionId } = binding
+    requireWorkspaceDirectory(binding.directory)
     const agentSessionId = this.store.getAgentSessionId(sessionId)
     const proc = this.entryForSession(sessionId)?.proc
     // No agent session yet: show what this agent version is KNOWN to offer, by
@@ -569,8 +575,10 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return state
   }
 
-  async setPermissionMode(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState> {
-    directory = requireWorkspaceDirectory(directory)
+  async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
+    assertAgentExecutionBinding(binding)
+    const { sessionId } = binding
+    requireWorkspaceDirectory(binding.directory)
     const agentSessionId = this.store.getAgentSessionId(sessionId)
     const proc = this.entryForSession(sessionId)?.proc
     // Deliberately a THROW rather than a silent no-op: a permission write that
@@ -582,8 +590,9 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return proc.setPermissionMode(agentSessionId, modeId)
   }
 
-  async getTodos(sessionId: string, _directory: string): Promise<Array<{ content: string; status: string; priority: string }>> {
-    return this.store.getTodos(sessionId)
+  async getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getTodos(binding.sessionId)
   }
 
   async listPermissions(directory: string): Promise<AgentPermission[]> {
@@ -600,13 +609,17 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async respondPermission(
+    binding: AgentExecutionBinding,
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
-    directory: string,
   ): Promise<AgentInteractionResult | void> {
-    directory = requireWorkspaceDirectory(directory)
+    assertAgentExecutionBinding(binding)
+    const directory = requireWorkspaceDirectory(binding.directory)
     log.info("respondPermission: called", { permId, decision, directory })
-    const row = (this.store.listPermissions(directory) as Array<{ id: string; sessionID: string }>).find((item) => item.id === permId)
+    const row = (this.store.listPermissions(directory) as Array<{ id: string; sessionID: string }>).find(
+      (item) => item.id === permId && item.sessionID === binding.sessionId,
+    )
+    if (!row) throw new Error(`Permission ${permId} does not belong to session ${binding.sessionId}`)
     const clear = () => {
       this.permissionOwnerMap().delete(permId)
       if (!row) return
@@ -683,14 +696,14 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     // Gating here keeps `currentMcp` empty for the whole adapter lifetime:
     // session requests, process fingerprints, restart decisions, and process
     // observation all read it, so nothing downstream needs its own check.
-    const nextMcp = this.options.supportsMcpServers === false ? [] : toAcpMcpServers(mcp ?? {})
+    const nextMcp = this.connection().supportsMcpServers === false ? [] : toAcpMcpServers(mcp ?? {})
     const nextEnv = mergeAcpEnv(this.currentEnv, envFromConfig(config))
     const unchanged = sameAcpMcp(this.currentMcp, nextMcp) && sameAcpEnv(this.currentEnv, nextEnv)
     if (unchanged && !this.configRestartPending) {
       log.info("ACP config apply skipped restart because effective config is unchanged", {
         keys: Object.keys(config),
         harness: this.harnessId(),
-        binary: this.options.binary,
+        transport: this.connection().kind,
       })
       return
     }
@@ -701,7 +714,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       log.info("ACP config apply deferred restart because a prompt is active", {
         keys: Object.keys(config),
         harness: this.harnessId(),
-        binary: this.options.binary,
+        transport: this.connection().kind,
       })
       return
     }
@@ -713,7 +726,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     log.info("Applied config in-memory, restarted ACP process", {
       keys: Object.keys(config),
       harness: this.harnessId(),
-      binary: this.options.binary,
+      transport: this.connection().kind,
     })
   }
 
@@ -727,7 +740,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     this.forgetSessionProcessBindings()
     log.info("Applied deferred ACP config after active prompts completed", {
       harness: this.harnessId(),
-      binary: this.options.binary,
+      transport: this.connection().kind,
     })
   }
 
@@ -799,6 +812,10 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   readRuntimeHealth(directory: string, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth {
     directory = requireWorkspaceDirectory(directory)
+    // Exact-session health is turn-correlated. Persisted recovery state is
+    // historical unless this adapter currently owns an active turn for the
+    // requested Claxedo session.
+    if (context?.sessionId && !this.lifecycle().activeTurns.has(context.sessionId)) return { status: "ok" }
     const recovering = (this.store.listSessions(directory) as Array<{
       id: string
       status?: string | null
@@ -813,7 +830,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       // stores project config on the list row; the config lookup keeps the same
       // contract for in-memory/custom stores without inventing ownership.
       const harness = session.config?.harness ?? this.store.getSessionConfig(session.id)?.harness
-      return harness?.id === this.harnessId() && harness.access === "acp"
+      return harness?.id === this.harnessId() && harness.access === "connection"
     })
     if (recovering.length > 0) {
       return {
@@ -834,7 +851,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     log.info("AcpHarnessAdapter dispose: disposing ACP processes", {
       processes: this.processMap().size,
       harness: this.harnessId(),
-      binary: this.options.binary,
+      transport: this.connection().kind,
     })
     this.restart()
     this.processMap().clear()

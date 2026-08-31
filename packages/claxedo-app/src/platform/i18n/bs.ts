@@ -323,7 +323,7 @@ export const dict = {
   "dialog.directory.empty": "Nema pronađenih foldera",
 
   "dialog.server.title": "Serveri",
-  "dialog.server.description": "Promijeni na koji se OpenCode server ova aplikacija povezuje.",
+  "dialog.server.description": "Promijeni na koji se Claxedo server ova aplikacija povezuje.",
   "dialog.server.search.placeholder": "Pretraži servere",
   "dialog.server.empty": "Još nema servera",
   "dialog.server.add.title": "Dodaj server",
@@ -664,7 +664,7 @@ export const dict = {
   "settings.tab.shortcuts": "Prečice",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL integracija",
-  "settings.desktop.wsl.description": "Pokreni OpenCode server unutar WSL-a na Windowsu.",
+  "settings.desktop.wsl.description": "Pokreni Claxedo server unutar WSL-a na Windowsu.",
 
   "settings.general.section.appearance": "Izgled",
   "settings.general.section.advanced": "Napredno",

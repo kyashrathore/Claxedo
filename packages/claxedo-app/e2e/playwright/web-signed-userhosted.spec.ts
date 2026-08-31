@@ -62,7 +62,6 @@ import {
   type RunningWebApp,
 } from "../helpers/web-signed-relay-harness"
 import {
-  fixtureOpencodeRequests,
   journeyA2,
   journeyA3,
   journeyB1toB4,
@@ -212,16 +211,5 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
   test("D1/D2/D3/E1: a real terminal streams a live prompt and its row aligns with session rows", async ({ page }) => {
     test.setTimeout(120_000)
     await journeyD1toD3E1({ ...ctx(), page })
-  })
-
-  test("F2: nothing in the journey ever hit the fixture's forbidden legacy opencode stub", async () => {
-    // Behavior mirrors `live-user-hosted-relay.spec.ts` behavior 8's first
-    // half: run only after the B/C/D scenarios above have already exercised
-    // real traffic through this same fixture — the forbidden stub in
-    // `signed-browser-relay-fixture.mjs` only serves a request that bypassed
-    // the relay/tunnel entirely, so a non-empty result here means SOME
-    // scenario above silently routed around the transport this lane exists
-    // to prove.
-    expect(await fixtureOpencodeRequests(fixture!.info.backendUrl)).toEqual([])
   })
 })

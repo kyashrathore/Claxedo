@@ -500,7 +500,7 @@ export async function journeyD1toD3E1(ctx: JourneyCtx) {
   // this same component (`renderer.ts`'s `rendererPreference()` reads plain
   // `localStorage`, not the `Persist`/electron-store system, so this is
   // surface-agnostic — it is not a desktop-only escape hatch).
-  await page.evaluate(() => localStorage.setItem("opencode.terminal.renderer", "dom"))
+  await page.evaluate(() => localStorage.setItem("claxedo.terminal.renderer", "dom"))
 
   const terminalId = await createShellTerminal(page)
 
@@ -573,15 +573,9 @@ export function watchForbiddenDirectRequests(page: Page, backendOrigin: string, 
     const url = new URL(request.url())
     if (url.origin !== backendOrigin) return
     if (isForbiddenDirectPath(url.pathname)) {
-      const directory = request.headers()["x-opencode-directory"]
+      const directory = request.headers()["x-claxedo-directory"]
       hits.push(`${request.method()} ${url.pathname}${url.search}${directory ? ` [directory=${directory}]` : ""}`)
     }
   })
   return hits
-}
-
-export async function fixtureOpencodeRequests(backendUrl: string): Promise<string[]> {
-  const res = await fetch(`${backendUrl}/__fixture/opencode-requests`)
-  if (!res.ok) throw new Error(`GATING: /__fixture/opencode-requests failed: ${res.status}`)
-  return ((await res.json()) as { requests: string[] }).requests
 }

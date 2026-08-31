@@ -1,5 +1,5 @@
 import { encodeSseData } from "../../../../agent-sdk-runtime/src/sse"
-import { connectedFrame } from "../../../../claxedo-local-server/src/opencode/compat-routes/events"
+import { connectedFrame } from "../../../../claxedo-local-server/src/shell/events"
 
 const decoder = new TextDecoder()
 

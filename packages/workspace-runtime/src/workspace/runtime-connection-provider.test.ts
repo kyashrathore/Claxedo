@@ -1,0 +1,152 @@
+import { afterEach, describe, expect, test } from "bun:test"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
+import type { ConnectionProvider, HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
+import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { createWorkspaceHost, WorkspaceHarnessUnavailableError } from "./runtime"
+
+const roots: string[] = []
+afterEach(async () => Promise.all(roots.splice(0).map((root) => rm(root, { recursive: true, force: true }))))
+
+const capabilities: HarnessConnectionCapabilities = {
+  abort: false,
+  reconnect: false,
+  replay: true,
+  permissions: false,
+  questions: false,
+  todos: false,
+  commands: false,
+  fork: false,
+  revert: false,
+  unrevert: false,
+  configOptions: false,
+  subagents: false,
+}
+
+function adapter(): AgentHarnessAdapter {
+  return {
+    async createSession() { return { id: "session-1" } },
+    async getSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
+    async updateSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
+    async deleteSession() {},
+    async getSessionConfig() { return { harness: { id: "fixture-primary", access: "connection" }, variant: null, agent: null } },
+    async updateSessionConfig(_binding, update) {
+      return { harness: update.harness ?? { id: "fixture-primary", access: "connection" }, variant: null, agent: null }
+    },
+    async getMessages() { return [] },
+    readHarnessCapabilities() { return { ...capabilities, harness: "fixture-primary" } },
+    dispose() {},
+  }
+}
+
+describe("WorkspaceRuntime generic connection selection", () => {
+  test("resolves a host-owned secret lease and reports only the public selection", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
+    roots.push(root)
+    let resolvedSecrets: Readonly<Record<string, string>> | undefined
+    const provider: ConnectionProvider<{ label: string }> = {
+      providerKey: "fixture",
+      validateConfig(input) {
+        if (!input || typeof input !== "object" || typeof (input as { label?: unknown }).label !== "string") throw new Error("label required")
+        return { label: (input as { label: string }).label }
+      },
+      project(config) { return { label: config.label, readiness: "ready", capabilities } },
+      resolve({ descriptor, secrets }) {
+        resolvedSecrets = secrets
+        return { config: descriptor.config }
+      },
+      createAdapter: adapter,
+    }
+    const host = createWorkspaceHost({
+      target: { workspaceId: "ws-1", directory: root },
+      storeRoot: join(root, "store"),
+      connectionProviders: [provider],
+      resolveConnectionSecrets: () => ({ secrets: { token: "runtime-only" }, secretLeaseGeneration: "lease-1" }),
+    })
+    await host.apply({
+      version: 3,
+      mcp: {},
+      connections: [{
+        connectionId: "fixture-primary",
+        providerKey: "fixture",
+        configRevision: 1,
+        enabled: true,
+        config: { label: "Fixture" },
+        secretRefs: { token: "credentials/fixture" },
+      }],
+      defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
+      auth: {},
+    })
+    expect(resolvedSecrets).toEqual({ token: "runtime-only" })
+    expect(host.detail().harness).toEqual({ kind: "connection", connectionId: "fixture-primary" })
+    host.dispose()
+  })
+
+  test("fails closed when a selected connection has unresolved secret references", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
+    roots.push(root)
+    const host = createWorkspaceHost({ target: { workspaceId: "ws-1", directory: root }, storeRoot: join(root, "store") })
+    await expect(host.apply({
+      version: 3,
+      mcp: {},
+      connections: [{
+        connectionId: "acp-primary",
+        providerKey: "acp",
+        configRevision: 1,
+        enabled: true,
+        config: { label: "ACP", connection: { kind: "process", command: "/bin/agent" } },
+        secretRefs: { token: "credentials/acp" },
+      }],
+      defaultHarness: { kind: "connection", connectionId: "acp-primary" },
+      auth: {},
+    })).rejects.toBeInstanceOf(WorkspaceHarnessUnavailableError)
+    host.dispose()
+  })
+
+  test("materializes VM connection secrets from the consent-filtered runtime snapshot", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
+    roots.push(root)
+    let resolvedSecrets: Readonly<Record<string, string>> | undefined
+    const provider: ConnectionProvider<{ label: string }> = {
+      providerKey: "fixture",
+      validateConfig(input) { return input as { label: string } },
+      project(config) { return { label: config.label, readiness: "ready", capabilities } },
+      resolve({ descriptor, secrets }) {
+        resolvedSecrets = secrets
+        return { config: descriptor.config }
+      },
+      createAdapter: adapter,
+    }
+    const host = createWorkspaceHost({
+      target: { workspaceId: "ws-1", directory: root },
+      storeRoot: join(root, "store"),
+      connectionProviders: [provider],
+    })
+    await host.apply({
+      version: 3,
+      mcp: {},
+      connections: [{
+        connectionId: "fixture-primary",
+        providerKey: "fixture",
+        configRevision: 1,
+        enabled: true,
+        config: { label: "Fixture" },
+        secretRefs: { token: "credential:external-agent" },
+      }],
+      defaultHarness: { kind: "connection", connectionId: "fixture-primary" },
+      auth: { "credential:external-agent": "vm-runtime-secret" },
+    })
+    expect(resolvedSecrets).toEqual({ token: "vm-runtime-secret" })
+    expect(JSON.stringify(host.detail())).not.toContain("vm-runtime-secret")
+    host.dispose()
+  })
+
+  test("leaves default selection unresolved when policy omits it", async () => {
+    const host = createWorkspaceHost()
+    await host.apply({ version: 3, mcp: {}, connections: [], auth: {} })
+    expect(host.detail().harness).toBeUndefined()
+    host.dispose()
+  })
+})

@@ -1,7 +1,7 @@
 # Host Integration Recipes
 
 Build one realtime agent host API, then run it against Codex app server,
-Claude, Cursor, OpenCode, ACP harnesses, or Pi.
+Claude, Codex, Cursor, configured connections, or Pi.
 
 `@claxedo/agent-sdk-runtime` is for backend engineers building agent products.
 It gives you one host-facing runtime contract:
@@ -25,12 +25,12 @@ workspaces, tenancy, storage, sharing, billing, route shape, and UI state.
 | --- | --- |
 | see the package work with no external agent setup | [1. Start One Session And Run One Turn](#1-start-one-session-and-run-one-turn) |
 | wire a backend route and realtime subscription | [2. Turn It Into A Realtime App Loop](#2-turn-it-into-a-realtime-app-loop) |
-| let users choose Codex, Claude, Cursor, OpenCode, or Pi | [3. Switch Harnesses Without Changing Host Code](#3-switch-harnesses-without-changing-host-code) |
+| let users choose native SDKs, configured connections, or Pi | [3. Switch Harnesses Without Changing Host Code](#3-switch-harnesses-without-changing-host-code) |
 | approve permissions or answer harness questions | [4. Handle Permissions And Questions](#4-handle-permissions-and-questions) |
 | change models, auth, MCP, or config options | [5. Configure Models And Runtime Settings](#5-configure-models-and-runtime-settings) |
 | persist sessions and replay output | [6. Add Durable Host Storage](#6-add-durable-host-storage) |
 | split reasoning from file/command execution | [7. Run Brain And Hands In Different Places](#7-run-brain-and-hands-in-different-places) |
-| choose ACP, native SDK, OpenCode HTTP, or Pi | [8. Choose An Integration Strategy](#8-choose-an-integration-strategy) |
+| choose a configured connection, native SDK, or Pi | [8. Choose An Integration Strategy](#8-choose-an-integration-strategy) |
 | build a sidebar/history view | [9. List And Project Sessions](#9-list-and-project-sessions) |
 
 ## 1. Start One Session And Run One Turn
@@ -43,7 +43,8 @@ Before you start:
 - No Claude/Codex/Cursor credentials are required.
 - This uses Pi with `createVirtualSessionEnv()` so the example is local and
   deterministic.
-- For real model-backed runs, switch to a Claude/Codex/Cursor/OpenCode harness
+- For real model-backed runs, switch to a native SDK harness or configured
+  connection
   later using the same host loop.
 
 ```ts
@@ -243,16 +244,15 @@ data.
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { claude, codex, cursor, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 
 const runtime = createAgentRuntime({
   store: createSqliteRuntimeStore({ root: ".agent-runtime" }),
   harnesses: [
     claude({ access: "native" }),
-    codex({ access: "acp" }),
+    codex({ access: "native" }),
     cursor({ access: "native" }),
-    opencode({ url: "http://127.0.0.1:4096" }),
     pi(),
   ],
 })
@@ -441,20 +441,22 @@ Use this when deciding how your backend should reach each harness.
 
 | Strategy | Use when |
 | --- | --- |
-| ACP | the harness is exposed through Agent Client Protocol |
+| configured connection | the agent is exposed through ACP or another installed provider |
 | native SDK/app server | you want the harness-specific local integration |
-| OpenCode HTTP | an OpenCode server owns the HTTP runtime |
 | Pi | you want the built-in host-driven harness |
 
-ACP:
+Configured connections are selected by id after the host installs their
+`ConnectionProvider` and applies a trusted v3 descriptor. Protocol commands,
+URLs, headers, and secret references live in that descriptor; sessions persist
+only the resulting execution binding.
+
+For example, a host can install the external OpenCode server provider without
+adding an OpenCode harness to this package:
 
 ```ts
-import { acp } from "@claxedo/agent-sdk-runtime/harnesses"
+import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 
-const openClaw = acp("openclaw", {
-  binary: "openclaw-acp",
-  args: ["serve"],
-})
+const providers = [createOpenCodeServerConnectionProvider()]
 ```
 
 Native Codex app server:
@@ -468,14 +470,6 @@ const codexNative = codex({
 })
 ```
 
-OpenCode HTTP:
-
-```ts
-import { opencode } from "@claxedo/agent-sdk-runtime/harnesses"
-
-const opencodeHarness = opencode({ url: "http://127.0.0.1:4096" })
-```
-
 Pi:
 
 ```ts
@@ -483,10 +477,6 @@ import { pi } from "@claxedo/agent-sdk-runtime/harnesses"
 
 const piHarness = pi()
 ```
-
-OpenCode's `http-proxy` adapter capability means selected compatibility routes
-may use the backing server. It does not mean your product should expose every
-OpenCode route.
 
 Next: build sidebar/history and app-owned projections.
 

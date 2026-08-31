@@ -7,7 +7,7 @@ read_body='{"userId":"user_live_relay","orgId":"org_live_relay","projectId":"pro
 read_json=$(curl --fail-with-body --silent --show-error --max-time 30 -X POST "$BASE$ENDPOINT" \
   -H "authorization: Bearer $RAT" \
   -H "x-claxedo-document-capability: $READ_CAP" \
-  -H 'x-opencode-directory: workspace:local_ws' \
+  -H 'x-claxedo-directory: workspace:local_ws' \
   -H 'content-type: application/json' \
   --data "$read_body")
 version=$(printf '%s' "$read_json" | jq -r .read.version)
@@ -22,7 +22,7 @@ write_body=$(jq -nc \
 write_json=$(curl --fail-with-body --silent --show-error --max-time 30 -X POST "$BASE$ENDPOINT" \
   -H "authorization: Bearer $RAT" \
   -H "x-claxedo-document-capability: $WRITE_CAP" \
-  -H 'x-opencode-directory: workspace:local_ws' \
+  -H 'x-claxedo-directory: workspace:local_ws' \
   -H 'content-type: application/json' \
   --data "$write_body")
 written_version=$(printf '%s' "$write_json" | jq -r .version)
@@ -34,7 +34,7 @@ stale_body=$(jq -nc \
 stale_status=$(curl --silent --show-error --max-time 30 -o /tmp/stale.json -w '%{http_code}' -X POST "$BASE$ENDPOINT" \
   -H "authorization: Bearer $RAT" \
   -H "x-claxedo-document-capability: $STALE_CAP" \
-  -H 'x-opencode-directory: workspace:local_ws' \
+  -H 'x-claxedo-directory: workspace:local_ws' \
   -H 'content-type: application/json' \
   --data "$stale_body")
 test "$stale_status" = "409"

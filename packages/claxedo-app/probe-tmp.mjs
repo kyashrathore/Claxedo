@@ -69,7 +69,7 @@ await page.route("**/session?**", (r) => (api(r.request()) ? json(r, []) : r.con
 await page.route("**/experimental/session", (r) => (api(r.request()) ? json(r, []) : r.continue()))
 await page.route("**/experimental/session?**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
 await page.route("**/session/*/message**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
-await page.route("**/session/*/capabilities**", (r) => (api(r.request()) ? json(r, { transport: "opencode" }) : r.continue()))
+await page.route("**/session/*/capabilities**", (r) => (api(r.request()) ? json(r, { transport: "runtime" }) : r.continue()))
 await page.route("**/session/status**", (r) => (api(r.request()) ? json(r, {}) : r.continue()))
 await page.route("**/api/control/session-list**", (r) => (api(r.request()) ? json(r, { view: {}, items: [], totalKnown: 0 }) : r.continue()))
 await page.route("**/api/control/sessions**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
@@ -80,8 +80,8 @@ function slug(value) {
 
 await page.addInitScript((d) => {
   localStorage.clear()
-  window.__OPENCODE__ = { serverUrl: window.location.origin, activeDirectory: d }
-  localStorage.setItem("opencode.global.dat:server", JSON.stringify({
+  window.__CLAXEDO__ = { serverUrl: window.location.origin, activeDirectory: d }
+  localStorage.setItem("claxedo.global.dat:server", JSON.stringify({
     list: [], projects: { local: [{ worktree: d, expanded: true }] }, lastProject: {}, workspaceServer: {}, closedProjects: {},
   }))
 }, DIR)

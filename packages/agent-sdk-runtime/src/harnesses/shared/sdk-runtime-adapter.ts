@@ -33,6 +33,7 @@ import type {
   AgentGoalMutationResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
+  AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
   AgentPermissionModeState,
   AgentTurnWriteContext,
@@ -295,13 +296,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     })
   }
 
-  async listSessions(directory: string): Promise<AgentSession[]> {
-    directory = requireWorkspaceDirectory(directory)
-    return this.store.listSessions(directory) as AgentSession[]
-  }
-
-  async getSession(id: string, _directory: string): Promise<AgentSession | null> {
-    return this.store.getSession(id) as AgentSession | null
+  async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getSession(binding.sessionId) as AgentSession | null
   }
 
   async createSession(directory: string, title?: string, sessionId: string = randomUUID()): Promise<{ id: string }> {
@@ -353,13 +350,16 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
   }
 
-  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
+  async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
     return acceptedSessionUpdate(this.store, id, updates)
   }
 
-  async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
-    return this.store.getSessionConfig(id) ?? {
+  async getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getSessionConfig(binding.sessionId) ?? {
       harness: {
         id: this.driver.type,
         access: "native",
@@ -771,11 +771,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     yield error
   }
 
-  async getMessages(id: string, _directory: string): Promise<AgentMessage[]> {
-    return this.store.getMessages(id) as AgentMessage[]
+  async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getMessages(binding.sessionId) as AgentMessage[]
   }
 
-  async abort(id: string, _directory: string): Promise<AbortResult> {
+  async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
     this.interactions.resolvePermissions(id, "deny")
@@ -791,19 +794,27 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return listCommands()
   }
 
-  async getTodos(sessionId: string, _directory: string): Promise<Array<{ content: string; status: string; priority: string }>> {
-    return this.store.getTodos(sessionId)
+  async getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getTodos(binding.sessionId)
   }
 
-  async listPermissionModes(sessionId: string, directory: string): Promise<AgentPermissionModeState> {
-    return this.driver.permissionModes?.(sessionId, directory) ?? { modes: [], appliesFrom: "next-turn" }
+  async listDraftPermissionModes(directory: string): Promise<AgentPermissionModeState> {
+    directory = requireWorkspaceDirectory(directory)
+    return this.driver.permissionModes?.("", directory) ?? { modes: [], appliesFrom: "next-turn" }
   }
 
-  async setPermissionMode(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState> {
+  async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
+    assertAgentExecutionBinding(binding)
+    return this.driver.permissionModes?.(binding.sessionId, binding.directory) ?? { modes: [], appliesFrom: "next-turn" }
+  }
+
+  async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
+    assertAgentExecutionBinding(binding)
     if (!this.driver.setPermissionMode) {
       throw new Error(`${this.driver.type} does not support permission modes`)
     }
-    return this.driver.setPermissionMode(sessionId, modeId, directory)
+    return this.driver.setPermissionMode(binding.sessionId, modeId, binding.directory)
   }
 
   async listPermissions(directory: string): Promise<AgentPermission[]> {
@@ -811,6 +822,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async respondPermission(
+    binding: AgentExecutionBinding,
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
     directory: string,
@@ -842,7 +854,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return sdkConfigOptions(this.driver.peekConfigOptions(this.currentModel, directory))
   }
 
-  readRuntimeHealth(_directory: string): AgentHarnessAdapterHealth {
+  readRuntimeHealth(_directory: string, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth {
+    if (context?.sessionId && !this.lifecycle().get(context.sessionId)) return { status: "ok" }
     return this.driver.readRuntimeHealth(_directory)
   }
 

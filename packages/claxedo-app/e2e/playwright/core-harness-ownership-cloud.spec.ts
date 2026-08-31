@@ -56,7 +56,7 @@
  *     is the draft-default record's STORAGE SCOPE: `createDraftDefaultPreferences`
  *     (`src/features/session/harness/draft-defaults.ts`) keys every record by
  *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, i.e.
- *     `opencode.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v1`
+ *     `claxedo.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v1`
  *     (`src/platform/persistence/persist.ts:223-233,382-384`) — a DIFFERENT localStorage
  *     key per (server, workspaceKey) pair. `rememberDraftHarness`
  *     (`src/features/session/harness/harness-store.ts:171-199`) writes that record when the
@@ -182,12 +182,12 @@ async function seedProjects(page: Page) {
   await page.addInitScript(
     (input: { dir: string; workspaceId: string }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: input.dir,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: {

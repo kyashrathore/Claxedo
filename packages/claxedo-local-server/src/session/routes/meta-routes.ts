@@ -43,7 +43,7 @@ async function workspace(c: {
   }
 }) {
   const projectId = c.req.query("projectId")
-  const directoryHeader = c.req.header("x-opencode-directory")
+  const directoryHeader = c.req.header("x-claxedo-directory")
   const headerWorkspaceId = directoryHeader?.startsWith("workspace:")
     ? directoryHeader.slice("workspace:".length)
     : undefined

@@ -195,7 +195,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return [...adapters.values()].find((adapter) => adapter[method])
   }
 
-  const executionBinding = (sessionId: string, directory?: RuntimeDirectory): AgentExecutionBinding => {
+  const executionBinding = (
+    sessionId: string,
+    directory?: RuntimeDirectory,
+    expectedHarness?: SessionHarness,
+  ): AgentExecutionBinding => {
     const binding = store.getExecutionBinding(sessionId)
     if (!binding) {
       throw new AgentRuntimeContractError({
@@ -217,7 +221,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       ...binding,
       sessionId,
       directory: runtimeDirectory(directory ?? session.directory),
-      connectionId: connectionIdForHarness(config.harness),
+      connectionId: connectionIdForHarness(expectedHarness ?? config.harness),
     })
   }
 
@@ -897,7 +901,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {
         const adapter = await adapterForSession(sessionId)
         if (!adapter.abort) throw new Error("This harness does not support abort")
-        const result = await adapter.abort(sessionId, directory)
+        const result = await adapter.abort(executionBinding(sessionId, directory))
         if (result.ok && result.status === "cancelled") {
           store.finishTurn({
             sessionId,
@@ -979,7 +983,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           .find((item) => item.id === permissionId)
         const adapter = await interactionAdapter("respondPermission", permission?.sessionID)
         if (!adapter?.respondPermission) throw new Error("No registered harness supports permissions")
-        const result = await adapter.respondPermission(permissionId, decision, directory)
+        const result = await adapter.respondPermission(executionBinding(permission.sessionID, directory), permissionId, decision)
         publishInteractionEvents(result?.events, directory)
         return result
       },
@@ -993,7 +997,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           .find((item) => item.id === questionId)
         const adapter = await interactionAdapter("replyQuestion", question?.sessionID)
         if (!adapter?.replyQuestion) throw new Error("No registered harness supports questions")
-        const result = await adapter.replyQuestion(questionId, answer, directory)
+        const result = await adapter.replyQuestion(executionBinding(question.sessionID, directory), questionId, answer)
         publishInteractionEvents(result?.events, directory)
         return result
       },
@@ -1002,7 +1006,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           .find((item) => item.id === questionId)
         const adapter = await interactionAdapter("rejectQuestion", question?.sessionID)
         if (!adapter?.rejectQuestion) throw new Error("No registered harness supports questions")
-        const result = await adapter.rejectQuestion(questionId, directory)
+        const result = await adapter.rejectQuestion(executionBinding(question.sessionID, directory), questionId)
         publishInteractionEvents(result?.events, directory)
         return result
       },
@@ -1021,7 +1025,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async execute(sessionId: string, command: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
         if (!adapter.executeCommand) throw new Error("This harness does not support commands")
-        return await adapter.executeCommand(sessionId, command, directory)
+        return await adapter.executeCommand(executionBinding(sessionId, directory), command)
       },
     },
     config: {

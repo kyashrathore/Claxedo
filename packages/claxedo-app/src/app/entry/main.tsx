@@ -227,7 +227,7 @@ async function startApp() {
   // In demo mode, start MSW to mock server responses before rendering
   if (isDemoMode()) {
     for (const key of Object.keys(localStorage)) {
-      if (!key.startsWith("opencode.demo.")) continue
+      if (!key.startsWith("claxedo.demo.")) continue
       localStorage.removeItem(key)
     }
     resetDemoPersisted()

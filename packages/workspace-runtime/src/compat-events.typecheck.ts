@@ -40,6 +40,8 @@ const kinds: Record<CompatEvent["type"], true> = {
   "message.updated": true,
   "message.part.updated": true,
   "message.part.delta": true,
+  "message.part.removed": true,
+  "message.removed": true,
   "message.completed": true,
   "permission.asked": true,
   "permission.replied": true,

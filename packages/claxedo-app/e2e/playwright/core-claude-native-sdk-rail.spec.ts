@@ -126,11 +126,11 @@ async function installSessionListFixture(
 
 async function seedProjectAtHome(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },

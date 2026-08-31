@@ -19,13 +19,11 @@ export function skillTargetDir(input: {
     if (!input.projectDir) throw new Error("projectDir is required for project skill materialization")
     if (input.runner === "claude") return path.join(input.projectDir, ".claude", "skills", input.name)
     if (input.runner === "codex") return path.join(input.projectDir, ".agents", "skills", input.name)
-    if (input.runner === "opencode") return path.join(input.projectDir, ".opencode", "skills", input.name)
     return path.join(input.projectDir, ".cursor", "skills", input.name)
   }
   if (!input.homeDir) throw new Error("homeDir is required for machine skill materialization")
   if (input.runner === "claude") return path.join(input.homeDir, ".claude", "skills", input.name)
   if (input.runner === "codex") return path.join(input.homeDir, ".codex", "skills", input.name)
-  if (input.runner === "opencode") return path.join(input.homeDir, ".config", "opencode", "skills", input.name)
   return path.join(input.homeDir, ".cursor", "skills", input.name)
 }
 

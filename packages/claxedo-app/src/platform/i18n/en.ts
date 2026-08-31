@@ -328,7 +328,7 @@ export const dict = {
   "app.server.otherServers": "Other servers",
 
   "dialog.server.title": "Servers",
-  "dialog.server.description": "Switch which OpenCode server this app connects to.",
+  "dialog.server.description": "Switch which Claxedo server this app connects to.",
   "dialog.server.search.placeholder": "Search servers",
   "dialog.server.empty": "No servers yet",
   "dialog.server.add.title": "Add server",
@@ -760,7 +760,7 @@ export const dict = {
   "settings.tab.shortcuts": "Shortcuts",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL integration",
-  "settings.desktop.wsl.description": "Run the OpenCode server inside WSL on Windows.",
+  "settings.desktop.wsl.description": "Run the Claxedo server inside WSL on Windows.",
 
   "settings.general.section.appearance": "Appearance",
   "settings.general.section.advanced": "Advanced",

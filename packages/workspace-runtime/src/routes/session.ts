@@ -1,7 +1,6 @@
 import { HTTPException } from "hono/http-exception"
 import { createSessionRoutes } from "./session-core"
 import {
-  normalizeHarnessIdentity,
   type AgentRuntime,
   type AgentMessage,
   type AgentPermission,
@@ -15,9 +14,7 @@ import {
 import {
   type AgentMessagePage,
   type AgentMessagePageInput,
-  hasAdapterCapability,
   type AgentHarnessAdapter,
-  type HttpProxyAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { workspaceRuntimeBus } from "../bus"
 import { withDir } from "../compat-events"
@@ -84,7 +81,7 @@ function dir(c: {
   req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined }
 }, input?: { sessionId?: string }): string {
   try {
-    const requested = c.req.query("directory") || c.req.header("x-opencode-directory")
+    const requested = c.req.query("directory")
     if (!requested && input?.sessionId) {
       return registeredWorkspaceDirectory(input.sessionId) ?? assertTarget(undefined)
     }
@@ -200,7 +197,6 @@ export function SessionRoutes(
       sessionId: string
       updates: { title?: string; time?: { archived?: number } }
     }) => Promise<void> | void
-    opencodeHeaders?: HeadersInit
   },
 ) {
   const eventHub = options?.eventHub ?? createRuntimeEventHub()
@@ -228,6 +224,7 @@ export function SessionRoutes(
     return identity
   }
   return createSessionRoutes({
+    requestedSessionHarness: (c) => requestedHarness(c as never),
     resolveAdapter: async (c, input) => {
       const harness = requestedHarness(c as never)
       return await getAdapter({

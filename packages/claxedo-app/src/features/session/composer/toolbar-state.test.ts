@@ -22,7 +22,6 @@ function toolbar(input: {
       selectionCatalogPending: () => false,
       fallbackModel: () => undefined,
       harnessMode: () => false,
-      isOpenCodeHarness: () => true,
       existingSession: () => true,
       variantList: () => [],
       selectedVariant: () => undefined,

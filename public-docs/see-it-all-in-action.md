@@ -9,7 +9,7 @@ workspace, deployment, and extension backends underneath.
 
 | Value | What Claxedo provides |
 | --- | --- |
-| Talk to many agent harnesses through one surface | Your app talks to the `AgentRuntime` facade from [Agent SDK Runtime](./agent-sdk-runtime.md), not directly to each harness. Today that covers OpenCode, ACP harnesses, native SDK harnesses, and Pi. New harnesses fit by adding a harness factory and event translation path. |
+| Talk to many agent harnesses through one surface | Your app talks to the `AgentRuntime` facade from [Agent SDK Runtime](./agent-sdk-runtime.md), not directly to each harness. Today that covers configured connections, native SDK harnesses, and Pi. New external protocols fit by adding a connection provider and event translation path. |
 | Normalize harness output once | [Agent Event Runtime](./agent-event-runtime.md) turns harness-specific streams into canonical `AgentRuntimeEvent`s and compatibility projections, so UI/session replay does not branch for every harness. |
 | Run terminal coding-agent infrastructure | [Workspace Runtime](./workspace-runtime.md) gives you sessions, PTYs, managed processes, files, diffs, runtime events, health, capabilities, config apply, and harness lifecycle next to the project directory. |
 | Install capabilities once and materialize them for many harnesses | [Agent Extensions](./agent-extensions.md) let users discover a package, install it into workspace desired state, and materialize its skills, MCP configs, and harness plugin assets into OpenCode, Claude, Codex, and Cursor targets. |
@@ -74,9 +74,9 @@ await fetch("http://127.0.0.1:4096/api/wr/config", {
     "content-type": "application/json",
   },
   body: JSON.stringify({
-    version: 2,
-    harnesses: [{ id: "codex", access: "native" }],
-    model: "default",
+    version: 3,
+    connections: [],
+    defaultHarness: { kind: "native", harnessId: "codex" },
     auth: {
       "codex-app-server": process.env.OPENAI_API_KEY,
     },
@@ -118,7 +118,7 @@ await fetch("http://127.0.0.1:4096/api/wr/process/start-all", {
 const files = await fetch("http://127.0.0.1:4096/file/all")
   .then((res) => res.json())
 
-const events = new EventSource("http://127.0.0.1:4096/global/event")
+const events = new EventSource("http://127.0.0.1:4096/api/wr/runtime-events?parentSessionId=SESSION_ID")
 events.onmessage = (event) => {
   console.log(JSON.parse(event.data))
 }
@@ -241,7 +241,7 @@ startServer(port, await workspaceRelayRuntimeOptionsFromEnv(process.env, port))
 | Product control plane | Local server, self-hosted server, or hosted service | User auth, org/workspace authorization, credential storage, marketplace policy, workspace routing | Product code; Claxedo server package in this repo |
 | Workspace Host | Next to the project directory the agent should work on | Harness lifecycle, sessions, terminals, processes, files, diffs, runtime events, config apply, Agent Extensions | `@claxedo/workspace-runtime` |
 | Agent Extensions | In the product server and Workspace Host | Discovery, install lifecycle, lock state, effective policy, and materialized harness files | `@claxedo/agent-extensions` |
-| Agent SDK Runtime | Inside the Workspace Host | One `AgentRuntime` facade over OpenCode, ACP harnesses, native SDK harnesses, and Pi | `@claxedo/agent-sdk-runtime` |
+| Agent SDK Runtime | Inside the Workspace Host | One `AgentRuntime` facade over configured connections, native SDK harnesses, and Pi | `@claxedo/agent-sdk-runtime` |
 | Event runtime | Inside adapters/host projections | Canonical `AgentRuntimeEvent` stream and compatibility projections | `@claxedo/agent-event-runtime` |
 | Relay | Separate relay process | Bidirectional tunnel between gateway/browser traffic and workspace-runtime hosts | `@claxedo/workspace-relay` |
 | Relay protocol | Shared dependency | Tunnel frame types, protocol version, token verifier seam | `@claxedo/workspace-relay-protocol` |
@@ -283,8 +283,9 @@ await fetch("http://127.0.0.1:4096/api/wr/config", {
     "content-type": "application/json",
   },
   body: JSON.stringify({
-    version: 2,
-    harnesses: [{ id: "claude", access: "native" }],
+    version: 3,
+    connections: [],
+    defaultHarness: { kind: "native", harnessId: "claude" },
     model: "claude-sonnet-4-6",
     auth: { anthropic: process.env.ANTHROPIC_API_KEY },
     mcp: {},
@@ -298,8 +299,7 @@ old adapter and creates the matching adapter:
 
 | Harness config | Adapter |
 | --- | --- |
-| `{ id: "opencode", access: "native" }` | `OpenCodeHarnessAdapter` |
-| `{ id: "claude" | "codex" | "cursor", access: "acp" }` | `AcpHarnessAdapter` |
+| `{ id: "<connection-id>", access: "connection" }` | adapter from the installed `ConnectionProvider` |
 | `{ id: "claude", access: "native" }` | `ClaudeHarnessAdapter` |
 | `{ id: "codex", access: "native" }` | `CodexHarnessAdapter` |
 | `{ id: "cursor", access: "native" }` | `CursorHarnessAdapter` |
@@ -342,7 +342,7 @@ app needs:
 | View logs | `/api/wr/process/logs` reads process or terminal logs. |
 | Browse files | `/find/file`, `/file`, `/file/content`, `/file/raw`, `/file/all`. |
 | Review changes | `/api/wr/diff/*` and `/vcs`. |
-| Watch session/runtime events | `/global/event` and `/api/wr/runtime-events`. |
+| Watch session/runtime events | `/api/wr/runtime-events`; central lifecycle facts use `/api/wr/events`. |
 | Check host state | `/api/wr/health` and `/api/wr/capabilities`. |
 
 ## User Action: Install Agent Extensions

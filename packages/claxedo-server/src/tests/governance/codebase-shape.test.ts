@@ -97,7 +97,6 @@ describe("architecture boundaries", () => {
         .map((file) => path.relative(path.resolve(import.meta.dirname, "../.."), file)),
     ]
     const forbidden = [
-      "@claxedo/agent-sdk-runtime",
       "AcpHarnessAdapter",
       "OpenCodeHarnessAdapter",
       "ClaudeHarnessAdapter",
@@ -155,6 +154,42 @@ describe("architecture boundaries", () => {
           text.includes(term) ? [`${path.relative(workspaceRuntimeSrc, file)}:${term}`] : [],
         )
       })
+
+    expect(offenders).toEqual([])
+  })
+
+  test("keeps backend products free of OpenCode runtime and generated-client coupling", () => {
+    const packageRoot = path.resolve(import.meta.dirname, "../../../..")
+    const sourceRoots = [
+      "agent-sdk-runtime/src",
+      "workspace-runtime/src",
+      "claxedo-server-core/src",
+      "claxedo-server/src",
+      "claxedo-local-server/src",
+      "claxedo-mcp/src",
+    ]
+    const forbidden = [
+      /from\s+["']@opencode-ai\/sdk(?:\/[^"']*)?["']/,
+      /from\s+["']opencode(?:\/[^"']*)?["']/,
+      /import\(\s*["']opencode(?:\/[^"']*)?["']\s*\)/,
+      /\bcreateOpencodeClient\b/,
+      /\bOpenCodeHarnessAdapter\b/,
+      /\bOpenCodeRequestFn\b/,
+      /\bopencodeRequest\b/,
+      /\bOPENCODE_INTERNAL_BASE\b/,
+    ]
+    const offenders = sourceRoots.flatMap((relativeRoot) => {
+      const root = path.join(packageRoot, relativeRoot)
+      return walk(root)
+        .filter((file) => /\.(?:ts|tsx|mts|cts|mjs)$/.test(file))
+        .filter((file) => !file.endsWith(".test.ts") && !file.endsWith(".test.tsx"))
+        .flatMap((file) => {
+          const source = fs.readFileSync(file, "utf8")
+          return forbidden.flatMap((pattern) => pattern.test(source)
+            ? [`${path.relative(packageRoot, file)}:${pattern.source}`]
+            : [])
+        })
+    })
 
     expect(offenders).toEqual([])
   })

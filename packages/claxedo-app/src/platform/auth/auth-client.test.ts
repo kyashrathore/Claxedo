@@ -5,20 +5,20 @@ describe("clearPersistedAuthState", () => {
   beforeEach(() => localStorage.clear())
   afterEach(() => localStorage.clear())
 
-  test("purges opencode.* persisted state", () => {
-    localStorage.setItem("opencode.workspaces", "[]")
-    localStorage.setItem("opencode.layout", "{}")
+  test("purges claxedo.* persisted state", () => {
+    localStorage.setItem("claxedo.workspaces", "[]")
+    localStorage.setItem("claxedo.layout", "{}")
     clearPersistedAuthState()
-    expect(localStorage.getItem("opencode.workspaces")).toBeNull()
-    expect(localStorage.getItem("opencode.layout")).toBeNull()
+    expect(localStorage.getItem("claxedo.workspaces")).toBeNull()
+    expect(localStorage.getItem("claxedo.layout")).toBeNull()
   })
 
   test("preserves the dedicated lastUserId key so an account switch stays detectable", () => {
-    localStorage.setItem("opencode.auth.lastUserId", "user_1")
-    localStorage.setItem("opencode.workspaces", "[]")
+    localStorage.setItem("claxedo.auth.lastUserId", "user_1")
+    localStorage.setItem("claxedo.workspaces", "[]")
     clearPersistedAuthState()
-    expect(localStorage.getItem("opencode.auth.lastUserId")).toBe("user_1")
-    expect(localStorage.getItem("opencode.workspaces")).toBeNull()
+    expect(localStorage.getItem("claxedo.auth.lastUserId")).toBe("user_1")
+    expect(localStorage.getItem("claxedo.workspaces")).toBeNull()
   })
 
   test("purges projection-cache keys", () => {

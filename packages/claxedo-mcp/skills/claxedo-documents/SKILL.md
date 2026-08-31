@@ -26,4 +26,4 @@ claxedo-mcp documents list
 claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
 ```
 
-`OPENCODE_API_DIR` supplies the default directory and `CLAXEDO_SESSION_ID` supplies the default session. Use `--directory`, `--project`, or `--session` to override them explicitly.
+`CLAXEDO_API_DIR` supplies the default directory and `CLAXEDO_SESSION_ID` supplies the default session. Use `--directory`, `--project`, or `--session` to override them explicitly.

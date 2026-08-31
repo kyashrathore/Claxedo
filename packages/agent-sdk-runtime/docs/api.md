@@ -92,7 +92,6 @@ Exports include:
 - `ClaudeHarnessAdapter`
 - `CodexHarnessAdapter`
 - `CursorHarnessAdapter`
-- `OpenCodeHarnessAdapter`
 - `PiHarnessAdapter`
 - ACP transport factories
 - `AgentRuntimeStoreWithRecovery`

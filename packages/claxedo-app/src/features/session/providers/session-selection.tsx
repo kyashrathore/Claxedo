@@ -1,5 +1,5 @@
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createEffect, createMemo, createSignal, onCleanup, startTransition, type Accessor } from "solid-js"
+import { batch, createEffect, createMemo, createSignal, startTransition, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { queryOptions, skipToken, useQuery } from "@tanstack/solid-query"
 import { settledQueryData } from "@/platform/query/settled-query-data"
@@ -20,10 +20,8 @@ import {
 import {
   localSelectionStateFromSessionConfig,
   sessionConfigRawQueryKey,
-  sessionConfigPatchFromLocalSelection,
   sessionConfigSelectionQueryKey,
 } from "@/features/session/store/session-config-selection"
-import { createSessionSyncRetry } from "./session-config-sync-retry"
 import { decodeSessionConfig } from "@/features/session/harness/profile"
 import { agentListQuery, configQuery, type Agent } from "../data/query/directory"
 import { useWorkspaceQuery } from "@/features/session/app-ports"
@@ -32,6 +30,7 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import { queryClient } from "@/platform/query/query-client"
 import { useSDK } from "@/features/session/app-ports"
 import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
+import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { parkedPaneQueryOptions } from "../store/pane-query-observer"
 import {
   cycleModelVariant,
@@ -48,10 +47,8 @@ type ModelSource = "selected" | "agent"
 
 type Saved = {
   session: Record<string, State | undefined>
-  dirty: Record<string, boolean | undefined>
 }
 
-const WORKSPACE_KEY = "__workspace__"
 const SESSION_CONFIG_STALE_TIME = 30 * 1000
 
 type SessionConfigRequest = {
@@ -105,28 +102,6 @@ function sessionConfigSelectionOptions(input: SessionConfigRequest | undefined) 
       await queryClient.fetchQuery(sessionConfigRawOptions(input)),
     ) ?? null,
   })
-}
-
-const migrate = (value: unknown) => {
-  if (!value || typeof value !== "object") return { session: {}, dirty: {} }
-
-  const item = value as {
-    session?: Record<string, State | undefined>
-    pick?: Record<string, State | undefined>
-    dirty?: Record<string, boolean | undefined>
-  }
-
-  const dirty = item.dirty && typeof item.dirty === "object"
-    ? Object.fromEntries(Object.entries(item.dirty).filter((entry): entry is [string, true] => entry[1] === true))
-    : {}
-
-  if (item.session && typeof item.session === "object") return { session: item.session, dirty }
-  if (!item.pick || typeof item.pick !== "object") return { session: {}, dirty }
-
-  return {
-    session: Object.fromEntries(Object.entries(item.pick).filter(([key]) => key !== WORKSPACE_KEY)),
-    dirty,
-  }
 }
 
 const localContextInput = {
@@ -229,13 +204,9 @@ const localContextInput = {
     const connected = createMemo(() => new Set(providers.connected().map((item) => item.id)))
 
     const [saved, setSaved] = persisted(
-      {
-        ...Persist.workspace(sdk.directory, "model-selection", ["model-selection.v1"]),
-        migrate,
-      },
+      Persist.workspace(sdk.directory, "model-selection"),
       createStore<Saved>({
         session: {},
-        dirty: {},
       }),
     )
 
@@ -269,8 +240,7 @@ const localContextInput = {
       return !!provider?.models[model.modelID] && connected().has(model.providerID)
     }
 
-    const isUsableSelection = (model: ModelKey | undefined): model is ModelKey =>
-      !!model && !isSignedWorkspaceDefaultModel({ id: model.modelID, provider: { id: model.providerID } })
+    const isUsableSelection = (model: ModelKey | undefined): model is ModelKey => !!model
 
     const selectionCatalogPending = (model: ModelKey | undefined) => {
       if (!isUsableSelection(model)) return false
@@ -329,17 +299,6 @@ const localContextInput = {
       setStore("current", items[0]?.name)
     })
 
-    const isOpenCodeSessionScope = (session: string) => {
-      if (hydrationSession() !== session) return false
-      const type = currentSessionHarnessId()
-      if (type && type !== "opencode") return false
-      if (sessionConfigRawQuery.isLoading || sessionConfigRawQuery.isFetching) return false
-      return true
-    }
-
-    const sameState = (left: State | undefined, right: State | undefined) =>
-      JSON.stringify(cloneLocalSelectionState(left)) === JSON.stringify(cloneLocalSelectionState(right))
-
     const sessionConfigSelectionLoading = createMemo(() => {
       const session = id()
       if (!session) return false
@@ -347,71 +306,15 @@ const localContextInput = {
       return sessionConfigSelectionQuery.isLoading || sessionConfigSelectionQuery.isFetching
     })
 
-    // Deliberate, bounded retry for the config-selection PATCH. Replaces the old accidental
-    // retry that re-fired the same doomed PATCH on every `sessionConfigRawQuery.isFetching`
-    // toggle during hydration. On failure we retry on an explicit backoff timer up to
-    // `maxAttempts`; after that the cycle stops but the persisted `dirty` flag is kept, so the
-    // write is never silently dropped — it flushes again on the next mount, or is re-armed by an
-    // explicit user selection (`deliberate: true`).
-    const syncRetry = createSessionSyncRetry({
-      maxAttempts: 5,
-      backoffMs: (failed) => Math.min(30_000, 500 * 2 ** (failed - 1)),
-      scopeReady: (session) => isOpenCodeSessionScope(session),
-      sameState,
-      patch: (session, state) =>
-        createAgentRuntimeClient({
-          serverUrl: sdk.url,
-          request: platform.fetch ?? fetch,
-          sessionRef: input.sessionRef?.(),
-          ...(workspaceClientOptions()),
-        }).updateSessionConfig({
-          directory: sdk.directory,
-          sessionID: session,
-          patch: sessionConfigPatchFromLocalSelection(state),
-        }),
-      onSuccess: (session, state) => {
-        const request = sessionConfigRequest(session)
-        if (request) queryClient.setQueryData(
-          sessionConfigSelectionQueryKey(sessionConfigQueryScope(request)),
-          cloneLocalSelectionState(state),
-        )
-        if (sameState(saved.session[session], state)) setSaved("dirty", session, false)
-      },
-      // onExhausted intentionally omitted: the persisted `dirty` flag stays set so a permanently
-      // failed write surfaces on the next hydration rather than being silently discarded.
-      schedule: (fn, ms) => {
-        const timer = setTimeout(fn, ms)
-        return { cancel: () => clearTimeout(timer) }
-      },
-    })
-    onCleanup(() => syncRetry.dispose())
-
     const commitSessionState = (session: string, state: State) => {
       setSaved("session", session, state)
-      if (!isOpenCodeSessionScope(session)) return
-      setSaved("dirty", session, true)
-      // Explicit user selection: reset the retry ledger and fire a fresh attempt.
-      syncRetry.arm(session, state, { deliberate: true })
     }
-
-    createEffect(() => {
-      const session = id()
-      if (!session) return
-      if (!saved.dirty[session]) return
-      const state = saved.session[session]
-      if (!state) return
-      // Hydration flush: `arm` reads `scopeReady` (which tracks `sessionConfigRawQuery.isFetching`),
-      // so this effect still re-runs on hydration churn — but `arm` now only advances an
-      // already-armed idle attempt and never re-fires a failed or exhausted PATCH.
-      syncRetry.arm(session, state, { deliberate: false })
-    })
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
       const selectionHandoff = settledQueryData(selectionHandoffQuery)
       const sessionConfigSelection = settledQueryData(sessionConfigSelectionQuery) ?? undefined
       if (!session) return store.draft ?? selectionHandoff
-      if (saved.dirty[session] && saved.session[session]) return saved.session[session]
       if (store.last === undefined) {
         // Session creation publishes the exact config atomically. A remounted
         // workbench owner must consume that handoff before the deferred config
@@ -430,7 +333,6 @@ const localContextInput = {
     const restorePending = () => {
       const session = id()
       if (!session) return false
-      if (saved.dirty[session] && saved.session[session]) return false
       if (store.last !== undefined && saved.session[session] !== undefined) return false
       if (settledQueryData(selectionHandoffQuery)) return false
       if (settledQueryData(sessionConfigSelectionQuery)) return false
@@ -604,9 +506,6 @@ const localContextInput = {
         model.set({ providerID: entry.provider.id, modelID: entry.id })
       },
       set(item: ModelKey | undefined, options?: { recent?: boolean }) {
-        if (item && isSignedWorkspaceDefaultModel({ id: item.modelID, provider: { id: item.providerID } })) {
-          item = undefined
-        }
         startTransition(() =>
           batch(() => {
             setStore("last", {
@@ -701,7 +600,6 @@ const localContextInput = {
             // The create request already persisted this exact state atomically.
             // Install it locally without scheduling a redundant config PATCH.
             setSaved("session", session, next)
-            setSaved("dirty", session, false)
             setStore("draft", undefined)
             return
           }

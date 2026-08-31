@@ -469,7 +469,7 @@ export function createBootstrapOrchestrator(input: {
     opts: DirectorySessionCacheRefreshOptions = {},
   ) {
     if (!directory) return
-    const effectiveHarnessType = harnessType ?? (input.workspaceDirectoryRef(directory) ? "opencode" : undefined)
+    const effectiveHarnessType = harnessType
     const workspace = opts.workspace ?? input.signedWorkspaceInfo(directory)
     const requestKey = bootstrapRequestKey(directory, effectiveHarnessType, workspace)
     await queryClient.fetchQuery({

@@ -1,6 +1,5 @@
 import { type Accessor, type JSX, Show } from "solid-js"
 import type { PickerState } from "@/features/session/ui/model/select-model"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harness-selector"
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"
@@ -109,7 +108,7 @@ export function PromptToolbarControls(props: {
           const current = props.permissionCurrent()
           if (!current?.id) return false
           // Hide the trigger until the offered rows include the resolved mode.
-          // Otherwise a default Claxedo id can flash on an opencode-shaped draft
+          // Otherwise a default Claxedo id can flash while runtime modes are still loading
           // while Codex modes are still loading (tier-real behavior 13).
           const offered = [...groups.claxedo, ...groups.harness.rows]
           if (offered.length === 0) return false
@@ -143,32 +142,6 @@ export function PromptToolbarControls(props: {
               triggerStyle={props.controlStyle()}
               sessionLocked={props.sessionLocked()}
               modelLocked={props.modelLocked()}
-              openCodeModel={() => {
-                const current = props.model().current()
-                const variant = props.currentVariant()
-                return current ? {
-                  providerID: current.provider.id,
-                  modelID: current.id,
-                  ...(variant && variant !== "default" ? { variant } : {}),
-                } satisfies ModelKey : undefined
-              }}
-              openCodeModelLabels={() => {
-                const current = props.model().current()
-                return openCodeDraftLabels(
-                  current ? { providerID: current.provider.id, modelID: current.id } : undefined,
-                  props.model().list(),
-                )
-              }}
-              openCode={{
-                model: props.model,
-                label: props.modelLabel,
-                loading: props.providerLoading,
-                showVariantSelector: props.showVariantSelector,
-                variants: props.variants,
-                currentVariant: props.currentVariant,
-                variantLabel: props.variantLabel,
-                onVariantSelect: props.onVariantSelect,
-              }}
             />
           )}
         </Show>

@@ -5,12 +5,15 @@ import { AcpHarnessAdapter } from "./index"
 
 type BaseInternals = {
   options: {
-    binary: string
+    connection: {
+      kind: "process"
+      command: string
+      args?: string[]
+      env?: Record<string, string>
+      supportsMcpServers?: boolean
+    }
     storeRoot?: string
     harness?: string
-    args?: string[]
-    env?: Record<string, string>
-    supportsMcpServers?: boolean
   }
   currentModel: string
   dirs: Set<string>
@@ -33,7 +36,7 @@ function adapter<Extra extends object = Record<never, never>>() {
     Omit<BaseInternals, keyof Extra> & Extra
   >
   const defaults: BaseInternals = {
-    options: { binary: "fake-acp" },
+    options: { connection: { kind: "process", command: "fake-acp" } },
     currentModel: "",
     dirs: new Set(),
     sessions: new Map(),
@@ -151,8 +154,8 @@ describe("AcpHarnessAdapter.createSession", () => {
         updateSessionConfig: (id: string, cfg: unknown) => void
       }
     }>()
-    a.options = { binary: "fake-acp" }
-    b.options = { binary: "fake-acp" }
+    a.options = { connection: { kind: "process", command: "fake-acp" } }
+    b.options = { connection: { kind: "process", command: "fake-acp" } }
     a.store = store
     b.store = store
     a.make = make
@@ -212,11 +215,14 @@ describe("AcpHarnessAdapter.createSession", () => {
       }
     }>()
     out.options = {
-      binary: "/opt/homebrew/bin/npx",
+      connection: {
+        kind: "process",
+        command: "/opt/homebrew/bin/npx",
+        args: ["--yes", "openclaw@latest", "acp"],
+        env: { OPENCLAW_GATEWAY_PORT: "18789" },
+        supportsMcpServers: false,
+      },
       harness: "openclaw",
-      args: ["--yes", "openclaw@latest", "acp"],
-      env: { OPENCLAW_GATEWAY_PORT: "18789" },
-      supportsMcpServers: false,
     }
     out.store = {
       getSession: () => undefined,
@@ -231,7 +237,7 @@ describe("AcpHarnessAdapter.createSession", () => {
     await out.createSession(path.resolve("/work"), "OpenClaw", "ses_openclaw")
 
     expect(configs).toEqual([{
-      harness: { id: "openclaw", access: "acp" },
+      harness: { id: "openclaw", access: "connection" },
       variant: null,
       agent: null,
     }])

@@ -514,14 +514,14 @@ describe("SessionEnvRoutes", () => {
         command: [
           "node -e 'process.stdout.write(JSON.stringify({",
           "nodeOptions: process.env.NODE_OPTIONS || null,",
-          "opencode: process.env.OPENCODE_ALLOWED || null,",
+          "vendor: process.env.UNRELATED_VENDOR_TOKEN || null,",
           "secret: process.env.SECRET_TOKEN || null,",
           "installation: process.env.CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN || null",
           "}))'",
         ].join(" "),
         env: {
           NODE_OPTIONS: "--require /definitely-missing-workspace-runtime-module",
-          OPENCODE_ALLOWED: "yes",
+          UNRELATED_VENDOR_TOKEN: "yes",
           SECRET_TOKEN: "nope",
           CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN: "request-secret",
         },
@@ -532,7 +532,7 @@ describe("SessionEnvRoutes", () => {
     const events = await ndjson(res)
     expect(JSON.parse(stdoutText(events[0]))).toEqual({
       nodeOptions: null,
-      opencode: "yes",
+      vendor: null,
       secret: null,
       installation: null,
     })

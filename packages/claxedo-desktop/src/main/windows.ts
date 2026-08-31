@@ -236,7 +236,7 @@ function injectGlobals(win: BrowserWindow, globals: Globals) {
       startupIsolationStage: globals.startupIsolationStage,
     }
     void win.webContents.executeJavaScript(
-      `window.__OPENCODE__ = Object.assign(window.__OPENCODE__ ?? {}, ${JSON.stringify(data)})`,
+      `window.__CLAXEDO__ = Object.assign(window.__CLAXEDO__ ?? {}, ${JSON.stringify(data)})`,
     )
   })
 }

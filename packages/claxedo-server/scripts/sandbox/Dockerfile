@@ -46,13 +46,10 @@ COPY .build/ /opt/workspace-runtime/
 RUN cd /opt/workspace-runtime && \
     npm install --omit=dev --min-release-age=2 --legacy-peer-deps && \
     test -f /opt/workspace-runtime/workspace-runtime-host.mjs && \
-    test -x /opt/workspace-runtime/opencode && \
     chmod 0755 /opt/workspace-runtime/workspace-runtime-host.mjs && \
     ln -sf /opt/workspace-runtime/workspace-runtime-host.mjs /usr/local/bin/workspace-runtime && \
-    install -m 0755 /opt/workspace-runtime/opencode /usr/local/bin/opencode && \
     command -v workspace-runtime && \
-    test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)" && \
-    command -v opencode
+    test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)"
 
 # Prove the exact production chain serves the durable Session V2 contract
 # through workspace-runtime, including a compressed history page.
@@ -71,14 +68,11 @@ RUN set -eu; \
     engine_pid=$!; \
     setsid env WORKSPACE_RUNTIME_PORT=2593 WORKSPACE_RUNTIME_HOSTNAME=127.0.0.1 WORKSPACE_RUNTIME_ID=image-smoke WORKSPACE_RUNTIME_DIRECTORY=/tmp/opencode-session-v2-smoke OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1 & \
     runtime_pid=$!; \
-    stop_servers() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$runtime_pid" 2>/dev/null || true; python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$engine_pid" 2>/dev/null || true; }; \
-    trap stop_servers EXIT; \
+    stop_runtime() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$runtime_pid" 2>/dev/null || true; }; \
+    trap stop_runtime EXIT; \
     ready=0; \
-    for attempt in $(seq 1 4800); do \
-      if curl -fsS -X POST \
-        -H 'content-type: application/json' \
-        -d "{\"id\":\"$smoke_id\",\"location\":{\"directory\":\"/tmp/opencode-session-v2-smoke\"}}" \
-        http://127.0.0.1:2593/api/session >/tmp/opencode-session-v2.json; then ready=1; break; fi; \
+    for attempt in $(seq 1 120); do \
+      if curl -fsS http://127.0.0.1:2593/api/wr/health >/tmp/workspace-runtime-health.json; then ready=1; break; fi; \
       sleep 0.25; \
     done; \
     if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log /tmp/workspace-runtime-smoke.log; exit 1; fi; \

@@ -17,13 +17,14 @@ export type PreparedRuntimeSession = {
 }
 
 export type PreparedHarnessSessionState = {
-  harness: HarnessType
+  harness?: HarnessType
   selectedModel?: string
 }
 
 export type PreparedHarnessSessionPlan =
   | { status: "disabled" }
   | { status: "missing-directory" }
+  | { status: "missing-harness" }
   | { status: "no-model" }
   | { status: "reuse"; item: PreparedRuntimeSession }
   | {
@@ -35,7 +36,7 @@ export type PreparedHarnessSessionPlan =
     }
 
 export function preparedHarnessSessionModel(state: PreparedHarnessSessionState) {
-  if (state.harness === "opencode") return undefined
+  if (!state.harness) return undefined
   return state.selectedModel
 }
 
@@ -47,13 +48,14 @@ export function planPreparedHarnessSession(input: {
 }): PreparedHarnessSessionPlan {
   if (!input.enabled) return { status: "disabled" }
   if (!input.directory) return { status: "missing-directory" }
+  if (!input.state.harness) return { status: "missing-harness" }
 
   const model = preparedHarnessSessionModel(input.state)
   if (!model) return { status: "no-model" }
 
   if (
     input.prepared?.directory === input.directory &&
-    input.prepared.harness === input.state.harness &&
+    JSON.stringify(input.prepared.harness) === JSON.stringify(input.state.harness) &&
     input.prepared.model === model
   ) {
     return { status: "reuse", item: input.prepared }

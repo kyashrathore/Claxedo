@@ -168,11 +168,6 @@ export {
   type AgentHookRunner,
   type MaterializeAgentHooksOptions,
 } from "./materializers/hooks"
-export {
-  generateOpenCodeDocAgentMarkdown,
-  materializeOpenCodeDocAgent,
-  OPENCODE_DOC_AGENT_FILE,
-} from "./materializers/opencode-agent"
 export { cursorLocalPluginDir, materializeCursorLocalPlugin } from "./materializers/cursor"
 export { materializeStandaloneSkill, skillTargetDir } from "./materializers/skills"
 export {

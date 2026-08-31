@@ -17,7 +17,7 @@ describe("Claxedo request scope", () => {
     })).toEqual({
       url: "https://claxedo.test/api/wr/process?state=running&directory=workspace%3Aworkspace-1&workspaceId=workspace-1",
       headers: {
-        "x-opencode-directory": "workspace:workspace-1",
+        "x-claxedo-directory": "workspace:workspace-1",
         "x-workspace-id": "workspace-1",
       },
     })

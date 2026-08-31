@@ -20,7 +20,7 @@ describe("process client", () => {
         seen = {
           body: init?.body,
           type: headers.get("Content-Type"),
-          dir: headers.get("x-opencode-directory"),
+          dir: headers.get("x-claxedo-directory"),
           url: String(input),
         }
         return new Response(

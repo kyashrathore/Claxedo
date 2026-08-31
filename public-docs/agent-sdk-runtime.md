@@ -38,15 +38,12 @@ The package separates three choices:
 | `harness.access` | How the host talks to that harness: `acp` for Agent Client Protocol, or `native` for the harness's native API/runtime. |
 | `model` | The prompt model to request. This is separate from harness access because model provider is not the same thing as harness. |
 
-Among the built-ins, only `claude`, `codex`, and `cursor` support
-`access: "acp"`; `opencode` and `pi` are native-only. Beyond the built-ins,
-`access: "acp"` is an open surface: any id matching the connection-slug
-pattern (`^[a-z][a-z0-9-]{0,63}$`) names an operator-configured ACP agent,
-carried under the canonical key `acp:<slug>` (`SessionHarnessId` widens
-`AgentHarnessId` for this). Its process descriptor — command, arguments, and
-environment — arrives only through the host's trusted config path, never from
-session callers. See
-[Operator-Configured ACP Connections](./acp-connections.md).
+Provider-owned agents are identified by the discriminated target
+`{ kind: "connection", connectionId }`. Native agents use
+`{ kind: "native", harnessId }`. Connection ids remain opaque: callers do not
+prefix or parse them, and process descriptors arrive only through the host's
+trusted v3 config path. Browser surfaces receive only sanitized
+`HarnessConnectionRef` values. See [Agent Connections](./acp-connections.md).
 
 `provider` remains valid for model providers, credential providers, sandbox
 providers, and upstream protocol fields. It should not be used for the harness
@@ -79,23 +76,20 @@ type SessionConfig = {
 }
 
 type SessionHarness = {
-  id: "claude" | "codex" | "cursor" | "opencode" | "pi"
-  access: "acp" | "native"
-  connection?: HarnessConnection
+  id: "claude" | "codex" | "cursor" | "pi" | (string & {})
+  access: "connection" | "native"
 }
 ```
 
-`connection` contains transport details:
+Native ids are closed. An open id is valid only with `access: "connection"`
+and must resolve through the host's accepted provider registry. Transport
+details and secrets remain in the trusted connection descriptor, not the
+session:
 
 ```ts
-type HarnessConnection =
-  | { kind: "process"; binary?: string; args?: string[] }
-  | {
-      kind: "remote"
-      transport?: "stdio" | "streamable-http" | "websocket"
-      url?: string
-      headers?: Record<string, string>
-    }
+type RuntimeHarnessSelection =
+  | { kind: "native"; harnessId: "claude" | "codex" | "cursor" | "pi" }
+  | { kind: "connection"; connectionId: string }
 ```
 
 Put model choice in `SessionConfig.model`, not inside `harness.connection`.
@@ -104,7 +98,7 @@ Put model choice in `SessionConfig.model`, not inside `harness.connection`.
 
 | Import | Factory |
 | --- | --- |
-| `@claxedo/agent-sdk-runtime/harnesses` | `claude`, `codex`, `cursor`, `opencode`, `pi` |
+| `@claxedo/agent-sdk-runtime/harnesses` | `claude`, `codex`, `cursor`, `pi` |
 
 Factories register harnesses with `createAgentRuntime()`. Adapter classes are
 an advanced, lower-level public API exported from

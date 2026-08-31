@@ -54,7 +54,7 @@ function messageData(event: unknown) {
 function requestWorkspace(c: Context) {
   return resolveWorkspace({
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
-    directory: decoded(c.req.query("directory") || c.req.header("x-opencode-directory")),
+    directory: decoded(c.req.query("directory") || c.req.header("x-claxedo-directory")),
   })
 }
 
@@ -203,7 +203,7 @@ export function mountWorkspaceRuntimePtyWebSocketProxy(
       !!c.req.query("workspace") ||
       !!c.req.query("directory") ||
       !!c.req.header("x-workspace-id") ||
-      !!c.req.header("x-opencode-directory")
+      !!c.req.header("x-claxedo-directory")
     if (!hasWorkspaceTarget) return next()
 
     const workspace = await requestWorkspace(c).catch(() => undefined)

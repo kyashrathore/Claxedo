@@ -172,7 +172,7 @@ describe("Agent Extensions runtime config projection", () => {
           },
           scope: "project",
           enabled: true,
-          targets: ["opencode", "claude", "codex", "cursor"],
+          targets: ["claude", "codex", "cursor"],
           installed_at: 0,
           updated_at: 0,
         },

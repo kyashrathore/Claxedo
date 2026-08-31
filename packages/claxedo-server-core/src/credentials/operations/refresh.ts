@@ -100,8 +100,7 @@ export async function refreshCredentialSecret(
 
 /**
  * Write the new tokens back into every mirrored position the secret already
- * uses, and only those — consumers read different ones (`central-session-runtime`
- * reads `tokens.refresh_token`, the OpenCode-shaped secret reads `oauth.access`),
+ * uses, and only those — consumers read different canonical provider fields,
  * so inventing keys that were not there would change the secret's shape.
  */
 function rewriteSecret(

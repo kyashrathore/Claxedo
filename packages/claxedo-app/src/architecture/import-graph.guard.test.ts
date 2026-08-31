@@ -21,6 +21,9 @@ const liveTypeContracts = [
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",
   "platform/runtime/session.ts",
+  // Claxedo's HTTP presentation contract is intentionally consumed only as
+  // types; no runtime module should be generated from or coupled to a vendor SDK.
+  "platform/api/claxedo-api-types.ts",
   // The workspace-startup port. `workspace-log.ts` used to sit here and no
   // longer does: it gained `appendWorkspaceRuntimeLog`, so it is reached by
   // value and is not a pure type contract any more.

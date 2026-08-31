@@ -1,4 +1,4 @@
-// CONTRACT BINDING: POST + GET /api/claxedo/agent-config/harness
+// Contract binding for POST /api/claxedo/agent-config/harness.
 //
 // Third route bound to the real server, following the pattern established in
 // `./session-prompt.ts` — read that file's header first for WHY this exists.
@@ -252,354 +252,47 @@ export const HARNESS_RESULT_FIELDS = {
 // ---------------------------------------------------------------------------
 
 export class HarnessConfigContractError extends Error {
-  constructor(method: "POST" | "GET", url: string, problems: string[]) {
-    super(
-      `${method} ${url} violated the real server's harness-config contract `
-        + `(claxedo-local-server/src/agent-config/routes/harness-routes.ts):\n  - ${problems.join("\n  - ")}\n`
-        + `This is a REAL failure: the mock now enforces what claxedo-server enforces, so this `
-        + `request/response would not have behaved this way against a real backend.`,
-    )
+  constructor(url: string, problems: string[]) {
+    super(`POST ${url} violated the canonical harness-config contract:\n  - ${problems.join("\n  - ")}`)
     this.name = "HarnessConfigContractError"
   }
 }
 
-/** What the server resolves a POST body down to, plus the routing fields it reads alongside. */
-export type ParsedHarnessConfigRequest = {
-  /** Resolved via the REAL `normalizeHarnessIdentity`, so this can never drift from the server. */
-  identity: { id: SessionHarnessId; access: AgentHarnessAccess }
-  /**
-   * The canonical, access-qualified key the server echoes as `activeType` on the next
-   * GET (`harnessKey(saved) ?? …`, agent-config-harness-routes.ts:117). This is NOT
-   * always the string the client posted — see `HARNESS_CONTRACT_DIVERGENCES.legacyKeyEcho`.
-   */
-  activeType: string
-  binary?: string
-  sessionId?: string
-  directory?: string
-  workspaceId?: string
+function record(input: unknown): Record<string, unknown> | undefined {
+  return input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : undefined
 }
 
-/**
- * Validates an intercepted `POST /api/claxedo/agent-config/harness` body against the
- * real server's acceptance rules and returns what the server would resolve it to.
- * Throws `HarnessConfigContractError` listing every problem.
- *
- * `rawBody` is `Route.request().postDataJSON()`'s output — already JSON-parsed.
- *
- * Unlike the prompt route, an absent/unparseable body is NOT tolerated here: the route
- * does `.catch(() => null)` and then `if (!body || !next) return c.json(errorBody(
- * "agent_config_harness_required", …), 400)` (`agent-config-harness-routes.ts:162`,
- * `:171`). A missing body is a hard 400, so this throws rather than returning `{}`.
- */
-export function parseHarnessConfigRequest(rawBody: unknown, url: string): ParsedHarnessConfigRequest {
-  const fail = (problems: string[]): never => {
-    throw new HarnessConfigContractError("POST", url, problems)
-  }
+const NATIVE = new Set(["claude", "codex", "cursor", "pi"])
 
-  if (rawBody === undefined || rawBody === null) {
-    return fail([
-      "body is absent — the real server answers this with HTTP 400 "
-        + `${JSON.stringify(HARNESS_POST_MISSING_HARNESS.code)} and changes NOTHING `
-        + "(agent-config-harness-routes.ts:162,171).",
-    ])
-  }
-  if (typeof rawBody !== "object" || Array.isArray(rawBody)) {
-    return fail([`body must be a JSON object, got ${typeOf(rawBody)}`])
-  }
-
-  const body = rawBody as Record<string, unknown>
+export function parseHarnessConfigRequest(rawBody: unknown, url: string): {
+  selection: RuntimeHarnessSelection
+  sessionId?: string
+} {
+  const body = record(rawBody)
+  const harness = record(body?.harness)
   const problems: string[] = []
+  let selection: RuntimeHarnessSelection | undefined
 
-  const forwarded = new Set<string>(HARNESS_POST_FORWARDED_IDENTITY_KEYS)
-  for (const [field, spec] of Object.entries(HARNESS_IDENTITY_FIELDS)) {
-    if (!forwarded.has(field)) {
-      // transport/url/headers at the TOP level never reach harnessFromRequest's `row`
-      // (agent-config-harness-routes.ts:165-168 forwards only four keys), so sending
-      // them flat is silent data loss, not a shape error. Flag it as such.
-      if (body[field] !== undefined) {
-        problems.push(
-          `"${field}" was sent at the TOP level, where the route does not forward it — `
-            + `it is silently DROPPED. Nest it under "harness" instead `
-            + `(agent-config-harness-routes.ts:164-169).`,
-        )
-      }
-      continue
-    }
-    const problem = spec.check(body[field])
-    if (problem) problems.push(problem)
+  if (harness?.kind === "native" && typeof harness.harnessId === "string" && NATIVE.has(harness.harnessId)) {
+    selection = { kind: "native", harnessId: harness.harnessId as "claude" | "codex" | "cursor" | "pi" }
+  } else if (harness?.kind === "connection" && typeof harness.connectionId === "string" && harness.connectionId.trim()) {
+    selection = { kind: "connection", connectionId: harness.connectionId.trim() }
+  } else {
+    problems.push("harness must be {kind:'native', harnessId} or {kind:'connection', connectionId}")
   }
 
-  for (const [field, spec] of Object.entries(HARNESS_POST_TOP_LEVEL_FIELDS)) {
-    const problem = spec.check(body[field])
-    if (problem) problems.push(problem)
+  for (const key of Object.keys(body ?? {})) {
+    if (key !== "harness" && key !== "sessionId") problems.push(`unknown field ${key}`)
   }
-
-  const known = new Set([...Object.keys(HARNESS_IDENTITY_FIELDS), ...Object.keys(HARNESS_POST_TOP_LEVEL_FIELDS)])
-  for (const field of Object.keys(body)) {
-    if (known.has(field)) continue
-    problems.push(
-      `unknown field "${field}" — the route's body literal `
-        + `(agent-config-harness-routes.ts:153-162) has no slot for it, so the real server `
-        + `silently DROPS it. Add it server-side, stop sending it, or document it here.`,
-    )
-  }
-
-  if (problems.length > 0) fail(problems)
-
-  // Call the REAL resolver rather than mirroring its id table. `harnessFromRequest`
-  // does `normalizeHarnessIdentity(input ?? fallback)` (agent-config-harness.ts:54),
-  // where `input` is `body.harness`; reproduce exactly that precedence.
-  const identity = normalizeHarnessIdentity(
-    body.harness ?? {
-      id: body.id,
-      access: body.access,
-      type: body.type,
-      binary: body.binary,
-    },
-  )
-  if (!identity) {
-    return fail([
-      `no harness identity resolves from ${JSON.stringify({ harness: body.harness, id: body.id, type: body.type, access: body.access })} — `
-        + `normalizeHarnessIdentity (harness-types.ts:108-123) returned undefined, so the real server `
-        + `answers HTTP ${HARNESS_POST_MISSING_HARNESS.status} ${JSON.stringify(HARNESS_POST_MISSING_HARNESS.code)} `
-        + `and changes NOTHING (agent-config-harness-routes.ts:171).`,
-    ])
-  }
-
-  // `harnessKey` is likewise the real function (harness-types.ts:104-106); it returns
-  // undefined only for an identity with no definition row, which cannot happen for a
-  // value normalizeHarnessIdentity just produced.
-  const activeType = harnessKey(identity) ?? identity.id
+  if (body?.sessionId !== undefined && typeof body.sessionId !== "string") problems.push("sessionId must be a string")
+  if (problems.length || !selection) throw new HarnessConfigContractError(url, problems)
 
   return {
-    identity,
-    activeType,
-    ...(typeof body.binary === "string" ? { binary: body.binary } : {}),
-    ...(typeof body.sessionId === "string" ? { sessionId: body.sessionId } : {}),
-    ...(typeof body.directory === "string" ? { directory: body.directory } : {}),
-    ...(typeof body.workspaceId === "string" ? { workspaceId: body.workspaceId } : {}),
+    selection,
+    ...(typeof body?.sessionId === "string" ? { sessionId: body.sessionId } : {}),
   }
 }
 
-// ---------------------------------------------------------------------------
-// (3) Responses the real route guarantees
-// ---------------------------------------------------------------------------
-
-/**
- * The POST success response, verbatim. BOTH success paths — the per-session write
- * (`setSessionHarness(…); return c.json({ ok: true })`,
- * `agent-config-harness-routes.ts:201-202`) and the global config write
- * (`await saveUserConfig(config); … return c.json({ ok: true })`, `:205-211`) — return
- * exactly this. Hono's `c.json` defaults to 200.
- *
- * There is NO harness status in this response. See
- * `HARNESS_CONTRACT_DIVERGENCES.postReturnsStatus`, which is the single highest-value
- * finding in this file.
- */
 export const HARNESS_POST_SUCCESS = { status: 200, body: { ok: true } } as const
-
-/**
- * `errorBody(code, message)` produces `{ error: { code, message } }`
- * (`claxedo-server-core/src/platform/http/http.ts:3-11`). The two failure codes this route can
- * produce:
- */
-export const HARNESS_POST_MISSING_HARNESS = {
-  status: 400,
-  code: "agent_config_harness_required",
-  /** `if (!body || !next)` — unparseable body OR unresolvable identity (:171). */
-  source: "agent-config-harness-routes.ts:171",
-} as const
-
-export const HARNESS_POST_CHANGE_LOCKED = {
-  status: 409,
-  code: "agent_config_harness_change_locked",
-  /**
-   * Fires when a sessionId + workspace resolve, the requested harness differs from the
-   * current one by `sameHarness` (id, access, and binary — agent-config-harness.ts:47-51),
-   * AND the session already exists in ANY of three stores: an in-memory session config,
-   * `sessionMeta`, or the sandbox (`:189-199`).
-   */
-  source: "agent-config-harness-routes.ts:189-199",
-} as const
-
-/**
- * Both handlers are gated by `localAgentConfigAllowed` FIRST
- * (`agent-config-harness-routes.ts:49-55` for GET, `:146-152` for POST), which delegates
- * to `localOnlyProjectionResponse` (`routes/local-only-projection.ts:117-151`). A
- * loopback request returns undefined and proceeds (:118); a non-loopback request without
- * a bearer token gets the control-plane auth error status, and otherwise 403 (:135-144).
- * The mock never exercises this because Playwright's page origin is loopback.
- */
-export const HARNESS_LOCAL_ONLY_FORBIDDEN = { status: 403 } as const
-
-/**
- * The GET route returns **200 on every path, including its own failure path**: the
- * `catch` at `agent-config-harness-routes.ts:130-142` returns `c.json({… status: "error",
- * error })` with no status override. A spec must therefore never treat a non-200 as the
- * way a harness failure surfaces — the failure is IN the 200 body.
- */
-export const HARNESS_GET_STATUS = 200
-
-/**
- * `status` values the GET body can carry. `"configured"` (:74) and `"error"` (:139) are
- * emitted by the route itself; the workspace path passes `body.status` straight through
- * from `/api/wr/health` (`:109`), which is where `"ready"` and `"applying"` come from.
- * The client only recognises these four — `harnessStatuses` in
- * `claxedo-app/src/features/session/harness/profile.ts:18` — and DROPS anything else.
- */
-export const HARNESS_GET_STATUSES = ["configured", "ready", "applying", "error"] as const
-
-/**
- * Asserts a POST response matches what claxedo-server actually returns.
- *
- * `strict` is OFF by default on purpose. The real route returns `{ ok: true }` and
- * nothing else, but today's mock returns a full harness-status payload
- * (`mock-runtime.ts:1300-1303`) from POST as well as GET. Turning `strict` on is the
- * correct end state and will FAIL the current fixture — which is the point of recording
- * the divergence rather than quietly widening the contract to fit the mock. Leave it off
- * until the fixture is fixed, then delete the flag.
- */
-export function assertHarnessPostResponse(body: unknown, url: string, opts: { strict?: boolean } = {}): void {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new HarnessConfigContractError("POST", url, [`response must be a JSON object, got ${typeOf(body)}`])
-  }
-  const row = body as Record<string, unknown>
-  const problems: string[] = []
-  if (row.ok !== true) {
-    problems.push(`response.ok must be literal true — the route returns c.json({ ok: true }) on every success path`)
-  }
-  if (opts.strict) {
-    for (const field of Object.keys(row)) {
-      if (field === "ok") continue
-      problems.push(
-        `response carries "${field}", which the real route never returns. `
-          + `The client's postHarnessConfig decodes this response with decodeHarnessState `
-          + `(harness-switcher.ts:175), so extra status fields let a spec exercise a `
-          + `"settled from the POST response" path production can never reach.`,
-      )
-    }
-  }
-  if (problems.length > 0) throw new HarnessConfigContractError("POST", url, problems)
-}
-
-/**
- * Asserts a GET response carries the fields every one of the route's three exit paths
- * guarantees: the no-workspace path (`:68-75`), the workspace path (`:102-129`), and the
- * catch path (`:131-141`). All three spread a `SessionHarness` at the top level and emit
- * `harness`, `activeType`, `activeHarness`, `activeBinary` and `status`.
- *
- * Asserted on the MOCK's own response so the fixture cannot drift into returning a shape
- * the real route never produces. Today it DOES — see
- * `HARNESS_CONTRACT_DIVERGENCES.getShapeDrift`.
- */
-export function assertHarnessStatusResponse(body: unknown, url: string): void {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new HarnessConfigContractError("GET", url, [`response must be a JSON object, got ${typeOf(body)}`])
-  }
-  const row = body as Record<string, unknown>
-  const problems: string[] = []
-
-  // The spread `...harness` / `...(saved ?? harness)` puts SessionHarness's own fields
-  // at the top level on every path (:70, :104, :133).
-  for (const [field, spec] of Object.entries(HARNESS_RESULT_FIELDS)) {
-    const problem = spec.check(row[field])
-    if (problem) problems.push(problem)
-  }
-
-  // `harness` and `activeHarness` are whole SessionHarness objects (:69, :72, :103, :118).
-  for (const key of ["harness", "activeHarness"]) {
-    const nested = row[key]
-    if (!nested || typeof nested !== "object" || Array.isArray(nested)) {
-      problems.push(`response.${key} must be a SessionHarness object, got ${typeOf(nested)}`)
-      continue
-    }
-    const nestedRow = nested as Record<string, unknown>
-    for (const [field, spec] of Object.entries(HARNESS_RESULT_FIELDS)) {
-      const problem = spec.check(nestedRow[field])
-      if (problem) problems.push(`${key}.${problem}`)
-    }
-  }
-
-  if (typeof row.activeType !== "string" || row.activeType.length === 0) {
-    problems.push(
-      "response.activeType must be a non-empty string — it is the access-qualified harness KEY "
-        + "and is what `activeHarness(data)` resolves the ACTIVE harness from "
-        + "(profile.ts:59). Omitting it makes desired-vs-active drift unobservable.",
-    )
-  }
-  if (row.activeBinary !== null && typeof row.activeBinary !== "string") {
-    problems.push(`response.activeBinary must be a string or null, got ${typeOf(row.activeBinary)}`)
-  }
-  if (typeof row.status !== "string") {
-    problems.push(`response.status must be a string, got ${typeOf(row.status)}`)
-  } else if (!(HARNESS_GET_STATUSES as readonly string[]).includes(row.status)) {
-    problems.push(
-      `response.status ${JSON.stringify(row.status)} is outside ${JSON.stringify(HARNESS_GET_STATUSES)} — `
-        + "the client's decodeHarnessState DROPS an unrecognised status (profile.ts:89), leaving the "
-        + "harness stuck in whatever state it was already in.",
-    )
-  }
-
-  if (problems.length > 0) throw new HarnessConfigContractError("GET", url, problems)
-}
-
-// ---------------------------------------------------------------------------
-// (4) Recorded divergences between the mock fixture and the real server
-// ---------------------------------------------------------------------------
-
-/**
- * Every difference found while binding this route, with the mock site and the server
- * site. These are NOT approved-forever; they are the work list this binding exists to
- * produce. Nothing here edits `mock-runtime.ts` — that is another change's job.
- */
-export const HARNESS_CONTRACT_DIVERGENCES: Readonly<Record<string, string>> = {
-  postReturnsStatus:
-    "HIGHEST VALUE. The mock returns a full harness-status payload from POST "
-    + "(mock-runtime.ts:1300-1303); the real route returns ONLY `{ ok: true }` "
-    + "(agent-config-harness-routes.ts:202, :211). The client feeds the POST response to "
-    + "decodeHarnessState and then applyPostedStatus (harness-switcher.ts:175, :190-195), so "
-    + "mocked specs can observe a switch settling as ready/error DIRECTLY FROM THE POST — a "
-    + "path production can never take, because decodeHarnessState({ok:true}) yields `{}` and "
-    + "failedHarness({}) is false.",
-  fetchHarnessStatusIsDeadCode:
-    "Consequence of the above, in the OTHER direction: harness-switcher.ts:175 reads "
-    + "`decodeHarnessState(...) ?? await fetchHarnessStatus(...) ?? true`. Against the real "
-    + "server decodeHarnessState returns `{}` — TRUTHY — so the `??` short-circuits and "
-    + "fetchHarnessStatus (:197-211) never runs in production. The mock cannot expose this "
-    + "because it also returns a decodable payload.",
-  getShapeDrift:
-    "The mock's GET returns `{type, model, ok, status, ready}` (mock-runtime.ts:1298-1303). The "
-    + "real GET returns `{harness, id, access, connection?, activeType, activeHarness, "
-    + "activeBinary, status, …}` (agent-config-harness-routes.ts:68-75, :102-129) and never emits "
-    + "`type` or `ok` at all. The client survives only because decodeHarnessState falls back "
-    + "from `id` to `type` (profile.ts:88). With `activeType` absent from the fixture, "
-    + "`activeHarness(data)` collapses onto `data.type` (profile.ts:59), so no spec can catch a "
-    + "desired-vs-active mismatch — the exact failure the field exists to express.",
-  opencodeBranchOmitsStatus:
-    "The mock's opencode branch returns `{type:\"opencode\", ok:true}` with NO `status` and no "
-    + "`ready` (mock-runtime.ts:1302). Every real GET path sets `status` — \"configured\" (:74), "
-    + "the health passthrough (:109), or \"error\" (:139).",
-  changeLockNeverFires:
-    "The mock switches harness unconditionally (mock-runtime.ts:1292). The real server answers "
-    + "HTTP 409 `agent_config_harness_change_locked` when a session already exists and the "
-    + "harness identity or binary differs (agent-config-harness-routes.ts:189-199). Specs that "
-    + "switch harness on an EXISTING session are asserting behaviour the real server rejects.",
-  binaryIgnored:
-    "The mock reads only `body.type` (mock-runtime.ts:1286, :1292) and drops `binary`, "
-    + "`sessionId` and `directory`. The real server turns `binary` into "
-    + "`connection.kind === \"process\"` (agent-config-harness.ts:66-67) and compares it in "
-    + "`sameHarness` (:47-51), and routes on `sessionId`/`directory` "
-    + "(agent-config-harness-routes.ts:172-181) to choose per-session vs global persistence.",
-  legacyKeyEcho:
-    "The mock echoes back the posted string verbatim. The real server re-derives the key: it "
-    + "normalizes \"claude-sdk\"/\"codex-app-server\"/\"cursor-sdk\" to {id, access} "
-    + "(harness-types.ts:129-131) and then emits `activeType = harnessKey(saved)` "
-    + "(agent-config-harness-routes.ts:117), which is the CANONICAL key \"claude\"/\"codex\"/"
-    + "\"cursor\". The app posts the legacy spellings (HARNESS_IDS, "
-    + "claxedo-app/src/platform/identity/session-ref.ts:12-21), so the string that comes back "
-    + "from a real server is NOT the string that went out.",
-  missingBodyIsA400:
-    "The mock tolerates an unparseable body and falls through to a 200 (mock-runtime.ts:1287-1292). "
-    + "The real route returns HTTP 400 `agent_config_harness_required` "
-    + "(agent-config-harness-routes.ts:162, :171).",
-}

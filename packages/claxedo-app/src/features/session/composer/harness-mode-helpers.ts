@@ -32,7 +32,7 @@ export function createComposerHarnessMode(deps: {
     const mode = deps.composerMode()
     if (mode.kind === "session") return composerHarnessId(mode)
     const harness = deps.harnessController.harness(scope)
-    return harness === "opencode" ? composerHarnessId(mode) : harness
+    return harness ?? composerHarnessId(mode)
   }
   return { isHarnessMode, toolbarHarnessMode, harnessReadiness, harnessReadyForSubmit, currentHarnessType }
 }

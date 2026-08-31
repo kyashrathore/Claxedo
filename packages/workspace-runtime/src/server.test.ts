@@ -373,71 +373,6 @@ describe("workspace runtime host route auth", () => {
     }
   })
 
-  test("global diagnostics report runner degradation without changing public health liveness", async () => {
-    const originalListSessions = AcpHarnessAdapter.prototype.listSessions
-    const originalReadRuntimeHealth = AcpHarnessAdapter.prototype.readRuntimeHealth
-    const healthContexts: Array<{ sessionId?: string } | undefined> = []
-    AcpHarnessAdapter.prototype.listSessions = async () => []
-    AcpHarnessAdapter.prototype.readRuntimeHealth = (_directory: string, context?: { sessionId?: string }) => {
-      healthContexts.push(context)
-      return {
-        status: "degraded",
-        reason: "harness_process_lost",
-        message: "ACP session process restarted",
-        sessions: [{ id: "s1", status: "recovering", message: "ACP session process restarted" }],
-      }
-    }
-    const runtime = createWorkspaceRuntimeApp({
-      exposure: loopbackWorkspaceRuntimeExposure(),
-      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
-    })
-    try {
-      const status = await runtime.app.request("http://localhost/session/status")
-      expect(status.status).toBe(200)
-
-      const diagnostics = await Promise.resolve(runtime.app.request("http://localhost/global/health")).then((res: Response) => res.json())
-      expect(diagnostics).toMatchObject({
-        ok: false,
-        status: "ready",
-        healthStatus: "degraded",
-        harnessHealth: {
-          status: "degraded",
-          reason: "harness_process_lost",
-          sessions: [{ id: "s1", status: "recovering" }],
-        },
-      })
-      const health = await (await runtime.app.request("http://localhost/api/wr/health?sessionId=s1")).json() as Record<string, unknown>
-      // Liveness semantics are unchanged by degradation: a degraded harness on a
-      // live runtime still reports ok:true/status:"ready". Only the harness-health
-      // detail (forwarded for the composer health peek) reflects the degradation.
-      expect(health).toMatchObject({
-        ok: true,
-        status: "ready",
-        service: "workspace-runtime",
-        agentType: "openclaw",
-        harnessHealth: {
-          status: "degraded",
-          reason: "harness_process_lost",
-          sessions: [{ id: "s1", status: "recovering" }],
-        },
-      })
-      expect(health).toHaveProperty("acpBinary")
-      expect(health).toHaveProperty("error")
-      // The heavy diagnostics fields stay on /global/health only.
-      expect(health).not.toHaveProperty("healthStatus")
-      expect(health).not.toHaveProperty("capabilities")
-      expect(health).not.toHaveProperty("directory")
-      expect(health).not.toHaveProperty("workspaceId")
-      expect(health).not.toHaveProperty("ptyCount")
-      expect(health).not.toHaveProperty("processCount")
-      expect(healthContexts).toContainEqual({ sessionId: "s1" })
-    } finally {
-      AcpHarnessAdapter.prototype.listSessions = originalListSessions
-      AcpHarnessAdapter.prototype.readRuntimeHealth = originalReadRuntimeHealth
-      await runtime.host.dispose()
-    }
-  })
-
   test("health reports the effective auth boundary and service exposure", async () => {
     const local = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
     const relayed = createWorkspaceRuntimeApp({
@@ -532,9 +467,10 @@ describe("workspace runtime host route auth", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          version: 1,
+          version: 3,
           mcp: {},
-          runner: { type: "opencode" },
+          connections: [],
+          defaultHarness: { kind: "native", harnessId: "pi" },
           auth: {},
         }),
       })
@@ -672,9 +608,10 @@ describe("workspace runtime host route auth", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          version: 1,
+          version: 3,
           mcp: {},
-          runner: { type: "opencode" },
+          connections: [],
+          defaultHarness: { kind: "native", harnessId: "pi" },
           auth: {},
         }),
       })
@@ -927,6 +864,26 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
     }
   })
 
+  test("creates a native session before its initial config exists", async () => {
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: loopbackWorkspaceRuntimeExposure(),
+      harness: { kind: "native", harnessId: "pi" },
+    })
+    try {
+      const created = await runtime.app.request("http://localhost/session?nativeHarness=pi", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ id: "session-pi-create", title: "Pi create" }),
+      })
+      expect(created.status).toBe(201)
+      const config = await runtime.app.request("http://localhost/session/session-pi-create/config")
+      expect(config.status).toBe(200)
+      expect(await config.json()).toMatchObject({ harness: { id: "pi", access: "native" } })
+    } finally {
+      await runtime.host.dispose()
+    }
+  })
+
   test("mounts /api/wr/session-env behind the app middleware", async () => {
     const runtime = createWorkspaceRuntimeApp({ exposure: loopbackWorkspaceRuntimeExposure() })
     try {
@@ -990,9 +947,10 @@ describe("relay-host auth middleware (characterization)", () => {
           "content-type": "application/json",
         },
         body: JSON.stringify({
-          version: 1,
+          version: 3,
           mcp: {},
-          runner: { type: "opencode" },
+          connections: [],
+          defaultHarness: { kind: "native", harnessId: "pi" },
           auth: {},
         }),
       })

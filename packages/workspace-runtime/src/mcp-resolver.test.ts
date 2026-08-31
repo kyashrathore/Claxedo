@@ -40,7 +40,7 @@ describe("mcp resolver", () => {
     const state = await mod.loadManagedMcpState(4310)
     const out = mod.resolveEffectiveMcp({
       state,
-      agent: "opencode",
+      agent: "claude",
       control: "generated-config",
       userMcp: {
         remote: {
@@ -59,15 +59,8 @@ describe("mcp resolver", () => {
     })
   })
 
-  test("mcpControl uses explicit options instead of ambient OPENCODE_URL", () => {
-    const prev = process.env.OPENCODE_URL
-    process.env.OPENCODE_URL = "http://ambient-opencode.test"
-    try {
-      expect(mod.mcpControl("opencode")).toBe("managed")
-      expect(mod.mcpControl("opencode", { externalOpencode: true })).toBe("external-unmanaged")
-    } finally {
-      if (prev === undefined) delete process.env.OPENCODE_URL
-      else process.env.OPENCODE_URL = prev
-    }
+  test("mcpControl is provider-neutral", () => {
+    expect(mod.mcpControl("claude")).toBe("managed")
+    expect(mod.mcpControl("gemini")).toBe("generated-config")
   })
 })

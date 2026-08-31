@@ -1,5 +1,6 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { HarnessType } from "./profile"
+import { sameHarnessSelection } from "@/platform/identity/harness-selection"
 
 export type DraftDefaultPair = {
   readonly harness: HarnessType
@@ -8,7 +9,7 @@ export type DraftDefaultPair = {
 
 export type DraftDefaultResult = DraftDefaultPair & {
   readonly state: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement"
-  readonly source: "saved" | "harness-default" | "pi-opencode" | "pi-provider-default" | "placement-default"
+  readonly source: "saved" | "harness-default" | "pi-provider-default" | "placement-default"
   readonly blockedModel?: ModelKey
 }
 
@@ -17,7 +18,6 @@ export type ResolveDraftDefaultInput = {
   readonly supportedHarnesses: readonly HarnessType[]
   readonly eligibleModels: readonly ModelKey[]
   readonly declaredDefaultModel?: ModelKey
-  readonly openCodeModel?: ModelKey
   readonly connectedProviderIDs?: readonly string[]
   readonly providerDefaults?: Readonly<Record<string, string | undefined>>
   readonly placementDefault?: DraftDefaultPair
@@ -36,11 +36,12 @@ export type DraftDefaultOwner = DraftDefaultApplication & {
 }
 
 export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefaultResult {
-  if (!input.supportedHarnesses.includes(input.saved.harness)) {
-    const placementDefault = input.placementDefault ?? {
-      harness: input.supportedHarnesses.includes("opencode")
-        ? "opencode"
-        : (input.supportedHarnesses[0] ?? "opencode"),
+  if (!input.supportedHarnesses.some((item) => sameHarnessSelection(item, input.saved.harness))) {
+    const placementDefault = input.placementDefault
+    if (!placementDefault) return {
+      harness: input.saved.harness,
+      state: "unsupported-placement",
+      source: "placement-default",
     }
     return {
       ...placementDefault,
@@ -59,18 +60,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       source: "saved",
     }
   }
-  if (
-    input.saved.harness === "pi" &&
-    eligible(input.eligibleModels, input.openCodeModel)
-  ) {
-    return {
-      harness: "pi",
-      model: input.openCodeModel,
-      state: "ready",
-      source: "pi-opencode",
-    }
-  }
-  if (input.saved.harness === "pi") {
+  if (input.saved.harness.kind === "native" && input.saved.harness.harnessId === "pi") {
     const defaults = [...new Set(input.connectedProviderIDs ?? [])]
       .map((providerID) => {
         const modelID = input.providerDefaults?.[providerID]
@@ -80,7 +70,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       .filter((model) => eligible(input.eligibleModels, model))
     if (defaults.length === 1) {
       return {
-        harness: "pi",
+        harness: input.saved.harness,
         model: defaults[0],
         state: "ready",
         source: "pi-provider-default",
@@ -88,7 +78,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
     }
   }
   if (
-    input.saved.harness !== "pi" &&
+    !(input.saved.harness.kind === "native" && input.saved.harness.harnessId === "pi") &&
     eligible(input.eligibleModels, input.declaredDefaultModel)
   ) {
     return {

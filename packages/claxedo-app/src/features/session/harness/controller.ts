@@ -3,7 +3,6 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessModelChoice, HarnessReadiness } from "./selection"
 import type { HarnessModelOption, HarnessType } from "./profile"
 import type { DraftDefaultLabels } from "./draft-defaults"
-import type { AcpConnectionRow } from "./acp-connections"
 import type { DraftDefaultResult, DraftDefaultAuthority, ResolveDraftDefaultInput } from "./draft-default-policy"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 
@@ -30,16 +29,12 @@ export type HarnessSelectionControllerStore = {
   probeHealth(scope: string, input?: HarnessScopeInput): void | Promise<void>
   /** Transition a never-settling harness to the terminal "error" readiness. */
   markUnavailable(scope: string): void
-  setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string): void | Promise<void>
+  setHarness(scope: string, type: HarnessType, input?: HarnessScopeInput): void | Promise<void>
   setModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | Promise<void>
   setThoughtLevel(scope: string, value: string | undefined): void
   rememberDraftModel(scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels): void | boolean
   resolveDraftDefault(scope: string, input: Omit<ResolveDraftDefaultInput, "saved">): boolean
-  /** Sanitized operator-ACP discovery rows (the picker's dynamic ACP group). */
-  enabledAcpConnections(): AcpConnectionRow[]
-  acpConnectionLabel(key: string): string | undefined
-  refreshAcpConnections(): Promise<void>
-  harness(scope: string): HarnessType
+  harness(scope: string): HarnessType | undefined
   isHarnessMode(scope: string): boolean
   readiness(scope: string): HarnessReadiness
   models(scope: string): HarnessModelChoice[]
@@ -65,7 +60,7 @@ export type HarnessSubmitControllerStore = HarnessSelectionControllerStore & {
 }
 
 export type HarnessSelectionSnapshot = {
-  harness: HarnessType
+  harness?: HarnessType
   isHarnessMode: boolean
   readiness: HarnessReadiness
   models: HarnessModelChoice[]
@@ -111,8 +106,8 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
     reprobe: (scope: string, input?: HarnessScopeInput) => store.reprobe(scope, input),
     probeHealth: (scope: string, input?: HarnessScopeInput) => store.probeHealth(scope, input),
     markUnavailable: (scope: string) => store.markUnavailable(scope),
-    setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string) =>
-      store.setHarness(scope, type, input, binary),
+    setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>
+      store.setHarness(scope, type, input),
     setModel: (scope: string, model: ModelKey, input?: HarnessScopeInput, labels?: DraftDefaultLabels) =>
       store.setModel(scope, model, input, labels),
     setThoughtLevel: (scope: string, value: string | undefined) => store.setThoughtLevel(scope, value),
@@ -120,9 +115,6 @@ export function createHarnessSelectionController(store: HarnessSelectionControll
       store.rememberDraftModel(scope, model, input, labels),
     resolveDraftDefault: (scope: string, input: Omit<ResolveDraftDefaultInput, "saved">) =>
       store.resolveDraftDefault(scope, input),
-    enabledAcpConnections: () => store.enabledAcpConnections(),
-    acpConnectionLabel: (key: string) => store.acpConnectionLabel(key),
-    refreshAcpConnections: () => store.refreshAcpConnections(),
   }
 }
 
@@ -130,15 +122,15 @@ export type HarnessSelectionController = ReturnType<typeof createHarnessSelectio
 
 export function createHarnessSubmitController(store: HarnessSubmitControllerStore | undefined) {
   return {
-    harness: (scope: string): HarnessType => store?.harness(scope) ?? "opencode",
+    harness: (scope: string): HarnessType | undefined => store?.harness(scope),
     isHarnessMode: (scope: string) => store?.isHarnessMode(scope) ?? false,
-    readiness: (scope: string): HarnessReadiness => store?.readiness(scope) ?? "ready",
-    readyForSubmit: (scope: string) => store?.harnessReadyForSubmit(scope) ?? true,
+    readiness: (scope: string): HarnessReadiness => store?.readiness(scope) ?? "unresolved",
+    readyForSubmit: (scope: string) => store?.harnessReadyForSubmit(scope) ?? false,
     modelKeyForSubmit: (scope: string) => store?.harnessModelKeyForSubmit(scope),
     claimSession: (scope: string, input: HarnessSessionClaimInput) =>
       store?.claimSession(scope, input) ?? Promise.resolve(undefined),
-    setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput, binary?: string) =>
-      store?.setHarness(scope, type, input, binary) ?? Promise.resolve(),
+    setHarness: (scope: string, type: HarnessType, input?: HarnessScopeInput) =>
+      store?.setHarness(scope, type, input) ?? Promise.resolve(),
     promote: (from: string, to: string) => store?.promote(from, to),
   }
 }

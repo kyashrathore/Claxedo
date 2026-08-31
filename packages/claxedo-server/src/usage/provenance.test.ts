@@ -36,7 +36,7 @@ describe("usage provenance", () => {
   })
 
   test("maps every TokenTracker-backed Claxedo harness family to its native source", () => {
-    expect(["claude-sdk", "codex-app-server", "cursor-sdk", "opencode", "pi"].map(tokenTrackerSourceForHarness))
-      .toEqual(["claude", "codex", "cursor", "opencode", "pi"])
+    expect(["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "connection"].map(tokenTrackerSourceForHarness))
+      .toEqual(["claude", "codex", "cursor", "pi", undefined])
   })
 })

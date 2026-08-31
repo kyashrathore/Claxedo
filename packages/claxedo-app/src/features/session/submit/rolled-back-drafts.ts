@@ -1,4 +1,4 @@
-// Short-lived registry of draft IDs whose `createOpencodeSessionWithLifecycle`
+// Short-lived registry of draft IDs whose `createSessionWithLifecycle`
 // wrapper already rolled back. Rubric C7: a `created` lifecycle event arriving
 // at `T = grace + epsilon` is too late for the wrapper to recover, but it
 // still passes through the GlobalSync subscriber which would otherwise insert

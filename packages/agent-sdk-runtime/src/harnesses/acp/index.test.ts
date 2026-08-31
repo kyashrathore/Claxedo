@@ -178,17 +178,17 @@ describe("AcpHarnessAdapter runtime health isolation", () => {
           id: "other-acp",
           status: "recovering",
           recovery_error: "other ACP process stopped",
-          config: { harness: { id: "gemini", access: "acp" } },
+          config: { harness: { id: "gemini", access: "connection" } },
         },
         {
           id: "openclaw-idle",
           status: "idle",
-          config: { harness: { id: "openclaw", access: "acp" } },
+          config: { harness: { id: "openclaw", access: "connection" } },
         },
       ],
     })
     const item = new AcpHarnessAdapter({
-      binary: "openclaw",
+      connection: { kind: "process", command: "openclaw" },
       harness: "openclaw",
       store,
     })
@@ -204,11 +204,11 @@ describe("AcpHarnessAdapter runtime health isolation", () => {
         recovery_error: "OpenClaw process stopped",
       }],
       getSessionConfig: (id) => id === "openclaw-recovering"
-        ? { harness: { id: "openclaw", access: "acp" } }
+        ? { harness: { id: "openclaw", access: "connection" } }
         : null,
     })
     const item = new AcpHarnessAdapter({
-      binary: "openclaw",
+      connection: { kind: "process", command: "openclaw" },
       harness: "openclaw",
       store,
     })
@@ -225,33 +225,32 @@ describe("AcpHarnessAdapter runtime health isolation", () => {
     })
   })
 
-  test("an exact-session health read ignores an older recovering session from the same ACP harness", () => {
+  test("an exact-session health read ignores a three-day-old recovering session without an active turn", () => {
+    const threeDaysAgo = Date.now() - (3 * 24 * 60 * 60 * 1_000)
     const store = fakeRuntimeStore({
       listSessions: () => [
         {
           id: "old-openclaw",
           status: "recovering",
           recovery_error: "old OpenClaw process stopped",
-          config: { harness: { id: "openclaw", access: "acp" } },
+          time: { created: threeDaysAgo, updated: threeDaysAgo },
+          config: { harness: { id: "openclaw", access: "connection" } },
         },
         {
           id: "current-openclaw",
           status: "idle",
-          config: { harness: { id: "openclaw", access: "acp" } },
+          config: { harness: { id: "openclaw", access: "connection" } },
         },
       ],
     })
     const item = new AcpHarnessAdapter({
-      binary: "openclaw",
+      connection: { kind: "process", command: "openclaw" },
       harness: "openclaw",
       store,
     })
 
     expect(item.readRuntimeHealth(path.resolve("/work"), { sessionId: "current-openclaw" })).toEqual({ status: "ok" })
-    expect(item.readRuntimeHealth(path.resolve("/work"), { sessionId: "old-openclaw" })).toMatchObject({
-      status: "degraded",
-      sessions: [{ id: "old-openclaw" }],
-    })
+    expect(item.readRuntimeHealth(path.resolve("/work"), { sessionId: "old-openclaw" })).toEqual({ status: "ok" })
   })
 
 })
@@ -259,10 +258,13 @@ describe("AcpHarnessAdapter runtime health isolation", () => {
 describe("AcpHarnessAdapter active turn cleanup", () => {
   test("process keys are opaque fingerprints without raw launch secrets", () => {
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: {
+        kind: "process",
+        command: "fake-acp",
+        args: ["--api-key", "arg-secret"],
+        env: { ACP_TOKEN: "env-secret" },
+      },
       harness: "codex",
-      args: ["--api-key", "arg-secret"],
-      env: { ACP_TOKEN: "env-secret" },
       store: {} as AcpRuntimeStore,
     })
     const item = internalsOf<{
@@ -291,7 +293,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       currentModel: string
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       store: { getSessionOwnerKey: (id: string) => string | null }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       processes: Map<string, unknown>
@@ -302,7 +304,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.currentEnv = { ACP_TOKEN: "old" }
     item.currentMcp = []
     item.currentModel = ""
-    item.options = { binary: "fake-acp", harness: "openclaw-active" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "openclaw-active" }
     item.store = {
       getSessionOwnerKey() {
         return "old-stored-key"
@@ -339,7 +341,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
       currentModel: string
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       store: {
         getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
@@ -354,7 +356,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.currentEnv = {}
     item.currentMcp = []
     item.currentModel = ""
-    item.options = { binary: "fake-acp", harness: "test-acp" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.store = {
       getAgentSessionId() {
         return "agent-session-1"
@@ -376,7 +378,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     item.sessionProcesses = new Map([["s1", "process-key"], ["s2", "process-key"]])
     item.permissionOwners = new Map([["perm-1", proc]])
 
-    const result = await item.abort("s1", path.resolve("/work"))
+    const result = await item.abort(executionBinding("s1", path.resolve("/work")))
 
     expect(result).toEqual({
       ok: false,
@@ -429,7 +431,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
 
-    await item.deleteSession("s1", path.resolve("/work"))
+    await item.deleteSession(executionBinding("s1", path.resolve("/work")))
 
     expect(calls).toEqual([])
     expect(item.processes.has("process-key")).toBe(true)
@@ -473,7 +475,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
 
-    await item.deleteSession("s1", path.resolve("/work"))
+    await item.deleteSession(executionBinding("s1", path.resolve("/work")))
 
     expect(calls).toEqual(["dispose"])
     expect(item.processes.has("process-key")).toBe(false)
@@ -494,15 +496,18 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     }
     const item = new AcpHarnessAdapter({
-      binary: "remote-acp",
+      connection: {
+        kind: "process",
+        command: "remote-acp",
+        args: ["--stdio"],
+        env: { ACP_TOKEN: "secret" },
+      },
       harness: "openclaw",
-      args: ["--stdio"],
-      env: { ACP_TOKEN: "secret" },
       store: {} as AcpRuntimeStore,
       createTransport(input) {
         calls.push({
           directory: input.directory,
-          binary: input.binary,
+          command: input.command,
           args: input.args,
           model: input.model,
           env: input.env,
@@ -519,7 +524,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     expect(calls).toEqual([
       {
         directory: process.cwd(),
-        binary: "remote-acp",
+        command: "remote-acp",
         args: ["--stdio"],
         model: "",
         env: { ACP_TOKEN: "secret" },
@@ -553,10 +558,13 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       dispose() {},
     })
     const adapter = new AcpHarnessAdapter({
-      binary: "/safe/bin/openclaw",
+      connection: {
+        kind: "process",
+        command: "/safe/bin/openclaw",
+        args: ["--token", sentinel],
+        env: { TOKEN: sentinel },
+      },
       harness: "openclaw",
-      args: ["--token", sentinel],
-      env: { TOKEN: sentinel },
       store: {} as AcpRuntimeStore,
       createTransport,
       processObserver,
@@ -596,12 +604,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const store = new MemoryRuntimeStore()
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "native-1" })
     store.updateSessionConfig("s1", {
-      harness: { id: "codex", access: "acp" },
+      harness: { id: "codex", access: "connection" },
       model: { providerID: "codex", modelID: "gpt-5.5" },
       variant: "medium",
       agent: "build",
     })
-    const item = new AcpHarnessAdapter({ binary: "example-acp", harness: "example", store })
+    const item = new AcpHarnessAdapter({ connection: { kind: "process", command: "example-acp" }, harness: "example", store })
     item.setModel("gpt-5.5")
     internalsOf<{
       entryForSession: () => { proc: { alive: boolean; syncSession: () => Promise<void> } }
@@ -612,7 +620,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     })
 
-    await expect(item.updateSessionConfig("s1", { variant: "high" }, path.resolve("/work")))
+    await expect(item.updateSessionConfig(executionBinding("s1", path.resolve("/work")), { variant: "high" }))
       .rejects.toThrow("model rejected")
     expect(store.getSessionConfig("s1")?.variant).toBe("medium")
     item.dispose()
@@ -646,7 +654,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       _sendMessage: (id: string, input: unknown, directory: string, t0: number) => AsyncIterable<unknown>
     })._sendMessage("s1", {
       parts: [],
-      model: { providerID: "acp:example", modelID: "gpt-5.5" },
+      model: { providerID: "connection:example", modelID: "gpt-5.5" },
     } as never, path.resolve("/work"), Date.now())) {
       break
     }
@@ -699,7 +707,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     process.env.CLAXEDO_ACP_NEW_SESSION_TIMEOUT_MS = "5"
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentModel: string
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       store: {
         getSession: () => unknown
         bindSession: () => void
@@ -714,7 +722,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }>
     const calls: string[] = []
     item.currentModel = ""
-    item.options = { binary: "fake-acp", harness: "test-acp" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.store = {
       getSession: () => undefined,
       bindSession() {
@@ -767,7 +775,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       getOrSpawnProcess: () => Promise<{
         proc: {
@@ -782,7 +790,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       }>
     }>
     const calls: string[] = []
-    item.options = { binary: "fake-acp", harness: "test-acp" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.store = {
       getAgentSessionId() {
@@ -823,12 +831,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     try {
       const events: string[] = []
-      for await (const event of item.sendMessage("s1", {
+      for await (const event of executeTestTurn(item, "s1", {
         parts: [{ type: "text", text: "hello" }],
         userMessageId: "user-1",
         assistantMessageId: "assistant-1",
         agent: "build",
-        model: { providerID: "acp:example", modelID: "default" },
+        model: { providerID: "connection:example", modelID: "default" },
       }, path.resolve("/work"))) {
         events.push(event.type)
       }
@@ -860,7 +868,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       getOrSpawnProcess: () => Promise<{
         proc: {
@@ -875,7 +883,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       }>
     }>
     const calls: string[] = []
-    item.options = { binary: "fake-acp", harness: "test-acp" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.store = {
       getAgentSessionId() {
@@ -914,12 +922,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     try {
       const events: string[] = []
-      for await (const event of item.sendMessage("s1", {
+      for await (const event of executeTestTurn(item, "s1", {
         parts: [{ type: "text", text: "hello" }],
         userMessageId: "user-1",
         assistantMessageId: "assistant-1",
         agent: "build",
-        model: { providerID: "acp:example", modelID: "default" },
+        model: { providerID: "connection:example", modelID: "default" },
       }, path.resolve("/work"))) {
         events.push(event.type)
       }
@@ -946,7 +954,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       sessions: Map<string, { directory: string; proc: unknown; init: null }>
       probe: null
@@ -969,7 +977,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }>
 
     const calls: string[] = []
-    item.options = { binary: "fake-acp", harness: "test-acp" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.sessions = new Map()
     item.probe = null
@@ -1011,12 +1019,12 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }
     item.getOrSpawnProcess = async () => ({ proc, isNew: false })
 
-    const iter = item.sendMessage("s1", {
+    const iter = executeTestTurn(item, "s1", {
       parts: [{ type: "text", text: "hello" }],
       userMessageId: "user-1",
       assistantMessageId: "assistant-1",
       agent: "build",
-      model: { providerID: "acp:openclaw-active", modelID: "default" },
+      model: { providerID: "connection:openclaw-active", modelID: "default" },
     }, path.resolve("/work"))[Symbol.asyncIterator]()
 
     expect((await iter.next()).value?.type).toBe("session.status")
@@ -1061,7 +1069,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       currentEnv: Record<string, string>
       currentMcp: unknown[]
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       restart: () => void
     }>
@@ -1069,7 +1077,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const calls: string[] = []
     item.currentEnv = { OPENAI_API_KEY: "sk-same" }
     item.currentMcp = []
-    item.options = { binary: "fake-acp", harness: "test-acp" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "test-acp" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.turnLifecycle.enter("s1")
     item.turnLifecycle.set("s1", {
@@ -1094,14 +1102,21 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
         currentEnv: Record<string, string>
         currentMcp: unknown[]
-        options: { binary: string; harness: string; supportsMcpServers?: boolean }
+        options: { connection: { kind: "process"; command: string; supportsMcpServers?: boolean }; harness: string }
         turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
         restart: () => void
         forgetSessionProcessBindings: () => void
       }>
       item.currentEnv = {}
       item.currentMcp = []
-      item.options = { binary: "fake-acp", harness: "openclaw-mcp", ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}) }
+      item.options = {
+        connection: {
+          kind: "process",
+          command: "fake-acp",
+          ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+        },
+        harness: "openclaw-mcp",
+      }
       item.turnLifecycle = createSessionTurnLifecycle()
       const calls: string[] = []
       item.restart = () => calls.push("restart")
@@ -1144,14 +1159,14 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     }) as typeof clearInterval
 
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
-      options: { binary: string; harness: string }
+      options: { connection: { kind: "process"; command: string }; harness: string }
       turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
       sessions: Map<string, unknown>
       probe: null
       getOrSpawnProbe: () => Promise<{ alive: boolean; cachedConfigOptions: unknown[] | null }>
       boot: () => Promise<string>
     }>
-    item.options = { binary: "fake-acp", harness: "openclaw-probe" }
+    item.options = { connection: { kind: "process", command: "fake-acp" }, harness: "openclaw-probe" }
     item.turnLifecycle = createSessionTurnLifecycle()
     item.sessions = new Map()
     item.probe = null
@@ -1207,7 +1222,7 @@ describe("AcpHarnessAdapter fork support", () => {
       },
     })
 
-    await expect(item.forkSession("s1", "m1", path.resolve("/work"))).rejects.toThrow(
+    await expect(item.forkSession(executionBinding("s1", path.resolve("/work")), "m1")).rejects.toThrow(
       "ACP agent does not advertise session fork support",
     )
     expect(calls).toEqual([])
@@ -1253,7 +1268,7 @@ describe("AcpHarnessAdapter fork support", () => {
       },
     })
 
-    const result = await item.forkSession("s1", "m1", path.resolve("/work"))
+    const result = await item.forkSession(executionBinding("s1", path.resolve("/work")), "m1")
 
     expect(typeof result.id).toBe("string")
     expect(calls).toEqual([

@@ -49,7 +49,7 @@ Literal toast bodies observed, verbatim:
 This is the exact signature the task brief pre-diagnosed: 404 then 503,
 because the scratch `CLAXEDO_DATA_DIR`'s embedded server has never
 registered the repo directory that the **Dev channel's real** store
-(`~/Library/Application Support/ai.claxedo.desktop.dev/opencode.global.dat.json`)
+(`~/Library/Application Support/ai.claxedo.desktop.dev/claxedo.global.dat.json`)
 already lists as a project. It is a harness isolation gap, not a product
 regression — but it means the lane's own evidence is currently self-failing
 by the plan's Phase 0 rule ("an assertion that can pass while the feature is
@@ -184,7 +184,7 @@ was scoped around.
   only their scenario's intended negative-path fixture.
 - The already-established, non-product-defect cause for the toast (stated in
   the task brief and consistent with everything seen here): the Dev channel
-  store at `~/Library/Application Support/ai.claxedo.desktop.dev/opencode.global.dat.json`
+  store at `~/Library/Application Support/ai.claxedo.desktop.dev/claxedo.global.dat.json`
   already lists the repo as a project; the e2e harness gives the app a
   fresh, empty `CLAXEDO_DATA_DIR`, so its scratch embedded server has never
   registered that directory → 404 then 503 → stacked toasts.

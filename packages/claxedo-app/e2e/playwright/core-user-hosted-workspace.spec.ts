@@ -192,8 +192,8 @@ const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
 // Runtime-native session id (NOT `ses_`-prefixed): the relay `/api/wr/runtime-events`
 // lane is consumed by global-sdk's runtime loop, which gates every frame on
-// `runtimeProjectionOwnsCompat` → `runtimeOwnsOpencodeCompatProjection`
-// (`packages/agent-event-runtime/.../opencode-compat/ownership.ts`), and that
+// `runtimeProjectionOwnsCompat` → `runtimeOwnsClientPresentationProjection`
+// (`packages/agent-event-runtime/.../client-presentation/ownership.ts`), and that
 // returns `false` for any `ses_`-prefixed id (those are OpenCode-legacy sessions
 // whose compat frames arrive on the classic `/global/event` loop instead). A
 // `ses_` id here would make the runtime consumer `continue` past every frame, so
@@ -318,12 +318,12 @@ async function seedProject(page: Page, opts: { registerWorkspace: boolean; model
       model?: typeof BIG_PICKLE
     }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: input.dir,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: {
@@ -384,7 +384,7 @@ async function installUserHostedRuntimeMock(
   // `${relayUrl}/workspaces/:id/api/wr/runtime-events` and reads each frame with
   // `runtimeEnvelope` — a `{contractVersion, directory, sessionId,
   // assistantMessageId?, payload: AgentRuntimeEvent}` shape run through
-  // `createOpencodeCompatProjection`. For a workspace-routed session the classic
+  // `createClientPresentationProjection`. For a workspace-routed session the classic
   // `/global/event` loop short-circuits (`workspaceRuntimeOwnsLiveEvents()` →
   // idle), so this lane is the ONLY channel that drives the turn. Frames go here,
   // NOT on `sessionBus` (whose `/global/event` route the app never polls for this
@@ -572,10 +572,8 @@ async function installUserHostedRuntimeMock(
     // now reads GET /api/claxedo/session) — control-plane discovery like the
     // session-list above, not the per-workspace runtime lane.
     if (isSessionInventoryPath(url.pathname)) return json(route, { sessions: [] })
-    // Saved ACP connection registry (config-driven harness picker) — polled on
-    // composer mounts against the control plane regardless of any workspace's
-    // readiness; same category as `/provider` below.
-    if (url.pathname === "/api/claxedo/agent-config/harness/acp-connections") {
+    // Sanitized generic agent-connection discovery.
+    if (url.pathname === "/api/claxedo/agent-config/connections") {
       return json(route, { connections: [] })
     }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
@@ -756,7 +754,7 @@ async function installUserHostedRuntimeMock(
         return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
       }
       if (/^\/session\/[^/]+\/capabilities$/.test(runtimePath)) {
-        return json(route, { transport: "opencode", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
+        return json(route, { transport: "runtime", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
       }
       // The SESSION-scoped half of the same contract. `getPermissionModes`
       // (platform/runtime/agent/agent-runtime-client.ts) switches from the
@@ -801,7 +799,7 @@ async function installUserHostedRuntimeMock(
         // the runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
         // (src/context/global-sdk.tsx) validates — the canonical `contractVersion`,
         // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
-        // `AgentRuntimeEvent` variant — then handed to `createOpencodeCompatProjection`.
+        // `AgentRuntimeEvent` variant — then handed to `createClientPresentationProjection`.
         // The `session-status: busy` → `finish` pair drives the app's turn
         // busy→settled transition, and the settle re-fetches the message list over
         // the relay lane (which now carries the `${userID}_r` assistant row), which
@@ -1036,7 +1034,7 @@ test.describe("core user-hosted workspace @core", () => {
   // CONTRACT-V4 AgentRuntimeEvent frames on the relay `/api/wr/runtime-events` lane
   // (`{contractVersion:4, directory, sessionId, assistantMessageId, payload}`), which
   // global-sdk's runtime loop reads via `runtimeEnvelope` and runs through
-  // `createOpencodeCompatProjection`. The `session-status: busy` → `finish` pair
+  // `createClientPresentationProjection`. The `session-status: busy` → `finish` pair
   // settles the turn, and the settle re-fetches the message list over the relay lane
   // (now carrying the `${userID}_r` assistant row) — see `installUserHostedRuntimeMock`
   // above. The runtime-native session id (`SESSION_ID` = `run_...`, not `ses_...`) is

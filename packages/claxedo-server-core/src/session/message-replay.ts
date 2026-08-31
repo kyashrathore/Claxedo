@@ -569,7 +569,7 @@ export function readSessionMaxEventOrdinal(sessionId: string): number {
 
 /**
  * Subscribe to a globalBus and persist message events for all sources that
- * publish OpenCode-shaped compatibility events into this process. This is the
+ * publish client-presentation events into this process. This is the
  * convergence point for events already on the central bus; workspace-runtime
  * canonical events remain per-workspace unless an explicit publisher bridges
  * them here.

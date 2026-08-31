@@ -18,7 +18,7 @@ harness-native event frame
   -> harness event adapter
   -> AgentRuntimeEvent
   -> RuntimeProjection
-  -> host view / debug trace / OpenCode compatibility stream
+  -> host view / debug trace / Claxedo client-presentation stream
 ```
 
 The core idea is:
@@ -93,7 +93,7 @@ Use subpaths for harness adapter and projection implementations:
 
 ```ts
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 ```
 
 New code should use the import style shown in [recipes.md](./recipes.md).

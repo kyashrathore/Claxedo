@@ -1,19 +1,8 @@
 import { Hono } from "hono"
 import os from "os"
-import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
-import {
-  defaultHarness,
-  loadUserConfig,
-} from "@claxedo/server-core/agent-config/index"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
 import { listProjects } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { opencodeEngineMode } from "@claxedo/server-core/opencode/engine"
-import {
-  configProvidersBody,
-  globalConfigBody,
-  providerBody,
-} from "../../opencode/compat-routes/provider-config"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
   ControlPlaneAuthError,
@@ -58,64 +47,13 @@ function version(options: Options) {
   return options.env?.npm_package_version || "1.0.0"
 }
 
-function queryHarnessId(url: string): string | undefined {
-  const runner = new URL(url).searchParams.get("harness") ?? new URL(url).searchParams.get("runner")
-  const identity = runner ? normalizeHarnessIdentity(runner) : undefined
-  if (identity) return identity.id
-  return undefined
-}
-
-async function resolveHarnessId(override?: string) {
-  if (override) return override
-  return defaultHarness(await loadUserConfig()).id
-}
-
-async function providerUnavailable(harnessOverride: string | undefined) {
-  const harnessId = await resolveHarnessId(harnessOverride)
-  return {
-    ok: false,
-    error: {
-      code: "provider_models_unavailable",
-      message: `${harnessId} does not expose live provider model metadata`,
-    },
-  }
-}
-
-function configBody(config: Awaited<ReturnType<typeof loadUserConfig>>) {
-  const runner = defaultHarness(config)
-  const model = config.model ?? ""
-  return {
-    model: model ? `${runner.id}/${model}` : "",
-    provider: {},
-    mcp: config.mcp ?? {},
-  }
-}
-
-function emptyConfigProviders() {
-  return {
-    providers: [],
-    default: {},
-  }
-}
-
-async function providerAuthBody(_harnessOverride: string | undefined, _options: Options) {
-  return providerAuthMethods()
-}
-
-async function localBootstrapBody(harnessOverride: string | undefined, options: Options) {
+async function localBootstrapBody(options: Options) {
   return {
     healthy: true,
     version: version(options),
-    // Additive field: which opencode engine transport this composition uses
-    // ("embedded" in-process vs "external-url"). Backward-safe — existing
-    // consumers ignore it.
-    engine_mode: opencodeEngineMode(),
     path: bootPath(),
     project: await listProjects(),
-    provider: await providerBody(harnessOverride, options),
-    provider_auth: await providerAuthBody(harnessOverride, options),
-    config: await globalConfigBody(harnessOverride, options),
-    config_providers: await configProvidersBody(harnessOverride, options),
+    provider_auth: providerAuthMethods(),
   }
 }
 
@@ -123,15 +61,14 @@ async function localShellBootstrapBody(options: Options) {
   return {
     healthy: true,
     version: version(options),
-    engine_mode: opencodeEngineMode(),
     path: bootPath(),
     project: await listProjects(),
   }
 }
 
-function localBootstrap(url: string, harnessOverride: string | undefined, options: Options) {
+function localBootstrap(url: string, options: Options) {
   if (new URL(url).searchParams.get("scope") === "shell") return localShellBootstrapBody(options)
-  return localBootstrapBody(harnessOverride, options)
+  return localBootstrapBody(options)
 }
 
 /**
@@ -191,17 +128,13 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
 }
 
 async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Options) {
-  const provider = await providerUnavailable(undefined)
   const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
   return {
     healthy: true,
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
     project: signedBootstrapProjects(Array.isArray(workspaces) ? workspaces : []),
-    provider,
     provider_auth: providerAuthMethods(),
-    config: {},
-    config_providers: emptyConfigProviders(),
   }
 }
 
@@ -234,7 +167,7 @@ export function BootstrapRoutes(options: Options = {}) {
         const token = bearerToken(c.req.header("authorization") ?? null)
         const authConfig = options.authConfig ?? controlPlaneAuthConfig()
         if (token && isLoopbackLocalRequest(c.req.raw)) {
-          return c.json(await localBootstrap(c.req.url, queryHarnessId(c.req.url), options))
+          return c.json(await localBootstrap(c.req.url, options))
         }
         if (token) {
           try {
@@ -254,7 +187,7 @@ export function BootstrapRoutes(options: Options = {}) {
             throw err
           }
         }
-        return c.json(await localBootstrap(c.req.url, queryHarnessId(c.req.url), options))
+        return c.json(await localBootstrap(c.req.url, options))
       } catch (err) {
         return c.json({
           error: {

@@ -34,8 +34,8 @@ page.on("response", (res) => { if (res.url().match(/\/provider(\?|$)/)) console.
 
 await page.addInitScript((d) => {
   localStorage.clear()
-  window.__OPENCODE__ = { serverUrl: window.location.origin, activeDirectory: d }
-  localStorage.setItem("opencode.global.dat:server", JSON.stringify({
+  window.__CLAXEDO__ = { serverUrl: window.location.origin, activeDirectory: d }
+  localStorage.setItem("claxedo.global.dat:server", JSON.stringify({
     list: [], projects: { local: [{ worktree: d, expanded: true }] }, lastProject: {}, workspaceServer: {}, closedProjects: {},
   }))
 }, DIR)

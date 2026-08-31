@@ -383,7 +383,6 @@ const mockedSpecifiers = [
   "@opencode-ai/ui/toast",
   "@/lib/encode",
   "@/platform/runtime/session-url",
-  "@opencode-ai/sdk/v2/client",
   "@/platform/api/api",
   "@/platform/runtime/transport",
   "@/features/session/providers/session-selection",
@@ -520,48 +519,6 @@ export async function installSubmitMocks(mock: ModuleMocker) {
 
   mock.module("@/platform/runtime/session-url", () => ({
     resolveSessionUrl: async (sessionID: string) => (state.demoMode ? null : `http://runtime.example.com/${sessionID}`),
-  }))
-
-  mock.module("@opencode-ai/sdk/v2/client", () => ({
-    createOpencodeClient: (input: { baseUrl?: string; directory?: string; fetch?: unknown }) => {
-      transportClients.push(input)
-      return {
-        session: {
-          create: async (createInput: unknown, options?: { headers?: Record<string, string> }) => {
-            calls.create += 1
-            sessionCreateCalls.push({ input: createInput, options })
-            if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)
-            return { data: { id: "session-1" } }
-          },
-          get: async ({ sessionID }: { sessionID: string }) => ({ data: state.transportGetSession ? { id: sessionID } : undefined }),
-          prompt: async () => {
-            calls.prompt += 1
-            return { data: undefined }
-          },
-          promptAsync: async (promptInput: unknown) => {
-            if (state.transportPromptAsyncError) throw state.transportPromptAsyncError
-            calls.transportAsync += 1
-            transportPromptAsyncCalls.push(promptInput)
-            return { data: undefined }
-          },
-          abort: async () => {
-            calls.transportAbort += 1
-            return { data: { ok: true, status: "cancelled" } }
-          },
-          shell: async (shellInput: unknown) => {
-            calls.shell += 1
-            shellCalls.push(shellInput)
-            if (state.shellError) throw state.shellError
-            return { data: undefined }
-          },
-          command: async (commandInput: unknown) => {
-            commandCalls.push(commandInput)
-            if (state.commandError) throw state.commandError
-            return { data: undefined }
-          },
-        },
-      }
-    },
   }))
 
   const perRouteAuthFetch = async (input: string | URL | Request, init?: RequestInit) => {
@@ -867,41 +824,54 @@ export async function installSubmitMocks(mock: ModuleMocker) {
           list: async () => ({ data: [] }),
         },
       },
-      createClient: () => ({
-        session: {
-          create: async () => {
-            calls.create += 1
-            return { data: { id: "session-1" } }
+      createClient: (input: { directory?: string; request?: unknown }) => {
+        transportClients.push({ directory: input.directory, fetch: input.request })
+        return {
+          session: {
+            create: async (createInput: unknown, options?: { headers?: Record<string, string> }) => {
+              calls.create += 1
+              sessionCreateCalls.push({ input: createInput, options })
+              if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)
+              return { data: { id: "session-1" } }
+            },
+            get: async ({ sessionID }: { sessionID: string }) => ({
+              data: state.transportGetSession ? { id: sessionID } : undefined,
+            }),
+            prompt: async () => {
+              calls.prompt += 1
+              return { data: undefined }
+            },
+            promptAsync: async (promptInput: unknown) => {
+              if (state.transportPromptAsyncError) throw state.transportPromptAsyncError
+              calls.transportAsync += 1
+              transportPromptAsyncCalls.push(promptInput)
+              return { data: undefined }
+            },
+            shell: async (shellInput: unknown) => {
+              calls.shell += 1
+              shellCalls.push(shellInput)
+              if (state.shellError) throw state.shellError
+              return { data: undefined }
+            },
+            command: async (commandInput: unknown) => {
+              commandCalls.push(commandInput)
+              if (state.commandError) throw state.commandError
+              return { data: undefined }
+            },
+            abort: async () => {
+              calls.transportAbort += 1
+              return { data: { ok: true, status: "cancelled" } }
+            },
+            status: async () => ({ data: {} }),
           },
-          prompt: async () => {
-            calls.prompt += 1
-            return { data: undefined }
+          permission: {
+            list: async () => ({ data: [] }),
           },
-          promptAsync: async () => {
-            calls.async += 1
-            return { data: undefined }
+          question: {
+            list: async () => ({ data: [] }),
           },
-          shell: async (input: unknown) => {
-            calls.shell += 1
-            shellCalls.push(input)
-            if (state.shellError) throw state.shellError
-            return { data: undefined }
-          },
-          command: async (input: unknown) => {
-            commandCalls.push(input)
-            if (state.commandError) throw state.commandError
-            return { data: undefined }
-          },
-          abort: async () => ({ data: undefined }),
-          status: async () => ({ data: {} }),
-        },
-        permission: {
-          list: async () => ({ data: [] }),
-        },
-        question: {
-          list: async () => ({ data: [] }),
-        },
-      }),
+        }
+      },
     }),
   }))
 

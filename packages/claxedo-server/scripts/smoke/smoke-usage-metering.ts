@@ -22,7 +22,6 @@ const NOW = Date.UTC(2026, 7, 9, 12)
 const PROJECTION_BUDGET_MS = { 7: 40, 30: 80, 90: 180 } as const
 const ROUTE_BUDGET_MS = 5_000
 const HARNESSES = [
-  "opencode",
   "claude-sdk",
   "codex-app-server",
   "cursor-sdk",
@@ -158,7 +157,7 @@ export async function runUsageMeteringSmoke() {
     }] : []
   })
   const classify = createUsageProvenanceClassifier(manifest, {
-    completeAfter: { claude: NOW - 90 * DAY, codex: NOW - 90 * DAY, opencode: NOW - 90 * DAY, pi: NOW - 90 * DAY },
+    completeAfter: { claude: NOW - 90 * DAY, codex: NOW - 90 * DAY, pi: NOW - 90 * DAY },
   })
   invariant(classify({ source: "claude", nativeSessionId: "native-claude-sdk", observedAt: NOW }) === "claxedo", "Claxedo history was not excluded")
   invariant(classify({ source: "claude", nativeSessionId: "direct-claude", observedAt: NOW }) === "external", "direct history was not admitted")

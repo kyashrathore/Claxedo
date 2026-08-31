@@ -98,12 +98,12 @@ async function main() {
 
       await page.addInitScript((input: { dir: string; destination?: string }) => {
         localStorage.clear()
-        ;(window as typeof window & { __OPENCODE__?: unknown }).__OPENCODE__ = {
+        ;(window as typeof window & { __CLAXEDO__?: unknown }).__CLAXEDO__ = {
           serverUrl: window.location.origin,
           activeDirectory: input.dir,
         }
         localStorage.setItem(
-          "opencode.global.dat:server",
+          "claxedo.global.dat:server",
           JSON.stringify({
             list: [],
             projects: { local: [{ worktree: input.dir, expanded: true }] },
@@ -114,7 +114,7 @@ async function main() {
         )
         if (input.destination) {
           localStorage.setItem(
-            "opencode.global.dat:onboarding.destination.v1",
+            "claxedo.global.dat:onboarding.destination.v1",
             JSON.stringify({ destination: input.destination }),
           )
         }

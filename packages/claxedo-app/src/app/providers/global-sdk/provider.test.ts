@@ -6,7 +6,6 @@ import {
   abortSubagentsForParent,
   applySubagentCompatLifecycleEvent,
   compatEventEnvelope,
-  createControlPlaneEventFetch,
   eventDirectoryForLiveSession,
   globalSdkClientPlacement,
   globalSdkClientWorkspaceId,
@@ -16,12 +15,10 @@ import {
   nextLiveSession,
   partUpdateSupersedesDeltas,
   projectRuntimeEventEnvelope,
-  rememberRuntimeEventEnvelope,
   resetRuntimeReplayGapState,
   runtimeEnvelope,
   runtimeProjectionOwnsCompat,
   runtimeReplayGap,
-  shouldAcceptCompatEvent,
   workspaceEventTransport,
 } from "@/app/providers/global-sdk/provider"
 import {
@@ -38,51 +35,6 @@ import { sessionGoalKey, type SessionGoalData } from "@/features/session/store/s
 afterEach(() => {
   queryClient.clear()
 })
-
-function requestUrl(input: Parameters<typeof fetch>[0]) {
-  if (input instanceof Request) return input.url
-  if (input instanceof URL) return input.toString()
-  return input
-}
-
-function eventResponse() {
-  return new Response("data: {}\n\n", { status: 200 })
-}
-
-function recordingFetch(calls: string[], respond: (url: string) => Response | Promise<Response> = () => eventResponse()): typeof fetch {
-  return async (input) => {
-    const url = requestUrl(input)
-    calls.push(url)
-    return respond(url)
-  }
-}
-
-function recordingRequests(
-  calls: Array<{ url: string; lastEventId: string | null }>,
-  respond: (request: Request) => Response | Promise<Response> = () => eventResponse(),
-): typeof fetch {
-  return async (input, init) => {
-    const request = input instanceof Request ? input : new Request(input, init)
-    calls.push({
-      url: request.url,
-      lastEventId: request.headers.get("Last-Event-ID"),
-    })
-    return respond(request)
-  }
-}
-
-function setHappyDomUrl(url: string) {
-  const happyDOM = Reflect.get(window, "happyDOM")
-  if (!happyDOM || typeof happyDOM !== "object") throw new Error("missing happyDOM")
-  const setURL = Reflect.get(happyDOM, "setURL")
-  if (typeof setURL !== "function") throw new Error("missing happyDOM setURL")
-  setURL.call(happyDOM, url)
-}
-
-function oldEventPath(url: string) {
-  const pathname = new URL(url).pathname
-  return pathname === "/global/event" || pathname === "/event"
-}
 
 describe("global sdk event fetch", () => {
   test("explicit workspace identity wins when the runtime directory is absent from inventory", () => {
@@ -425,51 +377,6 @@ describe("global sdk event fetch", () => {
     })
   })
 
-  test("drops legacy compat events by session id when normalized runtime events cover the session", () => {
-    const covered = new Set<string>()
-    rememberRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    }, covered)
-
-    expect(shouldAcceptCompatEvent({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "",
-        },
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "",
-        },
-      },
-    } as never, covered)).toBe(false)
-  })
-
-  test("accepts (does not crash on) a payload-less keepalive frame", () => {
-    const covered = new Set<string>()
-    // Heartbeat/keepalive frames (`{"type":"heartbeat"}`) reach the compat
-    // gate with no event payload. Reading `.type` off `undefined` previously
-    // threw and killed the whole event loop ("event stream failed: Cannot read
-    // properties of undefined (reading 'type')"). The gate must tolerate it.
-    expect(shouldAcceptCompatEvent(undefined as never, covered)).toBe(true)
-    expect(shouldAcceptCompatEvent(null as never, covered)).toBe(true)
-  })
-
   test("parses compat SSE envelopes without treating heartbeat frames as events", () => {
     expect(compatEventEnvelope({ type: "heartbeat" })).toBeUndefined()
     expect(compatEventEnvelope({ payload: { type: "server.heartbeat", properties: {} } })).toBeUndefined()
@@ -499,13 +406,13 @@ describe("global sdk event fetch", () => {
     })
   })
 
-  test("leaves OpenCode session events owned by the OpenCode compat stream", () => {
+  test("runtime projection owns every canonical session id", () => {
     expect(runtimeProjectionOwnsCompat({
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "ses_1",
       payload: { type: "text-delta", delta: "hello" },
-    })).toBe(false)
+    })).toBe(true)
     expect(runtimeProjectionOwnsCompat({
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
@@ -545,7 +452,6 @@ describe("global sdk event fetch", () => {
 
   test("runtime replay gaps reset projections and invalidate session read models", async () => {
     const projections = new Map([["runtime-session-1:assistant-1", {} as never]])
-    const covered = new Set(["runtime-session-1"])
     const subagents = createSubagentRegistry()
     subagents.apply("runtime-session-1", {
       type: "subagent-updated",
@@ -580,100 +486,16 @@ describe("global sdk event fetch", () => {
         },
       },
       projections,
-      covered,
       baseUrl: "http://claxedo.test",
       subagents,
       goalScope,
     })
 
     expect(projections.size).toBe(0)
-    expect(covered.size).toBe(0)
     expect(subagents.list()).toEqual([])
     expect(queryClient.getQueryState(rowKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(messagesKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(goalKey)?.isInvalidated).toBe(true)
-  })
-
-  test("drops mirrored compat events for runtime-owned sessions even before runtime coverage arrives", () => {
-    const covered = new Set<string>()
-
-    expect(shouldAcceptCompatEvent({
-      type: "permission.asked",
-      properties: {
-        sessionID: "runtime-session-1",
-        permissionID: "permission-1",
-        title: "Run command",
-        metadata: {},
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "permission.replied",
-      properties: {
-        sessionID: "runtime-session-1",
-        permissionID: "permission-1",
-        response: "once",
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "question.asked",
-      properties: {
-        sessionID: "runtime-session-1",
-        questionID: "question-1",
-        title: "Choose",
-      },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "session.status",
-      properties: {
-        sessionID: "runtime-session-1",
-        status: "recovering",
-      },
-    } as never, covered)).toBe(false)
-  })
-
-  test("keeps mirrored compat events for legacy OpenCode sessions", () => {
-    const covered = new Set<string>()
-
-    expect(shouldAcceptCompatEvent({
-      type: "permission.asked",
-      properties: {
-        sessionID: "ses_1",
-        permissionID: "permission-1",
-        title: "Run command",
-        metadata: {},
-      },
-    } as never, covered)).toBe(true)
-  })
-
-  test("keeps terminal compat status for OpenCode while suppressing runtime-owned duplicates", () => {
-    const covered = new Set<string>()
-    rememberRuntimeEventEnvelope({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "session-status", status: "idle" },
-    }, covered)
-
-    expect(shouldAcceptCompatEvent({
-      type: "session.idle",
-      properties: { sessionID: "ses_opencode_1" },
-    } as never, covered)).toBe(true)
-    expect(shouldAcceptCompatEvent({
-      type: "session.idle",
-      properties: { sessionID: "runtime-session-1" },
-    } as never, covered)).toBe(false)
-    expect(shouldAcceptCompatEvent({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          id: "part-1",
-          sessionID: "runtime-session-1",
-          messageID: "assistant-1",
-          type: "text",
-          text: "duplicate",
-        },
-      },
-    } as never, covered)).toBe(false)
   })
 
   test("empty text part updates do not supersede following deltas", () => {

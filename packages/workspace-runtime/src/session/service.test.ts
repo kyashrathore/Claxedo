@@ -16,18 +16,15 @@ import {
 } from "./service"
 
 function adapter(input: {
-  sendMessage?: AgentHarnessAdapter["sendMessage"]
+  executeTurn?: NonNullable<AgentHarnessAdapter["executeTurn"]>
   getMessages?: AgentHarnessAdapter["getMessages"]
   getSessionConfig?: AgentHarnessAdapter["getSessionConfig"]
 }) {
   return {
-    sendMessage: input.sendMessage ?? (async function* () {}) as AgentHarnessAdapter["sendMessage"],
-    executeTurn(binding: AgentExecutionBinding, prompt: Parameters<NonNullable<AgentHarnessAdapter["executeTurn"]>>[1]) {
-      return input.sendMessage?.(binding.sessionId, prompt, binding.directory) ?? (async function* () {})()
-    },
+    executeTurn: input.executeTurn ?? (async function* () {}) as NonNullable<AgentHarnessAdapter["executeTurn"]>,
     getMessages: input.getMessages ?? (async () => []),
     getSessionConfig: input.getSessionConfig ?? (async () => ({
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "codex", access: "native" },
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
       variant: "default",
       agent: "build",
@@ -39,7 +36,7 @@ const executionBinding: AgentExecutionBinding = {
   sessionId: "s1",
   workspaceId: "workspace-test",
   directory: "/work",
-  connectionId: "native:opencode",
+  connectionId: "native:codex",
   upstreamSessionId: "s1",
 }
 
@@ -47,7 +44,7 @@ describe("session service", () => {
   it("rejects a binding for another session before adapter execution", async () => {
     let executed = false
     const fixture = adapter({
-      async *sendMessage() {
+      async *executeTurn() {
         executed = true
       },
     })
@@ -70,7 +67,9 @@ describe("session service", () => {
     const turn = await runSessionPromptTurn({
       binding: executionBinding,
       adapter: adapter({
-        async *sendMessage(id, input, directory) {
+        async *executeTurn(binding, input) {
+          const id = binding.sessionId
+          const directory = binding.directory
           yield messageUpdated(buildUserMessage({
             id: input.userMessageId!,
             sessionID: id,
@@ -132,7 +131,7 @@ describe("session service", () => {
     await runSessionPromptTurn({
       binding: executionBinding,
       adapter: adapter({
-        async *sendMessage(_id, input) {
+        async *executeTurn(_binding, input) {
           modes.push(input.permissionMode)
         },
       }),
@@ -152,22 +151,22 @@ describe("session service", () => {
       binding: executionBinding,
       adapter: adapter({
         getSessionConfig: async () => ({
-          harness: { id: "openclaw", access: "acp" },
+          harness: { id: "openclaw", access: "connection" },
           variant: null,
           agent: null,
         }),
-        async *sendMessage(_id, input) {
+        async *executeTurn(_binding, input) {
           models.push(input.model)
         },
       }),
       sessionId: "s1",
       directory: "/work",
-      body: { parts: [{ type: "text", text: "hello" }] },
+      body: { parts: [{ type: "text" as const, text: "hello" }] },
       publishGlobal: () => {},
       publishStatus: () => {},
     })
 
-    expect(models).toEqual([{ providerID: "acp:openclaw", modelID: "default" }])
+    expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
   })
 
   it("carries the requested permission mode through the durable runtime turn", async () => {
@@ -227,7 +226,7 @@ describe("session service", () => {
       runtime,
       sessionId: "s1",
       directory: "/work" as const,
-      body: { parts: [{ type: "text", text: "hello" }] },
+      body: { parts: [{ type: "text" as const, text: "hello" }] },
       publishGlobal: () => {},
       publishStatus: () => {},
     }

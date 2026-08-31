@@ -47,12 +47,6 @@ type TokenTrackerHistoryModule = {
     since: number
     until: number
     sources?: string[]
-    /**
-     * Extra absolute dirs scanned for opencode sqlite DBs beyond
-     * `$sourceHome/.local/share/opencode` — the embedded engine keeps
-     * OPENCODE_DB under Claxedo's own data dir, never under $HOME.
-     */
-    opencodeRoots?: string[]
     upload: false
     telemetry: false
     classify(input: { source?: string; nativeSessionId?: string; observedAt: number }): UsageProvenance | Promise<UsageProvenance>
@@ -77,7 +71,6 @@ function scanKey(input: {
   since: number
   until: number
   sources?: string[]
-  opencodeRoots?: string[]
   classificationKey: string
 }) {
   return createHash("sha256").update(JSON.stringify({
@@ -85,7 +78,6 @@ function scanKey(input: {
     since: input.since,
     until: input.until,
     sources: (input.sources ?? []).toSorted(),
-    opencodeRoots: (input.opencodeRoots ?? []).toSorted(),
     classificationKey: input.classificationKey,
   })).digest("hex")
 }
@@ -115,8 +107,6 @@ export async function scanTokenTrackerLocalHistory(input: {
   since: number
   until: number
   sources?: string[]
-  /** See TokenTrackerHistoryModule.scanLocalHistory — embedded-engine DB dirs. */
-  opencodeRoots?: string[]
   classificationKey: string
   refresh?: boolean
   classify: (input: { source?: string; nativeSessionId?: string; observedAt: number }) => UsageProvenance | Promise<UsageProvenance>
@@ -138,7 +128,6 @@ export async function scanTokenTrackerLocalHistory(input: {
       since: input.since,
       until: input.until,
       ...(input.sources ? { sources: input.sources } : {}),
-      ...(input.opencodeRoots ? { opencodeRoots: input.opencodeRoots } : {}),
       upload: false,
       telemetry: false,
       classify: async (event) => await input.classify({

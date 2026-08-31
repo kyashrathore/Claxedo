@@ -8,6 +8,7 @@ import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
@@ -21,7 +22,7 @@ import {
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
-import { selectRuntimeModel } from "../model-strategy"
+import { sessionHarnessIdentity } from "@/features/session/harness/profile"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -161,23 +162,14 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     sessionFetch(dir)(usesWorkspaceRuntimeSession(dir) ? path : `${input.serverUrl()}${path}`, init)
 
   const modelForSubmit = async (dir: SubmitDirectory, selected: SubmitModel | undefined) => {
-    if (isSignedWorkspaceDefaultModel(selected)) return undefined
     if (!workspaceRuntimeRef(dir)) return selected
     if (centralTransportForServer(input.serverUrl()) === "loopback") {
       return selected
     }
-    const res = await sessionRequest(dir, opencodeProviderPath({
-      directory: dir,
-      harnessType: "opencode",
-    }), {
-      headers: { Accept: "application/json" },
-    }).catch(() => undefined)
-    if (!res?.ok) return selected
-    const body = await res.json().catch(() => undefined)
-    return selectRuntimeModel(body, selected)
+    return selected
   }
 
-  const sessionClient = (dir: string, harnessType?: string) =>
+  const sessionClient = (dir: string, harnessType?: HarnessSelection) =>
     input.createClient({
       baseUrl: input.serverUrl(),
       fetch: harnessQueryFetch({
@@ -327,14 +319,9 @@ function sessionConfigBody(input: SessionConfigPayload) {
 function sessionConfigPath(input: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) {
   const url = new URL(`/session/${encodeURIComponent(input.sessionID)}/config`, "http://claxedo.local")
   url.searchParams.set("directory", input.directory)
-  url.searchParams.set("harness", input.harnessType)
-  return `${url.pathname}${url.search}`
-}
-
-function opencodeProviderPath(input: { directory?: string; harnessType?: string }) {
-  const url = new URL("/provider", "http://claxedo.local")
-  if (input.directory) url.searchParams.set("directory", input.directory)
-  if (input.harnessType) url.searchParams.set("harness", input.harnessType)
+  for (const [key, value] of Object.entries(harnessSelectionQuery(input.harnessType))) {
+    url.searchParams.set(key, value)
+  }
   return `${url.pathname}${url.search}`
 }
 

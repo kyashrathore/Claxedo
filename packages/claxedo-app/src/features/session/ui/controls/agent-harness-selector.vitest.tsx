@@ -47,8 +47,6 @@ let piDefaults: Record<string, string> = {}
 let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined = "ready"
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
 let harnessMode = true
-let acpConnections: Array<{ key: `acp:${string}`; id: string; label: string; enabled: boolean }> = []
-  let acpRefreshCalls = 0
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
@@ -195,12 +193,6 @@ function harnessController(): HarnessSelectionController {
     },
     reprobe: () => undefined,
     markUnavailable: () => undefined,
-    enabledAcpConnections: () => acpConnections.filter((row) => row.enabled),
-    acpConnectionLabel: (key: string) => acpConnections.find((row) => row.key === key)?.label,
-    refreshAcpConnections: () => {
-      acpRefreshCalls += 1
-      return Promise.resolve()
-    },
   }
 }
 
@@ -248,8 +240,6 @@ beforeEach(() => {
   piDefaults = {}
   draftDefaultState = "ready"
   draftDefaultLabels = undefined
-  acpConnections = []
-  acpRefreshCalls = 0
   dialogState.show.mockClear()
   vi.mocked(openSettingsProviders).mockClear()
 })
@@ -259,32 +249,11 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("AgentHarnessSelector — existing session handoff", () => {
-  test("keeps both the harness and OpenCode model choices enabled", () => {
-    harnessMode = false
-    const model = {
-      list: () => [{ id: "model-1", name: "Model 1", provider: { id: "provider-1", name: "Provider 1" } }],
-      current: () => undefined,
-      visible: () => true,
-      set: () => undefined,
-    }
-    const { container } = render(() => (
-      <TestAgentHarnessSelector
-        sessionLocked
-        openCode={{
-          model: () => model,
-          label: () => "Model 1",
-          loading: () => false,
-          showVariantSelector: () => false,
-          variants: () => [],
-          currentVariant: () => undefined,
-          variantLabel: (value) => value,
-          onVariantSelect: () => undefined,
-        }}
-      />
-    ))
+  test("keeps harness selection enabled while disabling an unavailable model list", () => {
+    const { container } = render(() => <TestAgentHarnessSelector sessionLocked />)
 
     expect(container.querySelector("[data-testid='select']")?.getAttribute("data-disabled")).toBe("false")
-    expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("false")
+    expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("true")
   })
 
   test("trigger is enabled when sessionLocked is false (new session)", () => {
@@ -384,11 +353,10 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-app-server" }])
   })
 
-  test("existing sessions can hand off to built-in and operator ACP harnesses", () => {
-    acpConnections = [{ key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true }]
+  test("existing sessions can hand off to built-in harnesses", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
 
-    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode", "acp:gemini"]) {
+    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -398,46 +366,26 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   test("only starts one runner switch while a switch is in flight", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi", "opencode"]) {
+    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
-    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "claude-sdk" }])
+    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-app-server" }])
   })
 
-  test("groups harness choices: static Native SDK and Direct, discovery-driven ACP", () => {
-    acpConnections = [
-      { key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true },
-      { key: "acp:hermes", id: "hermes", label: "Hermes", enabled: false },
-    ]
+  test("groups only the currently supported native choices", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Claude")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Codex")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Cursor")
     expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("Pi")
-    expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("OpenCode")
-    // The ACP group is exactly the ENABLED operator connections, with the
-    // server-provided labels; disabled rows are absent.
-    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).toContain("Gemini")
-    expect(container.querySelector("[data-testid='select-group-ACP']")?.textContent).not.toContain("Hermes")
-    // The first-party ACP trio is no longer a built-in picker choice.
+    expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).not.toContain("OpenCode")
+    expect(container.querySelector("[data-testid='select-option-opencode']")).toBeNull()
+    expect(container.querySelector("[data-testid='select-group-ACP']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-claude-acp']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-codex-acp']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-cursor-acp']")).toBeNull()
-  })
-
-  test("with no enabled operator connections the ACP group is absent", () => {
-    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    expect(container.querySelector("[data-testid='select-group-ACP']")).toBeNull()
-  })
-
-  test("selecting an operator connection sends only its canonical key", () => {
-    acpConnections = [{ key: "acp:gemini", id: "gemini", label: "Gemini", enabled: true }]
-    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-
-    fireEvent.click(container.querySelector("[data-testid='select-option-acp:gemini']") as HTMLButtonElement)
-    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "acp:gemini" }])
   })
 
   test("renders the selected model when ACP model options are available", () => {
@@ -545,20 +493,6 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(row!.textContent).toContain("Couldn't load Claude models")
     expect(row!.textContent).toContain("No model options available")
     expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("Select model")
-  })
-
-  test("shows an operator ACP's managed model as informational and healthy", () => {
-    harnessType = "acp:openclaw"
-    acpConnections = [{ key: "acp:openclaw", id: "openclaw", label: "OpenClaw", enabled: true }]
-    models = []
-    selectedModel = "default"
-
-    const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-
-    expect(container.querySelector("[data-testid='model-trigger-content']")?.textContent).toContain("OpenClaw default")
-    expect(container.querySelector("[data-testid='model-selector']")?.getAttribute("data-disabled")).toBe("true")
-    expect(container.querySelector("[data-action='prompt-harness-model']")?.getAttribute("title")).toBe("Model is managed by OpenClaw")
-    expect(noticeRow(container)).toBeNull()
   })
 
   test("surfaces Cursor SDK auth requirements in the notice row", () => {
@@ -787,9 +721,8 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
 
     await waitFor(() => expect(resolveDefaultCalls).toContainEqual({
-      supportedHarnesses: expect.arrayContaining(["opencode", "pi"]),
+      supportedHarnesses: expect.arrayContaining(["pi"]),
       eligibleModels: [{ providerID: "openai-codex", modelID: "gpt-5.5" }],
-      openCodeModel: undefined,
       connectedProviderIDs: ["openai-codex"],
       providerDefaults: { "openai-codex": "gpt-5.5" },
     }))
@@ -828,28 +761,6 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     expect(row!.getAttribute("data-tone")).toBe("warning")
     expect(row!.textContent).toContain("GPT-5.4 Codex is unavailable")
     expect(row!.textContent).toContain("Reconnect its provider in Settings → Providers, or choose another model.")
-  })
-
-  test("switching to Pi reuses the current OpenCode model when the exact pair is connected", async () => {
-    piConnected = ["anthropic"]
-    piProviders.set("anthropic", {
-      id: "anthropic",
-      name: "Anthropic",
-      models: { "claude-sonnet-4-5": { id: "claude-sonnet-4-5", name: "Sonnet 4.5" } },
-    })
-    const { container } = render(() => (
-      <TestAgentHarnessSelector
-        sessionLocked={false}
-        openCodeModel={() => ({ providerID: "anthropic", modelID: "claude-sonnet-4-5" })}
-      />
-    ))
-
-    fireEvent.click(container.querySelector("[data-testid='select-option-pi']") as HTMLButtonElement)
-
-    await waitFor(() => expect(setModelCalls).toEqual([{
-      scope: "test-scope",
-      model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
-    }]))
   })
 
   test("switching to Pi selects the sole configured provider default", async () => {

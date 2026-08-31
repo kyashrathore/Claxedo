@@ -259,12 +259,12 @@ async function seed(page: Page) {
   await page.addInitScript(
     (input: { directory: string; uhDirectory: string }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: input.directory,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: { local: [{ worktree: input.directory, expanded: true }] },
@@ -1033,9 +1033,9 @@ test.describe("core cloud offline & roles @core", () => {
   // (src/utils/api.ts:107-118) HARD-CODES that resolution to a loopback origin
   // whenever `window.location.hostname` is itself a loopback host — which it always
   // is when Playwright drives this app from `http://localhost:<port>`. This function
-  // does NOT consult `window.__OPENCODE__.serverUrl` (that seam feeds a DIFFERENT
+  // does NOT consult `window.__CLAXEDO__.serverUrl` (that seam feeds a DIFFERENT
   // function, `getDefaultBaseUrl()`, src/utils/api.ts:246-254, used by an unrelated
-  // code path) — confirmed empirically: overriding `__OPENCODE__.serverUrl` to a
+  // code path) — confirmed empirically: overriding `__CLAXEDO__.serverUrl` to a
   // non-loopback fake origin in an initScript had NO effect on which origin
   // agent/vcs/session/provider/events resolved to. Net effect: in this harness, a
   // relay-backed workspace's post-ready traffic is UNCONDITIONALLY bridged through
@@ -1048,7 +1048,7 @@ test.describe("core cloud offline & roles @core", () => {
   // This is not a spec-local mocking gap (spec-local `page.route` cannot patch a
   // build-time env constant or the browser's own hostname) and not fixable without
   // either an app-source change (an explicit e2e override seam for
-  // `getClaxedoServerUrl()`, mirroring the existing `__OPENCODE__.serverUrl` seam for
+  // `getClaxedoServerUrl()`, mirroring the existing `__CLAXEDO__.serverUrl` seam for
   // `getDefaultBaseUrl()`) or running this spec from a genuinely non-loopback host —
   // both out of scope for this remediation pass. The role-transition STATE MACHINE
   // itself (`transitionConnectionPlacement`'s `role` event) is already unit-pinned in

@@ -109,8 +109,6 @@ export function spec(root = ROOT): Spec {
     "scripts/build-memory-impact-helper.ts",
     "scripts/bundle-claxedo-server.ts",
     "scripts/claxedo-server-entry.ts",
-    "scripts/claxedo-engine-worker-entry.ts",
-    "scripts/claxedo-engine-worker-policy.ts",
     "scripts/claxedo-server-startup.ts",
     "scripts/copy-bundles.ts",
     "scripts/contract.ts",
@@ -158,8 +156,6 @@ export function spec(root = ROOT): Spec {
     // rather than pass unnoticed.
     "../claxedo-host-connector/package.json",
     "../claxedo-host-connector/src",
-    "../opencode/package.json",
-    "../opencode/src",
     "../sdk/js/package.json",
     "../sdk/js/src",
     "../sdk-next/package.json",
@@ -177,7 +173,6 @@ export function spec(root = ROOT): Spec {
     input,
     output: [
       "out/main/claxedo-server",
-      "out/main/claxedo-engine-worker",
       "out/main/index.js",
       "out/preload/index.cjs",
       "out/preload/browser-preload.cjs",
@@ -190,14 +185,12 @@ export function spec(root = ROOT): Spec {
       "out/templates",
       "resources/claxedo-server",
       "resources/host-connector",
-      "resources/claxedo-engine-worker",
       "resources/icons/128x128@2x.png",
       "resources/icons/icon.icns",
       "resources/icons/icon.ico",
     ],
     match: [
       ["out/main/claxedo-server/index.js", "resources/claxedo-server/index.js"],
-      ["out/main/claxedo-engine-worker/index.js", "resources/claxedo-engine-worker/index.js"],
     ],
   }
 }

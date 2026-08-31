@@ -23,7 +23,7 @@ Extensions.
 
 Use these packages when you want to:
 
-- talk to OpenCode, ACP harnesses, native SDK harnesses, and Pi through one
+- talk to configured connections, native SDK harnesses, and Pi through one
   session/runtime surface
 - build infrastructure for terminal coding agents: sessions, PTYs, processes,
   files, diffs, events, and harness config
@@ -63,7 +63,7 @@ materialization can use `@claxedo/agent-extensions` directly.
 | --- | --- |
 | `@claxedo/workspace-runtime` | Run or embed a per-workspace host next to the project directory the agent should work on. |
 | `@claxedo/agent-extensions` | Discover, install, lock, materialize, and replay reusable Agent Extension packages for OpenCode, Claude, Codex, and Cursor. |
-| `@claxedo/agent-sdk-runtime` | Embed one `AgentRuntime` facade over OpenCode, ACP harnesses, native SDK harnesses, or Pi. |
+| `@claxedo/agent-sdk-runtime` | Embed one `AgentRuntime` facade over configured connections, native SDK harnesses, or Pi. |
 | `@claxedo/agent-event-runtime` | Normalize raw harness events into a canonical `AgentRuntimeEvent` stream and project them into compatibility formats. |
 | `@claxedo/workspace-relay-protocol` | Use tunnel wire types and token verifier contracts without pulling in Hono or server code. |
 | `@claxedo/workspace-relay` | Run the relay process that connects browsers/gateways to workspace-runtime hosts. |
@@ -86,8 +86,8 @@ materializer helpers live only in `@claxedo/agent-extensions`;
   facade, first-party stores, and supported harness factories.
 - [Agent Event Runtime](./agent-event-runtime.md): event normalization and
   projections.
-- [Operator-Configured ACP Connections](./acp-connections.md): plug any
-  stdio ACP agent into a Claxedo server as a first-class harness.
+- [Agent Connections](./acp-connections.md): configure provider-owned agent
+  runtimes without exposing trusted descriptors or secrets to the browser.
 - [Agent Extensions](./agent-extensions.md): discover, install, activate, sync,
   and materialize extension packages across harness targets.
 - [Relay And Deployment](./relay-and-deployment.md): local, private VM,

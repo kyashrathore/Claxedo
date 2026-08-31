@@ -38,13 +38,7 @@ const result = await build({
     "@cursor/sdk",
     "@cursor/sdk/*",
     "@lydell/node-pty",
-    "@opencode-ai/sdk",
-    "@opencode-ai/sdk/*",
     "better-sqlite3",
-    // The embedded engine is an independently built native-bearing resource.
-    // Keeping its public port external preserves that resource boundary while
-    // the smoke below proves the exact artifact loads beside this process.
-    "opencode/node-embed",
   ],
 })
 

@@ -1,48 +1,20 @@
 import { pickHarness } from "../../../features/session/harness/profile"
+import { isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
 import type { HarnessRef } from "@/platform/identity/session-ref"
 
 export function routeSessionHarness(input: unknown): HarnessRef | undefined {
   const row = record(input)
-  const harness = record(row?.harness)
-  const runner = record(row?.runner)
-  const config = record(row?.config)
-  const configHarness = record(config?.harness)
-  const configRunner = record(config?.runner)
-  const connection = record(harness?.connection)
-  const configConnection = record(configHarness?.connection)
-  const taggedHarness = Array.isArray(row?.tags)
-    ? row.tags.find((tag): tag is string => typeof tag === "string" && tag.startsWith("harness:"))?.slice("harness:".length)
-    : undefined
-  const id = pickHarness(
-    string(row?.harnessType) ??
-      runtimeHarnessType(harness) ??
-      string(harness?.type) ??
-      string(runner?.id) ??
-      string(runner?.type) ??
-      string(config?.harnessType) ??
-      runtimeHarnessType(configHarness) ??
-      string(configHarness?.type) ??
-      string(configRunner?.id) ??
-      string(configRunner?.type) ??
-      string(taggedHarness),
-    string(harness?.binary) ??
-      string(connection?.binary) ??
-      string(runner?.binary) ??
-      string(configHarness?.binary) ??
-      string(configConnection?.binary) ??
-      string(configRunner?.binary),
-  )
-  if (!id || id === "opencode") return
-  const binary = string(harness?.binary) ??
-    string(connection?.binary) ??
-    string(runner?.binary) ??
-    string(configHarness?.binary) ??
-    string(configConnection?.binary) ??
-    string(configRunner?.binary)
-  return {
-    id,
-    ...(binary ? { binary } : {}),
-  }
+  const value = row?.harness ?? record(row?.config)?.harness
+  if (isHarnessSelection(value)) return value
+  const harness = record(value)
+  const selection = pickHarness(harness)
+  if (!selection) return undefined
+  const binary = string(harness?.binary)
+  return { ...selection, ...(binary ? { binary } : {}) }
+}
+
+export function harnessReference(input: unknown): HarnessSelection | undefined {
+  return isHarnessSelection(input) ? input : undefined
 }
 
 function record(input: unknown) {

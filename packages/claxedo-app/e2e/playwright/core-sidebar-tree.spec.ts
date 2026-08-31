@@ -294,12 +294,12 @@ async function seedProject(page: Page, opts: { dir: string; view?: ViewOverride 
       // page itself had just persisted (e.g. the "view state survives
       // reload" scenario's own `localStorage.setItem` from a real user
       // interaction), which is exactly what those scenarios exist to prove.
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: dir,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: { local: [{ worktree: dir, expanded: true }] },

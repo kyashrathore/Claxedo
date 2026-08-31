@@ -291,7 +291,7 @@ export async function seedDesktopSignedWorkspace(
       const ref = `workspace:${seed.workspaceId}`
       const api = (window as unknown as { api: { storeSet(n: string, k: string, v: string): Promise<void> } }).api
       await api.storeSet(
-        "opencode.global.dat",
+        "claxedo.global.dat",
         "server",
         JSON.stringify({
           list: [],
@@ -302,7 +302,7 @@ export async function seedDesktopSignedWorkspace(
         }),
       )
       await api.storeSet(
-        "opencode.global.dat",
+        "claxedo.global.dat",
         "globalSync.project",
         JSON.stringify({
           value: [

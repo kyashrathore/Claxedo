@@ -214,27 +214,31 @@ function runtimeAdapter() {
   const sessions = new Map<string, { id: string; title: string; time: { created: number; updated: number } }>()
   const messages = new Map<string, Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }>>()
   const authors: unknown[] = []
+  const binding = (sessionId: string) => ({
+    sessionId,
+    workspaceId: "ws_runtime_private",
+    directory: "/workspace",
+    connectionId: "pi",
+    upstreamSessionId: sessionId,
+  })
   const adapter: AgentHarnessAdapter = {
-    async listSessions() {
-      return [...sessions.values()]
-    },
-    async getSession(id) {
-      return sessions.get(id) ?? null
+    async getSession(execution) {
+      return sessions.get(execution.sessionId) ?? null
     },
     async createSession(_directory, title, id) {
       const session = { id: id ?? "ses_runtime_private", title: title ?? "Private runtime", time: { created: 1, updated: 1 } }
       sessions.set(session.id, session)
       return session
     },
-    async updateSession(id, update) {
-      const current = sessions.get(id)
+    async updateSession(execution, update) {
+      const current = sessions.get(execution.sessionId)
       if (!current) return null
       const session = { ...current, ...(update.title ? { title: update.title } : {}), time: { ...current.time, updated: Date.now() } }
-      sessions.set(id, session)
+      sessions.set(execution.sessionId, session)
       return session
     },
-    async deleteSession(id) {
-      sessions.delete(id)
+    async deleteSession(execution) {
+      sessions.delete(execution.sessionId)
     },
     async getSessionConfig() {
       return { harness: { id: "pi", access: "native" }, agent: "build", variant: null }
@@ -260,7 +264,8 @@ function runtimeAdapter() {
         goals: false,
       }
     },
-    async *sendMessage(sessionId, input) {
+    async *executeTurn(execution, input) {
+      const sessionId = execution.sessionId
       authors.push(input.author)
       const user = buildUserMessage({
         id: input.userMessageId!,
@@ -302,12 +307,12 @@ function runtimeAdapter() {
       yield sessionIdle(sessionId)
       yield { type: "finish", sessionId }
     },
-    async getMessages(sessionId) {
-      return messages.get(sessionId) as never ?? []
+    async getMessages(execution) {
+      return messages.get(execution.sessionId) as never ?? []
     },
     dispose() {},
   }
-  return { adapter, messages, authors }
+  return { adapter, messages, authors, binding }
 }
 
 describe("two-user signed runtime transport acceptance", () => {
@@ -439,7 +444,7 @@ describe("two-user signed runtime transport acceptance", () => {
         harness: { id: "pi", access: "native" },
       }),
       getSession: (_c, directory, sessionId) => runtime.sessions.get(sessionId, directory),
-      getMessages: (_c, _directory, sessionId) => fixture.adapter.getMessages(sessionId, undefined),
+      getMessages: (_c, _directory, sessionId) => fixture.adapter.getMessages(fixture.binding(sessionId)),
       sessionAccessPolicy: policy,
       sessionBus,
       publishGlobal: () => {},

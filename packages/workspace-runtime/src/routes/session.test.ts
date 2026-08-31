@@ -16,7 +16,6 @@ import type {
   AgentHarnessAdapter,
   AgentMessagePage,
   AgentMessagePageInput,
-  HttpProxyAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   buildAssistantMessage,
@@ -42,7 +41,7 @@ function createSessionRoutes(options: Parameters<typeof createRawSessionRoutes>[
       sessionId,
       workspaceId: "workspace-test",
       directory: directory ?? "",
-      connectionId: "native:opencode",
+      connectionId: "native:codex",
       upstreamSessionId: sessionId,
     }),
     ...options,
@@ -58,7 +57,7 @@ function SessionRoutes(
       sessionId,
       workspaceId: "workspace-test",
       directory,
-      connectionId: "native:opencode",
+      connectionId: "native:codex",
       upstreamSessionId: sessionId,
     }),
     ...options,
@@ -78,25 +77,24 @@ function adapter(input: {
   ) => Promise<AgentMessagePage>
 }): AgentHarnessAdapter {
   return {
-    listSessions: async () => [],
-    getSession: async (id, directory) => buildSession({ id, directory: directory ?? "", title: "Demo" }),
+    getSession: async (binding) => buildSession({ id: binding.sessionId, directory: binding.directory, title: "Demo" }),
     createSession: async () => ({ id: "s1" }),
-    updateSession: async (id, updates, directory) => buildSession({ id, directory: directory ?? "", title: updates.title ?? "Demo" }),
+    updateSession: async (binding, updates) => buildSession({ id: binding.sessionId, directory: binding.directory, title: updates.title ?? "Demo" }),
     getSessionConfig: async () => ({
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "codex", access: "native" },
       model: { providerID: "openai", modelID: "gpt-5.4" },
       variant: "fast",
       agent: "plan",
     }),
-    updateSessionConfig: async (_id, patch) => ({
-      harness: patch.harness ?? { id: "opencode", access: "native" },
+    updateSessionConfig: async (_binding, patch) => ({
+      harness: patch.harness ?? { id: "codex", access: "native" },
       ...(patch.model ? { model: patch.model } : {}),
       variant: patch.variant ?? null,
       agent: patch.agent ?? null,
     } satisfies SessionConfig),
     deleteSession: async () => {},
     readHarnessCapabilities: () => ({
-      harness: "opencode",
+      harness: "codex",
       abort: true,
       reconnect: false,
       replay: true,
@@ -111,16 +109,14 @@ function adapter(input: {
       subagents: true,
       goals: false,
     }),
-    sendMessage(id, prompt, directory) {
-      input.onPrompt?.(prompt, directory)
-      return input.sendMessage?.(id, prompt, directory) ?? (async function* () {})()
-    },
     executeTurn(binding, prompt) {
       input.onPrompt?.(prompt, binding.directory)
       return input.sendMessage?.(binding.sessionId, prompt, binding.directory) ?? (async function* () {})()
     },
-    getMessages: async (id, directory) => input.getMessages?.(id, directory) ?? [],
-    ...(input.getMessagePage ? { getMessagePage: input.getMessagePage } : {}),
+    getMessages: async (binding) => input.getMessages?.(binding.sessionId, binding.directory) ?? [],
+    ...(input.getMessagePage ? {
+      getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
+    } : {}),
     abort: async () => ({ ok: true, status: "cancelled" }),
     revert: async () => {},
     unrevert: async () => {},
@@ -511,44 +507,6 @@ describe("session prompt route", () => {
     ])
   })
 
-  /**
-   * A harness name that does not resolve used to fall through to undefined,
-   * which made the adapter resolve from the DIRECTORY — the last harness
-   * selected there. On `/permission/modes` that meant asking for one harness
-   * and being handed another's permission modes, with nothing in the reply
-   * saying so, which the picker then rendered under the name it had asked for.
-   */
-  it("rejects a harness it does not recognise instead of answering for another one", async () => {
-    const directory = process.cwd()
-    const seen: Array<string | undefined> = []
-    const app = SessionRoutes((input) => {
-      seen.push(input?.harness ? `${input.harness.id}:${input.harness.access}` : undefined)
-      return {
-        ...adapter({}),
-        listPermissionModes: async () => ({
-          modes: [{ id: "read-only", name: "Read-only" }],
-          appliesFrom: "next-turn" as const,
-        }),
-      }
-    })
-
-    const bogus = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}&harness=not-a-harness`)
-    expect(bogus.status).toBe(400)
-    // The adapter must never have been asked for — an answer that reached the
-    // adapter at all is an answer that could be returned to the caller.
-    expect(seen).toEqual([])
-
-    // A name it does recognise still resolves, and an absent one still means
-    // "no preference" rather than an error.
-    const known = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}&harness=acp:openclaw`)
-    expect(known.status).toBe(200)
-    expect(seen).toEqual(["openclaw:acp"])
-
-    const unqualified = await app.request(`/permission/modes?directory=${encodeURIComponent(directory)}`)
-    expect(unqualified.status).toBe(200)
-    expect(seen).toEqual(["openclaw:acp", undefined])
-  })
-
   it("excludes archived sessions by default and includes them with ?archived=true", async () => {
     const directory = process.cwd()
     const sessions = [
@@ -756,7 +714,7 @@ describe("session prompt route", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         title: "Created",
-        model: { providerID: "acp:example", modelID: "gpt-5.5" },
+        model: { providerID: "connection:example", modelID: "gpt-5.5" },
       }),
     })
 
@@ -1232,7 +1190,7 @@ describe("session prompt route", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "codex", access: "native" },
       model: { providerID: "openai", modelID: "gpt-5.4" },
       variant: "fast",
       agent: "plan",
@@ -1245,7 +1203,7 @@ describe("session prompt route", () => {
       resolveAdapter: async (_c, input) => ({
         ...adapter({}),
         readHarnessCapabilities: () => ({
-          harness: input?.sessionId ? "codex" : "opencode",
+          harness: input?.sessionId ? "codex" : "claude",
           abort: true,
           reconnect: false,
           replay: true,
@@ -1276,7 +1234,7 @@ describe("session prompt route", () => {
 
     expect(global.status).toBe(200)
     expect(await global.json()).toMatchObject({
-      harness: "opencode",
+      harness: "claude",
       commands: true,
       questions: true,
       configOptions: false,
@@ -1339,7 +1297,7 @@ describe("session prompt route", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: { providerID: "acp:example", modelID: "sonnet" },
+        model: { providerID: "connection:example", modelID: "sonnet" },
         variant: "max",
         agent: "build",
       }),
@@ -1347,8 +1305,8 @@ describe("session prompt route", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      harness: { id: "opencode", access: "native" },
-      model: { providerID: "acp:example", modelID: "sonnet" },
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "connection:example", modelID: "sonnet" },
       variant: "max",
       agent: "build",
     })
@@ -1362,7 +1320,7 @@ describe("session prompt route", () => {
       updateSessionConfig: async (_id, patch) => {
         calls.push(patch)
         return {
-          harness: { id: "opencode", access: "native" },
+          harness: { id: "codex", access: "native" },
           variant: null,
           agent: null,
         }
@@ -1391,7 +1349,7 @@ describe("session prompt route", () => {
     const app = SessionRoutes(() => ({
       ...adapter({}),
       getSessionConfig: async () => ({
-        harness: { id: "codex", access: "native", connection: { kind: "process", binary: "codex" } },
+        harness: { id: "codex", access: "native" },
         model: { providerID: "codex", modelID: "default" },
         variant: null,
         agent: "build",
@@ -1424,7 +1382,7 @@ describe("session prompt route", () => {
     }))
 
     const patch = {
-      harness: { id: "codex", access: "native", connection: { kind: "process", binary: "codex" } },
+      harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "gpt-5" },
       variant: null,
       agent: "build",
@@ -1437,7 +1395,7 @@ describe("session prompt route", () => {
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
-      harness: { id: "codex", access: "native", connection: { kind: "process", binary: "codex" } },
+      harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "gpt-5" },
       variant: null,
       agent: "build",
@@ -1450,10 +1408,17 @@ describe("session prompt route", () => {
     const configs = new Map<string, SessionConfig>()
     const app = SessionRoutes(() => adapter({}), {
       getSessionConfig: async ({ adapter, directory, sessionId }) =>
-        configs.get(sessionId) ?? await adapter.getSessionConfig(sessionId, directory),
+        configs.get(sessionId) ?? await adapter.getSessionConfig({
+          sessionId,
+          workspaceId: "workspace-test",
+          directory,
+          connectionId: "native:codex",
+          upstreamSessionId: sessionId,
+        }),
       updateSessionConfig: async ({ sessionId, update }) => {
+        if (!update.harness) throw new Error("test update requires an explicit harness")
         const next = {
-          harness: update.harness ?? { id: "opencode", access: "native" },
+          harness: update.harness,
           ...(update.model ? { model: update.model } : {}),
           variant: update.variant ?? null,
           agent: update.agent ?? null,
@@ -1464,17 +1429,17 @@ describe("session prompt route", () => {
     })
 
     const patch = {
-      harness: { id: "opencode", access: "native" },
-      model: { providerID: "opencode", modelID: "deepseek-v4-flash-free" },
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.4" },
       variant: null,
       agent: "build",
     } satisfies SessionConfig
-    const update = await app.request(`http://localhost/session/s-opencode/config?directory=${encodeURIComponent(directory)}&runner=opencode`, {
+    const update = await app.request(`http://localhost/session/s-codex/config?directory=${encodeURIComponent(directory)}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(patch),
     })
-    const read = await app.request(`http://localhost/session/s-opencode/config?directory=${encodeURIComponent(directory)}&runner=opencode`)
+    const read = await app.request(`http://localhost/session/s-codex/config?directory=${encodeURIComponent(directory)}`)
 
     expect(update.status).toBe(200)
     expect(read.status).toBe(200)
@@ -1489,7 +1454,7 @@ describe("session prompt route", () => {
       ...adapter({}),
       updateSessionConfig: async () => {
         calls.push("updateSessionConfig")
-        return { harness: { id: "claude", access: "acp" } }
+        return { harness: { id: "claude", access: "connection" } }
       },
     }))
 
@@ -1497,8 +1462,8 @@ describe("session prompt route", () => {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        harness: { id: "example", access: "acp", connection: { kind: "process", binary: "/tmp/example-acp" } },
-        model: { providerID: "acp:example", modelID: "sonnet" },
+        harness: { id: "example", access: "connection" },
+        model: { providerID: "connection:example", modelID: "sonnet" },
       }),
     })
 
@@ -1509,10 +1474,10 @@ describe("session prompt route", () => {
         code: "unsupported_operation",
         operation: "harness_switch",
         capability: "session_harness",
-        harness: "opencode",
-        transport: "opencode",
+        harness: "codex",
+        transport: "codex",
         reason: "harness_switch_not_supported",
-        message: "opencode sessions cannot switch to example through session config patch",
+        message: "codex sessions cannot switch to example through session config patch",
       },
     })
     expect(calls).toEqual([])
@@ -1522,8 +1487,8 @@ describe("session prompt route", () => {
     const directory = process.cwd()
     const calls: SessionConfigUpdate[] = []
     const target = {
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "openai", modelID: "gpt-5.5" },
+      harness: { id: "openclaw", access: "connection" },
+      model: { providerID: "connection:openclaw", modelID: "default" },
       variant: null,
       agent: null,
     } satisfies SessionConfig
@@ -1535,8 +1500,8 @@ describe("session prompt route", () => {
     })
 
     const patch = {
-      harness: { id: "codex", access: "native" },
-      model: { providerID: "openai", modelID: "gpt-5.5" },
+      harness: { id: "openclaw", access: "connection" },
+      model: { providerID: "connection:openclaw", modelID: "default" },
     } satisfies SessionConfigUpdate
     const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
       method: "PATCH",
@@ -1547,73 +1512,6 @@ describe("session prompt route", () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(target)
     expect(calls).toEqual([patch])
-  })
-
-  it("accepts http transport spelling as a session config alias for streamable-http", async () => {
-    const directory = process.cwd()
-    const calls: SessionConfigUpdate[] = []
-    const app = SessionRoutes(() => ({
-      ...adapter({}),
-      getSessionConfig: async () => ({
-        harness: {
-          id: "claude",
-          access: "acp",
-          connection: {
-            kind: "remote",
-            transport: "streamable-http",
-            url: "http://127.0.0.1:7331/acp",
-          },
-        },
-        variant: null,
-        agent: null,
-      }),
-      updateSessionConfig: async (_id, patch) => {
-        calls.push(patch)
-        return {
-          harness: {
-            id: "claude",
-            access: "acp",
-            connection: {
-              kind: "remote",
-              transport: "streamable-http",
-              url: "http://127.0.0.1:7331/acp",
-            },
-          },
-          variant: null,
-          agent: null,
-        }
-      },
-    }))
-
-    const patch = {
-      harness: {
-        id: "claude",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "http",
-          url: "http://127.0.0.1:7331/acp",
-        },
-      },
-    } as unknown as SessionConfigUpdate
-    const res = await app.request(`http://localhost/session/s1/config?directory=${encodeURIComponent(directory)}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    })
-
-    expect(res.status).toBe(200)
-    expect(calls).toEqual([{
-      harness: {
-        id: "claude",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "streamable-http",
-          url: "http://127.0.0.1:7331/acp",
-        },
-      },
-    }])
   })
 
   it("returns 204 for prompt_async", async () => {
@@ -1875,7 +1773,7 @@ describe("session prompt route", () => {
     expect(calls).toEqual([])
   })
 
-  it("keeps supported OpenCode session operations on the existing success path", async () => {
+  it("keeps supported session operations on the existing success path", async () => {
     const directory = process.cwd()
     const calls: string[] = []
     const app = SessionRoutes(() => ({
@@ -2468,7 +2366,14 @@ describe("session prompt route", () => {
         },
       }),
       resolveDirectory: async () => directory,
-      listPermissions: async () => [{ id: "permission_1", sessionID: "session_owner" }],
+      listPermissions: async () => [{
+        id: "permission_1",
+        sessionID: "session_owner",
+        permission: "tool",
+        patterns: [],
+        always: [],
+        metadata: {},
+      }],
       beforeSessionOperation: (_c, input) => {
         admissions.push(input.sessionId)
       },

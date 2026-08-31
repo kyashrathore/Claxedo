@@ -11,8 +11,9 @@ import type {
   SubmitSessionTarget,
   SubmitSessionTargetResult,
 } from "../../submit/index"
-import { applyCreatedSessionTargetEffects, createOpencodeSessionWithLifecycle, resolveSubmitSessionTarget } from "../../submit/index"
+import { applyCreatedSessionTargetEffects, resolveSubmitSessionTarget } from "../../submit/index"
 import type { HarnessRef, SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import {
@@ -58,7 +59,7 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly sessionClient: () => SubmitSessionGetClient
   readonly scope: string
   readonly draftId: string | undefined
-  readonly sessionHarnessType: string
+  readonly sessionHarnessType: HarnessSelection
   readonly sessionConfig: {
     readonly agent: string
     readonly model: { readonly providerID: string; readonly modelID: string }
@@ -68,7 +69,7 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly boot: (sessionID?: string) => void
   readonly createSessionClient: (input: {
     readonly directory: SubmitDirectory
-    readonly harnessType: string
+    readonly harnessType: HarnessSelection
   }) => SubmitSessionCreateClient
   readonly claimHarnessSession: (input: {
     readonly scope: string

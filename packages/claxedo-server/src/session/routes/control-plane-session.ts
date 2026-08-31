@@ -349,8 +349,8 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         // source of truth for the session inventory. On a loopback request we
         // serve it directly — optionally filtered by directory or workspaceId,
         // or the full local inventory when neither is given — with no remote
-        // authority, no signed bearer token, and no dependence on the opencode
-        // server being queried.
+        // authority, no signed bearer token, and no dependence on an agent
+        // runtime being queried.
         if (isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw)) {
           const directory = c.req.query("directory")
           const workspaceId = c.req.query("workspaceId")
@@ -470,7 +470,18 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
           sessionId,
           workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),
         })
-        const transport = meta?.tags.find((tag) => tag.startsWith("harness:"))?.slice("harness:".length) || "opencode"
+        const transport = meta?.tags.find((tag) => tag.startsWith("harness:"))?.slice("harness:".length)
+        if (!transport) {
+          return c.json(
+            {
+              error: {
+                code: "session_harness_missing",
+                message: "Session metadata does not contain a canonical harness binding",
+              },
+            },
+            409,
+          )
+        }
         return c.json(workspaceTransportCapabilities(transport))
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)

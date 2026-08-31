@@ -9,7 +9,7 @@
  *
  * STATE MODEL —
  *   - A "project" is a git worktree root the client knows about. Membership lives in
- *     TWO places that must agree: (a) `opencode.global.dat:server` localStorage (the
+ *     TWO places that must agree: (a) `claxedo.global.dat:server` localStorage (the
  *     user-local list of open/closed project worktrees + expand state, read/written by
  *     `server.projects.*` in `src/context/server.tsx`), and (b) the server's `/project`
  *     (`GET`) list, which the client treats as the source of truth for which worktrees
@@ -240,12 +240,12 @@ type SeedProject = {
 async function seedProject(page: Page, dir: string = DIR) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },
@@ -447,7 +447,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/experimental/session", handleSessionList)
   await page.route("**/experimental/session?**", handleSessionList)
   await page.route("**/session/*/message**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
-  await page.route("**/session/*/capabilities**", (r) => (api(r.request()) ? json(r, { transport: "opencode" }) : r.continue()))
+  await page.route("**/session/*/capabilities**", (r) => (api(r.request()) ? json(r, { transport: "runtime" }) : r.continue()))
   await page.route("**/session/status**", (r) => (api(r.request()) ? json(r, {}) : r.continue()))
 
   // The sidebar is docked/visible by default (`sidebarPinned()` in

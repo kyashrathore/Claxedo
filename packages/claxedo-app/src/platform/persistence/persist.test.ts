@@ -89,7 +89,7 @@ describe("persisted storage", () => {
       lastProject: { live: "/real" },
       workspaceServer: {},
     })
-    localStorage.setItem("opencode.global.dat:server", real)
+    localStorage.setItem("claxedo.global.dat:server", real)
 
     const { Persist, persisted, resetDemoPersisted, setPersisted } = await import(`./persist?test=${Date.now()}`)
     resetDemoPersisted()
@@ -119,8 +119,8 @@ describe("persisted storage", () => {
 
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(localStorage.getItem("opencode.global.dat:server")).toBe(real)
-    expect(localStorage.getItem("opencode.demo.global.dat:server")).toBeNull()
+    expect(localStorage.getItem("claxedo.global.dat:server")).toBe(real)
+    expect(localStorage.getItem("claxedo.demo.global.dat:server")).toBeNull()
   })
 
   test("server-scoped persistence treats localhost and 127.0.0.1 as the same server", async () => {

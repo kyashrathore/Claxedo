@@ -5,7 +5,7 @@ import {
 } from "../helpers/contracts/session-config"
 
 describe("session config contract", () => {
-  test("normalizes the accepted request identity into the canonical harness shape", () => {
+  test("preserves the canonical native harness identity", () => {
     expect(
       parseSessionConfigPatch(
         { harness: { type: "claude-sdk" }, agent: "build" },
@@ -17,33 +17,21 @@ describe("session config contract", () => {
     })
   })
 
-  test("preserves normalized harness connection metadata from the authoritative normalizer", () => {
+  test("preserves a configured connection identity", () => {
     expect(
       parseSessionConfigPatch(
         {
           harness: {
-            id: "claude",
-            access: "acp",
-            connection: {
-              kind: "remote",
-              transport: "http",
-              url: "http://127.0.0.1:4096/acp",
-              headers: { authorization: "Bearer test" },
-            },
+            id: "team-agent",
+            access: "connection",
           },
         },
         "http://localhost/session/session-1/config",
       ),
     ).toEqual({
       harness: {
-        id: "claude",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "streamable-http",
-          url: "http://127.0.0.1:4096/acp",
-          headers: { authorization: "Bearer test" },
-        },
+        id: "team-agent",
+        access: "connection",
       },
     })
   })

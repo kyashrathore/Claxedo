@@ -31,6 +31,9 @@ const typeContractCandidates = new Set([
   "platform/runtime/workspace-runtime.ts",
   "platform/runtime/capabilities.ts",
   "platform/runtime/session.ts",
+  // Claxedo-owned HTTP DTOs are a pure presentation contract. Consumers import
+  // them type-only so the browser never gains a generated/vendor SDK edge.
+  "platform/api/claxedo-api-types.ts",
   // The workspace-startup port: what local code may ask a hosted build to bring
   // up. Same shape as the account port below — the contract is imported
   // type-only by its caller, its binding, and its cloud implementation, so the

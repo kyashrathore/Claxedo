@@ -55,6 +55,7 @@ import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-w
 import { createSubmitCommentActions } from "./comment-routing"
 import { createSubmitOptimisticTimeline } from "./submit-ui-state"
 import type { CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
+import { harnessSelectionValue, type HarnessSelection } from "@/platform/identity/harness-selection"
 
 export type { FollowupDraft } from "./submit-input"
 
@@ -312,6 +313,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       harnessController.promote(sourceScope, scope)
     }
     const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
+    const requestedHarnessType = infoSessionConfig?.harnessType ?? selectedHarnessType(scope)
+    if (!requestedHarnessType) {
+      showToast({
+        title: language.t("prompt.toast.modelAgentRequired.title"),
+        description: "Select an agent connection before starting a session.",
+        variant: "error",
+      })
+      return
+    }
     const existingSessionConfig = await (async () => {
       if (isNewSession) return undefined
       // A fully persisted harness config owns follow-up model/variant. Incomplete
@@ -323,7 +333,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           parseExistingSessionConfig(await readSessionConfig({
             sessionID: explicitSessionID!,
             directory: sessionDirectory,
-            harnessType: selectedHarnessType(scope),
+            harnessType: requestedHarnessType,
           })),
           infoSessionConfig,
         )
@@ -339,8 +349,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!isNewSession && usesWorkspaceRuntimeSession(sessionDirectory) && !existingSessionConfig) {
       return
     }
-    const harnessMode = existingSessionConfig ? existingSessionConfig.harnessType !== "opencode" : selectedHarnessMode(scope)
-    const sessionHarnessType = existingSessionConfig?.harnessType ?? (harnessMode ? selectedHarnessType(scope) : "opencode")
+    const sessionHarnessType = existingSessionConfig?.harnessType ?? requestedHarnessType
+    const harnessMode = true
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
     const signedWorkspaceId = signedControlPlane ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory) : undefined
     const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
@@ -377,14 +387,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       customCommandNames,
     })
     mode = resolvedMode.mode
-    const harness = harnessMode ? harnessProfile(sessionHarnessType).displayName : undefined
+    const harness = harnessProfile(sessionHarnessType).displayName
     const boot = (sessionID?: string) => {
-      setBooting({ harness: harness ?? "OpenCode", sessionID, phase: "booting" })
+      setBooting({ harness, sessionID, phase: "booting" })
     }
     const clearBoot = () => setBooting()
     const showSendingFirstMessage = () => {
       setBooting({
-        harness: harness ?? "OpenCode",
+        harness,
         ...(session?.id ? { sessionID: session.id } : {}),
         phase: "sending",
       })
@@ -419,10 +429,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const model = submittedConfig.model
     const agent = submittedConfig.agent
     const variant = submittedConfig.variant
-    const persistedHarnessType = sessionHarnessType === "opencode"
-      ? pickHarness(model.providerID) ?? sessionHarnessType
-      : sessionHarnessType
-    const persistedHarnessRef = persistedHarnessType !== "opencode" ? { id: persistedHarnessType } : selectedHarnessRef(scope)
+    const persistedHarnessType: HarnessSelection = sessionHarnessType
+    const persistedHarnessRef = persistedHarnessType
     publishCloudHandoff("creating_session", "Creating session.")
 
     let session = input.info()
@@ -566,7 +574,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const refreshPromptDirectory = () =>
       directorySessionCacheActions.refresh({
         directory: sessionDirectory,
-        harnessType: persistedHarnessType,
+        harnessType: harnessSelectionValue(persistedHarnessType),
         workspace: submitWorkspaceBacking({
           sessionRef: input.sessionRef?.(), workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.(),
         }),
@@ -599,15 +607,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const recordPromptSubmissionContext = {
       onSubmit: input.onSubmit,
       saveSessionConfig: () => {
-        // `target.created` covers BOTH paths now: an OpenCode session is
-        // created with its config in the create body, and a harness session is
-        // claimed with `sessionConfig` threaded into the claim. Neither needs a
-        // follow-up PATCH.
-        //
-        // This branch was briefly `target.created && !harnessMode`, because the
-        // harness claim did NOT carry config and those sessions never persisted
-        // theirs. Passing it into the claim is the better fix — it is atomic,
-        // where the follow-up write was not — so the narrower guard is gone.
+        // Session creation persists the selected runtime binding and config
+        // atomically, so a created session never needs a follow-up PATCH.
         if (target.created) return Promise.resolve()
         if (existingSessionConfig && sameExistingSessionConfig(existingSessionConfig, {
           harnessType: persistedHarnessType,

@@ -111,7 +111,6 @@ export function agentListQuery(input: {
     ),
     staleTime: 30 * 1000,
     queryFn: async () => {
-      if (!harnessUsesAgentProfiles(input.harnessType)) return []
       if (input.request && input.baseUrl) {
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
         const signedWorkspace = cachedSignedWorkspace(input.baseUrl, input.directory)

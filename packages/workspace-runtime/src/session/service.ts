@@ -30,7 +30,7 @@ export type ActiveTurnScope = {
 }
 
 export type SessionPromptBody = {
-  parts?: unknown[]
+  parts?: PromptInput["parts"]
   messageID?: string
   agent?: string
   model?: { providerID?: string; modelID?: string }
@@ -72,8 +72,8 @@ export type SessionPromptTurnResult = {
 
 export type SessionPromptTurnInput = {
   adapter: AgentHarnessAdapter
-  /** Required for the legacy direct-adapter path; canonical routes use AgentRuntime. */
-  binding?: AgentExecutionBinding
+  /** Canonical persisted execution binding for this Claxedo-owned session. */
+  binding: AgentExecutionBinding
   sessionId: string
   directory: RuntimeDirectory
   body: SessionPromptBody
@@ -200,12 +200,11 @@ function prompt(body: SessionPromptBody, config?: SessionConfig): PromptInput {
 
 async function promptForSession(
   adapter: AgentHarnessAdapter,
-  sessionId: string,
-  directory: RuntimeDirectory,
+  binding: AgentExecutionBinding,
   body: SessionPromptBody,
 ) {
   if (body.agent && body.model?.providerID && body.model?.modelID && body.variant !== undefined) return prompt(body)
-  return prompt(body, await adapter.getSessionConfig(sessionId, directory).catch(() => undefined))
+  return prompt(body, await adapter.getSessionConfig(binding).catch(() => undefined))
 }
 
 function isMessage(input: unknown): input is AgentMessage {
@@ -236,7 +235,7 @@ function createPromptEventProjection(input: {
   prompt: PromptInput
 }) {
   let assistantId = input.prompt.assistantMessageId ?? mkAssistantId(input.prompt.userMessageId)
-  const projection = createOpencodeCompatProjection({
+  const projection = createClientPresentationProjection({
     sessionId: input.sessionId,
     directory: input.directory,
     assistantMessageId: assistantId,
@@ -379,7 +378,7 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
     sessionId: input.sessionId,
     directory: input.directory ?? "",
   })
-  const promptInput = await promptForSession(input.adapter, input.sessionId, input.directory, input.body)
+  const promptInput = await promptForSession(input.adapter, binding, input.body)
   const scope = compatScope(input.directory, input.sessionId)
 
   let assistantId = promptInput.assistantMessageId ?? mkAssistantId(promptInput.userMessageId)
@@ -426,7 +425,7 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
     assistantId,
     assistantMessagePublished,
     ...(error ? { error } : {}),
-    messages: await input.adapter.getMessages(input.sessionId, input.directory),
+    messages: await input.adapter.getMessages(binding),
   }
 }
 

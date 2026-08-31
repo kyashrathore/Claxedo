@@ -246,12 +246,12 @@ function slug(value: string) {
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },
@@ -1338,7 +1338,7 @@ test.describe("core timeline rendering & scroll (local) @core", () => {
             type: "text",
             text: "The user made the following comment regarding line 10 of src/app.ts: please fix this",
             synthetic: true,
-            metadata: { opencodeComment: { path: "src/app.ts", comment: "please fix this", selection: { startLine: 10, startChar: 0, endLine: 10, endChar: 0 } } },
+            metadata: { claxedoComment: { path: "src/app.ts", comment: "please fix this", selection: { startLine: 10, startChar: 0, endLine: 10, endChar: 0 } } },
           },
         ],
       },

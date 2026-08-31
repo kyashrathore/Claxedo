@@ -64,15 +64,9 @@ Host decision seams (all default to decision-free kit behavior):
 `storeFactory` (store implementation; default SQLite `RuntimeStore`),
 `harnesses` (adapter registry; default `defaultWorkspaceHarnessRegistry()`),
 `corsOrigin` (origin policy; kit default = loopback dev origins only, no
-product domains), `opencodeCompat` (three-state OpenCode compatibility:
-`undefined` default keeps the OpenCode **adapter mechanism** on — upstream
-list/status proxying — while the root compat **route surface** (`/mcp`,
-`/provider`, `/vcs`, `/session/status`) stays off; `true` enables both;
-`false` is a full kill switch), `opencodeRequest` (OpenCode engine transport:
-inject an in-process `(request: Request) => Promise<Response>` handler and the
-adapter/compat routes/`/global/event` proxying all ride it — no socket, no
-child process; when set it wins over `opencodeUrl`), and `startServer`'s third argument
-`{ signals: true }` (process
+product domains), generic `connectionProviders` plus a strict v3 runtime
+snapshot (operator-owned process/remote descriptors and secret references),
+and `startServer`'s third argument `{ signals: true }` (process
 signal/exit handling; kit default makes no process-global claims). Claxedo
 supplies all of these from `claxedo-server` (`runtime-boot.ts`, embedded
 options); guards in claxedo-server's architecture tests ban product strings
@@ -158,7 +152,7 @@ boundary.
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |
-| `*    /lsp`, `*    /vcs`, `*    /global/event` | compatibility routes mounted by host | implicit |
+| `*    /lsp`, `*    /vcs` | client-presentation routes mounted by host | implicit |
 
 The capability response is versioned with `api_version: 2`. It advertises
 `process_observer: true` for the public, redacted owner-event API used by an
@@ -171,15 +165,14 @@ capability; the runtime HTTP surface remains the workspace execution boundary.
 
 | Surface | Transport | Event family | Contract |
 | --- | --- | --- | --- |
-| `GET /global/event` | SSE | OpenCode-compatible `CompatEnvelope` values | Primary client stream for session/message/permission/question lifecycle. For OpenCode compatibility mode this may proxy the upstream OpenCode `/global/event`; otherwise it fans out the host `RuntimeEventHub` global stream and emits `server.connected` plus heartbeat frames. |
-| `GET /api/wr/runtime-events` | SSE | `RuntimeEventEnvelope` values wrapping raw `AgentRuntimeEvent` payloads | Primary runtime-event stream for host-mounted core clients that need adapter-native runtime events. This route is mounted by `mountWorkspaceCore()`. |
+| `GET /api/wr/runtime-events` | SSE | `RuntimeEventEnvelope` values wrapping raw `AgentRuntimeEvent` payloads | The sole conversation runtime-event stream. This route is mounted by `mountWorkspaceCore()` and supports authorization and replay. |
 | `GET /api/wr/events` | SSE | `WorkspaceRuntimeEvent` values from `workspaceRuntimeBus` | Neutral runtime path for the compatibility/internal process-global stream. |
 | `GET /event` | SSE | `WorkspaceRuntimeEvent` values from `workspaceRuntimeBus` | Compatibility/internal process-global stream for PTY lifecycle, PTY stream summaries, process status/config events, agent lifecycle, session lifecycle, and heartbeats. It is not the primary session/message event stream. |
 | `GET /api/wr/pty/:ptyID/connect` | WebSocket | PTY bytes plus cursor metadata | Supported PTY data stream. PTY lifecycle summaries also appear on `/event`, but terminal bytes are delivered over this WebSocket. |
 | `GET /api/wr/process/logs` | HTTP snapshot | Text log tail | Process output is poll/snapshot based through PTY log snapshots. There is no separate supported process-output event stream. Process status summaries appear on `/event`. |
 
 `RuntimeEventHub` is the primary hub for session/runtime events. Session
-routes publish OpenCode-compatible events to its global channel and bridge only
+routes publish client-presentation events to its internal observer channel and bridge only
 terminal lifecycle states into `workspaceRuntimeBus` as `agent.lifecycle`
 compatibility events. That bridge maps `session.status` with busy status to
 `Busy`, permission/question asks to `UserActionRequired`, `session.idle` to
@@ -399,7 +392,7 @@ Strict type-based dispatch happens once, at host construction
 of the codebase calls into the `AgentHarnessAdapter` interface only — there are
 no connection-id-specific branches in the call paths.
 
-The four model-fallback sites (`bootstrap.ts`, `opencode-compat.ts`)
+The four model-fallback sites (`bootstrap.ts`, `client-presentation.ts`)
 are *model defaulting* decisions, not adapter-selection branches.
 
 ### Operator-configured ACP connections
@@ -517,7 +510,7 @@ contract.
 | `WORKSPACE_RUNTIME_DIRECTORY`, `WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID` | Runtime target identity. |
 | `WORKSPACE_RUNTIME_RUNNER`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |
-| `WORKSPACE_RUNTIME_OPENCODE_COMPAT` | Set to `0` by the host to disable the OpenCode compatibility adapter and routes. The executable translates this process-boundary setting into the `opencodeCompat` host option. |
+| `WORKSPACE_RUNTIME_OPENCODE_COMPAT` | Set to `0` by the host to disable the Claxedo client-presentation adapter and routes. The executable translates this process-boundary setting into the `opencodeCompat` host option. |
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
 | `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |
 | `WORKSPACE_RUNTIME_DATA_DIR`, `WORKSPACE_RUNTIME_STATE_DIR`, `WORKSPACE_RUNTIME_STORE_DIR`, `WORKSPACE_RUNTIME_PTY_HISTORY_DIR` | Neutral runtime-owned storage locations. Defaults are under `~/.workspace-runtime`. |

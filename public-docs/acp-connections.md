@@ -1,149 +1,148 @@
-# Operator-Configured ACP Connections
+# Agent Connections
 
-Any agent that speaks the [Agent Client Protocol](https://agentclientprotocol.com)
-(ACP) over stdio can be plugged into Claxedo as a first-class harness — no code
-change, no fork, no bundled binary. An operator registers a **connection**: a
-stable slug, a display label, and the command to spawn. Claxedo then treats it
-exactly like a built-in harness: it appears in the app's harness picker, runs
-sessions through the same `AcpHarnessAdapter`, and its sessions persist and
-reload like any other.
+Claxedo registers external agents through provider-owned connections. ACP is one
+possible provider; it is not a special route, identity format, or browser
+configuration shape.
 
-This is the extension point for products that want to connect their own agent
-to a Claxedo server.
+Connections are trusted operator configuration. The browser receives only a
+sanitized discovery record and never receives provider keys, commands,
+endpoints, environment variables, headers, secret references, or resolved
+credentials.
 
-## Identity Model
+## Trusted v3 configuration
 
-| Term | Meaning |
-| --- | --- |
-| Connection id (slug) | Lowercase stable identifier matching `^[a-z][a-z0-9-]{0,63}$`, e.g. `gemini`. |
-| Canonical harness key | `acp:<slug>`, e.g. `acp:gemini`. This is the identity sessions store and the app selects. |
-| Descriptor | The label + command + env resolved from the registry when a process must start. |
-
-Sessions and configuration store only the **logical identity** (`acp:<slug>`).
-The process descriptor is resolved from the accepted registry each time a
-process starts, so editing a connection's `command` or `env` applies on the
-next process start without rewriting any session.
-
-The built-in ids (`claude`, `codex`, `cursor`, `opencode`, `pi`, and the
-`-acp`/`-sdk` access variants) are reserved; a connection slug never collides
-with them because operator identities always travel under the `acp:` prefix.
-
-## Config Schema
-
-Connections live in the trusted user config file
-`~/.claxedo/user-agent-config.json` (honors `CLAXEDO_DATA_DIR`), under the
-`acp` map:
+Connections live in `~/.claxedo/user-agent-config.json` under the required v3
+`connections` map. Each map key must exactly match its descriptor's immutable
+`connectionId`.
 
 ```jsonc
 {
+  "version": 3,
   "mcp": {},
-  "acp": {
-    "gemini": {
-      "label": "Gemini",
-      // command[0] is the executable; the rest are arguments, passed verbatim.
-      "command": ["/usr/local/bin/gemini-cli", "--experimental-acp"],
-      // Extra process environment applied over the runtime environment.
-      "env": { "GEMINI_API_KEY": "..." },
-      // Narrow generic-ACP compatibility switches. `supportsMcpServers:
-      // false` keeps configured MCP servers out of everything offered to
-      // this agent — for implementations that reject requests carrying them.
-      "params": { "supportsMcpServers": false },
-      // Defaults to true. false is an explicit, reversible disable.
-      "enabled": true
+  "connections": {
+    "team-agent": {
+      "connectionId": "team-agent",
+      "providerKey": "acp",
+      "configRevision": 1,
+      "enabled": true,
+      "config": {
+        "label": "Team agent",
+        "connection": {
+          "kind": "process",
+          "command": "/opt/agents/team-agent",
+          "args": ["--acp"]
+        },
+        "secretBindings": {
+          "env": { "TEAM_AGENT_TOKEN": "token" }
+        },
+        "modelSelection": { "status": "optional" }
+      },
+      "secretRefs": {
+        "token": "credentials/team-agent-token"
+      }
     }
-  }
+  },
+  "defaultConnectionId": "team-agent"
 }
 ```
 
-**Offline provisioning:** edit this file directly while the server is stopped
-(or let config fan-out pick it up on the next mutation). On load, invalid
-entries are dropped with a warning and every valid entry survives — a
-hand-edited typo in one row cannot take the server down or drop the others.
+`defaultConnectionId` is optional. Omitting it leaves agent selection
+unresolved; file order never selects a connection. Changing trusted settings
+requires a higher `configRevision`. A different provider or endpoint identity
+requires a new `connectionId`.
 
-## Live Mutation API
+ACP `secretBindings.env` (process connections) and
+`secretBindings.headers` (HTTP/WebSocket connections) map a target variable or
+header name to a provider secret name. That name must have a matching
+`secretRefs` entry. The host resolves it immediately before adapter creation;
+the descriptor and browser projection never contain the resolved value.
 
-The local server exposes the registry under
-`/api/claxedo/agent-config/harness/acp-connections`. The routes are gated the
-same way as the rest of local harness configuration (local/self-hosted
-deployments; hosted deployments that disallow local agent config refuse them).
+There is no v1/v2 decoder, ACP map importer, built-in OpenCode row, or fallback
+connection.
+
+## Authenticated local API
+
+The local server exposes one generic route family under
+`/api/claxedo/agent-config/connections`:
 
 | Method + path | Effect |
 | --- | --- |
-| `GET /harness/acp-connections` | Sanitized discovery rows: `{ connections: [{ key, id, label, access: "acp", enabled }] }`. **Never** includes `command` or `env`. |
-| `PUT /harness/acp-connections/:id` | Upsert one connection. Body: `{ label, command, env?, params?, enabled? }`. |
-| `DELETE /harness/acp-connections/:id` | Remove the connection. `404` if absent. |
+| `GET /connections` | Returns `{ connections: HarnessConnectionRef[] }`. |
+| `PUT /connections/:connectionId` | Atomically validates and stores one complete trusted descriptor. |
+| `DELETE /connections/:connectionId` | Removes one connection and clears it as the explicit default, if selected. |
 
-Mutations are **atomic over the whole map**: the proposed result is validated
-in full and rejected whole (`400` with a `problems` array naming each offending
-id) if any entry is malformed. A failed mutation leaves the previously accepted
-registry serving — running sessions and new selections are unaffected.
+The removed `/harness/acp-connections` path has no alias.
 
-Every successful mutation fans the refreshed runtime snapshot out to connected
-workspace runtimes, so an added or edited connection is selectable without a
-restart.
+The public `HarnessConnectionRef` contains only:
 
-## Selection And Discovery
+```ts
+type HarnessConnectionRef = {
+  connectionId: string
+  label: string
+  enabled: boolean
+  readiness: "ready" | "unavailable" | "disabled"
+  capabilities: {
+    abort: boolean
+    reconnect: boolean
+    replay: boolean
+    permissions: boolean
+    questions: boolean
+    todos: boolean
+    commands: boolean
+    fork: boolean
+    revert: boolean
+    unrevert: boolean
+    configOptions: boolean
+    subagents: boolean
+  }
+  modelSelection?:
+    | { status: "required"; models: AgentModel[] }
+    | { status: "optional"; models?: AgentModel[] }
+    | { status: "unsupported" }
+}
+```
 
-The app's harness picker groups the **enabled** discovery rows under "ACP",
-labeled with the server-provided `label`. Selecting one stores the canonical
-key (`acp:<slug>`) — the browser never sees or sends the command or
-environment. Disabled rows are not offered.
+The Connections settings screen lists this projection and can remove a
+connection. Provider-specific add/edit payloads remain an authenticated
+operator action rather than a raw-secret browser form.
 
-Programmatically, a connection is selected like any harness identity: the
-string form `"acp:gemini"` or the object form `{ "id": "gemini", "access":
-"acp" }` are both accepted wherever a harness identity is.
+## Selection and model policy
 
-## Runtime Semantics
+Connection IDs are opaque. A client must not prefix, parse, or turn them into a
+legacy ACP string. Runtime selection uses the discriminated target
+`{ kind: "connection", connectionId }`; native selection uses
+`{ kind: "native", harnessId }`.
 
-- **Fail-closed resolution.** A workspace runtime only starts processes for
-  connections present in its **applied** registry (pushed through the trusted
-  config-apply path, `POST /api/wr/config`). Selecting an identity that is
-  unknown, disabled, or removed fails with
-  `workspace_harness_not_configured` ("ACP connection … is not configured on
-  this runtime") — it never falls back to a bundled first-party ACP binary or
-  to OpenCode.
-- **Process ownership.** The runtime spawns `command[0]` with the configured
-  arguments verbatim (stdio transport). It does not resolve the executable
-  against bundled binaries, and a missing or non-executable path surfaces as a
-  spawn-time session error, not a silent substitution.
-- **Environment is trusted-path-only.** `env` travels exclusively through the
-  operator config → runtime snapshot → process spawn path. Session callers can
-  never supply process environment, and discovery/status surfaces never echo
-  it back.
-- **MCP servers.** The user's configured MCP servers are offered to the agent
-  through the ACP protocol's native `mcpServers` field (Claxedo-managed MCP
-  servers remain a built-in-agent concern). `params.supportsMcpServers: false`
-  withholds the offer entirely — session requests, process fingerprints, and
-  process observation all see an empty server list — for agents that reject
-  requests carrying MCP servers.
-- **Enable / disable / remove.** `enabled: false` (or deletion) stops *new*
-  execution immediately on the next applied snapshot; running turns finish.
-  Stored sessions remain listed and their history stays readable; re-enabling
-  the same slug restores execution for those sessions.
-- **Id rebinding.** The slug is the identity. Deleting a slug and later
-  re-adding it — even pointing at a different agent binary — rebinds all
-  historical sessions under that slug to the new descriptor. Use a fresh slug
-  when the new agent should not inherit the old history.
+The picker follows the advertised `modelSelection` policy:
 
-## Verifying A Connection
+- `required`: a model must be selected before submission.
+- `optional`: model selection may be offered, but an empty model list does not
+  block submission.
+- `unsupported`: the agent owns model selection and the UI does not fabricate a
+  model row.
 
-An integration suite exercises the full path against a scripted ACP process:
-config mutation → sanitized discovery → session create → prompt turn streamed
-from the configured process → atomic rejection of a malformed mutation →
-disable failing closed → re-enable restoring the same logical identity and its
-history. See
-`packages/claxedo-server/src/tests/integration/agent-lifecycle.integration.test.ts`
-("operator ACP connection lifecycle") and
-`packages/workspace-runtime/src/workspace/runtime.test.ts`
-("operator ACP connections") for the enforced behavior.
+Until a runtime endpoint accepts the discriminated target, the app must leave a
+connection unselectable. It must not install a compatibility string encoding.
+
+## Secret and lifecycle rules
+
+- Secret references resolve on the host immediately before adapter creation.
+- Public responses and logs expose only redacted typed failures.
+- Disabled, unknown, unavailable, expired, revoked, or uninstalled connections
+  fail closed without falling back to another agent.
+- Config and secret-generation changes invalidate the prior adapter generation.
+- Removing a connection prevents new execution while canonical session history
+  remains readable.
 
 ## Grounding
 
-- Config schema + validation: `packages/claxedo-server-core/src/agent-config/index.ts`
-  (`UserAcpConnection`, `normalizeAcpConnections`, `acpConnectionHarness`,
-  `acpConnectionRows`, `getRuntimeConfigSnapshot`)
-- Mutation API: `packages/claxedo-local-server/src/agent-config/routes/acp-connection-routes.ts`
-- Identity rules: `packages/agent-sdk-runtime/src/harness-types.ts`
-  (`ACP_CONNECTION_ID_PATTERN`, `isAcpConnectionId`, `harnessKey`)
-- Runtime enforcement: `packages/workspace-runtime/src/workspace/runtime.ts`
-  (`WorkspaceHarnessUnavailableError`), `packages/workspace-runtime/src/routes/config.ts`
+- Trusted descriptor and provider-owned public projection:
+  `packages/agent-sdk-runtime/src/connection-provider.ts`
+- Strict v3 persistence/map validation:
+  `packages/claxedo-server-core/src/agent-config/connections.ts`
+- Secret boundary:
+  `packages/claxedo-server-core/src/agent-config/connection-secrets.ts`
+- Generic CRUD route:
+  `packages/claxedo-local-server/src/agent-config/routes/connection-routes.ts`
+- Browser decoder/store:
+  `packages/claxedo-app/src/features/settings/ui/agent-connections.ts`

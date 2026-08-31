@@ -78,27 +78,6 @@ describe("cached Agent Extension install flow", () => {
     await expect(fs.readFile(path.join(project, ".cursor", "skills", path.basename(result.cache.path), "SKILL.md"), "utf8")).resolves.toContain("name: review")
   })
 
-  test("installs a standalone skill for OpenCode project scope", async () => {
-    await writeSource("SKILL.md", "---\nname: review\ndescription: Review code\n---\n")
-
-    const result = await installCachedAgentExtension({
-      sourceRoot: source,
-      source: { type: "github", owner: "acme", repo: "review" },
-      resolvedSha: "abcdef1234567890",
-      scope: "project",
-      projectDir: project,
-      dataRoot: data,
-      homeDir: home,
-      targets: ["opencode"],
-      id: "review",
-      now: 100,
-    })
-
-    expect(result.materialized.status).toBe("applied")
-    await expectMaterializedDirectory(path.join(project, ".opencode", "skills", path.basename(result.cache.path)))
-    await expect(fs.readFile(path.join(project, ".opencode", "skills", path.basename(result.cache.path), "SKILL.md"), "utf8")).resolves.toContain("name: review")
-  })
-
   test("installs a standalone skill for machine scope", async () => {
     await writeSource("SKILL.md", "---\nname: review\n---\n")
 
@@ -145,11 +124,6 @@ describe("cached Agent Extension install flow", () => {
 
     expect(result.materialized.status).toBe("partial")
     expect(result.materialized.components).toMatchObject([
-      {
-        runner: "opencode",
-        status: "skipped",
-        reason: "native plugin install path not verified",
-      },
       {
         runner: "claude",
         status: "skipped",
@@ -231,7 +205,7 @@ describe("cached Agent Extension install flow", () => {
             args: ["-y", "@claxedo/mcp"],
             env: {
               CLAXEDO_SERVER_URL: "http://package.example",
-              OPENCODE_API_DIR: "/package-dir",
+              CLAXEDO_API_DIR: "/package-dir",
               CLAXEDO_WORKSPACE_ID: "ws_package",
               CLAXEDO_LOCAL_TOKEN: "local-token",
               CLAXEDO_AUTH_TOKEN: "auth-token",
@@ -270,7 +244,7 @@ describe("cached Agent Extension install flow", () => {
             args: ["-y", "@claxedo/mcp"],
             env: {
               CLAXEDO_SERVER_URL: "http://127.0.0.1:8123",
-              OPENCODE_API_DIR: project,
+              CLAXEDO_API_DIR: project,
               CLAXEDO_WORKSPACE_ID: "ws_docker",
               OTHER: "kept",
             },
@@ -320,41 +294,6 @@ describe("cached Agent Extension install flow", () => {
           command: "node",
           args: ["server.js"],
           env: { OTHER: "kept" },
-        },
-      },
-    })
-  })
-
-  test("installs standalone MCP for OpenCode project target", async () => {
-    await writeSource("mcp.json", JSON.stringify({ servers: { docs: { command: "node", args: ["server.js"] } } }))
-
-    const result = await installCachedAgentExtension({
-      sourceRoot: source,
-      source: { type: "github", owner: "acme", repo: "docs-mcp" },
-      resolvedSha: "abcdef1234567890",
-      scope: "project",
-      projectDir: project,
-      dataRoot: data,
-      homeDir: home,
-      targets: ["opencode"],
-      id: "docs-mcp",
-      now: 100,
-    })
-
-    expect(result.materialized.status).toBe("applied")
-    expect(result.materialized.components).toEqual([{
-      runner: "opencode",
-      component: "docs",
-      type: "mcp",
-      status: "applied",
-      path: path.join(project, ".opencode", "opencode.jsonc"),
-    }])
-    await expect(fs.readFile(path.join(project, ".opencode", "opencode.jsonc"), "utf8").then(JSON.parse)).resolves.toMatchObject({
-      mcp: {
-        docs: {
-          type: "local",
-          command: ["node", "server.js"],
-          enabled: true,
         },
       },
     })

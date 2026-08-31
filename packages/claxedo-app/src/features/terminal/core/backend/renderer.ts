@@ -58,7 +58,7 @@ let _webglSupported: boolean | undefined
 function terminalLigaturesEnabled(): boolean {
   if (typeof localStorage === "undefined") return false
   try {
-    return localStorage.getItem("opencode.terminal.ligatures") === "1"
+    return localStorage.getItem("claxedo.terminal.ligatures") === "1"
   } catch {
     return false
   }
@@ -156,7 +156,7 @@ export function shouldAttemptWebGL(input: {
 function rendererPreference(): string {
   if (typeof localStorage === "undefined") return ""
   try {
-    return localStorage.getItem("opencode.terminal.renderer") ?? ""
+    return localStorage.getItem("claxedo.terminal.renderer") ?? ""
   } catch {
     return ""
   }

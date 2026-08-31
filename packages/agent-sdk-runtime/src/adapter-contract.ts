@@ -94,7 +94,7 @@ export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
   readonly commitsStreamEvents?: boolean
 
-  getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
+  getSession(binding: AgentExecutionBinding): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
   createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
@@ -124,22 +124,16 @@ export interface AgentHarnessAdapterCore {
   dispose(): void
 }
 
-/** Provider-native discovery is separate from Claxedo inventory and is never
- * used to construct normal session lists or history. */
-export interface SupportsSessionDiscovery {
-  discoverSessions(workspace: AgentWorkspaceIdentity): Promise<AgentSession[]>
-}
-
 export interface SupportsAbort {
-  abort(id: string, directory: RuntimeDirectory): Promise<AbortResult>
+  abort(binding: AgentExecutionBinding): Promise<AbortResult>
 }
 
 export interface SupportsRevert {
-  revert(id: string, directory: RuntimeDirectory): Promise<void>
+  revert(binding: AgentExecutionBinding): Promise<void>
 }
 
 export interface SupportsUnrevert {
-  unrevert(id: string, directory: RuntimeDirectory): Promise<void>
+  unrevert(binding: AgentExecutionBinding): Promise<void>
 }
 
 export interface SupportsFork {
@@ -147,7 +141,7 @@ export interface SupportsFork {
 }
 
 export interface SupportsCommands {
-  executeCommand(id: string, command: string, directory: RuntimeDirectory): Promise<void>
+  executeCommand(binding: AgentExecutionBinding, command: string): Promise<void>
 }
 
 export type ShellCommandInput = {
@@ -182,7 +176,7 @@ export interface SupportsSummarize {
  * consumers must forward them unchanged rather than deriving replacements.
  */
 export interface SupportsMessagePages {
-  getMessagePage(id: string, input: AgentMessagePageInput, directory: RuntimeDirectory): Promise<AgentMessagePage>
+  getMessagePage(binding: AgentExecutionBinding, input: AgentMessagePageInput): Promise<AgentMessagePage>
 }
 
 export interface SupportsAgents {
@@ -190,7 +184,7 @@ export interface SupportsAgents {
 }
 
 export interface SupportsTodos {
-  getTodos(sessionId: string, directory: RuntimeDirectory): Promise<Array<{ content: string; status: string; priority: string }>>
+  getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>>
 }
 
 export type AgentGoalStartInput = {
@@ -242,7 +236,7 @@ export function requireGoalResource(adapter: AgentHarnessAdapter): AgentGoalReso
 
 export interface SupportsPermissions {
   listPermissions(directory: RuntimeDirectory): Promise<AgentPermission[]>
-  respondPermission(permId: string, decision: PermissionDecision, directory: RuntimeDirectory): Promise<AgentInteractionResult | void>
+  respondPermission(binding: AgentExecutionBinding, permId: string, decision: PermissionDecision): Promise<AgentInteractionResult | void>
 }
 
 /**
@@ -251,8 +245,7 @@ export interface SupportsPermissions {
  * A LADDER, not a taxonomy: the rungs are ordered by how much runs without
  * asking, and that ordering is the only thing shared across harnesses. What each
  * rung concretely does is the harness's business and differs wildly — `auto` is
- * an OS sandbox on codex, a model classifier on claude and cursor, and a rule
- * list on opencode.
+ * an OS sandbox on codex and a model classifier on claude and cursor.
  *
  * `level` is therefore a HINT for choosing a default, never a promise about
  * behaviour. Anything user-facing must show `AgentPermissionMode.name` — the
@@ -297,19 +290,20 @@ export type AgentPermissionModeState = {
 }
 
 export interface SupportsPermissionModes {
-  listPermissionModes(sessionId: string, directory: RuntimeDirectory): Promise<AgentPermissionModeState>
+  listDraftPermissionModes?(directory: RuntimeDirectory): Promise<AgentPermissionModeState>
+  listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState>
   /**
    * Returns the state read back AFTER the write, which is why it does not return
    * void: the caller must be able to see that the harness kept something other
    * than what was asked for.
    */
-  setPermissionMode(sessionId: string, modeId: string, directory: RuntimeDirectory): Promise<AgentPermissionModeState>
+  setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState>
 }
 
 export interface SupportsQuestions {
   listQuestions(directory: RuntimeDirectory): Promise<AgentQuestion[]>
-  replyQuestion(qId: string, answer: string, directory: RuntimeDirectory): Promise<AgentInteractionResult | void>
-  rejectQuestion(qId: string, directory: RuntimeDirectory): Promise<AgentInteractionResult | void>
+  replyQuestion(binding: AgentExecutionBinding, qId: string, answer: string): Promise<AgentInteractionResult | void>
+  rejectQuestion(binding: AgentExecutionBinding, qId: string): Promise<AgentInteractionResult | void>
 }
 
 export interface SupportsRuntimeConfig {
@@ -370,7 +364,6 @@ export interface SupportsConfigOptions {
 
 export type AgentHarnessAdapter =
   & AgentHarnessAdapterCore
-  & Partial<SupportsSessionDiscovery>
   & Partial<SupportsAbort>
   & Partial<SupportsRevert>
   & Partial<SupportsUnrevert>

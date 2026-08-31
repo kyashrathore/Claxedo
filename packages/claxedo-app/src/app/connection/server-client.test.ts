@@ -23,7 +23,7 @@ describe("createServerClient", () => {
     expect(call?.headers.get("x-request")).toBe("present")
   })
 
-  test("does not invent an OpenCode username for password-only credentials", async () => {
+  test("does not invent a username for password-only credentials", async () => {
     let call: Request | undefined
     const client = createServerClient({
       server: { url: "https://server.example", password: "secret" },

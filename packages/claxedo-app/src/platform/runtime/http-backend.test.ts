@@ -249,7 +249,7 @@ describe("http backend ports", () => {
       calls.push(url)
       if (url.includes("/capabilities")) {
         return new Response(JSON.stringify({
-          transport: "opencode",
+          transport: "runtime",
           abort: true,
           reconnect: false,
           replay: true,
@@ -290,7 +290,7 @@ describe("http backend ports", () => {
     await backend.listMessages({ directory: "/repo", sessionID: "uuid-1", limit: 8, before: "cursor_0" })
     await backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" })
 
-    expect(opaqueCapabilities).toMatchObject({ transport: "opencode", commands: true })
+    expect(opaqueCapabilities).toMatchObject({ transport: "runtime", commands: true })
     expect(calls).toEqual([
       "http://claxedo.test/session/ses_1?directory=legacy-project",
       "http://claxedo.test/session/ses_1/capabilities?directory=legacy-project",

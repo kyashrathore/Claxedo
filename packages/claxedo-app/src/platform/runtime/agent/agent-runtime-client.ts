@@ -4,6 +4,7 @@ import { createControlPlaneAccountFetch } from "@/platform/account/control-plane
 import { AgentRuntimeRequestError, runtimeRequestError } from "./agent-runtime-request-error"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
+import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
@@ -31,7 +32,6 @@ import { createAgentRuntimeGoalClient } from "./agent-runtime-goal-client"
 import { readRuntimeJson as readJson } from "./agent-runtime-json"
 import {
   agentRuntimeBaseUrl,
-  agentRuntimeEventsUrl,
   agentRuntimeSessionListUrl,
   agentRuntimeSessionResourceUrl,
   agentRuntimeSessionUrl,
@@ -58,7 +58,7 @@ export type {
 
 export type AgentRuntimeSessionCreateInput = {
   directory: AgentRuntimeDirectory
-  harness: { id: string; access: "native" | "acp" }
+  harness: HarnessSelection
   agent: string
   model: PromptModel
   variant?: string
@@ -461,11 +461,13 @@ export function createAgentRuntimeClient(options: {
     listSessions,
     async createSession(input: AgentRuntimeSessionCreateInput) {
       const url = agentRuntimeSessionListUrl({ serverUrl: serverUrl(), scope: input.directory })
+      const selection = harnessSelectionQuery(input.harness)
+      if ("nativeHarness" in selection) url.searchParams.set("nativeHarness", selection.nativeHarness)
+      else url.searchParams.set("connectionId", selection.connectionId)
       const res = await fetchRuntimePath({
         directory: input.directory,
         path: `${url.pathname}${url.search}`,
         init: jsonInit("POST", {
-          harness: input.harness,
           agent: input.agent,
           model: input.model,
           ...(input.variant ? { variant: input.variant } : {}),

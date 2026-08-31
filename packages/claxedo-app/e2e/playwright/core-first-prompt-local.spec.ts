@@ -18,7 +18,7 @@
  * (pending) → `message.part.delta`* → `message.updated` (completed) →
  * `session.idle`); (5) the URL navigates from the draft route to the created session's
  * route once the session exists. Directory attachment lives in the URL's `:dir` segment
- * (base64url-encoded worktree path) plus a `opencode.global.dat:server` localStorage
+ * (base64url-encoded worktree path) plus a `claxedo.global.dat:server` localStorage
  * entry that lists known projects; neither the draft text nor the reply depend on
  * anything else surviving reload for THIS spec (reload persistence is
  * `core-turns-reload-recovery`'s territory).
@@ -116,12 +116,12 @@ function slug(value: string) {
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },

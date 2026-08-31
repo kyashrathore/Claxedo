@@ -42,7 +42,7 @@ type LspClient = {
 type WorkspaceRuntimeStatusResource = "vcs" | "mcp" | "lsp"
 
 export const DEFAULT_SESSION_TRANSPORT_CAPABILITIES: SessionTransportCapabilities = {
-  transport: "opencode",
+  transport: "runtime",
   abort: true,
   reconnect: false,
   replay: true,

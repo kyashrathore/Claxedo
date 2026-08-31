@@ -4,8 +4,8 @@ This page builds the mental model for `@claxedo/agent-sdk-runtime`.
 
 ## The Short Version
 
-Agent harnesses expose different control surfaces. ACP binaries, native SDKs,
-OpenCode HTTP servers, and Pi do not create sessions, send
+Agent harnesses expose different control surfaces. Configured protocol
+connections, native SDKs, and Pi do not create sessions, send
 messages, stream events, or report capabilities in the same way.
 
 This package gives hosts one harness-control language:
@@ -15,7 +15,7 @@ host request
   -> AgentRuntime
   -> harness factory
   -> adapter driver
-  -> harness access (ACP or native)
+  -> harness access (configured connection or native)
   -> runtime event stream
   -> runtime.events.subscribe()
 ```
@@ -40,7 +40,7 @@ Examples:
 - Claude Agent SDK
 - Codex app-server
 - Cursor SDK
-- OpenCode HTTP
+- an external server through an installed connection provider
 - Pi
 
 The package names supported harnesses with `AgentHarnessId` and describes them
@@ -49,8 +49,8 @@ in `AGENT_HARNESS_DEFINITIONS`.
 Harness access tells the host how the harness is controlled:
 
 ```text
-acp    -> Agent Client Protocol process or remote ACP transport
-native -> the harness's native SDK, app-server, HTTP API, or built-in adapter
+connection -> an operator-configured provider (ACP process/remote transport or another protocol)
+native     -> the harness's native SDK, app-server, or built-in adapter
 ```
 
 Harness id and harness access are routing hints, not product policy. They do
@@ -142,12 +142,11 @@ Harness factories register one harness family or access mode with an
 Examples:
 
 ```ts
-import { claude, codex, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { claude, codex, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 
 const harnesses = [
   claude({ access: "native" }),
-  codex({ access: "acp" }),
-  opencode({ url: "http://127.0.0.1:4096" }),
+  codex({ access: "native" }),
   pi(),
 ]
 ```
@@ -166,7 +165,7 @@ It can describe:
 
 - harness id
 - harness access
-- harness process or remote connection
+- native harness or opaque configured connection identity
 - model
 - agent
 - variant
@@ -176,13 +175,8 @@ Example:
 ```ts
 const config = {
   harness: {
-    id: "claude",
-    access: "acp",
-    connection: {
-      kind: "remote",
-      transport: "streamable-http",
-      url: "http://127.0.0.1:47342/acp",
-    },
+    id: "team-agent",
+    access: "connection",
   },
   model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
   agent: "default",
@@ -293,8 +287,6 @@ permissions.
 
 `AdapterCapability` describes adapter-level host integration features:
 
-- `http-proxy`: the adapter can expose a backing HTTP server for selected
-  compatibility routes
 - `runtime-config`: the host can push runtime config such as model/auth updates
 
 The public runtime facade checks capabilities before calling optional adapter
@@ -315,7 +307,7 @@ system. The turn-start call is not the client-facing response stream.
 `AgentRuntimeEvent` is the canonical event model from
 `@claxedo/agent-event-runtime`.
 
-`CompatEvent` is an OpenCode-compatible bridge event. It exists so hosts can
+`CompatEvent` is an Claxedo client-presentation bridge event. It exists so hosts can
 serve old or OpenCode-shaped clients while the canonical event model matures.
 New host logic should prefer canonical runtime events when possible.
 

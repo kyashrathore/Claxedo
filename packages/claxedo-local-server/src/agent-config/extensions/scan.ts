@@ -10,7 +10,6 @@ export type DiscoveredAgentExtensionConfig = {
     | "skills-dir"
     | "instruction-file"
     | "mcp-config"
-    | "opencode-config"
   state: DiscoveryState
 }
 
@@ -30,11 +29,9 @@ const candidates: Array<{ path: string; kind: DiscoveredAgentExtensionConfig["ki
   { path: ".claude", kind: "harness-config-dir", type: "dir" },
   { path: ".codex", kind: "harness-config-dir", type: "dir" },
   { path: ".cursor", kind: "harness-config-dir", type: "dir" },
-  { path: ".opencode", kind: "harness-config-dir", type: "dir" },
   { path: ".agents/skills", kind: "skills-dir", type: "dir" },
   { path: "AGENTS.md", kind: "instruction-file", type: "file" },
   { path: "CLAUDE.md", kind: "instruction-file", type: "file" },
-  { path: "opencode.json", kind: "opencode-config", type: "file" },
   { path: "mcp.json", kind: "mcp-config", type: "file" },
   { path: ".vscode/mcp.json", kind: "mcp-config", type: "file" },
 ]

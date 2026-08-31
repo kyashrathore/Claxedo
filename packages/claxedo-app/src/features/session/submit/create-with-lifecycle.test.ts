@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import {
-  createOpencodeSessionWithLifecycle,
+  createSessionWithLifecycle,
   type ClaxedoLifecycleListener,
   type ClaxedoLifecycleListenerEvent,
 } from "./create-with-lifecycle"
@@ -29,10 +29,10 @@ function makeListener() {
   }
 }
 
-describe("createOpencodeSessionWithLifecycle", () => {
+describe("createSessionWithLifecycle", () => {
   test("returns the HTTP result when the perform call succeeds", async () => {
     const { listener, size } = makeListener()
-    const result = await createOpencodeSessionWithLifecycle({
+    const result = await createSessionWithLifecycle({
       draftId: "draft-a",
       events: listener,
       perform: async () => ({ id: "ses_http" }),
@@ -43,7 +43,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
 
   test("recovers from a lost HTTP response using a matching lifecycle created event", async () => {
     const { listener, emit } = makeListener()
-    const promise = createOpencodeSessionWithLifecycle({
+    const promise = createSessionWithLifecycle({
       draftId: "draft-b",
       events: listener,
       perform: async () => {
@@ -68,7 +68,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-c",
         events: listener,
         perform: async () => {
@@ -86,7 +86,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener, emit } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-d",
         events: listener,
         perform: async () => {
@@ -114,7 +114,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener, emit } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-e",
         events: listener,
         perform: async () => {
@@ -140,7 +140,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
 
   test("bypasses subscription when no draftId is provided", async () => {
     const { listener, size } = makeListener()
-    const result = await createOpencodeSessionWithLifecycle({
+    const result = await createSessionWithLifecycle({
       events: listener,
       perform: async () => ({ id: "ses_bare" }),
     })
@@ -152,7 +152,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener, emit } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-c6",
         events: listener,
         perform: async () => {
@@ -183,7 +183,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
 
   test("rubric C6: HTTP success + no lifecycle failed within grace → HTTP result", async () => {
     const { listener } = makeListener()
-    const result = await createOpencodeSessionWithLifecycle({
+    const result = await createSessionWithLifecycle({
       draftId: "draft-c6-happy",
       events: listener,
       perform: async () => ({ id: "ses_c6_happy" }),
@@ -196,7 +196,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-c7-hard",
         events: listener,
         perform: async () => {
@@ -215,7 +215,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener, emit } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-c7-server",
         events: listener,
         perform: async () => {
@@ -242,7 +242,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
 
   test("rubric C7: a successful HTTP create does NOT mark the draft as rolled back", async () => {
     const { listener } = makeListener()
-    const result = await createOpencodeSessionWithLifecycle({
+    const result = await createSessionWithLifecycle({
       draftId: "draft-c7-ok",
       events: listener,
       perform: async () => ({ id: "ses_c7_ok" }),
@@ -267,7 +267,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
       httpResolve = r
     })
 
-    const wrapperPromise = createOpencodeSessionWithLifecycle({
+    const wrapperPromise = createSessionWithLifecycle({
       draftId: "draft-t4-1",
       events: listener,
       perform: async () => httpPromise,
@@ -314,7 +314,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
         }
       }
     }
-    const result = await createOpencodeSessionWithLifecycle({
+    const result = await createSessionWithLifecycle({
       draftId: "draft-t4-4",
       events: listener,
       perform: async () => {
@@ -352,7 +352,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
         return unsub
       },
     }
-    const result = await createOpencodeSessionWithLifecycle({
+    const result = await createSessionWithLifecycle({
       draftId: "draft-t4-5",
       events: listener,
       perform: async () => {
@@ -373,7 +373,7 @@ describe("createOpencodeSessionWithLifecycle", () => {
     const { listener, emit } = makeListener()
     let caught: unknown
     try {
-      await createOpencodeSessionWithLifecycle({
+      await createSessionWithLifecycle({
         draftId: "draft-t4-6",
         events: listener,
         perform: async () => {

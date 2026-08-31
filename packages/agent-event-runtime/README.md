@@ -66,7 +66,7 @@ Entry point status:
   `@claxedo/agent-event-runtime/harnesses/cursor`,
   `@claxedo/agent-event-runtime/projections/debug-trace`
 - Compatibility:
-  `@claxedo/agent-event-runtime/projections/opencode-compat`
+  `@claxedo/agent-event-runtime/client-presentation`
 
 The package publishes built ESM and declaration files from `dist`.
 

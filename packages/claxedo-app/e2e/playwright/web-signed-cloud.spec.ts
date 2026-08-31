@@ -57,7 +57,6 @@ import {
   type RunningWebApp,
 } from "../helpers/web-signed-relay-harness"
 import {
-  fixtureOpencodeRequests,
   journeyA2,
   journeyA3,
   journeyB1toB4,
@@ -234,10 +233,5 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
     test.setTimeout(120_000)
     test.fixme(!!gateProbeError, gateProbeError)
     await journeyD1toD3E1({ ...ctx(), page })
-  })
-
-  test("F3: nothing in the journey ever hit the fixture's forbidden legacy opencode stub", async () => {
-    test.fixme(!!gateProbeError, gateProbeError)
-    expect(await fixtureOpencodeRequests(fixture!.info.backendUrl)).toEqual([])
   })
 })

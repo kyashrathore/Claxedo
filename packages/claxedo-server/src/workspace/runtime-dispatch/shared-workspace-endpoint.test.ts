@@ -15,7 +15,7 @@
  *   - a relay-backed workspace forwards with the minted owner token in
  *     `authorization`, NOT the caller's own bearer (the regression that made a
  *     local cloud workspace hang on "Preparing workspace" forever)
- *   - `x-opencode-directory` carries `workspace:<id>` for a relay hit rather
+ *   - `x-claxedo-directory` carries `workspace:<id>` for a relay hit rather
  *     than a filesystem path
  *   - the upstream response body and status reach the caller
  */
@@ -140,7 +140,7 @@ describe("shared workspace endpoint — successful relay forward", () => {
   test("addresses the workspace by id rather than by a local filesystem path", async () => {
     await sharedWorkspaceApp().request("http://127.0.0.1/workspaces/ws_1/api/wr/health")
 
-    expect(forwarded!.headers.get("x-opencode-directory")).toBe("workspace:ws_1")
+    expect(forwarded!.headers.get("x-claxedo-directory")).toBe("workspace:ws_1")
     expect(forwarded!.headers.get("x-workspace-id")).toBe("ws_1")
     expect(forwarded!.headers.get("x-forwarded-by")).toBe("workspace-relay")
   })

@@ -162,21 +162,21 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
       headers: {
         "content-type": "application/json",
         "x-workspace-id": workspace.id,
-        "x-opencode-directory": workspace.directory,
+        "x-claxedo-directory": workspace.directory,
       },
       body: JSON.stringify({ title: "Tier R terminal", initialCommand: "printf tier-r-terminal" }),
     })) as { id: string; title?: string }
     expect(created).toMatchObject({ id: expect.any(String), title: "Tier R terminal" })
     const listed = await body(await fetch(`${real.url}/api/wr/pty`, {
-      headers: { "x-workspace-id": workspace.id, "x-opencode-directory": workspace.directory },
+      headers: { "x-workspace-id": workspace.id, "x-claxedo-directory": workspace.directory },
     })) as Array<{ id: string }>
     expect(listed.some((item) => item.id === created.id)).toBe(true)
     expect((await fetch(`${real.url}/api/wr/pty/${encodeURIComponent(created.id)}`, {
       method: "DELETE",
-      headers: { "x-workspace-id": workspace.id, "x-opencode-directory": workspace.directory },
+      headers: { "x-workspace-id": workspace.id, "x-claxedo-directory": workspace.directory },
     })).status).toBe(200)
     const after = await body(await fetch(`${real.url}/api/wr/pty`, {
-      headers: { "x-workspace-id": workspace.id, "x-opencode-directory": workspace.directory },
+      headers: { "x-workspace-id": workspace.id, "x-claxedo-directory": workspace.directory },
     })) as Array<{ id: string }>
     expect(after.some((item) => item.id === created.id)).toBe(false)
   })

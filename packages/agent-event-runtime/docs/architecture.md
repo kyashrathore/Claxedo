@@ -76,13 +76,13 @@ translate harness-native payloads into canonical runtime events.
 - `value.ts` contains small shape readers for untrusted harness payloads.
 
 Adapters own only translation state. They do not start processes, perform I/O,
-persist data, or know about OpenCode compatibility events.
+persist data, or know about Claxedo client-presentation events.
 
 ### Projections
 
 `src/projections` turns canonical runtime events into output-specific views.
 
-- `opencode-compat` incrementally emits OpenCode-compatible event envelopes.
+- `client-presentation` incrementally emits Claxedo client-presentation event envelopes.
   It tracks assistant text, reasoning text, plan text, tool parts, tool status,
   tool outputs, and split part ids.
 - `debug-trace` emits compact trace rows with runtime type, harness, thread,
@@ -120,7 +120,7 @@ the fallback constrains values to JSON-safe data.
 Adapters should use those context functions whenever they need timestamps or
 fallback ids.
 
-`createOpencodeCompatProjection()` accepts its own `clock` because compatibility
+`createClientPresentationProjection()` accepts its own `clock` because compatibility
 events have their own timestamp boundary.
 
 Tests should inject deterministic clocks and ids for replay parity. Production

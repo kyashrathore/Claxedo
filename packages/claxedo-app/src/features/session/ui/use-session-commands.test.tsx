@@ -369,7 +369,7 @@ describe("upstream contract", async () => {
   })
 
   const collectCommands = (capabilities = {
-    transport: "opencode",
+    transport: "runtime",
     abort: true,
     reconnect: false,
     replay: true,

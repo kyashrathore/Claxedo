@@ -162,7 +162,7 @@ function handoffHarness(input: {
 }): AgentHarnessFactory {
   let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
   const adapter: AgentHarnessAdapter = {
-    async getSession(id) { return { id } },
+    async getSession(binding) { return { id: binding.sessionId } },
     async createSession(_directory, _title, id = "ses_handoff") { return { id } },
     async createHandoffSession(_directory, _title, id, options) {
       input.handoffs?.push(id)
@@ -1311,18 +1311,18 @@ describe("createAgentRuntime", () => {
     })
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [{ ...base, id: "openclaw", access: "acp" } as AgentHarnessFactory],
+      harnesses: [{ ...base, id: "openclaw", access: "connection" } as AgentHarnessFactory],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       directory: "/workspace",
-      harness: { id: "openclaw", access: "acp" },
+      harness: { id: "openclaw", access: "connection" },
     })
 
     const turn = await runtime.turns.start({ sessionId: session.id, text: "hello" })
     await tick()
 
-    expect(turn.prompt.model).toEqual({ providerID: "acp:openclaw", modelID: "default" })
-    expect(models).toEqual([{ providerID: "acp:openclaw", modelID: "default" }])
+    expect(turn.prompt.model).toEqual({ providerID: "connection:openclaw", modelID: "default" })
+    expect(models).toEqual([{ providerID: "connection:openclaw", modelID: "default" }])
     runtime.dispose()
   })
 

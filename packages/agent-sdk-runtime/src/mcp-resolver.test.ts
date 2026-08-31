@@ -30,7 +30,7 @@ describe("mcp resolver", () => {
     const state = await loadManagedMcpState(4310)
     const resolved = resolveEffectiveMcp({
       state,
-      agent: "opencode",
+      agent: "claude",
       control: "generated-config",
       userMcp: {
         remote: {
@@ -74,7 +74,7 @@ describe("mcp resolver", () => {
     expect(harnessAgent("claude")).toBe("claude")
     expect(harnessAgent("codex")).toBe("codex")
     expect(harnessAgent("cursor")).toBe("cursor")
-    expect(harnessAgent("opencode")).toBe("opencode")
-    expect(harnessAgent("acp:openclaw")).toBeNull()
+    expect(harnessAgent("opencode")).toBeNull()
+    expect(harnessAgent("connection:openclaw")).toBeNull()
   })
 })

@@ -355,7 +355,7 @@ describe("session transport split", () => {
 
   test("exports Claxedo-owned default session capabilities", () => {
     expect(DEFAULT_SESSION_TRANSPORT_CAPABILITIES).toMatchObject({
-      transport: "opencode",
+      transport: "runtime",
       abort: true,
       replay: true,
     })

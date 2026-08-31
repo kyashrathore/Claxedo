@@ -1,3 +1,5 @@
+import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
+
 type HarnessDirectory = string
 type HarnessConfigResource = "harness" | "harness/model" | "harness/options"
 type HarnessSessionResource = "session" | "messages" | "todo" | "capabilities" | "config"
@@ -8,13 +10,13 @@ function harnessConfigPath(input: {
   /** The workspace's identity; `directory` alone is only what a client shows for it. */
   workspaceId?: string
   sessionId?: string
-  harnessType?: string
+  selection?: HarnessSelection
 }) {
   const url = new URL(`/api/claxedo/agent-config/${input.resource ?? "harness"}`, "http://claxedo.local")
   if (input.directory) url.searchParams.set("directory", input.directory)
   if (input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
   if (input.sessionId && input.sessionId !== "new") url.searchParams.set("sessionId", input.sessionId)
-  if (input.harnessType) url.searchParams.set("type", input.harnessType)
+  appendSelection(url, input.selection)
   return `${url.pathname}${url.search}`
 }
 
@@ -44,10 +46,17 @@ export function sessionResourceUrl(input: Parameters<typeof sessionResourcePath>
 export function workspaceRuntimeAgentConfigPath(input: {
   resource: "api/wr/harness-config-options"
   directory: HarnessDirectory
-  harnessType?: string
+  selection?: HarnessSelection
 }) {
   const url = new URL(`/${input.resource}`, "http://claxedo.local")
   url.searchParams.set("directory", input.directory)
-  if (input.harnessType) url.searchParams.set("harness", input.harnessType)
+  appendSelection(url, input.selection)
   return `${url.pathname}${url.search}`
+}
+
+function appendSelection(url: URL, selection?: HarnessSelection) {
+  if (!selection) return
+  const query = harnessSelectionQuery(selection)
+  if ("nativeHarness" in query) url.searchParams.set("nativeHarness", query.nativeHarness)
+  else url.searchParams.set("connectionId", query.connectionId)
 }

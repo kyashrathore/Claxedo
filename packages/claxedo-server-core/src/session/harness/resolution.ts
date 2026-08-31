@@ -1,27 +1,13 @@
 import type { HarnessHost } from "../../platform/runtime/profile"
-import { defaultHarness, loadUserConfig } from "../../agent-config"
+import { loadUserConfig } from "../../agent-config"
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { getSessionConfig, normalize, type SessionHarness } from "./index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 
 type Input = {
-  type?: string | null
-  binary?: string | null
-  model?: string | null
   sessionId?: string | null
   workspaceId?: string | null
   directory?: string | null
-}
-
-export function parseHarness(input: Pick<Input, "type" | "binary" | "model">) {
-  const identity = normalizeHarnessIdentity(input.type ?? undefined)
-  if (!identity) return
-  return normalize({
-    id: identity.id,
-    access: identity.access,
-    ...(input.binary ? { connection: { kind: "process" as const, binary: input.binary } } : {}),
-  } satisfies SessionHarness)
 }
 
 async function sessionHarness(input: Pick<Input, "sessionId" | "workspaceId" | "directory">) {
@@ -48,9 +34,17 @@ async function sessionHarness(input: Pick<Input, "sessionId" | "workspaceId" | "
 export async function resolveHarnessForRequest(input: Input = {}): Promise<SessionHarness> {
   const saved = await sessionHarness(input)
   if (saved) return saved
-  const hit = parseHarness(input)
-  if (hit) return hit
-  return defaultHarness(await loadUserConfig())
+  await loadUserConfig()
+  throw new HarnessSelectionRequiredError()
+}
+
+export class HarnessSelectionRequiredError extends Error {
+  readonly code = "harness_selection_required"
+
+  constructor() {
+    super("An explicit harness selection is required")
+    this.name = "HarnessSelectionRequiredError"
+  }
 }
 
 export async function resolveHarnessHostForRequest(_input: Input = {}): Promise<HarnessHost> {

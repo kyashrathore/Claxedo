@@ -27,7 +27,6 @@ const ENTRIES = [
   "src/types.ts",
   "src/cli.ts",
   "src/materializers/mcp.ts",
-  "src/materializers/opencode-agent.ts",
   "src/materializers/cursor.ts",
   "src/materializers/skills.ts",
 ]

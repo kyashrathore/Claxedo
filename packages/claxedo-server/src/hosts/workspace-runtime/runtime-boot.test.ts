@@ -3,7 +3,7 @@ import { exportSPKI, generateKeyPair } from "jose"
 import { loopbackWorkspaceRuntimeExposure, relayWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import {
   claxedoCorsOrigin,
-  claxedoRuntimeRunnerFromEnv,
+  claxedoRuntimeHarnessFromEnv,
   claxedoWorkspaceRuntimeBootFromEnv,
   claxedoWorkspaceRuntimeLaunch,
 } from "./runtime-boot"
@@ -76,21 +76,14 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.port).toBe(3002)
     expect(boot.hostname).toBe("127.0.0.1")
     expect(boot.options.exposure?.kind).toBe("loopback")
-    expect(boot.options.harness).toEqual({ id: "opencode", access: "native" })
+    expect(boot.options.harness).toBeUndefined()
+    expect(boot.options.connectionProviders?.map((provider) => provider.providerKey)).toEqual([
+      "acp",
+      "opencode-server",
+    ])
     expect(boot.options.target).toEqual({ workspaceId: "ws-env", directory: process.cwd() })
     expect(boot.options.relayHostAuth).toBeUndefined()
     expect(boot.options.hostTunnel).toBeUndefined()
-    // Claxedo keeps OpenCode compat ON by default (kit default is off).
-    expect(boot.options.opencodeCompat).toBe(true)
-  })
-
-  test("compat env flag decodes to opencodeCompat=false", async () => {
-    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
-      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
-      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
-      WORKSPACE_RUNTIME_OPENCODE_COMPAT: "0",
-    })
-    expect(boot.options.opencodeCompat).toBe(false)
   })
 
   test("runner parsing: acp alias, named harness, acp binary connection", () => {

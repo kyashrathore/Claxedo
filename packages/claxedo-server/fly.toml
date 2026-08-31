@@ -42,5 +42,5 @@ primary_region = "sin"
 
 [[vm]]
   size = "shared-cpu-2x"
-  # 4GB: the embedded engine (node-embed) OOMs a 2GB machine on first load.
+  # 4GB leaves headroom for the control plane, workspace orchestration, and UI.
   memory = "4gb"

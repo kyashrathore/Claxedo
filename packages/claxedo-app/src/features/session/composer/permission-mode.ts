@@ -215,9 +215,8 @@ function harnessGroupLabel(harness: HarnessId) {
  * that harness's own modes.
  */
 const HARNESS_GROUP_LABELS: Record<BuiltinHarnessId, string> = {
-  opencode: "opencode",
-  "claude-sdk": "Claude",
-  "codex-app-server": "Codex",
-  "cursor-sdk": "Cursor",
+  claude: "Claude",
+  codex: "Codex",
+  cursor: "Cursor",
   pi: "Pi",
 }

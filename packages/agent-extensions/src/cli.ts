@@ -68,7 +68,7 @@ function usage() {
     "  --home       Home directory for machine-scoped runner targets. Defaults to the current user home",
     "  --cache-dir  Package cache and durable install state. Defaults to CLAXEDO_DATA_DIR or ~/.claxedo",
     "  --runtime-dir Generated runtime state directory for materialize/list. Defaults to <project>/.agent-extensions",
-    "  --targets    Comma-separated targets: opencode, claude, codex, cursor",
+    "  --targets    Comma-separated targets: claude, codex, cursor",
     "  --id         Stable install id. Defaults to package name",
     "  --path       Local project package path for install",
     "  --grant      trust: record consent for this checkout's extension declarations",

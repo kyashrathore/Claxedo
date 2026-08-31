@@ -1,7 +1,5 @@
 import {
-  normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
-  type HarnessConnection,
   type PromptModel,
   type SessionConfig,
   type SessionConfigRequestUpdate,
@@ -13,58 +11,15 @@ function record(input: unknown): Record<string, unknown> | undefined {
   return input as Record<string, unknown>
 }
 
-function stringRecord(input: unknown): Record<string, string> | undefined {
-  const row = record(input)
-  if (!row) return
-  if (!Object.values(row).every((item) => typeof item === "string")) return
-  return row as Record<string, string>
-}
-
 export function normalizeSessionHarness(input: unknown): SessionHarness | undefined {
   const row = record(input)
   if (!row) return
   const identity = normalizeHarnessIdentity(row)
   if (!identity) return
-  const connection = harnessConnection(row)
   return {
     id: identity.id,
     access: identity.access,
-    ...(connection ? { connection } : {}),
   }
-}
-
-function harnessConnection(row: Record<string, unknown>): HarnessConnection | undefined {
-  const nested = record(row.connection)
-  if (nested?.kind === "process") {
-    return {
-      kind: "process",
-      ...(typeof nested.binary === "string" ? { binary: nested.binary } : {}),
-      ...(Array.isArray(nested.args) && nested.args.every((item) => typeof item === "string")
-        ? { args: nested.args }
-        : {}),
-    }
-  }
-  if (nested?.kind === "remote") {
-    const transport = normalizeAgentHarnessTransport(nested.transport)
-    const headers = stringRecord(nested.headers)
-    return {
-      kind: "remote",
-      ...(transport ? { transport } : {}),
-      ...(typeof nested.url === "string" ? { url: nested.url } : {}),
-      ...(headers ? { headers } : {}),
-    }
-  }
-  const headers = stringRecord(row.headers)
-  if (typeof row.url === "string" || row.transport !== undefined || headers) {
-    const transport = normalizeAgentHarnessTransport(row.transport)
-    return {
-      kind: "remote",
-      ...(transport ? { transport } : {}),
-      ...(typeof row.url === "string" ? { url: row.url } : {}),
-      ...(headers ? { headers } : {}),
-    }
-  }
-  if (typeof row.binary === "string") return { kind: "process", binary: row.binary }
 }
 
 function promptModel(input: unknown): PromptModel | null | undefined {
@@ -80,13 +35,8 @@ function promptModel(input: unknown): PromptModel | null | undefined {
 
 export function normalizeSessionConfigUpdate(input: unknown): SessionConfigRequestUpdate {
   const row = record(input) ?? {}
-  const legacyRunner = record(row.runner)
-  const harness = normalizeSessionHarness(row.harness ?? legacyRunner)
-  const model = "model" in row
-    ? promptModel(row.model)
-    : typeof legacyRunner?.model === "string" && typeof legacyRunner.type === "string"
-      ? { providerID: legacyRunner.type, modelID: legacyRunner.model }
-      : undefined
+  const harness = normalizeSessionHarness(row.harness)
+  const model = "model" in row ? promptModel(row.model) : undefined
   return {
     ...(harness ? { harness } : {}),
     ...(model !== undefined ? { model } : {}),

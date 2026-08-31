@@ -5,7 +5,7 @@ import type {
   PreparedRuntimeSessionConfig,
   PreparedSessionDirectory,
 } from "./prepared-session"
-import { sessionHarnessIdentity, type HarnessType } from "./profile"
+import type { HarnessType } from "./profile"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 
 type HarnessRuntimeSessionClient = Pick<ReturnType<typeof createAgentRuntimeClient>, "createSession" | "deleteSession">
@@ -39,7 +39,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
       request: input.runtime.harnessSessionFetch(params.input),
     }).createSession({
       directory: params.directory,
-      harness: sessionHarnessIdentity(params.harness),
+      harness: params.harness,
       agent: params.input.sessionConfig.agent,
       model: params.input.sessionConfig.model,
       ...(params.input.sessionConfig.variant ? { variant: params.input.sessionConfig.variant } : {}),

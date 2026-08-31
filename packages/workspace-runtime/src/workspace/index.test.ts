@@ -192,13 +192,9 @@ describe("workspace module wiring", () => {
     expect(seen).toContain("/session/status")
 
     const res = await app.request("http://localhost/api/wr/harness-config-options")
-    expect(res.status).toBe(404)
+    expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({
-      ok: false,
-      error: {
-        code: "harness_config_options_unavailable",
-        harness: "opencode",
-      },
+      error: { code: "workspace_harness_not_configured" },
     })
   })
 

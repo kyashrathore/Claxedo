@@ -12,14 +12,14 @@ lower-level packages into one per-workspace service.
 
 | Capability | Description |
 | --- | --- |
-| Harness selection and lifecycle | The host chooses, creates, replaces, and disposes the active harness adapter for `opencode`, ACP harnesses, native SDK harnesses, and Pi. The adapter layer comes from [Agent SDK Runtime](./agent-sdk-runtime.md); emitted harness events are normalized through [Agent Event Runtime](./agent-event-runtime.md). |
+| Harness selection and lifecycle | The host chooses, creates, replaces, and disposes native SDK/Pi adapters or adapters supplied by installed connection providers. The adapter layer comes from [Agent SDK Runtime](./agent-sdk-runtime.md); emitted harness events are normalized through [Agent Event Runtime](./agent-event-runtime.md). |
 | Session APIs | The host mounts normalized session routes from [Agent SDK Runtime](./agent-sdk-runtime.md): create, list, read, send message, abort, config read/update, permissions, questions, todos, command execution, and message replay. Product code can call one session surface instead of branching per harness. |
-| Runtime event streams | The host exposes `/global/event` and runtime event streams so UI clients can subscribe to session lifecycle, assistant output, tool progress, permission prompts, questions, and status changes. |
+| Runtime event streams | The host exposes `/api/wr/runtime-events` so UI clients can subscribe to assistant output, tool progress, permission prompts, questions, and session status. Control-plane lifecycle facts use the central `/api/wr/events` stream. |
 | PTY lifecycle | The host creates and manages terminal sessions for the workspace: create, list, inspect, resize/update, remove, and connect over WebSocket for input/output streaming. |
 | Managed processes | The host manages repeatable workspace services such as dev servers and watchers. It supports process config CRUD, start, stop, restart, start-all, stop-all, diagnostics, termination diagnostics, port mapping, and log retrieval. |
 | Files | The host exposes workspace file discovery and reads: find files, read file metadata, read content, read raw bytes/text, inspect git-backed file status, and list all known files. |
 | Diff and VCS | The host exposes git-backed diff routes for targets, file diffs, refs, and VCS status. It also provides lightweight local VCS metadata such as branch/default branch when OpenCode-backed VCS data is unavailable. |
-| Runtime config apply | `/api/wr/config` applies a `RuntimeSnapshot` containing harnesses, model, auth, MCP, workspace harness, commands, and Agent Extension desired state. When harness id, access, or connection changes, the host replaces the active adapter. A v2 snapshot's `harnesses` list may also carry operator-configured ACP connections (`acp:<slug>` identities with process descriptors); the host retains them as the applied registry and resolves selections against it fail-closed. See [Operator-Configured ACP Connections](./acp-connections.md). |
+| Runtime config apply | `/api/wr/config` applies the host's current runtime snapshot. Generic connections arrive through the strict v3 connection schema and are selected with `{ kind: "connection", connectionId }`; there is no v2 connection importer or string-encoded connection identity. See [Agent Connections](./acp-connections.md). |
 | Agent Extensions | During config apply, the host replays Agent Extensions and materializes supported package assets into harness-native locations. See [Agent Extensions](./agent-extensions.md). |
 | MCP compatibility | The host exposes MCP status/connect/disconnect compatibility routes for harness-hosted MCP config. |
 | Relay attachment | The host can attach itself to Workspace Relay as a host tunnel. In that mode the relay forwards HTTP/WebSocket traffic to the local runtime URL. See [Relay And Deployment](./relay-and-deployment.md). |
@@ -117,12 +117,9 @@ await fetch("http://127.0.0.1:4096/api/wr/config", {
     "x-workspace-runtime-management-token": managementToken,
   },
   body: JSON.stringify({
-    version: 2,
-    harnesses: [{
-      id: "codex",
-      access: "native",
-    }],
-    model: "default",
+    version: 3,
+    connections: [],
+    defaultHarness: { kind: "native", harnessId: "codex" },
     auth: {
       "codex-app-server": process.env.OPENAI_API_KEY,
     },
@@ -155,9 +152,9 @@ const host = createWorkspaceHost({
 host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
 
 await host.apply({
-  version: 2,
-  harnesses: [{ id: "claude", access: "native" }],
-  model: "claude-sonnet-4-6",
+  version: 3,
+  connections: [],
+  defaultHarness: { kind: "native", harnessId: "claude" },
   auth: { anthropic: process.env.ANTHROPIC_API_KEY ?? "" },
   mcp: {},
   commands: {},
@@ -198,7 +195,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `GET /api/wr/capabilities` | Runtime capability manifest. |
 | `/api/wr/checkpoint/*` | Freeze, flush, scrub, resume, and restore reconciliation for consistent provider capture. |
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |
-| `GET /api/wr/harness-config-options` | Probe harness config options for non-OpenCode harnesses. |
+| `GET /api/wr/harness-config-options` | Probe config options for the selected harness when it advertises that capability. |
 | `/api/wr/events` | Process-global compatibility event stream. |
 | `/api/wr/runtime-events` | Runtime event stream. |
 | `/api/wr/file/*` | File metadata, content, raw content, status, and list routes. |
@@ -214,9 +211,8 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `/session/*` | Session create/list/read/update/delete/message/abort/revert/fork/command routes. |
 | `/agent`, `/permission`, `/question`, `/command`, `/event` | Compatibility and session support routes. |
 | `/mcp`, `/mcp/:name/connect`, `/mcp/:name/disconnect` | Harness MCP status and connect/disconnect compatibility. |
-| `/lsp`, `/vcs`, `/provider` | Compatibility surfaces backed by OpenCode or fallback metadata. |
-| `/global/event` | Runtime/global SSE event stream. |
-| `/global/health` | Legacy health shape with `healthy`. |
+| `/lsp`, `/vcs` | Client-presentation compatibility surfaces backed by workspace services. |
+| `/global/health` | Control-plane health shape with `healthy`. |
 | `/find/file`, `/file`, `/file/content`, `/file/raw`, `/file/status`, `/file/all` | OpenCode-compatible file discovery and read routes. |
 
 Product-specific route families are supplied through host route contributions

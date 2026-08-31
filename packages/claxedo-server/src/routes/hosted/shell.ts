@@ -3,7 +3,7 @@
  * shell needs from a hosted central (Cloudflare Worker) deployment.
  *
  * The app shell boots against a set of "global" routes that the local Node
- * server answers from disk/opencode (`server.ts` + `routes/opencode-compat.ts`
+ * server answers from local state (`server.ts` + `routes/client-presentation.ts`
  * + `routes/bootstrap.ts`). A hosted central has no local filesystem, no
  * embedded runtime, and no central runner, so these routes answer with the
  * minimal synthetic payloads the app actually reads:
@@ -141,7 +141,7 @@ function version(options: HostedShellRouteOptions) {
   return options.version || "1.0.0"
 }
 
-// Shape mirror of `bootPath()` in routes/opencode-compat.ts — the hosted
+// Shape mirror of `bootPath()` in routes/client-presentation.ts — the hosted
 // central has no home/state/config directories, so those stay empty (the app
 // synthesizes the same shape for remote workspaces in `pathFromWorkspace`).
 function hostedPath(directory?: string) {
@@ -155,7 +155,7 @@ function hostedPath(directory?: string) {
   }
 }
 
-// Shape mirror of `dirProject()` in routes/opencode-compat.ts. The app's
+// Shape mirror of `dirProject()` in routes/client-presentation.ts. The app's
 // `projectCurrentQuery` only reads `.id`.
 function hostedProject(directory: string) {
   const id = directory || "hosted"

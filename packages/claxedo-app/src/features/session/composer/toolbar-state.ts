@@ -21,7 +21,6 @@ export function createPromptToolbarState(input: {
   modelRestorePending: Accessor<boolean>
   selectionCatalogPending: Accessor<boolean>
   harnessMode: Accessor<boolean>
-  isOpenCodeHarness: Accessor<boolean>
   existingSession: Accessor<boolean>
   variantList: Accessor<string[]>
   selectedVariant: Accessor<string | null | undefined>
@@ -79,7 +78,6 @@ export function createPromptToolbarState(input: {
     modelSubmitBlocked: () => readiness().blocked,
     showAgentSelector: () =>
       shouldShowPromptAgentSelector({
-        isOpenCodeHarness: input.isOpenCodeHarness(),
         agentCount: agentNames().length,
       }),
     variants,

@@ -7,17 +7,7 @@ import {
 } from "./model-strategy"
 import { resolveSubmittedConfig } from "@/features/session/submit/resolve"
 import { submitBlockReason } from "./submit-block-reason"
-import {
-  SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
-  SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
-} from "./signed-workspace-model"
-
 const sonnet = { id: "sonnet", name: "Claude Sonnet", provider: { id: "anthropic" } }
-const placeholder = {
-  id: SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
-  name: "Big Pickle",
-  provider: { id: SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER },
-}
 
 function toolbar(input: Partial<Parameters<typeof createPromptToolbarState>[0]> = {}) {
   return createPromptToolbarState({
@@ -32,7 +22,6 @@ function toolbar(input: Partial<Parameters<typeof createPromptToolbarState>[0]> 
     modelRestorePending: () => false,
     selectionCatalogPending: () => false,
     harnessMode: () => false,
-    isOpenCodeHarness: () => true,
     existingSession: () => false,
     variantList: () => [],
     selectedVariant: () => undefined,
@@ -53,10 +42,6 @@ describe("model selection policy", () => {
         undefined,
       ),
     ).toBeUndefined()
-  })
-
-  test("selectRuntimeModel rejects the signed-workspace placeholder even when explicitly selected", () => {
-    expect(selectRuntimeModel({}, placeholder)).toBeUndefined()
   })
 
   test("shouldUsePromptFallbackModel is permanently disabled", () => {
@@ -113,16 +98,6 @@ describe("model selection policy", () => {
     })
     expect(state.currentModel()).toBeUndefined()
     expect(state.modelSubmitBlocked()).toBe(true)
-  })
-
-  test("toolbar treats the signed-workspace placeholder as missing", () => {
-    const state = toolbar({
-      currentModel: () => placeholder,
-      currentModelSource: () => "selected",
-      hasSelectedModel: () => true,
-    })
-    expect(state.modelSubmitBlocked()).toBe(true)
-    expect(state.readiness().label).toBe("Select model")
   })
 
   test("resolveSubmittedConfig refuses to submit without an explicit selected model", async () => {

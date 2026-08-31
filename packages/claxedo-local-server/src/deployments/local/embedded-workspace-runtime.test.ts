@@ -11,9 +11,7 @@ import {
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimeAgentExtensions,
 } from "./embedded-workspace-runtime"
-import type { OpencodeEvent } from "../../opencode/events"
 import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
-import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -78,7 +76,6 @@ const previous = {
   CLAXEDO_DATA_DIR: process.env.CLAXEDO_DATA_DIR,
   CLAXEDO_AGENT_TYPE: process.env.CLAXEDO_AGENT_TYPE,
   CURSOR_DATA_DIR: process.env.CURSOR_DATA_DIR,
-  OPENCODE_URL: process.env.OPENCODE_URL,
 }
 
 function shutdownTestRuntimes() {
@@ -101,8 +98,6 @@ afterEach(async () => {
   else process.env.CLAXEDO_AGENT_TYPE = previous.CLAXEDO_AGENT_TYPE
   if (previous.CURSOR_DATA_DIR === undefined) delete process.env.CURSOR_DATA_DIR
   else process.env.CURSOR_DATA_DIR = previous.CURSOR_DATA_DIR
-  if (previous.OPENCODE_URL === undefined) delete process.env.OPENCODE_URL
-  else process.env.OPENCODE_URL = previous.OPENCODE_URL
 })
 
 describe("embedded workspace runtime", () => {
@@ -196,7 +191,6 @@ describe("embedded workspace runtime", () => {
       },
     })
     configureEmbeddedWorkspaceRuntime({
-      opencodeRequest: async () => Response.json({ id: "ses_private", directory: project, title: "Private" }),
       sessionAccessPolicy,
     })
 
@@ -212,7 +206,22 @@ describe("embedded workspace runtime", () => {
         org_id: "org_1",
         role: "editor",
       })
-      const denied = await runtime.app.request("http://runtime.test/session/ses_private", {
+      const created = await runtime.app.request(
+        `http://runtime.test/session?directory=${encodeURIComponent(project)}&nativeHarness=pi`,
+        {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: "Bearer alice-proof",
+            [EMBEDDED_RELAY_HOST_AUTH_HEADER]: embeddedClaims("actor_alice", "Alice"),
+          },
+          body: JSON.stringify({ title: "Private" }),
+        },
+      )
+      expect(created.status, await created.clone().text()).toBe(201)
+      const session = await created.json() as { id: string }
+
+      const denied = await runtime.app.request(`http://runtime.test/session/${session.id}`, {
         headers: {
           authorization: "Bearer bob-proof",
           [EMBEDDED_RELAY_HOST_AUTH_HEADER]: embeddedClaims("actor_bob", "Bob"),
@@ -221,7 +230,7 @@ describe("embedded workspace runtime", () => {
       expect(denied.status).toBe(403)
       await expect(denied.json()).resolves.toMatchObject({ error: { code: "session_private" } })
 
-      const allowed = await runtime.app.request("http://runtime.test/session/ses_private", {
+      const allowed = await runtime.app.request(`http://runtime.test/session/${session.id}`, {
         headers: {
           authorization: "Bearer alice-proof",
           [EMBEDDED_RELAY_HOST_AUTH_HEADER]: embeddedClaims("actor_alice", "Alice"),
@@ -229,11 +238,11 @@ describe("embedded workspace runtime", () => {
       })
       expect(allowed.status).toBe(200)
       expect(authorityCalls).toEqual([
-        "actor_bob:read:ses_private:Bearer bob-proof",
-        "actor_alice:read:ses_private:Bearer alice-proof",
+        `actor_bob:read:${session.id}:Bearer bob-proof`,
+        `actor_alice:read:${session.id}:Bearer alice-proof`,
       ])
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({})
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -247,8 +256,6 @@ describe("embedded workspace runtime", () => {
     await fs.writeFile(path.join(extension, "SKILL.md"), "---\nname: review\n---\n\n# Review\n")
 
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
 
     const workspace: Workspace = {
       id: "ws_embedded_extensions",
@@ -305,8 +312,6 @@ describe("embedded workspace runtime", () => {
   test("caches one runtime per workspace id and recreates when the directory changes", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-cache-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
 
     try {
       const ws = workspace("ws_cache", project)
@@ -331,8 +336,6 @@ describe("embedded workspace runtime", () => {
     const skip = await makeWorkspaceRoot("claxedo-embedded-skip-")
     const sync = await makeWorkspaceRoot("claxedo-embedded-sync-")
     process.env.CLAXEDO_DATA_DIR = path.join(skip.root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
 
     try {
       await ensureEmbeddedWorkspaceRuntime(workspace("ws_skip", skip.project), { config: "skip" })
@@ -356,16 +359,13 @@ describe("embedded workspace runtime", () => {
   test("configureEmbeddedWorkspaceRuntime does not retroactively recreate a cached runtime", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-configure-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-
     try {
       const ws = workspace("ws_configure", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
-      // Reconfiguring the module-level opencode target only affects NEW
-      // creations; an already-cached runtime is not recreated.
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      // Reconfiguring process-level options affects new runtimes only; an
+      // already-cached runtime is not recreated.
+      configureEmbeddedWorkspaceRuntime({ routeContributions: [] })
       const afterConfigure = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(afterConfigure).toBe(first)
 
@@ -377,9 +377,7 @@ describe("embedded workspace runtime", () => {
       })
       expect(fresh).not.toBe(first)
     } finally {
-      // Restore the default target so we do not leak the reconfigured URL into
-      // other tests in this file.
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({})
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
@@ -389,8 +387,6 @@ describe("embedded workspace runtime", () => {
   test("shutdownEmbeddedWorkspaceRuntimes clears the cache", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-shutdown-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
 
     try {
       const ws = workspace("ws_shutdown", project)
@@ -470,14 +466,13 @@ describe("embedded workspace runtime", () => {
     try {
       const resolved: unknown[] = []
       configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async () => new Response(null, { status: 404 }),
         piModelBackend: (input) => {
           resolved.push(input)
           return undefined
         },
       })
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_pi_backend", project), { config: "skip" })
-      const query = `directory=${encodeURIComponent(project)}&runner=pi`
+      const query = `directory=${encodeURIComponent(project)}&nativeHarness=pi`
       const created = await runtime.app.request(`http://localhost/session?${query}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -506,7 +501,7 @@ describe("embedded workspace runtime", () => {
         model: { providerID: "openai-codex", modelID: "gpt-5.5" },
       }])
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({})
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -606,44 +601,37 @@ describe("embedded workspace runtime", () => {
   test("reconciles persisted runtime titles when rebuilding a workspace after restart", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-reconcile-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
 
     try {
       const snapshots: unknown[][] = []
       configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async (req: Request) => {
-          const url = new URL(req.url)
-          if (url.pathname === "/session") {
-            return Response.json([{
-              id: "s_existing_title",
-              title: "Title generated before restart",
-              directory: project,
-              time: { created: 1, updated: 2 },
-            }])
-          }
-          if (url.pathname === "/global/event") {
-            return new Response(new ReadableStream<Uint8Array>({ start() {} }), {
-              headers: { "content-type": "text/event-stream" },
-            })
-          }
-          return new Response(null, { status: 404 })
-        },
         onSessionMetaSnapshot: (_workspace: Workspace, sessions: unknown[]) => {
           snapshots.push(sessions)
         },
-      } as never)
+      })
 
-      await ensureEmbeddedWorkspaceRuntime(workspace("ws_title_reconcile", project), { config: "skip" })
+      const ws = workspace("ws_title_reconcile", project)
+      const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      const created = await first.app.request(
+        `http://localhost/session?directory=${encodeURIComponent(project)}&nativeHarness=pi`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ title: "Title generated before restart" }),
+        },
+      )
+      expect(created.status).toBe(201)
+      snapshots.length = 0
+      shutdownEmbeddedWorkspaceRuntimes()
+      await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
       expect(snapshots).toEqual([[
         expect.objectContaining({
-          id: "s_existing_title",
           title: "Title generated before restart",
         }),
       ]])
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({})
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }

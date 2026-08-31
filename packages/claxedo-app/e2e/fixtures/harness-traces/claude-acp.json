@@ -342,14 +342,14 @@
     {
       "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
       "payload": {
-        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.opencode_compat.duplicate_terminal_tool_update",
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.client_presentation.duplicate_terminal_tool_update",
         "type": "runtime.diagnostic",
         "properties": {
           "sessionID": "ses_harness_matrix_claude-acp",
-          "projection": "opencode-compat",
+          "projection": "client-presentation",
           "phase": "ingest",
-          "code": "projection.opencode_compat.duplicate_terminal_tool_update",
-          "message": "OpenCode compatibility projection ignored a duplicate terminal tool update",
+          "code": "projection.client_presentation.duplicate_terminal_tool_update",
+          "message": "Claxedo client-presentation projection ignored a duplicate terminal tool update",
           "severity": "warn",
           "eventType": "tool-output"
         }
@@ -735,14 +735,14 @@
     {
       "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
       "payload": {
-        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.opencode_compat.duplicate_terminal_tool_update",
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.client_presentation.duplicate_terminal_tool_update",
         "type": "runtime.diagnostic",
         "properties": {
           "sessionID": "ses_harness_matrix_claude-acp",
-          "projection": "opencode-compat",
+          "projection": "client-presentation",
           "phase": "ingest",
-          "code": "projection.opencode_compat.duplicate_terminal_tool_update",
-          "message": "OpenCode compatibility projection ignored a duplicate terminal tool update",
+          "code": "projection.client_presentation.duplicate_terminal_tool_update",
+          "message": "Claxedo client-presentation projection ignored a duplicate terminal tool update",
           "severity": "warn",
           "eventType": "tool-output"
         }
@@ -955,14 +955,14 @@
     {
       "directory": "/tmp/e2e-core-harness-rendering-matrix-claude-acp",
       "payload": {
-        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.opencode_compat.duplicate_terminal_tool_update",
+        "id": "runtime.diagnostic:ses_harness_matrix_claude-acp:projection.client_presentation.duplicate_terminal_tool_update",
         "type": "runtime.diagnostic",
         "properties": {
           "sessionID": "ses_harness_matrix_claude-acp",
-          "projection": "opencode-compat",
+          "projection": "client-presentation",
           "phase": "ingest",
-          "code": "projection.opencode_compat.duplicate_terminal_tool_update",
-          "message": "OpenCode compatibility projection ignored a duplicate terminal tool update",
+          "code": "projection.client_presentation.duplicate_terminal_tool_update",
+          "message": "Claxedo client-presentation projection ignored a duplicate terminal tool update",
           "severity": "warn",
           "eventType": "tool-output"
         }

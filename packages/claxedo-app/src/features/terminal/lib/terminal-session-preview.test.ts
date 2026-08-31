@@ -221,7 +221,7 @@ describe("terminal session preview aliases", () => {
       directory: "/workspace",
       request: ((input, init) => {
         const req = new Request(String(input), init)
-        seen.push(`${req.method} ${req.url} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+        seen.push(`${req.method} ${req.url} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
         if (req.url === "http://127.0.0.1:3001/workspaces/ws_local/api/wr/hook/terminal-session?terminalId=pty-cloud-local") {
           return Promise.resolve(Response.json({
             success: true,

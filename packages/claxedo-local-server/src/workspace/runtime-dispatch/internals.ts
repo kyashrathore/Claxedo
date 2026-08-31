@@ -2,7 +2,6 @@ import type { Context } from "hono"
 import { workspaceSupervisor } from "@claxedo/server-core/workspace/supervisor-port"
 import type { SandboxEnsureResult, SandboxManagerPort } from "@claxedo/server-core/sandbox/manager-port"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { ensureEmbeddedWorkspaceRuntime, type EmbeddedWorkspaceRuntimeConfigMode } from "../../deployments/local/embedded-workspace-runtime"
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
@@ -52,7 +51,7 @@ export function runtimeOwned(pathname: string) {
 }
 
 export function requestWorkspace(c: Context) {
-  const dir = c.req.query("directory") || c.req.header("x-opencode-directory")
+  const dir = c.req.query("directory") || c.req.header("x-claxedo-directory")
   return {
     workspaceId: c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id"),
     directory: dir ? decodeURIComponent(dir) : undefined,
@@ -174,10 +173,10 @@ export async function proxy(c: Context, hit: Hit, options?: {
 }) {
   const url = new URL(c.req.url)
   const target = await proxyTarget(hit, options, (options?.pathname ?? url.pathname) + url.search)
-  const headers = opencodeHeaders(c.req.raw.headers)
+  const headers = new Headers(c.req.raw.headers)
   headers.set("x-workspace-id", hit.workspaceId)
   if (hit.workspaceName) headers.set("x-workspace-name", hit.workspaceName)
-  headers.set("x-opencode-directory", hit.relay ? `workspace:${hit.workspaceId}` : hit.directory)
+  headers.set("x-claxedo-directory", hit.relay ? `workspace:${hit.workspaceId}` : hit.directory)
   if (options?.forwardedBy) headers.set("x-forwarded-by", options.forwardedBy)
   if (!hit.relay) headers.set("X-Daytona-Skip-Preview-Warning", "true")
   headers.delete("host")
@@ -339,7 +338,6 @@ export function embeddedConfigModeForPath(
   if (
     pathname === "/api/wr/health"
     || pathname === "/api/wr/capabilities"
-    || pathname === "/global/event"
     || pathname === "/event"
     || pathname === "/api/wr/events"
     || pathname === "/api/wr/runtime-events"
@@ -380,7 +378,7 @@ export function embeddedConfigModeForPath(
  * The synthetic host only ever bought a recognisable marker in traces, and
  * nothing routes on it. Fabricating an origin for a request that HAS one just
  * invents values the runtime then trusts, so the in-process hop is identified
- * by the `x-workspace-id` / `x-opencode-directory` headers set below instead.
+ * by the `x-workspace-id` / `x-claxedo-directory` headers set below instead.
  * (The other synthetic-base call sites construct requests with no caller at
  * all, so they legitimately need one.)
  */
@@ -399,9 +397,9 @@ export async function embedded(
   const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: embeddedConfigModeForPath(targetPath, c.req.method) })
   const target = embeddedRuntimeTargetUrl(url, targetPath)
   if (target.searchParams.has("directory")) target.searchParams.set("directory", ws.directory)
-  const headers = opencodeHeaders(c.req.raw.headers)
+  const headers = new Headers(c.req.raw.headers)
   headers.set("x-workspace-id", ws.id)
-  headers.set("x-opencode-directory", ws.directory)
+  headers.set("x-claxedo-directory", ws.directory)
   headers.delete("host")
   headers.delete("connection")
   // Never trust a client-supplied stamp; only this in-process hop may set it.

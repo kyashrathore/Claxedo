@@ -6,6 +6,6 @@ describe("persistence keys", () => {
     expect(isProjectionCacheKey("projection:workbench:user:global")).toBe(true)
     expect(isProjectionCacheKey("projection:harness-config:user:workspace")).toBe(true)
     expect(isProjectionCacheKey("projection:other:user:global")).toBe(false)
-    expect(isProjectionCacheKey("opencode.global.dat")).toBe(false)
+    expect(isProjectionCacheKey("claxedo.global.dat")).toBe(false)
   })
 })

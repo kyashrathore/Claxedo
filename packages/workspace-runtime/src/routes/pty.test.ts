@@ -113,7 +113,7 @@ describe("PtyRoutes", () => {
     try {
       const created = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": "/tmp" },
+        headers: { "content-type": "application/json", "x-claxedo-directory": "/tmp" },
         body: JSON.stringify({
           sessionId: "session_a",
           createRequestId: "request-client-a",
@@ -148,7 +148,7 @@ describe("PtyRoutes", () => {
     try {
       const response = await PtyRoutes(upgradeWebSocket).request("http://localhost/", {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": "/tmp" },
+        headers: { "content-type": "application/json", "x-claxedo-directory": "/tmp" },
         body: JSON.stringify({ title: "Terminal" }),
       })
 
@@ -527,7 +527,7 @@ describe("PtyRoutes", () => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-opencode-directory": "/tmp/other",
+        "x-claxedo-directory": "/tmp/other",
       },
       body: JSON.stringify({ title: "bad" }),
     })

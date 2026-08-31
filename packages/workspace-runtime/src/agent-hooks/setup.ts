@@ -6,20 +6,13 @@
 
 import * as fs from "fs"
 import * as os from "os"
-import * as path from "path"
-import { materializeAgentHooks, OPENCODE_DOC_AGENT_FILE } from "@claxedo/agent-extensions"
+import { materializeAgentHooks } from "@claxedo/agent-extensions"
 import { Log } from "../log"
 import {
   BIN_DIR,
   CLAXEDO_DIR,
 } from "./core/constants"
 import { setupStatusHooks, isStatusHooksSetupComplete, type StatusHooksSetupOptions } from "./core/setup"
-import {
-  OPENCODE_PLUGIN,
-  opencodeAgentDir,
-  opencodePluginDir,
-} from "./opencode/constants"
-import { setupOpencodeIntegration } from "./opencode/setup"
 
 const log = Log.create({ service: "agent-hooks" })
 
@@ -53,21 +46,13 @@ export async function setupAgentHooks(options: SetupOptions = {}): Promise<void>
     if (result.status !== "failed") continue
     log.warn("Failed to materialize agent hooks", { runner: result.runner, path: result.path, reason: result.reason })
   }
-  await setupOpencodeIntegration({ manifest, force })
-
   log.info("Agent hooks setup complete", { binDir: BIN_DIR })
 }
 
 // ── Status check ───────────────────────────────────────────────────────────
 
 export function isSetupComplete(): boolean {
-  if (!isStatusHooksSetupComplete()) return false
-  const requiredFiles = [
-    path.join(BIN_DIR, "opencode"),
-    path.join(opencodePluginDir(CLAXEDO_DIR), OPENCODE_PLUGIN),
-    path.join(opencodeAgentDir(CLAXEDO_DIR), OPENCODE_DOC_AGENT_FILE),
-  ]
-  return requiredFiles.every((file) => fs.existsSync(file))
+  return isStatusHooksSetupComplete()
 }
 
 // ── Cleanup ────────────────────────────────────────────────────────────────

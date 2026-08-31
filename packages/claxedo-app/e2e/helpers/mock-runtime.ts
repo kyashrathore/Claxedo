@@ -23,7 +23,7 @@ import {
 } from "../../../agent-sdk-runtime/src/runtime-event-hub"
 import type {
   ClaxedoEvent,
-  OpenCodeEvent,
+  ClientPresentationEvent,
 } from "../../../claxedo-server-core/src/platform/runtime/lib/bus"
 import {
   assistantIdForUserMessage,
@@ -168,9 +168,9 @@ export type MockEvent =
 type MockWireEvent = MockEvent | ClaxedoEvent | RuntimeEventEnvelope
 
 // Compile-time tripwire: every wrapped frame emitted by the mock must remain a
-// real OpenCode-compatible event. Flat Claxedo events and contract-v4 runtime
+// real Claxedo client-presentation event. Flat Claxedo events and contract-v4 runtime
 // envelopes use their own typed emitters below.
-const _mockEventContract: MockEvent extends OpenCodeEvent ? true : never = true
+const _mockEventContract: MockEvent extends ClientPresentationEvent ? true : never = true
 void _mockEventContract
 
 export type MockMessageInfo = {
@@ -857,8 +857,14 @@ function sessionHarnessFor(harness: Harness) {
 function sameSessionHarness(current: SessionHarness, requested: SessionHarness) {
   return current.id === requested.id
     && current.access === requested.access
-    && (requested.connection === undefined
-      || JSON.stringify(current.connection ?? null) === JSON.stringify(requested.connection))
+}
+
+function harnessSelectionFor(harness: Harness) {
+  if (harness === "claude-sdk") return { kind: "native" as const, harnessId: "claude" as const }
+  if (harness === "codex-app-server") return { kind: "native" as const, harnessId: "codex" as const }
+  if (harness === "cursor-sdk") return { kind: "native" as const, harnessId: "cursor" as const }
+  if (harness === "pi") return { kind: "native" as const, harnessId: "pi" as const }
+  return { kind: "connection" as const, connectionId: harness }
 }
 
 export function providerCatalogIndex(input: {
@@ -2503,7 +2509,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   //
   // CONTRACTS, all read from the routes the app actually talks to
   // (claxedo-local-server/src/opencode/compat-routes/index.ts:67-89, which delegate to
-  // opencode-compat-file-browser.ts; workspace-runtime/src/routes/file.ts:55-108 is
+  // client-presentation-file-browser.ts; workspace-runtime/src/routes/file.ts:55-108 is
   // the same surface behind the relay and agrees on every shape):
   //   GET /find/file    -> string[] of workspace-RELATIVE paths (globSearch)
   //   GET /find         -> GrepMatch[] : { path:{text}, lines:{text}, line_number,
@@ -2512,7 +2518,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   //   GET /file/content -> { type:"text", content } (or a base64 `binary` variant)
   //   GET /file/status  -> [] here; the fixture has no VCS state
   //   GET /file/all     -> { paths: string[] }
-  //   GET /find/symbol  -> [] — the real handler is itself a stub (opencode-compat.ts:75)
+  //   GET /find/symbol  -> [] — the real handler is itself a stub (client-presentation.ts:75)
   // ------------------------------------------------------------------------
   const workspaceFiles = options.workspaceFiles ?? DEFAULT_WORKSPACE_FILES
   const workspaceFilePaths = workspaceFiles.map((file) => file.path)
@@ -2610,7 +2616,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         const requested = (url.searchParams.get("path") ?? "").replace(/^\/+/, "")
         const match = workspaceFiles.find((file) => file.path === requested)
         // CONTRACT: an unreadable path is NOT an error here — `fileContentBody`'s
-        // catch returns `{type:"text", content:""}` (opencode-compat-file-browser.ts:75-80).
+        // catch returns `{type:"text", content:""}` (client-presentation-file-browser.ts:75-80).
         return json(r, { type: "text", content: (match?.content ?? "").trim() })
       }
       case "/file/status":
@@ -2637,10 +2643,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, localHarnessOptionsResponse(harnessConfigOptions(harness, harnessModel())))
   })
 
-  // Operator-configured ACP connection discovery — the picker's ACP group is
-  // exactly these rows. The mock deployment configures none, so the group is
-  // absent and only the built-in options render.
-  await contractRoute(page, "**/api/claxedo/agent-config/harness/acp-connections**", (r) => {
+  // Sanitized generic agent-connection discovery for the Connections screen.
+  await contractRoute(page, "**/api/claxedo/agent-config/connections**", (r) => {
     if (!api(r)) return r.continue()
     return json(r, { connections: [] })
   })
@@ -2673,16 +2677,11 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       // exported `normalizeHarnessIdentity`/`harnessKey`, so the accepted harness-id
       // vocabulary cannot drift from the server's. The old inline `{ type?: string }`
       // cast ignored `binary`, `sessionId`, `directory`, and `workspaceId` entirely.
-      parseHarnessConfigRequest(body, r.request().url())
-      // Selection still keys off the RAW posted string, not the validator's canonical
-      // `activeType`. That is deliberate: `harnessModels` is keyed by the app's legacy
-      // ids (`claude-sdk`, `codex-app-server`, `cursor-sdk`) while the real server
-      // normalizes and echoes canonical ones (`claude`, `codex`, `cursor`) — see
-      // `HARNESS_CONTRACT_DIVERGENCES.legacyKeyEcho`. Switching this fixture to the
-      // canonical key is a real behavior change for every harness spec, so it is
-      // recorded there rather than smuggled in here.
-      const postedType = (body as { type?: unknown } | undefined)?.type
-      if (typeof postedType === "string" && postedType in harnessModels) harness = postedType as Harness
+      const parsed = parseHarnessConfigRequest(body, r.request().url())
+      const requested = parsed.selection.kind === "native"
+        ? ({ claude: "claude-sdk", codex: "codex-app-server", cursor: "cursor-sdk", pi: "pi" } as const)[parsed.selection.harnessId]
+        : parsed.selection.connectionId
+      if (requested in harnessModels) harness = requested as Harness
       // CONTRACT: the real switch endpoint returns `{ ok: true }` and NOTHING else
       // (agent-config-harness-routes.ts:202 and :211 — both the per-session and the
       // global-config branch). This fixture used to answer with a full harness-status
@@ -2699,10 +2698,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     requests.harnessGetCount += 1
     const model = harnessModel()
     const status = harnessStatusPayload()
-    return json(
-      r,
-      harness === "opencode" ? { type: "opencode", ok: true } : { type: harness, model: model.id, ok: true, ...status },
-    )
+    const selection = harnessSelectionFor(harness)
+    return json(r, { harness: selection, activeHarness: selection, model: model.id, ok: true, ...status })
   })
 
   await page.route("**/api/claxedo/agent-config/agents**", (r) =>

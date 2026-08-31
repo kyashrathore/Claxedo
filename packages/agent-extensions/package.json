@@ -2,7 +2,7 @@
   "name": "@claxedo/agent-extensions",
   "version": "0.7.0",
   "type": "module",
-  "description": "Install and materialize reusable agent capabilities (skills, MCP configs, plugins) into Codex, Claude, OpenCode, and Cursor runner-native locations",
+  "description": "Install and materialize reusable agent capabilities into native agent runtimes",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -161,13 +161,6 @@
       "development": "./dist/materializers/cursor.mjs",
       "import": "./dist/materializers/cursor.mjs",
       "default": "./dist/materializers/cursor.mjs"
-    },
-    "./materializers/opencode-agent": {
-      "types": "./dist/materializers/opencode-agent.d.ts",
-      "bun": "./dist/materializers/opencode-agent.mjs",
-      "development": "./dist/materializers/opencode-agent.mjs",
-      "import": "./dist/materializers/opencode-agent.mjs",
-      "default": "./dist/materializers/opencode-agent.mjs"
     },
     "./materializers/skills": {
       "types": "./dist/materializers/skills.d.ts",

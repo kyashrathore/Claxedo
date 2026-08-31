@@ -35,7 +35,9 @@ describe("runtime config secret scoping", () => {
 
   test("shared runtime snapshots exclude legacy and local-only credential secrets", async () => {
     await saveUserConfig({
+      version: 3,
       mcp: {},
+      connections: {},
       auth: {
         legacy: "legacy-local-secret",
       },
@@ -87,8 +89,9 @@ describe("runtime config secret scoping", () => {
 
   test("shared runtime snapshots exclude local-only MCP overlays", async () => {
     await saveUserConfig({
+      version: 3,
       auth: {},
-      runner: { type: "claude-acp" },
+      connections: {},
       mcp: {
         "local-stdio": {
           type: "stdio",

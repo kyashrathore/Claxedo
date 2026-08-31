@@ -293,7 +293,7 @@ export async function launchPackagedApp(
   //         join(app.getPath("appData"), … "ai.claxedo.desktop.dev"))
   // so the Chromium flag loses to that call and the app keeps reading the real
   // channel store at
-  //   ~/Library/Application Support/ai.claxedo.desktop.dev/opencode.global.dat.json
+  //   ~/Library/Application Support/ai.claxedo.desktop.dev/claxedo.global.dat.json
   // which already lists the developer's own repo checkout as a project. The
   // app then asked its FRESH scratch server for a directory that server had
   // never registered -> 404, then 503, then stacked error toasts at boot.

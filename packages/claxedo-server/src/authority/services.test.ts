@@ -879,15 +879,10 @@ describe("control-plane services", () => {
       telemetry: { capture },
     }))
 
-    captureControlPlaneStartupTelemetry(services, {
-      port: 4987,
-      engineMode: "embedded",
-    })
+    captureControlPlaneStartupTelemetry(services, { port: 4987 })
 
     expect(capture).toHaveBeenCalledWith("control-plane", "control_plane.started", {
       port: 4987,
-      opencodeConfigured: true,
-      opencodeEngineMode: "embedded",
       authMode: "signed",
       signedAuth: true,
       sessionWriteMode: "central_canonical",
@@ -912,10 +907,7 @@ describe("control-plane services", () => {
     })
 
     expect(() =>
-      captureControlPlaneStartupTelemetry(services, {
-        port: 4987,
-        engineMode: "embedded",
-      })
+      captureControlPlaneStartupTelemetry(services, { port: 4987 })
     ).not.toThrow()
   })
 

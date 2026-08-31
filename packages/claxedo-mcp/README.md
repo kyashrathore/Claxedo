@@ -107,7 +107,7 @@ security audit trail.
 Supported environment:
 
 - `CLAXEDO_SERVER_URL`: Claxedo server URL. Defaults to `http://127.0.0.1:3001`.
-- `OPENCODE_API_DIR`: default local project directory.
+- `CLAXEDO_API_DIR`: default local project directory.
 - `CLAXEDO_WORKSPACE_ID`: default Docker/cloud workspace id.
 - `CLAXEDO_SESSION_ID`: optional current session id for document path grants.
 - `CLAXEDO_AUTH_TOKEN`: optional signed remote server bearer token.
@@ -137,7 +137,7 @@ claxedo-mcp documents list
 claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
 ```
 
-`OPENCODE_API_DIR` and `CLAXEDO_SESSION_ID` provide the default project and
+`CLAXEDO_API_DIR` and `CLAXEDO_SESSION_ID` provide the default project and
 session. The published package includes `skills/claxedo-documents/SKILL.md` so
 agent-extension installation can teach supported harnesses to resolve compact
 document references instead of copying absolute paths into prompts.

@@ -8,7 +8,7 @@ import type {
   AgentPresentationSession,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
-import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/opencode-compat"
+import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
 import type { StatusCompat } from "./status"
 import { firstTurnErrorData } from "./first-turn-error"
 
@@ -53,7 +53,7 @@ export type CompatEnvelope = {
   payload: CompatEvent
 }
 
-// These helpers are the package-level constructors for OpenCode-compatible
+// These helpers are the package-level constructors for Claxedo client-presentation
 // events. Route/adapters should use them instead of hand-assembling shapes
 // except when they are validating external harness payloads.
 const kinds = new Set<CompatEvent["type"]>([

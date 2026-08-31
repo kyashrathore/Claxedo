@@ -1,5 +1,7 @@
 /** Browser-facing Claxedo DTOs. These are owned by Claxedo, not generated from a harness SDK. */
 
+import type { AgentPresentationSession } from "@claxedo/agent-runtime-contract"
+
 export type ClaxedoProject = {
   id: string
   worktree: string
@@ -162,8 +164,8 @@ export type ClaxedoWorkspaceEvent =
   | { id?: string; type: "project.updated"; properties: { info: ClaxedoProject } }
   | { id?: string; type: "vcs.branch.updated"; properties: { branch?: string } }
   | { id?: string; type: "global.disposed"; properties: Record<string, unknown> }
-  | { id?: string; type: "session.created"; properties: { info: import("@claxedo/agent-runtime-contract").AgentPresentationSession } }
-  | { id?: string; type: "session.deleted"; properties: { info: import("@claxedo/agent-runtime-contract").AgentPresentationSession } }
+  | { id?: string; type: "session.created"; properties: { info: AgentPresentationSession } }
+  | { id?: string; type: "session.deleted"; properties: { info: AgentPresentationSession } }
   | { id?: string; type: "session.share.changed"; properties: { sessionID: string; share?: { url: string } } }
   | { id?: string; type: "pty.created"; properties: { info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string } } }
   | { id?: string; type: "pty.updated"; properties: { info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string } } }

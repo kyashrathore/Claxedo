@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
+import { executeTestTurn } from "../../test-utils/execution-binding"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import fs from "fs"
 import os from "os"
@@ -121,7 +122,7 @@ process.stdin.on("data", (chunk) => {
 
 function prompt(): PromptInput {
   return {
-    parts: ["Reply with exactly OK."],
+    parts: [{ type: "text", text: "Reply with exactly OK." }],
     userMessageId: "user-1",
     assistantMessageId: "assistant-1",
     agent: "build",
@@ -172,7 +173,7 @@ describe("Codex app-server idle reaping", () => {
     })
 
     const session = await adapter.createSession(fake.dir)
-    for await (const _event of adapter.sendMessage(session.id, prompt(), fake.dir)) {}
+    for await (const _event of executeTestTurn(adapter, session.id, prompt(), fake.dir)) {}
 
     const first = pids[0]
     expect(typeof first).toBe("number")
@@ -180,7 +181,7 @@ describe("Codex app-server idle reaping", () => {
 
     // The next turn transparently starts a NEW child rather than failing.
     const second = await adapter.createSession(fake.dir)
-    for await (const _event of adapter.sendMessage(second.id, prompt(), fake.dir)) {}
+    for await (const _event of executeTestTurn(adapter, second.id, prompt(), fake.dir)) {}
     expect(pids.length).toBeGreaterThan(1)
     expect(pids[1]).not.toBe(first)
 
@@ -205,7 +206,7 @@ describe("Codex app-server idle reaping", () => {
 
     const session = await adapter.createSession(fake.dir)
     const events: unknown[] = []
-    for await (const event of adapter.sendMessage(session.id, prompt(), fake.dir)) events.push(event)
+    for await (const event of executeTestTurn(adapter, session.id, prompt(), fake.dir)) events.push(event)
 
     // The turn completed: the child survived a silence far longer than the
     // idle grace because the lease held the countdown open.

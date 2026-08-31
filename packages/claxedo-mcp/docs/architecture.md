@@ -34,7 +34,7 @@ boundaries:
   (`CLAXEDO_SERVER_URL`, default `http://127.0.0.1:3001`). It attaches
   `Authorization: Bearer ${CLAXEDO_AUTH_TOKEN}` when that env var is set, plus
   scope headers from `claxedoRequestScope` (`src/request-scope.ts`): a
-  `directory`/`workspaceId` query string and `x-opencode-directory` /
+  `directory`/`workspaceId` query string and `x-claxedo-directory` /
   `x-workspace-id` headers for workspace-scoped calls, or no scope headers at
   all for `scope: "owner"` calls (used by the `cloud_workspace_*` tools and the
   workspace-resolve lookup). `CLAXEDO_AUTH_TOKEN` is optional for local

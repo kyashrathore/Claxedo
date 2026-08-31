@@ -67,12 +67,12 @@ async function seedProjects(page: Page) {
   await page.addInitScript(
     (input: { dir: string; workspaceId: string }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: input.dir,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: {

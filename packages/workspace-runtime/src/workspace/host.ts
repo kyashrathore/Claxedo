@@ -1,6 +1,6 @@
 import type { Hono } from "hono"
 import type { PtyRoutes } from "../routes/pty"
-import type { RuntimeRunner, RuntimeSnapshot } from "../routes/config"
+import type { RuntimeHarnessSelection, RuntimeSnapshot } from "../routes/config"
 import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
 import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapters"
@@ -11,7 +11,7 @@ export type RuntimeConfigApplyStatus = {
   revision: number
   acceptedAt?: string
   updatedAt?: string
-  harness?: RuntimeRunner
+  harness?: RuntimeHarnessSelection
   error?: {
     code: string
     message: string
@@ -62,7 +62,7 @@ export type WorkspaceHost = {
   detail: () => {
     state: "ready" | "applying" | "error"
     healthStatus: "ok" | "degraded" | "unavailable"
-    harness: RuntimeRunner
+    harness?: RuntimeHarnessSelection
     error: string
     harnessHealth: AgentHarnessAdapterHealth
     workspaceHarnessEnabled: boolean

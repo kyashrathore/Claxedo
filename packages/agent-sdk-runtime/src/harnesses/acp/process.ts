@@ -115,7 +115,7 @@ export class ACPProcess {
 
   constructor(
     readonly directory: string,
-    binary: string,
+    command: string | undefined,
     args: string[],
     model: string,
     private readonly mcp: () => McpServer[],
@@ -136,7 +136,7 @@ export class ACPProcess {
     })
     this.transport = createTransport({
       directory,
-      binary,
+      command,
       args,
       model,
       env: this.env(),
@@ -152,7 +152,7 @@ export class ACPProcess {
         this.notifyDead()
       },
       onError: (err) => {
-        log.error("ACP transport error", { err, binary, directory, kind: this.transport?.kind })
+        log.error("ACP transport error", { err, command, directory, kind: this.transport?.kind })
         this.exitObservation({ reason: "error" })
         this.failExitWaiters(err)
         this.notifyDead()

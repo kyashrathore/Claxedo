@@ -27,7 +27,7 @@ type PersistTarget = {
 }
 
 const LEGACY_STORAGE = "default.dat"
-const LOCAL_PREFIX = "opencode."
+const LOCAL_PREFIX = "claxedo."
 const fallback = { disabled: false }
 const demo = new Map<string, string>()
 
@@ -211,13 +211,13 @@ function storageName(name: string) {
 }
 
 function globalStorage() {
-  return storageName("opencode.global.dat")
+  return storageName("claxedo.global.dat")
 }
 
 function workspaceStorage(dir: string) {
   const head = ((dir ?? "").slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
   const sum = checksum(dir) ?? "0"
-  return storageName(`opencode.workspace.${head}.${sum}.dat`)
+  return storageName(`claxedo.workspace.${head}.${sum}.dat`)
 }
 
 function serverWorkspaceStorage(serverUrl: string, dir: string) {
@@ -231,7 +231,7 @@ function serverWorkspaceStorage(serverUrl: string, dir: string) {
   const serverSum = checksum(scoped) ?? "0"
   const dirHead = ((dir ?? "").slice(0, 12) || "workspace").replace(/[^a-zA-Z0-9._-]/g, "-")
   const dirSum = checksum(dir) ?? "0"
-  return storageName(`opencode.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`)
+  return storageName(`claxedo.server.${serverHead}.${serverSum}.workspace.${dirHead}.${dirSum}.dat`)
 }
 
 function localStorageWithPrefix(prefix: string): SyncStorage {

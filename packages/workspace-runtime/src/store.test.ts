@@ -522,31 +522,6 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
-  it("does not reinterpret removed first-party ACP runner identities", () => {
-    const store = new RuntimeStore(tmp())
-    db(store).exec("ALTER TABLE session ADD COLUMN runner_type TEXT")
-    db(store).exec("ALTER TABLE session ADD COLUMN runner_binary TEXT")
-    db(store).exec("ALTER TABLE session ADD COLUMN runner_model TEXT")
-    db(store)
-      .prepare(
-        `
-      INSERT INTO session (
-        id,
-        directory,
-        runner_type,
-        runner_binary,
-        runner_model,
-        created_at,
-        updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run("legacy", "/work", "claude-acp", "/bin/claude-agent-acp", "sonnet", 1, 2)
-
-    ;(store as unknown as { migrateLegacyRunnerColumns(): void }).migrateLegacyRunnerColumns()
-
-    assert.equal(store.getSessionConfig("legacy"), null)
-  })
 
   it("journals before projecting so replay recovers when projection fails", () => {
     const root = tmp()
@@ -1136,8 +1111,8 @@ describe("RuntimeStore", () => {
     store.requestProjectionReset("s1", "operator requested rebuild")
     store.updateSession("s1", { title: "Updated", time: { archived: 123 } })
     store.updateSessionConfig("s1", {
-      runner: { type: "opencode" },
-      model: { providerID: "opencode", modelID: "deepseek-v4-flash-free" },
+      harness: { id: "codex", access: "native" },
+      model: { providerID: "openai", modelID: "gpt-5.4" },
     })
     store.deleteSession("s1")
     store.close()
@@ -1210,37 +1185,6 @@ describe("RuntimeStore", () => {
       END
     `)
     first.close()
-
-    const next = new RuntimeStore(root)
-    assert.equal(next.getAgentSessionId("s1"), "a1")
-    next.close()
-  })
-
-  it("imports legacy JSONL once and replays from the SQLite journal", () => {
-    const root = tmp()
-    fs.mkdirSync(path.join(root, "sessions"), { recursive: true })
-    fs.writeFileSync(
-      path.join(root, "sessions", "s1.jsonl"),
-      JSON.stringify({
-        seq: 1,
-        ts: 1,
-        sessionId: "s1",
-        agentSessionId: "a1",
-        kind: "control",
-        control: {
-          type: "session.bind",
-          directory: "/work",
-          agentSessionId: "a1",
-          createdAt: 1,
-        },
-      }) + "\n",
-    )
-
-    const first = new RuntimeStore(root)
-    assert.equal(first.getAgentSessionId("s1"), "a1")
-    first.close()
-
-    fs.rmSync(path.join(root, "sessions", "s1.jsonl"), { force: true })
 
     const next = new RuntimeStore(root)
     assert.equal(next.getAgentSessionId("s1"), "a1")
@@ -2244,13 +2188,7 @@ describe("RuntimeStore", () => {
     first.updateSessionConfig("s1", {
       harness: {
         id: "openclaw",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "streamable-http",
-          url: "http://127.0.0.1:7331/acp",
-          headers: { Authorization: "Bearer test-token" },
-        },
+        access: "connection",
       },
       model: {
         providerID: "acp:openclaw",
@@ -2263,15 +2201,7 @@ describe("RuntimeStore", () => {
     const expectedConfig = {
       harness: {
         id: "openclaw",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "streamable-http",
-          url: "http://127.0.0.1:7331/acp",
-          headers: {
-            Authorization: "Bearer test-token",
-          },
-        },
+        access: "connection",
       },
       model: {
         providerID: "acp:openclaw",
@@ -2311,128 +2241,6 @@ describe("RuntimeStore", () => {
     assert.equal(new RuntimeStore(root).getSessionConfig("s1")?.handoff, undefined)
   })
 
-  it("normalizes http transport spelling across replay", () => {
-    const root = tmp()
-    const first = new RuntimeStore(root)
-    first.bindSession({
-      sessionId: "s1",
-      directory: "/work",
-      agentSessionId: "a1",
-      createdAt: 1,
-    })
-    first.updateSessionConfig("s1", {
-      harness: {
-        id: "openclaw",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "http",
-          url: "http://127.0.0.1:7331/acp",
-        },
-      },
-    } as unknown as Parameters<RuntimeStore["updateSessionConfig"]>[1])
-
-    assert.deepEqual(first.getSessionConfig("s1"), {
-      harness: {
-        id: "openclaw",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "streamable-http",
-          url: "http://127.0.0.1:7331/acp",
-        },
-      },
-      variant: null,
-      agent: null,
-    })
-
-    const next = new RuntimeStore(root)
-    assert.deepEqual(next.getSessionConfig("s1"), {
-      harness: {
-        id: "openclaw",
-        access: "acp",
-        connection: {
-          kind: "remote",
-          transport: "streamable-http",
-          url: "http://127.0.0.1:7331/acp",
-        },
-      },
-      variant: null,
-      agent: null,
-    })
-  })
-
-  it("persists config-only OpenCode sessions across replay", () => {
-    const root = tmp()
-    const first = new RuntimeStore(root)
-    first.updateSessionConfig(
-      "s-opencode",
-      {
-        runner: { type: "opencode" },
-        model: {
-          providerID: "opencode",
-          modelID: "deepseek-v4-flash-free",
-        },
-        variant: null,
-        agent: "build",
-      },
-      { directory: "/work" },
-    )
-
-    const expectedConfig = {
-      harness: { id: "opencode", access: "native" },
-      model: {
-        providerID: "opencode",
-        modelID: "deepseek-v4-flash-free",
-      },
-      variant: null,
-      agent: "build",
-    }
-    assert.deepEqual(first.getSessionConfig("s-opencode"), expectedConfig)
-
-    const next = new RuntimeStore(root)
-    assert.deepEqual(next.getSessionConfig("s-opencode"), expectedConfig)
-    assert.equal((next.getSession("s-opencode") as { directory?: string } | null)?.directory, "/work")
-  })
-
-  it("does not carry stale ACP binary when runner type changes", () => {
-    const store = new RuntimeStore(tmp())
-    store.bindSession({
-      sessionId: "s1",
-      directory: "/work",
-      agentSessionId: "a1",
-      createdAt: 1,
-    })
-    store.updateSessionConfig("s1", {
-      harness: {
-        id: "openclaw",
-        access: "acp",
-        connection: { kind: "process", binary: "/tmp/openclaw-acp" },
-      },
-      model: {
-        providerID: "acp:openclaw",
-        modelID: "sonnet",
-      },
-    })
-
-    store.updateSessionConfig("s1", {
-      harness: { id: "otherclaw", access: "acp" },
-      model: {
-        providerID: "acp:otherclaw",
-        modelID: "gpt-5.5",
-      },
-    })
-
-    assert.deepEqual(store.getSessionConfig("s1"), {
-      harness: { id: "otherclaw", access: "acp" },
-      model: {
-        providerID: "acp:otherclaw",
-        modelID: "gpt-5.5",
-      },
-      variant: null,
-      agent: null,
-    })
-  })
 })
 
 describe("canonical execution binding", () => {
@@ -2479,9 +2287,6 @@ describe("provisional user parts", () => {
       text,
     })
 
-  const adapterProvisional = (messageId: string, text: string) =>
-    messagePartUpdated({ id: `000000_${messageId}-input`, sessionID: "s1", messageID: messageId, type: "text", text })
-
   function seeded(root: string) {
     const store = new RuntimeStore(root)
     store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
@@ -2492,7 +2297,7 @@ describe("provisional user parts", () => {
       userMessageId: "u1",
       assistantMessageId: "m1",
       agent: "general",
-      model: { providerID: "opencode", modelID: "big-pickle" },
+      model: { providerID: "test-provider", modelID: "test-model" },
       parts: [{ type: "text", text: "UNIQUE-PROMPT-XYZ" }],
     })
     return store
@@ -2505,37 +2310,13 @@ describe("provisional user parts", () => {
       )?.parts ?? []
     ).map((part) => part.id)
 
-  it("renders one part when all three writers record the same prompt", () => {
-    const store = seeded(tmp())
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: adapterProvisional("u1", "UNIQUE-PROMPT-XYZ") })
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("u1", "UNIQUE-PROMPT-XYZ") })
-
-    assert.deepEqual(userParts(store), ["prt_fbf520445001MRpnaorKB7bmPL"])
-    store.close()
-  })
-
-  it("supersedes regardless of arrival order — the canonical part may land first", () => {
-    // Superseding only when the CANONICAL part arrives leaves this ordering
-    // broken: a provisional written after the canonical would sit beside it
-    // until the canonical happened to be rewritten, and if the engine never
-    // wrote that part again the prompt stayed doubled — the same defect, in
-    // the other order. Supersession must therefore be checked at both writes.
-    const store = seeded(tmp())
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("u1", "UNIQUE-PROMPT-XYZ") })
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: adapterProvisional("u1", "UNIQUE-PROMPT-XYZ") })
-
-    assert.deepEqual(userParts(store), ["prt_fbf520445001MRpnaorKB7bmPL"])
-    store.close()
-  })
-
   it("keeps provisional parts while NO canonical part exists — nothing is dropped without a replacement", () => {
     // The durability case these writers exist for: the engine never responds.
     const store = seeded(tmp())
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: adapterProvisional("u1", "UNIQUE-PROMPT-XYZ") })
 
     const parts = userParts(store)
     assert.ok(parts.length > 0, "a turn whose engine never answered must still show the user's prompt")
-    assert.ok(parts.every((id) => id === "u1-part-0" || id === "000000_u1-input"))
+    assert.deepEqual(parts, ["u1-part-0"])
     store.close()
   })
 
@@ -2554,7 +2335,7 @@ describe("provisional user parts", () => {
       userMessageId: "u1",
       assistantMessageId: "m1",
       agent: "general",
-      model: { providerID: "opencode", modelID: "big-pickle" },
+      model: { providerID: "test-provider", modelID: "test-model" },
       parts: [
         { type: "text", text: "PROMPT" },
         { type: "text", text: "ATTACHED" },
@@ -2578,22 +2359,19 @@ describe("provisional user parts", () => {
 
   it("a canonical part on ONE user message leaves another's provisionals alone", () => {
     // The mutation this exists to catch: a predicate matching id SHAPE alone
-    // (any `*-part-N` / `*-input`) rather than THIS message's id would retire
+    // (any `*-part-N`) rather than THIS message's id would retire
     // a second turn's provisionals the moment the first turn's engine part
     // landed. Needs two user messages, each holding provisionals, to discriminate.
     const store = seeded(tmp())
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: adapterProvisional("u1", "FIRST") })
     store.startTurn({
       sessionId: "s1",
       agentSessionId: "a1",
       userMessageId: "u2",
       assistantMessageId: "m2",
       agent: "general",
-      model: { providerID: "opencode", modelID: "big-pickle" },
+      model: { providerID: "test-provider", modelID: "test-model" },
       parts: [{ type: "text", text: "SECOND" }],
     })
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: adapterProvisional("u2", "SECOND") })
-
     // u1's engine part lands; u2's turn is still in flight.
     store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("u1", "FIRST") })
 
@@ -2602,20 +2380,18 @@ describe("provisional user parts", () => {
         (message) => message.info.id === "u2",
       )?.parts ?? []
     ).map((part) => part.id)
-    assert.deepEqual(u2.sort(), ["000000_u2-input", "u2-part-0"], "u2's provisionals must survive u1's canonical part")
+    assert.deepEqual(u2, ["u2-part-0"], "u2's provisional must survive u1's canonical part")
     store.close()
   })
 
   it("does not retire another message's provisional parts", () => {
     const store = seeded(tmp())
-    store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: adapterProvisional("u1", "UNIQUE-PROMPT-XYZ") })
     // A canonical part on the ASSISTANT message must not touch the user's.
     store.appendEvent({ sessionId: "s1", agentSessionId: "a1", payload: engineCanonical("m1", "OK") })
 
-    // BOTH of the user's provisionals must survive: a predicate that matched on
-    // id SHAPE alone (any `*-part-N` / `*-input`) rather than on THIS message's
-    // id would retire them from under an unrelated message's canonical part.
-    assert.deepEqual(userParts(store).sort(), ["000000_u1-input", "u1-part-0"])
+    // The user's provisional must survive: a predicate that matched on id shape
+    // alone rather than on this message's id would retire it.
+    assert.deepEqual(userParts(store), ["u1-part-0"])
     store.close()
   })
 })

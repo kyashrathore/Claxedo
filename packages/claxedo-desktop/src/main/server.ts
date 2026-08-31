@@ -32,7 +32,7 @@ export function getSavedServerUrl(): string | null {
   return getDefaultServerUrl()
 }
 
-export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
+export async function checkHealth(url: string): Promise<boolean> {
   let healthUrl: URL
   try {
     healthUrl = new URL("/global/health", url)
@@ -40,16 +40,9 @@ export async function checkHealth(url: string, password?: string | null): Promis
     return false
   }
 
-  const headers = new Headers()
-  if (password) {
-    const auth = Buffer.from(`opencode:${password}`).toString("base64")
-    headers.set("authorization", `Basic ${auth}`)
-  }
-
   try {
     const res = await fetch(healthUrl, {
       method: "GET",
-      headers,
       signal: AbortSignal.timeout(3000),
     })
     return res.ok
@@ -75,5 +68,4 @@ export async function checkHealthOrAskRetry(url: string): Promise<boolean> {
     return false
   }
 }
-
 

@@ -3486,7 +3486,7 @@ export async function installSeedState(page: Page, app: Pick<BrowserTarget, "tar
       JSON.stringify({ general: { showFileTree: true, showSessionProgressBar: true, editToolPartsExpanded: true } }),
     )
     localStorage.setItem(
-      "opencode.global.dat:layout",
+      "claxedo.global.dat:layout",
       JSON.stringify({
         sidebar: { opened: true, width: 280, workspaces: {}, workspacesDefault: true },
         terminal: { height: 320, opened: false },
@@ -3500,7 +3500,7 @@ export async function installSeedState(page: Page, app: Pick<BrowserTarget, "tar
       }),
     )
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         projects: { local: [{ worktree: directory, expanded: true }] },
         lastProject: { local: directory },
@@ -3860,8 +3860,8 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   if (pathName === "/api/claxedo/usage/sync") {
     return { attempted: 0, delivered: 0, conflicts: 0, pending: 0 }
   }
-  // Saved ACP connection registry (config-driven harness picker).
-  if (pathName === "/api/claxedo/agent-config/harness/acp-connections") return { connections: [] }
+  // Sanitized generic agent-connection discovery.
+  if (pathName === "/api/claxedo/agent-config/connections") return { connections: [] }
   // Subagent hydration (directory-scope.tsx ensureSubagents) — HostSubagentRow[].
   if (/^\/session\/[^/]+\/subagents$/.test(pathName)) return []
   if (pathName === "/api/claxedo/diff/vcs" || pathName === "/api/wr/diff/vcs") {
@@ -4654,7 +4654,6 @@ export async function startApp(): Promise<BrowserTarget> {
       PLAYWRIGHT_SERVER_PORT: String(mockPort),
       VITE_OPENCODE_SERVER_HOST: "127.0.0.1",
       VITE_OPENCODE_SERVER_PORT: String(mockPort),
-      VITE_OPENCODE_BACKEND_URL: `http://127.0.0.1:${mockPort}`,
       VITE_CLAXEDO_SERVER_URL: `http://127.0.0.1:${mockPort}`,
       VITE_CLAXEDO_E2E: "1",
     },
@@ -4677,7 +4676,6 @@ async function buildProductionApp(mockPort: number) {
       PLAYWRIGHT_SERVER_PORT: String(mockPort),
       VITE_OPENCODE_SERVER_HOST: "127.0.0.1",
       VITE_OPENCODE_SERVER_PORT: String(mockPort),
-      VITE_OPENCODE_BACKEND_URL: `http://127.0.0.1:${mockPort}`,
       VITE_CLAXEDO_SERVER_URL: `http://127.0.0.1:${mockPort}`,
     },
     stdout: "inherit",

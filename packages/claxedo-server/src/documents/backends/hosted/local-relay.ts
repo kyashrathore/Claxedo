@@ -85,7 +85,7 @@ export function createHostedLocalDocumentRelay(
             authorization: `Bearer ${token.token}`,
             "content-type": "application/json",
             "x-claxedo-document-capability": capability.token,
-            "x-opencode-directory": `workspace:${input.localWorkspaceId}`,
+            "x-claxedo-directory": `workspace:${input.localWorkspaceId}`,
           },
           ...(read ? {} : { body: JSON.stringify(body) }),
           signal: input.signal,

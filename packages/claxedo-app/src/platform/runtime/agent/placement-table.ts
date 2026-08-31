@@ -2,7 +2,7 @@
  * Explicit, testable session-routing placement table.
  *
  * agent-runtime-client.ts is the single place that decides, per request,
- * whether a session read/write goes to the injected legacy OpenCode client,
+ * whether a session read/write goes to the client-presentation transport,
  * the loopback runtime transport, the signed central control plane, or the
  * relay-backed workspace runtime. That decision used to live as 4–5-condition-
  * deep branching inline in three closures (`shouldUseRuntimeSessionTransport`,

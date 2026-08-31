@@ -18,14 +18,12 @@ import {
 import {
   createMemorySubagentAdmissionStore,
   firstTurnErrorData,
-  normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
 } from "@claxedo/agent-sdk-runtime"
 import type {
   AdmittedSubagentObservation,
   AgentMessage,
   AgentTurnOutcome,
-  HarnessConnection,
   SessionConfig,
   SessionConfigUpdate,
   SessionHarness,
@@ -424,29 +422,6 @@ function nullable(input: unknown): string | null | undefined {
   return typeof input === "string" ? input : undefined
 }
 
-function harnessRemote(harness?: SessionHarness) {
-  return harness?.connection?.kind === "remote" ? harness.connection : undefined
-}
-
-function harnessProcess(harness?: SessionHarness) {
-  return harness?.connection?.kind === "process" ? harness.connection : undefined
-}
-
-function harnessHeadersJson(harness?: SessionHarness) {
-  return harnessRemote(harness)?.headers ? JSON.stringify(harnessRemote(harness)!.headers) : null
-}
-
-function harnessHeaders(input: string | null | undefined) {
-  if (!input) return
-  try {
-    const value = JSON.parse(input) as unknown
-    if (!value || typeof value !== "object" || Array.isArray(value)) return
-    const entries = Object.entries(value)
-    if (!entries.every(([, item]) => typeof item === "string")) return
-    return Object.fromEntries(entries) as Record<string, string>
-  } catch {}
-}
-
 function sessionHandoff(input: string | null | undefined): SessionConfig["handoff"] | undefined {
   if (!input) return
   try {
@@ -462,112 +437,24 @@ function sessionHandoffJson(input: SessionConfig["handoff"] | undefined) {
   return input ? JSON.stringify(input) : null
 }
 
-/**
- * A config update that may still carry the pre-`harness` `runner` shape.
- *
- * Persisted rows and older callers write `runner: { type, binary, transport,
- * url, headers, model }`; `sessionConfigPatch` translates that into `harness`
- * plus `model`. The field is deliberately typed loosely — it is legacy input to
- * be normalized, not a shape anything should construct fresh — but it belongs
- * in the signature, because a caller passing it is using a supported path, not
- * making a mistake.
- */
-export type LegacySessionConfigUpdate = SessionConfigUpdate & {
-  /** @deprecated Superseded by `harness`; accepted for stored/older payloads. */
-  runner?: unknown
-}
-
-function sessionConfigPatch(input: LegacySessionConfigUpdate): SessionConfigUpdate {
-  const row = input
-  const runner = rec(row.runner)
-  const legacyHarness = runner
-    ? sessionHarness({
-        runner_type: str(runner.type),
-        runner_binary: str(runner.binary),
-        runner_transport: str(runner.transport),
-        runner_url: str(runner.url),
-        runner_headers_json:
-          runner.headers && typeof runner.headers === "object" && !Array.isArray(runner.headers)
-            ? JSON.stringify(runner.headers)
-            : null,
-      })
-    : undefined
-  const legacyModel =
-    runner && str(runner.model)
-      ? {
-          providerID: str(runner.type) ?? legacyHarness?.id ?? "unknown",
-          modelID: str(runner.model)!,
-        }
-      : undefined
-  return {
-    ...input,
-    ...(input.harness ? {} : legacyHarness ? { harness: legacyHarness } : {}),
-    ...(input.model !== undefined ? {} : legacyModel ? { model: legacyModel } : {}),
-  }
-}
-
-function harnessTransport(input: string | null | undefined) {
-  return normalizeAgentHarnessTransport(input)
-}
-
 function sessionHarness(input: {
   harness_id?: string | null
   harness_access?: string | null
-  harness_binary?: string | null
-  harness_transport?: string | null
-  harness_url?: string | null
-  harness_headers_json?: string | null
-  runner_type?: string | null
-  runner_binary?: string | null
-  runner_transport?: string | null
-  runner_url?: string | null
-  runner_headers_json?: string | null
 }): SessionHarness | undefined {
   const identity = normalizeHarnessIdentity(
     input.harness_id && input.harness_access
       ? { id: input.harness_id, access: input.harness_access }
-      : input.runner_type,
+      : undefined,
   )
   if (!identity) return
-  const binary = input.harness_binary ?? input.runner_binary ?? undefined
-  const transport = harnessTransport(input.harness_transport ?? input.runner_transport)
-  const url = input.harness_url ?? input.runner_url ?? undefined
-  const headers = harnessHeaders(input.harness_headers_json ?? input.runner_headers_json)
-  const connection: HarnessConnection | undefined =
-    url || transport || headers
-      ? {
-          kind: "remote",
-          ...(transport ? { transport } : {}),
-          ...(url ? { url } : {}),
-          ...(headers ? { headers } : {}),
-        }
-      : binary
-        ? { kind: "process", binary }
-        : undefined
-  return {
-    id: identity.id,
-    access: identity.access,
-    ...(connection ? { connection } : {}),
-  }
-}
-
-function parse(line: string): Row | null {
-  try {
-    const row = JSON.parse(line) as Row
-    if (typeof row.seq !== "number" || typeof row.ts !== "number" || typeof row.sessionId !== "string") return null
-    if (row.kind !== "control" && row.kind !== "event") return null
-    return row
-  } catch {
-    return null
-  }
+  return identity
 }
 
 /**
  * Is this part id one a provisional writer derived from the message id?
  *
- * Matches the two synthetic conventions exactly — `${messageId}-part-N` from
- * `inputParts` below, and `NNNNNN_${messageId}-input` from the opencode
- * adapter's `promptParts`. Both are recognisable from the message id alone.
+ * Matches the canonical synthetic convention `${messageId}-part-N` from
+ * `inputParts` below. It is recognisable from the message id alone.
  *
  * Deliberately anchored and message-bound. An id that merely CONTAINS the
  * message id, or that merely looks like the shape, is not matched: a false
@@ -575,8 +462,7 @@ function parse(line: string): Row | null {
  */
 export function isProvisionalPartId(messageId: string, partId: string) {
   if (!messageId || !partId) return false
-  if (new RegExp(`^${escapeRegExp(messageId)}-part-\\d+$`).test(partId)) return true
-  return new RegExp(`^\\d+_${escapeRegExp(messageId)}-input$`).test(partId)
+  return new RegExp(`^${escapeRegExp(messageId)}-part-\\d+$`).test(partId)
 }
 
 function escapeRegExp(value: string) {
@@ -606,15 +492,13 @@ function provisionalPromptWidth(messageId: string, provisionalIds: readonly stri
 
 export class RuntimeStore {
   private root: string
-  private sessions: string
   private db: SqliteDatabase
   private subagentAdmission = createMemorySubagentAdmissionStore()
   private closed = false
 
   constructor(root = workspaceRuntimeStoreDir()) {
     this.root = root
-    this.sessions = path.join(root, "sessions")
-    fs.mkdirSync(this.sessions, { recursive: true, mode: 0o755 })
+    fs.mkdirSync(root, { recursive: true, mode: 0o755 })
     this.db = openDatabase(path.join(root, "state.db"))
     this.db.exec("PRAGMA journal_mode = WAL")
     this.db.exec("PRAGMA synchronous = NORMAL")
@@ -930,8 +814,6 @@ export class RuntimeStore {
         // column already exists
       }
     }
-    this.migrateLegacyRunnerColumns()
-    this.importJsonlJournals()
   }
 
   private hydrateSubagentAdmission() {
@@ -1307,56 +1189,6 @@ export class RuntimeStore {
     }
   }
 
-  private migrateLegacyRunnerColumns() {
-    if (!hasColumn(this.db, "session", "runner_type")) return
-    for (const column of ["runner_binary", "runner_model", "runner_transport", "runner_url", "runner_headers_json"]) {
-      if (!hasColumn(this.db, "session", column)) this.db.exec(`ALTER TABLE session ADD COLUMN ${column} TEXT`)
-    }
-    this.db.exec(`
-      UPDATE session
-      SET
-        harness_id = COALESCE(
-          harness_id,
-          CASE
-            WHEN runner_type = 'claude' THEN 'claude'
-            WHEN runner_type IN ('codex-app-server', 'codex') THEN 'codex'
-            WHEN runner_type = 'cursor' THEN 'cursor'
-            WHEN runner_type IN ('opencode-native', 'opencode') THEN 'opencode'
-            WHEN runner_type = 'pi' THEN 'pi'
-            ELSE NULL
-          END
-        ),
-        harness_access = COALESCE(
-          harness_access,
-          CASE
-            WHEN runner_type IN ('claude', 'codex-app-server', 'codex', 'cursor', 'opencode-native', 'opencode', 'pi') THEN 'native'
-            ELSE NULL
-          END
-        ),
-        harness_binary = COALESCE(harness_binary, runner_binary),
-        harness_transport = COALESCE(harness_transport, runner_transport),
-        harness_url = COALESCE(harness_url, runner_url),
-        harness_headers_json = COALESCE(harness_headers_json, runner_headers_json),
-        model_provider_id = COALESCE(model_provider_id, runner_type),
-        model_id = COALESCE(model_id, runner_model)
-    `)
-    for (const column of [
-      "runner_type",
-      "runner_binary",
-      "runner_model",
-      "runner_transport",
-      "runner_url",
-      "runner_headers_json",
-    ]) {
-      if (!hasColumn(this.db, "session", column)) continue
-      try {
-        this.db.exec(`ALTER TABLE session DROP COLUMN ${column}`)
-      } catch {
-        // Older SQLite builds may not support DROP COLUMN. Existing rows are already migrated.
-      }
-    }
-  }
-
   private reset() {
     this.transaction(() => {
       this.db.exec("DELETE FROM journal_checkpoint")
@@ -1574,23 +1406,6 @@ export class RuntimeStore {
       ORDER BY last_activity_at DESC, session_id ASC
     `).all(workspaceId) as Array<{ session_id: string }>)
       .map((row) => this.getWorktree(workspaceId, row.session_id)!)
-  }
-
-  private importJsonlJournals() {
-    const names = fs.existsSync(this.sessions)
-      ? fs
-          .readdirSync(this.sessions)
-          .filter((name) => name.endsWith(".jsonl"))
-          .sort()
-      : []
-    for (const name of names) {
-      const text = fs.readFileSync(path.join(this.sessions, name), "utf8")
-      for (const line of text.split("\n").filter(Boolean)) {
-        const row = parse(line)
-        if (!row) continue
-        this.insertRuntimeJournal(row, row.seq, { ignoreDuplicate: true })
-      }
-    }
   }
 
   private parseJournalRow(row: RuntimeJournalRow): Row | null {
@@ -1873,16 +1688,15 @@ export class RuntimeStore {
   /**
    * Drops a user message's PROVISIONAL parts once a canonical one has landed.
    *
-   * Three layers each record a user prompt, and each mints its own id:
+   * Two layers can record a user prompt, and each mints its own id:
    *   `${messageId}-part-N`       — this store (`inputParts`)
-   *   `NNNNNN_${messageId}-input` — the opencode adapter (`promptParts`)
-   *   `prt_…`                     — the engine's own persisted part
-   * All three describe the SAME text, so one send rendered the prompt three
-   * times in the transcript. The provider request always carried exactly one
+   *   provider part id             — the connected runtime's persisted part
+   * Both describe the SAME text, so one send rendered the prompt twice in the
+   * transcript. The provider request always carried exactly one
    * part, so this was transcript fidelity — never model input, never tokens.
    *
-   * The first two are provisional BY CONSTRUCTION: their ids are derived from
-   * the message id, which is what makes them identifiable without comparing
+   * The first is provisional BY CONSTRUCTION: its id is derived from the
+   * message id, which makes it identifiable without comparing
    * text (a user may legitimately send the same text twice; identical text is
    * not evidence of duplication). They are written eagerly for durability —
    * each survives if the layer below it never responds — so they are retired
@@ -2056,10 +1870,10 @@ export class RuntimeStore {
         input.processKey === undefined ? prev?.process_key ?? null : input.processKey,
         input.harness?.id ?? prev?.harness_id ?? null,
         input.harness?.access ?? prev?.harness_access ?? null,
-        harnessProcess(input.harness)?.binary ?? prev?.harness_binary ?? null,
-        harnessRemote(input.harness)?.transport ?? prev?.harness_transport ?? null,
-        harnessRemote(input.harness)?.url ?? prev?.harness_url ?? null,
-        input.harness ? harnessHeadersJson(input.harness) : (prev?.harness_headers_json ?? null),
+        null,
+        null,
+        null,
+        null,
         input.model?.providerID ?? prev?.model_provider_id ?? null,
         input.model?.modelID ?? prev?.model_id ?? null,
         input.variant ?? prev?.variant ?? null,
@@ -3684,8 +3498,7 @@ export class RuntimeStore {
     }
   }
 
-  private applyConfigUpdate(id: string, update: LegacySessionConfigUpdate, ts = Date.now(), directory?: string) {
-    const patch = sessionConfigPatch(update)
+  private applyConfigUpdate(id: string, patch: SessionConfigUpdate, ts = Date.now(), directory?: string) {
     const prev = this.db
       .prepare(
         `
@@ -3752,10 +3565,10 @@ export class RuntimeStore {
       .run(
         nextHarness?.id ?? null,
         nextHarness?.access ?? null,
-        harnessProcess(nextHarness)?.binary ?? null,
-        harnessRemote(nextHarness)?.transport ?? null,
-        harnessRemote(nextHarness)?.url ?? null,
-        harnessHeadersJson(nextHarness),
+        null,
+        null,
+        null,
+        null,
         patch.model === undefined ? (prev?.model_provider_id ?? null) : (patch.model?.providerID ?? null),
         nextModelId,
         patch.variant === undefined ? (prev?.variant ?? null) : patch.variant,
@@ -3766,7 +3579,7 @@ export class RuntimeStore {
       )
   }
 
-  updateSessionConfig(id: string, update: LegacySessionConfigUpdate, input: { directory?: string } = {}) {
+  updateSessionConfig(id: string, update: SessionConfigUpdate, input: { directory?: string } = {}) {
     const row: Row = {
       seq: this.next(id),
       ts: Date.now(),

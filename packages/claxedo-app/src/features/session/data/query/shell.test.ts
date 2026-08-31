@@ -101,7 +101,7 @@ describe("shell query helpers", () => {
         const url = new URL(req.url)
         if (url.toString() === "http://127.0.0.1:3001/workspaces/ws_1/command") {
           expect(req.headers.get("authorization")).toBeNull()
-          expect(req.headers.get("x-opencode-directory")).toBeNull()
+          expect(req.headers.get("x-claxedo-directory")).toBeNull()
           return new Response(JSON.stringify([{ name: "deploy" }]), { status: 200 })
         }
         throw new Error(`unexpected request: ${req.method} ${req.url}`)

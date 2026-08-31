@@ -208,7 +208,7 @@ async function runtimeFetch(
       headers: {
         accept: "application/json",
         authorization: `Bearer ${token.token}`,
-        "x-opencode-directory": `workspace:${input.workspaceId}`,
+        "x-claxedo-directory": `workspace:${input.workspaceId}`,
       },
     },
   )

@@ -3,7 +3,7 @@ import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { useI18n } from "@opencode-ai/ui/context/i18n"
-import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { getDirectory, getFilename } from "@/lib/path"
 import { Match, Show, Switch } from "solid-js"
 import { mediaKindFromPath } from "@/ui/session-kit"
 

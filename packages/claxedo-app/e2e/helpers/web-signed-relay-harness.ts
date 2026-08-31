@@ -405,7 +405,7 @@ export async function seedWorkspace(
       authUserFullName?: string
     }) => {
       localStorage.clear()
-      localStorage.setItem("opencode.terminal.renderer", "dom")
+      localStorage.setItem("claxedo.terminal.renderer", "dom")
       if (seed.orgId && seed.orgId !== "personal") {
         localStorage.setItem("claxedo.activeOrgId", seed.orgId)
       }
@@ -428,7 +428,7 @@ export async function seedWorkspace(
       }
       const ref = `workspace:${seed.workspaceId}`
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: { local: [{ worktree: ref, expanded: true, sandboxes: [seed.workspaceId] }] },
@@ -438,7 +438,7 @@ export async function seedWorkspace(
         }),
       )
       localStorage.setItem(
-        "opencode.global.dat:globalSync.project",
+        "claxedo.global.dat:globalSync.project",
         JSON.stringify({
           value: [
             {

@@ -114,7 +114,7 @@ workspaces, signed remote servers, and desktop-hosted browser tools.
 | --- | --- |
 | `CLAXEDO_SERVER_URL` | Base URL for the Claxedo server. Defaults to `http://127.0.0.1:3001`. |
 | `CLAXEDO_AUTH_TOKEN` | Optional bearer token sent as `Authorization: Bearer …` on every server request. Set only when pointing the MCP at a signed remote Claxedo server. |
-| `OPENCODE_API_DIR` | Default local project directory for workspace-scoped requests. |
+| `CLAXEDO_API_DIR` | Default local project directory for workspace-scoped requests. |
 | `CLAXEDO_WORKSPACE_ID` | Default workspace id for Docker/cloud workspace requests. |
 | `CLAXEDO_SESSION_ID` | Optional current session id used by `documents_open` and the documents CLI for the per-project local file grant. |
 | `CLAXEDO_TERMINAL_ID` | Default terminal id for `get_logs`, `session_messages`, and `summarize_logs` when no id is passed. Set automatically inside a Claxedo terminal. |
@@ -249,7 +249,7 @@ claxedo-mcp documents list
 claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
 ```
 
-`OPENCODE_API_DIR` and `CLAXEDO_SESSION_ID` (or `--directory`/`--project` and
+`CLAXEDO_API_DIR` and `CLAXEDO_SESSION_ID` (or `--directory`/`--project` and
 `--session`) provide the default project and session. The published package
 includes `skills/claxedo-documents/SKILL.md` so agent-extension installation can
 teach supported harnesses to resolve compact document references instead of

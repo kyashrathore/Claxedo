@@ -22,15 +22,6 @@ describe("buildSafeEnv", () => {
     expect(result.NODE_PATH).toBeUndefined()
   })
 
-  test("passes through OPENCODE_ prefixed vars", () => {
-    const result = buildSafeEnv({
-      OPENCODE_CUSTOM_FLAG: "1",
-      OPENCODE_TERMINAL: "1",
-    })
-    expect(result.OPENCODE_CUSTOM_FLAG).toBe("1")
-    expect(result.OPENCODE_TERMINAL).toBe("1")
-  })
-
   test("passes through CLAXEDO_ prefixed vars", () => {
     const result = buildSafeEnv({
       CLAXEDO_PORT: "7860",
@@ -83,12 +74,6 @@ describe("buildSafeEnv", () => {
     const result = buildSafeEnv({ node_options: "--inspect", Node_Options: "--experimental" }, { platform: "win32" })
     expect(result.node_options).toBeUndefined()
     expect(result.Node_Options).toBeUndefined()
-  })
-
-  test("Windows: case-insensitive prefix matching for OPENCODE_ vars", () => {
-    const result = buildSafeEnv({ opencode_debug: "1", Opencode_Terminal: "1" }, { platform: "win32" })
-    expect(result.opencode_debug).toBe("1")
-    expect(result.Opencode_Terminal).toBe("1")
   })
 
   test("Windows: allows Windows-specific env vars", () => {

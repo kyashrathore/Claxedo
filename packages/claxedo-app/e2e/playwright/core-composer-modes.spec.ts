@@ -188,18 +188,18 @@ function slug(value: string) {
 // just the first), including `page.reload()` and subsequent `page.goto()` calls. An
 // unconditional `localStorage.clear()` here would wipe the persisted composer draft
 // (behaviors 20/21 test exactly that survival) out from under the app on the very
-// reload/navigate the test is asserting about. `window.__OPENCODE__` is a fresh JS
+// reload/navigate the test is asserting about. `window.__CLAXEDO__` is a fresh JS
 // realm on every navigation so it must always be reset, but the server-catalog
 // localStorage seed is written idempotently (only if absent) so it seeds a clean
 // profile once per test (Playwright gives each test a fresh context) without erasing
 // state the app itself persists across navigations within that same test.
 async function seedProjects(page: Page, dirs: string[]) {
   await page.addInitScript((worktrees: string[]) => {
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: worktrees[0],
     }
-    const key = "opencode.global.dat:server"
+    const key = "claxedo.global.dat:server"
     if (localStorage.getItem(key)) return
     localStorage.setItem(
       key,

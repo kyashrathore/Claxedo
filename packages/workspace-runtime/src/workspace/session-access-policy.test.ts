@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Hono } from "hono"
 import { embeddedWorkspaceRuntimeExposure, privateNetworkWorkspaceRuntimeExposure } from "../exposure"
-import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 import { createWorkspaceHost } from "./runtime"
 
 const exposure = privateNetworkWorkspaceRuntimeExposure({ name: "test", guard: () => true, runtimeAuth: () => true })

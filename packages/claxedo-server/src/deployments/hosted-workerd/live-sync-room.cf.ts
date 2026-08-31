@@ -29,7 +29,7 @@
  *
  * The room also holds this deployment's SSE retention ring, so the hosted
  * stream is resumable on the same terms as the three local ones
- * (`routes/events.ts`, `routes/opencode-compat-events.ts`,
+ * (`routes/events.ts`, `routes/client-presentation-events.ts`,
  * `workspace-runtime/src/routes/runtime-events.ts`). Before this, hosted
  * clients had the resume machinery on the client and nothing to talk to: the
  * bridge wrote no `id:` lines, so claxedo-app's cursor stayed null forever, it

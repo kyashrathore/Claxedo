@@ -197,7 +197,7 @@ async function waitForReady(client: Awaited<ReturnType<typeof connectCdp>>) {
 async function evaluateReadiness(client: Awaited<ReturnType<typeof connectCdp>>) {
   const result = asObject(await client.send("Runtime.evaluate", {
     expression: `(() => {
-      const fatal = window.__OPENCODE__ && window.__OPENCODE__.lastError
+      const fatal = window.__CLAXEDO__ && window.__CLAXEDO__.lastError
       const root = document.getElementById("root")
       const text = document.body ? document.body.innerText.trim() : ""
       const html = document.body ? document.body.innerHTML.slice(0, 400) : ""

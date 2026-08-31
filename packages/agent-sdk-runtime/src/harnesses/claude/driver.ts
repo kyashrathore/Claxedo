@@ -366,8 +366,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         // Reasoning effort rides the TURN, not a config push. A Claude turn is
         // exactly one `query()`, and the SDK takes `effort` as a per-query
         // option alongside `model` and `agent` above — so this is the same
-        // shape opencode already uses, where the chosen level travels on the
-        // prompt rather than being pushed at the process. `variant` is the
+        // shape where the chosen level travels on the prompt rather than being
+        // pushed at the process. `variant` is the
         // field that already carries it end to end (`PromptInput.variant`).
         ...(turnEffort ? { effort: turnEffort } : {}),
         ...(input.getAgentSessionId().startsWith(CLAUDE_PENDING_PREFIX)

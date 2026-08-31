@@ -276,12 +276,12 @@ export async function startRealWebHarness(options: RealWebHarnessOptions): Promi
     await page.addInitScript(
       ({ serverUrl, directories }) => {
         const state = window as typeof window & {
-          __OPENCODE__?: { serverUrl: string; activeDirectory: string }
+          __CLAXEDO__?: { serverUrl: string; activeDirectory: string }
         }
-        state.__OPENCODE__ = { serverUrl, activeDirectory: directories[0]! }
+        state.__CLAXEDO__ = { serverUrl, activeDirectory: directories[0]! }
         localStorage.clear()
         localStorage.setItem(
-          "opencode.global.dat:server",
+          "claxedo.global.dat:server",
           JSON.stringify({
             list: [],
             projects: { local: directories.map((worktree) => ({ worktree, expanded: true })) },

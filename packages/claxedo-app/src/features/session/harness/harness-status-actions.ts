@@ -18,6 +18,8 @@ import {
   shouldRefreshDirectoryAfterHarnessStatus,
   type HarnessScopeInput,
 } from "./store-policy"
+import { sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { harnessSelectionId } from "./profile"
 
 type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>
 
@@ -50,16 +52,15 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
 
   const applyStatus = async (scope: string, data: HarnessState, params?: ScopeInput) => {
     const current = input.state(scope)
-    const want = desiredHarness(data) ?? input.state(scope)?.harness ?? "opencode"
-    // Skip a failed status only when the user has confirmed a *different* real
-    // harness. The store seeds `harness: "opencode"` before any confirmation,
-    // so the seed must NOT be treated as a deliberate selection — otherwise a
-    // failed status for the harness this scope is actually configured with is
-    // silently swallowed, leaving submit unblocked with no error dot
-    // (core-harness-ownership-local). applyStatus only runs during hydration
-    // (no external callers), so a confirmed non-opencode selection is the only
-    // thing worth protecting here.
-    if (failedHarness(data) && current?.harness && current.harness !== "opencode" && want !== current.harness) return
+    const want = desiredHarness(data) ?? input.state(scope)?.harness
+    // A failed status for another confirmed selection must not overwrite the
+    // current harness. With no confirmed selection, the runtime response is the
+    // authority for this hydration.
+    if (!want) {
+      input.applyPatch(scope, harnessStatusPatch({ data, current }))
+      return
+    }
+    if (failedHarness(data) && current?.harness && !sameHarnessSelection(want, current.harness)) return
     input.applyPatch(scope, harnessStatusPatch({ data, current }))
     if (shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
       input.fetchConfigOptions(scope, want, params)
@@ -79,7 +80,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
       input.applyPatch(scope, { optionsLoading: false })
     }
     if (params?.directory && shouldRefreshDirectoryAfterHarnessStatus(params)) {
-      await refresh(params.directory, want, { draft: true })
+      await refresh(params.directory, want.kind === "native" ? want.harnessId : undefined, { draft: true })
     }
   }
 

@@ -22,14 +22,14 @@ const prev = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 // Import route builder after env is set
-const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/compat-routes/index")
+const { ShellRoutes } = await import("@claxedo/local-server/self-hosted-execution")
 const { ensureWorkspace } = await import("@claxedo/server-core/workspace/store/index")
 
-// Build a minimal Hono app with compat routes + SSE event handler
+// Build a minimal Hono app with Claxedo shell routes + SSE event handler
 const { Hono } = await import("hono")
 
 const app = new Hono()
-app.route("/", OpenCodeCompatRoutes())
+app.route("/", ShellRoutes())
 
 function sh(cmd: string) { execSync(cmd, { stdio: "ignore" }) }
 

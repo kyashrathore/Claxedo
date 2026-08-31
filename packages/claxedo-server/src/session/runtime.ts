@@ -548,6 +548,11 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       agent: null,
     })
   }
+  function centralExecutionBinding(sessionId: string) {
+    const binding = runtimeStore.getExecutionBinding(sessionId)
+    if (!binding) throw new Error(`No execution binding for central session ${sessionId}`)
+    return binding
+  }
   async function ensureCentralRuntimeSession(sessionId: string) {
     if (runtimeStore.getSession(sessionId)) return true
     const meta = await services.projectionStore.session_meta(sessionId)
@@ -568,13 +573,13 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         toolSandbox: toolSandboxFromMeta(meta),
       },
     })
-    if (meta.model) await adapter.updateSessionConfig(sessionId, { model: meta.model }, undefined)
     bindRuntimeSession({
       id: sessionId,
       title: meta.title ?? null,
       ...(meta.model ? { model: meta.model } : {}),
       ...(meta.parentID ? { parentSessionId: meta.parentID } : {}),
     })
+    if (meta.model) await adapter.updateSessionConfig(centralExecutionBinding(sessionId), { model: meta.model })
     return true
   }
   const sessionAccessPolicy = {
@@ -633,7 +638,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     },
     getSessionConfig: async (_c, directory, sessionId) => {
       const meta = await services.projectionStore.session_meta(sessionId)
-      const config = await adapter.getSessionConfig(sessionId, directory)
+      const config = await adapter.getSessionConfig(centralExecutionBinding(sessionId))
       return meta?.model ? { ...config, model: meta.model } : config
     },
     updateSessionConfig: async (_c, directory, sessionId, update: SessionConfigUpdate) => {
@@ -653,7 +658,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         await services.projectionStore.put_session_meta(sessionId, { model: update.model })
       }
       try {
-        const config = await adapter.updateSessionConfig(sessionId, update, directory)
+        const config = await adapter.updateSessionConfig(centralExecutionBinding(sessionId), update)
         runtimeStore.updateSessionConfig(sessionId, config)
         return config
       } catch (cause) {
@@ -696,7 +701,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       })
     },
     afterMessageCheckpoint: async (_c, directory, sessionId) => {
-      const session = await adapter.getSession(sessionId, directory)
+      const session = await adapter.getSession(centralExecutionBinding(sessionId))
       if (!session || typeof session.title !== "string") return
       await services.projectionStore.put_session_meta(sessionId, {
         host: "central",
@@ -758,7 +763,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
         ? event.payload.properties.info.title
         : null
       void Promise.all([
-        adapter.updateSession(event.payload.properties.info.id, { ...(title !== null ? { title } : {}) }, undefined),
+        adapter.updateSession(
+          centralExecutionBinding(event.payload.properties.info.id),
+          { ...(title !== null ? { title } : {}) },
+        ),
         services.projectionStore.put_session_meta(event.payload.properties.info.id, {
           host: "central",
           directory: null,
@@ -825,7 +833,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     } else {
       return c.json({ error: { code: "invalid_tool_sandbox", message: "toolSandbox.kind must be workspace-runtime or virtual" } }, 400)
     }
-    if (!(await ensureCentralRuntimeSession(sessionId)) && !(await adapter.getSession(sessionId, undefined))) {
+    if (!(await ensureCentralRuntimeSession(sessionId))) {
       return c.json({ error: { code: "session_not_found", message: `No central session ${sessionId}` } }, 404)
     }
     const workspaceId = toolSandbox.kind === "workspace-runtime" ? toolSandbox.workspaceId : undefined
@@ -942,18 +950,24 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       ...(workspaceId ? { workspaceId } : {}),
       toolSandbox,
     })
-    const model = input.model ?? await deploymentDefaultModel(session.id)
-    if (input.requireModel && !model) {
-      await adapter.deleteSession(session.id, undefined)
-      throw new Error("Pi model is not configured; select a model or configure CLAXEDO_PI_MODEL")
-    }
-    if (model) await adapter.updateSessionConfig(session.id, { model }, undefined)
-    if (input.parentID) subagentChildren.add(session.id)
     bindRuntimeSession({
       id: session.id,
       title: input.title ?? "Hybrid Session",
-      ...(model ? { model } : {}),
       ...(input.parentID ? { parentSessionId: input.parentID } : {}),
+    })
+    const model = input.model ?? await deploymentDefaultModel(session.id)
+    if (input.requireModel && !model) {
+      await adapter.deleteSession(centralExecutionBinding(session.id))
+      runtimeStore.deleteSession(session.id)
+      throw new Error("Pi model is not configured; select a model or configure CLAXEDO_PI_MODEL")
+    }
+    if (model) await adapter.updateSessionConfig(centralExecutionBinding(session.id), { model })
+    if (input.parentID) subagentChildren.add(session.id)
+    if (model) runtimeStore.updateSessionConfig(session.id, {
+      harness: { id: "pi", access: "native" },
+      model,
+      variant: null,
+      agent: null,
     })
     const tags = [
       `harness:${input.harness ?? "pi"}`,
@@ -1076,7 +1090,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     const mode = input.background ? "background" as const : "foreground" as const
     const toolCallId = input.toolCallId ?? `pi-subagent-${randomUUID()}`
     const childSessionId = randomUUID()
-    const source = await adapter.getSessionConfig(sourceSessionId, undefined)
+    const source = await adapter.getSessionConfig(centralExecutionBinding(sourceSessionId))
     const sourceModel = source.model?.providerID === "pi" && source.model.modelID === "virtual"
       ? undefined
       : source.model
@@ -1176,14 +1190,14 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       })
       const abort = () => {
         forcedStatus = "interrupted"
-        void adapter.abort(childSessionId, undefined)
+        void adapter.abort(centralExecutionBinding(childSessionId))
       }
       if (mode === "foreground") input.signal?.addEventListener("abort", abort, { once: true })
       if (mode === "foreground" && input.signal?.aborted) abort()
       const timeout = mode === "background" ? setTimeout(() => {
         forcedStatus = "failed"
         failure = `background subagent timed out after ${subagentTimeoutMs}ms`
-        void adapter.abort(childSessionId, undefined)
+        void adapter.abort(centralExecutionBinding(childSessionId))
       }, subagentTimeoutMs) : undefined
       try {
         await observe("running", "running")
@@ -1223,7 +1237,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       childSessionId,
       terminate: async (status) => {
         forcedStatus = status
-        await adapter.abort(childSessionId, undefined)
+        await adapter.abort(centralExecutionBinding(childSessionId))
         await running
       },
     })
@@ -1296,7 +1310,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       if (!(await ensureCentralRuntimeSession(sessionId))) throw new Error(`No central session ${sessionId}`)
       const session = runtimeStore.getSession(sessionId)
       if (!session) throw new Error(`No central session ${sessionId}`)
-      await adapter.updateSessionConfig(sessionId, { model }, undefined)
+      await adapter.updateSessionConfig(centralExecutionBinding(sessionId), { model })
       runtimeStore.updateSessionConfig(sessionId, {
         harness: { id: "pi", access: "native" },
         model,

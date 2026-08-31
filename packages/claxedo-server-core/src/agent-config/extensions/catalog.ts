@@ -23,7 +23,7 @@ export type CatalogCategory =
   | "productivity"
   | "agent-orchestration"
 
-export type CatalogTarget = "claude" | "codex" | "cursor" | "opencode"
+export type CatalogTarget = "claude" | "codex" | "cursor"
 
 export type CatalogEntry = {
   id: string
@@ -74,7 +74,7 @@ const ENTRIES: CatalogEntry[] = [
     icon: "C",
     categories: ["featured", "mcp-servers", "agent-orchestration"],
     recommendedScope: "machine",
-    recommendedTargets: ["opencode", "claude", "codex", "cursor"],
+    recommendedTargets: ["claude", "codex", "cursor"],
     featured: true,
     firstParty: "claxedo",
   },
@@ -103,7 +103,7 @@ const ENTRIES: CatalogEntry[] = [
     icon: "📁",
     categories: ["featured", "mcp-servers", "productivity"],
     recommendedScope: "machine",
-    recommendedTargets: ["opencode", "claude", "codex", "cursor"],
+    recommendedTargets: ["claude", "codex", "cursor"],
     featured: true,
   },
   {
@@ -115,7 +115,7 @@ const ENTRIES: CatalogEntry[] = [
     icon: "🌐",
     categories: ["mcp-servers", "productivity"],
     recommendedScope: "machine",
-    recommendedTargets: ["opencode", "claude", "codex", "cursor"],
+    recommendedTargets: ["claude", "codex", "cursor"],
   },
 ]
 

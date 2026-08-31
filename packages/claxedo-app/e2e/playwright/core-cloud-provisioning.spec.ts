@@ -284,12 +284,12 @@ async function seedCloudProject(page: Page, opts: { registerWorkspace: boolean }
   await page.addInitScript(
     (input: { dir: string; projectId: string; workspaceId: string; registerWorkspace: boolean }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: input.dir,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: { local: [{ worktree: input.dir, expanded: true, sandboxes: input.registerWorkspace ? [input.workspaceId] : [] }] },
@@ -477,7 +477,7 @@ async function installCloudRuntimeMock(
       })
     }
     if (url.pathname === `/api/control/sessions/${SESSION_ID}/capabilities`) {
-      return json(route, { transport: "opencode", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
+      return json(route, { transport: "runtime", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
     }
     if (url.pathname === `/api/control/sessions/${SESSION_ID}/messages`) return json(route, { messages })
     if (url.pathname === `/api/control/sessions/${SESSION_ID}/gateway`) return json(route, { gatewayUrl: null })
@@ -598,7 +598,7 @@ async function installCloudRuntimeMock(
         return json(route, saved, SESSION_CONFIG_PATCH_SUCCESS_STATUS)
       }
       if (/^\/session\/[^/]+\/capabilities$/.test(runtimePath)) {
-        return json(route, { transport: "opencode", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
+        return json(route, { transport: "runtime", abort: true, reconnect: true, replay: true, permissions: true, questions: true, todos: true, commands: true, fork: true, revert: true, unrevert: true, configOptions: false })
       }
       if (/^\/session\/[^/]+\/todo$/.test(runtimePath)) return json(route, [])
       if (/^\/session\/[^/]+\/message$/.test(runtimePath)) return json(route, messages)
@@ -768,12 +768,12 @@ test.describe("core cloud provisioning @core", () => {
 
       await page.addInitScript((dir: string) => {
         localStorage.clear()
-        ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+        ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
           serverUrl: window.location.origin,
           activeDirectory: dir,
         }
         localStorage.setItem(
-          "opencode.global.dat:server",
+          "claxedo.global.dat:server",
           JSON.stringify({ list: [], projects: { local: [{ worktree: dir, expanded: true, sandboxes: [] }] }, lastProject: {}, workspaceServer: {}, closedProjects: {} }),
         )
       }, DIR)
@@ -825,12 +825,12 @@ test.describe("core cloud provisioning @core", () => {
 
     await page.addInitScript((dir: string) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: dir,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({ list: [], projects: { local: [{ worktree: dir, expanded: true, sandboxes: [] }] }, lastProject: {}, workspaceServer: {}, closedProjects: {} }),
       )
     }, DIR)

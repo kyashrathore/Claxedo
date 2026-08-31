@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 
 import { readFileSync } from "node:fs"
-import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import {
   isLoopbackHostname,
   startServer,
@@ -32,11 +31,10 @@ if (process.argv.includes("--help") || process.argv.includes("-h")) {
 const port = parseInt(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_PORT") ?? "3002", 10)
 const hostname = workspaceRuntimeListenHostname(process.env)
 const relay = await workspaceRelayRuntimeOptionsFromEnv(process.env, port)
-const rawRunner = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_RUNNER")
-const identity = rawRunner === "acp"
-  ? { id: "claude" as const, access: "acp" as const }
-  : normalizeHarnessIdentity(rawRunner ?? "opencode") ?? { id: "opencode" as const, access: "native" as const }
-const acpBinary = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_ACP_BINARY")
+const nativeHarness = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_NATIVE_HARNESS")
+if (nativeHarness && !["claude", "codex", "cursor", "pi"].includes(nativeHarness)) {
+  throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarness}`)
+}
 const server = startServer(port, {
   target: { workspaceId: workspaceId(process.env), directory: workspaceDir(process.env) },
   ...relay,
@@ -59,7 +57,6 @@ const server = startServer(port, {
   // hosted capability supplied by a host launcher
   // (`claxedoWorkspaceRuntimeBootFromEnv`), not something a generic runtime
   // process turns on from an environment variable.
-  opencodeCompat: runtimeEnvText(process.env, "WORKSPACE_RUNTIME_OPENCODE_COMPAT") !== "0",
 }, { signals: true })
 
 console.log(

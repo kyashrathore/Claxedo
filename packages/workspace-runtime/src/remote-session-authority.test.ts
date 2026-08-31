@@ -48,7 +48,6 @@ describe("remote workspace session authority", () => {
 
     expect((await policy.authorize({ ...input, operation: "message_read" })).allowed).toBe(true)
     expect((await policy.authorize({ ...input, operation: "prompt" })).allowed).toBe(true)
-    expect((await policy.authorize({ ...input, operation: "session_v2_proxy", method: "POST" })).allowed).toBe(true)
     expect(policy.registerSession).toBeDefined()
     expect((await policy.registerSession!({
       ...input,
@@ -64,27 +63,6 @@ describe("remote workspace session authority", () => {
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register", operationId: "op_register_1" } },
     ])
-  })
-
-  test("allows opaque Session V2 collection reads for policy filtering", async () => {
-    const policy = remoteWorkspaceSessionAccessPolicy({
-      url: "https://control.test/authorize",
-      fetch: async () => Response.json({ allowed: true }),
-    })
-    expect((await policy.authorize({
-      ...input,
-      sessionId: undefined,
-      operation: "session_v2_proxy",
-      method: "GET",
-      path: "/api/session",
-    })).allowed).toBe(true)
-    expect((await policy.authorize({
-      ...input,
-      sessionId: undefined,
-      operation: "session_v2_proxy",
-      method: "POST",
-      path: "/api/session",
-    })).allowed).toBe(true)
   })
 
   test("fails closed when proof, endpoint, network, or authority is unavailable", async () => {

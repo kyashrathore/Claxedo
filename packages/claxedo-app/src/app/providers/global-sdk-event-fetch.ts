@@ -1,7 +1,3 @@
-import { createTransport } from "@/platform/runtime/transport"
-import { queryClient } from "@/platform/query/query-client"
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
-import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"

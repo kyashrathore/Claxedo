@@ -179,42 +179,6 @@ describe("session inventory writers", () => {
     expect(inventory.byWorkspace["/repo/a"]?.sessions ?? []).toEqual([])
   })
 
-  test("remove deletes a session from legacy indexes when canonical rows are not populated yet", () => {
-    setSessionInventoryQueryData({
-      baseUrl: "http://test",
-      value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
-        global: [session("ses_global", 3, { directory: "global", tags: ["global"] })],
-        byProject: {
-          project_a: [session("ses_1", 2), session("ses_2", 1)],
-        },
-        byWorkspace: {
-          "/repo/a": {
-            directory: "/repo/a",
-            projectID: "project_a",
-            sessions: [session("ses_1", 2), session("ses_2", 1)],
-            hasMore: true,
-            total: 4,
-          },
-        },
-        workspaceOrder: ["/repo/a"],
-        loaded: true,
-      },
-    })
-
-    removeSessionInventoryQueryData<SessionInventoryRow>({
-      baseUrl: "http://test",
-      session: { id: "ses_1", directory: "/repo/a", projectID: "project_a" },
-    })
-
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
-    expect(inventory.sessions.map((item) => item.id)).toEqual(["ses_global", "ses_2"])
-    expect(inventory.global.map((item) => item.id)).toEqual(["ses_global"])
-    expect(inventory.byProject.project_a.map((item) => item.id)).toEqual(["ses_2"])
-    expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_2"])
-    expect(inventory.byWorkspace["/repo/a"].total).toBe(3)
-  })
-
   test("lifecycle upserts root project sessions and ignores child sessions", () => {
     updateSessionInventoryQueryData<SessionInventoryRow>({
       baseUrl: "http://test",

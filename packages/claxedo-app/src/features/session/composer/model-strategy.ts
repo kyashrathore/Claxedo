@@ -1,9 +1,3 @@
-import {
-  isSignedWorkspaceDefaultModel,
-  SIGNED_WORKSPACE_DEFAULT_MODEL_ID,
-  SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER,
-} from "./signed-workspace-model"
-
 export type ModelKey = { providerID: string; modelID: string; variant?: string }
 
 type AgentModel = {
@@ -34,21 +28,9 @@ export type ProviderItem = {
 export type ProviderModelInfo = ProviderModel & { provider: ProviderItem }
 export type SubmitModelInfo = { id: string; name?: string; provider: { id: string } }
 
-// `opencode` is the zero-key gateway: it reports itself connected on every
-// machine, so ranking it first made it the silent default even for a user who
-// had just connected their own Anthropic/OpenAI key — and its free models fail
-// upstream, so the very first turn errored. A provider the user actually
-// authenticated outranks the gateway; the gateway stays last as the fallback
-// for a machine with no credential at all, and its models remain pickable.
+// Keep the familiar first-party providers near the top without granting any
+// provider a fallback/default role. Unknown providers retain their input order.
 const preferredProviderOrder = ["anthropic", "openai", "google"]
-const GATEWAY_PROVIDER = "opencode"
-// The hosted default model is a placeholder the server may still list as a
-// provider default before real models load; skip it so a signed-workspace user
-// is never stuck on the placeholder once concrete models exist. Sourced from the
-// single SIGNED_WORKSPACE_DEFAULT_MODEL definition so both call sites stay in sync.
-const staleProviderDefaults: Record<string, Set<string>> = {
-  [SIGNED_WORKSPACE_DEFAULT_MODEL_PROVIDER]: new Set([SIGNED_WORKSPACE_DEFAULT_MODEL_ID]),
-}
 
 export function firstConnectedModel(input: {
   connected: ProviderItem[]
@@ -66,11 +48,8 @@ export function firstConnectedModelInfo(input: {
   return sortedConnectedProviders(input.connected)
     .map((provider) => {
       const configured = input.defaults[provider.id]
-      const models = Object.values(provider.models ?? {}).filter((model) => !isSignedWorkspaceDefaultModel({
-        id: model.id,
-        provider: { id: provider.id },
-      }))
-      const model = configured && !staleProviderDefaults[provider.id]?.has(configured) && provider.models?.[configured]
+      const models = Object.values(provider.models ?? {})
+      const model = configured && provider.models?.[configured]
         ? provider.models[configured]
         : models[0]
       if (!model) return undefined
@@ -81,7 +60,6 @@ export function firstConnectedModelInfo(input: {
 
 /** Explicit selection only — never substitute provider defaults or placeholders. */
 export function selectRuntimeModel(_input: unknown, selected: SubmitModelInfo | undefined): SubmitModelInfo | undefined {
-  if (!selected || isSignedWorkspaceDefaultModel(selected)) return undefined
   return selected
 }
 
@@ -126,9 +104,6 @@ function sortedConnectedProviders(providers: ProviderItem[]) {
 }
 
 function providerRank(id: string) {
-  // The gateway sorts strictly after every other connected provider, including
-  // ones absent from the preference list — those still imply a real credential.
-  if (id === GATEWAY_PROVIDER) return preferredProviderOrder.length + 1
   const index = preferredProviderOrder.indexOf(id)
   return index === -1 ? preferredProviderOrder.length : index
 }
@@ -184,9 +159,7 @@ export function promptModelState(input: PromptModelStateInput) {
     }
   }
 
-  if (input.model && !isSignedWorkspaceDefaultModel(
-    input.model.id && input.model.provider ? { id: input.model.id, provider: input.model.provider } : undefined,
-  )) {
+  if (input.model) {
     return {
       blocked: false,
       disabled: false,

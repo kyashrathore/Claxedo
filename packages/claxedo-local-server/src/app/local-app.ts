@@ -43,14 +43,13 @@ import { sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { AgentConfigRoutes } from "../agent-config/routes/index"
 import { SessionMetaRoutes } from "../session/routes/meta-routes"
 import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
-import { OpenCodeCompatRoutes } from "../opencode/compat-routes/index"
+import { ShellRoutes } from "../shell/routes"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
 import { UserHostedServingRoutes } from "../workspace/user-hosted-serving-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
-import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
 import { LocalUsageRoutes } from "@claxedo/server-core/usage/routes"
 import { SandboxDriverSettingsRoutes } from "@claxedo/server-core/sandbox/routes/sandbox-driver-settings-routes"
 import type { LocalDaemonLifecycle } from "./local-daemon-lifecycle"
@@ -75,7 +74,6 @@ export function isLocalCredentialPath(path: string): boolean {
 export function localCorsOrigin(origin: string): string | undefined {
   if (origin.startsWith("http://localhost:")) return origin
   if (origin.startsWith("http://127.0.0.1:")) return origin
-  if (/^https:\/\/([a-z0-9-]+\.)*opencode\.ai$/.test(origin)) return origin
   return undefined
 }
 
@@ -87,7 +85,6 @@ export type LocalAppOptions = {
   runtimeProxyOptions?: RuntimeProxyOptions
   /** Answers `/workspaces/:workspaceId`; registered ahead of the runtime proxy. */
   workspaceRelayProxy?: MiddlewareHandler
-  onOpencodeAccess?: () => void
   onError?: Parameters<Hono["onError"]>[0]
   updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
   invalidateCentralSession?: (sessionId: string) => void
@@ -250,11 +247,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   }
 
   app.route("/", BootstrapRoutes({ services, env, ...authRouteOptions(services) }))
-  app.route("/", ProviderAuthRoutes(services, {
-    ...authRouteOptions(services),
-    deferToHarnessRoute: async (harness) =>
-      await resolveHarnessId(harness ? normalizeHarnessIdentity(harness)?.id : undefined) === "opencode",
-  }))
+  app.route("/", ProviderAuthRoutes(services, authRouteOptions(services)))
   app.route("/api/claxedo/credentials", CredentialRoutes(services.credentials, {
     ...(env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
     // FINDING 2: derived from the environment, exactly as the self-hosted
@@ -289,15 +282,14 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   if (options.usage) app.route("/api/claxedo/usage", LocalUsageRoutes(options.usage))
 
   // Routes workspace-owned traffic ahead of route matching, so scoped
-  // `/global/event`, `/api/claxedo/events` and `/api/wr/runtime-events` stay
-  // per-workspace runtime streams rather than central control-plane streams.
+  // `/api/claxedo/events` and `/api/wr/runtime-events` stay per-workspace
+  // runtime streams. `/global/event` remains central control-plane traffic.
   app.use(createWorkspaceRuntimeProxy(runtimeProxyOptions))
 
-  app.route("/", OpenCodeCompatRoutes({
+  app.route("/", ShellRoutes({
     services,
     env,
     ...authRouteOptions(services),
-    ...(options.onOpencodeAccess ? { onOpencodeAccess: options.onOpencodeAccess } : {}),
   }))
   app.route("/api/claxedo/agent-config", AgentConfigRoutes({
     services,

@@ -2,7 +2,7 @@ import { Component, For, Show } from "solid-js"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
-import { getDirectory, getFilename, getFilenameTruncated } from "@opencode-ai/core/util/path"
+import { getDirectory, getFilename, getFilenameTruncated } from "@/lib/path"
 import type { ContextItem } from "@/features/session/providers/prompt"
 
 type PromptContextItem = ContextItem & { key: string }

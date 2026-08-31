@@ -413,50 +413,6 @@ describe("TokenTracker embedded local history", () => {
     expect(snapshot.rows[0]?.tokens).toMatchObject({ input: 10, output: 2, cacheRead: 100 })
   })
 
-  test("reads legacy and SQLite OpenCode histories before provenance aggregation", async () => {
-    const { root, observedAt } = await fixture()
-    const storage = path.join(root, ".local", "share", "opencode")
-    const legacy = path.join(storage, "storage", "message", "session-legacy")
-    await fs.mkdir(legacy, { recursive: true })
-    await fs.writeFile(path.join(legacy, "msg_legacy.json"), JSON.stringify({
-      id: "msg_legacy",
-      sessionID: "opencode-direct",
-      role: "assistant",
-      modelID: "gpt-5.4",
-      time: { completed: observedAt },
-      tokens: { input: 7, output: 2, reasoning: 1, cache: { read: 3 } },
-    }))
-    const db = new Database(path.join(storage, "opencode.db"))
-    db.exec("CREATE TABLE message (id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT)")
-    const insert = db.prepare("INSERT INTO message VALUES (?, ?, ?, ?, ?)")
-    insert.run("msg_db", "opencode-claxedo", observedAt, observedAt, JSON.stringify({
-      role: "assistant",
-      modelID: "claude-sonnet-4-5",
-      time: { completed: observedAt },
-      tokens: { input: 11, output: 4, cache: { read: 5, write: 2 } },
-    }))
-    db.close()
-
-    const snapshot = await scanTokenTrackerLocalHistory({
-      sourceHome: root,
-      stateDir: path.join(root, "state"),
-      since: observedAt - 1,
-      until: observedAt + 1,
-      sources: ["opencode"],
-      classificationKey: "fixture-opencode-v1",
-      classify: ({ nativeSessionId }) => nativeSessionId === "opencode-claxedo" ? "claxedo" : "external",
-    })
-
-    expect(snapshot.rows).toEqual([expect.objectContaining({
-      app: "opencode",
-      nativeSessionId: "opencode-direct",
-      model: "gpt-5.4",
-      tokens: { input: 7, output: 2, reasoning: 1, cacheRead: 3, cacheWrite: null },
-    })])
-    expect(snapshot.classifiedClaxedo).toBe(1)
-    expect(snapshot.coverage).toEqual([{ source: "opencode", status: "available" }])
-  })
-
   test("reads Cursor SDK run stores and excludes Claxedo-launched agent ids", async () => {
     const { root, observedAt } = await fixture()
     const cursorRoot = path.join(root, ".cursor", "sdk")

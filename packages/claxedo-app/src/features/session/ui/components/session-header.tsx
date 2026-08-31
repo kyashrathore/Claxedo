@@ -1,7 +1,7 @@
 // Session titlebar: project search + Share (central sessions only when signed in).
 import { Button } from "@opencode-ai/ui/button"
 import { Keybind } from "@opencode-ai/ui/keybind"
-import { getFilename } from "@opencode-ai/core/util/path"
+import { getFilename } from "@/lib/path"
 import { createMemo, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
@@ -86,7 +86,7 @@ export function SessionHeader() {
   })
 
   const hotkey = createMemo(() => command.keybind("file.open"))
-  const isDesktopBeta = platform.platform === "desktop" && import.meta.env.VITE_OPENCODE_CHANNEL === "beta"
+  const isDesktopBeta = platform.platform === "desktop" && import.meta.env.VITE_CLAXEDO_CHANNEL === "beta"
   const search = createMemo(() => !isDesktopBeta || settings.general.showSearch())
 
   const centerMount = titlebarCenterSlot

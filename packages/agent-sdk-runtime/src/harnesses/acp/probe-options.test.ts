@@ -10,7 +10,7 @@ type ProbeEntry = {
 }
 
 type BaseInternals = {
-  options: { binary: string; harness: string }
+  options: { connection: { kind: "process"; command: string }; harness: string }
   sessions: Map<string, unknown>
   probe: ProbeEntry | null
 }

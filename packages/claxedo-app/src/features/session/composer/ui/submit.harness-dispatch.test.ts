@@ -227,7 +227,6 @@ describe("Harness + demo dispatch and abort", () => {
       },
     })
     expect(transportClients).toHaveLength(1)
-    expect(transportClients[0]?.baseUrl).toBe("http://localhost:3001")
     expect(transportClients[0]?.directory).toBe("/repo/main")
     expect(transportClients[0]?.fetch).not.toBeUndefined()
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
@@ -552,7 +551,6 @@ describe("Harness + demo dispatch and abort", () => {
 
     expect(calls.transportAbort).toBe(1)
     expect(transportClients).toHaveLength(1)
-    expect(transportClients[0]?.baseUrl).toBe("http://localhost:3001")
     expect(transportClients[0]?.directory).toBe("/repo/main")
     expect(sessionStatusFor("/repo/main", "session-1")).toEqual({ type: "idle" })
     const testQueryClient = (await import("@/platform/query/query-client")).queryClient

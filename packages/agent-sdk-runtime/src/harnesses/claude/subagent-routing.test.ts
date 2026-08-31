@@ -1,5 +1,6 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
+import { executeTestTurn } from "../../test-utils/execution-binding"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
@@ -140,7 +141,7 @@ describe("Claude native subagent routing", () => {
     const adapter = new SdkRuntimeAdapter({ store, eventHub, driver: claudeDriver })
     const parent = await adapter.createSession(path.resolve("/repo"))
 
-    for await (const _ of adapter.sendMessage(parent.id, {
+    for await (const _ of executeTestTurn(adapter, parent.id, {
       parts: [{ type: "text", text: "Delegate review" }],
       userMessageId: "parent-user",
       assistantMessageId: "parent-assistant",

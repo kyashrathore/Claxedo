@@ -1,8 +1,7 @@
 /**
  * PTY Module
  *
- * Removes opencode-specific abstractions (Instance, Bus, Shell, Plugin, Identifier)
- * and uses the runtime event bus directly.
+ * Owns terminal lifecycle and uses the runtime event bus directly.
  */
 
 import { type IPty } from "@lydell/node-pty"
@@ -120,13 +119,13 @@ export namespace Pty {
    */
   const BUFFER_LIMIT = 1024 * 1024 * 2
   const WEBSOCKET_BUFFERED_AMOUNT_MAX = (() => {
-    const raw = Number(process.env.OPENCODE_PTY_WS_BUFFERED_AMOUNT_MAX)
+    const raw = Number(process.env.CLAXEDO_PTY_WS_BUFFERED_AMOUNT_MAX)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024
     return Math.floor(raw)
   })()
   /** DISK cap per transcript. Not a memory cost — nothing mirrors it in RAM. */
   const HISTORY_LIMIT = (() => {
-    const raw = Number(process.env.OPENCODE_PTY_HISTORY_LIMIT)
+    const raw = Number(process.env.CLAXEDO_PTY_HISTORY_LIMIT)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024 * 16
     return Math.floor(raw)
   })()
@@ -136,23 +135,23 @@ export namespace Pty {
    * disk. Swept once per process — see `sweepStaleHistoryOnce`.
    */
   const HISTORY_RETENTION_MS = (() => {
-    const raw = Number(process.env.OPENCODE_PTY_HISTORY_RETENTION_MS)
+    const raw = Number(process.env.CLAXEDO_PTY_HISTORY_RETENTION_MS)
     if (!Number.isFinite(raw) || raw <= 0) return 7 * 24 * 60 * 60 * 1000
     return Math.floor(raw)
   })()
   const BUFFER_CHUNK = 64 * 1024
   const QUEUE_HIGH_WATERMARK = (() => {
-    const raw = Number(process.env.OPENCODE_PTY_QUEUE_HIGH_WATERMARK)
+    const raw = Number(process.env.CLAXEDO_PTY_QUEUE_HIGH_WATERMARK)
     if (!Number.isFinite(raw) || raw <= 0) return 1024 * 1024
     return Math.floor(raw)
   })()
   const QUEUE_LOW_WATERMARK = (() => {
-    const raw = Number(process.env.OPENCODE_PTY_QUEUE_LOW_WATERMARK)
+    const raw = Number(process.env.CLAXEDO_PTY_QUEUE_LOW_WATERMARK)
     if (!Number.isFinite(raw) || raw <= 0) return 256 * 1024
     return Math.floor(raw)
   })()
   const orphanTimeoutMs = () => {
-    const raw = Number(process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS)
+    const raw = Number(process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS)
     if (!Number.isFinite(raw) || raw <= 0) return 60_000
     return Math.floor(raw)
   }
@@ -635,7 +634,7 @@ export namespace Pty {
       // is coupled to.
       TERM_PROGRAM: TERMINAL_TERM_PROGRAM,
       TERM_PROGRAM_VERSION: TERMINAL_TERM_PROGRAM_VERSION,
-      OPENCODE_TERMINAL: "1",
+      CLAXEDO_TERMINAL: "1",
       COLORFGBG: "15;0",
     } as Record<string, string>
     env.PATH = prependWorkspaceRuntimeBin(env.PATH)
@@ -672,12 +671,6 @@ export namespace Pty {
       })
 
       Object.assign(env, agentEnv)
-    }
-
-    const xdgDataDir = process.env.XDG_DATA_HOME || path.join(os.homedir(), ".local", "share")
-    const worktreePrefix = path.join(xdgDataDir, "opencode", "worktree") + "/"
-    if (cwd.startsWith(worktreePrefix)) {
-      env.OPENCODE_WORKTREE = path.basename(cwd)
     }
 
     if (process.platform === "win32") {

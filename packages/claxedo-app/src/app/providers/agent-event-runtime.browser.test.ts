@@ -3,7 +3,7 @@ import {
   createAgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
 import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 describe("agent-event-runtime browser consumption", () => {
   test("imports and replays a small ACP projection under browser conditions", () => {
@@ -14,7 +14,7 @@ describe("agent-event-runtime browser consumption", () => {
       clock: () => 100,
       createId: () => "id",
     })
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "assistant-1",

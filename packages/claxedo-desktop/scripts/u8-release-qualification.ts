@@ -8,7 +8,7 @@ export const U8_RELEASE_BASELINE_SCHEMA = "claxedo-u8-release-baseline/v1" as co
 export const U8_RELEASE_EVIDENCE_SCHEMA = "claxedo-u8-release-evidence/v1" as const
 export const U8_RELEASE_GATE_SCHEMA = "claxedo-u8-release-gate/v1" as const
 
-export const REQUIRED_HARNESSES = ["opencode", "codex", "claude", "acp", "pi"] as const
+export const REQUIRED_HARNESSES = ["codex", "claude", "acp", "pi"] as const
 export const REQUIRED_BROWSER_FLOWS = [
   "launch-project",
   "session-switch",

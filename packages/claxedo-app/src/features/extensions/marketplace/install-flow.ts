@@ -8,7 +8,7 @@ export type CatalogCategoryId =
   | "productivity"
   | "agent-orchestration"
 
-export type CatalogTarget = "claude" | "codex" | "cursor" | "opencode"
+export type CatalogTarget = "claude" | "codex" | "cursor"
 
 export type CatalogEntry = {
   id: string
@@ -49,11 +49,11 @@ export type DiscoveredExtensionAction = "adopt" | "ignore"
 
 export type DiscoveredExtension = {
   path: string
-  kind: "harness-config-dir" | "skills-dir" | "instruction-file" | "mcp-config" | "opencode-config"
+  kind: "harness-config-dir" | "skills-dir" | "instruction-file" | "mcp-config"
   state: "discovered" | "adopted" | "generated" | "drifted" | "ignored"
 }
 
-export type MachineHarness = "opencode" | "claude" | "codex" | "cursor" | "agents"
+export type MachineHarness = "claude" | "codex" | "cursor" | "agents"
 
 export type MachineDiscoveredItem = {
   id: string
@@ -77,11 +77,9 @@ export const DISCOVERY_LABEL: Record<DiscoveredExtension["kind"], string> = {
   "skills-dir": "Skills folder",
   "instruction-file": "Instructions",
   "mcp-config": "MCP config",
-  "opencode-config": "OpenCode config",
 }
 
 export const HARNESS_LABEL: Record<MachineHarness, string> = {
-  opencode: "OpenCode",
   claude: "Claude",
   codex: "Codex",
   cursor: "Cursor",
@@ -126,7 +124,7 @@ export function catalogCategoryId(input: unknown): CatalogCategoryId | undefined
 }
 
 export function catalogTarget(input: unknown): CatalogTarget | undefined {
-  if (input === "claude" || input === "codex" || input === "cursor" || input === "opencode") return input
+  if (input === "claude" || input === "codex" || input === "cursor") return input
   return undefined
 }
 
@@ -234,8 +232,7 @@ export function discoveryKind(input: unknown): DiscoveredExtension["kind"] | und
     input === "harness-config-dir" ||
     input === "skills-dir" ||
     input === "instruction-file" ||
-    input === "mcp-config" ||
-    input === "opencode-config"
+    input === "mcp-config"
   ) return input
   return undefined
 }
@@ -266,7 +263,7 @@ export function discoveredExtensionsFromJson(input: unknown) {
 }
 
 export function machineHarness(input: unknown): MachineHarness | undefined {
-  if (input === "opencode" || input === "claude" || input === "codex" || input === "cursor" || input === "agents") return input
+  if (input === "claude" || input === "codex" || input === "cursor" || input === "agents") return input
   return undefined
 }
 

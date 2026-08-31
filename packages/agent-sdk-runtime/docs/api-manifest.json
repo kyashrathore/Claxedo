@@ -69,7 +69,7 @@
     },
     "@claxedo/agent-sdk-runtime/compat-events": {
       "status": "compatibility",
-      "purpose": "OpenCode-compatible event bridge."
+      "purpose": "Claxedo client-presentation event bridge."
     },
     "@claxedo/agent-sdk-runtime/status": {
       "status": "compatibility",
@@ -292,7 +292,7 @@
       "status": "compatibility",
       "import": "@claxedo/agent-sdk-runtime/compat-events",
       "kind": "type",
-      "purpose": "OpenCode-compatible event bridge."
+      "purpose": "Claxedo client-presentation event bridge."
     },
     "createVirtualSessionEnv": {
       "status": "integration",

@@ -2,7 +2,7 @@
  * Environment sanitization for PTY sessions.
  *
  * Allowlist-based: only explicitly allowed variables pass through.
- * Prefix-based passthrough for OPENCODE_* and CLAXEDO_*.
+ * Prefix-based passthrough for CLAXEDO_*.
  * Explicit deny list for dangerous variables.
  */
 
@@ -167,20 +167,6 @@ const ALLOWED_CLAXEDO_VARS = new Set([
 ])
 
 /**
- * `OPENCODE_` stays a prefix passthrough: it is ~80 engine feature flags that a
- * child engine legitimately needs, and deny-by-default there would break the
- * engine rather than protect anything. Its handful of real secrets are named
- * here, and the suffix backstop below catches the shape generally.
- */
-const DENIED_OPENCODE_VARS = new Set([
-  "OPENCODE_API_KEY",
-  "OPENCODE_CONSOLE_TOKEN",
-  "OPENCODE_SERVER_PASSWORD",
-  "OPENCODE_SERVER_USERNAME",
-  "OPENCODE_AUTH_CONTENT",
-])
-
-/**
  * Backstop applied to our two namespaces, allowlisted names included, so a
  * secret-shaped var cannot reach a child even if someone adds it to
  * `ALLOWED_CLAXEDO_VARS` by mistake.
@@ -197,7 +183,7 @@ export function isSecretShapedEnvName(name: string) {
 /**
  * Whether a prefixed var may be projected into an agent-driven child process.
  *
- * Scoped to `CLAXEDO_`/`OPENCODE_` on purpose. A host embedding the kit passes
+ * Scoped to `CLAXEDO_` on purpose. A host embedding the kit passes
  * its own `customPrefix` and owns that namespace's policy; silently filtering it
  * would change a documented kit contract to solve a problem that is ours, not
  * theirs.
@@ -205,15 +191,14 @@ export function isSecretShapedEnvName(name: string) {
 export function prefixedEnvAllowed(name: string) {
   const upper = name.toUpperCase()
   if (upper.startsWith("CLAXEDO_")) return ALLOWED_CLAXEDO_VARS.has(upper) && !isSecretShapedEnvName(upper)
-  if (upper.startsWith("OPENCODE_")) return !DENIED_OPENCODE_VARS.has(upper) && !isSecretShapedEnvName(upper)
   return true
 }
 
-const DEFAULT_PREFIXES = ["OPENCODE_", "CLAXEDO_"]
+const DEFAULT_PREFIXES = ["CLAXEDO_"]
 
 /**
- * Where the env being filtered came from, which decides how `CLAXEDO_`/
- * `OPENCODE_` names are treated.
+ * Where the env being filtered came from, which decides how `CLAXEDO_` names
+ * are treated.
  *
  * - `"ambient"` (default): the host process's own `process.env`. This is the
  *   dangerous projection — in embedded mode it is the CONTROL PLANE's

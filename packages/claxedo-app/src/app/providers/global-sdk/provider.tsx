@@ -24,7 +24,7 @@ import {
   whenSessionEventStreamsOpen,
 } from "@/platform/runtime/session-event-scope"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
-import { createControlPlaneEventFetch, openCentralRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
+import { openCentralRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
@@ -155,16 +155,9 @@ const globalSDKContextInput = {
       if (!platform.fetch || !server.current) return
       if (centralTransportForServer(server.current.http.url) !== "loopback") return platform.fetch
     })()
-    const eventFetch = createControlPlaneEventFetch({
-      signedControlPlane: signedEventAccess,
-      liveSession: eventLiveSession,
-      setLiveSession: (next) => {
-        liveSession = next
-      },
-      fetch: signedEventAccess() && centralTransportForServer(server.current?.http.url) !== "loopback"
-        ? authFetch
-        : rawEventFetch ?? platform.fetch ?? globalThis.fetch,
-    })
+    const eventFetch = signedEventAccess() && centralTransportForServer(server.current?.http.url) !== "loopback"
+      ? authFetch
+      : rawEventFetch ?? platform.fetch ?? globalThis.fetch
 
     const currentServer = server.current
     if (!currentServer) throw new Error(language.t("error.globalSDK.noServerAvailable"))
@@ -216,7 +209,6 @@ const globalSDKContextInput = {
     const aborted = isAbortError
     const transientStreamError = (error: unknown) =>
       error instanceof TypeError && error.message.toLowerCase() === "network error"
-    const runtimeCoveredSessions: RuntimeCoveredSessions = new Set()
     const subagents = createSubagentRegistry()
 
     let attempt: AbortController | undefined
@@ -413,7 +405,6 @@ const globalSDKContextInput = {
                 void resetRuntimeReplayGapState({
                   envelope,
                   projections,
-                  covered: runtimeCoveredSessions,
                   baseUrl: currentServer.http.url,
                   liveSession: eventLiveSession(),
                   subagents,
@@ -506,7 +497,7 @@ const globalSDKContextInput = {
           try {
             const headers = new Headers({ Accept: "text/event-stream" })
             if (lastGlobalEventId) headers.set("Last-Event-ID", lastGlobalEventId)
-            const response = await eventFetch(new URL("/global/event", currentServer.http.url), {
+            const response = await eventFetch(new URL("/api/wr/events", currentServer.http.url), {
               signal: attempt.signal,
               headers,
             })
@@ -525,7 +516,6 @@ const globalSDKContextInput = {
                 liveSession: eventLiveSession(),
               })
               applySubagentCompatLifecycleEvent(event.payload, subagents)
-              if (!shouldAcceptCompatEvent(event.payload, runtimeCoveredSessions)) continue
               enqueue(directory, event.payload)
 
               if (Date.now() - yielded < STREAM_YIELD_MS) continue

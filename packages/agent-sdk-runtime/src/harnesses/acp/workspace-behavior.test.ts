@@ -6,7 +6,7 @@ import { AcpHarnessAdapter } from "./index"
 type BaseInternals = {
   busySessions: Set<string>
   currentModel: string
-  options: { binary: string; harness: string }
+  options: { connection: { kind: "process"; command: string }; harness: string }
   sessions: Map<string, { directory: string; proc: null; init: null }>
   probe: null
 }
@@ -25,7 +25,7 @@ function adapter<Extra extends object = Record<never, never>>() {
   const defaults: BaseInternals = {
     busySessions: new Set(),
     currentModel: "",
-    options: { binary: "fake-acp", harness: "openclaw" },
+    options: { connection: { kind: "process", command: "fake-acp" }, harness: "openclaw" },
     sessions: new Map(),
     probe: null,
   }

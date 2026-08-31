@@ -555,28 +555,6 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(result.queryByText("Acquiring sandbox")).toBeNull()
   })
 
-  test("does not explicitly request OpenCode during passive visible pane bootstrap", async () => {
-    state.harnessType = () => "opencode"
-
-    render(() => (
-      <DirectoryScope {...directoryScopeProps}
-        directory="workspace:ws_1"
-        harnessType={() => state.harnessType()}
-        sessionId={() => state.sessionId}
-        surfaceId={() => state.surfaceId}
-      >
-        <div>visible pane content</div>
-      </DirectoryScope>
-    ))
-
-    await waitFor(() => {
-      expect(state.refreshDirectory).toHaveBeenCalledWith("workspace:ws_1", undefined, {
-        quiet: undefined,
-        workspace: { workspaceId: "ws_1", kind: "user-hosted" },
-      })
-    })
-  })
-
   test("uses canonical session-first links by default", async () => {
     state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), { at: 1, limit: 5, total: 0, session: readyStore.session })
 
@@ -822,7 +800,7 @@ describe("DirectoryScope bootstrap gating", () => {
       "http://localhost:4096",
       "agents",
       directory,
-      "opencode",
+      "",
       "cloud:ws_cloud",
     ])
 
@@ -832,7 +810,7 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(state.agentResourceRequest).toHaveBeenCalledTimes(1)
     expect(state.agentResourceRequest).toHaveBeenCalledWith(expect.objectContaining({
       directory,
-      harnessType: "opencode",
+      harnessType: undefined,
       workspace,
     }))
   })

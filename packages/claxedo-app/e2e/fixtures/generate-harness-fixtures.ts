@@ -7,7 +7,7 @@
  * the rendering-matrix spec must replay each harness family's REAL translated event
  * trace through the mocked SSE stream, not a hand-invented one. This script is the
  * single source of truth for those traces: it runs the ACTUAL production code from
- * `@claxedo/agent-event-runtime` (the harness adapters + the opencode-compat
+ * `@claxedo/agent-event-runtime` (the harness adapters + the client-presentation
  * projection — the same pipeline claxedo-server runs in production, see
  * packages/workspace-runtime/src/session/service.ts) over RAW harness event payloads
  * copied/composed from that package's OWN test fixtures:
@@ -28,7 +28,7 @@
  *     for it — `find packages/agent-event-runtime/src/harnesses` has no opencode
  *     directory — because opencode's own SSE events ARE the target compat shape
  *     already (nothing to translate). Its trace is authored directly as literal
- *     CompatEnvelope objects matching the exact shape `createOpencodeCompatProjection`
+ *     CompatEnvelope objects matching the exact shape `createClientPresentationProjection`
  *     produces for every other harness (see OPENCODE_NATIVE_TRACE below).
  *   - "pi": there is no pi-specific code anywhere under packages/agent-event-runtime
  *     either (grep confirmed zero hits). Per project memory, Pi is a fixed-model
@@ -54,7 +54,7 @@ import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 
 import { createAgentEventRuntime, type HarnessEventAdapter } from "@claxedo/agent-event-runtime"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 import { createAcpEventTranslator } from "@claxedo/agent-event-runtime/harnesses/acp"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
 import { codexAppServerAdapter } from "@claxedo/agent-event-runtime/harnesses/codex"
@@ -98,7 +98,7 @@ function runAdapter<State>(input: {
       return (prefix = "id") => `${prefix}-${next++}`
     })(),
   })
-  const projection = createOpencodeCompatProjection({
+  const projection = createClientPresentationProjection({
     sessionId,
     directory,
     assistantMessageId,
@@ -367,7 +367,7 @@ const CLAUDE_SDK_RAW: RawEvent[] = [
 // opencode (native) + pi — hand-authored CompatEnvelope literals. Documented
 // exception (see file header): there is no agent-event-runtime adapter for either,
 // because this already IS the target shape. Every field below matches the exact
-// shapes `createOpencodeCompatProjection` produces for the other six harnesses
+// shapes `createClientPresentationProjection` produces for the other six harnesses
 // (cross-checked against projection.ts's `toolPart`/`toolState`/`partEvent`
 // helpers and packages/session-ui/src/components/message-part.tsx's readers).
 // ---------------------------------------------------------------------------

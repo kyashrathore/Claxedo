@@ -20,7 +20,7 @@
  * app, in `@claxedo/agent-event-runtime`'s per-harness adapters
  * (`packages/agent-event-runtime/src/harnesses/{acp,claude,codex,cursor}`) which
  * translate each provider's raw wire events into `AgentRuntimeEvent`s, and the
- * `opencode-compat` projection (`.../src/projections/opencode-compat/projection.ts`)
+ * `client-presentation` projection (`.../src/projections/client-presentation/projection.ts`)
  * which turns those into the exact `message.part.updated`/`.../delta` envelopes this
  * spec replays. Nothing in this app re-derives that translation; the client is a pure
  * function of the parts it receives. Fixtures for each harness are GENERATED (not
@@ -245,7 +245,7 @@
  * HARNESS NOTES —
  *   FIXTURE PRE-BAKING (added 2026-07-25; the single most important limit on what this
  *   spec can prove). This spec replays TRANSLATED envelopes — the output of the real
- *   adapter + `opencode-compat` projection, as committed under
+ *   adapter + `client-presentation` projection, as committed under
  *   `e2e/fixtures/harness-traces/`. Every transformation that happens INSIDE that
  *   translation is therefore already applied in the committed JSON, and replaying it
  *   cannot re-prove it. Concretely, verified by inspecting the fixture files:
@@ -276,7 +276,7 @@
  *   consistently normalized. Native SDK families (claude-sdk/codex-app-server/
  *   cursor-sdk) have NO such registry — `projection.ts` passes the provider's raw tool
  *   name straight through (verified: zero `toLowerCase()`/name-map calls in
- *   `projections/opencode-compat/projection.ts` for tool names), so their builtin
+ *   `projections/client-presentation/projection.ts` for tool names), so their builtin
  *   tools (Claude's `"Grep"`/`"Task"`, Codex's `"command"`/`"file-change"`, Cursor's
  *   `"shell"`) mostly fall to `GenericTool` — this is real, current behavior, not a
  *   bug this spec works around. `opencode` (native) and `pi` have no
@@ -404,7 +404,7 @@ function slug(value: string) {
 //     `**/event?**` (`e2e/helpers/mock-runtime.ts`'s `eventStreamHandler`). But
 //     in the CURRENT app, ANY session with a `directory` set — every seeded
 //     local session, not just cloud ones — has its `/global/event` fetch
-//     REWRITTEN by `createControlPlaneEventFetch`
+//     consumed from the central `/api/wr/events` stream
 //     (`src/context/global-sdk-event-fetch.ts` lines 54-98: `hosting:
 //     "workspace"` is unconditional once `session?.directory` is truthy) into a
 //     request against `/api/wr/events` on the workspace's loopback origin
@@ -490,12 +490,12 @@ const PROJECT_ID = "proj_harness_rendering_matrix"
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript(({ dir, projectId }: { dir: string; projectId: string }) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: dir,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ id: projectId, worktree: dir, expanded: true }] },

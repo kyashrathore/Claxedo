@@ -65,7 +65,7 @@ type Alias = ExactAlias | PrefixAlias
 const ALIASES: Alias[] = [
   { kind: "exact", find: "#terminal-backend", to: path.join(appSrc, "features/terminal/core/backend/xterm.ts") },
   { kind: "exact", find: "@claxedo/agent-event-runtime/contracts", to: path.resolve(appRoot, "../agent-event-runtime/src/contracts/index.ts") },
-  { kind: "exact", find: "@claxedo/agent-event-runtime/opencode-compat", to: path.resolve(appRoot, "../agent-event-runtime/src/projections/opencode-compat/index.ts") },
+  { kind: "exact", find: "@claxedo/agent-event-runtime/client-presentation", to: path.resolve(appRoot, "../agent-event-runtime/src/projections/client-presentation/index.ts") },
   { kind: "exact", find: "@claxedo/agent-event-runtime", to: path.resolve(appRoot, "../agent-event-runtime/src/index.ts") },
   { kind: "prefix", find: "@/", to: appSrc + path.sep },
 ]

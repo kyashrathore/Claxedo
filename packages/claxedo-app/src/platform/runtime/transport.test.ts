@@ -53,7 +53,7 @@ describe("createTransport", () => {
       serverUrl: "http://127.0.0.1:3001",
       request: (async (input: string | URL | Request, init?: RequestInit) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
-        calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+        calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
         return Response.json({ ok: true })
       }) as typeof fetch,
     })
@@ -70,7 +70,7 @@ describe("createTransport", () => {
     const calls: string[] = []
     const request = (async (input: string | URL | Request, init?: RequestInit) => {
       const req = input instanceof Request ? input : new Request(String(input), init)
-      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+      calls.push(`${req.method} ${req.url} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
       const url = new URL(req.url)
       if (url.pathname === "/api/workspace/ws_relay/connection") {
         return Response.json({
@@ -111,7 +111,7 @@ describe("createTransport", () => {
       serverUrl: "http://127.0.0.1:3001",
       request: (async (input: string | URL | Request, init?: RequestInit) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
-        calls.push(`${req.method} ${req.url} ${await req.clone().text()} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-opencode-directory") ?? ""}`.trim())
+        calls.push(`${req.method} ${req.url} ${await req.clone().text()} ${req.headers.get("authorization") ?? ""} ${req.headers.get("x-claxedo-directory") ?? ""}`.trim())
         return Response.json({ ok: true })
       }) as typeof fetch,
     })

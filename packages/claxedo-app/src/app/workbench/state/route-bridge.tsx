@@ -490,7 +490,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     if (surface.sessionId !== sessionId || !sameWorkspaceDirectory(surface.directory, workspaceDir)) return undefined
     if (surface.content?.type !== "session") return undefined
     const harness = surface.content.sessionRef?.harness
-    return harness?.id && harness.id !== "opencode" ? harness : undefined
+    return harness
   }
   const routeLocalSessionResolutionMisses = new Set<string>()
   const routeSessionMetaLookups = new Set<string>()

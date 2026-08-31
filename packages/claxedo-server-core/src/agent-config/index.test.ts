@@ -1,11 +1,11 @@
 import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
-import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
 import { grantProjectExtensionTrust } from "@claxedo/agent-extensions"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import type { HarnessConnectionDescriptor } from "./connections"
 
 const root = path.join(realpathSync(os.tmpdir()), `agent-config-test-${randomUUID().slice(0, 8)}`)
 const prev = process.env.CLAXEDO_DATA_DIR
@@ -50,8 +50,20 @@ function cmdDir() {
   return path.join(root, "opencode-config", "command")
 }
 
-function processBinary(input: { connection?: { kind: string; binary?: string } }) {
-  return input.connection?.kind === "process" ? input.connection.binary : undefined
+function trustedConnection(overrides: Partial<HarnessConnectionDescriptor> = {}): HarnessConnectionDescriptor {
+  return {
+    connectionId: "conn-primary",
+    providerKey: "acp",
+    configRevision: 1,
+    enabled: true,
+    config: {
+      label: "Primary agent",
+      connection: { kind: "process", command: "agent", args: ["--serve"] },
+      modelSelection: { status: "optional" },
+    },
+    secretRefs: { token: "credentials/agent" },
+    ...overrides,
+  }
 }
 
 describe("agent config", () => {
@@ -79,67 +91,76 @@ describe("agent config", () => {
 
   // ── defaultHarness ────────────────────────────────────────────────────
 
-  test("defaults to opencode when no runner is configured", () => {
-    expect(mod.defaultHarness()).toEqual({ id: "opencode", access: "native" })
-    expect(mod.defaultHarness({ mcp: {}, auth: {} })).toEqual({ id: "opencode", access: "native" })
+  test("leaves the default unresolved when no explicit selection is configured", () => {
+    expect(mod.defaultHarness()).toBeUndefined()
+    expect(mod.defaultHarness({ version: 3, connections: {}, mcp: {}, auth: {} })).toBeUndefined()
   })
 
-  test("preserves an operator ACP connection's explicit binary path", () => {
-    const runner = mod.defaultHarness({
+  test("selects an explicit default connection without exposing its trusted config", () => {
+    const selected = mod.defaultHarness({
+      version: 3,
       mcp: {},
       auth: {},
-      harness: {
-        id: "openclaw",
-        access: "acp",
-        connection: { kind: "process", binary: "/custom/openclaw", args: ["acp"] },
-      },
+      connections: { "conn-primary": trustedConnection() },
+      defaultConnectionId: "conn-primary",
     })
-    expect(runner).toMatchObject({ id: "openclaw", access: "acp" })
-    expect(processBinary(runner)).toBe("/custom/openclaw")
+    expect(selected).toEqual({ kind: "connection", connectionId: "conn-primary" })
+    expect(JSON.stringify(selected)).not.toContain("command")
   })
 
-  test("native runners do not inherit ACP binary defaults", () => {
+  test("selects only an explicit supported native default", () => {
     expect(mod.defaultHarness({
+      version: 3,
+      connections: {},
       mcp: {},
       auth: {},
-      runner: { type: "claude-sdk" },
-    })).toEqual({ id: "claude", access: "native" })
-    expect(mod.defaultHarness({
-      mcp: {},
-      auth: {},
-      runner: { type: "codex-app-server", model: "default" },
-    })).toEqual({ id: "codex", access: "native" })
+      defaultHarness: { kind: "native", harnessId: "claude" },
+    })).toEqual({ kind: "native", harnessId: "claude" })
   })
 
-  test("loads a canonical operator ACP harness and model", async () => {
+  test("rejects legacy runner, harness, and ACP config instead of adopting it", async () => {
     await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
+    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
       auth: {},
       harness: { id: "openclaw", access: "acp" },
-      model: "operator-default",
       acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
     }))
-    const config = await mod.loadUserConfig()
-    expect(config.harness).toEqual({ id: "openclaw", access: "acp" })
-    expect(config.model).toBe("operator-default")
+    await expect(mod.loadUserConfig()).rejects.toMatchObject({
+      code: "user_agent_config_invalid_schema",
+    })
   })
 
-  test("opencode runner has no binary or model", () => {
-    const runner = mod.defaultHarness({
+  test("rejects OpenCode as a native default", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      version: 3,
+      connections: {},
       mcp: {},
-      auth: {},
-      runner: { type: "opencode" },
-    })
-    expect(runner).toEqual({ id: "opencode", access: "native" })
-    expect(processBinary(runner)).toBeUndefined()
+      defaultHarness: { kind: "native", harnessId: "opencode" },
+    }))
+    await expect(mod.loadUserConfig()).rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
   })
 
   // ── loadUserConfig / saveUserConfig ──────────────────────────────────
 
   test("returns default config when file does not exist", async () => {
     const config = await mod.loadUserConfig()
-    expect(config).toEqual({ mcp: {}, auth: {}, sandbox_driver: {} })
+    expect(config).toEqual({ version: 3, connections: {}, mcp: {}, auth: {}, sandbox_driver: {} })
+  })
+
+  test("rejects v1, v2, and unversioned files without compatibility decoding", async () => {
+    await fs.mkdir(root, { recursive: true })
+    for (const legacy of [
+      { mcp: {}, connections: {} },
+      { version: 1, mcp: {}, connections: {} },
+      { version: 2, mcp: {}, harnesses: [] },
+    ]) {
+      await fs.writeFile(cfgFile(), JSON.stringify(legacy))
+      await expect(mod.loadUserConfig()).rejects.toMatchObject({
+        code: "user_agent_config_invalid_schema",
+      })
+    }
   })
 
   test("rejects malformed config without exposing or overwriting its contents", async () => {
@@ -177,6 +198,9 @@ describe("agent config", () => {
 
   test("round-trips config through save and load", async () => {
     const original = {
+      version: 3 as const,
+      connections: { "conn-primary": trustedConnection() },
+      defaultConnectionId: "conn-primary",
       mcp: {
         "my-server": {
           type: "stdio" as const,
@@ -185,18 +209,15 @@ describe("agent config", () => {
           env: { PORT: "3000" },
         },
       },
-      harness: { id: "openclaw" as const, access: "acp" as const },
-      model: "operator-default",
       auth: { "claude-sdk": "sk-ant-test" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       sandbox_driver: { default_driver: "daytona" as const },
     }
     await mod.saveUserConfig(original)
     const loaded = await mod.loadUserConfig()
 
     expect(loaded.mcp["my-server"]).toEqual(original.mcp["my-server"])
-    expect(loaded.harness).toEqual(original.harness)
-    expect(loaded.model).toEqual(original.model)
+    expect(loaded.connections).toEqual(original.connections)
+    expect(loaded.defaultConnectionId).toEqual(original.defaultConnectionId)
     expect(loaded.auth).toEqual(original.auth)
     expect(loaded.sandbox_driver).toEqual(original.sandbox_driver)
     expect((loaded as { sandbox?: unknown }).sandbox).toBeUndefined()
@@ -204,7 +225,7 @@ describe("agent config", () => {
 
   test("keeps only canonical sandbox driver config", async () => {
     await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
+    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
       auth: {},
       sandbox_driver: {
@@ -231,9 +252,9 @@ describe("agent config", () => {
     expect(mod.sandboxDriverConfig(loaded)).toEqual(loaded.sandbox_driver)
   })
 
-  test("ignores legacy sandbox provider config", async () => {
+  test("rejects legacy sandbox provider config", async () => {
     await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
+    await fs.writeFile(cfgFile(), JSON.stringify({ version: 3, connections: {},
       mcp: {},
       auth: {},
       sandbox: {
@@ -247,14 +268,13 @@ describe("agent config", () => {
       },
     }))
 
-    const loaded = await mod.loadUserConfig()
-
-    expect(loaded.sandbox_driver).toEqual({})
-    expect(mod.sandboxDriverConfig(loaded)).toEqual(loaded.sandbox_driver)
+    await expect(mod.loadUserConfig()).rejects.toMatchObject({
+      code: "user_agent_config_invalid_schema",
+    })
   })
 
   test("save creates directory if it doesn't exist", async () => {
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
     const exists = await fs
       .stat(cfgFile())
       .then(() => true)
@@ -264,41 +284,38 @@ describe("agent config", () => {
 
   // ── getRuntimeConfigSnapshot ────────────────────────────────────────
 
-  test("snapshot includes version, mcp, harnesses, auth, and no command side channel", async () => {
-    await mod.saveUserConfig({
+  test("snapshot includes v3 connections, explicit default, mcp, and no command side channel", async () => {
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: { "test-mcp": { type: "remote", url: "http://localhost:9000" } },
-      harness: { id: "openclaw", access: "acp" },
-      acp: { openclaw: { label: "OpenClaw", command: ["/opt/openclaw", "acp"] } },
+      defaultConnectionId: "conn-primary",
       auth: { "codex-app-server": "sk-test" },
     })
     await mod.saveCommand("triage", "Triage $ARGUMENTS")
     const snap = await mod.getRuntimeConfigSnapshot()
-    expect(snap.version).toBe(2)
+    expect(snap.version).toBe(3)
     expect(snap.mcp["test-mcp"]).toBeDefined()
-    expect(snap.harnesses[0]).toMatchObject({ id: "openclaw", access: "acp" })
+    expect(snap.connections).toEqual([trustedConnection()])
+    expect(snap.defaultHarness).toEqual({ kind: "connection", connectionId: "conn-primary" })
     expect(snap.auth["codex-app-server"]).toBe("sk-test")
     expect("commands" in snap).toBe(false)
     expect(await mod.listCommands()).toContainEqual({ name: "triage", content: "Triage $ARGUMENTS" })
   })
 
-  test("snapshot does not alias native provider auth into operator ACP identities", async () => {
-    await mod.saveUserConfig({
+  test("snapshot does not alias native provider auth into generic connection identities", async () => {
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       auth: {
         openai: "sk-openai-managed",
       },
     })
     const snap = await mod.getRuntimeConfigSnapshot()
     expect(snap.auth.openai).toBe("sk-openai-managed")
-    expect(snap.auth["acp:openclaw"]).toBeUndefined()
+    expect(snap.auth["conn-primary"]).toBeUndefined()
   })
 
-  test("snapshot preserves plain OpenCode OAuth without ACP aliases", async () => {
-    await mod.saveUserConfig({
+  test("snapshot preserves trusted native auth without selecting a harness", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {},
-      runner: { type: "opencode" },
       auth: {
         openai: JSON.stringify({
           type: "oauth",
@@ -317,13 +334,14 @@ describe("agent config", () => {
         expires: 1_790_000_000_000,
       }),
     )
-    expect(Object.keys(snap.auth).some((key) => key.startsWith("acp:"))).toBe(false)
+    expect(snap.defaultHarness).toBeUndefined()
   })
 
-  test("snapshot defaults harness to opencode when no harness configured", async () => {
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+  test("snapshot remains unresolved when no harness is configured", async () => {
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
     const snap = await mod.getRuntimeConfigSnapshot()
-    expect(snap.harnesses[0]).toEqual({ id: "opencode", access: "native" })
+    expect(snap.defaultHarness).toBeUndefined()
+    expect(snap.connections).toEqual([])
   })
 
   test("snapshot includes Agent Extensions replay metadata for a workspace directory", async () => {
@@ -348,7 +366,7 @@ describe("agent config", () => {
         ],
       }),
     )
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
 
     // Repo-shipped extension declarations are ignored until this host has
     // recorded trust for the checkout (project-scope consent gate).
@@ -375,30 +393,26 @@ describe("agent config", () => {
     })
   })
 
-  // Forward wire contract: every snapshot the control plane pushes must be
-  // accepted by the *current* workspace runtime validator. This guards
-  // against emitter/validator drift like the `version: 2` rollout — if the
-  // two sides disagree, `config push` fails with 400 and the composer never
-  // unlocks. (Deployed sandboxes must run a matching runtime version; that
-  // is enforced separately by the image version pin.)
-  test("snapshot is accepted by the current workspace runtime validator", async () => {
-    await mod.saveUserConfig({
+  test("snapshot emits only the clean v3 connection contract", async () => {
+    await mod.saveUserConfig({ version: 3, connections: { "conn-primary": trustedConnection() },
       mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
+      defaultConnectionId: "conn-primary",
       auth: {},
     })
     const snap = await mod.getRuntimeConfigSnapshot()
-    expect(normalizeRuntimeSnapshot(snap)).toBeDefined()
+    expect(snap).toMatchObject({
+      version: 3,
+      connections: [trustedConnection()],
+      defaultHarness: { kind: "connection", connectionId: "conn-primary" },
+    })
+    expect("harnesses" in snap).toBe(false)
   })
 
-  test("shared cloud snapshot is accepted by the current workspace runtime validator", async () => {
+  test("shared cloud snapshot keeps the v3 contract without implicit selection", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({
+    await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {},
-      harness: { id: "openclaw", access: "acp" },
-      acp: { openclaw: { label: "OpenClaw", command: ["openclaw", "acp"] } },
       auth: {},
     })
     const snap = await mod.getRuntimeConfigSnapshot(undefined, {
@@ -407,13 +421,15 @@ describe("agent config", () => {
       workspaceId: "ws_1",
       authority: unavailableWorkspaceAuthority(),
     })
-    expect(normalizeRuntimeSnapshot(snap)).toBeDefined()
+    expect(snap.version).toBe(3)
+    expect(snap.connections).toEqual([])
+    expect(snap.defaultHarness).toBeUndefined()
   })
 
   test("local workspace snapshot hydrates from SQLite despite an ambient workspace-authority URL", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
     const deploymentMode = process.env.CLAXEDO_DEPLOYMENT_MODE
     const authorityUrl = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     const serviceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
@@ -444,7 +460,7 @@ describe("agent config", () => {
   test("shared workspace Agent Extensions snapshot fails closed when Control Plane hydration is unavailable", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
 
     await expect(
       mod.getRuntimeConfigSnapshot(undefined, {
@@ -462,7 +478,7 @@ describe("agent config", () => {
   test("shared workspace Agent Extensions snapshot falls back to empty when service hydration is optional", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
 
     const snap = await mod.getRuntimeConfigSnapshot(undefined, {
       secretScope: "shared",
@@ -509,7 +525,7 @@ describe("agent config", () => {
         reason: "blocked by org policy",
       },
     ])
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
 
     const snap = await mod.getRuntimeConfigSnapshot(undefined, {
       secretScope: "shared",
@@ -557,13 +573,13 @@ describe("agent config", () => {
   // ── getEffectiveConfig ──────────────────────────────────────────────
 
   test("effective config is empty when no user MCP servers exist", async () => {
-    await mod.saveUserConfig({ mcp: {}, auth: {} })
+    await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
     const config = await mod.getEffectiveConfig()
     expect(config).toEqual({})
   })
 
   test("effective config transforms stdio servers into local format", async () => {
-    await mod.saveUserConfig({
+    await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         "my-tool": {
           type: "stdio",
@@ -583,7 +599,7 @@ describe("agent config", () => {
   })
 
   test("effective config transforms remote servers", async () => {
-    await mod.saveUserConfig({
+    await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         "remote-tool": {
           type: "remote",
@@ -601,7 +617,7 @@ describe("agent config", () => {
   })
 
   test("effective config excludes disabled servers", async () => {
-    await mod.saveUserConfig({
+    await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         active: { type: "stdio", command: "node", args: [] },
         disabled: { type: "stdio", command: "node", args: [], disabled: true },
@@ -654,145 +670,5 @@ describe("agent config", () => {
   test("get returns null for nonexistent command", async () => {
     const cmd = await mod.getCommand("nonexistent-" + randomUUID())
     expect(cmd).toBeNull()
-  })
-})
-
-describe("operator ACP connections", () => {
-  beforeEach(async () => {
-    // The first describe's afterAll restores CLAXEDO_DATA_DIR; pin it back to
-    // this file's temp root for every test here.
-    process.env.CLAXEDO_DATA_DIR = root
-    // See the first describe's beforeEach: Windows needs the sqlite handles
-    // closed before the wipe can unlink the database files.
-    closeSqliteHandles()
-    await fs.rm(root, { recursive: true, force: true })
-    mod.configureAgentConfig({})
-  })
-
-  afterAll(async () => {
-    closeSqliteHandles()
-    await fs.rm(root, { recursive: true, force: true })
-    if (prev === undefined) delete process.env.CLAXEDO_DATA_DIR
-    else process.env.CLAXEDO_DATA_DIR = prev
-  })
-
-  test("validates the whole proposed map and defaults enabled to true", () => {
-    const valid = mod.normalizeAcpConnections({
-      gemini: { label: "Gemini", command: ["gemini", "--acp"], env: { GEMINI_API_KEY: "g-key" } },
-      hermes: { label: "Hermes", command: ["hermes", "acp"], enabled: false },
-    })
-    expect(valid.problems).toEqual([])
-    expect(valid.accepted.gemini).toEqual({
-      label: "Gemini",
-      command: ["gemini", "--acp"],
-      env: { GEMINI_API_KEY: "g-key" },
-    })
-    expect(valid.accepted.hermes).toEqual({ label: "Hermes", command: ["hermes", "acp"], enabled: false })
-
-    const invalid = mod.normalizeAcpConnections({
-      gemini: { label: "Gemini", command: ["gemini"] },
-      "Bad Slug": { label: "Nope", command: ["nope"] },
-      empty: { label: "Empty", command: [] },
-    })
-    expect(invalid.problems.map((problem) => problem.id).sort()).toEqual(["Bad Slug", "empty"])
-    expect(Object.keys(invalid.accepted)).toEqual(["gemini"])
-  })
-
-  test("loadUserConfig keeps valid provisioned connections and drops invalid ones", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      mcp: {},
-      acp: {
-        gemini: { label: "Gemini", command: ["gemini", "--acp"] },
-        broken: { label: "", command: ["x"] },
-      },
-    }))
-    const config = await mod.loadUserConfig()
-    expect(Object.keys(config.acp ?? {})).toEqual(["gemini"])
-  })
-
-  test("the runtime snapshot fans out every enabled connection behind the active harness", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      mcp: {},
-      acp: {
-        gemini: { label: "Gemini", command: ["gemini", "--acp"], env: { GEMINI_API_KEY: "g-key" } },
-        hermes: { label: "Hermes", command: ["hermes", "acp"], enabled: false },
-      },
-    }))
-    const snapshot = await mod.getRuntimeConfigSnapshot()
-    expect(snapshot.harnesses[0]).toMatchObject({ id: "opencode", access: "native" })
-    expect(snapshot.harnesses.slice(1)).toEqual([{
-      id: "gemini",
-      access: "acp",
-      connection: {
-        kind: "process",
-        binary: "gemini",
-        args: ["--acp"],
-        env: { GEMINI_API_KEY: "g-key" },
-      },
-    }])
-    // The fanned-out snapshot round-trips through the runtime's own
-    // normalization with the registry intact.
-    const normalized = normalizeRuntimeSnapshot(snapshot)
-    expect(normalized?.harnesses?.map((row) => row.id)).toEqual(["opencode", "gemini"])
-  })
-
-  test("params.supportsMcpServers rides the trusted descriptor and survives runtime normalization", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      mcp: {},
-      acp: {
-        gemini: { label: "Gemini", command: ["gemini", "--acp"], params: { supportsMcpServers: false } },
-      },
-    }))
-    const snapshot = await mod.getRuntimeConfigSnapshot()
-    expect(snapshot.harnesses.slice(1)).toEqual([{
-      id: "gemini",
-      access: "acp",
-      connection: {
-        kind: "process",
-        binary: "gemini",
-        args: ["--acp"],
-        supportsMcpServers: false,
-      },
-    }])
-    const normalized = normalizeRuntimeSnapshot(snapshot)
-    const row = normalized?.harnesses?.find((item) => item.id === "gemini")
-    expect(row?.connection).toMatchObject({ kind: "process", supportsMcpServers: false })
-  })
-
-  test("a selected operator connection resolves its descriptor from the registry", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await fs.writeFile(cfgFile(), JSON.stringify({
-      mcp: {},
-      harness: { id: "gemini", access: "acp" },
-      acp: {
-        gemini: { label: "Gemini", command: ["gemini", "--acp"] },
-      },
-    }))
-    const snapshot = await mod.getRuntimeConfigSnapshot()
-    expect(snapshot.harnesses[0]).toEqual({
-      id: "gemini",
-      access: "acp",
-      connection: { kind: "process", binary: "gemini", args: ["--acp"] },
-    })
-    // The registry row is not duplicated behind the selected identity.
-    expect(snapshot.harnesses.filter((row) => row.id === "gemini")).toHaveLength(1)
-  })
-
-  test("discovery rows carry identity and label but never command or env", async () => {
-    const rows = mod.acpConnectionRows({
-      acp: {
-        gemini: { label: "Gemini", command: ["gemini", "--acp"], env: { GEMINI_API_KEY: "secret" } },
-        hermes: { label: "Hermes", command: ["hermes"], enabled: false },
-      },
-    })
-    expect(rows).toEqual([
-      { key: "acp:gemini", id: "gemini", label: "Gemini", access: "acp", enabled: true },
-      { key: "acp:hermes", id: "hermes", label: "Hermes", access: "acp", enabled: false },
-    ])
-    expect(JSON.stringify(rows)).not.toContain("secret")
-    expect(JSON.stringify(rows)).not.toContain("--acp")
   })
 })

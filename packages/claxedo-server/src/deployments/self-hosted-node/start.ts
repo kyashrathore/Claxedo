@@ -30,8 +30,6 @@ import { assertSelfHostedPosture } from "./posture"
 
 export type SelfHostedStartOptions = {
   port: number
-  /** An explicit URL opts out of the embedded engine. */
-  opencodeUrl?: string
   env?: NodeJS.ProcessEnv
 }
 

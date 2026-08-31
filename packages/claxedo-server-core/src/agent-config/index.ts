@@ -1,16 +1,12 @@
 /**
  * Centralized Agent Configuration
  *
- * Stores user-defined additions to the opencode agent config:
+ * Stores trusted operator configuration for agent runtimes:
  *   - User MCP servers
- *   - Slash commands (markdown files in ~/.claxedo/opencode-config/command/)
+ *   - Slash commands (markdown files in ~/.claxedo/commands/)
  *
  * User config persisted at: ~/.claxedo/user-agent-config.json
- * Command .md files at:     ~/.claxedo/opencode-config/command/<name>.md
- *
- * The opencode wrapper sets OPENCODE_CONFIG_DIR=~/.claxedo/opencode-config/,
- * so opencode automatically picks up both the opencode.jsonc (MCP) and the
- * command/ directory (slash commands) on every startup.
+ * Command .md files at:     ~/.claxedo/commands/<name>.md
  */
 
 import * as fs from "fs"
@@ -19,20 +15,10 @@ import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { isSandboxDriverID, type SandboxDriverConfig } from "@claxedo/sandbox-contract"
 import {
-  harnessKey,
-  isAcpConnectionId,
-  normalizeAgentHarnessTransport,
-  normalizeHarnessIdentity,
-  type AgentHarnessId,
-  type SessionHarness,
-} from "@claxedo/agent-sdk-runtime"
-import {
   loadManagedMcpState,
   harnessAgent,
-  mcpControl,
   resolveEffectiveMcp,
   resolveUserMcp,
-  toOpencodeConfig,
   type ResolvedMcpServer,
 } from "@claxedo/workspace-runtime/config"
 import { resolveSecretsForScope } from "@claxedo/server-core/credentials/registry"
@@ -51,6 +37,49 @@ import {
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createSqliteWorkspaceAuthority } from "../authority/adapters/sqlite/workspace-authority"
+import {
+  createHarnessConnectionSchema,
+  explicitDefaultHarness,
+  isConnectionId,
+  isNativeHarnessId,
+} from "./connections"
+import type {
+  ConnectionProvider,
+  HarnessConnectionDescriptor,
+  HarnessConnectionRef,
+} from "@claxedo/agent-sdk-runtime"
+import { createAcpConnectionProvider, createConnectionProviderRegistry } from "@claxedo/agent-sdk-runtime"
+import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
+
+export type {
+  ConnectionReadiness,
+  HarnessConnectionCapabilities,
+  HarnessConnectionDescriptor,
+  HarnessConnectionRef,
+} from "@claxedo/agent-sdk-runtime"
+export type {
+  RuntimeHarnessSelection,
+  RuntimeNativeHarnessId,
+} from "@claxedo/workspace-runtime/config"
+export {
+  explicitDefaultHarness,
+  isConnectionId,
+  isNativeHarnessId,
+} from "./connections"
+export {
+  ConnectionUnavailableError,
+  createLocalConnectionSecretResolver,
+  createVmConnectionSecretResolver,
+  publicConnectionUnavailable,
+} from "./connection-secrets"
+export type {
+  ConnectionSecretUnavailableReason,
+  PublicConnectionUnavailable,
+} from "./connection-secrets"
+export type {
+  ConnectionSecretLease,
+  ConnectionSecretResolver,
+} from "@claxedo/agent-sdk-runtime"
 
 const log = Log.create({ service: "agent-config" })
 
@@ -59,7 +88,7 @@ function claxedoDir() {
 }
 
 function commandDir() {
-  return path.join(claxedoDir(), "opencode-config", "command")
+  return path.join(claxedoDir(), "commands")
 }
 
 function userConfigFile() {
@@ -81,38 +110,21 @@ export interface UserMcpServer {
   disabled?: boolean
 }
 
-/**
- * One operator-configured ACP connection: a stdio ACP-compatible agent the
- * operator installed themselves, described as data in the trusted config.
- * The map of these IS the extension catalog, execution allowlist, and source
- * of runtime descriptors — there is no second registry.
- */
-export interface UserAcpConnection {
-  label: string
-  /** `command[0]` is the executable; remaining values are arguments. */
-  command: string[]
-  /** Extra process environment applied over the runtime environment. */
-  env?: Record<string, string>
-  /** Narrow generic-ACP compatibility switches (only proven-necessary ones). */
-  params?: { supportsMcpServers?: boolean }
-  /** Defaults to true. `false` is an explicit, reversible disable. */
-  enabled?: boolean
-}
-
 export interface UserAgentConfig {
+  version: 3
   mcp: Record<string, UserMcpServer>
-  harness?: SessionHarness
-  model?: string
-  runner?: unknown
+  connections: Record<string, HarnessConnectionDescriptor>
+  /** Explicit operator policy. Omission leaves agent selection unresolved. */
+  defaultConnectionId?: string
+  /** Explicit native default; mutually exclusive with defaultConnectionId. */
+  defaultHarness?: Extract<RuntimeHarnessSelection, { kind: "native" }>
   auth?: Record<string, string>  // native provider ID → credential material
   sandbox_driver?: SandboxDriverConfig
-  /** Operator-configured ACP connections, keyed by stable lowercase slug. */
-  acp?: Record<string, UserAcpConnection>
 }
 
 class UserAgentConfigLoadError extends Error {
   constructor(
-    readonly code: "user_agent_config_read_failed" | "user_agent_config_invalid_json",
+    readonly code: "user_agent_config_read_failed" | "user_agent_config_invalid_json" | "user_agent_config_invalid_schema",
     message: string,
     options?: ErrorOptions,
   ) {
@@ -122,9 +134,10 @@ class UserAgentConfigLoadError extends Error {
 }
 
 export interface RuntimeConfigSnapshot {
-  version: 2
+  version: 3
   mcp: Record<string, ResolvedMcpServer>
-  harnesses: NonNullable<UserAgentConfig["harness"]>[]
+  connections: HarnessConnectionDescriptor[]
+  defaultHarness?: RuntimeHarnessSelection
   auth: Record<string, string>
   agent_extensions?: RuntimeAgentExtensionsSnapshot
 }
@@ -140,7 +153,6 @@ export interface CommandItem {
   content: string
 }
 
-export type HarnessType = AgentHarnessId
 export type AgentConfigOptions = {
   /**
    * Authority used to hydrate workspace Agent Extensions into the runtime
@@ -151,6 +163,8 @@ export type AgentConfigOptions = {
    * When mounted standalone, the local SQLite authority answers.
    */
   workspaceAuthority?: RuntimeWorkspaceAuthority
+  /** Providers installed by this product composition. */
+  connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
@@ -164,11 +178,15 @@ export function disposeAgentConfig() {
   localRuntimeWorkspaceAuthority?.authority.close()
   localRuntimeWorkspaceAuthority = undefined
   agentConfigOptions = {}
+  harnessConnectionSchema = createHarnessConnectionSchema()
 }
 
 export function configureAgentConfig(options: AgentConfigOptions = {}) {
   disposeAgentConfig()
   agentConfigOptions = options
+  harnessConnectionSchema = createHarnessConnectionSchema(createConnectionProviderRegistry(
+    options.connectionProviders ?? [createAcpConnectionProvider()],
+  ))
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -190,173 +208,31 @@ function record(input: unknown) {
     : undefined
 }
 
-// ── Operator ACP connections ───────────────────────────────────────────────
+// ── Trusted generic connections ───────────────────────────────────────────
 
-export type AcpConnectionProblem = { id: string; problem: string }
+let harnessConnectionSchema = createHarnessConnectionSchema()
 
-/**
- * Validates a proposed ACP connection map in full. Mutation paths reject when
- * any problem is reported (one malformed entry rejects the whole mutation);
- * the load path keeps only `accepted` and logs what it dropped, so a hand
- * -edited file with one typo cannot take the server down.
- */
-export function normalizeAcpConnections(input: unknown): {
-  accepted: Record<string, UserAcpConnection>
-  problems: AcpConnectionProblem[]
-} {
-  const accepted: Record<string, UserAcpConnection> = {}
-  const problems: AcpConnectionProblem[] = []
-  const rows = record(input)
-  if (input !== undefined && !rows) {
-    return { accepted, problems: [{ id: "", problem: "acp must be an object map of connection definitions" }] }
-  }
-  for (const [id, value] of Object.entries(rows ?? {})) {
-    if (!isAcpConnectionId(id)) {
-      problems.push({ id, problem: "connection id must be a lowercase slug (a-z, 0-9, dashes; max 64 chars)" })
-      continue
-    }
-    const row = record(value)
-    if (!row) {
-      problems.push({ id, problem: "connection definition must be an object" })
-      continue
-    }
-    const label = typeof row.label === "string" ? row.label.trim() : ""
-    if (!label) {
-      problems.push({ id, problem: "label is required" })
-      continue
-    }
-    const command = Array.isArray(row.command) && row.command.length > 0
-      && row.command.every((item) => typeof item === "string" && item.trim())
-      ? (row.command as string[]).map((item) => item.trim())
-      : undefined
-    if (!command) {
-      problems.push({ id, problem: "command must be a non-empty array of strings (command[0] is the executable)" })
-      continue
-    }
-    const env = row.env === undefined ? undefined : stringRecord(row.env)
-    if (row.env !== undefined && !env) {
-      problems.push({ id, problem: "env must be a string map" })
-      continue
-    }
-    const params = record(row.params)
-    if (row.params !== undefined && !params) {
-      problems.push({ id, problem: "params must be an object" })
-      continue
-    }
-    if (params && params.supportsMcpServers !== undefined && typeof params.supportsMcpServers !== "boolean") {
-      problems.push({ id, problem: "params.supportsMcpServers must be a boolean" })
-      continue
-    }
-    if (row.enabled !== undefined && typeof row.enabled !== "boolean") {
-      problems.push({ id, problem: "enabled must be a boolean" })
-      continue
-    }
-    accepted[id] = {
-      label,
-      command,
-      ...(env && Object.keys(env).length ? { env } : {}),
-      ...(params && typeof params.supportsMcpServers === "boolean"
-        ? { params: { supportsMcpServers: params.supportsMcpServers } }
-        : {}),
-      ...(row.enabled === false ? { enabled: false } : {}),
-    }
-  }
-  return { accepted, problems }
+export function validateHarnessConnections(input: unknown) {
+  return harnessConnectionSchema.validate(input)
 }
 
-function acpConnectionEnabled(connection: UserAcpConnection) {
-  return connection.enabled !== false
+export function publicHarnessConnections(
+  connections: Record<string, HarnessConnectionDescriptor>,
+) {
+  return harnessConnectionSchema.publicRows(connections)
 }
 
-/** The trusted runtime descriptor for one accepted ACP connection. */
-export function acpConnectionHarness(id: string, connection: UserAcpConnection): SessionHarness {
-  const [binary, ...args] = connection.command
-  return {
-    id,
-    access: "acp",
-    connection: {
-      kind: "process",
-      binary: binary!,
-      ...(args.length ? { args } : {}),
-      ...(connection.env ? { env: connection.env } : {}),
-      ...(connection.params?.supportsMcpServers !== undefined
-        ? { supportsMcpServers: connection.params.supportsMcpServers }
-        : {}),
-    },
-  }
+export function connectionRevisionProblems(
+  previous: Record<string, HarnessConnectionDescriptor>,
+  next: Record<string, HarnessConnectionDescriptor>,
+) {
+  return harnessConnectionSchema.revisionProblems(previous, next)
 }
 
-/** Enabled connections projected as trusted runtime harness descriptors. */
-export function acpConnectionHarnesses(config: Pick<UserAgentConfig, "acp">): SessionHarness[] {
-  return Object.entries(config.acp ?? {})
-    .filter(([, connection]) => acpConnectionEnabled(connection))
-    .map(([id, connection]) => acpConnectionHarness(id, connection))
-}
-
-/**
- * The sanitized discovery projection: what the app may see. Identity, label,
- * access, and enabled state only — never the command or environment.
- */
-export function acpConnectionRows(config: Pick<UserAgentConfig, "acp">): Array<{
-  key: string
-  id: string
-  label: string
-  access: "acp"
-  enabled: boolean
-}> {
-  return Object.entries(config.acp ?? {}).map(([id, connection]) => ({
-    key: `acp:${id}`,
-    id,
-    label: connection.label,
-    access: "acp" as const,
-    enabled: acpConnectionEnabled(connection),
-  }))
-}
-
-function normalizeHarness(input: unknown, options: AgentConfigOptions = agentConfigOptions): SessionHarness | undefined {
-  const identity = normalizeHarnessIdentity(input)
-  if (!identity) return
-  const row = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {}
-  const existingConnection = row.connection && typeof row.connection === "object" && !Array.isArray(row.connection)
-    ? row.connection as SessionHarness["connection"]
-    : undefined
-  if (existingConnection) {
-    return {
-      id: identity.id,
-      access: identity.access,
-      connection: existingConnection,
-    }
-  }
-  const binary = typeof row.binary === "string" ? row.binary : undefined
-  const transport = normalizeAgentHarnessTransport(row.transport)
-  const url = typeof row.url === "string" ? row.url : undefined
-  const headers = stringRecord(row.headers)
-  return {
-    id: identity.id,
-    access: identity.access,
-    ...(url || transport || headers
-      ? {
-          connection: {
-            kind: "remote" as const,
-            ...(transport ? { transport } : {}),
-            ...(url ? { url } : {}),
-            ...(headers ? { headers } : {}),
-          },
-        }
-      : binary && identity.id !== "opencode" && identity.id !== "pi"
-      ? { connection: { kind: "process" as const, binary } }
-      : {}),
-  }
-}
-
-function legacyHarness(input: unknown, options: AgentConfigOptions = agentConfigOptions): { harness: SessionHarness; model?: string } | undefined {
-  const harness = normalizeHarness(input, options)
-  if (!harness) return
-  const row = input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {}
-  return {
-    harness,
-    ...(typeof row.model === "string" ? { model: row.model } : {}),
-  }
+export function harnessConnectionRows(
+  config: Pick<UserAgentConfig, "connections">,
+): HarnessConnectionRef[] {
+  return publicHarnessConnections(config.connections)
 }
 
 // ── User config (MCP servers) ──────────────────────────────────────────────
@@ -370,29 +246,17 @@ export async function loadUserConfig(): Promise<UserAgentConfig> {
       { cause: error },
     )
   })
-  if (raw === undefined) return { mcp: {}, auth: {}, sandbox_driver: {} }
-
+  if (raw === undefined) return emptyUserAgentConfig()
+  let parsed: unknown
   try {
-    const data = JSON.parse(raw) as Partial<UserAgentConfig>
-    const legacy = legacyHarness(data.runner)
-    const acp = normalizeAcpConnections(data.acp)
-    for (const problem of acp.problems) {
-      log.warn("Ignoring invalid ACP connection in user agent config", problem)
-    }
-    return {
-      mcp: data.mcp ?? {},
-      harness: data.harness ?? legacy?.harness,
-      model: typeof data.model === "string" ? data.model : legacy?.model,
-      auth: data.auth ?? {},
-      sandbox_driver: sandboxDriverConfig(data),
-      ...(Object.keys(acp.accepted).length ? { acp: acp.accepted } : {}),
-    }
+    parsed = JSON.parse(raw)
   } catch {
     throw new UserAgentConfigLoadError(
       "user_agent_config_invalid_json",
       "User agent config contains invalid JSON",
     )
   }
+  return validateUserAgentConfig(parsed)
 }
 
 function isNodeError(error: unknown, code: string) {
@@ -400,13 +264,114 @@ function isNodeError(error: unknown, code: string) {
 }
 
 export async function saveUserConfig(config: UserAgentConfig): Promise<void> {
+  const next = validateUserAgentConfig(config)
+  const previous = await loadUserConfig()
+  const revisionProblems = connectionRevisionProblems(previous.connections, next.connections)
+  if (revisionProblems.length > 0) {
+    throw invalidSchema(revisionProblems.map((problem) => `${problem.connectionId}: ${problem.problem}`).join("; "))
+  }
   await fs.promises.mkdir(claxedoDir(), { recursive: true, mode: 0o755 })
-  await fs.promises.writeFile(userConfigFile(), JSON.stringify(config, null, 2) + "\n", { mode: 0o644 })
-  log.info("Saved user agent config", { mcpServers: Object.keys(config.mcp) })
+  const target = userConfigFile()
+  const temporary = `${target}.${process.pid}.${crypto.randomUUID()}.tmp`
+  try {
+    await fs.promises.writeFile(temporary, JSON.stringify(next, null, 2) + "\n", { mode: 0o600 })
+    await fs.promises.rename(temporary, target)
+  } catch (error) {
+    await fs.promises.unlink(temporary).catch(() => undefined)
+    throw error
+  }
+  log.info("Saved user agent config", {
+    mcpServers: Object.keys(next.mcp),
+    connections: Object.keys(next.connections),
+  })
+}
+
+function emptyUserAgentConfig(): UserAgentConfig {
+  return { version: 3, mcp: {}, connections: {}, auth: {}, sandbox_driver: {} }
+}
+
+function validateUserAgentConfig(input: unknown): UserAgentConfig {
+  const row = record(input)
+  if (!row || row.version !== 3) throw invalidSchema("version must be exactly 3")
+  const allowed = new Set([
+    "version",
+    "mcp",
+    "connections",
+    "defaultConnectionId",
+    "defaultHarness",
+    "auth",
+    "sandbox_driver",
+  ])
+  const unsupported = Object.keys(row).find((key) => !allowed.has(key))
+  if (unsupported) throw invalidSchema(`unsupported field: ${unsupported}`)
+  const mcp = record(row.mcp)
+  if (!mcp) throw invalidSchema("mcp must be an object map")
+  const connections = validateHarnessConnections(row.connections)
+  if (connections.problems.length > 0) {
+    throw invalidSchema(connections.problems.map((problem) =>
+      `${problem.connectionId || "connections"}: ${problem.problem}`).join("; "))
+  }
+  const auth = row.auth === undefined ? {} : stringRecord(row.auth)
+  if (!auth) throw invalidSchema("auth must be a string map")
+  const defaultConnectionId = row.defaultConnectionId
+  if (defaultConnectionId !== undefined && (typeof defaultConnectionId !== "string" || !isConnectionId(defaultConnectionId))) {
+    throw invalidSchema("defaultConnectionId must be a valid connection id")
+  }
+  const defaultHarness = validateNativeDefault(row.defaultHarness)
+  if (row.defaultHarness !== undefined && !defaultHarness) {
+    throw invalidSchema("defaultHarness must be an explicit supported native selection")
+  }
+  if (defaultConnectionId && defaultHarness) {
+    throw invalidSchema("defaultConnectionId and defaultHarness are mutually exclusive")
+  }
+  if (defaultConnectionId) {
+    const connection = connections.accepted[defaultConnectionId]
+    if (!connection) throw invalidSchema("defaultConnectionId must name an installed connection")
+    if (!connection.enabled) throw invalidSchema("defaultConnectionId must name an enabled connection")
+  }
+  return {
+    version: 3,
+    mcp: mcpEntries(mcp),
+    connections: connections.accepted,
+    ...(defaultConnectionId ? { defaultConnectionId } : {}),
+    ...(defaultHarness ? { defaultHarness } : {}),
+    auth,
+    sandbox_driver: sandboxDriverConfig({ sandbox_driver: row.sandbox_driver }),
+  }
+}
+
+function validateNativeDefault(input: unknown): Extract<RuntimeHarnessSelection, { kind: "native" }> | undefined {
+  const row = record(input)
+  if (!row || row.kind !== "native" || typeof row.harnessId !== "string" || !isNativeHarnessId(row.harnessId)) return
+  if (Object.keys(row).some((key) => key !== "kind" && key !== "harnessId")) return
+  return { kind: "native", harnessId: row.harnessId }
+}
+
+function mcpEntries(input: Record<string, unknown>): Record<string, UserMcpServer> {
+  return Object.fromEntries(Object.entries(input).flatMap(([key, value]) => {
+    const row = record(value)
+    if (!row || (row.type !== "stdio" && row.type !== "remote")) return []
+    return [[key, {
+      type: row.type,
+      ...(typeof row.command === "string" ? { command: row.command } : {}),
+      ...(Array.isArray(row.args) && row.args.every((arg) => typeof arg === "string") ? { args: [...row.args] } : {}),
+      ...(stringRecord(row.env) ? { env: stringRecord(row.env) } : {}),
+      ...(typeof row.url === "string" ? { url: row.url } : {}),
+      ...(stringRecord(row.headers) ? { headers: stringRecord(row.headers) } : {}),
+      ...(typeof row.disabled === "boolean" ? { disabled: row.disabled } : {}),
+    } satisfies UserMcpServer]]
+  }))
+}
+
+function invalidSchema(detail: string) {
+  return new UserAgentConfigLoadError(
+    "user_agent_config_invalid_schema",
+    `User agent config does not match schema v3: ${detail}`,
+  )
 }
 
 export function sandboxDriverConfig(
-  config?: Pick<UserAgentConfig, "sandbox_driver">,
+  config?: { sandbox_driver?: unknown },
 ): SandboxDriverConfig {
   const row = record(config?.sandbox_driver)
   if (!row) return {}
@@ -481,34 +446,25 @@ export function setSandboxDriverConfig(
 
 export function defaultHarness(
   config?: UserAgentConfig,
-  options: AgentConfigOptions = agentConfigOptions,
-): NonNullable<UserAgentConfig["harness"]> {
-  const harness = config?.harness ? normalizeHarness(config.harness, options) : legacyHarness(config?.runner, options)?.harness
-  if (harness) return harness
-  return { id: "opencode", access: "native" }
+): RuntimeHarnessSelection | undefined {
+  return config ? explicitDefaultHarness(config) : undefined
 }
 
 async function runtimeMcp(
   config: UserAgentConfig,
-  harness: NonNullable<UserAgentConfig["harness"]>,
+  harness: RuntimeHarnessSelection | undefined,
   scope: RuntimeConfigSecretScope,
 ) {
   const userMcp = scope === "shared" ? {} : config.mcp
-  // An operator-configured ACP connection is not one of the managed-MCP
-  // capable built-in agents, but the ACP protocol carries MCP servers
-  // natively: it receives the user's configured servers (managed servers stay
-  // a built-in-agent concern). The connection's `params.supportsMcpServers:
-  // false` withholds the offer at the adapter for agents that reject it.
-  if (harness.access === "acp") {
-    return resolveUserMcp(userMcp)
-  }
-  const agent = harnessAgent(harnessKey(harness) ?? harness.id)
-  if (!agent) return {}
+  if (!harness) return resolveUserMcp(userMcp)
+  if (harness.kind === "connection") return resolveUserMcp(userMcp)
+  const agent = harnessAgent(harness.harnessId)
+  if (!agent) return resolveUserMcp(userMcp)
   const state = await loadManagedMcpState()
   return resolveEffectiveMcp({
     state,
     agent,
-    control: harness.id === "opencode" ? mcpControl("opencode", { externalOpencode: true }) : "managed",
+    control: "managed",
     userMcp,
     strict: true,
   }).mcp
@@ -626,7 +582,7 @@ function codexCompatible(input: string | undefined): input is string {
 }
 
 export async function getRuntimeConfigSnapshot(
-  current?: NonNullable<UserAgentConfig["harness"]>,
+  current?: RuntimeHarnessSelection,
   options: {
     secretScope?: RuntimeConfigSecretScope
     workspaceDir?: string
@@ -639,27 +595,23 @@ export async function getRuntimeConfigSnapshot(
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
   const selected = current ?? defaultHarness(config)
-  // An operator-configured ACP identity resolves its process descriptor from
-  // the accepted registry at snapshot time — the session record and config
-  // carry only the logical identity, so a command/env change applies to the
-  // next process start without rewriting either.
-  const selectedRegistryEntry = selected.access === "acp"
-    ? config.acp?.[selected.id]
-    : undefined
-  const harness = selectedRegistryEntry && acpConnectionEnabled(selectedRegistryEntry)
-    ? acpConnectionHarness(selected.id, selectedRegistryEntry)
-    : selected
+  if (selected?.kind === "connection") {
+    const connection = config.connections[selected.connectionId]
+    if (!connection || !connection.enabled) {
+      throw invalidSchema("selected connection is not installed and enabled")
+    }
+  }
   const scope = options.secretScope ?? "local"
-  const mcp = await runtimeMcp(config, harness, scope)
-  // Merge legacy config auth with credential registry secrets (registry takes precedence)
-  const legacyAuth = options.secretScope === "shared" ? {} : config.auth ?? {}
+  const mcp = await runtimeMcp(config, selected, scope)
+  // Merge trusted config auth with credential registry secrets (registry takes precedence).
+  const configAuth = options.secretScope === "shared" ? {} : config.auth ?? {}
   let registryAuth: Record<string, string> = {}
   try {
     registryAuth = await resolveSecretsForScope(scope)
   } catch {
     // Registry may not be initialized yet during early startup
   }
-  const auth = { ...legacyAuth, ...registryAuth }
+  const auth = { ...configAuth, ...registryAuth }
   const codexAppServerAuth = auth.openai
   if (!auth["codex-app-server"] && codexAppServerAuth) auth["codex-app-server"] = codexAppServerAuth
   const workspaceInstalls = options.workspaceDir && options.workspaceId
@@ -680,17 +632,10 @@ export async function getRuntimeConfigSnapshot(
       }
     : undefined
   return {
-    version: 2,
+    version: 3,
     mcp,
-    // The selected/default harness leads (receivers still treat the first row
-    // as the active one); every other ENABLED operator ACP connection rides
-    // along so workspace runtimes hold the full accepted registry.
-    harnesses: [
-      harness,
-      ...acpConnectionHarnesses(config).filter(
-        (row) => !(row.id === harness.id && row.access === harness.access),
-      ),
-    ],
+    connections: Object.values(config.connections),
+    ...(selected ? { defaultHarness: selected } : {}),
     auth,
     ...(options.workspaceDir ? { agent_extensions: await getRuntimeAgentExtensionsSnapshot({
       projectDir: options.workspaceDir,
@@ -760,21 +705,7 @@ export async function deleteCommand(name: string): Promise<boolean> {
 
 // ── Full config for on-demand injection ───────────────────────────────────
 
-/**
- * Returns the effective opencode config as a plain object, suitable for:
- *   - OPENCODE_CONFIG_CONTENT env var (pass to any opencode instance)
- *   - Display in the claxedo UI
- *
- * Includes user-defined MCP servers.
- */
+/** Returns the canonical provider-neutral runtime configuration snapshot. */
 export async function getEffectiveConfig(): Promise<Record<string, unknown>> {
-  const userConfig = await loadUserConfig()
-  const state = await loadManagedMcpState()
-  return toOpencodeConfig(resolveEffectiveMcp({
-    state,
-    agent: "opencode",
-    control: "generated-config",
-    userMcp: userConfig.mcp,
-    strict: true,
-  }).mcp)
+  return { ...await getRuntimeConfigSnapshot() }
 }

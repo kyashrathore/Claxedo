@@ -1,5 +1,6 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
+import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
@@ -273,7 +274,7 @@ describe("SdkRuntimeAdapter", () => {
     })
     const session = await adapter.createSession(path.resolve("/repo"))
 
-    for await (const _event of adapter.sendMessage(session.id, {
+    for await (const _event of executeTestTurn(adapter, session.id, {
       parts: [{ type: "text", text: "go" }],
       assistantMessageId: "assistant",
       agent: "general",
@@ -338,7 +339,7 @@ describe("SdkRuntimeAdapter", () => {
       }),
     })
     const session = await adapter.createSession(path.resolve("/repo"))
-    for await (const _event of adapter.sendMessage(session.id, {
+    for await (const _event of executeTestTurn(adapter, session.id, {
       parts: [{ type: "text", text: "delegate" }],
       userMessageId: "parent-user",
       assistantMessageId: "parent-assistant",
@@ -407,7 +408,7 @@ describe("SdkRuntimeAdapter", () => {
     })
     const yielded: AgentRuntimeStreamEvent[] = []
 
-    for await (const event of adapter.sendMessage(session.id, {
+    for await (const event of executeTestTurn(adapter, session.id, {
       parts: [{ type: "text", text: "delegate" }],
       userMessageId: "parent-user",
       assistantMessageId: "parent-assistant",
@@ -466,7 +467,7 @@ describe("SdkRuntimeAdapter", () => {
     const session = await adapter.createSession(path.resolve("/repo"))
     const events = []
 
-    for await (const event of adapter.sendMessage(session.id, {
+    for await (const event of executeTestTurn(adapter, session.id, {
       parts: [{ type: "text", text: `Please fix ${type} native title` }],
       assistantMessageId: "assistant-1",
       agent: "build",
@@ -586,7 +587,7 @@ describe("SdkRuntimeAdapter", () => {
     const session = await adapter.createSession(path.resolve("/repo"))
     const events: AgentRuntimeStreamEvent[] = []
     const turn = (async () => {
-      for await (const event of adapter.sendMessage(session.id, {
+      for await (const event of executeTestTurn(adapter, session.id, {
         parts: [{ type: "text", text: "hello" }],
         userMessageId: "user-1",
         assistantMessageId: "assistant-1",
@@ -596,7 +597,7 @@ describe("SdkRuntimeAdapter", () => {
     })()
 
     await running
-    await expect(adapter.abort(session.id, path.resolve("/repo"))).resolves.toEqual({ ok: true, status: "cancelled" })
+    await expect(adapter.abort(executionBinding(session.id, path.resolve("/repo")))).resolves.toEqual({ ok: true, status: "cancelled" })
     await turn
 
     expect(events.map((event) => event.type)).not.toContain("session.error")
@@ -639,12 +640,12 @@ describe("SdkRuntimeAdapter", () => {
       model: { providerID: "codex-app-server", modelID: "gpt-test" },
     })
     const first = (async () => {
-      for await (const _event of adapter.sendMessage(session.id, prompt("first"), path.resolve("/repo"))) {}
+      for await (const _event of executeTestTurn(adapter, session.id, prompt("first"), path.resolve("/repo"))) {}
     })()
 
     await running
     let abortSettled = false
-    const abort = adapter.abort(session.id, path.resolve("/repo")).then((result) => {
+    const abort = adapter.abort(executionBinding(session.id, path.resolve("/repo"))).then((result) => {
       abortSettled = true
       return result
     })
@@ -656,7 +657,7 @@ describe("SdkRuntimeAdapter", () => {
     await first
 
     const replacementEvents: AgentRuntimeStreamEvent[] = []
-    for await (const event of adapter.sendMessage(session.id, prompt("replacement"), path.resolve("/repo"))) {
+    for await (const event of executeTestTurn(adapter, session.id, prompt("replacement"), path.resolve("/repo"))) {
       replacementEvents.push(event)
     }
     expect(replacementEvents.map((event) => event.type)).not.toContain("session.error")
@@ -714,7 +715,7 @@ describe("SdkRuntimeAdapter", () => {
     const accepted = await item.updateSessionConfig(session.id, {
       harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "session-model" },
-    }, path.resolve("/work"))
+    })
 
     expect(accepted.model).toEqual({ providerID: "codex", modelID: "session-model" })
     expect(store.getSessionConfig(session.id)).toEqual({
@@ -754,7 +755,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
     const seen: boolean[] = []
-    for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
+    for await (const _ of executeTestTurn(adapter, "s1", prompt as never, path.resolve("/repo"))) {
       // Busy state as observed by a would-be second prompt at each yield.
       seen.push(lifecycle.busySessions.has("s1"))
     }
@@ -782,7 +783,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const adapter = lockProbeAdapter([{ type: "session.idle", properties: { sessionID: "s1" } }])
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
-    for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) { /* drain */ }
+    for await (const _ of executeTestTurn(adapter, "s1", prompt as never, path.resolve("/repo"))) { /* drain */ }
     expect(lifecycle.busySessions.has("s1")).toBe(false)
     expect(lifecycle.enter("s1")).not.toBeNull()
   })
@@ -829,7 +830,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     })
     const session = await adapter.createSession(path.resolve("/repo"))
     const events: AgentRuntimeStreamEvent[] = []
-    for await (const event of adapter.sendMessage(session.id, {
+    for await (const event of executeTestTurn(adapter, session.id, {
       parts: [{ type: "text", text: "go" }],
       assistantMessageId: "assistant",
       agent: "general",

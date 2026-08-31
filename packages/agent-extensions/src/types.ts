@@ -1,4 +1,4 @@
-export const HARNESS_TARGETS = ["opencode", "claude", "codex", "cursor"] as const
+export const HARNESS_TARGETS = ["claude", "codex", "cursor"] as const
 export const FIRST_PARTY_AGENT_EXTENSION_ID = "first-party-agent-extensions"
 export const FIRST_PARTY_AGENT_EXTENSIONS_DIR = "agent-extensions"
 export const FIRST_PARTY_AGENT_EXTENSION_PACKAGE_NAME = "agent-extensions"

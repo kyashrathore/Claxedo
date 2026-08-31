@@ -1,10 +1,10 @@
-import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import {
   isLoopbackHostname,
   workspaceRuntimeListenHostname,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
-import type { RuntimeRunner } from "@claxedo/workspace-runtime"
+import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
+import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { workspaceDir, workspaceId } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
@@ -97,6 +97,13 @@ export function claxedoRuntimeRunnerFromEnv(env: NodeJS.ProcessEnv = process.env
     access: identity.access,
     ...(acpBinary ? { connection: { kind: "process" as const, binary: acpBinary } } : {}),
   }
+  if (nativeHarness) {
+    if (nativeHarness !== "claude" && nativeHarness !== "codex" && nativeHarness !== "cursor" && nativeHarness !== "pi") {
+      throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarness}`)
+    }
+    return { kind: "native", harnessId: nativeHarness }
+  }
+  if (connectionId) return { kind: "connection", connectionId }
 }
 
 /**
@@ -136,10 +143,6 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     ...(opencodeUrl ? { opencodeUrl } : {}),
     harness: claxedoRuntimeRunnerFromEnv(env),
     corsOrigin: claxedoCorsOrigin,
-    // Claxedo keeps OpenCode compat ON unless its env flag disables it. The
-    // env var is the wire format of this HOST decision across the process
-    // boundary; the kit itself never reads it (option-only).
-    opencodeCompat: env.WORKSPACE_RUNTIME_OPENCODE_COMPAT !== "0",
   }
   return { port, hostname, options }
 }

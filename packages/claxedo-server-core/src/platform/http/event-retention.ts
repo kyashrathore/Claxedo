@@ -2,7 +2,7 @@ import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus
 
 /**
  * SSE replay-retention policy for the CENTRAL event streams
- * (`routes/events.ts` and `routes/opencode-compat-events.ts`).
+ * (`routes/events.ts` and `routes/client-presentation-events.ts`).
  *
  * Both read the same process-global `claxedoBus`, so a frame that one of them
  * protects from eviction and the other does not is a bug waiting to happen —
@@ -30,7 +30,7 @@ import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus
  *    settlements with the same "stuck spinner forever" failure mode as a lost
  *    pty exit.
  *  - `session.lifecycle` at `created`/`failed` — the ONLY notification a
- *    non-opencode/harness (ACP) session's `POST /session` emits, and the
+ *    connection-backed session's `POST /session` emits, and the
  *    central stream is the only channel local/unsigned workspaces have for it.
  *    Losing it means the session never reaches the sidebar's inventory. The
  *    workspace stream does not need it in its terminal ring because nothing

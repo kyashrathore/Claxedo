@@ -7,7 +7,7 @@ export type CatalogCategoryId =
   | "productivity"
   | "agent-orchestration"
 
-export type CatalogTarget = "claude" | "codex" | "cursor" | "opencode"
+export type CatalogTarget = "claude" | "codex" | "cursor"
 export type ExtensionScope = "machine" | "project" | "workspace"
 
 export type CatalogEntry = {
@@ -54,7 +54,7 @@ function catalogCategoryId(input: unknown): CatalogCategoryId | undefined {
 }
 
 function catalogTarget(input: unknown): CatalogTarget | undefined {
-  if (input === "claude" || input === "codex" || input === "cursor" || input === "opencode") return input
+  if (input === "claude" || input === "codex" || input === "cursor") return input
   return undefined
 }
 
@@ -193,7 +193,6 @@ export function sourceLabel(source: string) {
 export function targetLabel(targets: CatalogTarget[]) {
   if (targets.length === 0) return "No targets"
   return targets.map((item) => {
-    if (item === "opencode") return "OpenCode"
     if (item === "claude") return "Claude"
     if (item === "codex") return "Codex"
     return "Cursor"

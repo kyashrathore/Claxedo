@@ -8,9 +8,8 @@ import {
   normalizeHarnessIdentity,
 } from "@claxedo/agent-sdk-runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
-import { defaultHarness, type UserAgentConfig } from "../../agent-config"
 
-export type SessionHarness = NonNullable<UserAgentConfig["harness"]>
+export type SessionHarness = AgentSessionHarness
 export type SessionConfig = AgentSessionConfig
 export type SessionConfigUpdate = AgentSessionConfigUpdate
 
@@ -67,21 +66,16 @@ function load() {
   if (previous && loadedAt - cacheLoadedAt < CACHE_TTL_MS) return previous
   try {
     const next = new Map<string, Row>()
-    const rows = JSON.parse(fs.readFileSync(filePath(root), "utf8")) as Array<Row | {
-      workspaceId: string
-      sessionId: string
-      harness?: AgentSessionHarness
-      updatedAt?: number
-    }>
+    const rows = JSON.parse(fs.readFileSync(filePath(root), "utf8")) as Row[]
     for (const row of rows) {
-      if (!row?.workspaceId || !row?.sessionId) continue
-      const config = "config" in row ? row.config : row.harness ? { harness: row.harness } : undefined
+      if (!row?.workspaceId || !row?.sessionId || typeof row.updatedAt !== "number") continue
+      const config = row.config
       if (!config?.harness?.id) continue
       next.set(key(row.workspaceId, row.sessionId), {
         workspaceId: row.workspaceId,
         sessionId: row.sessionId,
         config: merge(config),
-        updatedAt: row.updatedAt ?? Date.now(),
+        updatedAt: row.updatedAt,
       })
     }
     cache = next
@@ -104,11 +98,13 @@ function save() {
 }
 
 export function normalize(input: SessionHarness): SessionHarness {
-  return defaultHarness({
-    mcp: {},
-    auth: {},
-    harness: input,
-  })
+  const identity = normalizeHarnessIdentity(input)
+  if (!identity) throw new Error("Unsupported harness identity")
+  return {
+    ...input,
+    id: identity.id,
+    access: identity.access,
+  }
 }
 
 export function getSessionConfig(workspaceId: string, sessionId: string) {

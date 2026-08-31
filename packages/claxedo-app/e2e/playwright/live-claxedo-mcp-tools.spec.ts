@@ -11,7 +11,7 @@
  *   (a) WIRING — that installing `claxedo-mcp` (real GitHub fetch of
  *       `kyashrathore/Claxedo@dev`'s `packages/claxedo-mcp`, the same materializer
  *       `live-agent-extensions-materialization.spec.ts` exercises through the
- *       marketplace UI) rewrites the package's own `CLAXEDO_SERVER_URL`/`OPENCODE_API_DIR`
+ *       marketplace UI) rewrites the package's own `CLAXEDO_SERVER_URL`/`CLAXEDO_API_DIR`
  *       to the REAL installing server's own runtime values across every harness config
  *       target, and that this rewrite is gated on an EXACT (id, owner, repo, ref,
  *       package_path) match — a look-alike install is NOT silently treated as
@@ -77,7 +77,7 @@
  *      `packages/claxedo-mcp`) via `POST /api/claxedo/agent-config/extensions` (the same
  *      real materializer path the marketplace UI calls, exercised here directly per the
  *      plan's "via spec 23's path or CLI") rewrites `env.CLAXEDO_SERVER_URL` to the
- *      INSTALLING SERVER's own real runtime URL and injects `env.OPENCODE_API_DIR` set to
+ *      INSTALLING SERVER's own real runtime URL and injects `env.CLAXEDO_API_DIR` set to
  *      the project directory, across all four harness targets (claude, cursor, codex,
  *      opencode), for a project-scope install.
  *   2. A look-alike install — the exact same real, live-fetched source, differing ONLY in
@@ -86,7 +86,7 @@
  *      check fails) and materializes the fetched `mcp.json`'s `env` block byte-for-byte
  *      verbatim: `CLAXEDO_SERVER_URL` stays the literal fallback string
  *      `"http://127.0.0.1:3001"` baked into the real committed file, NOT the installing
- *      server's real (different) URL, and no `OPENCODE_API_DIR` is injected.
+ *      server's real (different) URL, and no `CLAXEDO_API_DIR` is injected.
  *   3. [cited, not independently re-proven live] Credential stripping — every
  *      `CLAXEDO_*_TOKEN` key is removed from a first-party install's materialized env —
  *      is real, tested behavior at `packages/agent-extensions/src/install.test.ts:220-290`.
@@ -369,7 +369,7 @@ async function connectMcp(opts: { backendUrl: string; dir: string; extraEnv?: Re
   const env: Record<string, string | undefined> = {
     ...process.env,
     CLAXEDO_SERVER_URL: opts.backendUrl,
-    OPENCODE_API_DIR: opts.dir,
+    CLAXEDO_API_DIR: opts.dir,
     ...opts.extraEnv,
   }
   for (const key of opts.omitEnv ?? []) delete env[key]
@@ -452,7 +452,7 @@ test.describe("live claxedo-mcp tools @live", () => {
       if (wiringHomeDir) await fs.rm(wiringHomeDir, { recursive: true, force: true }).catch(() => undefined)
     })
 
-    test("first-party claxedo-mcp install rewrites CLAXEDO_SERVER_URL and OPENCODE_API_DIR across all four harness targets — behavior 1", async () => {
+    test("first-party claxedo-mcp install rewrites CLAXEDO_SERVER_URL and CLAXEDO_API_DIR across all four harness targets — behavior 1", async () => {
       const projectDir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-live-mcp-wiring-proj-")))
       scratchDirs.push(projectDir)
 
@@ -481,7 +481,7 @@ test.describe("live claxedo-mcp tools @live", () => {
 
       for (const env of [claudeEnv, cursorEnv, opencodeEnv, codexEnv]) {
         expect(env?.CLAXEDO_SERVER_URL).toBe(WIRING_URL)
-        expect(env?.OPENCODE_API_DIR).toBe(projectDir)
+        expect(env?.CLAXEDO_API_DIR).toBe(projectDir)
       }
     })
 
@@ -503,7 +503,7 @@ test.describe("live claxedo-mcp tools @live", () => {
       // Verbatim: the literal fallback baked into the real committed mcp.json, NOT this
       // scratch server's own (different) URL — proves the first-party rewrite did NOT run.
       expect(cursorEnv).toEqual({ CLAXEDO_SERVER_URL: "http://127.0.0.1:3001" })
-      expect(cursorEnv?.OPENCODE_API_DIR).toBeUndefined()
+      expect(cursorEnv?.CLAXEDO_API_DIR).toBeUndefined()
     })
   })
 
@@ -515,7 +515,7 @@ test.describe("live claxedo-mcp tools @live", () => {
       const dir = await makeWorkspace("process")
       const seed = await fetch(`${AMBIENT_URL}/api/wr/process?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": dir },
+        headers: { "content-type": "application/json", "x-claxedo-directory": dir },
         body: JSON.stringify({
           id: "proc_live_e2e",
           name: "live-e2e-proc",
@@ -562,7 +562,7 @@ test.describe("live claxedo-mcp tools @live", () => {
       const dir = await makeWorkspace("get-logs")
       await fetch(`${AMBIENT_URL}/api/wr/process?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": dir },
+        headers: { "content-type": "application/json", "x-claxedo-directory": dir },
         body: JSON.stringify({
           id: "proc_live_logs",
           name: "live-e2e-logs",
@@ -602,7 +602,7 @@ test.describe("live claxedo-mcp tools @live", () => {
 
       const sessionRes = await fetch(`${AMBIENT_URL}/session?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": dir },
+        headers: { "content-type": "application/json", "x-claxedo-directory": dir },
         body: JSON.stringify({ title: "live-claxedo-mcp-tools session_messages" }),
       })
       const session = (await sessionRes.json()) as { id: string }
@@ -610,7 +610,7 @@ test.describe("live claxedo-mcp tools @live", () => {
 
       await fetch(`${AMBIENT_URL}/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": dir },
+        headers: { "content-type": "application/json", "x-claxedo-directory": dir },
         body: JSON.stringify({ parts: [{ type: "text", text: marker }] }),
       })
 
@@ -635,14 +635,14 @@ test.describe("live claxedo-mcp tools @live", () => {
 
       const sessionRes = await fetch(`${AMBIENT_URL}/session?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": dir },
+        headers: { "content-type": "application/json", "x-claxedo-directory": dir },
         body: JSON.stringify({ title: "live-claxedo-mcp-tools binding" }),
       })
       const session = (await sessionRes.json()) as { id: string }
 
       await fetch(`${AMBIENT_URL}/session/${encodeURIComponent(session.id)}/message?directory=${encodeURIComponent(dir)}`, {
         method: "POST",
-        headers: { "content-type": "application/json", "x-opencode-directory": dir },
+        headers: { "content-type": "application/json", "x-claxedo-directory": dir },
         body: JSON.stringify({ parts: [{ type: "text", text: marker }] }),
       })
 
@@ -720,7 +720,7 @@ test.describe("live claxedo-mcp tools @live", () => {
           .poll(
             async () => {
               const listRes = await fetch(`${AMBIENT_URL}/session?directory=${encodeURIComponent(dir)}`, {
-                headers: { "x-opencode-directory": dir },
+                headers: { "x-claxedo-directory": dir },
               })
               const sessions = (await listRes.json()) as Array<{ title?: string }>
               return sessions.some((s) => s.title === "Log Summary")

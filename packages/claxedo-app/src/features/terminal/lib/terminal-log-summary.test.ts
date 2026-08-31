@@ -82,7 +82,7 @@ describe("terminal log summary", () => {
       seen.push({
         url: req.url,
         authorization: req.headers.get("Authorization"),
-        directory: req.headers.get("x-opencode-directory"),
+        directory: req.headers.get("x-claxedo-directory"),
       })
 
       if (req.url === "http://server.test/api/workspace/ws_logs/connection") {

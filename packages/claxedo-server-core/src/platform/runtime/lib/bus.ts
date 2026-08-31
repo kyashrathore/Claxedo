@@ -142,14 +142,14 @@ export const claxedoBus = runtimeBus as {
   subscribe(fn: Subscriber<ClaxedoEvent>): () => void
 }
 
-export type OpenCodeEvent = {
+export type ClientPresentationEvent = {
   type: string
   properties?: Record<string, unknown>
 }
 
 export type GlobalEvent = {
   directory?: string
-  payload: OpenCodeEvent
+  payload: ClientPresentationEvent
 }
 
 export const globalBus = createBus<GlobalEvent>()

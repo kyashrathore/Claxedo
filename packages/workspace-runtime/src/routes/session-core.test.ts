@@ -8,7 +8,6 @@ import type {
   AgentRuntime,
   AgentRuntimeStreamEvent,
   AgentSession,
-  PromptInput,
   RuntimeDirectory,
   SessionConfig,
 } from "@claxedo/agent-sdk-runtime"
@@ -38,27 +37,23 @@ function adapter(input: {
   ) => Promise<AgentMessagePage>
 } = {}): AgentHarnessAdapter {
   return {
-    listSessions: async (directory) => {
-      input.onDirectory?.(directory)
-      return []
-    },
-    getSession: async (id, directory) => {
-      input.onDirectory?.(directory)
-      return { id, title: "Hybrid", time: { created: 1, updated: 1 } }
+    getSession: async (binding) => {
+      input.onDirectory?.(binding.directory)
+      return { id: binding.sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }
     },
     createSession: async () => ({ id: "session_1" }),
-    updateSession: async (id) => ({ id, title: "Hybrid", time: { created: 1, updated: 1 } }),
-    getSessionConfig: async (_id, directory) => {
-      input.onDirectory?.(directory)
+    updateSession: async (binding) => ({ id: binding.sessionId, title: "Hybrid", time: { created: 1, updated: 1 } }),
+    getSessionConfig: async (binding) => {
+      input.onDirectory?.(binding.directory)
       return {
-        harness: { id: "opencode", access: "native" },
+        harness: { id: "codex", access: "native" },
         model: { providerID: "test", modelID: "fixture" },
         agent: "build",
         variant: null,
       } satisfies SessionConfig
     },
-    updateSessionConfig: async (_id, patch) => ({
-      harness: patch.harness ?? { id: "opencode", access: "native" },
+    updateSessionConfig: async (_binding, patch) => ({
+      harness: patch.harness ?? { id: "codex", access: "native" },
       ...(patch.model ? { model: patch.model } : {}),
       agent: patch.agent ?? null,
       variant: patch.variant ?? null,
@@ -67,7 +62,7 @@ function adapter(input: {
     readHarnessCapabilities: (directory) => {
       input.onDirectory?.(directory)
       return {
-        harness: "opencode",
+        harness: "codex",
         abort: true,
         reconnect: false,
         replay: true,
@@ -83,20 +78,17 @@ function adapter(input: {
         goals: false,
       }
     },
-    sendMessage: (_id: string, _prompt: PromptInput, directory: RuntimeDirectory) => {
-      input.onDirectory?.(directory)
-      return (async function* () {
-        for (const event of input.events ?? []) yield event
-      })()
-    },
-    executeTurn: (_binding, _prompt) => (async function* () {
+    executeTurn: (binding, _prompt) => (async function* () {
+      input.onDirectory?.(binding.directory)
       for (const event of input.events ?? []) yield event
     })(),
-    getMessages: async (_id, directory) => {
-      input.onDirectory?.(directory)
+    getMessages: async (binding) => {
+      input.onDirectory?.(binding.directory)
       return input.messages ?? []
     },
-    ...(input.getMessagePage ? { getMessagePage: input.getMessagePage } : {}),
+    ...(input.getMessagePage ? {
+      getMessagePage: (binding, page) => input.getMessagePage!(binding.sessionId, page, binding.directory),
+    } : {}),
     abort: async () => ({ ok: true, status: "cancelled" }),
     revert: async () => {},
     unrevert: async () => {},
@@ -555,7 +547,7 @@ describe("createSessionRoutes message paging", () => {
     expect(response.status).toBe(200)
     expect(await response.json()).toEqual([second])
     expect(response.headers.get("x-next-cursor")).toBeNull()
-    expect(calls).toEqual([{ id: "session-1", page: { limit: 1 }, directory: undefined }])
+    expect(calls).toEqual([{ id: "session-1", page: { limit: 1 }, directory: "" }])
   })
 
   test("forwards the authoritative latest-turn view without a numeric limit", async () => {
@@ -626,6 +618,13 @@ describe("createSessionRoutes message paging", () => {
     const snapshot = { messages: [first, second], maxEventOrdinal: 14 }
     const app = createSessionRoutes({
       resolveAdapter: () => adapter(),
+      resolveExecutionBinding: (_c, directory, sessionId) => ({
+        sessionId,
+        workspaceId: "workspace-test",
+        directory: directory ?? "",
+        connectionId: "native:codex",
+        upstreamSessionId: sessionId,
+      }),
       resolveDirectory: () => "/workspace",
       getMessageSnapshot: () => snapshot,
       getMessagePage: () => {
@@ -734,7 +733,7 @@ function routes(input: {
       sessionId,
       workspaceId: "workspace-test",
       directory: directory ?? "",
-      connectionId: "native:opencode",
+      connectionId: "native:codex",
       upstreamSessionId: sessionId,
     }),
     resolveDirectory: () => undefined,
@@ -786,8 +785,8 @@ describe("createSessionRoutes directory-less sessions", () => {
           calls.push("create")
           return { id: "session_configured" }
         },
-        updateSessionConfig: async (id, update) => {
-          calls.push(`config:${id}:${update.model?.providerID}:${update.model?.modelID}`)
+        updateSessionConfig: async (binding, update) => {
+          calls.push(`config:${binding.sessionId}:${update.model?.providerID}:${update.model?.modelID}`)
           return {
             harness: update.harness ?? { id: "claude", access: "native" },
             ...(update.model ? { model: update.model } : {}),
@@ -824,8 +823,8 @@ describe("createSessionRoutes directory-less sessions", () => {
           calls.push("config")
           throw new Error("config unavailable")
         },
-        deleteSession: async (id) => {
-          calls.push(`delete:${id}`)
+        deleteSession: async (binding) => {
+          calls.push(`delete:${binding.sessionId}`)
         },
       },
     })
@@ -857,9 +856,9 @@ describe("createSessionRoutes directory-less sessions", () => {
           calls.push(`create:${id}`)
           return { id }
         },
-        deleteSession: async (id) => {
-          calls.push(`delete:${id}`)
-          persisted.delete(id)
+        deleteSession: async (binding) => {
+          calls.push(`delete:${binding.sessionId}`)
+          persisted.delete(binding.sessionId)
         },
       },
       sessionAccessPolicy: registrationPolicy(async () => {
@@ -895,7 +894,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       adapter: {
         ...item,
         createSession: async () => ({ id: "session_committed" }),
-        deleteSession: async (id) => { calls.push(`delete:${id}`) },
+        deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
       },
       sessionAccessPolicy: registrationPolicy(async () => {
         registrations += 1
@@ -954,7 +953,7 @@ describe("createSessionRoutes directory-less sessions", () => {
       adapter: {
         ...item,
         forkSession: async () => ({ id: "session_child" }),
-        deleteSession: async (id) => { calls.push(`delete:${id}`) },
+        deleteSession: async (binding) => { calls.push(`delete:${binding.sessionId}`) },
       },
       sessionAccessPolicy: registrationPolicy(async () => ({
         allowed: false,
@@ -1144,7 +1143,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     }).request("http://localhost/session/session_1/capabilities")
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ harness: "opencode" })
+    expect(await res.json()).toMatchObject({ harness: "codex" })
     expect(directories).toEqual([undefined])
   })
 
@@ -1237,7 +1236,7 @@ describe("createSessionRoutes directory-less sessions", () => {
             sessionID: "session_1",
             role: "user",
             time: { created: 1 },
-          } as Message),
+          }),
           messagePartUpdated({
             id: "user_1_part_0",
             sessionID: "session_1",
@@ -1250,7 +1249,7 @@ describe("createSessionRoutes directory-less sessions", () => {
             sessionID: "session_1",
             role: "assistant",
             time: { created: 1 },
-          } as Message),
+          }),
           sessionIdle("session_1"),
         ],
         messages: [{
@@ -1324,7 +1323,7 @@ describe("createSessionRoutes directory-less sessions", () => {
               sessionID: "session_1",
               role: "assistant",
               time: { created: 1 },
-            } as Message),
+            }),
           }
           yield {
             sessionId: "session_1",
@@ -1780,18 +1779,18 @@ describe("createSessionRoutes directory-less sessions", () => {
         if (prompt.permissionMode) modes.push(prompt.permissionMode)
         markStarted?.()
         yield messageUpdated({
-          id: prompt.userMessageId,
+          id: prompt.userMessageId!,
           sessionID: id,
           role: "user",
           time: { created: 1 },
-        } as Message)
+        })
         yield messageUpdated({
-          id: prompt.assistantMessageId,
+          id: prompt.assistantMessageId!,
           sessionID: id,
           parentID: prompt.userMessageId,
           role: "assistant",
           time: { created: 2 },
-        } as Message)
+        })
         await blocked
         yield sessionIdle(id)
       },

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
-import { createOpencodeCompatProjection } from "../../projections/opencode-compat"
+import { createClientPresentationProjection } from "../../projections/client-presentation"
 import { codexAppServerAdapter } from "./adapter"
 
 const trace = [
@@ -57,7 +57,7 @@ describe("Codex subagent parent transcript baseline", () => {
       clock: () => 0,
       createId: (prefix = "id") => `${prefix}-baseline`,
     })
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-parent-1",
       directory: "/workspace",
       assistantMessageId: "assistant-parent-1",

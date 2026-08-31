@@ -11,7 +11,7 @@
  *
  * Environment variables:
  *   CLAXEDO_SERVER_URL - Base URL of the Claxedo local control plane
- *   OPENCODE_API_DIR   - Default project directory for requests
+ *   CLAXEDO_API_DIR    - Default project directory for requests
  *   CLAXEDO_WORKSPACE_ID - Default workspace id for Docker/cloud workspace requests
  *   CLAXEDO_AUTH_TOKEN - Optional signed remote server auth token
  *   CLAXEDO_SESSION_ID - Optional current session id for documents_open and the documents CLI
@@ -399,7 +399,7 @@ registerTool(
                 text: JSON.stringify(
                   {
                     source,
-                    provider: provider || "opencode",
+                    provider: provider || "unknown",
                     terminal_id: terminalID || undefined,
                     tab_id: tabID || undefined,
                     session_id: sessionID,
@@ -417,7 +417,7 @@ registerTool(
           content: [
             {
               type: "text" as const,
-              text: `Session ${sessionID} (${provider || "opencode"}) messages: ${messages.length}\n\n${formatSessionMessages(messages) || "(no messages found)"}`,
+              text: `Session ${sessionID} (${provider || "unknown"}) messages: ${messages.length}\n\n${formatSessionMessages(messages) || "(no messages found)"}`,
             },
           ],
         }
@@ -436,7 +436,7 @@ registerTool(
         content: [
           {
             type: "text" as const,
-            text: "No structured messages available. This provider may not expose OpenCode session routes and no transcript path was recorded.",
+            text: "No structured messages available. This provider may not expose structured session routes and no transcript path was recorded.",
           },
         ],
         isError: true,
@@ -513,7 +513,7 @@ if (!READ_ONLY) {
         title: z.string().optional().describe("Session title shown in the app."),
         prompt: z.string().optional().describe("Initial prompt to send to the new session (fire-and-forget)."),
         workspace_id: z.string().optional().describe("Workspace whose runtime hosts the session's tools. Omit for a virtual (tools-only) sandbox."),
-        harness: z.enum(["pi"]).optional().describe("Harness for the session. Only 'pi' (central model-backed) is dispatchable today; codex/opencode sandbox harnesses land with sandbox dispatch."),
+        harness: z.enum(["pi"]).optional().describe("Harness for the session. Only 'pi' (central model-backed) is dispatchable today; other harnesses require workspace dispatch."),
       },
     },
     async (args) => {

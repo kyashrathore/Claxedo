@@ -51,7 +51,7 @@ function controlHeaders(token: string, fixture: RunningRelayFixture, webApp: Run
     accept: "application/json",
     "content-type": "application/json",
     origin: webApp.url,
-    "x-opencode-directory": fixture.info.directory,
+    "x-claxedo-directory": fixture.info.directory,
   }
 }
 

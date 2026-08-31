@@ -94,12 +94,6 @@ async function providerListResponse(res: Response) {
   return data
 }
 
-function requireProviderListForRunner(input: ProviderListResponse, harnessType: string) {
-  if (harnessType !== "opencode") return input
-  if (input.all.some((provider) => provider.id === "opencode" && Object.keys(provider.models ?? {}).length > 0)) return input
-  throw new Error("OpenCode provider fetch returned a catalog without OpenCode models")
-}
-
 function normalizedServerUrl(serverUrl: string | undefined) {
   return normalizeUrl(serverUrl) ?? getClaxedoServerUrl()
 }
@@ -109,7 +103,6 @@ function isLoopbackServer(serverUrl: string | undefined) {
 }
 
 function providerBaseUrl(input: { serverUrl?: string; harnessType?: string }) {
-  if (!input.harnessType || input.harnessType === "opencode") return input.serverUrl
   return input.serverUrl ?? getClaxedoServerUrl()
 }
 
@@ -119,7 +112,7 @@ function claxedoBootstrapUrl(input: { serverUrl?: string; harnessType?: string }
   return url
 }
 
-function opencodeProviderUrl(input: { serverUrl?: string; harnessType?: string; directory?: string }) {
+function providerUrl(input: { serverUrl?: string; harnessType?: string; directory?: string }) {
   const url = new URL("/provider", normalizedServerUrl(providerBaseUrl(input)))
   if (input.harnessType) url.searchParams.set("harness", input.harnessType)
   if (input.directory) url.searchParams.set("directory", input.directory)
@@ -311,15 +304,8 @@ export async function bootstrapDirectory(input: {
   quiet?: boolean
   workspace?: WorkspaceRuntimeSnapshot & { workspaceId: string; kind: "cloud" | "user-hosted" }
 }) {
-  const harnessType = input.harnessType ?? (workspaceDirectoryRef(input.directory) ? "opencode" : undefined)
-  // The model catalog must be fetched with an explicit harness. The provider
-  // route cannot identify the OpenCode runner unless the
-  // request carries `?harness=`. `harnessType` is intentionally left undefined for
-  // opencode sessions so the agents/session caches use the default no-harness path,
-  // but that starves the provider fetch — so reopening an opencode session showed
-  // "Select model" until a session was created. opencode is the default harness, so
-  // resolve a dedicated runner for the provider fetch only.
-  const providerHarnessType = harnessType ?? "opencode"
+  const harnessType = input.harnessType
+  const providerHarnessType = harnessType
 
   const runtimeRequest = (workspace: WorkspaceRuntimeSnapshot | null | undefined) => {
     if (!input.baseUrl) return undefined
@@ -389,26 +375,26 @@ export async function bootstrapDirectory(input: {
     const baseUrl = input.baseUrl
     const runtime = runtimeRequest(workspace)
     if (runtime && baseUrl) {
-      const url = opencodeProviderUrl({
+      const url = providerUrl({
         serverUrl: baseUrl,
         harnessType: providerHarnessType,
         directory: scope,
       })
       return runtime.fetch(`${url.pathname}${url.search}`).then(async (r) => {
         if (!r.ok) throw new Error(await providerFetchError(r))
-        return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)
+        return await providerListResponse(r)
       }).then((data) => {
         setProviderQuery(normalizeProviderList(data))
       })
     }
     if (providerHarnessType && input.baseUrl) {
-      return (input.fetch ?? globalThis.fetch)(opencodeProviderUrl({
+      return (input.fetch ?? globalThis.fetch)(providerUrl({
         serverUrl: input.baseUrl,
         harnessType: providerHarnessType,
         directory: scope,
       })).then(async (r) => {
         if (!r.ok) throw new Error(await providerFetchError(r))
-        return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)
+        return await providerListResponse(r)
       }).then((data) => {
         setProviderQuery(normalizeProviderList(data))
       })

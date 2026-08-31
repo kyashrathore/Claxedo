@@ -113,7 +113,7 @@ async function probeEngine(scripted: ScriptedModelServer) {
       await new Promise((resolve) => setTimeout(resolve, 500))
     }
 
-    const headers = { "content-type": "application/json", "x-opencode-directory": workdir }
+    const headers = { "content-type": "application/json", "x-claxedo-directory": workdir }
     const created = await fetch(`${base}/session`, { method: "POST", headers, body: JSON.stringify({}) })
     if (!created.ok) throw new Error(`session create ${created.status}: ${await created.text()}`)
     const session = (await created.json()) as { id: string }

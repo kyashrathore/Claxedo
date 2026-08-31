@@ -9,7 +9,7 @@ export function claxedoRequestScope(
   return {
     url: `${origin}${requestPath}${requestPath.includes("?") ? "&" : "?"}${query}`,
     headers: {
-      "x-opencode-directory": scope.directory,
+      "x-claxedo-directory": scope.directory,
       ...(scope.workspaceId ? { "x-workspace-id": scope.workspaceId } : {}),
     },
   }

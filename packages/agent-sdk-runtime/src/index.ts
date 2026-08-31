@@ -75,6 +75,26 @@ export type {
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData, FIRST_TURN_ERROR_CLASSES } from "./first-turn-error"
 export type { FirstTurnErrorClass } from "./first-turn-error"
+export {
+  ConnectionProviderError,
+  createConnectionProviderRegistry,
+} from "./connection-provider"
+export { createAcpConnectionProvider } from "./harnesses/acp/connection-provider"
+export type { AcpConnectionProviderConfig } from "./harnesses/acp/connection-provider"
+export type {
+  ConnectionGeneration,
+  ConnectionProvider,
+  ConnectionProviderAdapterContext,
+  ConnectionProviderErrorCode,
+  ConnectionProviderProjection,
+  ConnectionProviderResolution,
+  ConnectionSecretLease,
+  ConnectionSecretResolver,
+  ConnectionReadiness,
+  HarnessConnectionCapabilities,
+  HarnessConnectionDescriptor,
+  HarnessConnectionRef,
+} from "./connection-provider"
 export { defaultSessionModel, resolveSessionModel } from "./session-model"
 export {
   createMemorySubagentAdmissionStore,
@@ -118,7 +138,6 @@ export type {
   AgentHarnessId,
   AgentHarnessKey,
   AgentHarnessTransport,
-  AgentHarnessTransportInput,
   NativeHarnessId,
   SessionHarnessId,
 } from "./harness-types"
@@ -154,41 +173,10 @@ export {
   type AgentProcessRole,
 } from "./process-observer"
 
-export type ProcessHarnessConnection = {
-  kind: "process"
-  binary?: string
-  args?: string[]
-  /**
-   * Extra process environment applied over the runtime's own environment when
-   * the harness process spawns. Carried only through the trusted config-apply
-   * path (the same management-authenticated snapshot that already carries
-   * auth); never accepted from session callers.
-   */
-  env?: Record<string, string>
-  /**
-   * Generic-ACP compatibility: `false` stops the host from offering MCP
-   * servers to this agent (some ACP implementations reject requests that
-   * include them). Absent/`true` means servers are offered as usual. Carried
-   * only through the trusted config-apply path, like `env`.
-   */
-  supportsMcpServers?: boolean
-}
-
-export type RemoteHarnessConnection = {
-  kind: "remote"
-  transport?: AgentHarnessTransport
-  url?: string
-  headers?: Record<string, string>
-}
-
-export type HarnessConnection = ProcessHarnessConnection | RemoteHarnessConnection
-
 export type SessionHarness = {
-  /** A built-in harness id, or a validated open ACP connection slug when
-   *  `access` is `"acp"` (see {@link SessionHarnessId}). */
+  /** A built-in harness id, or a configured connection id. */
   id: SessionHarnessId
   access: AgentHarnessAccess
-  connection?: HarnessConnection
 }
 
 export type SessionConfig = {

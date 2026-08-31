@@ -249,12 +249,12 @@ function slug(value: string) {
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },
@@ -330,7 +330,7 @@ async function openSession(page: Page, dir: string, sessionId: string) {
  *   - `/api/wr/runtime-events` is read via `runtimeEnvelope` (same file), which requires a
  *     completely different, contract-versioned `{contractVersion, directory, sessionId,
  *     payload: AgentRuntimeEvent}` envelope that is then run through
- *     `createOpencodeCompatProjection(...).ingest(...)` — a real protocol-translation layer,
+ *     `createClientPresentationProjection(...).ingest(...)` — a real protocol-translation layer,
  *     not a shape this workaround can reasonably reproduce. Anything posted to that channel in
  *     the plain OpenCode `Event` shape is silently dropped (`runtimeEnvelope` returns
  *     `undefined`, the consumer `continue`s) — harmless, but it means this channel is only ever

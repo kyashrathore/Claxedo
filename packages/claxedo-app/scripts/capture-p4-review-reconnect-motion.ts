@@ -51,7 +51,7 @@ const context = await browser.newContext({
 })
 await context.addInitScript((args: { workspaceId: string }) => {
   const appWindow = window as typeof window & {
-    __OPENCODE__?: { serverUrl?: string; activeDirectory?: string }
+    __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string }
     __CLAXEDO_TEST_AUTH_TOKEN__?: string
     __CLAXEDO_TEST_AUTH_USER__?: unknown
     __CLAXEDO_REVIEW_LOAD_LOG__?: unknown[]
@@ -59,12 +59,12 @@ await context.addInitScript((args: { workspaceId: string }) => {
     __claxedoConnections?: { snapshot?: () => Record<string, { status?: string }> }
   }
   localStorage.clear()
-  appWindow.__OPENCODE__ = {
+  appWindow.__CLAXEDO__ = {
     serverUrl: window.location.origin,
     activeDirectory: args.workspaceId,
   }
   localStorage.setItem(
-    "opencode.global.dat:server",
+    "claxedo.global.dat:server",
     JSON.stringify({
       list: [],
       projects: {
@@ -76,7 +76,7 @@ await context.addInitScript((args: { workspaceId: string }) => {
     }),
   )
   localStorage.setItem(
-    "opencode.global.dat:model",
+    "claxedo.global.dat:model",
     JSON.stringify({
       recent: [{ providerID: "claude-sdk", modelID: "claude-sonnet-4-6" }],
       user: [],

@@ -6,7 +6,7 @@ import { existsSync } from "fs"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import { createServer } from "node:http"
 import { execFileSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
@@ -62,28 +62,8 @@ const [serverMod, supervisor, store, agent, embedded] = await Promise.all([
 
 const realBinary = path.resolve(__dirname, "../../../workspace-runtime/node_modules/.bin/claude-agent-acp")
 
-let upstreamPort = 0
 let serverPort = 0
-let upstream: Server
 let server: ReturnType<typeof serverMod.startServer>
-
-function startUpstreamMock(port: number) {
-  const srv = createServer((req: IncomingMessage, res: ServerResponse) => {
-    const url = new URL(req.url ?? "/", `http://127.0.0.1:${port}`)
-    if (url.pathname === "/global/event") {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache",
-        Connection: "keep-alive",
-      })
-      return
-    }
-    res.writeHead(200, { "Content-Type": "application/json" })
-    res.end("{}")
-  })
-  srv.listen(port, "127.0.0.1")
-  return srv
-}
 
 async function workspace(label: string) {
   const directory = path.join(root, "workspaces", `${label}-${randomUUID()}`)
@@ -106,20 +86,31 @@ function q(ws: { id: string; directory: string }) {
 
 describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
   beforeAll(async () => {
-    upstreamPort = await freePort()
     serverPort = await freePort()
-    upstream = startUpstreamMock(upstreamPort)
-    await new Promise<void>((resolve) => upstream.once("listening", resolve))
-    server = serverMod.startServer(serverPort, `http://127.0.0.1:${upstreamPort}`)
+    server = serverMod.startServer(serverPort)
   })
 
   beforeEach(async () => {
     embedded.shutdownEmbeddedWorkspaceRuntimes()
     await supervisor.shutdownWorkspaceSupervisor()
     await agent.saveUserConfig({
+      version: 3,
       mcp: {},
       auth: {},
-      runner: { type: "claude-acp", binary: realBinary },
+      connections: {
+        "real-claude-acp": {
+          connectionId: "real-claude-acp",
+          providerKey: "acp",
+          configRevision: 1,
+          enabled: true,
+          config: {
+            label: "Real Claude ACP",
+            connection: { kind: "process", command: realBinary },
+            modelSelection: { status: "optional" },
+          },
+        },
+      },
+      defaultConnectionId: "real-claude-acp",
     })
   })
 
@@ -127,7 +118,6 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
     embedded.shutdownEmbeddedWorkspaceRuntimes()
     await supervisor.shutdownWorkspaceSupervisor()
     server?.close()
-    upstream?.close()
     for (const [k, v] of Object.entries(prev)) {
       if (v !== undefined) (process.env as Record<string, string | undefined>)[k] = v
       else delete process.env[k]

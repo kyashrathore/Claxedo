@@ -1,4 +1,5 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test"
+import { executeTestTurn } from "../../test-utils/execution-binding"
 import { removeTestTempDir } from "../shared/test-temp-dir"
 import fs from "fs"
 import os from "os"
@@ -202,7 +203,7 @@ async function waitForProcessExit(pid: number) {
 
 function prompt(modelID: string, variant?: string): PromptInput {
   return {
-    parts: ["Reply with exactly OK."],
+    parts: [{ type: "text", text: "Reply with exactly OK." }],
     userMessageId: "user-1",
     assistantMessageId: "assistant-1",
     agent: "build",
@@ -236,7 +237,7 @@ async function runWithModels(input: {
   })
   adapter.setModel(input.globalModel)
   const session = await adapter.createSession(fake.dir)
-  for await (const _event of adapter.sendMessage(session.id, prompt(input.promptModel ?? input.globalModel), fake.dir)) {}
+  for await (const _event of executeTestTurn(adapter, session.id, prompt(input.promptModel ?? input.globalModel), fake.dir)) {}
   adapter.dispose()
   return fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
     method: string
@@ -466,7 +467,7 @@ describe("CodexHarnessAdapter", () => {
     adapter.setModel("gpt-5.5")
     await adapter.probeConfigOptions(fake.dir)
     const session = await adapter.createSession(fake.dir)
-    for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5", "minimal"), fake.dir)) {}
+    for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5", "minimal"), fake.dir)) {}
     adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
@@ -513,7 +514,7 @@ describe("CodexHarnessAdapter", () => {
     })
 
     const session = await adapter.createSession(fake.dir)
-    for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5"), fake.dir)) {}
+    for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
     adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
@@ -553,7 +554,7 @@ describe("CodexHarnessAdapter", () => {
 
     const session = await adapter.createSession(fake.dir)
     const events = []
-    for await (const event of adapter.sendMessage(session.id, prompt("gpt-5.5"), fake.dir)) events.push(event)
+    for await (const event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) events.push(event)
     adapter.dispose()
 
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
@@ -574,7 +575,7 @@ describe("CodexHarnessAdapter", () => {
     adapter.setModel("gpt-5.5")
 
     const session = await adapter.createSession(fake.dir)
-    for await (const _event of adapter.sendMessage(session.id, prompt("gpt-5.5"), fake.dir)) {}
+    for await (const _event of executeTestTurn(adapter, session.id, prompt("gpt-5.5"), fake.dir)) {}
     adapter.dispose()
 
     const lifecycle = runtimeEvents.filter((event) => event.payload.type === "subagent-updated")

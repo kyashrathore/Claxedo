@@ -11,7 +11,6 @@ export type UsageSessionManifestEntry = {
 export type UsageProvenance = "claxedo" | "external" | "unclassified"
 
 export function tokenTrackerSourceForHarness(harness: string) {
-  if (harness === "opencode") return "opencode"
   if (harness === "pi") return "pi"
   if (harness.startsWith("claude")) return "claude"
   if (harness.startsWith("codex")) return "codex"

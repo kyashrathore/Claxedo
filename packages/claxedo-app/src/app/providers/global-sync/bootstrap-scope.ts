@@ -8,8 +8,8 @@ export function workspaceDirectoryRef(directory: string) {
 export function initialRouteDirectory() {
   if (typeof window === "undefined") return
   const configured = (window as typeof window & {
-    __OPENCODE__?: { activeDirectory?: string }
-  }).__OPENCODE__?.activeDirectory
+    __CLAXEDO__?: { activeDirectory?: string }
+  }).__CLAXEDO__?.activeDirectory
   if (configured) return configured
   return shellRouteDirectoryFromPathname(window.location.pathname)
 }

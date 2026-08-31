@@ -1167,7 +1167,7 @@ describe("control plane session routes", () => {
         headers: {
           Authorization: "Bearer signed-token",
           Origin: "http://127.0.0.1:4444",
-          "x-opencode-directory": "workspace:ws_1",
+          "x-claxedo-directory": "workspace:ws_1",
         },
       },
     )
@@ -1690,7 +1690,7 @@ describe("control plane session routes", () => {
         headers: {
           Authorization: "Bearer hosted-test-token",
           Origin: "http://127.0.0.1:4444",
-          "x-opencode-directory": "/workspace/hosted",
+          "x-claxedo-directory": "/workspace/hosted",
         },
       },
     )

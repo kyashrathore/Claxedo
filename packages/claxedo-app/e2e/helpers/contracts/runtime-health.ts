@@ -6,7 +6,7 @@ import {
 export function readyRuntimeHealthResponse(agentType: string): WorkspaceRuntimeLivenessResponse {
   return workspaceRuntimeLivenessResponse({
     state: "ready",
-    harness: { id: agentType },
+    harness: { kind: "native", harnessId: agentType as "claude" | "codex" | "cursor" | "pi" },
     harnessHealth: { status: "ok" },
     routeAuthBoundary: "relay-host-auth",
     serviceExposure: {

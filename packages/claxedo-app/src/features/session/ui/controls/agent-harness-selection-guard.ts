@@ -14,15 +14,17 @@
 // rejected. This preserves the intended power-user flow (open the menu, arrow,
 // Enter) while blocking silent mutation.
 
+import { sameHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
+
 export function shouldApplyHarnessSelection(input: {
-  next: string | undefined
-  current: string
+  next: HarnessSelection | undefined
+  current: HarnessSelection | undefined
   disabled: boolean
   openedViaMenu: boolean
 }): boolean {
   if (!input.next) return false
   if (input.disabled) return false
-  if (input.next === input.current) return false
+  if (sameHarnessSelection(input.next, input.current)) return false
   // Reject stray typeahead-while-closed: only apply an explicit menu selection.
   if (!input.openedViaMenu) return false
   return true

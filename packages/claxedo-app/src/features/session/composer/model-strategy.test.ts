@@ -109,14 +109,6 @@ describe("model-strategy", () => {
     })
   })
 
-  test("runtime submit model selection rejects an explicit signed-workspace placeholder", () => {
-    expect(selectRuntimeModel({
-      all: [{ id: "opencode", models: { "big-pickle": { name: "Big Pickle" } } }],
-      connected: ["opencode"],
-      default: { opencode: "big-pickle" },
-    }, { id: "big-pickle", provider: { id: "opencode" } })).toBeUndefined()
-  })
-
   test("runtime submit model selection never substitutes catalog defaults when selected is absent", () => {
     expect(selectRuntimeModel({
       all: [
@@ -192,19 +184,6 @@ describe("model-strategy", () => {
     expect(promptModelState({
       harnessMode: false,
       providerLoading: false,
-      agent: { name: "build" },
-    })).toEqual({
-      blocked: true,
-      disabled: true,
-      label: "Select model",
-    })
-  })
-
-  test("treats the signed-workspace placeholder as a missing model", () => {
-    expect(promptModelState({
-      harnessMode: false,
-      providerLoading: false,
-      model: { id: "big-pickle", name: "Big Pickle", provider: { id: "opencode" } },
       agent: { name: "build" },
     })).toEqual({
       blocked: true,

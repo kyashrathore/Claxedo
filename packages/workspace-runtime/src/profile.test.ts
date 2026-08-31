@@ -21,8 +21,6 @@ describe("workspace profile helpers", () => {
       diff: true,
       config: true,
       mcp: true,
-      lsp: true,
-      vcs: true,
     })
 
     expect(workspaceCapabilities(false)).toEqual({
@@ -39,8 +37,6 @@ describe("workspace profile helpers", () => {
       diff: true,
       config: true,
       mcp: false,
-      lsp: false,
-      vcs: false,
     })
   })
 })

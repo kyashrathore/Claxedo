@@ -1,7 +1,7 @@
 const executed = new Set<string>()
 const claimed = new Set<string>()
 
-export const initialCommandKey = (ptyId: string) => `opencode.pty.${ptyId}.initial-command-ran`
+export const initialCommandKey = (ptyId: string) => `claxedo.pty.${ptyId}.initial-command-ran`
 
 export function shouldRunInitialCommand(pty: { id: string; initialCommand?: string }) {
   if (!pty.initialCommand) {

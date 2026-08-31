@@ -31,18 +31,6 @@ type ProviderAuthRouteOptions = ControlPlaneRouteAuthOptions & {
    * function, not a second copy of the rules.
    */
   resolveOrg?: (request: Request) => Promise<string> | string
-  /**
-   * Answered by a LATER-registered `/provider/auth` when this returns true.
-   *
-   * These routes are mounted before the OpenCode-compat ones, and Hono runs the
-   * first registered match, so the compat handler for `/provider/auth` never
-   * ran: an opencode workspace got the credential registry's ACP/codex methods
-   * instead of the engine's provider catalog, and the connect dialog fell back
-   * to "API Key" for every opencode provider because none of them appear in the
-   * registry's fixed map. Deferring hands those requests to the compat route
-   * without reordering the mounts, which would take every OTHER harness with it.
-   */
-  deferToHarnessRoute?: (harness: string | undefined) => Promise<boolean> | boolean
 }
 
 function invalidBody(error: z.ZodError) {
@@ -86,13 +74,10 @@ export function ProviderAuthRoutes(services: ControlPlaneServicesContract, optio
   const org = (request: Request) => orgs.get(request) ?? SINGLE_TENANT_ORG
 
   return new Hono()
-    // Registered BEFORE the routes below, so it runs first for every
-    // `/provider/*` request — including one the handler defers with `next()`.
-    // The fall-through therefore reaches the compat route already authenticated
-    // rather than around the gate. `provider-auth-defer-gate.test.ts` pins that.
+    // Registered before the routes below, so every provider operation is
+    // authenticated by the Claxedo credential owner.
     .use("/provider/*", controlPlaneRouteAuth(options))
-    // Scoped to the OAuth paths only: `/provider/auth` may be deferred to the
-    // harness compat route, which has no tenant of its own to resolve.
+    // Tenant resolution is required only for the mutating OAuth paths.
     .use("/provider/:providerId/oauth/*", async (c, next) => {
       try {
         orgs.set(c.req.raw, await requestOrg(c.req.raw, options))
@@ -102,11 +87,7 @@ export function ProviderAuthRoutes(services: ControlPlaneServicesContract, optio
       }
       await next()
     })
-    .get("/provider/auth", async (c, next) => {
-      const harness = c.req.query("harness") ?? c.req.query("runner") ?? undefined
-      if (await options.deferToHarnessRoute?.(harness)) return next()
-      return c.json(service.methods())
-    })
+    .get("/provider/auth", (c) => c.json(service.methods()))
     .post("/provider/:providerId/oauth/authorize", async (c) => {
       const body = authorizeBody.safeParse(await c.req.json().catch(() => ({})))
       if (!body.success) return c.json(invalidBody(body.error), 400)

@@ -104,7 +104,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       // the existing-session config contract by omitting harness identity, keep
       // the authoritative SessionRef identity visible and settle as unavailable
       // instead of polling forever or exposing the seeded OpenCode selection.
-      const refType = params.sessionRef?.harness?.id
+      const refType = params.sessionRef?.harness
       if (refType && config !== null && typeof config === "object" && !Array.isArray(config)) {
         return {
           type: refType,
@@ -153,7 +153,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       if (!params.sessionId || params.sessionId === "new") {
         if (draftDefault?.saved) {
           if (!active()) return
-          const type = input.state(scope)?.harness ?? draftDefault.saved?.harness ?? "opencode"
+          const type = input.state(scope)?.harness ?? draftDefault.saved.harness
           input.setReadyHydration(scope, type)
           if (harnessHasConfigOptions(type)) input.fetchConfigOptions(scope, type, params)
           await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: type }), { draft: true })
@@ -171,10 +171,14 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
             return
           }
         }
-        const type = input.state(scope)?.harness ?? "opencode"
-        input.setReadyHydration(scope, type)
-        if (harnessHasConfigOptions(type)) input.fetchConfigOptions(scope, type, params)
-        await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: type }), { draft: true })
+        const type = input.state(scope)?.harness
+        if (type) {
+          input.setReadyHydration(scope, type)
+          if (harnessHasConfigOptions(type)) input.fetchConfigOptions(scope, type, params)
+        } else {
+          input.resetWorkspaceDraftHarness(scope)
+        }
+        await input.refresh(params.directory, type ? refreshHarnessTypeForScope({ directory: params.directory, harness: type }) : undefined, { draft: true })
         if (active()) input.cache.setSeen(scope, key)
         return
       }
@@ -185,7 +189,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
         // belongs to a different harness. Keep it retryable and, when the
         // SessionRef already carries authoritative harness identity, expose
         // that identity while the model/config is still connecting.
-        input.setPollingHydration(scope, params.sessionRef?.harness?.id)
+        input.setPollingHydration(scope, params.sessionRef?.harness)
         return
       }
       await applyAndMarkSeen(scope, data, params, key, active)
@@ -277,8 +281,7 @@ function stamp(input?: HarnessScopeInput) {
       ref.cwd ?? "",
       sandbox?.kind ?? "",
       backing,
-      ref.harness?.id ?? "",
-      ref.harness?.binary ?? "",
+      ref.harness ? JSON.stringify(ref.harness) : "",
     ].join("\n")
   }
   return `${input?.directory ?? ""}\nnew`

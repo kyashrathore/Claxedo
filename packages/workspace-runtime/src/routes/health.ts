@@ -3,13 +3,9 @@ import type { WorkspaceRuntimeRouteAuthBoundary, WorkspaceRuntimeServiceExposure
 
 export type WorkspaceRuntimeLivenessInput = {
   state: string
-  harness: {
-    id: string
-    connection?: {
-      kind: string
-      binary?: string
-    }
-  }
+  harness?:
+    | { kind: "native"; harnessId: string }
+    | { kind: "connection"; connectionId: string }
   error?: string | null
   harnessHealth: AgentHarnessAdapterHealth
   routeAuthBoundary: WorkspaceRuntimeRouteAuthBoundary
@@ -28,12 +24,9 @@ export function workspaceRuntimeLivenessResponse(input: WorkspaceRuntimeLiveness
     exposure: input.exposure,
     // Harness-health detail is intentionally present on the lightweight probe;
     // diagnostics-only capabilities, directory, and process counts are not.
-    agentType: input.harness.id,
-    acpBinary: input.harness.id === "opencode"
-      ? null
-      : input.harness.connection?.kind === "process"
-        ? input.harness.connection.binary ?? null
-        : null,
+    agentType: input.harness?.kind === "native"
+      ? input.harness.harnessId
+      : input.harness?.connectionId ?? null,
     error: input.error || null,
     harnessHealth: input.harnessHealth,
   }

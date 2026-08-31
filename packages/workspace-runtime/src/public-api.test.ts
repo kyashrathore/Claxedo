@@ -43,9 +43,9 @@ describe("workspace-runtime public API manifest", () => {
     expect(WorkspaceRuntimeRouteManifest.every((item) => item.path.startsWith("/api/wr/"))).toBe(true)
   })
 
-  // The kit stays decision-free: hosts construct the OpenCode engine and
-  // inject its handler via WorkspaceHostOptions.opencodeRequest. A direct
-  // engine import here would hard-couple every host to the embedded engine.
+  // The kit stays decision-free: hosts compose protocol providers through the
+  // generic connection registry. A direct engine import here would hard-couple
+  // every host to one vendor runtime.
   test("kit sources never import the opencode engine package", () => {
     const violations: string[] = []
     const specifier = /(?:from\s+|import\(\s*|require\(\s*)["'](opencode(?:\/[^"']*)?)["']/g

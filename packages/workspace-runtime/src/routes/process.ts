@@ -21,7 +21,7 @@ import {
 } from "../session-access-policy"
 
 function dir(c: { req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined } }): string {
-  return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
+  return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
 }
 
 function bind(c: { req: { header: (k: string) => string | undefined } }, directory: string) {

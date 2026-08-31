@@ -1,7 +1,7 @@
-export const deepLinkEvent = "opencode:deep-link"
+export const deepLinkEvent = "claxedo:deep-link"
 
 const parseUrl = (input: string) => {
-  if (!input.startsWith("opencode://")) return
+  if (!input.startsWith("claxedo://")) return
   if (typeof URL.canParse === "function" && !URL.canParse(input)) return
   try {
     return new URL(input)
@@ -50,14 +50,14 @@ export function newSessionDeepLinkRoute(
 }
 
 type DeepLinkWindow = Window & {
-  __OPENCODE__?: {
+  __CLAXEDO__?: {
     deepLinks?: string[]
   }
 }
 
 export const drainPendingDeepLinks = (target: DeepLinkWindow) => {
-  const pending = target.__OPENCODE__?.deepLinks ?? []
+  const pending = target.__CLAXEDO__?.deepLinks ?? []
   if (pending.length === 0) return []
-  if (target.__OPENCODE__) target.__OPENCODE__.deepLinks = []
+  if (target.__CLAXEDO__) target.__CLAXEDO__.deepLinks = []
   return pending
 }

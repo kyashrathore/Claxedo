@@ -1,4 +1,15 @@
 import { isFilesystemDirectory, isLocalSessionDirectory } from "./legacy-resolver"
+import {
+  NATIVE_HARNESS_IDS,
+  sameHarnessSelection,
+  type HarnessSelection,
+  type NativeHarnessId,
+} from "./harness-selection"
+
+export type { HarnessSelection, NativeHarnessId } from "./harness-selection"
+export const HARNESS_IDS = NATIVE_HARNESS_IDS
+export type HarnessId = string
+export type BuiltinHarnessId = NativeHarnessId
 
 export type SessionHost = "central" | "workspace"
 
@@ -93,7 +104,7 @@ export function sameSessionRef(a: SessionRef | undefined, b: SessionRef | undefi
     a.workspaceId !== b.workspaceId ||
     a.cwd !== b.cwd ||
     a.toolSandbox?.kind !== b.toolSandbox?.kind ||
-    a.harness?.id !== b.harness?.id ||
+    !sameHarnessSelection(a.harness, b.harness) ||
     a.harness?.binary !== b.harness?.binary
   ) return false
   if (a.toolSandbox?.kind === "workspace" && b.toolSandbox?.kind === "workspace") {
@@ -113,14 +124,13 @@ export function hasBacking(ref: SessionRef) {
   return ref.toolSandbox?.kind === "workspace" || ref.toolSandbox?.kind === "local"
 }
 
-export function sessionHarness(ref: SessionRef): HarnessRef {
-  return ref.harness ?? { id: "opencode" }
+export function sessionHarness(ref: SessionRef): HarnessRef | undefined {
+  return ref.harness
 }
 
 export function isDirectorylessPiSession(input: { directory?: string | null; sessionRef?: SessionRef }) {
-  return !input.directory &&
-    input.sessionRef?.host === "central" &&
-    sessionHarness(input.sessionRef).id === "pi"
+  const harness = input.sessionRef ? sessionHarness(input.sessionRef) : undefined
+  return !input.directory && input.sessionRef?.host === "central" && harness?.kind === "native" && harness.harnessId === "pi"
 }
 
 export function supportsSessionDirectory(input: { directory?: string | null; sessionRef?: SessionRef }) {

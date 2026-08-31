@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import { getModel, createAssistantMessageEventStream, type AssistantMessage } from "@mariozechner/pi-ai"
 import type { StreamFn } from "@mariozechner/pi-agent-core"
 import { PiHarnessAdapter } from "./index"
@@ -41,9 +42,9 @@ describe("PiHarnessAdapter", () => {
       toolExtensionProvider: { providesSubagentTool: () => true },
     })
     const session = await adapter.createSession(undefined)
-    await adapter.updateSessionConfig(session.id, {
+    await adapter.updateSessionConfig(executionBinding(session.id, undefined, "pi"), {
       model: { providerID: model.provider, modelID: model.id },
-    }, undefined)
+    })
 
     expect((await adapter.readHarnessCapabilities(undefined, { sessionId: session.id })).subagents).toBe(true)
     backend.extraTools = [{ name: "another-tool" } as never]
@@ -57,9 +58,8 @@ describe("PiHarnessAdapter", () => {
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
     await expect(adapter.createSession(undefined, "Stable retry", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
-    expect(await adapter.listSessions(undefined)).toMatchObject([
-      { id: "ses_wgrun_run_1", title: "Stable retry" },
-    ])
+    expect(await adapter.getSession(executionBinding("ses_wgrun_run_1", undefined, "pi")))
+      .toMatchObject({ id: "ses_wgrun_run_1", title: "Stable retry" })
   })
 
   test("does not replace an existing target session while preparing a handoff", async () => {
@@ -76,7 +76,7 @@ describe("PiHarnessAdapter", () => {
 
     await adapter.bindSession({ id: "child-1", parentID: "parent-1", title: "Child" })
 
-    expect(await adapter.getSession("child-1", undefined)).toMatchObject({
+    expect(await adapter.getSession(executionBinding("child-1", undefined, "pi"))).toMatchObject({
       id: "child-1",
       parentID: "parent-1",
       title: "Child",
@@ -87,7 +87,7 @@ describe("PiHarnessAdapter", () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")
 
-    const events = await collect(adapter.sendMessage(session.id, prompt(), undefined))
+    const events = await collect(executeTestTurn(adapter, session.id, prompt(), undefined))
 
     expect(events.map((event) => event.type)).toEqual([
       "message.updated",
@@ -100,8 +100,8 @@ describe("PiHarnessAdapter", () => {
       "finish",
     ])
     expect(events).toContainEqual({ type: "text-delta", delta: "hi" })
-    expect(await adapter.listSessions(undefined)).toMatchObject([{ id: session.id, title: "Hybrid" }])
-    expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
+    expect(await adapter.getSession(executionBinding(session.id, undefined, "pi"))).toMatchObject({ id: session.id, title: "Hybrid" })
+    expect(await adapter.getMessages(executionBinding(session.id, undefined, "pi"))).toMatchObject([
       { info: { id: "user-1", role: "user" }, parts: [{ text: "exec: printf hi > note.txt && cat note.txt" }] },
       { info: { id: "assistant-1", role: "assistant" }, parts: [{ text: "hi" }] },
     ])
@@ -123,10 +123,10 @@ describe("PiHarnessAdapter", () => {
     const adapter = new PiHarnessAdapter({ processObserver })
     const session = await adapter.createSession("/safe/workspace")
 
-    await collect(adapter.sendMessage(session.id, prompt({
+    await collect(executeTestTurn(adapter, session.id, prompt({
       parts: [{ type: "text", text: `exec: printf ${sentinel}` }],
     }), "/safe/workspace"))
-    await adapter.deleteSession(session.id, "/safe/workspace")
+    await adapter.deleteSession(executionBinding(session.id, "/safe/workspace", "pi"))
 
     expect(descriptors.map((descriptor) => [descriptor.role, descriptor.locality])).toEqual([
       ["harness", "in-process"],
@@ -252,7 +252,7 @@ describe("PiHarnessAdapter", () => {
       host: "central",
       toolSandbox: { kind: "virtual", id: "first" },
     }])
-    expect(await adapter.listSessions(undefined)).toMatchObject([{ id: "session_1", title: "Renamed" }])
+    expect(await adapter.getSession(executionBinding("session_1", undefined, "pi"))).toMatchObject({ id: "session_1", title: "Renamed" })
   })
 
   test("publishes canonical runtime events to the event hub", async () => {
@@ -262,7 +262,7 @@ describe("PiHarnessAdapter", () => {
     const adapter = new PiHarnessAdapter({ eventHub })
     const session = await adapter.createSession(undefined, "Hybrid")
 
-    await collect(adapter.sendMessage(session.id, prompt(), undefined))
+    await collect(executeTestTurn(adapter, session.id, prompt(), undefined))
 
     expect(runtimeEvents.map((event) => event.payload.type)).toEqual([
       "session-status",
@@ -271,7 +271,7 @@ describe("PiHarnessAdapter", () => {
       "finish",
     ])
     expect(runtimeEvents).toContainEqual(expect.objectContaining({
-      directory: session.id,
+      directory: "",
       sessionId: session.id,
       assistantMessageId: "assistant-1",
       payload: { type: "finish", sessionId: session.id },
@@ -289,22 +289,22 @@ describe("PiHarnessAdapter", () => {
   test("raises no permission requests, and answers none", async () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")
-    const events = await collect(adapter.sendMessage(session.id, prompt({
+    const events = await collect(executeTestTurn(adapter, session.id, prompt({
       parts: [{ type: "text", text: "exec: printf ran" }],
     }), undefined))
 
     expect(events.map((event) => event.type)).not.toContain("permission.asked")
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "ran" }))
     expect(await adapter.listPermissions(undefined)).toEqual([])
-    await adapter.respondPermission(`${session.id}:perm_1`, "allow_once", undefined)
-    expect((await adapter.readHarnessCapabilities(session.id)).permissions).toBe(false)
+    await adapter.respondPermission(executionBinding(session.id, undefined, "pi"), `${session.id}:perm_1`, "allow_once")
+    expect((await adapter.readHarnessCapabilities(undefined, { sessionId: session.id })).permissions).toBe(false)
   })
 
   /** `permission:` is ordinary prompt text. */
   test("a prompt beginning with permission: is not a checkpoint", async () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")
-    const iterator = adapter.sendMessage(session.id, prompt({
+    const iterator = executeTestTurn(adapter, session.id, prompt({
       // One token: `printf` renders only the format operand, so a spaced string
       // would assert on shell behaviour rather than on the prefix being inert.
       parts: [{ type: "text", text: "exec: printf permission:bash" }],
@@ -361,7 +361,7 @@ describe("PiHarnessAdapter", () => {
       }),
     })
     const session = await adapter.createSession(undefined, "Model")
-    const events = await collect(adapter.sendMessage(session.id, prompt({
+    const events = await collect(executeTestTurn(adapter, session.id, prompt({
       parts: [{ type: "text", text: "say hello" }],
     }), undefined))
 
@@ -388,7 +388,7 @@ describe("PiHarnessAdapter", () => {
         },
       },
     })
-    expect(await adapter.getMessages(session.id, undefined)).toMatchObject([
+    expect(await adapter.getMessages(executionBinding(session.id, undefined, "pi"))).toMatchObject([
       { info: { id: "user-1", role: "user" } },
       {
         info: {
@@ -434,7 +434,7 @@ describe("PiHarnessAdapter", () => {
       modelBackend: () => ({ model, getApiKey: () => "test-key", streamFn }),
     })
     const session = await adapter.createSession(undefined, "Model")
-    const events = await collect(adapter.sendMessage(session.id, prompt({
+    const events = await collect(executeTestTurn(adapter, session.id, prompt({
       parts: [{ type: "text", text: "say hello" }],
     }), undefined))
 
@@ -453,16 +453,16 @@ describe("PiHarnessAdapter", () => {
     })
     await adapter.bindSession({ id: "session-openai" })
     await adapter.bindSession({ id: "session-anthropic" })
-    await adapter.updateSessionConfig("session-openai", {
+    await adapter.updateSessionConfig(executionBinding("session-openai", undefined, "pi"), {
       model: { providerID: "openai", modelID: "gpt-4.1" },
-    }, undefined)
-    await adapter.updateSessionConfig("session-anthropic", {
+    })
+    await adapter.updateSessionConfig(executionBinding("session-anthropic", undefined, "pi"), {
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
-    }, undefined)
+    })
 
     const [openaiEvents, anthropicEvents] = await Promise.all([
-      collect(adapter.sendMessage("session-openai", prompt({ parts: [{ type: "text", text: "hello" }] }), undefined)),
-      collect(adapter.sendMessage("session-anthropic", prompt({ parts: [{ type: "text", text: "hello" }] }), undefined)),
+      collect(executeTestTurn(adapter, "session-openai", prompt({ parts: [{ type: "text", text: "hello" }] }), undefined)),
+      collect(executeTestTurn(adapter, "session-anthropic", prompt({ parts: [{ type: "text", text: "hello" }] }), undefined)),
     ])
 
     expect(resolved).toEqual(expect.arrayContaining([
@@ -479,7 +479,7 @@ describe("PiHarnessAdapter", () => {
     const adapter = new PiHarnessAdapter({ modelBackend: () => undefined })
     await adapter.bindSession({ id: "legacy-virtual" })
 
-    const events = await collect(adapter.sendMessage("legacy-virtual", prompt({
+    const events = await collect(executeTestTurn(adapter, "legacy-virtual", prompt({
       parts: [{ type: "text", text: "hello" }],
     }), undefined))
 
@@ -498,11 +498,11 @@ describe("PiHarnessAdapter", () => {
       }),
     })
     await adapter.bindSession({ id: "session-a" })
-    await adapter.updateSessionConfig("session-a", {
+    await adapter.updateSessionConfig(executionBinding("session-a", undefined, "pi"), {
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-6" },
-    }, undefined)
+    })
 
-    const events = await collect(adapter.sendMessage("session-a", prompt({
+    const events = await collect(executeTestTurn(adapter, "session-a", prompt({
       parts: [{ type: "text", text: "hello" }],
     }), undefined))
 

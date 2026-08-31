@@ -1,6 +1,4 @@
 import {
-  normalizeAgentHarnessTransport,
-  normalizeHarnessIdentity,
   type AgentHarnessId,
   type SessionHarnessId,
   type SessionHarness,
@@ -64,58 +62,16 @@ export function isNativeSdkHarnessId(id: SessionHarnessId): id is NativeSdkHarne
 }
 
 export function harnessModelConfigurable(harness: SessionHarness) {
-  return harness.access === "acp" || isNativeSdkHarnessId(harness.id)
+  return harness.access === "connection" || isNativeSdkHarnessId(harness.id)
 }
 
 export function harnessConfigOptionsUnavailable(harness: SessionHarness) {
-  if (harness.id === "opencode") return "opencode model options are exposed through /provider, not harness config options"
   if (harness.id === "pi") return "pi does not expose harness config options"
   return `${harness.id} did not return live harness config options`
 }
 
-export function harnessBinary(harness: SessionHarness) {
-  return harness.connection?.kind === "process" ? harness.connection.binary : undefined
-}
-
 export function sameHarness(a: SessionHarness, b: SessionHarness) {
-  return a.id === b.id
-    && a.access === b.access
-    && (harnessBinary(a) ?? "") === (harnessBinary(b) ?? "")
-}
-
-export function harnessFromRequest(input: unknown, fallback?: { type?: unknown; id?: unknown; access?: unknown; binary?: unknown; transport?: unknown; url?: unknown; headers?: unknown }) {
-  const identity = normalizeHarnessIdentity(input ?? fallback)
-    // The app's canonical picker value for an operator connection is the
-    // access-qualified string `acp:<slug>`. When it arrives through the legacy
-    // `type` query/body field, structured normalization cannot infer the ACP
-    // access from an unknown id, so decode that canonical string explicitly.
-    ?? (input == null && typeof fallback?.type === "string"
-      ? normalizeHarnessIdentity(fallback.type)
-      : undefined)
-  if (!identity) return
-  const row = input && typeof input === "object" && !Array.isArray(input)
-    ? input as Record<string, unknown>
-    : fallback ?? {}
-  const binary = typeof row.binary === "string" ? row.binary : undefined
-  const transport = normalizeAgentHarnessTransport(row.transport)
-  const headers = stringRecord(row.headers)
-  const url = typeof row.url === "string" ? row.url : undefined
-  return normalize({
-    id: identity.id,
-    access: identity.access,
-    ...(binary
-      ? { connection: { kind: "process" as const, binary } }
-      : url || transport || headers
-      ? {
-          connection: {
-            kind: "remote" as const,
-            ...(transport ? { transport } : {}),
-            ...(url ? { url } : {}),
-            ...(headers ? { headers } : {}),
-          },
-        }
-      : {}),
-  })
+  return a.id === b.id && a.access === b.access
 }
 
 export type SandboxHarnessHealth = {
@@ -136,25 +92,10 @@ export type SandboxHealth = {
 
 type RuntimeSessionConfig = {
   harness?: SessionHarness
-  runner?: {
-    type?: string
-    binary?: string
-    model?: string
-    transport?: string
-    url?: string
-    headers?: Record<string, unknown>
-  }
   model?: {
     providerID?: string
     modelID?: string
   }
-}
-
-function stringRecord(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input)
-    && Object.values(input).every((item) => typeof item === "string")
-    ? input as Record<string, string>
-    : undefined
 }
 
 export async function cloudRuntimeSessionHarness(
@@ -169,17 +110,10 @@ export async function cloudRuntimeSessionHarness(
     const res = await sandboxFetch(ws, `${url.pathname}${url.search}`, undefined, options)
     if (!res.ok) return
     const config = await res.json() as RuntimeSessionConfig
-    return config.harness?.id
-      ? normalize(config.harness)
-      : harnessFromRequest(config.runner, config.runner)
+    return config.harness?.id ? normalize(config.harness) : undefined
   } catch {
     return
   }
-}
-
-export function requestedHarness(input?: string | null) {
-  const identity = input ? normalizeHarnessIdentity(input) : undefined
-  return identity ? normalize(identity) : undefined
 }
 
 export async function sandboxJson<T>(

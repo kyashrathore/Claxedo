@@ -47,9 +47,6 @@ const server = startLocalServer({
     },
     lifecycle,
   },
-  ...(startup.opencodeUrl ? { opencodeUrl: startup.opencodeUrl } : {}),
-  opencodePassword: startup.opencodePassword,
-  ...(startup.opencodeEmbedPath ? { opencodeEmbedPath: startup.opencodeEmbedPath } : {}),
   ...(transport ? { processObserver: transport.observer } : {}),
 })
 const discovery: ClaxedoDaemonDiscovery = {

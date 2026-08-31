@@ -15,17 +15,17 @@ export type ComposerMode =
   | { readonly kind: "session"; readonly ref: SessionRef }
   | { readonly kind: "draft"; readonly target: DraftTarget | undefined; readonly draftId?: string }
 
-export function composerHarness(mode: ComposerMode): HarnessRef {
+export function composerHarness(mode: ComposerMode): HarnessRef | undefined {
   if (mode.kind === "session") return sessionHarness(mode.ref)
-  return mode.target?.harness ?? { id: "opencode" }
+  return mode.target?.harness
 }
 
 export function composerHarnessId(mode: ComposerMode) {
-  return composerHarness(mode).id
+  return composerHarness(mode)
 }
 
 export function isComposerHarnessMode(mode: ComposerMode) {
-  return composerHarnessId(mode) !== "opencode"
+  return !!composerHarness(mode)
 }
 
 export function harnessBridge(mode: ComposerMode) {

@@ -181,20 +181,6 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/claxedo-server-core/src/workspace/store/index.ts", callee: "execFileAsync", calls: 1 },
   }),
   product({
-    id: "server-opencode-compat-git",
-    family: "OpenCode compatibility Git operations",
-    owner: "server",
-    linkage: "workspace",
-    observation: "lifecycle-only",
-    stop: "owner-dependent",
-    kill: "unsupported",
-    source: {
-      file: "packages/claxedo-local-server/src/opencode/compat-routes/git.ts",
-      callee: "execFileAsync",
-      calls: 3,
-    },
-  }),
-  product({
     id: "server-workspace-route-git",
     family: "Workspace route Git operations",
     owner: "server",
@@ -285,17 +271,6 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     stop: "supported",
     kill: "owner-dependent",
     source: { file: "packages/agent-sdk-runtime/src/harnesses/codex/app-server-process.ts", callee: "spawn", calls: 1 },
-  }),
-  product({
-    id: "opencode-cli",
-    family: "OpenCode CLI",
-    classification: "registered-root",
-    owner: "harness",
-    linkage: "harness",
-    observation: "host-tree",
-    stop: "supported",
-    kill: "owner-dependent",
-    source: { file: "packages/agent-sdk-runtime/src/harnesses/opencode/process.ts", callee: "spawnChild", calls: 1 },
   }),
   product({
     id: "claude-sdk-cli",
@@ -398,9 +373,7 @@ export function harnessInventory<
         ? "acp-cli"
         : definition.id === "codex"
           ? "codex-app-server"
-          : definition.id === "opencode"
-            ? "opencode-cli"
-            : definition.id === "claude"
+          : definition.id === "claude"
               ? "claude-sdk-cli"
               : definition.id === "cursor"
                 ? "cursor-sdk-cli"

@@ -42,7 +42,7 @@ export function sessionMetaProjectionTap(
       if (!isCreate && !isUpdate && !isDelete) return
       const res = c.res
       if (!res || res.status < 200 || res.status >= 300) return
-      const rawDir = c.req.query("directory") || c.req.header("x-opencode-directory") || undefined
+      const rawDir = c.req.query("directory") || c.req.header("x-claxedo-directory") || undefined
       const directory = rawDir ? decodeURIComponent(rawDir) : undefined
       const workspaceId =
         c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id") || undefined
@@ -96,11 +96,11 @@ export function sessionMetaProjectionTap(
 /**
  * The SSE half of the same concern.
  *
- * A harness session's auto-generated title — OpenCode's own LLM rename, or an
- * ACP harness's post-turn `maybeEmitTitle` — is published ONLY on that
- * workspace's `/global/event` stream. It never arrives as an HTTP
- * `PATCH /session/:id`, so the response tap above cannot see it, and without
- * this projection titles revert to "Untitled" after a restart.
+ * A harness session's auto-generated title is emitted by WorkspaceRuntime's
+ * canonical event hub. It never arrives as an HTTP `PATCH /session/:id`, so
+ * the response tap above cannot see it, and without this observer projection
+ * titles revert to "Untitled" after a restart. This is an internal producer
+ * tap; it does not republish conversation events onto the control-plane bus.
  */
 export async function projectLocalSessionMetaFromEvent(
   projectionStore: Pick<SessionProjectionStore, "sync_session_meta">,

@@ -22,7 +22,7 @@
  *     `/w/:id/session[/:id]`, `/w/:id/page/:id`, `/w/:id/terminal/:id`, or a legacy
  *     `/:dir` route carrying a session/page/terminal id) — so whatever was open in a
  *     previous tab/session is discarded and only the URL's own route-intent
- *     repopulates the workbench. Project/model prefs (`opencode.global.dat:server`,
+ *     repopulates the workbench. Project/model prefs (`claxedo.global.dat:server`,
  *     `:model`) are separate keys and are NOT touched by this wipe.
  *   - Route → pane resolution: `parseShellRoute` (`src/shell/identity/route.ts`)
  *     classifies the pathname; `createRouteIntentAdapter.receive()`
@@ -186,12 +186,12 @@ function workspaceSessionUrl(workspaceId: string, sessionId: string) {
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript(({ dir, projectId }: { dir: string; projectId: string }) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: dir,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ id: projectId, worktree: dir, expanded: true }] },
@@ -211,7 +211,7 @@ async function seedOneProject(page: Page, dir: string) {
  */
 async function seedDestination(page: Page, destination: "local" | "cloud" | "both") {
   await page.addInitScript((value: string) => {
-    localStorage.setItem("opencode.global.dat:onboarding.destination.v1", JSON.stringify({ destination: value }))
+    localStorage.setItem("claxedo.global.dat:onboarding.destination.v1", JSON.stringify({ destination: value }))
   }, destination)
 }
 
@@ -224,7 +224,7 @@ async function seedNoProjects(page: Page) {
     // any of this file's same-origin `page.route()` patterns ("TypeError: Failed to
     // fetch" from src/context/global-sdk.tsx's event stream). Same fix as
     // seedOneProject/seedProjectWithRawLayout below.
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
     }
   })
@@ -238,12 +238,12 @@ async function seedProjectWithRawLayout(page: Page, dir: string, rawLayout: stri
   await page.addInitScript(
     (input: { d: string; raw: string }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: window.location.origin,
         activeDirectory: input.d,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: { local: [{ worktree: input.d, expanded: true }] },
@@ -351,7 +351,7 @@ async function readPersistedLayout(page: Page) {
 // `resolveDefaultUrl()` (src/app.tsx:353-361) always falls back to the hardcoded
 // `getClaxedoServerUrl()` default (http://127.0.0.1:3001) for the app's own "central"
 // server connection when no `platform.getDefaultServer()`/env override is present —
-// this is a SEPARATE resolution path from `__OPENCODE__.serverUrl`
+// this is a SEPARATE resolution path from `__CLAXEDO__.serverUrl`
 // (`getDefaultBaseUrl()`/`seedOneProject`/`seedNoProjects` in this file), used only by
 // `directory-layout.tsx`. Multiple distinct control-plane-scoped endpoints
 // (`src/context/global-sdk.tsx`'s global event stream on mount, `/api/wr/events` relay
@@ -534,7 +534,7 @@ test.describe("core boot, deep links, and home @core", () => {
     await seedDestination(page, "local")
     await page.goto("/", { waitUntil: "domcontentloaded" })
     await expect.poll(() => credentialRequests, { timeout: 20_000 }).toBeGreaterThan(0)
-    expect(await page.evaluate(() => localStorage.getItem("opencode.global.dat:onboarding.dismissals.v1"))).toBeNull()
+    expect(await page.evaluate(() => localStorage.getItem("claxedo.global.dat:onboarding.dismissals.v1"))).toBeNull()
     await expect(page.getByTestId("onboarding-owner")).toHaveAttribute("data-mode", "form")
     await expect(page.getByRole("heading", { name: "Set up Claxedo" })).toBeVisible({ timeout: 20_000 })
     // Web has no remote-access step, so the local flow advances directly to

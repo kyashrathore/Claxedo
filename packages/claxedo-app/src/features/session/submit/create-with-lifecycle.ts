@@ -5,7 +5,7 @@ import { markRolledBackDraft } from "./rolled-back-drafts"
 //
 // This flow requires the frontend to "subscribe
 // first, perform the HTTP fetch, and reconcile events buffered during fetch."
-// `createOpencodeSessionWithLifecycle` does exactly that for draft-backed
+// `createSessionWithLifecycle` does exactly that for draft-backed
 // creates: before the HTTP call fires, it begins listening for a matching
 // `session.lifecycle` `created` event.
 //
@@ -35,23 +35,23 @@ export type ClaxedoLifecycleListener = {
   ): () => void
 }
 
-export type CreateOpencodeSessionTarget = { id: string }
+export type CreatedSessionTarget = { id: string }
 
 const DEFAULT_RECOVERY_GRACE_MS = 1500
 
-export async function createOpencodeSessionWithLifecycle(input: {
+export async function createSessionWithLifecycle(input: {
   draftId?: string
   events?: ClaxedoLifecycleListener
-  perform: () => Promise<CreateOpencodeSessionTarget>
+  perform: () => Promise<CreatedSessionTarget>
   recoveryGraceMs?: number
-}): Promise<CreateOpencodeSessionTarget> {
+}): Promise<CreatedSessionTarget> {
   if (!input.draftId || !input.events) return input.perform()
 
-  let recovered: CreateOpencodeSessionTarget | undefined
+  let recovered: CreatedSessionTarget | undefined
   let failure: string | undefined
-  let resolveRecovered: ((value: CreateOpencodeSessionTarget | undefined) => void) | undefined
+  let resolveRecovered: ((value: CreatedSessionTarget | undefined) => void) | undefined
   let resolveFailure: (() => void) | undefined
-  const lifecyclePromise = new Promise<CreateOpencodeSessionTarget | undefined>((resolve) => {
+  const lifecyclePromise = new Promise<CreatedSessionTarget | undefined>((resolve) => {
     resolveRecovered = resolve
   })
   const failurePromise = new Promise<void>((resolve) => {

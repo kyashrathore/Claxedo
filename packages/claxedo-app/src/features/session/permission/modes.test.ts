@@ -4,10 +4,6 @@ import type { AgentPermissionModeState } from "@claxedo/agent-sdk-runtime/adapte
 import { PERMISSION_MECHANISMS } from "./mechanisms"
 import {
   CLAXEDO_ALLOW_SAFE_ID,
-  CLAXEDO_ASK_ALWAYS_ID,
-  DANGER_GATED_PERMISSIONS,
-  IN_PROJECT_WRITE_PERMISSIONS,
-  SAFE_READ_PERMISSIONS,
   SANDBOXED_NO_POLICY_REASON,
   claxedoPermissionModes,
   classifyToolKind,
@@ -111,17 +107,8 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(SANDBOXED_NO_POLICY_REASON).not.toMatch(/loading|has not reported/i)
   })
 
-  test("Auto resolves to whoever actually enforces it", () => {
-    // opencode writes its own ruleset. It reports no modes of its own, which is
-    // why Claxedo names anything here at all.
-    const [opencodeAuto] = claxedoPermissionModes({ harness: "opencode" })
-    expect(opencodeAuto!.delivery.kind).toBe("opencode-session-ruleset")
-    expect(opencodeAuto!.caveat ?? "").not.toMatch(/harness enforces nothing/i)
-
-    // Everywhere else Claxedo answers locally — and the caveat says so, which is
-    // only honest because this rung is now unreachable on a harness that reports
-    // modes of its own. `cursor-sdk` stands in: not opencode, reporting nothing.
-    const [localAuto] = claxedoPermissionModes({ harness: "cursor-sdk" })
+  test("Claxedo-owned fallback modes are answered locally", () => {
+    const [localAuto] = claxedoPermissionModes({ harness: "configured-connection" })
     expect(localAuto!.delivery.kind).toBe("claxedo-auto-answer")
     expect(localAuto!.caveat).toMatch(/harness enforces nothing/i)
   })
@@ -155,19 +142,6 @@ describe("harness modes are shown in the harness's own words", () => {
     const empty = harnessPermissionModes({ harness: "claude-acp", report: report() })
     expect(empty.unavailable).toMatch(/has not reported/i)
     expect(empty.unavailable).not.toMatch(/loading/i)
-  })
-
-  test("an unsupported report is complete and exposes Claxedo's fallback modes", () => {
-    const unsupported = report({
-      unsupported: "opencode has no permission modes of its own",
-    })
-    const options = permissionModeOptions({ harness: "opencode", report: unsupported })
-
-    expect(options.claxedo.map((option) => option.id)).toEqual([
-      CLAXEDO_ALLOW_SAFE_ID,
-      CLAXEDO_ASK_ALWAYS_ID,
-    ])
-    expect(options.harness.unavailable).toBe("opencode has no permission modes of its own")
   })
 
   // A 200 carrying something that is not a mode report has to degrade to a
@@ -230,27 +204,6 @@ describe("harness modes are shown in the harness's own words", () => {
   })
 
   /*
-   * The next-turn caveat is about a turn that is ALREADY RUNNING, so it cannot be
-   * stated before a session exists. On a draft the first message creates the
-   * session and runs under exactly this ruleset — telling the user it "applies
-   * from your next message" says their choice is ignored for the one turn it
-   * actually governs.
-   *
-   * Same rule as cursor's next-session caveat above, on the opencode path.
-   */
-  test("opencode's next-turn caveat is suppressed on a draft and present on a session", () => {
-    const opencode = report({ modes: [], appliesFrom: "next-turn" })
-    const draft = permissionModeOptions({ harness: "opencode", report: opencode, hasSession: false })
-    for (const option of draft.claxedo) expect(option.caveat, option.id).toBeUndefined()
-
-    const live = permissionModeOptions({ harness: "opencode", report: opencode, hasSession: true })
-    for (const option of live.claxedo) expect(option.caveat, option.id).toMatch(/next message/i)
-    // Both of Claxedo's options carry it, not just Auto — the off switch writes a
-    // ruleset too, so it lands at the same moment.
-    expect(live.claxedo.length).toBe(2)
-  })
-
-  /*
    * A draft and a live session show the SAME list.
    *
    * Claxedo used to hoist the auto rung into a row of its own whose description
@@ -290,12 +243,6 @@ describe("the two groups are mutually exclusive", () => {
     expect(options.harness.modes).toHaveLength(3)
   })
 
-  test("a harness with no modes gets Auto, plus an off switch", () => {
-    const options = permissionModeOptions({ harness: "opencode", report: report() })
-    expect(options.harness.modes).toEqual([])
-    expect(options.claxedo.map((option) => option.id)).toEqual([CLAXEDO_ALLOW_SAFE_ID, CLAXEDO_ASK_ALWAYS_ID])
-  })
-
   test("a policy harness with an empty report does not flash Claxedo rows in the picker", () => {
     const options = permissionModeOptions({ harness: "codex-app-server", report: report() })
     expect(options.claxedo).toEqual([])
@@ -310,46 +257,6 @@ describe("the two groups are mutually exclusive", () => {
       if (result.modes.length === 0) expect(result.unavailable, harness).toBeTruthy()
     }
     expect(Object.keys(PERMISSION_MECHANISMS).sort()).toEqual([...HARNESS_IDS].sort())
-  })
-})
-
-describe("Claxedo's own options, where nothing else enforces", () => {
-  // opencode has rules rather than modes, so Claxedo writes them. The ordering is
-  // load-bearing: evaluate() takes the LAST matching rule.
-  test("allow-safe puts the catch-all first and grants after it", () => {
-    const option = claxedoPermissionModes({ harness: "opencode" }).find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
-    const delivery = option.delivery
-    if (delivery.kind !== "opencode-session-ruleset") throw new Error("expected a ruleset")
-    expect(delivery.ruleset[0]).toEqual({ permission: "*", pattern: "*", action: "ask" })
-    for (const key of [...SAFE_READ_PERMISSIONS, ...IN_PROJECT_WRITE_PERMISSIONS]) {
-      expect(delivery.ruleset.filter((rule) => rule.permission === key).at(-1)?.action, key).toBe("allow")
-    }
-    for (const key of DANGER_GATED_PERMISSIONS) {
-      expect(delivery.ruleset.filter((rule) => rule.permission === key).at(-1)?.action, key).toBe("ask")
-    }
-  })
-
-  // Nothing deletes rules in the engine, so the way back has to be WRITTEN. If
-  // this sent nothing, the engine would stay permissive while the picker read
-  // "ask for everything" — a security regression invisible from the UI.
-  test("ask-always genuinely withdraws rather than sending nothing", () => {
-    const option = claxedoPermissionModes({ harness: "opencode" }).find((row) => row.id === CLAXEDO_ASK_ALWAYS_ID)!
-    const delivery = option.delivery
-    if (delivery.kind !== "opencode-session-ruleset") throw new Error("expected a ruleset")
-    expect(delivery.ruleset.every((rule) => rule.action === "ask")).toBe(true)
-    for (const key of [...SAFE_READ_PERMISSIONS, ...IN_PROJECT_WRITE_PERMISSIONS]) {
-      expect(delivery.ruleset.some((rule) => rule.permission === key), key).toBe(true)
-    }
-  })
-
-  // Everywhere else Claxedo answers in-process: nothing is enforced and the
-  // grants die with the app. The row must admit that.
-  test("off opencode, the permissive option says Claxedo is the one answering", () => {
-    for (const harness of POLICY_HARNESS_IDS.filter((id) => id !== "opencode")) {
-      const option = claxedoPermissionModes({ harness }).find((row) => row.id === CLAXEDO_ALLOW_SAFE_ID)!
-      expect(option.delivery.kind, harness).toBe("claxedo-auto-answer")
-      expect(option.caveat, harness).toMatch(/Claxedo answers/i)
-    }
   })
 })
 

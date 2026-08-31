@@ -599,7 +599,7 @@ export const dict = {
   "settings.tab.shortcuts": "Skróty",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL integration",
-  "settings.desktop.wsl.description": "Run the OpenCode server inside WSL on Windows.",
+  "settings.desktop.wsl.description": "Run the Claxedo server inside WSL on Windows.",
   "settings.general.section.appearance": "Wygląd",
   "settings.general.section.advanced": "Zaawansowane",
   "settings.general.section.notifications": "Powiadomienia systemowe",

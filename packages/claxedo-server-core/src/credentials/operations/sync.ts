@@ -62,30 +62,6 @@ const nativeHarnessEnv = {
   "cursor-sdk": "CURSOR_API_KEY",
 } as const
 
-// Mirrors the engine's xdg-basedir resolution (packages/core/src/global.ts):
-// XDG_DATA_HOME wins, otherwise ~/.local/share — on Windows too (USERPROFILE,
-// never APPDATA). Falls back across candidates so a login made before
-// XDG_DATA_HOME was set is still found.
-function opencodeAuthPath() {
-  const xdg = clean(process.env.XDG_DATA_HOME)
-  const candidates = [
-    ...(xdg ? [path.join(xdg, "opencode", "auth.json")] : []),
-    path.join(homeDir(), ".local", "share", "opencode", "auth.json"),
-  ]
-  return candidates.find((file) => fs.existsSync(file)) ?? candidates[0]
-}
-
-function opencodeAuth() {
-  try {
-    const file = opencodeAuthPath()
-    if (!fs.existsSync(file)) return
-    const data = JSON.parse(fs.readFileSync(file, "utf8")) as Record<string, unknown>
-    return data
-  } catch (err) {
-    log.warn("Failed to read OpenCode auth", { error: String(err) })
-  }
-}
-
 function codexAuthPath() {
   return path.join(homeDir(), ".codex", "auth.json")
 }
@@ -262,99 +238,34 @@ function codexBundle(input: unknown) {
   }
 }
 
-function opencodeCodex(input: unknown, local: unknown) {
-  const row = input && typeof input === "object" ? input as Record<string, unknown> : undefined
+function codexCredential(local: unknown) {
   const bundle = codexBundle(local)
-  const refresh = clean(typeof row?.refresh === "string" ? row.refresh : undefined) ?? bundle?.tokens.refresh_token
-  const access = clean(typeof row?.access === "string" ? row.access : undefined) ?? bundle?.tokens.access_token
-  const account_id = clean(typeof row?.accountId === "string" ? row.accountId : undefined) ?? bundle?.tokens.account_id
-  const expires =
-    typeof row?.expires === "number"
-      ? row.expires
-      : jwtExp(access) ?? Date.now() + 55 * 60 * 1000
+  const refresh = bundle?.tokens.refresh_token
+  const access = bundle?.tokens.access_token
+  const account_id = bundle?.tokens.account_id
+  const expires = jwtExp(access) ?? Date.now() + 55 * 60 * 1000
   if (!refresh || !access) return
   return {
     provider_id: "codex-app-server",
     kind: "oauth_token" as const,
-    source: row?.type === "oauth" ? "upstream_sync" as const : "local_only" as const,
-    label: row?.type === "oauth" ? "Synced from OpenCode auth" : "Synced from local Codex auth",
+    source: "local_only" as const,
+    label: "Synced from local Codex auth",
     ...(account_id ? { account_id } : {}),
     ...(expires ? { fresh_until: expires } : {}),
     secret: JSON.stringify({
-      source: row?.type === "oauth" ? "opencode" : "codex",
+      source: "codex",
       type: "codex_auth",
       ...(bundle ? bundle : {}),
       refresh,
       access,
       expires,
       account_id,
-      enterprise_url: typeof row?.enterpriseUrl === "string" ? row.enterpriseUrl : undefined,
       oauth: {
         refresh,
         access,
         expires,
         ...(account_id ? { account_id } : {}),
-        ...(typeof row?.enterpriseUrl === "string" ? { enterprise_url: row.enterpriseUrl } : {}),
       },
-    }),
-  }
-}
-
-function opencodeOpenAI(input: unknown) {
-  if (!input || typeof input !== "object") return
-  const row = input as Record<string, unknown>
-  if (row.type === "api") {
-    const key = clean(typeof row.key === "string" ? row.key : undefined)
-    if (!key) return
-    return {
-      provider_id: "openai",
-      kind: "api_key" as const,
-      source: "upstream_sync" as const,
-      label: "Synced from OpenCode auth",
-      secret: key,
-    }
-  }
-  if (row.type !== "oauth") return
-  const refresh = clean(typeof row.refresh === "string" ? row.refresh : undefined)
-  const access = clean(typeof row.access === "string" ? row.access : undefined)
-  const expires = typeof row.expires === "number" ? row.expires : undefined
-  if (!refresh || !access || !expires) return
-  return {
-    provider_id: "openai",
-    kind: "oauth_token" as const,
-    source: "upstream_sync" as const,
-    label: "Synced from OpenCode auth",
-    secret: JSON.stringify({
-      type: "oauth",
-      refresh,
-      access,
-      expires,
-      ...(typeof row.accountId === "string" ? { accountId: row.accountId } : {}),
-      ...(typeof row.enterpriseUrl === "string" ? { enterpriseUrl: row.enterpriseUrl } : {}),
-    }),
-  }
-}
-
-function opencodeCopilot(input: unknown, providerId: "github-copilot" | "github-copilot-enterprise") {
-  if (!input || typeof input !== "object") return
-  const row = input as Record<string, unknown>
-  if (row.type !== "oauth") return
-  const refresh = clean(typeof row.refresh === "string" ? row.refresh : undefined)
-  const access = clean(typeof row.access === "string" ? row.access : undefined)
-  if (!refresh || !access) return
-  return {
-    provider_id: providerId,
-    kind: "oauth_token" as const,
-    source: "upstream_sync" as const,
-    label: "Synced from OpenCode auth",
-    secret: JSON.stringify({
-      source: "opencode",
-      type: "copilot_oauth",
-      refresh,
-      access,
-      expires: typeof row.expires === "number" ? row.expires : undefined,
-      account_id: typeof row.accountId === "string" ? row.accountId : undefined,
-      enterprise_url: typeof row.enterpriseUrl === "string" ? row.enterpriseUrl : undefined,
     }),
   }
 }
@@ -366,7 +277,6 @@ function kind(providerId: string): CredentialKind {
 
 function itemOrigin(item: Item) {
   if (item.origin) return item.origin
-  if (item.label.includes("OpenCode")) return "~/.local/share/opencode/auth.json"
   if (item.label.includes("Codex")) return "~/.codex/auth.json"
   if (item.label.includes("Claude Code")) return process.platform === "darwin" ? "macOS Keychain or ~/.claude/.credentials.json" : "~/.claude/.credentials.json"
   if (item.label.includes("local config")) return "Claxedo local config"
@@ -446,21 +356,17 @@ export async function collectLocalCredentials(options: CollectLocalCredentialsOp
   const cfg = await loadUserConfig()
   const sandboxDriverConfigValue = sandboxDriverConfig(cfg)
   const map = new Map<string, LocalCredentialItem>()
-  const opencode = opencodeAuth()
   const codexAccounts = codexAuthCandidates()
   const codex = codexAccounts[0]?.data
 
-  put(map, opencodeOpenAI(opencode?.openai))
-  const primaryCodex = opencodeCodex(opencode?.openai, codex)
-  put(map, primaryCodex && !opencode?.openai && codexAccounts[0]
+  const primaryCodex = codexCredential(codex)
+  put(map, primaryCodex && codexAccounts[0]
     ? { ...primaryCodex, origin: codexAccounts[0].origin }
     : primaryCodex)
   for (const account of codexAccounts.slice(1)) {
-    const item = opencodeCodex(undefined, account.data)
+    const item = codexCredential(account.data)
     put(map, item ? { ...item, origin: account.origin } : undefined)
   }
-  put(map, opencodeCopilot(opencode?.["github-copilot"], "github-copilot"))
-  put(map, opencodeCopilot(opencode?.["github-copilot-enterprise"], "github-copilot-enterprise"))
   const claudeOAuth = claudeCodeOAuthToken(options)
   put(map, claudeOAuthItem(claudeOAuth))
 

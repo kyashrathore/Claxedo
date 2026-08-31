@@ -172,7 +172,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     tests: [
       "tests/governance/codebase-shape.test.ts",
       "workspace/runtime-dispatch/runtime-wait.test.ts",
-      "tests/integration/control-plane.integration.test.ts",
+      "../../claxedo-local-server/src/agent-config/routes/connection-routes.test.ts",
     ],
   },
   {
@@ -210,7 +210,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "createSandbox",
     tests: [
-      "../../workspace-runtime/src/workspace/runtime.test.ts",
+      "../../workspace-runtime/src/workspace/runtime-connection-provider.test.ts",
       "../../workspace-runtime/src/workspace/index.test.ts",
     ],
   },
@@ -283,20 +283,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local-only route guard",
     tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
-  },
-  {
-    area: "route",
-    module: "../../claxedo-local-server/src/opencode/compat-routes/index.ts",
-    status: OwnershipStatus.Compatibility,
-    owner: "OpenCode HTTP compatibility routes",
-    canonicalReplacement: "Control-plane and workspace-runtime route domains in route-ownership.ts",
-    reason: "Existing local OpenCode-compatible clients still call these paths.",
-    removalCondition: "All local app and CLI callers use canonical authority/workspace-runtime routes.",
-    tests: [
-      "workspace/runtime-dispatch/route-ownership-contract.test.ts",
-      "tests/governance/codebase-shape.test.ts",
-    ],
-    routeSamples: ["/command", "/mcp", "/agent"],
   },
   {
     area: "projection",
@@ -400,7 +386,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local bootstrap route (Claxedo local adapter)",
     reason:
-      "Unit 5 verdict DOCUMENT: imports listProjects from ../workspace-store (FORBIDDEN_LOCAL), ../paths, ../opencode-auth, and node os. env + local provider catalog + opencode-compat coupling, so it stays in place.",
+      "Unit 5 verdict DOCUMENT: imports local workspace and environment owners, so it stays in the local adapter.",
     tests: ["../../claxedo-local-server/src/deployments/shared-routes/bootstrap.test.ts"],
     routeSamples: ["/api/claxedo/bootstrap"],
   },

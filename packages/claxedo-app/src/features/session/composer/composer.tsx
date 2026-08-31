@@ -50,7 +50,6 @@ import { createComposerHarnessMode } from "./harness-mode-helpers"
 import { showToast } from "@opencode-ai/ui/toast"
 import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
-import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
 import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
@@ -147,12 +146,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         key: `prompt:${scope()}`,
         current: selectedModelKey,
       }),
-      write: (model, options) => writeOpenCodeDraftModel({
-        controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-        newSession: isNewSessionVariant(), model, options,
-        labels: openCodeDraftLabels(model, local.model.list()),
-        write: local.model.set,
-      }),
+      write: local.model.set,
     }),
     hydrate: () => { void local.model.hydrate() },
   }))
@@ -431,7 +425,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const toolbarState = createPromptToolbarState({
     agentList: local.agent.list,
     currentAgent: local.agent.current,
-    fallbackAgent: signedWorkspaceRuntimeFallback.agent,
+    fallbackAgent: () => undefined,
     agentOverride: () => props.agent,
     providerLoading: providers.loading,
     currentModel: local.model.current,
@@ -440,7 +434,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     modelRestorePending: local.model.restorePending,
     selectionCatalogPending: local.model.selectionCatalogPending,
     harnessMode: () => toolbarHarnessMode(scope()),
-    isOpenCodeHarness: () => currentHarnessType(scope()) === "opencode",
     existingSession: () => !!resolvedSessionId() && resolvedSessionId() !== "new",
     variantList: local.model.variant.list,
     selectedVariant,
@@ -514,13 +507,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     // `[data-action="prompt-permission-mode"]` from first navigation).
     if (toolbarHarnessMode(scope())) {
       const selected = snapshot?.harness
-      if (selected && selected !== "opencode") return selected
-      return undefined
+      return selected ? harnessSelectionValue(selected) : undefined
     }
     if (!snapshot || snapshot.readiness !== "ready") return undefined
-    if (snapshot.harness) return snapshot.harness
-    const id = currentHarnessType(scope())
-    return id === "opencode" ? "opencode" : id
+    if (snapshot.harness) return harnessSelectionValue(snapshot.harness)
+    const current = currentHarnessType(scope())
+    return current ? harnessSelectionValue(current) : undefined
   }
 
   const { autoAccept, permissionMode } = createComposerPermissionSurface({

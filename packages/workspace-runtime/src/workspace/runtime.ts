@@ -1,16 +1,15 @@
 import { Log } from "../log"
 import fs from "fs"
-import os from "os"
 import path from "path"
 import {
   AGENT_HARNESS_DEFINITIONS,
   connectionIdForHarness,
+  createAcpConnectionProvider,
   createAgentRuntime,
+  createConnectionProviderRegistry,
   type AgentRuntime,
   type AgentHarnessFactory,
   type AgentRuntimeStore,
-  normalizeAgentHarnessTransport,
-  normalizeHarnessIdentity,
   type AgentHarnessId,
   type AgentSession,
   type AgentMessage,
@@ -18,35 +17,33 @@ import {
   type AgentQuestion,
   type SessionConfig,
   type SessionConfigUpdate,
+  type SessionHarness,
+  type ConnectionProvider,
+  type ConnectionSecretResolver,
+  type HarnessConnectionDescriptor,
   type AgentProcessObserver,
   type AgentTurnOutcome,
 } from "@claxedo/agent-sdk-runtime"
 import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions"
 import {
-  AcpHarnessAdapter,
   ClaudeHarnessAdapter,
   CodexHarnessAdapter,
   CursorHarnessAdapter,
-  OpenCodeHarnessAdapter,
   PiHarnessAdapter,
-  createStreamableHttpACPTransportFactory,
-  createWebSocketACPTransportFactory,
   hasAdapterCapability,
   type AgentHarnessAdapter,
   type AgentHarnessAdapterHealth,
   type AgentMessagePage,
   type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
-  type HttpProxyAdapter,
-  type OpenCodeRequestFn,
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
-import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
+import { sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
+import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
 import { eventSessionId, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
-import type { Context, Hono } from "hono"
+import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
 import { runGit } from "../git"
@@ -73,16 +70,11 @@ import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
   agentRuntimeEventDeliveryPolicy,
-  createIdentityAwareEventSource,
-  eventDeliveryPrincipal,
-  sessionEventDeliveryPolicy,
   type EventDeliveryPolicy,
   type EventDeliveryPrincipal,
 } from "../event-delivery"
 import {
   managedWorkspaceSessionAccessPolicy,
-  sessionAccessContext,
-  sessionAccessDenied,
   type SessionAccessPolicy,
 } from "../session-access-policy"
 import {
@@ -216,7 +208,11 @@ export type WorkspaceHostOptions = {
   sessionAccessPolicy?: SessionAccessPolicy
   /** Host-owned credential/model resolver for concrete Pi model turns. */
   piModelBackend?: PiModelBackendResolver
-  harness?: RuntimeRunner
+  harness?: RuntimeHarnessSelection
+  /** Installed generic connection providers. ACP is installed by default. */
+  connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
+  /** Host-owned resolver for opaque descriptor secret references. */
+  resolveConnectionSecrets?: ConnectionSecretResolver
   target?: WorkspaceTarget
   storeRoot?: string
   /**
@@ -248,16 +244,6 @@ export type WorkspaceHostOptions = {
    * {@link WorkspaceRuntimeStoreFactory}.
    */
   storeFactory?: WorkspaceRuntimeStoreFactory
-  /**
-   * Durable subagent admission the OpenCode adapter records delegations into.
-   *
-   * Adapters that own a store (the native-SDK and ACP rails) admit through it
-   * directly; the OpenCode adapter keeps no store of its own because its
-   * sessions live in the engine, so the host hands it exactly the two methods
-   * the admission boundary needs. `createWorkspaceHost` fills this in from its
-   * own store — the same one `/session/:id/subagents` reads — so an omitted
-   * value means "no host behind this adapter", not "use a second store".
-   */
   subagentAdmission?: SubagentAdmissionStore
   /**
    * Host-supplied harness-adapter registry. `createAdapter` dispatches through
@@ -286,16 +272,15 @@ type RuntimeAuth = {
 }
 type AuthSlot = keyof RuntimeAuth
 
+type RuntimeRunner = SessionHarness
 const NATIVE_HARNESS_ADAPTERS = {
   claude: ClaudeHarnessAdapter,
   codex: CodexHarnessAdapter,
   cursor: CursorHarnessAdapter,
 } as const
 
-export const ACP_REMOTE_TRANSPORT_FLAG = "WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT"
-
-function acp(harness: RuntimeRunner) {
-  return harness.access === "acp"
+function configuredConnection(harness: RuntimeRunner) {
+  return harness.access === "connection"
 }
 
 function nativeSdk(harness: RuntimeRunner): harness is RuntimeRunner & { id: keyof typeof NATIVE_HARNESS_ADAPTERS; access: "native" } {
@@ -345,58 +330,18 @@ function harnessKey(harness: RuntimeRunner) {
   return `${harness.id}:${harness.access}`
 }
 
-/**
- * A runner that may still carry connection fields flattened onto it.
- *
- * Before `connection` existed, a runner named its transport inline as
- * `{ binary, args }` or `{ url, transport, headers }`. Stored snapshots and
- * older callers still use that shape, and `processConnection`/`remoteConnection`
- * exist precisely to normalize it — so the flat fields belong in the signature
- * rather than behind a cast inside the body. New callers should set
- * `connection`, which takes precedence.
- */
-type LegacyRuntimeRunner = Omit<RuntimeRunner, "id" | "access"> & Partial<Pick<RuntimeRunner, "id" | "access">> & {
-  /**
-   * @deprecated Use `id` + `access`. `normalizeHarnessIdentity` still reads
-   * this, including access-qualified operator connection keys.
-   */
-  type?: string
-  /** @deprecated Use `connection: { kind: "process", ... }`. */
-  binary?: string
-  /** @deprecated Use `connection: { kind: "process", ... }`. */
-  args?: string[]
-  /** @deprecated Use `connection: { kind: "remote", ... }`. */
-  url?: string
-  /** @deprecated Use `connection: { kind: "remote", ... }`. */
-  transport?: unknown
-  /** @deprecated Use `connection: { kind: "remote", ... }`. */
-  headers?: Record<string, string>
+function runnerForSelection(selection: RuntimeHarnessSelection): RuntimeRunner {
+  return selection.kind === "native"
+    ? { id: selection.harnessId, access: "native" }
+    : { id: selection.connectionId, access: "connection" }
 }
 
-function processConnection(harness: LegacyRuntimeRunner) {
-  const row = harness
-  if (harness.connection?.kind === "process") return harness.connection
-  if (typeof row.binary === "string") {
-    return {
-      kind: "process" as const,
-      binary: row.binary,
-      ...(Array.isArray(row.args) ? { args: row.args } : {}),
-    }
+function selectionForRunner(runner: RuntimeRunner): RuntimeHarnessSelection {
+  if (runner.access === "native" && ["claude", "codex", "cursor", "pi"].includes(runner.id)) {
+    return { kind: "native", harnessId: runner.id as RuntimeNativeHarnessId }
   }
-}
-
-function remoteConnection(harness: LegacyRuntimeRunner) {
-  const row = harness
-  if (harness.connection?.kind === "remote") return harness.connection
-  if (row.url || row.transport !== undefined || row.headers) {
-    const transport = normalizeAgentHarnessTransport(row.transport)
-    return {
-      kind: "remote" as const,
-      ...(transport ? { transport } : {}),
-      ...(row.url ? { url: row.url } : {}),
-      ...(row.headers ? { headers: row.headers } : {}),
-    }
-  }
+  if (runner.access === "connection") return { kind: "connection", connectionId: runner.id }
+  throw new WorkspaceHarnessUnavailableError(runner)
 }
 
 /**
@@ -407,46 +352,13 @@ function remoteConnection(harness: LegacyRuntimeRunner) {
 export class WorkspaceHarnessUnavailableError extends Error {
   readonly code = "workspace_harness_not_configured"
   constructor(readonly harness: { id: string; access: string }) {
-    super(`ACP connection "${harness.id}" is not configured on this runtime`)
+    super(harness.access === "connection"
+      ? `Connection "${harness.id}" is not configured on this runtime`
+      : "No default harness is configured on this runtime")
     this.name = "WorkspaceHarnessUnavailableError"
   }
 }
 
-function openAcpRunner(harness: RuntimeRunner) {
-  return harness.access === "acp"
-}
-
-function binary(harness: RuntimeRunner) {
-  const raw = processConnection(harness)?.binary
-  if (!raw) throw new WorkspaceHarnessUnavailableError(harness)
-  return raw
-}
-
-function acpArgs(harness: RuntimeRunner) {
-  return processConnection(harness)?.args ?? []
-}
-
-export function acpRemoteTransportEnabled(env: NodeJS.ProcessEnv = process.env) {
-  return ["1", "true", "yes", "on"].includes(env[ACP_REMOTE_TRANSPORT_FLAG]?.trim().toLowerCase() ?? "")
-}
-
-export function acpTransportFactory(harness: LegacyRuntimeRunner, env: NodeJS.ProcessEnv = process.env) {
-  const remote = remoteConnection(harness)
-  if (!remote?.url) return
-  if (!acpRemoteTransportEnabled(env)) return
-  const transport = normalizeAgentHarnessTransport(remote.transport) ?? "streamable-http"
-  if (transport === "websocket") {
-    return createWebSocketACPTransportFactory({
-      serverUrl: remote.url,
-      headers: remote.headers,
-    })
-  }
-  if (transport === "stdio") return
-  return createStreamableHttpACPTransportFactory({
-    serverUrl: remote.url,
-    headers: remote.headers,
-  })
-}
 
 function authSlotValue(auth: Record<string, string>, slot: AuthSlot) {
   const candidates = AGENT_HARNESS_DEFINITIONS
@@ -498,7 +410,7 @@ function harnessConfigOptionsErrorMessage(input: {
   cause: unknown
 }) {
   const message = errorMessage(input.cause)
-  if (input.harness.id === "codex" && input.harness.access === "acp" && message.startsWith("ACP connection closed")) {
+  if (input.harness.id === "codex" && input.harness.access === "connection" && message.startsWith("ACP connection closed")) {
     const detail = message.replace(/^ACP connection closed:?\s*/, "").replace(/^Error:\s*/, "")
     if (detail) return `Codex could not start: ${detail}. Run \`codex doctor\`, fix the reported Codex config/auth issue, then retry.`
     return "Codex could not start. Run `codex doctor`, fix the reported Codex config/auth issue, then retry."
@@ -539,8 +451,13 @@ async function applyAgentExtensionsSnapshot(
 function runtimeConfigSnapshotMetadata(snapshot: AppliedRuntimeSnapshot) {
   return {
     version: snapshot.version,
-    harness: snapshot.harness,
-    ...(typeof snapshot.model === "string" ? { model: snapshot.model } : {}),
+    ...(snapshot.defaultHarness ? { defaultHarness: snapshot.defaultHarness } : {}),
+    connections: snapshot.connections.map(({ connectionId, providerKey, configRevision, enabled }) => ({
+      connectionId,
+      providerKey,
+      configRevision,
+      enabled,
+    })),
     mcp: { keys: Object.keys(snapshot.mcp).sort() },
     auth: { keys: Object.keys(snapshot.auth).sort() },
     ...(snapshot.agent_extensions ? {
@@ -633,47 +550,6 @@ export function runtimeAuthKey(input: string | undefined) {
   return typeof value.OPENAI_API_KEY === "string" ? value.OPENAI_API_KEY : undefined
 }
 
-export async function materializeCodexAuth(input: string | undefined) {
-  const materialization = codexAuthMaterialization(input)
-  if (!materialization) return
-  await writeCodexAuth(materialization)
-  return materialization.target
-}
-
-function codexAuthMaterialization(input: string | undefined) {
-  const value = codexAuthValue(input)
-  if (!value) return
-  const oauth = value.oauth && typeof value.oauth === "object" ? value.oauth as Record<string, unknown> : undefined
-  const row = value.tokens && typeof value.tokens === "object" ? value.tokens as Record<string, unknown> : undefined
-  const access = typeof row?.access_token === "string" ? row.access_token : typeof oauth?.access === "string" ? oauth.access : undefined
-  const refresh = typeof row?.refresh_token === "string" ? row.refresh_token : typeof oauth?.refresh === "string" ? oauth.refresh : undefined
-  const account = typeof row?.account_id === "string" ? row.account_id : typeof oauth?.account_id === "string" ? oauth.account_id : undefined
-  if (!access || !refresh || !account) return
-  return {
-    target: path.join(process.env.HOME || os.homedir(), ".codex", "auth.json"),
-    content: JSON.stringify({
-      auth_mode: typeof value.auth_mode === "string" ? value.auth_mode : "chatgpt",
-      OPENAI_API_KEY: null,
-      tokens: {
-        ...(typeof row?.id_token === "string" ? { id_token: row.id_token } : {}),
-        access_token: access,
-        refresh_token: refresh,
-        account_id: account,
-      },
-      last_refresh: typeof value.last_refresh === "string" ? value.last_refresh : new Date().toISOString(),
-    }, null, 2) + "\n",
-  }
-}
-
-async function writeCodexAuth(input: { target: string; content: string }) {
-  await fs.promises.mkdir(path.dirname(input.target), { recursive: true, mode: 0o700 })
-  await fs.promises.writeFile(
-    input.target,
-    input.content,
-    { mode: 0o600 },
-  )
-}
-
 const defaultStoreFactory: WorkspaceRuntimeStoreFactory = ({ storeRoot }) => new RuntimeStore(storeRoot)
 
 function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeStoreFactory {
@@ -746,38 +622,11 @@ export type WorkspaceHarnessRegistryEntry = {
 export type WorkspaceHarnessRegistry = WorkspaceHarnessRegistryEntry[]
 
 /**
- * The built-in adapter catalog. Selection order: ACP (any `access: "acp"`
- * runner) → native claude/codex/cursor SDK adapters → Pi → OpenCode. The
- * OpenCode entry matches the `opencode` runner ONLY — an unknown runner
- * surfaces `createAdapter`'s typed error instead of silently becoming an
- * OpenCode engine session, so a mistyped or unregistered harness id fails
- * loudly at dispatch rather than running a different product. Operator ACP
- * processes must provide an explicit connection binary.
+ * Native SDK adapter catalog. Generic connections resolve through the
+ * connection-provider registry and never enter this dispatch table.
  */
 export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
-    {
-      match: (runner) => acp(runner),
-      create: ({ runner, options }) => {
-        const createTransport = acpTransportFactory(runner)
-        const process = processConnection(runner)
-        const env = process?.env
-        return new AcpHarnessAdapter({
-          binary: binary(runner),
-          harness: runner.id,
-          args: acpArgs(runner),
-          ...(env ? { env } : {}),
-          ...(typeof process?.supportsMcpServers === "boolean"
-            ? { supportsMcpServers: process.supportsMcpServers }
-            : {}),
-          ...(createTransport ? { createTransport } : {}),
-          createStore: adapterCreateStore(resolveStoreFactory(options)),
-          ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
-          ...(options.eventHub ? { eventHub: options.eventHub } : {}),
-          ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
-        })
-      },
-    },
     {
       match: (runner) => nativeSdk(runner),
       create: ({ runner, options }) => {
@@ -785,7 +634,6 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         const transcripts = options.transcripts
         const registerTranscript = transcripts?.resolver.register
         return new Adapter({
-          ...(processConnection(runner)?.binary ? { binary: binary(runner) } : {}),
           createStore: adapterCreateStore(resolveStoreFactory(options)),
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
@@ -813,20 +661,6 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         ...(options.eventHub ? { eventHub: options.eventHub } : {}),
         ...(options.piModelBackend ? { modelBackend: options.piModelBackend } : {}),
         ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
-      }),
-    },
-    {
-      match: (runner) => runner.id === "opencode",
-      create: ({ options }) => new OpenCodeHarnessAdapter(options.opencodeUrl, {
-        ...(options.opencodeHeaders ? { headers: options.opencodeHeaders } : {}),
-        ...(options.opencodeRequest ? { request: options.opencodeRequest } : {}),
-        eventHub: options.eventHub,
-        ...(options.subagentAdmission ? { subagents: options.subagentAdmission } : {}),
-        ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
-        // Adapter mechanism (upstream list/status proxying) stays on unless the
-        // host explicitly opts out. The root compat ROUTE surface is separately
-        // gated by `!== true` below. See WorkspaceHostOptions.opencodeCompat.
-        compat: options.opencodeCompat !== false,
       }),
     },
   ]
@@ -877,7 +711,7 @@ function createAdapter(
   if (!entry) {
     // Reached for any runner no registry entry claims — including an unknown
     // harness id against the default registry. Deliberate: an unrecognized
-    // runner must fail loudly here, never silently fall through to OpenCode.
+    // runner must fail loudly here.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
   return entry.create({ runner: harness, options })
@@ -1215,7 +1049,7 @@ function scopedToolPrompt(
 }
 
 function requestDirectory(c: any) {
-  return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory") || workspaceDir())
+  return assertTarget(c.req.query("directory") || workspaceDir())
 }
 
 async function gitLine(directory: string, args: string[]) {
@@ -1287,25 +1121,12 @@ function runtimeSnapshotSignature(snapshot: AppliedRuntimeSnapshot) {
 
 export function createWorkspaceHost(options: WorkspaceHostOptions = {}): WorkspaceHost {
   const eventHub = options.eventHub ?? createRuntimeEventHub()
-  // Observe the hub itself, not `/global/event`: that route may proxy a
-  // currently-live OpenCode stream, while this host can later switch a session
-  // to Claude/Codex. The hub is the canonical producer shared by every adapter.
+  // The hub is the canonical producer shared by every adapter.
   const cleanupCompatObserver = options.onCompatEvent
     ? eventHub.subscribeGlobal(options.onCompatEvent)
     : () => undefined
-  const globalEventPolicy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
-  const globalEvents = createIdentityAwareEventSource<CompatEnvelope>({
-    subscribe: eventHub.subscribeGlobal,
-    policy: globalEventPolicy,
-    sessionId: (event) => eventSessionId(event.payload),
-    isTerminal: (event) => isTerminalCompatEvent(event.payload),
-  })
-  globalEvents.open({ mode: "unmanaged-local", connectionId: "local-global-replay" })
-  // `store()` is the host's own session-config store — the same instance
-  // `/session/:id/subagents` lists from — so an OpenCode delegation admitted
-  // through this port is immediately readable on the host read path and
-  // survives a reload. Bound lazily: `store()` opens SQLite on first use, and a
-  // host that never runs a turn should never open it.
+  // `store()` is the host's own session-config store. Bound lazily: `store()`
+  // opens SQLite on first use, and an idle host never opens it.
   const hostOptions = {
     ...options,
     eventHub,
@@ -1315,7 +1136,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         subagentStore().markPublished(parentSessionId, observationId),
     },
   }
-  let runner = options.harness ?? { id: "opencode" as const, access: "native" as const }
+  let runner = options.harness ? runnerForSelection(options.harness) : undefined
   let state: "ready" | "applying" | "error" = "ready"
   let err = ""
   let enabled = false
@@ -1329,13 +1150,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let currentMcp: Record<string, unknown> = {}
   let currentAuth: RuntimeAuth = {}
   let currentAuthRaw: Record<string, string> = {}
-  let currentModel: string | undefined
-  let materializedCodexAuthPath: string | undefined
   let applyQueue = Promise.resolve()
   const storeFactory = resolveStoreFactory(options)
   // Resolved once and reused: the registry must be stable for the host lifetime
   // (adapter cache identity depends on it — R2).
   const harnessRegistry = resolveHarnessRegistry(options)
+  const connectionRegistry = createConnectionProviderRegistry(
+    options.connectionProviders ?? [createAcpConnectionProvider()],
+  )
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
   const sessionAdapters = new Map<string, AgentHarnessAdapter>()
   const sessionRuntimes = new Map<string, AgentRuntime>()
@@ -1353,78 +1175,42 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }>()
 
   function adapterKey(next: RuntimeRunner) {
-    const process = processConnection(next)
-    const remote = remoteConnection(next)
-    const binary = next.id === "codex" && next.access === "native" && process?.binary === "codex"
-      ? ""
-      : process?.binary ?? ""
-    const env = process?.env && Object.keys(process.env).length ? JSON.stringify(process.env) : ""
-    // Ninth part: MCP-offering compatibility. Toggling it must produce a new
-    // adapter (the gate is an adapter-construction option). Older stored
-    // eight-part keys parse with the part absent, meaning "servers offered".
-    const mcpCompat = process?.supportsMcpServers === undefined ? "" : String(process.supportsMcpServers)
-    return `${next.id}\n${next.access}\n${binary}\n${process?.args?.join("\0") ?? ""}\n${remote?.transport ?? ""}\n${remote?.url ?? ""}\n${JSON.stringify(remote?.headers ?? {})}\n${env}\n${mcpCompat}`
+    if (next.access === "native") return `native:${next.id}`
+    const descriptor = appliedConnections.get(next.id)
+    if (!descriptor) throw new WorkspaceHarnessUnavailableError(next)
+    return `${descriptor.providerKey}:${descriptor.connectionId}:${descriptor.configRevision}`
   }
 
-  function runnerFromAdapterKey(key: string) {
-    const [id, access, binary, args, transport, url, headers, env, mcpCompat] = key.split("\n")
-    const identity = normalizeHarnessIdentity({ id, access })
-    const connection = url || headers || transport
-      ? {
-          kind: "remote" as const,
-          ...(transport ? { transport: normalizeAgentHarnessTransport(transport) } : {}),
-          ...(url ? { url } : {}),
-          ...(headers ? { headers: JSON.parse(headers) as Record<string, string> } : {}),
-        }
-      : binary || args || env || mcpCompat
-        ? {
-            kind: "process" as const,
-            ...(binary ? { binary } : {}),
-            ...(args ? { args: args.split("\0").filter(Boolean) } : {}),
-            ...(env ? { env: JSON.parse(env) as Record<string, string> } : {}),
-            ...(mcpCompat ? { supportsMcpServers: mcpCompat === "true" } : {}),
-          }
-        : undefined
-    return {
-      id: identity?.id ?? "opencode",
-      access: identity?.access ?? "native",
-      ...(connection ? { connection } : {}),
-    }
+  function currentRunner(): RuntimeRunner {
+    if (!runner) throw new WorkspaceHarnessUnavailableError({ id: "default", access: "unconfigured" })
+    return runner
   }
 
-  async function configureAdapter(next: AgentHarnessAdapter, nextRunner: RuntimeRunner, model?: string) {
+  async function configureAdapter(next: AgentHarnessAdapter, nextRunner: RuntimeRunner) {
     if (!hasAdapterCapability(next, "runtime-config") || !next.applyConfig) return
-    const configuredModel = model ?? currentModel
     if (
-      configuredModel === undefined
-      && Object.keys(currentAuthRaw).length === 0
+      Object.keys(currentAuthRaw).length === 0
       && Object.keys(currentMcp).length === 0
       && adapterConfigStamps.get(next) === undefined
     ) {
       adapterConfigStamps.set(next, `${adapterKey(nextRunner)}\n\n{}\n{}`)
       return
     }
-    const adapterAuth = acp(nextRunner) ? {} : currentAuthRaw
-    const stamp = `${adapterKey(nextRunner)}\n${configuredModel ?? ""}\n${JSON.stringify(adapterAuth)}\n${JSON.stringify(currentMcp)}`
+    const adapterAuth = configuredConnection(nextRunner) ? {} : currentAuthRaw
+    const stamp = `${adapterKey(nextRunner)}\n${JSON.stringify(adapterAuth)}\n${JSON.stringify(currentMcp)}`
     if (adapterConfigStamps.get(next) === stamp) return
-    const turns = acp(nextRunner) ? activeTurns.get(next) : undefined
+    const turns = configuredConnection(nextRunner) ? activeTurns.get(next) : undefined
     if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
     if (adapterConfigStamps.get(next) === stamp) return
     ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
-      acp(nextRunner)
+      configuredConnection(nextRunner)
         ? {}
         : runtimeAuthForAdapter(currentAuth),
     )
-    if (configuredModel !== undefined) {
-      ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setModel(
-        configuredModel === "default" ? "" : configuredModel,
-      )
-    }
     await next.applyConfig({
       mcp: currentMcp,
       auth: adapterAuth,
       harness: nextRunner,
-      model: configuredModel,
     })
     await (next as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
     adapterConfigStamps.set(next, stamp)
@@ -1435,34 +1221,69 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   // ACP identity by id only — the process command/env always resolves from
   // here, and an identity with no applied row fails closed before any adapter
   // is created.
-  let appliedAcpConnections = new Map<string, RuntimeRunner>(
-    openAcpRunner(runner) ? [[runner.id, runner]] : [],
-  )
+  let appliedConnections = new Map<string, RuntimeConnectionDescriptor>()
 
-  function resolveAppliedRunner(next: RuntimeRunner): RuntimeRunner {
-    if (!openAcpRunner(next)) return next
-    // Operational details always come from the CURRENT accepted registry.
-    // Stored sessions and request payloads are logical identities only; even a
-    // historical row that still contains a descriptor cannot override the
-    // authoritative command, arguments, environment, or compatibility flags.
-    const applied = appliedAcpConnections.get(next.id)
-    if (!applied) throw new WorkspaceHarnessUnavailableError(next)
-    return applied
+  /**
+   * A managed VM receives connection secrets separately from descriptors in
+   * the authenticated runtime-config snapshot. `secretRefs` names the exact
+   * entries to materialize from that snapshot; an embedding host can override
+   * this with a vault-backed resolver. No descriptor value is ever treated as
+   * secret material and a missing reference fails closed.
+   */
+  const resolveSnapshotConnectionSecrets: ConnectionSecretResolver = async ({ descriptor }) => {
+    const secrets: Record<string, string> = {}
+    const references = Object.entries(descriptor.secretRefs ?? {}).sort(([a], [b]) => a.localeCompare(b))
+    for (const [name, reference] of references) {
+      const value = currentAuthRaw[reference]
+      if (!value) throw new WorkspaceHarnessUnavailableError({ id: descriptor.connectionId, access: "connection" })
+      secrets[name] = value
+    }
+    return {
+      secrets,
+      secretLeaseGeneration: `runtime-config:${configApplyRevision}:${references.map(([name, reference]) => `${encodeURIComponent(name)}=${encodeURIComponent(reference)}`).join("&") || "none"}`,
+    }
   }
 
-  function ensure() {
-    if (adapter) return adapter
-    adapter = createAdapter(runner, hostOptions, harnessRegistry)
-    enabled = true
-    return adapter
+  function resolveAppliedRunner(next: RuntimeRunner): RuntimeRunner {
+    if (next.access === "native") return next
+    if (!appliedConnections.has(next.id)) throw new WorkspaceHarnessUnavailableError(next)
+    return { id: next.id, access: "connection" }
   }
 
   async function ensureSessionAdapter(requestedRunner: RuntimeRunner) {
     const nextRunner = resolveAppliedRunner(requestedRunner)
-    if (adapterKey(nextRunner) === adapterKey(runner)) {
-      const next = ensure()
-      await configureAdapter(next, nextRunner)
-      return next
+    if (nextRunner.access === "connection") {
+      const descriptor = appliedConnections.get(nextRunner.id)!
+      const secretLease = descriptor.secretRefs && Object.keys(descriptor.secretRefs).length > 0
+        ? await (options.resolveConnectionSecrets ?? resolveSnapshotConnectionSecrets)({
+            descriptor,
+            directory: options.target?.directory ?? workspaceDir(),
+          })
+        : undefined
+      const resolved = await connectionRegistry.resolve({
+        descriptor: descriptor as HarnessConnectionDescriptor,
+        directory: options.target?.directory ?? workspaceDir(),
+        context: {
+          store: store(),
+          eventHub,
+          ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
+        },
+        ...(secretLease ? { secretLease } : {}),
+      })
+      const generation = `${resolved.connectionGeneration.configRevision}:${resolved.connectionGeneration.secretLeaseGeneration}`
+      const key = `${descriptor.providerKey}:${descriptor.connectionId}:${generation}`
+      const existing = sessionAdapters.get(key)
+      if (existing) {
+        resolved.adapter.dispose()
+        await configureAdapter(existing, nextRunner)
+        return existing
+      }
+      sessionAdapters.set(key, resolved.adapter)
+      sessionAdapterRunners.set(key, nextRunner)
+      enabled = true
+      await configureAdapter(resolved.adapter, nextRunner)
+      if (runner && harnessKey(nextRunner) === harnessKey(runner)) adapter = resolved.adapter
+      return resolved.adapter
     }
     const key = adapterKey(nextRunner)
     const existing = sessionAdapters.get(key)
@@ -1476,6 +1297,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     sessionAdapterRunners.set(key, nextRunner)
     enabled = true
     await configureAdapter(next, nextRunner)
+    if (runner && harnessKey(nextRunner) === harnessKey(runner)) adapter = next
     return next
   }
 
@@ -1497,13 +1319,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return config
   }
 
-  function canonicalExecutionBinding(sessionId: string, directory: string) {
+  function executionBindingForHarness(sessionId: string, directory: string, harness: SessionHarness) {
     const binding = store().getExecutionBinding(sessionId)
-    const config = store().getSessionConfig(sessionId)
-    if (!binding || !config) {
+    if (!binding) {
       throw new AgentRuntimeContractError({
         code: "invalid_execution_binding",
-        field: !binding ? "upstreamSessionId" : "connectionId",
+        field: "upstreamSessionId",
         message: `Session ${sessionId} has no complete execution binding`,
       })
     }
@@ -1512,23 +1333,35 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       sessionId,
       workspaceId: workspaceId(),
       directory,
-      connectionId: connectionIdForHarness(config.harness),
+      connectionId: connectionIdForHarness(harness),
     })
+  }
+
+  function canonicalExecutionBinding(sessionId: string, directory: string) {
+    const config = store().getSessionConfig(sessionId)
+    if (!config) {
+      throw new AgentRuntimeContractError({
+        code: "invalid_execution_binding",
+        field: "connectionId",
+        message: `Session ${sessionId} has no complete execution binding`,
+      })
+    }
+    return executionBindingForHarness(sessionId, directory, config.harness)
   }
 
   async function adapterForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     if (!input?.sessionId) {
       if (input?.harness) return await ensureSessionAdapter(input.harness)
-      return await ensureSessionAdapter(runner)
+      return await ensureSessionAdapter(currentRunner())
     }
     const config = sessionConfigFor(input)
-    if (!config) return await ensureSessionAdapter(input?.harness ?? runner)
+    if (!config) return await ensureSessionAdapter(input?.harness ?? currentRunner())
     return await ensureSessionAdapter(config.harness)
   }
 
   async function runtimeForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     const config = sessionConfigFor(input)
-    const nextRunner = config?.harness ?? input?.harness ?? runner
+    const nextRunner = config?.harness ?? input?.harness ?? currentRunner()
     const key = adapterKey(nextRunner)
     const existing = sessionRuntimes.get(key)
     if (existing) return existing
@@ -1793,7 +1626,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const pending = [...turns]
     for (const turn of pending) turn.controller.abort()
     const aborts = next.abort
-      ? pending.map((turn) => next.abort!(turn.sessionId, turn.directory).catch(() => {}))
+      ? pending.map((turn) => next.abort!(canonicalExecutionBinding(turn.sessionId, turn.directory)).catch(() => {}))
       : []
     const drained = Promise.all([...aborts, ...pending.map((turn) => turn.done)])
     await Promise.race([
@@ -1880,46 +1713,57 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
     state = "applying"
     enabled = next.workspaceHarnessEnabled ?? enabled
-    // The accepted snapshot is the ONLY source of operator-ACP descriptors:
-    // rebuild the applied registry wholesale so removed or disabled
-    // connections stop resolving immediately while running adapters finish
-    // their current turn undisturbed.
-    appliedAcpConnections = new Map(
-      (next.harnesses ?? [next.harness])
-        .filter(openAcpRunner)
-        .map((row) => [row.id, row] as const),
-    )
+    let nextConnections: Map<string, RuntimeConnectionDescriptor>
+    let nextRunner: RuntimeRunner | undefined
+    try {
+      const validatedConnections = connectionRegistry.validateDescriptors(next.connections)
+      nextConnections = new Map(validatedConnections.map((row) => [row.connectionId, row] as const))
+      for (const [connectionId, previous] of appliedConnections) {
+        const updated = nextConnections.get(connectionId)
+        if (updated) connectionRegistry.assertRevision(updated, previous)
+      }
+      nextRunner = next.defaultHarness ? runnerForSelection(next.defaultHarness) : undefined
+      if (nextRunner?.access === "connection") {
+        const descriptor = nextConnections.get(nextRunner.id)
+        if (!descriptor || !descriptor.enabled) throw new WorkspaceHarnessUnavailableError(nextRunner)
+      }
+    } catch (error) {
+      state = "ready"
+      throw error
+    }
     const directory = options.target?.directory ?? workspaceDir()
     const receiptDir = options.configApplyReceiptDir
     let revision = configApplyRevision
     let acceptedAt: string | undefined
-    const replacing = adapterKey(next.harness) !== adapterKey(runner)
+    const currentKey = runner ? adapterKey(runner) : undefined
+    appliedConnections = nextConnections as Map<string, RuntimeConnectionDescriptor>
+    const nextKey = nextRunner ? adapterKey(nextRunner) : undefined
+    const replacing = nextKey !== currentKey
     const nextAuth = runtimeAuth(next.auth)
-    const effectiveModel = next.model ?? currentModel
-    const configChangesActiveAcp = (replacing ? effectiveModel !== undefined : next.model !== undefined)
-      || !sameRuntimeMcp(currentMcp, next.mcp)
+    const configChangesActiveConnection = !sameRuntimeMcp(currentMcp, next.mcp)
 
     function assertSafeAcpTarget(target: AgentHarnessAdapter | undefined) {
       if (
         !target
-        || !acp(next.harness)
+        || !nextRunner
+        || !configuredConnection(nextRunner)
         || !hasAdapterCapability(target, "runtime-config")
         || (activeTurns.get(target)?.size ?? 0) === 0
-        || !configChangesActiveAcp
+        || !configChangesActiveConnection
       ) return
       throw new RuntimeConfigApplyError(
         "runtime_config_unsafe_restart",
         "ACP runtime config change would restart an active session",
         409,
         {
-          harness: next.harness.id,
+          harness: nextRunner.id,
           activeTurns: activeTurns.get(target)?.size ?? 0,
         },
       )
     }
 
     try {
-      assertSafeAcpTarget(replacing ? sessionAdapters.get(adapterKey(next.harness)) : adapter)
+      assertSafeAcpTarget(replacing && nextKey ? sessionAdapters.get(nextKey) : adapter)
       revision = configApplyRevision + 1
       acceptedAt = new Date().toISOString()
       configApplyRevision = revision
@@ -1928,87 +1772,58 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         revision,
         acceptedAt,
         updatedAt: acceptedAt,
-        harness: next.harness,
+        ...(next.defaultHarness ? { harness: next.defaultHarness } : {}),
       }
       await persistRuntimeConfigApplyStatus({ receiptDir, status: configApply, snapshot: next })
-      const nextMaterializedCodexAuthPath = await materializeCodexAuth(codexAuthInput(next.auth))
-      const obsoleteMaterializedCodexAuthPath = materializedCodexAuthPath
-        && materializedCodexAuthPath !== nextMaterializedCodexAuthPath
-        ? materializedCodexAuthPath
-        : undefined
-      // Do not materialize central slash commands pushed via
-      // the runtime config push — the runner-host owns command discovery
-      // and re-writing them at the workspace layer would clobber any
-      // user-authored commands that already live on disk.
-      // (See workspace/runtime.test.ts: "runtime config push does not
-      // materialize central slash commands".)
-      if (obsoleteMaterializedCodexAuthPath) {
-        await fs.promises.rm(obsoleteMaterializedCodexAuthPath, { force: true })
-      }
-      materializedCodexAuthPath = nextMaterializedCodexAuthPath
 
       if (replacing) {
         if (adapter) await drainActiveTurns(adapter)
-        const key = adapterKey(next.harness)
-        const promoted = sessionAdapters.get(key)
-        // Config acceptance is the linearization point. A runner-scoped ACP
-        // turn admitted during receipt/auth I/O is promoted without restarting
-        // its process; the accepted config is applied on its next safe use.
-        // Promotion and the runner flip are synchronous, so no second adapter
-        // for this identity can appear between them.
+        const promoted = nextKey ? sessionAdapters.get(nextKey) : undefined
         clear()
-        runner = next.harness
-        if (promoted) {
-          // A session adapter can already own native provider process state
-          // before the workspace-default config fan-out settles.
+        runner = nextRunner
+        if (promoted && nextKey) {
           adapter = promoted
-          sessionAdapters.delete(key)
-          sessionAdapterRunners.delete(key)
+          sessionAdapters.delete(nextKey)
+          sessionAdapterRunners.delete(nextKey)
         }
       }
 
       currentMcp = next.mcp
       currentAuth = nextAuth
       currentAuthRaw = next.auth
-      currentModel = effectiveModel
       const deferDefaultAdapterConfig = adapter
-        && acp(next.harness)
+        && nextRunner
+        && configuredConnection(nextRunner)
         && (activeTurns.get(adapter)?.size ?? 0) > 0
-
-      if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config") && effectiveModel !== undefined) {
-        ;(adapter as AgentHarnessAdapter & RuntimeConfigurableAdapter).setModel(
-          effectiveModel === "default" ? "" : effectiveModel,
-        )
-      }
 
       if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config")) {
         ;(adapter as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
-          acp(next.harness)
+          nextRunner && configuredConnection(nextRunner)
             ? {}
             : runtimeAuthForAdapter(nextAuth),
         )
       }
 
-      if (!replacing) runner = next.harness
-      if (!deferDefaultAdapterConfig && adapter?.applyConfig) {
+      if (!replacing) runner = nextRunner
+      if (!adapter && nextRunner) adapter = await ensureSessionAdapter(nextRunner)
+      if (!deferDefaultAdapterConfig && adapter?.applyConfig && nextRunner) {
         await adapter.applyConfig({
           mcp: next.mcp,
-          auth: acp(next.harness) ? {} : next.auth,
-          harness: next.harness,
-          model: effectiveModel,
+          auth: configuredConnection(nextRunner) ? {} : next.auth,
+          harness: nextRunner,
         })
         await (adapter as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
         if (hasAdapterCapability(adapter, "runtime-config")) {
           adapterConfigStamps.set(
             adapter,
-            `${adapterKey(next.harness)}\n${effectiveModel ?? ""}\n${JSON.stringify(acp(next.harness) ? {} : next.auth)}\n${JSON.stringify(next.mcp)}`,
+            `${adapterKey(nextRunner)}\n${JSON.stringify(configuredConnection(nextRunner) ? {} : next.auth)}\n${JSON.stringify(next.mcp)}`,
           )
         }
       }
       await Promise.all([...sessionAdapters.entries()].map(([key, nextAdapter]) => {
         return activeTurns.get(nextAdapter)?.size
           ? Promise.resolve()
-          : configureAdapter(nextAdapter, sessionAdapterRunners.get(key) ?? runnerFromAdapterKey(key), next.model)
+          : configureAdapter(nextAdapter, sessionAdapterRunners.get(key) ?? currentRunner())
       }))
       await applyAgentExtensionsSnapshot(next.agent_extensions, directory, options.agentExtensionStateRoot)
       state = "ready"
@@ -2021,7 +1836,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         revision,
         ...(acceptedAt ? { acceptedAt } : {}),
         updatedAt,
-        harness: next.harness,
+        ...(next.defaultHarness ? { harness: next.defaultHarness } : {}),
       }
       await persistRuntimeConfigApplyStatus({ receiptDir, status: configApply })
     } catch (cause) {
@@ -2035,7 +1850,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         revision,
         ...(acceptedAt ? { acceptedAt } : {}),
         updatedAt,
-        harness: next.harness,
+        ...(next.defaultHarness ? { harness: next.defaultHarness } : {}),
         error: runtimeConfigApplyError(cause),
       }
       await persistRuntimeConfigApplyStatus({ receiptDir, status: configApply }).catch(() => {})
@@ -2276,10 +2091,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/vcs", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        const fallback = () => localVcsInfo(requestDirectory(c))
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(await fallback())
-        return proxyOpenCodeOrJson(c, adapter, fallback, hostOptions.opencodeHeaders)
+        return c.json(await localVcsInfo(requestDirectory(c)))
       })
 
       app.get("/global/event", async (c) => {
@@ -2453,13 +2265,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           const adapter = await adapterForSession({
             ...(id ? { sessionId: id } : {}),
             directory,
-            ...(requested ? { harness: { id: requested.id, access: requested.access } } : {}),
+            ...(requested ? { harness: requested } : {}),
           })
           const session = await adapter.createSession(directory, title, id)
           assertSessionDirectory(session.id, directory)
           const selectedHarness = requested
-            ? { id: requested.id, access: requested.access }
-            : sessionConfigFor({ sessionId: session.id, directory })?.harness ?? runner
+            ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
+            ?? currentRunner()
           // The agent session id belongs to the HARNESS, never to this
           // write-through. An adapter that persists into this store has
           // already bound the id its process answers to: a codex
@@ -2481,7 +2293,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             agentSessionId: store().getAgentSessionId(session.id) ?? session.id,
           })
           if (!store().getSessionConfig(session.id)) {
-            const accepted = await adapter.getSessionConfig(session.id, directory)
+            const accepted = await adapter.getSessionConfig(
+              executionBindingForHarness(session.id, directory, selectedHarness),
+            )
             store().updateSessionConfig(session.id, {
               ...accepted,
               harness: selectedHarness,
@@ -2509,32 +2323,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             parts: [...(body.parts ?? []), { type: "text", text: scopedToolPrompt(sessionId, registration) }],
           }
         },
-        // An empty message projection is never authoritative: proxy-driven
-        // sessions (OpenCode Session V2) keep their messages in the engine and
-        // are bound into the store message-less by session discovery, so an
-        // empty projection must fall through to the adapter instead of
-        // shadowing the engine transcript.
         getMessages: async ({ sessionId }) => {
-          if (!store().getSession(sessionId)) return undefined
-          const messages = store().getMessages(sessionId)
-          if (!messages.length) return undefined
-          return messages
+          if (!store().getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
+          return store().getMessages(sessionId)
         },
-        getMessagePage: async ({ adapter, sessionId, page }) => {
+        getMessagePage: async ({ sessionId, page }) => {
           const runtimeStore = store()
-          if (!runtimeStore.getSession(sessionId)) return undefined
+          if (!runtimeStore.getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
           const getMessagePage = runtimeStore.getMessagePage
-          if (!getMessagePage) return undefined
-          const projection = getMessagePage.call(runtimeStore, sessionId, page)
-          if (projection) return projection
-          // Only an adapter with a bounded page contract can own an empty
-          // store projection. Native/ACP/Pi sessions are journal-backed, so an
-          // empty projection is an authoritative empty transcript rather than
-          // permission to read unbounded history from the harness.
-          return adapter.getMessagePage ? undefined : { messages: [] }
+          if (!getMessagePage) throw new HTTPException(501, { message: "Bounded message history is unavailable" })
+          return getMessagePage.call(runtimeStore, sessionId, page) ?? { messages: [] }
         },
         getMessageSnapshot: async ({ sessionId }) => {
-          if (!store().getSession(sessionId)) return undefined
+          if (!store().getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
           const messages = store().getMessages(sessionId)
           if (!messages.length) return undefined
           const fencingToken = store().getSessionFencingToken?.(sessionId) ?? 0
@@ -2553,13 +2354,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           if (!store().getSession(sessionId)) return undefined
           return store().getTodos(sessionId)
         },
-        getSessionConfig: async ({ adapter, directory, sessionId }) => {
-          const config = store().getSessionConfig(sessionId) ?? await adapter.getSessionConfig(sessionId, directory)
+        getSessionConfig: async ({ sessionId }) => {
+          const config = store().getSessionConfig(sessionId)
+          if (!config) throw new HTTPException(404, { message: "Session not found" })
           if (config.model && config.agent && config.variant !== undefined) return config
           const session = store().getSession(sessionId)
           const recovered = mergeRecoveredSessionConfig(
             config,
-            sessionRowConfigPatch(session ?? await adapter.getSession(sessionId, directory)),
+            sessionRowConfigPatch(session),
           )
           return recovered
         },
@@ -2574,7 +2376,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // complete `SessionConfig` from every harness, so a single write after
         // acceptance loses nothing.
         updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
-          const adapterConfig = await adapter.updateSessionConfig(sessionId, update, directory)
+          const adapterConfig = await adapter.updateSessionConfig(canonicalExecutionBinding(sessionId, directory), update)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },
         switchSessionHarness: async ({ directory, sessionId, update }) => {
@@ -2596,9 +2398,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           store().deleteSession(sessionId)
           hostOptions.transcripts?.resolver.invalidateParent?.(hostOptions.transcripts.workspaceId, sessionId)
         },
-        ...(hostOptions.opencodeHeaders ? { opencodeHeaders: hostOptions.opencodeHeaders } : {}),
       }))
-      app.route("/", OpenCodeCompatRoutes())
     },
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)
@@ -2610,29 +2410,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     async apply(next: RuntimeSnapshot) {
       const normalized = normalizeRuntimeSnapshot(next)
       if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
-      const target = adapterKey(normalized.harness) === adapterKey(runner)
-        ? adapter
-        : sessionAdapters.get(adapterKey(normalized.harness))
-      if (
-        target
-        && acp(normalized.harness)
-        && hasAdapterCapability(target, "runtime-config")
-        && (activeTurns.get(target)?.size ?? 0) > 0
-        && (
-          normalized.model !== undefined
-          || !sameRuntimeMcp(currentMcp, normalized.mcp)
-        )
-      ) {
-        throw new RuntimeConfigApplyError(
-          "runtime_config_unsafe_restart",
-          "ACP runtime config change would restart an active session",
-          409,
-          {
-            harness: normalized.harness.id,
-            activeTurns: activeTurns.get(target)?.size ?? 0,
-          },
-        )
-      }
       const pending = applyQueue.then(() => applySnapshot(normalized), () => applySnapshot(normalized))
       applyQueue = pending.catch(() => {})
       return pending
@@ -2642,7 +2419,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       return {
         state,
         healthStatus: healthStatus(health),
-        harness: runner,
+        harness: runner ? selectionForRunner(runner) : undefined,
         error: err,
         harnessHealth: health,
         workspaceHarnessEnabled: enabled,
@@ -2661,44 +2438,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
     },
     async registerSessionTools(input) {
-      const directory = options.target?.directory ?? workspaceDir()
-      const harness = normalizeHarnessIdentity(input.harness)
-      const next = await adapterForSession({
-        sessionId: input.sessionId,
-        directory,
-        ...(harness ? { harness } : {}),
-      })
-      if (!hasAdapterCapability(next, "http-proxy")) {
-        sessionToolPrompts.set(input.sessionId, input)
-        return
-      }
-      sessionToolPrompts.delete(input.sessionId)
-      const response = await next.getRequestFn().then((request) => request(new Request(
-        `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(input.sessionId)}/tool`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json", "x-opencode-directory": directory },
-          body: JSON.stringify({ callbackUrl: input.callbackUrl, tools: input.tools }),
-          // @ts-ignore Node fetch requires duplex for request bodies.
-          duplex: "half",
-        },
-      )))
-      if (!response.ok) throw new Error(`Core Session tool registration failed: ${response.status} ${await response.text()}`)
+      sessionToolPrompts.set(input.sessionId, input)
     },
     async unregisterSessionTools(sessionId) {
-      const registration = sessionToolPrompts.get(sessionId)
       sessionToolPrompts.delete(sessionId)
-      const directory = options.target?.directory ?? workspaceDir()
-      const harness = normalizeHarnessIdentity(registration?.harness)
-      const next = await adapterForSession({ sessionId, directory, ...(harness ? { harness } : {}) })
-      if (!hasAdapterCapability(next, "http-proxy")) return
-      const response = await next.getRequestFn().then((request) => request(new Request(
-        `${OPENCODE_INTERNAL_BASE}/api/session/${encodeURIComponent(sessionId)}/tool`,
-        { method: "DELETE", headers: { "x-opencode-directory": directory } },
-      )))
-      if (!response.ok && response.status !== 404) {
-        throw new Error(`Core Session tool cleanup failed: ${response.status} ${await response.text()}`)
-      }
     },
     checkpoint: {
       detail: checkpointDetail,
@@ -2734,13 +2477,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         sessionAdapters.clear()
         sessionAdapterRunners.clear()
         sessionRuntimes.clear()
-        if (materializedCodexAuthPath) {
-          await fs.promises.rm(materializedCodexAuthPath, { force: true })
-          materializedCodexAuthPath = undefined
-        }
       },
       async resume() {
-        materializedCodexAuthPath = await materializeCodexAuth(codexAuthInput(currentAuthRaw))
         checkpointState = "active"
         return checkpointDetail()
       },
@@ -2755,7 +2493,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     dispose() {
       cleanupCompatObserver()
-      globalEvents.close()
       clear()
       for (const next of sessionAdapters.values()) {
         next.dispose()

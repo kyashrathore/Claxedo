@@ -1,14 +1,6 @@
 import { Hono } from "hono"
 import { Log } from "../log"
-import {
-  isAcpConnectionId,
-  isAgentHarnessAccess,
-  isAgentHarnessId,
-  normalizeAgentHarnessTransport,
-  normalizeHarnessIdentity,
-  type HarnessConnection,
-  type SessionHarness,
-} from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { WorkspaceRuntimeManagementAuth, WorkspaceRuntimeManagementTarget } from "../management-auth"
@@ -16,19 +8,24 @@ import { WorkspaceRuntimeRoutes } from "./manifest"
 
 const log = Log.create({ service: "config-route" })
 
-export type RuntimeHarness = SessionHarness
-export type RuntimeRunner = RuntimeHarness
+export const RUNTIME_NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi"] as const
+export type RuntimeNativeHarnessId = (typeof RUNTIME_NATIVE_HARNESS_IDS)[number]
+export type RuntimeHarnessSelection =
+  | { kind: "native"; harnessId: RuntimeNativeHarnessId }
+  | { kind: "connection"; connectionId: string }
+
+export type RuntimeConnectionDescriptor = HarnessConnectionDescriptor
 
 export type RuntimeCommandItem = {
   name: string
   content: string
 }
 
-export type RuntimeSnapshotV1 = {
-  version: 1
+export type RuntimeSnapshot = {
+  version: 3
   mcp: Record<string, unknown>
-  harness: RuntimeHarness
-  model?: string
+  connections: RuntimeConnectionDescriptor[]
+  defaultHarness?: RuntimeHarnessSelection
   auth: Record<string, string>
   agent_extensions?: {
     version: 1
@@ -42,28 +39,7 @@ export type RuntimeSnapshotV1 = {
   workspaceHarnessEnabled?: boolean
   commands?: RuntimeCommandItem[]
 }
-
-export type RuntimeSnapshotV2 = Omit<RuntimeSnapshotV1, "version" | "harness"> & {
-  version: 2
-  harnesses: RuntimeHarness[]
-}
-
-export type LegacyRuntimeSnapshotV1 = Omit<RuntimeSnapshotV1, "harness"> & {
-  runner: unknown
-}
-
-export type LegacyRuntimeSnapshotV2 = Omit<RuntimeSnapshotV2, "harnesses"> & {
-  runners: unknown[]
-}
-
-export type RuntimeSnapshot = RuntimeSnapshotV1 | RuntimeSnapshotV2 | LegacyRuntimeSnapshotV1 | LegacyRuntimeSnapshotV2
-/**
- * The normalized form the engine applies. `harness` is the ACTIVE runner (v2's
- * first row); `harnesses` retains EVERY validated row so the runtime holds the
- * full accepted registry — in particular operator-configured ACP connections a
- * session may select later.
- */
-export type AppliedRuntimeSnapshot = RuntimeSnapshotV1 & { harnesses?: RuntimeHarness[] }
+export type AppliedRuntimeSnapshot = RuntimeSnapshot
 
 export class RuntimeConfigApplyError extends Error {
   constructor(
@@ -103,66 +79,39 @@ function stringRecord(input: unknown): input is Record<string, string> {
   return record(input) && Object.values(input).every((item) => typeof item === "string")
 }
 
-function validTransport(input: unknown) {
-  return input === undefined || normalizeAgentHarnessTransport(input) !== undefined
-}
-
-function processConnection(input: Record<string, unknown>): HarnessConnection | undefined {
-  if (input.connection && record(input.connection)) {
-    if (input.connection.kind === "process") {
-      return {
-        kind: "process",
-        ...(typeof input.connection.binary === "string" ? { binary: input.connection.binary } : {}),
-        ...(Array.isArray(input.connection.args) && input.connection.args.every((item) => typeof item === "string")
-          ? { args: input.connection.args }
-          : {}),
-        ...(stringRecord(input.connection.env) ? { env: input.connection.env as Record<string, string> } : {}),
-        ...(typeof input.connection.supportsMcpServers === "boolean"
-          ? { supportsMcpServers: input.connection.supportsMcpServers }
-          : {}),
-      }
-    }
-    if (input.connection.kind === "remote") {
-      const transport = normalizeAgentHarnessTransport(input.connection.transport)
-      return {
-        kind: "remote",
-        ...(transport ? { transport } : {}),
-        ...(typeof input.connection.url === "string" ? { url: input.connection.url } : {}),
-        ...(stringRecord(input.connection.headers) ? { headers: input.connection.headers } : {}),
-      }
-    }
-  }
-  if (typeof input.url === "string" || stringRecord(input.headers) || input.transport !== undefined) {
-    const transport = normalizeAgentHarnessTransport(input.transport)
-    return {
-      kind: "remote",
-      ...(transport ? { transport } : {}),
-      ...(typeof input.url === "string" ? { url: input.url } : {}),
-      ...(stringRecord(input.headers) ? { headers: input.headers } : {}),
-    }
-  }
-  if (typeof input.binary === "string") return { kind: "process", binary: input.binary }
-}
-
-function normalizeHarness(input: unknown): RuntimeHarness | undefined {
+function normalizeSelection(input: unknown): RuntimeHarnessSelection | undefined {
   if (!record(input)) return
-  const identity = normalizeHarnessIdentity(input)
-  if (!identity) return
-  if (!isAgentHarnessAccess(identity.access)) return
-  // Built-in ids are accepted for either access; an open validated ACP
-  // connection slug is accepted ONLY as `access: "acp"` — native dispatch
-  // stays closed to the finite id set.
-  if (!isAgentHarnessId(identity.id) && !(identity.access === "acp" && isAcpConnectionId(identity.id))) return
-  const connection = processConnection(input)
-  return {
-    id: identity.id,
-    access: identity.access,
-    ...(connection ? { connection } : {}),
-  }
+  if (
+    input.kind === "native"
+    && typeof input.harnessId === "string"
+    && RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === input.harnessId)
+    && Object.keys(input).every((key) => key === "kind" || key === "harnessId")
+  ) return { kind: "native", harnessId: input.harnessId as RuntimeNativeHarnessId }
+  if (
+    input.kind === "connection"
+    && typeof input.connectionId === "string"
+    && input.connectionId.trim().length > 0
+    && Object.keys(input).every((key) => key === "kind" || key === "connectionId")
+  ) return { kind: "connection", connectionId: input.connectionId }
 }
 
-function validHarness(input: unknown): input is RuntimeHarness {
-  return normalizeHarness(input) !== undefined
+function normalizeDescriptor(input: unknown): RuntimeConnectionDescriptor | undefined {
+  if (!record(input)) return
+  if (typeof input.connectionId !== "string" || !input.connectionId.trim()) return
+  if (typeof input.providerKey !== "string" || !input.providerKey.trim()) return
+  if (typeof input.configRevision !== "number" || !Number.isSafeInteger(input.configRevision) || input.configRevision < 1) return
+  if (typeof input.enabled !== "boolean" || !record(input.config)) return
+  if (input.secretRefs !== undefined && !stringRecord(input.secretRefs)) return
+  const allowed = new Set(["connectionId", "providerKey", "configRevision", "enabled", "config", "secretRefs"])
+  if (Object.keys(input).some((key) => !allowed.has(key))) return
+  return {
+    connectionId: input.connectionId,
+    providerKey: input.providerKey,
+    configRevision: input.configRevision,
+    enabled: input.enabled,
+    config: input.config,
+    ...(stringRecord(input.secretRefs) ? { secretRefs: input.secretRefs } : {}),
+  }
 }
 
 function agentExtensionsValidationProblem(input: unknown) {
@@ -213,70 +162,40 @@ function agentExtensionsValidationProblem(input: unknown) {
   }
 }
 
-function normalizeAgentExtensions(input: unknown): RuntimeSnapshotV1["agent_extensions"] | undefined {
+function normalizeAgentExtensions(input: unknown): RuntimeSnapshot["agent_extensions"] | undefined {
   if (input === undefined) return
   if (agentExtensionsValidationProblem(input)) return
-  return input as RuntimeSnapshotV1["agent_extensions"]
+  return input as RuntimeSnapshot["agent_extensions"]
 }
 
 export function normalizeRuntimeSnapshot(input: unknown): AppliedRuntimeSnapshot | undefined {
   if (
     !record(input)
+    || input.version !== 3
     || !record(input.mcp)
+    || !Array.isArray(input.connections)
     || !stringRecord(input.auth)
   ) return
-
-  if (input.version === 1) {
-    const harness = normalizeHarness((input as { harness?: unknown; runner?: unknown }).harness ?? (input as { runner?: unknown }).runner)
-    if (!harness) return
-    const agentExtensions = normalizeAgentExtensions(input.agent_extensions)
-    if (input.agent_extensions !== undefined && !agentExtensions) return
-    const snapshot = input as RuntimeSnapshotV1 | LegacyRuntimeSnapshotV1
-    const legacyRunner = record((input as { runner?: unknown }).runner) ? (input as { runner: Record<string, unknown> }).runner : undefined
-    // An already-normalized applied snapshot re-enters here (routes normalize,
-    // then host.apply normalizes again) — a valid retained registry must
-    // survive the round trip.
-    const retained = Array.isArray((input as { harnesses?: unknown }).harnesses)
-      && (input as { harnesses: unknown[] }).harnesses.every(validHarness)
-      ? (input as { harnesses: unknown[] }).harnesses.map((row) => normalizeHarness(row)!)
-      : undefined
-    return {
-      version: 1,
-      mcp: snapshot.mcp,
-      harness,
-      ...(retained ? { harnesses: retained } : {}),
-      ...(typeof input.model === "string" ? { model: input.model } : typeof legacyRunner?.model === "string" ? { model: legacyRunner.model } : {}),
-      auth: snapshot.auth,
-      ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),
-      ...(snapshot.workspaceHarnessEnabled !== undefined ? { workspaceHarnessEnabled: snapshot.workspaceHarnessEnabled } : {}),
-      ...(snapshot.commands ? { commands: snapshot.commands } : {}),
-    }
-  }
-
-  if (input.version === 2) {
-    const list = Array.isArray((input as { harnesses?: unknown }).harnesses)
-      ? (input as { harnesses: unknown[] }).harnesses
-      : Array.isArray((input as { runners?: unknown }).runners)
-        ? (input as { runners: unknown[] }).runners
-        : undefined
-    if (!list || !list.every(validHarness)) return
-    const harnesses = list.map((row) => normalizeHarness(row)!)
-    const harness = harnesses[0]
-    if (!harness) return
-    const agentExtensions = normalizeAgentExtensions(input.agent_extensions)
-    if (input.agent_extensions !== undefined && !agentExtensions) return
-    const snapshot = input as RuntimeSnapshotV2 | LegacyRuntimeSnapshotV2
-    return {
-      version: 1,
-      mcp: snapshot.mcp,
-      harness,
-      harnesses,
-      ...(typeof input.model === "string" ? { model: input.model } : {}),
-      auth: snapshot.auth,
-      ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),
-      ...(snapshot.workspaceHarnessEnabled !== undefined ? { workspaceHarnessEnabled: snapshot.workspaceHarnessEnabled } : {}),
-      ...(snapshot.commands ? { commands: snapshot.commands } : {}),
-    }
+  const connections = input.connections.map(normalizeDescriptor)
+  if (connections.some((row) => !row)) return
+  const ids = connections.map((row) => row!.connectionId)
+  if (new Set(ids).size !== ids.length) return
+  const defaultHarness = input.defaultHarness === undefined ? undefined : normalizeSelection(input.defaultHarness)
+  if (input.defaultHarness !== undefined && !defaultHarness) return
+  if (defaultHarness?.kind === "connection" && !connections.some((row) => row!.connectionId === defaultHarness.connectionId)) return
+  const agentExtensions = normalizeAgentExtensions(input.agent_extensions)
+  if (input.agent_extensions !== undefined && !agentExtensions) return
+  if (input.workspaceHarnessEnabled !== undefined && typeof input.workspaceHarnessEnabled !== "boolean") return
+  if (input.commands !== undefined && (!Array.isArray(input.commands) || !input.commands.every((row) => record(row) && typeof row.name === "string" && typeof row.content === "string"))) return
+  return {
+    version: 3,
+    mcp: input.mcp,
+    connections: connections as RuntimeConnectionDescriptor[],
+    ...(defaultHarness ? { defaultHarness } : {}),
+    auth: input.auth,
+    ...(agentExtensions ? { agent_extensions: agentExtensions } : {}),
+    ...(typeof input.workspaceHarnessEnabled === "boolean" ? { workspaceHarnessEnabled: input.workspaceHarnessEnabled } : {}),
+    ...(Array.isArray(input.commands) ? { commands: input.commands as RuntimeCommandItem[] } : {}),
   }
 }
 
@@ -356,8 +275,8 @@ export const ConfigRoutes = (apply: (snapshot: AppliedRuntimeSnapshot) => Promis
       try {
         await apply(body)
         log.info("Applied runtime snapshot", {
-          harness: body.harness.id,
-          access: body.harness.access,
+          connectionCount: body.connections.length,
+          selection: body.defaultHarness,
         })
         return c.json({ ok: true })
       } catch (err) {

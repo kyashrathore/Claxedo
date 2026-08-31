@@ -64,7 +64,6 @@ const attributionScenarioByHarness = {
   claude: { root: "direct-pid", probe: "direct-pid", mcp: "stdio-and-remote" },
   codex: { root: "direct-pid", probe: "shared-process", mcp: "stdio-and-remote" },
   cursor: { root: "inferred-local", probe: "remote", mcp: "stdio-and-remote" },
-  opencode: { root: "direct-pid", probe: "unsupported", mcp: "stdio-and-remote" },
   pi: { root: "in-process", probe: "unsupported", mcp: "unsupported" },
 } as const satisfies Record<
   AgentHarnessKey,

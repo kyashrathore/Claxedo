@@ -71,7 +71,7 @@ describe("sandboxFetch", () => {
     expect(String(call[0])).toBe("https://relay.example.test/workspaces/ws_1/api/wr/health?probe=1")
     const headers = new Headers((call[1] as RequestInit).headers)
     expect(headers.get("authorization")).toBe("Bearer relay-runtime-token")
-    expect(headers.get("x-opencode-directory")).toBe("workspace:ws_1")
+    expect(headers.get("x-claxedo-directory")).toBe("workspace:ws_1")
     expect(headers.get("accept-encoding")).toBe("identity")
   })
 
@@ -213,7 +213,7 @@ describe("sandboxFetch", () => {
       const headers = new Headers(request.headers as HeadersInit)
       requests.push({
         url: `${origin}${request.url}`,
-        directory: headers.get("x-opencode-directory"),
+        directory: headers.get("x-claxedo-directory"),
         encoding: headers.get("accept-encoding"),
       })
       response.setHeader("content-type", "application/json")

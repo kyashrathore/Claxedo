@@ -26,8 +26,8 @@
       "@/*": ["./src/*"],
       "@claxedo/agent-event-runtime": ["../agent-event-runtime/src/index.ts"],
       "@claxedo/agent-event-runtime/contracts": ["../agent-event-runtime/src/contracts/index.ts"],
-      "@claxedo/agent-event-runtime/opencode-compat": [
-        "../agent-event-runtime/src/projections/opencode-compat/index.ts"
+      "@claxedo/agent-event-runtime/client-presentation": [
+        "../agent-event-runtime/src/projections/client-presentation/index.ts"
       ],
       // Type-only, for e2e/helpers/contracts/*: `SessionConfigUpdate` is the shape
       // `POST /session` actually consumes, but it is imported-not-re-exported by

@@ -52,17 +52,17 @@ describe("route bridge deep links", () => {
 
   test("drains pending window deep links exactly once", () => {
     const target = {
-      __OPENCODE__: {
+      __CLAXEDO__: {
         deepLinks: ["opencode://open-project?directory=/repo/main"],
       },
-    } as Window & { __OPENCODE__: { deepLinks: string[] } }
+    } as Window & { __CLAXEDO__: { deepLinks: string[] } }
 
     expect(drainPendingDeepLinks(target)).toEqual(["opencode://open-project?directory=/repo/main"])
-    expect(target.__OPENCODE__.deepLinks).toEqual([])
+    expect(target.__CLAXEDO__.deepLinks).toEqual([])
     expect(drainPendingDeepLinks(target)).toEqual([])
   })
 
   test("keeps the desktop event name stable", () => {
-    expect(deepLinkEvent).toBe("opencode:deep-link")
+    expect(deepLinkEvent).toBe("claxedo:deep-link")
   })
 })

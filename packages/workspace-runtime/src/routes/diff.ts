@@ -40,7 +40,7 @@ type DiffRouteContext = {
 }
 
 function diffTargetDirectory(c: DiffRouteContext) {
-  const requested = c.req.query("directory") || c.req.header("x-opencode-directory")
+  const requested = c.req.query("directory") || c.req.header("x-claxedo-directory")
   if (requested) return assertTarget(requested)
   if (hasWorkspaceTarget()) return assertTarget(undefined)
 }

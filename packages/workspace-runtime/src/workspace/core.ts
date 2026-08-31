@@ -75,7 +75,7 @@ export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAcce
   app.route(WorkspaceRuntimeRoutes.diff, DiffRoutes())
   app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes())
   app.route(WorkspaceRuntimeApiPrefix, FileRoutes())
-  // OpenCode-compatible adapter routes. The neutral public runtime API is
+  // Claxedo client-presentation adapter routes. The neutral public runtime API is
   // mounted above under /api/wr.
   app.route("/", FileRoutes())
 }

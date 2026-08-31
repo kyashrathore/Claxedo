@@ -15,7 +15,7 @@ import { buildSafeEnv, isSecretShapedEnvName, prefixedEnvAllowed } from "./env"
 // is the property a hand-maintained deny list cannot have.
 
 const repoRoot = path.resolve(import.meta.dirname, "../../../..")
-const SECRET_SUFFIXED = /\b(?:CLAXEDO|OPENCODE)_[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIALS?|PEM)\b/g
+const SECRET_SUFFIXED = /\bCLAXEDO_[A-Z0-9_]*(?:TOKEN|SECRET|KEY|PASSWORD|CREDENTIALS?|PEM)\b/g
 
 function sourceFiles(dir: string, out: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -40,7 +40,7 @@ function secretNamesInRepo(): string[] {
 }
 
 describe("agent-facing env never carries prefixed secrets", () => {
-  test("every secret-suffixed CLAXEDO_/OPENCODE_ name in the repo is unreachable", () => {
+  test("every secret-suffixed CLAXEDO_ name in the repo is unreachable", () => {
     const names = secretNamesInRepo()
     // Sanity: if the scan finds nothing the assertion below is vacuous.
     expect(names.length).toBeGreaterThan(20)
@@ -62,10 +62,6 @@ describe("agent-facing env never carries prefixed secrets", () => {
       "CLAXEDO_EMBEDDED_AUTH_SECRET",
       "CLAXEDO_POLAR_WEBHOOK_SECRET",
       "CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN",
-      "OPENCODE_API_KEY",
-      "OPENCODE_CONSOLE_TOKEN",
-      "OPENCODE_SERVER_PASSWORD",
-      "OPENCODE_AUTH_CONTENT",
     ]) {
       expect(prefixedEnvAllowed(name), `${name} must not reach an agent-driven child`).toBe(false)
     }
@@ -95,18 +91,6 @@ describe("agent-facing env keeps what children actually need", () => {
       CLAXEDO_SESSION_ID: "ses_1",
       CLAXEDO_MCP_READ_ONLY: "1",
       CLAXEDO_DESKTOP_URL: "http://127.0.0.1:51234",
-    }
-    expect(buildSafeEnv(env, { platform: "linux", customPrefix: "CLAXEDO" })).toEqual(env)
-  })
-
-  test("OPENCODE_ engine feature flags still pass", () => {
-    // ~80 of these exist; deny-by-default here would break the engine, which is
-    // why only OPENCODE_ keeps prefix passthrough.
-    const env = {
-      OPENCODE_EXPERIMENTAL_PLAN_MODE: "1",
-      OPENCODE_DISABLE_AUTOUPDATE: "1",
-      OPENCODE_LOG_LEVEL: "debug",
-      OPENCODE_CONFIG_DIR: "/tmp/cfg",
     }
     expect(buildSafeEnv(env, { platform: "linux", customPrefix: "CLAXEDO" })).toEqual(env)
   })

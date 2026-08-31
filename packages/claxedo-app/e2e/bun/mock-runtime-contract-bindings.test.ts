@@ -128,7 +128,6 @@ describe("mock-runtime canonical route bindings", () => {
       },
       exposure: { kind: "relay" },
       agentType: "codex",
-      acpBinary: null,
       error: null,
       harnessHealth: { status: "ok" },
     })

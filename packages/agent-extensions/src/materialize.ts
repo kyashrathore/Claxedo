@@ -90,8 +90,7 @@ async function readJson(file: string) {
 
 const CLAXEDO_MCP_MANAGED_ENV = new Set([
   "CLAXEDO_SERVER_URL",
-  "OPENCODE_API_URL",
-  "OPENCODE_API_DIR",
+  "CLAXEDO_API_DIR",
   "CLAXEDO_WORKSPACE_ID",
 ])
 
@@ -151,7 +150,7 @@ function managedClaxedoMcpEnv(input: {
       && !CLAXEDO_MCP_AUTH_ENV.has(key)
     )),
     CLAXEDO_SERVER_URL: claxedoMcpServerUrl(),
-    ...(input.targetScope === "project" ? { OPENCODE_API_DIR: input.projectDir } : {}),
+    ...(input.targetScope === "project" ? { CLAXEDO_API_DIR: input.projectDir } : {}),
     ...(claxedoMcpWorkspaceId() ? { CLAXEDO_WORKSPACE_ID: claxedoMcpWorkspaceId() } : {}),
   }
 }

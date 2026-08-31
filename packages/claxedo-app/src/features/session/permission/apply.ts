@@ -18,19 +18,6 @@ export type SessionPermissionWriter = {
     sessionID: string
     modeId: string
   }) => Promise<{ currentModeId?: string }>
-  session: {
-    update: (input: {
-      sessionID: string
-      /**
-       * MUTABLE on purpose: the SDK's generated `PermissionRuleset` is
-       * `PermissionRule[]`, so a `readonly` array is not assignable to it. The
-       * delivery's ruleset is readonly, and `applyPermissionMode` copies it at this
-       * boundary — which also means the SDK cannot mutate the shared constant the
-       * mode table hands out.
-       */
-      permission?: { permission: string; pattern: string; action: "ask" | "allow" | "deny" }[]
-    }) => Promise<unknown>
-  }
 }
 
 /**
@@ -43,8 +30,7 @@ export type PermissionModeApplied =
       appliesFrom: "next-turn" | "next-session"
       /**
        * What the harness reports as current AFTER the write, when it says. Absent
-       * for deliveries with no read-back (the opencode ruleset write returns no
-       * mode, because opencode has rules rather than modes).
+       * for deliveries with no read-back.
        */
       kept?: string
     }
@@ -77,7 +63,6 @@ export type PermissionModeApplied =
  */
 export function permissionModeDeliverable(kind: PermissionModeDelivery["kind"]) {
   switch (kind) {
-    case "opencode-session-ruleset":
     case "claxedo-auto-answer":
       return true
     case "harness-permission-mode":
@@ -91,19 +76,9 @@ export function permissionModeDeliverable(kind: PermissionModeDelivery["kind"]) 
 /**
  * Deliver a permission mode to the harness.
  *
- * Two real paths now. The harness path forwards an id the harness itself
+ * The harness path forwards an id the harness itself
  * supplied, so this module holds no per-harness knowledge at all — the runtime
- * translates. The opencode path stays separate because opencode has no modes to
- * forward: it writes a SESSION-scoped ruleset via
- * `PATCH /session/:sessionID` — deliberately NOT `PATCH /config`, whose handler
- * disposes the engine instance on every request and so hard-interrupts every running
- * turn in the directory (and wipes standing "allow always" grants, which live only in
- * memory). See the `opencode-session-ruleset` doc on `PermissionMechanism` for the
- * full reasoning.
- *
- * The ruleset is sent COMPLETE every time. The engine's handler merges rather than
- * replaces (`Permission.merge(current, incoming)`), so anything omitted keeps
- * whatever a previous mode left behind.
+ * translates.
  */
 export async function applyPermissionMode(input: {
   delivery: PermissionModeDelivery
@@ -113,19 +88,6 @@ export async function applyPermissionMode(input: {
   const { delivery } = input
 
   switch (delivery.kind) {
-    case "opencode-session-ruleset":
-      // No `directory`: the client is already scoped to one (the existing
-      // `session.update({ sessionID, title })` call site passes none either), so
-      // threading a directory string here would add routing debt for nothing.
-      await input.client.session.update({
-        sessionID: input.sessionID,
-        permission: [...delivery.ruleset],
-      })
-      // Not "active": `runLoop` snapshots the session row once at turn entry, so a
-      // turn already in flight keeps the rules it started with. The caller must say
-      // so rather than implying the change is live.
-      return { kind: "applied", appliesFrom: delivery.appliesFrom }
-
     case "claxedo-auto-answer":
       return { kind: "answered-locally" }
 

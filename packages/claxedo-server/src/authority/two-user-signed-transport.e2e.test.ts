@@ -2,8 +2,8 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
-import { withClaxedoMessageAuthor } from "../../../agent-event-runtime/src/projections/opencode-compat"
-import type { EventMessageUpdated } from "../../../agent-event-runtime/src/projections/opencode-compat"
+import { withClaxedoMessageAuthor } from "../../../agent-event-runtime/src/projections/client-presentation"
+import type { EventMessageUpdated } from "../../../agent-event-runtime/src/projections/client-presentation"
 
 const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-two-user-signed-"))
 const previous = Object.fromEntries([
@@ -360,6 +360,6 @@ function signedRequest(token: string, pathname: string, init: RequestInit = {}) 
   headers.set("authorization", `Bearer ${token}`)
   headers.set("content-type", "application/json")
   headers.set("origin", "https://app.claxedo.test")
-  headers.set("x-opencode-directory", "/workspace")
+  headers.set("x-claxedo-directory", "/workspace")
   return app.request(`https://control.example.test${pathname}`, { ...init, headers })
 }

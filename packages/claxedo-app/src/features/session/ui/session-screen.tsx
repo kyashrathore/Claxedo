@@ -10,11 +10,7 @@ import { addProjectAction } from "@/features/session/ui/components/session-add-p
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLocation, useNavigate } from "@solidjs/router"
-import type {
-  AgentRuntimeStatus as SessionStatus,
-  AgentSnapshotFileDiff as SnapshotFileDiff,
-  AgentUserMessage as UserMessage,
-} from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeStatus as SessionStatus, AgentSnapshotFileDiff as SnapshotFileDiff, AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
 import { showToast } from "@opencode-ai/ui/toast"

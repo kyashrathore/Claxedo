@@ -61,7 +61,7 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "PUT /session/:id/permission-mode",
 ]
 
-describe("OpenCode-compatible session route inventory", () => {
+describe("Claxedo client-presentation session route inventory", () => {
   test("keeps the externally consumed route and method set explicit", async () => {
     const source = await Bun.file(new URL("./session-core.ts", import.meta.url)).text()
     const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\(\"([^\"]+)\"/g)]

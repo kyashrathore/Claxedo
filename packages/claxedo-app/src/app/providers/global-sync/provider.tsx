@@ -33,7 +33,6 @@ import {
   setSessionInventoryQueryData,
   updateSessionInventoryQueryData,
 } from "../../../features/session/data/sync/inventory-writers"
-import { migrateLegacyProjectInventoryToQueryCache } from "../../integrations/sync/project-inventory"
 import { removeSessionIdentity } from "@/platform/sync/global-session-identity"
 import {
   applyWorkspaceCatalog,

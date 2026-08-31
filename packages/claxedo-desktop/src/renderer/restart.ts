@@ -5,7 +5,7 @@ import { desktopApi } from "./api"
  * missing value means the injection has not landed yet; treating that as "not
  * packaged" is the safe read, because the unpackaged branch never quits.
  */
-export const IS_PACKAGED = window.__OPENCODE__?.packaged ?? false
+export const IS_PACKAGED = window.__CLAXEDO__?.packaged ?? false
 
 /**
  * The renderer's "Restart" — the error page's recovery button and the app menu

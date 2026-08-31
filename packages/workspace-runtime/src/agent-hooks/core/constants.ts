@@ -30,7 +30,6 @@ export const DEFAULT_GENERIC_WRAPPERS = ["amp", "aider", "goose", "cline"]
 export const SHIMMED_BINARIES = new Set([
   "claude",
   "codex",
-  "opencode",
   "gemini",
   "cursor",
   "cursor-agent",

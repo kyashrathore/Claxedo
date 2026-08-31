@@ -24,7 +24,7 @@ const calls: Array<{
   url: string
 }> = []
 const originalFetch = globalThis.fetch
-const originalOpencode = window.__OPENCODE__
+const originalOpencode = window.__CLAXEDO__
 
 // Use an absolute path with a cache-busting query to bypass any stale
 // mock.module("./api") may be registered by other API client tests.
@@ -88,7 +88,7 @@ beforeEach(() => {
   // asPackagedDesktopRenderer) so it cannot leak into unrelated cases.
   Reflect.deleteProperty(window.location, "origin")
   window.location.href = "http://localhost/"
-  window.__OPENCODE__ = originalOpencode ? { ...originalOpencode } : undefined
+  window.__CLAXEDO__ = originalOpencode ? { ...originalOpencode } : undefined
   token = null
   tokenRequests.length = 0
   calls.length = 0
@@ -124,7 +124,7 @@ beforeEach(() => {
 
 afterAll(() => {
   globalThis.fetch = originalFetch
-  window.__OPENCODE__ = originalOpencode
+  window.__CLAXEDO__ = originalOpencode
 })
 
 describe("demo routing", () => {
@@ -325,9 +325,9 @@ describe("authFetch", () => {
     expect(calls[0]?.auth).toBe("Bearer custom")
   })
 
-  test("does not inject x-opencode-directory from window globals", async () => {
-    window.__OPENCODE__ ??= {}
-    window.__OPENCODE__.activeDirectory = "/tmp/project"
+  test("does not inject x-claxedo-directory from window globals", async () => {
+    window.__CLAXEDO__ ??= {}
+    window.__CLAXEDO__.activeDirectory = "/tmp/project"
 
     await authFetch("http://localhost/test")
 

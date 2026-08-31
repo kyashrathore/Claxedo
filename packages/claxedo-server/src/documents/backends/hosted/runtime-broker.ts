@@ -100,7 +100,7 @@ export function createHostedDocumentRuntimeBroker(
           headers: {
             authorization: `Bearer ${access.token}`,
             "content-type": "application/json",
-            "x-opencode-directory": `workspace:${workspaceId}`,
+            "x-claxedo-directory": `workspace:${workspaceId}`,
           },
           body: JSON.stringify({
             sessionId: input.sessionId,
@@ -138,7 +138,7 @@ export function createHostedDocumentRuntimeBroker(
             headers: {
               authorization: `Bearer ${access.token}`,
               "content-type": "application/json",
-              "x-opencode-directory": `workspace:${workspaceId}`,
+              "x-claxedo-directory": `workspace:${workspaceId}`,
             },
             body: "{}",
             signal: input.signal,
@@ -222,7 +222,7 @@ export function createHostedDocumentRuntimeBroker(
           headers: {
             authorization: `Bearer ${access.token}`,
             "content-type": "application/json",
-            "x-opencode-directory": `workspace:${workspaceId}`,
+            "x-claxedo-directory": `workspace:${workspaceId}`,
           },
           body: JSON.stringify({
             strategy: input.choice === "durable" ? "use-remote" : "keep-session",

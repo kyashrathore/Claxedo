@@ -25,7 +25,7 @@ export type ACPTransport = {
 
 export type ACPTransportFactoryInput = {
   directory: string
-  binary: string
+  command?: string
   args: string[]
   model: string
   env: ACPTransportEnv
@@ -36,6 +36,72 @@ export type ACPTransportFactoryInput = {
 
 export type ACPTransportFactory = (input: ACPTransportFactoryInput) => ACPTransport
 
+export type ACPProcessConnection = {
+  kind: "process"
+  command: string
+  args?: string[]
+  env?: ACPTransportEnv
+  supportsMcpServers?: boolean
+}
+
+export type ACPStreamableHttpConnection = {
+  kind: "streamable-http"
+  url: string
+  headers?: Record<string, string>
+  supportsMcpServers?: boolean
+}
+
+export type ACPWebSocketConnection = {
+  kind: "websocket"
+  url: string
+  protocols?: string[]
+  headers?: Record<string, string>
+  supportsMcpServers?: boolean
+}
+
+export type ACPConnection = ACPProcessConnection | ACPStreamableHttpConnection | ACPWebSocketConnection
+
+export function validateACPConnection(input: unknown): ACPConnection {
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("connection must be an object")
+  const row = input as Record<string, unknown>
+  const supportsMcpServers = optionalBoolean(row.supportsMcpServers, "supportsMcpServers")
+  if (row.kind === "process") {
+    requireOnlyFields(row, ["kind", "command", "args", "env", "supportsMcpServers"])
+    if (typeof row.command !== "string" || row.command.length === 0) throw new Error("process connection requires command")
+    return {
+      kind: "process",
+      command: row.command,
+      ...(stringArray(row.args, "args") ? { args: stringArray(row.args, "args") } : {}),
+      ...(stringRecord(row.env, "env") ? { env: stringRecord(row.env, "env") } : {}),
+      ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+    }
+  }
+  if (row.kind === "streamable-http") {
+    requireOnlyFields(row, ["kind", "url", "headers", "supportsMcpServers"])
+    if (typeof row.url !== "string" || row.url.length === 0) throw new Error("streamable-http connection requires url")
+    requireUrlProtocol(row.url, ["http:", "https:"], "streamable-http")
+    return {
+      kind: "streamable-http",
+      url: row.url,
+      ...(stringRecord(row.headers, "headers") ? { headers: stringRecord(row.headers, "headers") } : {}),
+      ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+    }
+  }
+  if (row.kind === "websocket") {
+    requireOnlyFields(row, ["kind", "url", "protocols", "headers", "supportsMcpServers"])
+    if (typeof row.url !== "string" || row.url.length === 0) throw new Error("websocket connection requires url")
+    requireUrlProtocol(row.url, ["ws:", "wss:"], "websocket")
+    return {
+      kind: "websocket",
+      url: row.url,
+      ...(stringArray(row.protocols, "protocols") ? { protocols: stringArray(row.protocols, "protocols") } : {}),
+      ...(stringRecord(row.headers, "headers") ? { headers: stringRecord(row.headers, "headers") } : {}),
+      ...(supportsMcpServers !== undefined ? { supportsMcpServers } : {}),
+    }
+  }
+  throw new Error("connection kind must be process, streamable-http, or websocket")
+}
+
 export type ACPStreamableHttpTransportFactoryOptions = {
   serverUrl: string
   fetch?: HttpStreamOptions["fetch"]
@@ -43,7 +109,6 @@ export type ACPStreamableHttpTransportFactoryOptions = {
   cookies?: HttpStreamOptions["cookies"]
   cookieStore?: AcpCookieStore
 }
-export type ACPHttpTransportFactoryOptions = ACPStreamableHttpTransportFactoryOptions
 
 export type ACPWebSocketTransportFactoryOptions = {
   serverUrl: string
@@ -55,10 +120,11 @@ export type ACPWebSocketTransportFactoryOptions = {
 }
 
 export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTransport {
+  if (!input.command) throw new Error("ACP process transport requires a command")
   // Shims must go through the shell (see isWindowsShimBinary); the quoting
   // keeps a binary path with spaces intact through cmd.exe's tokenization.
-  const windowsShim = isWindowsShimBinary(input.binary)
-  const proc = spawn(windowsShim ? `"${input.binary}"` : input.binary, input.args, {
+  const windowsShim = isWindowsShimBinary(input.command)
+  const proc = spawn(windowsShim ? `"${input.command}"` : input.command, input.args, {
     cwd: input.directory,
     stdio: ["pipe", "pipe", "pipe"],
     ...(windowsShim ? { shell: true } : {}),
@@ -78,11 +144,10 @@ export function createStdioACPTransport(input: ACPTransportFactoryInput): ACPTra
     kind: "stdio",
     stream: ndJsonStream(webWritable(proc), webReadable(proc)),
     metadata: {
-      binary: input.binary,
       args: input.args,
       directory: input.directory,
       model: input.model,
-      command: input.binary,
+      command: input.command,
       commandArgs: input.args,
     },
     get pid() {
@@ -113,8 +178,6 @@ export function createStreamableHttpACPTransportFactory(options: ACPStreamableHt
   }
 }
 
-export const createHttpACPTransportFactory = createStreamableHttpACPTransportFactory
-
 export function createWebSocketACPTransportFactory(options: ACPWebSocketTransportFactoryOptions): ACPTransportFactory {
   return () => {
     const stream = createWebSocketStream(options.serverUrl, {
@@ -128,10 +191,63 @@ export function createWebSocketACPTransportFactory(options: ACPWebSocketTranspor
   }
 }
 
+export function createACPTransportFactory(connection: ACPConnection): ACPTransportFactory {
+  switch (connection.kind) {
+    case "process":
+      return createStdioACPTransport
+    case "streamable-http":
+      return createStreamableHttpACPTransportFactory({
+        serverUrl: connection.url,
+        headers: connection.headers,
+      })
+    case "websocket":
+      return createWebSocketACPTransportFactory({
+        serverUrl: connection.url,
+        protocols: connection.protocols,
+        headers: connection.headers,
+      })
+  }
+}
+
 function definedEnv(env: ACPTransportEnv) {
   return Object.fromEntries(
     Object.entries(env).filter((item): item is [string, string] => typeof item[1] === "string" && item[1].length > 0),
   )
+}
+
+function optionalBoolean(input: unknown, field: string) {
+  if (input === undefined) return undefined
+  if (typeof input !== "boolean") throw new Error(`${field} must be boolean`)
+  return input
+}
+
+function stringArray(input: unknown, field: string): string[] | undefined {
+  if (input === undefined) return undefined
+  if (!Array.isArray(input) || input.some((item) => typeof item !== "string")) throw new Error(`${field} must be an array of strings`)
+  return input
+}
+
+function stringRecord(input: unknown, field: string): Record<string, string> | undefined {
+  if (input === undefined) return undefined
+  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error(`${field} must be a string record`)
+  const entries = Object.entries(input)
+  if (entries.some(([, value]) => typeof value !== "string")) throw new Error(`${field} must be a string record`)
+  return Object.fromEntries(entries) as Record<string, string>
+}
+
+function requireOnlyFields(input: Record<string, unknown>, allowed: readonly string[]) {
+  const extra = Object.keys(input).find((key) => !allowed.includes(key))
+  if (extra) throw new Error(`${String(input.kind)} connection cannot include ${extra}`)
+}
+
+function requireUrlProtocol(input: string, protocols: readonly string[], kind: string) {
+  let url: URL
+  try {
+    url = new URL(input)
+  } catch {
+    throw new Error(`${kind} connection requires a valid URL`)
+  }
+  if (!protocols.includes(url.protocol)) throw new Error(`${kind} connection URL uses an unsupported protocol`)
 }
 
 function remoteTransport(

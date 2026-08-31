@@ -1,6 +1,6 @@
 import fs from "fs/promises"
 import path from "path"
-import { applyEdits, modify, parse as parseJsonc, type ParseError, type ParseOptions } from "jsonc-parser"
+import { parse as parseJsonc, type ParseError } from "jsonc-parser"
 import type { MaterializedAgentExtensionScope, HarnessTarget } from "../types"
 import { readFileIfExists, writeFileAtomic } from "../fs-safe"
 import { AgentExtensionMaterializationError, type MaterializedRuntimeRecord } from "../materialization"
@@ -83,14 +83,6 @@ export function mcpTargetPath(input: {
     if (!input.homeDir) throw new Error("homeDir is required for machine Codex MCP materialization")
     return path.join(input.homeDir, ".codex", "config.toml")
   }
-  if (input.runner === "opencode") {
-    if (input.scope === "project") {
-      if (!input.projectDir) throw new Error("projectDir is required for project OpenCode MCP materialization")
-      return path.join(input.projectDir, ".opencode", "opencode.jsonc")
-    }
-    if (!input.homeDir) throw new Error("homeDir is required for machine OpenCode MCP materialization")
-    return path.join(input.homeDir, ".config", "opencode", "opencode.jsonc")
-  }
   return undefined
 }
 
@@ -151,23 +143,6 @@ function toRunnerMcpServers(runner: HarnessTarget, config: StandaloneMcpConfig) 
       command: cfg.command,
       args: cfg.args ?? [],
       env: cfg.env ?? {},
-    }]
-  })))
-}
-
-function toOpenCodeMcpServers(config: StandaloneMcpConfig) {
-  return sortedObject(Object.fromEntries(Object.entries(config.servers).map(([name, cfg]) => {
-    if ("url" in cfg) return [name, {
-      type: "remote",
-      url: cfg.url,
-      enabled: true,
-      ...(cfg.headers && Object.keys(cfg.headers).length > 0 ? { headers: cfg.headers } : {}),
-    }]
-    return [name, {
-      type: "local",
-      command: [cfg.command, ...(cfg.args ?? [])],
-      enabled: true,
-      ...(cfg.env && Object.keys(cfg.env).length > 0 ? { environment: cfg.env } : {}),
     }]
   })))
 }
@@ -234,7 +209,7 @@ async function readJson(file: string): Promise<Record<string, unknown>> {
   return readJsonFromText(raw, file)
 }
 
-// Target config files (.mcp.json, ~/.claude.json, opencode.jsonc, ...) are
+// Target config files are
 // user-owned. A parse failure must abort instead of reading as "empty":
 // an empty read would rewrite the file with only this extension's servers,
 // or delete it outright on uninstall.
@@ -243,15 +218,10 @@ async function readJson(file: string): Promise<Record<string, unknown>> {
 // tolerates comments even with no options passed, since `disallowComments`
 // defaults to false). Plain-JSON targets (.mcp.json, ~/.claude.json,
 // .cursor/mcp.json) are fully re-serialized on write via writeJson(), so they
-// keep this strict default. opencode.jsonc targets pass OPENCODE_PARSE_OPTIONS
-// below: the embedded opencode engine legitimately writes trailing commas
-// there (e.g. a `$schema` property injected via text-replace ahead of a `}`
-// with nothing after it), and those targets are edited with jsonc-parser's
-// modify/applyEdits rather than re-serialized, so tolerating the extra comma
-// on read does not affect what gets written back.
-function readJsonFromText(raw: string, file: string, options: ParseOptions = {}): Record<string, unknown> {
+// keep this strict default.
+function readJsonFromText(raw: string, file: string): Record<string, unknown> {
   const errors: ParseError[] = []
-  const parsed = parseJsonc(raw, errors, options)
+  const parsed = parseJsonc(raw, errors)
   if (errors.length > 0) {
     throw new AgentExtensionMaterializationError(
       `MCP target config ${file} contains invalid JSON; fix it before materializing (refusing to rewrite a file that cannot be parsed)`,
@@ -262,16 +232,10 @@ function readJsonFromText(raw: string, file: string, options: ParseOptions = {})
   return asRecord(parsed)
 }
 
-// opencode.jsonc (and its opencode.json sibling handled the same way below)
-// is the only target format this materializer treats as tolerant JSONC.
-const OPENCODE_PARSE_OPTIONS: ParseOptions = { allowTrailingComma: true }
-
 async function writeJson(file: string, input: Record<string, unknown>) {
   await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o755 })
   await writeFileAtomic(file, JSON.stringify(input, null, 2) + "\n")
 }
-
-const JSONC_FORMAT = { formattingOptions: { tabSize: 2, insertSpaces: true } }
 
 export async function removeStandaloneMcpEntries(input: {
   file: string
@@ -287,27 +251,6 @@ export async function removeStandaloneMcpEntries(input: {
     if (sections.length === 0) return
     const next = [...sections].reverse().reduce((text, section) => `${text.slice(0, section.start)}${text.slice(section.end)}`, raw)
     await writeFileAtomic(input.file, next.replace(/\n{3,}/g, "\n\n"))
-    return
-  }
-  if (input.file.endsWith("opencode.jsonc") || input.file.endsWith("opencode.json")) {
-    const raw = await readText(input.file)
-    if (!raw.trim()) return
-    readJsonFromText(raw, input.file, OPENCODE_PARSE_OPTIONS)
-    // Remove entries with jsonc edits (mirroring how they were added) so the
-    // user's comments and formatting survive instead of being re-serialized.
-    let text = raw
-    for (const name of input.names) {
-      text = applyEdits(text, modify(text, ["mcp", name], undefined, JSONC_FORMAT))
-    }
-    const withoutEntries = readJsonFromText(text, input.file, OPENCODE_PARSE_OPTIONS)
-    if (Object.keys(asRecord(withoutEntries.mcp)).length === 0) {
-      text = applyEdits(text, modify(text, ["mcp"], undefined, JSONC_FORMAT))
-    }
-    if (Object.keys(readJsonFromText(text, input.file, OPENCODE_PARSE_OPTIONS)).length === 0) {
-      await fs.rm(input.file, { force: true })
-      return
-    }
-    await writeFileAtomic(input.file, `${text.trimEnd()}\n`)
     return
   }
   const root = await readJson(input.file)
@@ -388,47 +331,6 @@ export async function materializeStandaloneMcp(input: {
     await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o755 })
     await writeFileAtomic(target, `${prefix}${Object.entries(nextSections).map(([name, cfg]) => codexMcpSection(name, cfg)).join("\n")}`)
     return mcpComponents({ runner: input.runner, target, names: Object.keys(nextSections) })
-  }
-
-  if (input.runner === "opencode") {
-    const raw = await readText(target)
-    const root = raw.trim() ? readJsonFromText(raw, target, OPENCODE_PARSE_OPTIONS) : {}
-    const current = asRecord(root.mcp)
-    const nextServers = toOpenCodeMcpServers(input.config)
-    const drifted = new Set<string>()
-    for (const [name, next] of Object.entries(nextServers)) {
-      if (current[name] === undefined) continue
-      if (!componentOwned({ record: input.record, ownerId: input.ownerId, path: target, component: name })) {
-        throw new AgentExtensionMaterializationError(
-          `MCP server ${name} already exists in ${target}`,
-          "agent_extension_mcp_server_conflict",
-          {
-            ownerId: input.ownerId,
-            runner: input.runner,
-            serverName: name,
-            targetPath: target,
-          },
-        )
-      }
-      if (!input.replaceOwned && JSON.stringify(current[name]) !== JSON.stringify(next)) {
-        drifted.add(name)
-      }
-    }
-    if (drifted.size > 0) {
-      return mcpComponents({
-        runner: input.runner,
-        target,
-        names: Object.keys(nextServers),
-        drifted,
-        existing: new Set(Object.keys(current)),
-      })
-    }
-    const next = Object.entries(nextServers).reduce((text, [name, value]) => applyEdits(text, modify(text, ["mcp", name], value, {
-      formattingOptions: { tabSize: 2, insertSpaces: true },
-    })), raw.trim() ? raw : "{}")
-    await fs.mkdir(path.dirname(target), { recursive: true, mode: 0o755 })
-    await writeFileAtomic(target, `${next.trimEnd()}\n`)
-    return mcpComponents({ runner: input.runner, target, names: Object.keys(nextServers) })
   }
 
   const root = await readJson(target)

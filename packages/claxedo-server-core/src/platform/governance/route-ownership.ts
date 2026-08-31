@@ -93,6 +93,7 @@ const ROUTE_RULES = [
     central,
   ),
   exact(["/global/config"], RouteDomain.AgentConfigRegistry, central),
+  exact(["/global/event"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/claxedo/remote-access"], RouteDomain.ClaxedoControlPlane, central),
   // `/provider` itself is served by the workspace runtime for every
   // workspace-scoped caller (the control plane proxies it; a relayed
@@ -116,8 +117,8 @@ const ROUTE_RULES = [
     RouteDomain.AgentConfigRegistry,
     central,
   ),
-  // `/command` has central no-directory OpenCode compatibility in
-  // OpenCodeCompatRoutes, but workspace-scoped cloud/Relay requests can still
+  // `/command` has central no-directory Claxedo client-presentation in
+  // ClientPresentationRoutes, but workspace-scoped cloud/Relay requests can still
   // route to workspace-runtime. Keep the static ownership classifier aligned
   // with that runtime-routed path while the canonical command-management API
   // remains the Agent Config Registry.
@@ -147,7 +148,7 @@ const ROUTE_RULES = [
   exact(["/experimental/session"], RouteDomain.AgentSessionRuntime, runtime),
   prefix(["/experimental"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/api/wr/hook"], RouteDomain.SandboxRuntime, runtime),
-  exact(["/global/event", "/api/wr/events", "/api/wr/runtime-events"], RouteDomain.SandboxRuntime, runtime),
+  exact(["/api/wr/events", "/api/wr/runtime-events"], RouteDomain.SandboxRuntime, runtime),
   exact(["/api/wr/health", "/api/wr/capabilities"], RouteDomain.SandboxRuntime, runtime),
   exact(
     ["/api/wr/config", "/api/wr/harness-config-options", "/api/wr/provider-config"],

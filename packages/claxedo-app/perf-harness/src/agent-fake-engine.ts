@@ -219,7 +219,7 @@ export async function startFakeEngine(input: {
       }
       if (path === "/global/health") return json({ healthy: true })
       if (path === "/session" && request.method === "GET") {
-        const directory = request.headers.get("x-opencode-directory")
+        const directory = request.headers.get("x-claxedo-directory")
         const rows = sessions.filter((row) => !directory || row.directory === directory)
         return json(rows.map(sessionRow))
       }

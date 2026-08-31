@@ -16,7 +16,6 @@ const IMAGE_REQUIRED_DEPENDENCIES = [
 ]
 
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"
-export const OPENCODE_BINARY_FILENAME = "opencode"
 export const WORKSPACE_RUNTIME_VERSION_FILENAME = "workspace-runtime-version"
 
 function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
@@ -29,10 +28,6 @@ function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: N
 
 function packagesRoot() {
   return path.resolve(workspaceRuntimeRoot(), "..")
-}
-
-function opencodeRoot() {
-  return path.join(packagesRoot(), "opencode")
 }
 
 /**
@@ -246,7 +241,6 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // one. workspace-runtime is the last package built.
   buildClaxedoWorkspacePackages(exec)
   const versionFile = writeWorkspaceRuntimeVersion(outDir)
-  const opencodeBinary = buildSandboxOpenCodeBinary(outDir, exec)
   await esbuildBuild(esbuildHostBundleOptions({
     entry: claxedoWorkspaceRuntimeEntry(),
     outfile: path.join(outDir, HOST_BUNDLE_FILENAME),
@@ -267,7 +261,6 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   const buildId = createHash("sha256")
     .update(fs.readFileSync(bundlePath))
     .update(fs.readFileSync(versionFile))
-    .update(fs.readFileSync(opencodeBinary))
     .update(packageJson)
     .digest("hex")
     .slice(0, 10)
@@ -275,7 +268,6 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
     bundle: bundlePath,
     packageJson: packageJsonPath,
     versionFile,
-    opencodeBinary,
     buildId,
   }
 }

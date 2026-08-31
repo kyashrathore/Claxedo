@@ -422,7 +422,7 @@ export function getDefaultBaseUrl(): string {
   if (cfg.base) return cfg.base
 
   // Desktop: sidecar URL is set during init
-  const serverUrl = (window as typeof window & { __OPENCODE__?: { serverUrl?: string } }).__OPENCODE__?.serverUrl
+  const serverUrl = (window as typeof window & { __CLAXEDO__?: { serverUrl?: string } }).__CLAXEDO__?.serverUrl
   if (serverUrl) return normalized(serverUrl) ?? serverUrl
 
   const backendUrl = normalized(envString(import.meta.env.VITE_CLAXEDO_SERVER_URL))

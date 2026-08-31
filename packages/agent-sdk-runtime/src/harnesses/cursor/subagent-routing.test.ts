@@ -1,5 +1,6 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
+import { executeTestTurn } from "../../test-utils/execution-binding"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { cursorSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/cursor"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
@@ -147,7 +148,7 @@ describe("Cursor native subagent routing", () => {
     })
     const parent = await adapter.createSession(path.resolve("/repo"))
 
-    for await (const _ of adapter.sendMessage(parent.id, {
+    for await (const _ of executeTestTurn(adapter, parent.id, {
       parts: [{ type: "text", text: "Delegate reviews" }],
       userMessageId: "parent-user",
       assistantMessageId: "parent-assistant",
@@ -224,7 +225,7 @@ describe("Cursor native subagent routing", () => {
     })
     const parent = await adapter.createSession(path.resolve("/repo"))
 
-    for await (const _ of adapter.sendMessage(parent.id, {
+    for await (const _ of executeTestTurn(adapter, parent.id, {
       parts: [{ type: "text", text: "Delegate reviews" }],
       userMessageId: "parent-user",
       assistantMessageId: "parent-assistant",

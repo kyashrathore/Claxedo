@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createAgentEventRuntime } from "../../core/runtime"
-import { createOpencodeCompatProjection } from "../../projections/opencode-compat"
+import { createClientPresentationProjection } from "../../projections/client-presentation"
 import { replayRuntimeEvents } from "../../test-utils/replay"
 import { createAcpEventTranslator } from "./event-translator"
 
@@ -13,7 +13,7 @@ describe("ACP frozen compat output", () => {
       clock: () => 0,
       createId: () => "id",
     })
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "assistant-1",
@@ -107,19 +107,19 @@ describe("ACP frozen compat output", () => {
       {
         properties: {
           eventType: "available-commands-update",
-          code: "projection.opencode_compat.lossy_runtime_event",
+          code: "projection.client_presentation.lossy_runtime_event",
         },
       },
       {
         properties: {
           eventType: "tool-content",
-          code: "projection.opencode_compat.lossy_runtime_event",
+          code: "projection.client_presentation.lossy_runtime_event",
         },
       },
       {
         properties: {
           eventType: "thinking-audio-delta",
-          code: "projection.opencode_compat.lossy_runtime_event",
+          code: "projection.client_presentation.lossy_runtime_event",
         },
       },
     ])

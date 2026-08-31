@@ -39,12 +39,12 @@ describe("Windows CI contract", () => {
     )
     expect(desktopManifest.scripts["test:broad"]).toContain("--path-ignore-patterns='**/claxedo-server-boot.test.ts'")
     expect(desktopManifest.scripts["test:broad"]).toContain(
-      "--path-ignore-patterns='**/opencode-compile-cache-boot.test.ts'",
+      "--path-ignore-patterns='**/claxedo-compile-cache-boot.test.ts'",
     )
     expect(desktopManifest.scripts["test:bundle-single"]).toContain("bun test ./scripts/bundle-single-instance.test.ts")
     expect(desktopManifest.scripts["test:server-boot"]).toContain("bun test ./scripts/claxedo-server-boot.test.ts")
     expect(desktopManifest.scripts["test:compile-cache"]).toContain(
-      "bun test ./scripts/opencode-compile-cache-boot.test.ts",
+      "bun test ./scripts/claxedo-compile-cache-boot.test.ts",
     )
     expect(acceptance.indexOf("\nbun run build\n")).toBeLessThan(acceptance.indexOf("\nbun run test\n"))
   })

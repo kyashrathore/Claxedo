@@ -9,7 +9,6 @@ import { createHarnessHydrator } from "./harness-hydrator"
 import { createHarnessSwitcher } from "./harness-switcher"
 import { createHarnessModelWriter } from "./harness-model-writer"
 import { createHarnessStore } from "./harness-store"
-import { createAcpConnectionsCatalog } from "./acp-connections"
 import {
   createHarnessHydratorQueryCache,
   createHarnessOptionsQueryCache,
@@ -67,9 +66,6 @@ export function createHarnessConfigStore() {
     projects: () => projectsQuery.data ?? [],
   })
   const harnessStore = createHarnessStore(localStorage)
-  // Operator-configured ACP connections: the sanitized discovery rows the
-  // picker's ACP group renders. One catalog per store (per app shell).
-  const acpConnections = createAcpConnectionsCatalog({ base, request })
   const runtimeSessionActions = createHarnessRuntimeSessionActions<ClaimInput>({
     base,
     runtime: harnessRuntime,
@@ -205,9 +201,9 @@ export function createHarnessConfigStore() {
     cache: createHarnessSwitcherQueryCache(base),
   })
 
-  const setHarness: typeof switcher.setHarness = (scope, type, input, binary) => {
+  const setHarness: typeof switcher.setHarness = (scope, type, input) => {
     hydrator.cancel(scope)
-    return switcher.setHarness(scope, type, input, binary)
+    return switcher.setHarness(scope, type, input)
   }
 
   const claimSession = preparedRuntimeSessions.claim
@@ -259,7 +255,7 @@ export function createHarnessConfigStore() {
   const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
     if (!input?.directory) return
     const current = harnessStore.read(scope)
-    if (current.harness === "opencode") return
+    if (!current.harness) return
     const res = await harnessRuntime
       .localHarnessConfigFetch(input)(
         harnessConfigUrl({
@@ -286,10 +282,6 @@ export function createHarnessConfigStore() {
   return {
     hydrate: hydrator.hydrate,
     reprobe: hydrator.reprobe,
-    acpConnections: acpConnections.rows,
-    enabledAcpConnections: acpConnections.enabled,
-    acpConnectionLabel: acpConnections.label,
-    refreshAcpConnections: acpConnections.refresh,
     probeHealth: probeHarnessHealth,
     // Give up on a harness that never left "polling": surface the terminal
     // "error" readiness so the selector shows the "Unavailable" affordance and
@@ -302,7 +294,6 @@ export function createHarnessConfigStore() {
     setModel,
     setHarness,
     harnessMode: harnessStore.harnessMode,
-    harnessBinary: harnessStore.harnessBinary,
     selectedModel: harnessStore.selectedModel,
     selectedModelKey: harnessStore.selectedModelKey,
     harness: harnessStore.harness,

@@ -251,7 +251,7 @@ function slug(value: string) {
 
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
@@ -259,7 +259,7 @@ async function seedOneProject(page: Page, dir: string) {
     sessionStorage.setItem("core-harness-seeded", "1")
     localStorage.clear()
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },
@@ -1068,7 +1068,7 @@ test.describe("core harness ownership (local) @core", () => {
         status: 200,
         contentType: "application/json",
         body: JSON.stringify({
-          transport: "opencode",
+          transport: "runtime",
           abort: false,
           reconnect: true,
           replay: true,

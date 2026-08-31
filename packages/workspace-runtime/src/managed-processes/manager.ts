@@ -475,8 +475,6 @@ const log = Log.create({ service: "process" })
 
 const CONFIG_FILE = ".workspace-runtime/processes.jsonc"
 const SCHEMA_FILE = ".workspace-runtime/processes.schema.json"
-// Legacy paths kept for one-shot migration on first load.
-const LEGACY_CONFIG_FILES = [".claxedo/processes.jsonc", ".opencode/processes.jsonc"]
 
 /**
  * Write the JSON Schema for processes.jsonc so editors provide autocompletion.
@@ -509,43 +507,9 @@ async function writeSchema(directory: string): Promise<void> {
 
 /**
  * Load process configs from the project root `.workspace-runtime/processes.jsonc`.
- *
- * If the new path doesn't exist but a legacy `.claxedo/processes.jsonc` or
- * `.opencode/processes.jsonc` does, migrate it (parse + rewrite at the new
- * path with generated ids) and continue. The legacy file is left in place so
- * external tooling that still reads it doesn't break.
  */
 export async function loadConfig(directory: string): Promise<Process.ProcessConfig[]> {
   const filePath = cfgPath(directory)
-
-  // Migrate legacy process config into the neutral runtime path when only a
-  // legacy file exists.
-  let migrated = false
-  try {
-    await fs.access(filePath)
-  } catch {
-    for (const legacyConfigFile of LEGACY_CONFIG_FILES) {
-      const legacyPath = path.join(real(directory), legacyConfigFile)
-      try {
-        const legacyContent = await fs.readFile(legacyPath, "utf-8")
-        const legacyRaw = parseJsonc(legacyContent)
-        const legacyParsed = Process.ProcessConfigFile.parse(legacyRaw)
-        await fs.mkdir(path.dirname(filePath), { recursive: true })
-        await fs.writeFile(
-          filePath,
-          JSON.stringify({ processes: legacyParsed.processes }, null, 2) + "\n",
-          "utf-8",
-        )
-        migrated = true
-        log.info("migrated legacy process config", { from: legacyPath, to: filePath })
-        break
-      } catch (err) {
-        // No legacy file at this path — try the next candidate.
-        void err
-      }
-    }
-  }
-  void migrated
   try {
     const content = await fs.readFile(filePath, "utf-8")
     const raw = parseJsonc(content)
@@ -1057,9 +1021,9 @@ async function startOnce(
     ...buildSafeEnv(process.env, { customPrefix: "CLAXEDO" }),
     // Operator-configured process env: explicit (see SafeEnvSource).
     ...buildSafeEnv(resolvePortTemplates(config.env || {}, pm), { customPrefix: "CLAXEDO", source: "explicit" }),
-    OPENCODE_TERMINAL: "1",
-    OPENCODE_PROCESS: config.name,
-    OPENCODE_PROCESS_ID: configId,
+    CLAXEDO_TERMINAL: "1",
+    CLAXEDO_PROCESS: config.name,
+    CLAXEDO_PROCESS_ID: configId,
     CLAXEDO_WORKSPACE_ID: workspace(directory),
   }
 

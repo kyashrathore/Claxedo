@@ -456,7 +456,7 @@ export async function sync(
       )
     } else if (next.modes.length > 0) {
       // Only call setSessionMode if the agent name matches a known ACP mode.
-      // OpenCode agent names (e.g. "General") don't map to ACP modes (e.g. "code", "plan").
+      // Connection-specific agent names do not necessarily map to ACP modes.
       const lower = input.agent.toLowerCase()
       const matched = modeIds(next).find((id) => id === input.agent || id === lower)
       if (matched) {

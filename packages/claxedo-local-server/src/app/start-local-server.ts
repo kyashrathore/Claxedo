@@ -30,17 +30,12 @@ import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import { createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
-import {
-  configureOpenCodeEngine,
-  configureOpenCodeEmbedPath,
-  opencodeRequest,
-} from "@claxedo/server-core/opencode/engine"
-import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/opencode/auth"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -66,10 +61,6 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   services?: LocalAppOptions["services"]
   port?: number
   hostname?: string
-  /** An explicit URL opts out of the embedded engine. */
-  opencodeUrl?: string
-  opencodePassword?: string | null
-  opencodeEmbedPath?: string
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
@@ -117,22 +108,16 @@ export function startLocalServer(options: StartLocalServerOptions): LocalServer 
 function startOwned(options: StartLocalServerOptions, release: () => void): LocalServer {
   const port = options.port ?? DEFAULT_CLAXEDO_SERVER_PORT
   const services = options.services ?? createLocalControlPlaneServices()
-  const opencodeCompat = process.env.CLAXEDO_DISABLE_OPENCODE_COMPAT !== "1"
+  const connectionProviders = [
+    createAcpConnectionProvider(),
+    createOpenCodeServerConnectionProvider(),
+  ] as const
 
-  configureOpenCodeAuth(options.opencodePassword ?? null)
-  if (options.opencodeEmbedPath) configureOpenCodeEmbedPath(options.opencodeEmbedPath)
-  if (options.opencodeUrl) {
-    configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
-  } else {
-    configureOpenCodeEngine({ embedded: true })
-  }
-
-  let consumeRuntimeEvent = (event: OpencodeEvent) => {
-    if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
+  let consumeRuntimeEvent = (event: CompatEnvelope) => {
+    if (event.payload.type === "session.updated") {
       void projectLocalSessionMetaFromEvent(services.projectionStore, event)
     }
   }
-  configureOpencodeMcpSync({ enabled: opencodeCompat })
   configureEmbeddedWorkspaceRuntime({
     opencodeRequest,
     opencodeCompat,
@@ -162,6 +147,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     // Reuse the local product's canonical SQLite authority. Ambient hosted
     // configuration cannot replace a product-owned authority choice.
     ...(services.authority ? { workspaceAuthority: services.authority } : {}),
+    connectionProviders,
   })
 
   // Opened here so the first session-list request does not pay for migrations,
@@ -175,7 +161,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
 
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
+  const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "pi"])
   const usageOutbox = createUsageOutboxSync({ local: usageRevisionStore, telemetry: services.telemetry })
   const turnMeter = createTurnMeter({
     writer: usageRevisionStore,
@@ -200,7 +186,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         harness: meteringHarness,
         ...(meta.model?.providerID ? { providerId: meta.model.providerID } : {}),
         ...(meta.model?.modelID ? { modelId: meta.model.modelID } : {}),
-        ...(meteringHarness === "opencode" || meteringHarness === "pi" ? { nativeSessionId: sessionId } : {}),
+        ...(meteringHarness === "pi" ? { nativeSessionId: sessionId } : {}),
       }
     },
     onTerminal: async () => { await usageOutbox.notify() },
@@ -210,7 +196,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   let usageEventTail = Promise.resolve()
   consumeRuntimeEvent = (event) => {
     usageEventTail = usageEventTail.then(async () => {
-      if (event.payload.type === "session.created" || event.payload.type === "session.updated") {
+      if (event.payload.type === "session.updated") {
         await projectLocalSessionMetaFromEvent(services.projectionStore, event)
       }
       if (typeof event.payload.type === "string" && event.payload.properties) {
@@ -237,7 +223,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       const incompleteSources = new Set<string>()
       const entries = facts.flatMap((fact) => {
         const source = tokenTrackerSourceForHarness(fact.harness)
-        const nativeSessionId = fact.nativeSessionId ?? (source === "opencode" || source === "pi" ? fact.sessionId : undefined)
+        const nativeSessionId = fact.nativeSessionId ?? (source === "pi" ? fact.sessionId : undefined)
         if (source && !nativeSessionId) incompleteSources.add(source)
         return source && nativeSessionId ? [{
           source,
@@ -266,10 +252,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         stateDir: path.join(dataDir(), "usage-scanner"),
         since,
         until,
-        // The embedded engine's sqlite (OPENCODE_DB, engine.ts) lives under
-        // the data dir, not $HOME — without this, its turns never reach the
-        // Total-local view on a machine with no standalone opencode CLI.
-        opencodeRoots: [path.join(dataDir(), "opencode-engine")],
         classificationKey,
         refresh,
         classify: createUsageProvenanceClassifier(entries, { completeAfter }),
@@ -326,7 +308,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     stopOperation = (async () => {
       try {
         options.daemon?.lifecycle.stop()
-        upstreamEvents?.close()
         shutdownEmbeddedWorkspaceRuntimes()
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
@@ -343,8 +324,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   log.info("local server listening", {
     port,
     hostname,
-    opencode: options.opencodeUrl ? "external" : "embedded",
-    compat: opencodeCompat,
     // Stated at boot: a supervisor here would mean cloud provisioning, which
     // this product does not do.
     supervisor: workspaceSupervisorInstalled(),

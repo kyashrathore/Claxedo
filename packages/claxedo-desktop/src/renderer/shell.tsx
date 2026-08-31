@@ -197,32 +197,32 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
     return originalGetComputedStyle(elt, pseudoElt ?? undefined)
   }) as typeof window.getComputedStyle
 
-  const deepLinkEvent = "opencode:deep-link"
+  const deepLinkEvent = "claxedo:deep-link"
 
   const emitDeepLinks = (urls: string[]) => {
     if (urls.length === 0) return
-    window.__OPENCODE__ ??= {}
-    const pending = window.__OPENCODE__.deepLinks ?? []
-    window.__OPENCODE__.deepLinks = [...pending, ...urls]
+    window.__CLAXEDO__ ??= {}
+    const pending = window.__CLAXEDO__.deepLinks ?? []
+    window.__CLAXEDO__.deepLinks = [...pending, ...urls]
     window.dispatchEvent(new CustomEvent(deepLinkEvent, { detail: { urls } }))
   }
 
   const listenForDeepLinks = () => {
-    const start = window.__OPENCODE__?.deepLinks ?? []
+    const start = window.__CLAXEDO__?.deepLinks ?? []
     if (start.length) emitDeepLinks(start)
     return desktopApi().onDeepLink((urls) => emitDeepLinks(urls))
   }
 
   const createPlatform = (): Platform => {
     const wslHome = async () => {
-      if (os !== "windows" || !window.__OPENCODE__?.wsl) return undefined
+      if (os !== "windows" || !window.__CLAXEDO__?.wsl) return undefined
       return desktopApi()
         .wslPath("~", "windows")
         .catch(() => undefined)
     }
 
     const handleWslPicker = async <T extends string | string[]>(result: T | null): Promise<T | null> => {
-      if (!result || !window.__OPENCODE__?.wsl) return result
+      if (!result || !window.__CLAXEDO__?.wsl) return result
       if (Array.isArray(result)) {
         const next = await Promise.all(
           result.map((path) =>
@@ -309,7 +309,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
                 .catch(() => null)
             : null
           const nextPath = await (async () => {
-            if (window.__OPENCODE__?.wsl) {
+            if (window.__CLAXEDO__?.wsl) {
               const converted = await desktopApi()
                 .wslPath(path, "windows")
                 .catch(() => null)
@@ -387,7 +387,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
           .getWslConfig()
           .catch(() => null)
         if (next) return next.enabled
-        return window.__OPENCODE__?.wsl ?? false
+        return window.__CLAXEDO__?.wsl ?? false
       },
 
       setWslEnabled: async (enabled) => {

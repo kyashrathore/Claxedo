@@ -15,7 +15,7 @@
  *     (`packages/claxedo-app/src/process/client.ts`) at `/api/wr/process*`
  *     (`processPath()`, client.ts:27-33). The client always sends
  *     `?directory=<dir>` (+ `workspaceId` when scoped to a non-local workspace) and an
- *     `x-opencode-directory` header.
+ *     `x-claxedo-directory` header.
  *   - Client-side cache: `ProcessPaneProvider`
  *     (`src/claxedo-ui/context/process-pane.tsx`) holds a SolidJS store
  *     `{configs, processes, paneHeight}` persisted (paneHeight only, NOT
@@ -213,12 +213,12 @@ function escapeRegExp(value: string) {
 async function seedOneProject(page: Page, dir: string) {
   await page.addInitScript((d: string) => {
     localStorage.clear()
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },

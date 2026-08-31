@@ -170,7 +170,7 @@ describe("shouldPreferDomRenderer", () => {
 describe("loadRenderer", () => {
   afterEach(() => {
     try {
-      localStorage.removeItem("opencode.terminal.renderer")
+      localStorage.removeItem("claxedo.terminal.renderer")
     } catch {}
   })
 
@@ -187,7 +187,7 @@ describe("loadRenderer", () => {
   })
 
   test('pref "dom" short-circuits: never loads a WebGL addon onto the terminal', async () => {
-    localStorage.setItem("opencode.terminal.renderer", "dom")
+    localStorage.setItem("claxedo.terminal.renderer", "dom")
     const xterm = fakeXterm()
     const ref = loadRenderer(xterm)
     // Let any (erroneous) async addon import settle.
@@ -197,7 +197,7 @@ describe("loadRenderer", () => {
   })
 
   test('pref "dom" performs ZERO WebGL support probes (regression: probe fired before the short-circuit)', () => {
-    localStorage.setItem("opencode.terminal.renderer", "dom")
+    localStorage.setItem("claxedo.terminal.renderer", "dom")
     let probeCalls = 0
     const ref = loadRenderer(fakeXterm(), {
       webglSupported: () => {

@@ -16,7 +16,7 @@ describe("ACP session config sync", () => {
 
     await sync({ request: async (_method: unknown, params: unknown) => calls.push(params) } as never, state, "agent-session", {
       agent: "auto",
-      model: { providerID: "acp:example", modelID: "default" },
+      model: { providerID: "connection:example", modelID: "default" },
       parts: [],
     } as never, { syncMode: false })
 
@@ -47,7 +47,7 @@ describe("ACP session config sync", () => {
 
     await sync(conn as never, state, "agent-session", {
       agent: "build",
-      model: { providerID: "acp:example", modelID: "default" },
+      model: { providerID: "connection:example", modelID: "default" },
       parts: [],
     } as never)
 
@@ -96,7 +96,7 @@ describe("ACP session config sync", () => {
 
     await sync(conn as never, state, "agent-session", {
       agent: "read-only",
-      model: { providerID: "acp:example", modelID: "gpt-5.6-sol" },
+      model: { providerID: "connection:example", modelID: "gpt-5.6-sol" },
       variant: "ultra",
       parts: [],
     } as never, { syncMode: false })

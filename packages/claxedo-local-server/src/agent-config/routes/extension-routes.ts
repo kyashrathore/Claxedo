@@ -71,7 +71,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
         label: "Local Agent Extensions scan",
       })
       if (localOnly) return localOnly
-      const directory = c.req.query("directory") || c.req.header("x-opencode-directory")
+      const directory = c.req.query("directory") || c.req.header("x-claxedo-directory")
       if (!directory) return c.json(errorBody("agent_extension_directory_required", "directory is required"), 400)
       return c.json(await scanExistingAgentExtensionConfig(directory))
     })
@@ -91,7 +91,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
       })
       if (localOnly) return localOnly
       const body = await c.req.json<{ directory?: string; path?: string }>().catch(() => null)
-      const directory = body?.directory || c.req.query("directory") || c.req.header("x-opencode-directory")
+      const directory = body?.directory || c.req.query("directory") || c.req.header("x-claxedo-directory")
       if (!directory) return c.json(errorBody("agent_extension_directory_required", "directory is required"), 400)
       if (!body?.path) return c.json(errorBody("agent_extension_path_required", "path is required"), 400)
       try {
@@ -120,7 +120,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
       if (localOnly) return localOnly
       const scope = extensionScope({
         scope: requestedScope,
-        directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+        directory: c.req.query("directory") || c.req.header("x-claxedo-directory"),
         homeDir: options.homeDir,
       })
       if (scope instanceof Response) return scope
@@ -159,7 +159,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
       if (localOnly) return localOnly
       const scope = extensionScope({
         scope: requestedScope,
-        directory: body.directory || c.req.query("directory") || c.req.header("x-opencode-directory"),
+        directory: body.directory || c.req.query("directory") || c.req.header("x-claxedo-directory"),
         homeDir: options.homeDir,
       })
       if (scope instanceof Response) return scope
@@ -210,7 +210,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
       if (localOnly) return localOnly
       const scope = extensionScope({
         scope: c.req.query("scope"),
-        directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+        directory: c.req.query("directory") || c.req.header("x-claxedo-directory"),
         homeDir: options.homeDir,
       })
       if (scope instanceof Response) return scope
@@ -279,7 +279,7 @@ export function agentConfigExtensionRoutes(options: AgentConfigRouteOptions = {}
       if (localOnly) return localOnly
       const scope = extensionScope({
         scope: c.req.query("scope"),
-        directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+        directory: c.req.query("directory") || c.req.header("x-claxedo-directory"),
         homeDir: options.homeDir,
       })
       if (scope instanceof Response) return scope
@@ -310,7 +310,7 @@ async function discoveredExtensionStateResponse(
   })
   if (localOnly) return localOnly
   const body = await c.req.json<{ directory?: string; path?: string }>().catch(() => null)
-  const directory = body?.directory || c.req.query("directory") || c.req.header("x-opencode-directory")
+  const directory = body?.directory || c.req.query("directory") || c.req.header("x-claxedo-directory")
   if (!directory) return c.json(errorBody("agent_extension_directory_required", "directory is required"), 400)
   if (!body?.path) return c.json(errorBody("agent_extension_path_required", "path is required"), 400)
   try {
@@ -593,7 +593,7 @@ async function extensionEnabledResponse(
   if (localOnly) return localOnly
   const scope = extensionScope({
     scope: c.req.query("scope"),
-    directory: c.req.query("directory") || c.req.header("x-opencode-directory"),
+    directory: c.req.query("directory") || c.req.header("x-claxedo-directory"),
     homeDir: options.homeDir,
   })
   if (scope instanceof Response) return scope

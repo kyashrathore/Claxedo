@@ -16,7 +16,7 @@ if (!dir) throw new Error("LATEST_YML_DIR is required")
 const repo = process.env.GH_REPO
 if (!repo) throw new Error("GH_REPO is required")
 
-const version = process.env.CLAXEDO_VERSION ?? process.env.OPENCODE_VERSION
+const version = process.env.CLAXEDO_VERSION
 if (!version) throw new Error("CLAXEDO_VERSION is required")
 
 type FileEntry = {

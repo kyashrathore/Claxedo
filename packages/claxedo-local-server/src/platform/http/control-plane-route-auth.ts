@@ -69,7 +69,7 @@ export async function requireSignedControlPlaneRoute(
 
 /**
  * Hono middleware form. Mount it path-scoped — `.use("/provider/*", ...)`, or
- * once per route path as `opencode-compat.ts` does — NOT as `.use("*", ...)`
+ * once per route path as `client-presentation.ts` does — NOT as `.use("*", ...)`
  * unless the router is mounted under a prefix of its own. `app.route("/", sub)`
  * re-registers a sub-app's middleware onto the parent router, so a `"*"`
  * middleware inside a router mounted at `/` also runs for every parent route

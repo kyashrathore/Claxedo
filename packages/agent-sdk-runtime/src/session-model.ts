@@ -14,7 +14,7 @@ const NATIVE_COMPATIBILITY_MODEL: PromptModel = {
  * control. Native compatibility sessions retain their existing default.
  */
 export function defaultSessionModel(harness: SessionHarness): PromptModel {
-  if (harness.access === "acp") {
+  if (harness.access === "connection") {
     const providerID = harnessKey(harness)
     if (!providerID) throw new Error(`Invalid ACP harness identity: ${harness.id}`)
     return { providerID, modelID: "default" }

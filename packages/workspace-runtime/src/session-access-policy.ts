@@ -48,7 +48,6 @@ export type SessionAccessOperation =
   | "summarize"
   | "delete"
   | "session_event_stream"
-  | "session_v2_proxy"
   | "checkpoint_read"
   | "checkpoint_write"
   | "tool_read"
@@ -218,7 +217,7 @@ type SessionRouteDecision =
   | { kind: "workspace" }
 
 /**
- * Route-level contract for every OpenCode-shaped session-core surface.
+ * Route-level contract for every client-presentation session-core surface.
  * `workspace` is an explicit decision for directory/catalog surfaces that do
  * not expose an existing Session transcript. New routes must choose a decision
  * here before the inventory test will pass.
@@ -324,9 +323,7 @@ function authorizeManaged(input: SessionAccessPolicyInput, requireActor: boolean
 export function sessionAccessRequiresWrite(
   input: Pick<SessionAccessPolicyInput, "operation" | "method">,
 ) {
-  if (WRITE_OPERATIONS.has(input.operation)) return true
-  return input.operation === "session_v2_proxy"
-    && !["GET", "HEAD", "OPTIONS"].includes((input.method ?? "GET").toUpperCase())
+  return WRITE_OPERATIONS.has(input.operation)
 }
 
 function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | void): SessionAccessDecision {
@@ -494,11 +491,6 @@ export function managedWorkspaceSessionAccessPolicy(
     },
   }
 }
-
-export const SESSION_V2_PROXY_ROUTE_ACCESS = {
-  "ALL /api/session": { kind: "prefix", operation: "session_v2_proxy" },
-  "ALL /api/session/*": { kind: "prefix", operation: "session_v2_proxy" },
-} as const
 
 type SessionAccessContextReader = {
   get(name: "relayHostAuth" | "relayHostDirectAuth"):

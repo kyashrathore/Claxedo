@@ -115,7 +115,7 @@ export function PtyRoutes(
       const workspaceId = c.req.header("x-workspace-id")
       let cwd: string | undefined
       try {
-        const directory = assertTarget(c.req.header("x-opencode-directory"))
+        const directory = assertTarget(c.req.header("x-claxedo-directory"))
         cwd = input.cwd ? await resolveWorkspacePath(directory, input.cwd) : directory
         await resolveWorkspaceCommandPaths(directory, {
           command: input.command,

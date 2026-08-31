@@ -13,9 +13,10 @@ const issuer = "test-management-issuer"
 const audience = "workspace-runtime-management"
 
 const validSnapshot: RuntimeSnapshot = {
-  version: 1,
+  version: 3,
   mcp: {},
-  harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "/bin/agent" } },
+  connections: [],
+  defaultHarness: { kind: "native", harnessId: "codex" },
   auth: {},
 }
 

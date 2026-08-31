@@ -1,4 +1,4 @@
-import { base64Encode } from "@opencode-ai/core/util/encode"
+import { base64Encode } from "@/lib/encode"
 import {
   ACP_SAFE_TOOL_KINDS,
   IN_PROJECT_WRITE_PERMISSIONS,
@@ -16,8 +16,8 @@ import {
  * subagent spawns — still reaches the user.
  *
  * Membership is an ALLOWLIST, so anything not named here asks. That matters more
- * than it looks: opencode's permission namespace has an open tail (MCP tool
- * names, subagent ids, the shell tool id are all dynamic), and a denylist would
+ * than it looks: agent permission namespaces have an open tail (MCP tool names,
+ * subagent ids, shell tool ids are all dynamic), and a denylist would
  * silently auto-approve every future or third-party tool.
  *
  * Deliberately a scan over the readonly tiers rather than a module-scope `Set`:

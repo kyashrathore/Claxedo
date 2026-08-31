@@ -10,11 +10,7 @@ export type ExistingSessionConfig = {
 export function parseExistingSessionConfig(input: unknown): ExistingSessionConfig | undefined {
   const row = record(input)
   const harness = record(row?.harness)
-  const harnessType = pickHarness(
-    string(row?.harnessType) ?? string(harness?.id) ?? string(harness?.type),
-    string(harness?.binary),
-    string(harness?.access),
-  )
+  const harnessType = pickHarness(row?.harnessType) ?? pickHarness(harness)
   if (!harnessType) return
   return {
     harnessType,

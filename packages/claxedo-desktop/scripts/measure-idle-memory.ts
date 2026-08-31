@@ -333,7 +333,6 @@ function processRole(process: ProcessRow, mainPid: number) {
   if (process.pid === mainPid) return "main"
   if (process.command.includes("--type=gpu-process")) return "gpu"
   if (process.command.includes("--type=renderer")) return "renderer"
-  if (process.command.includes("claxedo-engine-worker")) return "opencode-compat-worker"
   if (
     process.command.includes("--utility-sub-type=node.mojom.NodeService") ||
     process.command.includes("claxedo-server/index.js")

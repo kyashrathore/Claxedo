@@ -336,8 +336,8 @@ export function createTurnMeter(input: {
       current.modelId = info.modelID
       activeBySession.set(sessionId, info.id)
       const tokens = messageTokens(info.tokens)
-      // OpenCode publishes its authoritative token snapshot on the final
-      // assistant update, but represents terminality with `finish` followed by
+      // A connected runtime may publish its authoritative token snapshot on the final
+      // assistant update while representing terminality with `finish` followed by
       // `message.completed` rather than populating `time.completed`. Capture
       // usage whenever the provider supplies it; settlement remains owned by
       // the terminal lifecycle events below.

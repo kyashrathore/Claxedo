@@ -9,7 +9,6 @@ import copilotHook from "../templates/copilot-hook.template.sh?raw"
 import cursorHook from "../templates/cursor-hook.template.sh?raw"
 import geminiHook from "../templates/gemini-hook.template.sh?raw"
 import notify from "../templates/notify.template.sh?raw"
-import opencodePlugin from "../templates/opencode-plugin.template.txt?raw"
 import wrapperCommon from "../templates/wrapper-common.template.sh?raw"
 import zshenv from "../templates/zshenv.template.sh?raw"
 import zshlogin from "../templates/zshlogin.template.sh?raw"
@@ -26,7 +25,6 @@ export const templates = {
   "cursor-hook.template.sh": cursorHook,
   "gemini-hook.template.sh": geminiHook,
   "notify.template.sh": notify,
-  "opencode-plugin.template.txt": opencodePlugin,
   "wrapper-common.template.sh": wrapperCommon,
   "zshenv.template.sh": zshenv,
   "zshlogin.template.sh": zshlogin,

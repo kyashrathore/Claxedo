@@ -98,21 +98,13 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       draftDefault: saved,
       draftDefaultState: undefined,
       harness: type,
-      harnessMode: type === "opencode" ? "opencode" : "harness",
+      harnessMode: type ? "harness" : "unknown",
       selectedModel: saved?.model?.modelID ?? "",
       selectedModelProvider: saved?.model?.providerID,
-      optionsLoading: !!saved && harnessHasConfigOptions(type),
+      optionsLoading: !!saved && !!type && harnessHasConfigOptions(type),
       configError: saved ? "Loading model options..." : undefined,
     })
     const application = { scope, workspaceKey: identity.workspaceKey, revision }
-    if (!saved) {
-      setStore(scope, {
-        draftDefaultAuthority: "defaulted",
-        draftDefaultState: "ready",
-        optionsLoading: false,
-        configError: undefined,
-      })
-    }
     return { application, saved }
   }
 
@@ -122,12 +114,13 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
   ) => {
     const current = read(application.scope)
     if (!shouldApplyDraftDefault(application, owner(application.scope))) return false
-    const saved = current.draftDefault ?? { harness: "opencode" as const }
+    const saved = current.draftDefault
+    if (!saved) return false
     const result = resolveDraftDefault({ ...input, saved })
     const model = result.model ?? result.blockedModel
     setStore(application.scope, {
       harness: result.harness,
-      harnessMode: result.harness === "opencode" ? "opencode" : "harness",
+      harnessMode: "harness",
       selectedModel: model?.modelID ?? "",
       selectedModelProvider: model?.providerID,
       optionsLoading: false,
@@ -157,7 +150,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     const current = read(scope)
     if (
       (current.draftDefaultAuthority ?? "unresolved") !== "unresolved" ||
-      current.draftDefault?.harness !== type ||
+      !sameHarnessSelection(current.draftDefault?.harness, type) ||
       !current.draftDefaultWorkspaceKey
     ) return undefined
     return {
@@ -301,12 +294,11 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     },
     displayName: (scope: string) => harnessDisplayName(read(scope)),
     harness: (scope: string) => read(scope).harness,
-    harnessBinary: (scope: string) => read(scope).harnessBinary,
     harnessMode: (scope: string) => read(scope).harnessMode,
     harnessModelKeyForSubmit: (scope: string) => harnessModelKeyForSubmit(read(scope)),
     harnessModelNameForSubmit: (scope: string) => harnessModelNameForSubmit(read(scope)),
     harnessReadyForSubmit: (scope: string) => harnessReadyForSubmit(read(scope)),
-    isHarnessMode: (scope: string) => read(scope).harness !== "opencode",
+    isHarnessMode: (scope: string) => !!read(scope).harness,
     models: (scope: string) => harnessModels(read(scope)),
     thoughtLevels: (scope: string) => read(scope).thoughtLevels ?? [],
     setThoughtLevel: (scope: string, value: string | undefined) => {
@@ -330,6 +322,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 }
 
 function canSelectDraftModel(state: HarnessStoreState, model: ModelKey) {
-  if (state.harness === "pi" || state.harness === "opencode") return true
-  return model.providerID === state.harness && !!state.dynamicModels?.some((item) => item.id === model.modelID)
+  if (!state.harness) return false
+  if (isNativeHarness(state.harness, "pi") || state.harness.kind === "connection") return true
+  return model.providerID === state.harness.harnessId && !!state.dynamicModels?.some((item) => item.id === model.modelID)
 }

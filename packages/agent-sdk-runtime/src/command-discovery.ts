@@ -8,7 +8,7 @@ export type CommandItem = {
 }
 
 function commandDir() {
-  return path.join(dataDir(), "opencode-config", "command")
+  return path.join(dataDir(), "commands")
 }
 
 export async function listCommands(): Promise<CommandItem[]> {

@@ -62,7 +62,6 @@ export {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
   SESSION_CORE_ROUTE_ACCESS,
-  SESSION_V2_PROXY_ROUTE_ACCESS,
 } from "./session-access-policy"
 export {
   WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL,
@@ -124,10 +123,9 @@ export { normalizeRuntimeSnapshot }
   from "./routes/config"
 export type {
   AppliedRuntimeSnapshot,
-  RuntimeHarness,
-  RuntimeRunner,
+  RuntimeConnectionDescriptor,
+  RuntimeHarnessSelection,
+  RuntimeNativeHarnessId,
   RuntimeSnapshot,
-  RuntimeSnapshotV1,
-  RuntimeSnapshotV2,
 }
   from "./routes/config"

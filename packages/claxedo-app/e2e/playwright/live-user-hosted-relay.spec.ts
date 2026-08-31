@@ -26,7 +26,7 @@
  * worth stating plainly: `getClaxedoServerUrl()` (`src/utils/api.ts:211-223`) has a
  * HARDCODED fallback of `http://127.0.0.1:3001` for every claxedo-server API call
  * (bootstrap, connection mint, etc.) with no runtime override site reachable from a
- * Playwright init script — `window.__OPENCODE__.serverUrl` is read only by
+ * Playwright init script — `window.__CLAXEDO__.serverUrl` is read only by
  * `getDefaultBaseUrl()` (a DIFFERENT function, used for legacy direct-opencode/desktop
  * sidecar addressing, not the claxedo-server control-plane calls this spec needs). The
  * ONLY supported way to point the real app at a non-3001 backend is
@@ -370,7 +370,6 @@ type RunningFixture = {
   scripted: ScriptedModelServer
   close: () => Promise<void>
   mintRole: (role: "viewer" | "editor" | "owner" | "admin") => Promise<{ runtimeAccessToken: string; relayUrl: string }>
-  opencodeRequests: () => Promise<string[]>
   pauseTunnel: () => Promise<void>
   resumeTunnel: () => Promise<void>
 }
@@ -539,12 +538,6 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
     const res = await fetch(`${info.backendUrl}/__fixture/mint?role=${role}`)
     if (!res.ok) throw new Error(`GATING: /__fixture/mint?role=${role} failed: ${res.status} ${await res.text()}`)
     return (await res.json()) as { runtimeAccessToken: string; relayUrl: string }
-  }
-
-  const opencodeRequests = async () => {
-    const res = await fetch(`${info.backendUrl}/__fixture/opencode-requests`)
-    if (!res.ok) throw new Error(`GATING: /__fixture/opencode-requests failed: ${res.status}`)
-    return ((await res.json()) as { requests: string[] }).requests
   }
 
   const pauseTunnel = async () => {
@@ -743,7 +736,7 @@ async function seedWorkspace(page: Page, info: FixtureInfo) {
     // `data-session-directory` read `/private/var/folders/…/workspace`).
     const ref = `workspace:${input.workspaceId}`
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: ref, expanded: true, sandboxes: [input.workspaceId] }] },
@@ -753,7 +746,7 @@ async function seedWorkspace(page: Page, info: FixtureInfo) {
       }),
     )
     localStorage.setItem(
-      "opencode.global.dat:globalSync.project",
+      "claxedo.global.dat:globalSync.project",
       JSON.stringify({
         value: [
           {

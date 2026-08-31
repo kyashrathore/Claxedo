@@ -130,8 +130,8 @@ export function createElectronRenderer(mode: string): UserConfig {
           replacement: normalize(path.join(agentEventRuntimeDir, "src/contracts/index.ts")),
         },
         {
-          find: /^@claxedo\/agent-event-runtime\/opencode-compat$/,
-          replacement: normalize(path.join(agentEventRuntimeDir, "src/projections/opencode-compat/index.ts")),
+          find: /^@claxedo\/agent-event-runtime\/client-presentation$/,
+          replacement: normalize(path.join(agentEventRuntimeDir, "src/projections/client-presentation/index.ts")),
         },
         {
           find: "@/",

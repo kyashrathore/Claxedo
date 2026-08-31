@@ -1,4 +1,4 @@
-import { isAcpConnectionHarnessId, type BuiltinHarnessId, type HarnessId } from "@/platform/identity/session-ref"
+import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
 import { harnessDisplayLabel } from "@/ui/harness-display"
 
 /**
@@ -23,32 +23,6 @@ import { harnessDisplayLabel } from "@/ui/harness-display"
  * from the UI and have different fixes.
  */
 export type PermissionMechanism =
-  /**
-   * `opencode` — a per-session `PermissionRuleset`, written with
-   * `client.session.update({ permission })` (`PATCH /session/:sessionID`).
-   *
-   * The app writes this directly; the runtime adapter has no `setPermissionMode`
-   * for opencode, by design.
-   *
-   * Not `PATCH /config`, for three independent reasons:
-   *
-   *  1. The config handler calls `markInstanceForDisposal` unconditionally, even
-   *     for a no-op payload
-   *     (`server/routes/instance/httpapi/handlers/config.ts`). Disposal runs in
-   *     the same request, `Effect.uninterruptible`, with no check for a live turn.
-   *  2. The disposer set includes `SessionRunState`, whose finalizer interrupts
-   *     every live turn's fiber — the same path as the user pressing Stop. The
-   *     prompt returns 200 with a partial message stamped
-   *     `AbortError{aborted:true}`, pending permission prompts get
-   *     `RejectedError`, and MCP clients and LSP servers die with it.
-   *  3. `Config.update` writes `<instance dir>/config.json`, which no config
-   *     loader reads — the loader walks `opencode.json`/`opencode.jsonc`,
-   *     `.opencode/`, `$OPENCODE_CONFIG` and the global config dir.
-   *
-   * The session route has none of that, and the ruleset is projected into SQLite
-   * so it survives an engine restart and an app restart.
-   */
-  | { kind: "opencode-session-ruleset" }
   /**
    * `claude-sdk` — the SDK's enumerated `PermissionMode` (`sdk.d.ts:2065`), set
    * as `options.permissionMode` at query time. The only harness whose modes are
@@ -149,10 +123,9 @@ export type PermissionMechanism =
   | { kind: "sandboxed-no-policy" }
 
 export const PERMISSION_MECHANISMS: Record<BuiltinHarnessId, PermissionMechanism> = {
-  opencode: { kind: "opencode-session-ruleset" },
-  "claude-sdk": { kind: "claude-sdk-permission-mode" },
-  "codex-app-server": { kind: "codex-approval-policy" },
-  "cursor-sdk": { kind: "cursor-local-agent-options" },
+  claude: { kind: "claude-sdk-permission-mode" },
+  codex: { kind: "codex-approval-policy" },
+  cursor: { kind: "cursor-local-agent-options" },
   pi: { kind: "sandboxed-no-policy" },
 }
 
@@ -209,10 +182,9 @@ export type CursorLocalPermissionOptions = {
 }
 
 export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
-  opencode: "opencode",
-  "claude-sdk": "Claude (SDK)",
-  "codex-app-server": "Codex (SDK)",
-  "cursor-sdk": "Cursor (SDK)",
+  claude: "Claude (SDK)",
+  codex: "Codex (SDK)",
+  cursor: "Cursor (SDK)",
   pi: "Pi",
 }
 
@@ -224,15 +196,13 @@ export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
 export function permissionMechanism(harness: HarnessId): PermissionMechanism {
   const hit = (PERMISSION_MECHANISMS as Partial<Record<string, PermissionMechanism>>)[harness]
   if (hit) return hit
-  if (isAcpConnectionHarnessId(harness)) return { kind: "acp-session-mode" }
-  // Unknown non-ACP identities have no policy surface to describe; fail toward
-  // the harness-owns-it mechanism rather than inventing one.
+  // Configured connections own their policy surface and report it at runtime.
   return { kind: "acp-session-mode" }
 }
 
 /** True when the picker may show Claxedo's own rows instead of a harness list. */
 export function harnessUsesClaxedoPermissionPicker(harness: HarnessId): boolean {
-  return permissionMechanism(harness).kind === "opencode-session-ruleset"
+  return false
 }
 
 /** Prose label for ANY harness identity ("Claude (SDK)", or the connection's slug label). */

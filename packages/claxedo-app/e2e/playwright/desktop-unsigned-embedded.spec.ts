@@ -680,7 +680,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
   async function openWorkspaceProject(app: PackagedApp, dir: string, workspaceId: string): Promise<Locator> {
     await app.page.evaluate(async (worktree) => {
       await (window as unknown as { api: { storeSet(n: string, k: string, v: string): Promise<void> } }).api.storeSet(
-        "opencode.global.dat",
+        "claxedo.global.dat",
         "server",
         JSON.stringify({
           list: [],
@@ -1424,7 +1424,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // pixels `page.locator` cannot read as text at all — a canvas-only lane
     // could never assert "never matches /Reconnecting.../" against real
     // rendered content, only screenshot pixel-diffing, which the plan reserves
-    // for E2/nightly. `opencode.terminal.renderer` is a REAL, shipped escape
+    // for E2/nightly. `claxedo.terminal.renderer` is a REAL, shipped escape
     // hatch (`renderer.ts`: "Allow an escape hatch for debugging /
     // problematic GPUs"), read via plain `window.localStorage` — NOT the
     // electron-store-backed `Persist` system (`rendererPreference()` in
@@ -1432,7 +1432,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // user-facing setting, not a test seam. Verified live 2026-08-06: with it
     // set, `.xterm-rows` renders the shell's real prompt text
     // (`<cwd> main ❯ ... <clock>`), readable via Playwright locators.
-    await packaged.page.evaluate(() => localStorage.setItem("opencode.terminal.renderer", "dom"))
+    await packaged.page.evaluate(() => localStorage.setItem("claxedo.terminal.renderer", "dom"))
     const projectGroup = await openWorkspaceProject(packaged, dir, workspaceId)
 
     // Navigate INTO the project before touching the terminal toolbar.

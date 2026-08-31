@@ -7,7 +7,7 @@ import { Pty } from "./pty/index"
 import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
-import type { OpenCodeRequestFn, PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
+import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
@@ -16,7 +16,7 @@ import {
   type WorkspaceRelayHostTunnel,
   type WorkspaceRelayHostTunnelOptions,
 } from "./workspace-relay-host-tunnel"
-import { ConfigRoutes, type RuntimeRunner } from "./routes/config"
+import { ConfigRoutes, type RuntimeHarnessSelection } from "./routes/config"
 import { SessionEnvRoutes } from "./routes/session-env"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
 import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
@@ -80,13 +80,6 @@ export type WorkspaceRuntimeServerOptions = {
   configToken?: string
   managementAuth?: WorkspaceRuntimeManagementAuth
   managementTarget?: WorkspaceRuntimeManagementTarget
-  opencodeUrl?: string
-  opencodeHeaders?: HeadersInit
-  /**
-   * Injected opencode transport (peer of `opencodeUrl`). When supplied, the host
-   * rides this handler instead of building a URL — used by embedded compositions.
-   */
-  opencodeRequest?: OpenCodeRequestFn
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
   opencodeCompat?: boolean
@@ -384,9 +377,8 @@ function runtimeDiagnostics(host: Host, options: WorkspaceRuntimeServerOptions) 
       consecutiveFailures: 0,
     },
     capabilities: host.capabilities(),
-    agentType: detail.harness.id,
+    agentType: detail.harness?.kind === "native" ? detail.harness.harnessId : detail.harness?.connectionId ?? null,
     harness: detail.harness,
-    acpBinary: detail.harness.id === "opencode" ? null : detail.harness.connection?.kind === "process" ? detail.harness.connection.binary ?? null : null,
     model: null,
     error: detail.error || null,
     harnessHealth: detail.harnessHealth,
@@ -439,10 +431,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ? managedWorkspaceSessionAccessPolicy()
       : remoteWorkspaceSessionAccessPolicyFromEnv())
   const host = createWorkspaceHost({
-    ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
-    ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
-    ...(options.opencodeRequest ? { opencodeRequest: options.opencodeRequest } : {}),
     ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
+    ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
+    ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
     ...(options.providerCatalog ? { providerCatalog: options.providerCatalog } : {}),

@@ -87,49 +87,6 @@ describe("process config file", () => {
     await manager.dispose(tmpDir)
   })
 
-  test("migrates legacy .claxedo configs and persists generated ids", async () => {
-    await fs.mkdir(path.join(tmpDir, ".claxedo"), { recursive: true })
-    await fs.writeFile(
-      path.join(tmpDir, ".claxedo", "processes.jsonc"),
-      JSON.stringify({
-        processes: [
-          {
-            name: "dev",
-            command: "npm run dev",
-          },
-        ],
-      }),
-    )
-
-    const { loadConfig } = await import("./manager")
-    const configs = await loadConfig(tmpDir)
-    const persisted = JSON.parse(await fs.readFile(path.join(tmpDir, ".workspace-runtime", "processes.jsonc"), "utf-8"))
-
-    expect(configs[0]!.id).toMatch(/^proc_/)
-    expect(persisted.processes[0].id).toBe(configs[0]!.id)
-  })
-
-  test("migrates legacy .opencode configs and persists generated ids", async () => {
-    await fs.mkdir(path.join(tmpDir, ".opencode"), { recursive: true })
-    await fs.writeFile(
-      path.join(tmpDir, ".opencode", "processes.jsonc"),
-      JSON.stringify({
-        processes: [
-          {
-            name: "dev",
-            command: "npm run dev",
-          },
-        ],
-      }),
-    )
-
-    const { loadConfig } = await import("./manager")
-    const configs = await loadConfig(tmpDir)
-    const persisted = JSON.parse(await fs.readFile(path.join(tmpDir, ".workspace-runtime", "processes.jsonc"), "utf-8"))
-
-    expect(configs[0]!.id).toMatch(/^proc_/)
-    expect(persisted.processes[0].id).toBe(configs[0]!.id)
-  })
 })
 
 // ---------------------------------------------------------------------------
@@ -1001,7 +958,7 @@ describe("resolvePort via start()", () => {
       env: {
         NODE_OPTIONS: "--require /definitely-missing-workspace-runtime-module",
         SECRET_TOKEN: "nope",
-        OPENCODE_ALLOWED: "yes",
+        UNRELATED_VENDOR_ALLOWED: "nope",
         CLAXEDO_ALLOWED: "yes",
       },
       port: { name: "http", preferred: 19878, inject: "PORT" },
@@ -1029,8 +986,8 @@ describe("resolvePort via start()", () => {
       expect(created).toHaveLength(1)
       expect(created[0]!.env?.NODE_OPTIONS).toBeUndefined()
       expect(created[0]!.env?.SECRET_TOKEN).toBeUndefined()
+      expect(created[0]!.env?.UNRELATED_VENDOR_ALLOWED).toBeUndefined()
       expect(created[0]!.env).toMatchObject({
-        OPENCODE_ALLOWED: "yes",
         CLAXEDO_ALLOWED: "yes",
         PORT: "19878",
       })

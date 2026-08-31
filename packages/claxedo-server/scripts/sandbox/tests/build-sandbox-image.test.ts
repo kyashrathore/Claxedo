@@ -5,7 +5,6 @@ import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "@claxedo/sandbox-manager"
 import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
-  OPENCODE_BINARY_FILENAME,
   WORKSPACE_RUNTIME_VERSION_FILENAME,
   hostBundleDependencies,
   sandboxImageBuildArgs,
@@ -105,7 +104,7 @@ describe("build-sandbox-image", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     expect(dockerfiles.every((dockerfile) => dockerfile.includes("setsid env WORKSPACE_RUNTIME_PORT=2593"))).toBe(true)
-    expect(dockerfiles.every((dockerfile) => dockerfile.includes("OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes("http://127.0.0.1:2593/api/wr/health"))).toBe(true)
     expect(dockerfiles.every((dockerfile) =>
       dockerfile.includes(`ln -sf /opt/workspace-runtime/${HOST_BUNDLE_FILENAME} /usr/local/bin/workspace-runtime`)
     )).toBe(true)
@@ -122,7 +121,7 @@ describe("build-sandbox-image", () => {
     expect(fs.readFileSync(versionFile, "utf8")).toMatch(/^\d+\.\d+\.\d+\n$/)
   })
 
-  test("production images install and smoke the checkout's Session V2 OpenCode binary", () => {
+  test("production images do not bundle or start an agent provider", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     for (const dockerfile of dockerfiles) {
@@ -137,7 +136,6 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).toContain("setsid env OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true opencode serve")
       expect(dockerfile).toContain("os.killpg")
     }
-    expect(dockerfiles.every((dockerfile) => !dockerfile.includes("opencode-ai@"))).toBe(true)
   })
 
   test("Cloudflare data-plane proxy targets the canonical workspace-runtime port", () => {

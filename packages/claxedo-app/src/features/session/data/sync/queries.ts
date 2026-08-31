@@ -291,14 +291,7 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
       workspaceMeta[key] = workspaceMetaFromGroup(key, group)
     }
   }
-  const legacyRows = "global" in input
-    ? [
-      ...input.global,
-      ...Object.values(input.byProject).flat(),
-      ...Object.values(input.byWorkspace).flatMap((group) => group.sessions),
-    ]
-    : []
-  return sessionInventoryStore(input, input.sessions.length > 0 ? input.sessions : legacyRows, workspaceMeta)
+  return sessionInventoryStore(input, input.sessions, workspaceMeta)
 }
 
 /**
@@ -306,9 +299,8 @@ export function toSessionInventoryStore<TSession extends SessionInventoryIdentit
  *
  * `byProject` and `byWorkspace` are derived indexes and can still describe the
  * pre-mutation snapshot while `sessions` is intentionally empty. Re-reading
- * those indexes here resurrected the final archived/deleted session. Legacy
- * index-only values are materialized by `toSessionInventoryStore` at the input
- * boundary; after that point the canonical `sessions` array is authoritative.
+ * those indexes here resurrected the final archived/deleted session. The
+ * canonical `sessions` array is authoritative at every boundary.
  */
 export function toCanonicalSessionInventoryStore<TSession extends SessionInventoryIdentity>(
   input: SessionInventoryValue<TSession>,

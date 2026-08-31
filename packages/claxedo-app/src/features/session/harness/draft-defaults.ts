@@ -1,7 +1,7 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import { Persist } from "@/platform/persistence/persist"
-import { isHarnessId, type HarnessId } from "@/platform/identity/session-ref"
+import { isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
 
 const VERSION = 2
 const KEY = "session.draft-default.v1"

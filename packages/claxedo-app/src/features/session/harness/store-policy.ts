@@ -130,9 +130,8 @@ export function harnessWorkspaceRuntimeRef(
 export function refreshHarnessTypeForScope(input: {
   directory?: string
   harness: HarnessType
-}): HarnessType | undefined {
-  if (input.harness !== "opencode") return input.harness
-  return harnessWorkspaceRuntimeRef(input) ? "opencode" : undefined
+}): string | undefined {
+  return input.harness.kind === "native" ? input.harness.harnessId : undefined
 }
 
 /**
@@ -211,7 +210,7 @@ export function harnessStateFromSessionConfig(input: {
   model?: { providerID?: string | null; modelID?: string | null } | null
 }): HarnessState | undefined {
   const harness = input.harness
-  const type = pickHarness(harness?.type, harness?.binary)
+  const type = pickHarness(harness?.type)
   if (!harness || !type) return undefined
   return {
     ...harness,
@@ -221,7 +220,6 @@ export function harnessStateFromSessionConfig(input: {
     status: "ready",
     ready: true,
     activeType: type,
-    activeBinary: harness.binary ?? null,
   }
 }
 

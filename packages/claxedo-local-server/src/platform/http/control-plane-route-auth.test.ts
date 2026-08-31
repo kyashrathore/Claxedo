@@ -37,8 +37,8 @@ afterAll(async () => {
 // that is exactly when the protection disappears.
 //
 // `LivingAppsRoutes` was the other instance of this class; the route has since
-// been removed from the tree, so `provider-auth` and `opencode-compat` are what
-// remain to hold — the latter in `opencode-compat-auth-gate.test.ts`. The
+// been removed from the tree, so `provider-auth` and `client-presentation` are what
+// remain to hold — the latter in `client-presentation-auth-gate.test.ts`. The
 // structural guard against a *future* ungated mount lives in
 // architecture.test.ts — this file covers the runtime behaviour.
 

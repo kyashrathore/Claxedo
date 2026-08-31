@@ -18,7 +18,7 @@
  * STATE MODEL —
  *   - Model/agent/variant SELECTION lives in `useLocal()` (`src/context/local.tsx`), a
  *     per-directory store persisted via `Persist.workspace(directory, "model-selection")`
- *     (localStorage key `opencode.workspace.<dirhash>.dat:workspace:model-selection`),
+ *     (localStorage key `claxedo.workspace.<dirhash>.dat:workspace:model-selection`),
  *     keyed by session id once a session exists (`saved.session[sessionId]`). Before a
  *     session exists (a fresh draft), `store.draft` holds the pick IN MEMORY ONLY — it
  *     does NOT survive reload by itself. What DOES survive reload for a fresh draft is
@@ -177,12 +177,12 @@ async function seedOneProject(page: Page, dir: string) {
       localStorage.clear()
       sessionStorage.setItem("__e2e_seed_done__", "1")
     }
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },
@@ -622,7 +622,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           operation: "harness_switch",
           capability: "session_harness",
           harness: "opencode",
-          transport: "opencode",
+          transport: "runtime",
           reason: "harness_switch_not_supported",
           message: "opencode sessions cannot switch to claude through session config patch",
         },

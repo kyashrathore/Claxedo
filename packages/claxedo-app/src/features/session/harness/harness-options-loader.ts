@@ -106,17 +106,17 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         : decision.patch)
       if (resolvingDefault && !payload.stale) {
         const eligibleModels = (decision.patch.dynamicModels ?? []).map((model) => ({
-          providerID: type,
+          providerID: harnessSelectionId(type),
           modelID: model.id,
         }))
         if (decision.managedDefault && decision.patch.selectedModel) {
-          eligibleModels.push({ providerID: type, modelID: decision.patch.selectedModel })
+          eligibleModels.push({ providerID: harnessSelectionId(type), modelID: decision.patch.selectedModel })
         }
         input.resolveDraftDefault!(draftDefault, {
-          supportedHarnesses: ["opencode", type],
+          supportedHarnesses: [type],
           eligibleModels,
           ...(decision.patch.selectedModel
-            ? { declaredDefaultModel: { providerID: type, modelID: decision.patch.selectedModel } }
+            ? { declaredDefaultModel: { providerID: harnessSelectionId(type), modelID: decision.patch.selectedModel } }
             : {}),
         })
       }
@@ -125,7 +125,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
         optionTimers.set(
           scope,
           (input.scheduleRetry ?? ((run) => setTimeout(run, 1000)))(() => {
-            if (input.cache.getSeq(scope) !== id || input.currentHarness(scope) !== type) return
+            if (input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)) return
             void load(scope, type, params)
           }),
         )

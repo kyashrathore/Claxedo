@@ -12,7 +12,6 @@ import {
   generateCopilotWrapper,
   normalizeWrappers,
 } from "./core/wrappers"
-import { generateOpenCodeWrapper } from "./opencode/wrapper"
 import { WRAPPER_MARKER } from "./core/constants"
 
 const TEST_ROOT = path.join(tmpdir(), `claxedo-wrappers-test-${process.pid}-${Date.now()}`)
@@ -108,16 +107,6 @@ describe("generateCodexWrapper", () => {
     expect(script).toContain('_claxedo_emit_event "PermissionRequest"')
     expect(script).toContain("CLAXEDO_CODEX_START_WATCHER_PID")
     expect(script).toContain('kill "$CLAXEDO_CODEX_START_WATCHER_PID"')
-  })
-})
-
-describe("generateOpenCodeWrapper", () => {
-  it("injects OPENCODE_CONFIG_DIR", () => {
-    const script = generateOpenCodeWrapper("/tmp/opencode-config")
-
-    expect(script).toContain('OPENCODE_CONFIG_DIR="/tmp/opencode-config"')
-    expect(script).toContain('exec "$REAL_BIN" "$@"')
-    expect(script).toContain('find_real_binary "opencode"')
   })
 })
 

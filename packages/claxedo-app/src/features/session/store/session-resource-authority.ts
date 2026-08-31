@@ -1,4 +1,5 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
+import { harnessSelectionKey } from "@/platform/identity/harness-selection"
 import { normalizedAgentRuntimeServerUrl, type AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-urls"
 
 export type SessionResourceAuthorityScope = {
@@ -63,7 +64,7 @@ function sessionRefAuthority(ref: SessionRef | undefined) {
     ref.workspaceId ?? "",
     ref.cwd ?? "",
     sandboxAuthority(ref),
-    ref.harness ? [ref.harness.id, ref.harness.binary ?? ""] as const : null,
+    ref.harness ? [harnessSelectionKey(ref.harness), ref.harness.binary ?? ""] as const : null,
   ] as const
 }
 

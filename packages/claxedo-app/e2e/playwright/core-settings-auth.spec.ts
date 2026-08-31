@@ -87,7 +87,7 @@
  *     acting on stale state.
  *   Sandbox: `SandboxSettingsSection` loads `GET /api/workspace/drivers`
  *     (default provider id + per-provider field/configured metadata) against
- *     `getDefaultBaseUrl()` (reads `window.__OPENCODE__.serverUrl` when set,
+ *     `getDefaultBaseUrl()` (reads `window.__CLAXEDO__.serverUrl` when set,
  *     else env/origin fallbacks). `shouldUseSandboxDriverMutations` gates every
  *     mutation control on `centralTransportForServer(baseUrl) === "loopback"`;
  *     non-loopback hosts render the same data read-only.
@@ -379,7 +379,7 @@
  *       every update-check affordance is permanently disabled here (behavior
  *       8) and the error page's update button never renders (behavior 31).
  *     - `getDefaultBaseUrl()` (unlike `getClaxedoServerUrl()`) DOES read
- *       `window.__OPENCODE__.serverUrl` when present, so the Sandbox tab's
+ *       `window.__CLAXEDO__.serverUrl` when present, so the Sandbox tab's
  *       loopback/non-loopback mutation gate (behavior 23) CAN be flipped at
  *       runtime by overriding that property before the app boots, without
  *       touching `CloudAuthGate`'s unrelated resolution path.
@@ -439,7 +439,7 @@ async function json(route: import("@playwright/test").Route, body: unknown, stat
  * Every custom route this spec registers (credentials, integrations, sandbox
  * providers, network policy, cli/exchange) targets `getClaxedoServerUrl()`
  * (credentials/integrations/cli-exchange) or a deliberately-forced
- * `window.__OPENCODE__.serverUrl` (the sandbox read-only-lock scenario) — both
+ * `window.__CLAXEDO__.serverUrl` (the sandbox read-only-lock scenario) — both
  * genuinely cross-origin relative to the Playwright test page, through
  * `authFetch`/`api.*`, which always attach `Authorization`/`Content-Type`
  * headers. A real browser performs a real CORS preflight (`OPTIONS`) against
@@ -458,17 +458,17 @@ function withCors(handler: (route: import("@playwright/test").Route) => Promise<
   }
 }
 
-/** Seeds one registered local project, optionally forcing a specific `__OPENCODE__.serverUrl`. */
+/** Seeds one registered local project, optionally forcing a specific `__CLAXEDO__.serverUrl`. */
 async function seedProject(page: Page, dir: string, opts?: { serverUrl?: string }) {
   await page.addInitScript(
     ({ d, serverUrl }: { d: string; serverUrl?: string }) => {
       localStorage.clear()
-      ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+      ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
         serverUrl: serverUrl ?? window.location.origin,
         activeDirectory: d,
       }
       localStorage.setItem(
-        "opencode.global.dat:server",
+        "claxedo.global.dat:server",
         JSON.stringify({
           list: [],
           projects: { local: [{ worktree: d, expanded: true }] },
@@ -1098,9 +1098,9 @@ test.describe("core settings + auth @core", () => {
       await seedProject(page, DIR)
       await openWorkbench(page, DIR)
 
-      // Seed a persisted `opencode.*` marker that a real sign-out must purge
-      // (clearPersistedAuthState wipes every opencode.* / projection-cache key).
-      await page.evaluate(() => localStorage.setItem("opencode.marker.should-be-purged", "1"))
+      // Seed a persisted `claxedo.*` marker that a real sign-out must purge
+      // (clearPersistedAuthState wipes every claxedo.* / projection-cache key).
+      await page.evaluate(() => localStorage.setItem("claxedo.marker.should-be-purged", "1"))
 
       await openSettings(page)
       const logout = page.getByRole("button", { name: "Log out" })
@@ -1121,7 +1121,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.locator("button").filter({ hasText: "Continue" })).toBeVisible({ timeout: 20_000 })
 
       // Persisted auth state was purged by the (previously no-op) sign-out.
-      const marker = await page.evaluate(() => localStorage.getItem("opencode.marker.should-be-purged"))
+      const marker = await page.evaluate(() => localStorage.getItem("claxedo.marker.should-be-purged"))
       expect(marker).toBeNull()
     })
   })

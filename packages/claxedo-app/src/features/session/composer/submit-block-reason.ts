@@ -32,7 +32,7 @@ export type SubmitBlock = {
 export type SubmitBlockInput = {
   /** Read-only workspace / insufficient role. Always hard-blocks the handler. */
   readonly roleBlocked: boolean
-  /** Whether harness-readiness gating applies (non-opencode harness selected). */
+  /** Whether harness-readiness gating applies to the selected runtime. */
   readonly harnessMode: boolean
   readonly harnessReadiness: HarnessReadiness
   readonly harnessConfigError: boolean
@@ -40,11 +40,11 @@ export type SubmitBlockInput = {
   readonly harnessOptionsLoading: boolean
   /** False when the harness has no submittable model key (or is not ready). */
   readonly harnessReadyForSubmit: boolean
-  /** A saved harness/opencode draft default needs an explicit model choice. */
+  /** A saved draft default needs an explicit model choice. */
   readonly needsModelSelection: boolean
-  /** opencode-mode model gate (`toolbarState.modelSubmitBlocked()`). */
+  /** Canonical model gate (`toolbarState.modelSubmitBlocked()`). */
   readonly modelBlocked: boolean
-  /** opencode-mode model label that distinguishes the block cause. */
+  /** Model label that distinguishes the block cause. */
   readonly modelBlockLabel: string | undefined
   readonly providerLoading: boolean
   readonly booting: boolean

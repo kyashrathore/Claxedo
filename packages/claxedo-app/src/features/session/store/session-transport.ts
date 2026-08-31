@@ -41,7 +41,7 @@ export function shouldFetchSessionAlongsideHistory(input: {
 // revert, ...) stay hidden until the transport confirms them — offering one it
 // lacks would break on click. Abort is the exception and keeps DEFAULT's
 // `true`: every shipped harness reports abort:true (agent-sdk-runtime
-// harnesses acp/opencode/pi and the shared sdk-runtime-adapter), and the
+// harnesses exposed by connection providers and native SDK adapters), and the
 // composer's stop control renders from `working() && canAbort()` — a
 // pessimistic abort:false here suppressed the stop icon for the ENTIRE first
 // turn of a freshly created native session, because `syncSessionCapabilities`

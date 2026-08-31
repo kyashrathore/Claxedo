@@ -9,20 +9,12 @@ import * as path from "node:path"
 import { claxedoServerForkOptions } from "../src/main/server-child-process"
 import { localServerBundleEntry, requireLocalServerBundle } from "./local-server"
 
-// Boot-level coverage for the desktop server composition. Unit tests run from
-// packages that carry their own node_modules/opencode link, so they can never
-// see the bundled server's module-resolution reality: the bundle externalizes
-// `opencode/node-embed` and loads the engine from the explicit artifact path
-// the desktop main hands over (CLAXEDO_CHILD_OPENCODE_EMBED_PATH). These tests
-// exercise that path with the real bundle, the real artifact, and a hermetic
-// data dir.
+// Boot-level coverage for the desktop server composition using the real bundle
+// and a hermetic data directory.
 
 const SCRIPT_DIR = import.meta.dir
 const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
-// The same resolver `prebuild`, `predev`, and `build` use, so the smoke test
-// cannot pass against a different artifact than the one that ships.
 const SERVER_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
-const ENGINE_ARTIFACT = path.resolve(PACKAGE_DIR, "../opencode/dist/node/node.js")
 
 const require = createRequire(import.meta.url)
 
@@ -74,27 +66,9 @@ test("requireLocalServerBundle names the artifact and the command that builds it
   }
 })
 
-test("embedded OpenCode engine artifact exists at the desktop-resolved path", () => {
-  // The desktop main points CLAXEDO_CHILD_OPENCODE_EMBED_PATH at this exact
-  // location in dev. If the artifact moves or the dist layout changes, the
-  // embedded engine silently dies in the app — fail here instead. CI's unit
-  // job runs without predev, so an entirely absent dist is a skip (same
-  // convention as the boot test below); a PRESENT dist with the wrong layout
-  // still fails.
-  if (!fs.existsSync(path.resolve(PACKAGE_DIR, "../opencode/dist"))) {
-    console.warn("[skip] opencode dist missing — run `bun run predev` first")
-    return
-  }
-  expect(fs.existsSync(ENGINE_ARTIFACT)).toBe(true)
-})
-
-test("bundled claxedo-server boots the embedded engine and serves engine-backed routes", async () => {
+test("bundled claxedo-server boots and serves Claxedo-owned routes", async () => {
   if (!fs.existsSync(SERVER_BUNDLE)) {
     console.warn("[skip] claxedo-server bundle missing — run `bun run predev` first")
-    return
-  }
-  if (!fs.existsSync(ENGINE_ARTIFACT)) {
-    console.warn("[skip] embedded engine artifact missing — run `bun run predev` first")
     return
   }
 
@@ -127,7 +101,6 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
       CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscoveryPath,
       // First launch hands the server a profile path that does not exist yet.
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-      CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
       CLAXEDO_DIAGNOSTICS_LAUNCH_ID: launchId,
       CLAXEDO_DIAGNOSTICS_GENERATION: generation,
     }),
@@ -166,25 +139,18 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
       pid: child.pid,
     })
 
-    // Mirror the app's open-workspace flow: registering the workspace first is
-    // what makes engine-backed session routes answer for that directory.
+    // Mirror the app's open-workspace flow: register the workspace first.
     const directory = encodeURIComponent(workspaceDirectory)
     const project = await fetch(`${base}/project/current?directory=${directory}`)
     expect(project.status).toBe(200)
     expect(await project.json()).toMatchObject({ worktree: fs.realpathSync(workspaceDirectory) })
 
-    // /session is engine-backed with no network dependency (pure DB read), so
-    // it is the offline-safe discriminator: a dead embedded engine surfaces a
-    // 500 here while claxedo-local routes keep answering 200.
     const sessions = await fetch(`${base}/session?directory=${directory}&roots=true`)
     const sessionsBody = await sessions.text()
     if (sessions.status !== 200) {
-      throw new Error(`engine-backed /session returned ${sessions.status}: ${sessionsBody}`)
+      throw new Error(`Claxedo /session returned ${sessions.status}: ${sessionsBody}`)
     }
     expect(JSON.parse(sessionsBody)).toBeArray()
-
-    expect((await fetch(`${base}/global/config`)).status).toBe(200)
-    expect((await fetch(`${base}/provider?view=index`)).status).toBe(200)
 
     const createPty = await fetch(`${base}/api/wr/pty?directory=${directory}`, {
       method: "POST",
@@ -253,8 +219,8 @@ test("bundled claxedo-server boots the embedded engine and serves engine-backed 
 }, 90_000)
 
 test("a quiescent daemon exits after its bounded idle grace", async () => {
-  if (!fs.existsSync(SERVER_BUNDLE) || !fs.existsSync(ENGINE_ARTIFACT)) {
-    console.warn("[skip] server artifacts missing — run `bun run predev` first")
+  if (!fs.existsSync(SERVER_BUNDLE)) {
+    console.warn("[skip] server bundle missing — run `bun run predev` first")
     return
   }
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-idle-daemon-test-"))
@@ -274,7 +240,6 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
       CLAXEDO_DAEMON_POLL_INTERVAL_MS: "5",
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-      CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
     }),
     execPath: require("electron"),
     stdio: ["ignore", "ignore", "pipe", "ipc"],

@@ -30,16 +30,6 @@ export type WorkspaceCapabilities = {
    * The control plane can still manage MCP config globally even when this is false.
    */
   mcp: boolean
-  /**
-   * Opencode-backed LSP status APIs are available on this runtime.
-   * This is not a generic capability for non-opencode runners.
-   */
-  lsp: boolean
-  /**
-   * Opencode-backed VCS metadata APIs are available on this runtime.
-   * This is not a generic capability for non-opencode runners.
-   */
-  vcs: boolean
 }
 
 export type WorkspaceRpc = {
@@ -62,7 +52,5 @@ export function workspaceCapabilities(enabled: boolean): WorkspaceCapabilities {
     diff: true,
     config: true,
     mcp: enabled,
-    lsp: enabled,
-    vcs: enabled,
   }
 }

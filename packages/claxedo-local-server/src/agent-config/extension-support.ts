@@ -280,7 +280,7 @@ export function extensionTargets(input: unknown) {
   if (!Array.isArray(input)) throw new AgentExtensionInputError("agent_extension_targets_invalid", "targets must be an array")
   const targets = input.filter(isHarnessTarget)
   if (targets.length !== input.length) {
-    throw new AgentExtensionInputError("agent_extension_targets_invalid", "targets must contain only opencode, claude, codex, or cursor")
+    throw new AgentExtensionInputError("agent_extension_targets_invalid", "targets must contain only claude, codex, or cursor")
   }
   return targets
 }

@@ -1,13 +1,17 @@
-import { HARNESS_IDS, isAcpConnectionHarnessId, type HarnessId } from "@/platform/identity/session-ref"
+import {
+  isHarnessSelection,
+  type HarnessSelection,
+  type NativeHarnessId,
+} from "@/platform/identity/harness-selection"
 import { HARNESS_DISPLAY_NAMES, harnessDisplayLabel } from "@/ui/harness-display"
 
 export { HARNESS_DISPLAY_NAMES, harnessDisplayLabel } from "@/ui/harness-display"
 
-export type HarnessType = HarnessId
+export type HarnessType = HarnessSelection
 export type OptionsSource = "harness" | "catalog" | "empty"
 export type HarnessHealthStatus = "ok" | "degraded" | "unavailable"
 export type HarnessHealth = { status?: HarnessHealthStatus; reason?: string }
-export type HarnessState = { type?: HarnessType; binary?: string | null; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; activeBinary?: string | null; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
+export type HarnessState = { type?: HarnessType; model?: string | null; modelProviderID?: string | null; activeType?: HarnessType; status?: "configured" | "ready" | "applying" | "error"; error?: string; ready?: boolean; workspaceId?: string; harnessHealth?: HarnessHealth }
 /** A model choice offered by a harness. `description` carries the version and
  * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
 export type HarnessModelOption = { id: string; name: string; description?: string }
@@ -29,47 +33,50 @@ export type OptionsResponse = {
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
 const harnessStatuses = ["configured", "ready", "applying", "error"] as const
 
-export function pickHarness(type?: string | null, _binary?: string | null, access?: string | null): HarnessType | undefined {
-  if (type && isAcpConnectionHarnessId(type)) return type
-  if (access === "acp" && type && isAcpConnectionHarnessId(`acp:${type}`)) {
-    return `acp:${type}`
+export function pickHarness(input?: unknown): HarnessType | undefined {
+  if (isHarnessSelection(input)) return input
+  const row = record(input)
+  if (!row || typeof row.id !== "string" || !row.id.trim()) return undefined
+  if (row.access === "connection") return { kind: "connection", connectionId: row.id }
+  if (row.access === "native" && (row.id === "claude" || row.id === "codex" || row.id === "cursor" || row.id === "pi")) {
+    return { kind: "native", harnessId: row.id }
   }
-  if (access === "native") {
-    if (type === "claude") return "claude-sdk"
-    if (type === "codex") return "codex-app-server"
-    if (type === "cursor") return "cursor-sdk"
-    if (type === "opencode" || type === "pi") return type
-  }
-  if ((HARNESS_IDS as readonly string[]).includes(type ?? "")) return type as HarnessType
   return undefined
 }
 
-export function harnessHasConfigOptions(type: HarnessType) { return type !== "opencode" && type !== "pi" }
+export function harnessHasConfigOptions(type: HarnessType) {
+  return type.kind === "connection" || type.harnessId !== "pi"
+}
 
 export function harnessProfile(id: HarnessType) {
   return {
-    displayName: harnessDisplayLabel(id),
+    displayName: harnessDisplayLabel(harnessSelectionId(id)),
     hasConfigOptions: harnessHasConfigOptions(id),
   }
 }
 
 export function sessionHarnessIdentity(type: HarnessType) {
-  if (type.startsWith("acp:")) return { id: type.slice(4), access: "acp" as const }
-  if (type === "claude-sdk") return { id: "claude", access: "native" as const }
-  if (type === "codex-app-server") return { id: "codex", access: "native" as const }
-  if (type === "cursor-sdk") return { id: "cursor", access: "native" as const }
-  return { id: type, access: "native" as const }
+  return type.kind === "native"
+    ? { id: type.harnessId, access: "native" as const }
+    : { id: type.connectionId, access: "connection" as const }
 }
 
 export function effectiveHarnessModel(type: HarnessType, selected?: string | null) {
-  if (type === "opencode") return ""
-  if (type === "pi") return selected || ""
+  if (type.kind === "native" && type.harnessId === "pi") return selected || ""
   return selected || DEFAULT_HARNESS_MODEL.id
 }
 
 /** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
 export function isNativeSdkHarness(type: HarnessType) {
-  return type === "claude-sdk" || type === "codex-app-server" || type === "cursor-sdk"
+  return type.kind === "native" && type.harnessId !== "pi"
+}
+
+export function isNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {
+  return type.kind === "native" && type.harnessId === id
+}
+
+export function harnessSelectionId(type: HarnessType) {
+  return type.kind === "native" ? type.harnessId : type.connectionId
 }
 
 export function isStaticCatalogOptions(payload: Pick<OptionsResponse, "source" | "stale">) {
@@ -80,9 +87,9 @@ export function isClientDefaultPlaceholder(model?: string | null) {
   return !model || model === DEFAULT_HARNESS_MODEL.id
 }
 
-export function desiredHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.type, data.binary) }
+export function desiredHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.type) }
 
-export function activeHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.activeType ?? data.type, data.activeBinary ?? data.binary) }
+export function activeHarness(data: HarnessState): HarnessType | undefined { return pickHarness(data.activeType ?? data.type) }
 
 export function hardFailedHarness(data: HarnessState) { return data.status === "error" || !!data.error }
 
@@ -146,18 +153,14 @@ export function extractThoughtLevelFromConfigOptions(
 export function decodeHarnessState(value: unknown): HarnessState | undefined {
   const raw = record(value)
   if (!raw) return undefined
-  const type = pickHarnessFromRecord(raw, "harness", "id", "type", "binary", "access")
-  const activeType = pickHarnessFromRecord(raw, "activeHarness", "activeType", "activeType", "activeBinary", "activeAccess")
+  const type = pickHarness(raw.harness)
+  const activeType = pickHarness(raw.activeHarness)
   const status = (harnessStatuses as readonly unknown[]).includes(raw.status) ? raw.status as HarnessState["status"] : undefined
-  const binary = stringOrNull(raw.binary)
-  const activeBinary = stringOrNull(raw.activeBinary)
   return {
     ...(type ? { type } : {}),
-    ...(binary !== undefined ? { binary } : {}),
     ...(typeof raw.model === "string" || raw.model === null ? { model: raw.model } : {}),
     ...(typeof raw.modelProviderID === "string" || raw.modelProviderID === null ? { modelProviderID: raw.modelProviderID } : {}),
     ...(activeType ? { activeType } : {}),
-    ...(activeBinary !== undefined ? { activeBinary } : {}),
     ...(status ? { status } : {}),
     ...(typeof raw.error === "string" ? { error: raw.error } : {}),
     ...(typeof raw.ready === "boolean" ? { ready: raw.ready } : {}),
@@ -177,28 +180,12 @@ function decodeHarnessHealth(value: unknown): HarnessHealth | undefined {
   }
 }
 
-function pickHarnessFromRecord(
-  raw: Record<string, unknown>,
-  harnessKey: string,
-  primaryKey: string,
-  fallbackKey: string,
-  binaryKey: string,
-  accessKey: string,
-) {
-  const harness = record(raw[harnessKey])
-  return pickHarness(
-    stringOrNull(raw[primaryKey]) ?? stringOrNull(raw[fallbackKey]) ?? stringOrNull(harness?.id),
-    stringOrNull(raw[binaryKey]),
-    stringOrNull(raw[accessKey]) ?? stringOrNull(harness?.access),
-  )
-}
-
 export function decodeSessionConfig(value: unknown) {
   const raw = record(value)
   if (!raw) return {}
   const model = record(raw.model)
   return {
-    harness: decodeHarnessState(raw.harness ?? raw.runner),
+    harness: decodeHarnessState({ harness: raw.harness, activeHarness: raw.harness }),
     model: model && (typeof model.modelID === "string" || model.modelID === null)
       ? {
           modelID: model.modelID,

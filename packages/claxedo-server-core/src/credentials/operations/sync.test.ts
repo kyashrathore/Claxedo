@@ -68,7 +68,7 @@ describe("syncLocalCredentials", () => {
       deleteCredentialsByProvider("vercel"),
       deleteCredentialsByProvider("cloudflare"),
     ])
-    await saveUserConfig({ mcp: {}, auth: {}, sandbox_driver: {} })
+    await saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {}, sandbox_driver: {} })
   })
 
   afterAll(async () => {
@@ -94,7 +94,7 @@ describe("syncLocalCredentials", () => {
     process.env.MODAL_TOKEN_ID = "modal-id"
     process.env.MODAL_TOKEN_SECRET = "modal-secret"
 
-    await saveUserConfig({
+    await saveUserConfig({ version: 3, connections: {},
       mcp: {},
       auth: { "claude-sdk": "sk-ant-config" },
       sandbox_driver: {
@@ -254,73 +254,6 @@ describe("syncLocalCredentials", () => {
     expect(secret?.type).toBe("codex_auth")
     expect(secret?.tokens?.id_token).toBe("id-token")
     expect(secret?.oauth?.account_id).toBe("acct-123")
-  })
-
-  test("syncs local OpenCode oauth auth into managed openai storage", async () => {
-    const dir = path.join(process.env.HOME!, ".local", "share", "opencode")
-    mkdirSync(dir, { recursive: true })
-    await fs.writeFile(path.join(dir, "auth.json"), JSON.stringify({
-      openai: {
-        type: "oauth",
-        refresh: "refresh-openai",
-        access: "access-openai",
-        expires: 1_790_000_000_000,
-        accountId: "acct-openai",
-      },
-    }, null, 2))
-
-    const result = await syncLocalCredentials(["openai"])
-    const raw = await resolveSecret("openai")
-    const secret = raw ? JSON.parse(raw) as Record<string, unknown> : undefined
-
-    expect(result.synced).toEqual(["openai"])
-    expect(secret).toEqual({
-      type: "oauth",
-      refresh: "refresh-openai",
-      access: "access-openai",
-      expires: 1_790_000_000_000,
-      accountId: "acct-openai",
-    })
-  })
-
-  test("prefers OpenCode auth under XDG_DATA_HOME over the default data dir", async () => {
-    process.env.XDG_DATA_HOME = path.join(process.env.HOME!, "xdg-data")
-    const xdgDir = path.join(process.env.XDG_DATA_HOME, "opencode")
-    const defaultDir = path.join(process.env.HOME!, ".local", "share", "opencode")
-    mkdirSync(xdgDir, { recursive: true })
-    mkdirSync(defaultDir, { recursive: true })
-    await fs.writeFile(path.join(xdgDir, "auth.json"), JSON.stringify({
-      openai: { type: "api", key: "sk-openai-xdg" },
-    }))
-    await fs.writeFile(path.join(defaultDir, "auth.json"), JSON.stringify({
-      openai: { type: "api", key: "sk-openai-default" },
-    }))
-
-    const result = await syncLocalCredentials(["openai"])
-
-    expect(result.synced).toEqual(["openai"])
-    expect(await resolveSecret("openai")).toBe("sk-openai-xdg")
-  })
-
-  test("discovers OpenCode auth via os.homedir when HOME is unset (Windows-style home)", async () => {
-    const home = process.env.HOME!
-    delete process.env.HOME
-    const homedirSpy = vi.spyOn(os, "homedir").mockReturnValue(home)
-    try {
-      const dir = path.join(home, ".local", "share", "opencode")
-      mkdirSync(dir, { recursive: true })
-      await fs.writeFile(path.join(dir, "auth.json"), JSON.stringify({
-        openai: { type: "api", key: "sk-openai-userprofile" },
-      }))
-
-      const result = await syncLocalCredentials(["openai"])
-
-      expect(result.synced).toEqual(["openai"])
-      expect(await resolveSecret("openai")).toBe("sk-openai-userprofile")
-    } finally {
-      homedirSpy.mockRestore()
-      process.env.HOME = home
-    }
   })
 
   test("syncs Cursor credentials from the CURSOR_API_KEY env var", async () => {

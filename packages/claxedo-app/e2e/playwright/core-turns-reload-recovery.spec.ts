@@ -34,8 +34,8 @@
  *     `[data-testid="session-page-root"]` (`src/pages/session.tsx`).
  *   Prompt history (ArrowUp/ArrowDown recall): two independent, GLOBAL (not per-session)
  *     stacks persisted to `localStorage` via `Persist.global` —
- *     `opencode.global.dat:prompt-history` (normal mode) and
- *     `opencode.global.dat:prompt-history-shell` (shell mode) — written by
+ *     `claxedo.global.dat:prompt-history` (normal mode) and
+ *     `claxedo.global.dat:prompt-history-shell` (shell mode) — written by
  *     `createPromptHistoryController` (`src/components/prompt-input/history-controller.ts`).
  *     Every submit attempt calls `input.addToHistory(currentPrompt, userMode)`
  *     (`src/components/prompt-input/submit.ts:295`) BEFORE the network call — so an entry
@@ -98,11 +98,11 @@
  *      `packages/session-ui/src/components/message-part.tsx:174-177` only exposes
  *      `fork`/`revert`) — recall-then-edit via history IS the mechanism.
  *   6. Prompt history is persisted to `localStorage`
- *      (`opencode.global.dat:prompt-history`) and survives a reload: `ArrowUp`
+ *      (`claxedo.global.dat:prompt-history`) and survives a reload: `ArrowUp`
  *      immediately after reload still recalls prompts that were sent before the reload.
  *   7. Shell-mode history (entered via `!` at cursor position 0,
  *      `src/components/prompt-input/editor-keymap.ts:66-73`) is tracked in an independent
- *      stack (`opencode.global.dat:prompt-history-shell`) from normal-mode history;
+ *      stack (`claxedo.global.dat:prompt-history-shell`) from normal-mode history;
  *      navigating history while in shell mode never surfaces a normal-mode entry, and a
  *      fresh normal-mode composer never surfaces a shell entry.
  *   8. A forced `prompt_async` dispatch failure removes the optimistic user row that was
@@ -180,22 +180,22 @@ async function seedOneProject(page: Page, dir: string) {
   // `addInitScript` re-runs on EVERY navigation the page makes, including `page.reload()` —
   // not just the first `page.goto()`. An unconditional `localStorage.clear()` here would
   // wipe out exactly the localStorage-backed state (prompt history,
-  // `opencode.global.dat:prompt-history`) this spec's reload-survival tests (behaviors 6,7)
+  // `claxedo.global.dat:prompt-history`) this spec's reload-survival tests (behaviors 6,7)
   // exist to prove persists across reload, defeating the scenario on every reload. Guard the
   // clear behind a same-origin sentinel so it fires once, at the very first load, and every
-  // later reload in the same test only re-asserts the `__OPENCODE__` window global (which a
+  // later reload in the same test only re-asserts the `__CLAXEDO__` window global (which a
   // reload legitimately does wipe, being in-memory) without touching localStorage again.
   await page.addInitScript((d: string) => {
     if (!localStorage.getItem("__e2e_seeded__")) {
       localStorage.clear()
       localStorage.setItem("__e2e_seeded__", "1")
     }
-    ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
+    ;(window as typeof window & { __CLAXEDO__?: { serverUrl?: string; activeDirectory?: string } }).__CLAXEDO__ = {
       serverUrl: window.location.origin,
       activeDirectory: d,
     }
     localStorage.setItem(
-      "opencode.global.dat:server",
+      "claxedo.global.dat:server",
       JSON.stringify({
         list: [],
         projects: { local: [{ worktree: d, expanded: true }] },
@@ -393,7 +393,7 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
 
     await sendAndProve(page, "core turns persisted before reload", "ack 1: core turns persisted before reload")
 
-    const storedBeforeReload = await page.evaluate(() => localStorage.getItem("opencode.global.dat:prompt-history"))
+    const storedBeforeReload = await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history"))
     expect(storedBeforeReload).toContain("core turns persisted before reload")
 
     await page.reload()
@@ -449,8 +449,8 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(inputAfterReload).toContainText("core turns normal history entry")
     await expect(inputAfterReload).not.toContainText("core turns shell history entry")
 
-    const normalHistory = await page.evaluate(() => localStorage.getItem("opencode.global.dat:prompt-history"))
-    const shellHistory = await page.evaluate(() => localStorage.getItem("opencode.global.dat:prompt-history-shell"))
+    const normalHistory = await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history"))
+    const shellHistory = await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history-shell"))
     expect(normalHistory).toContain("core turns normal history entry")
     expect(normalHistory).not.toContain("core turns shell history entry")
     expect(shellHistory).toContain("core turns shell history entry")

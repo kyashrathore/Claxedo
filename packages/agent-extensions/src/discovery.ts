@@ -126,7 +126,7 @@ async function discoverCursorPlugins(root: string) {
 }
 
 function hookRunner(name: string): AgentHookComponentRunner | undefined {
-  if (name === "claude" || name === "codex" || name === "cursor" || name === "opencode") return name
+  if (name === "claude" || name === "codex" || name === "cursor") return name
   if (name === "droid" || name === "gemini" || name === "mastra") return name
   return undefined
 }

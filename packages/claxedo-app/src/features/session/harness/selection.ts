@@ -4,16 +4,17 @@ import {
   HARNESS_DISPLAY_NAMES,
   effectiveHarnessModel,
   harnessDisplayLabel,
+  harnessSelectionId,
+  isNativeHarness,
   isClientDefaultPlaceholder,
   type HarnessModelOption,
   type HarnessType,
 } from "./profile"
 
-export type HarnessReadiness = "polling" | "ready" | "degraded" | "error"
+export type HarnessReadiness = "unresolved" | "polling" | "ready" | "degraded" | "error"
 
 export type HarnessSelectionState = {
-  readonly harness: HarnessType
-  readonly harnessBinary?: string
+  readonly harness?: HarnessType
   readonly selectedModel?: string
   readonly selectedModelProvider?: string
   readonly dynamicModels?: readonly (HarnessModelOption & { providerID?: string })[] | null
@@ -25,17 +26,15 @@ export type HarnessSelectionState = {
 }
 
 export function harnessMode(type?: HarnessType) {
-  if (type === "opencode") return "opencode"
   if (type) return "harness"
   return "unknown"
 }
 
-export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness" | "harnessBinary">) {
-  const key = binaryName(state.harnessBinary || state.harness)
+export function harnessDisplayName(state: Pick<HarnessSelectionState, "harness">) {
+  if (!state.harness) return "Select agent"
+  const key = harnessSelectionId(state.harness)
   if (HARNESS_DISPLAY_NAMES[key]) return HARNESS_DISPLAY_NAMES[key]
-  // Operator ACP connections get their slug title-cased; anything else keeps
-  // the historical behavior of echoing the binary/key verbatim.
-  if (state.harness.startsWith("acp:")) return harnessDisplayLabel(state.harness)
+  if (state.harness.kind === "connection") return harnessDisplayLabel(state.harness.connectionId)
   return key
 }
 
@@ -67,12 +66,12 @@ export function harnessModels(
 }
 
 export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey | undefined {
-  if (state.harness === "opencode") return undefined
+  if (!state.harness) return undefined
   const raw = state.selectedModel ?? ""
   if (!raw) return undefined
   if (harnessUsesManagedDefaultModel(state)) {
     return {
-      providerID: state.harness,
+      providerID: harnessSelectionId(state.harness),
       modelID: DEFAULT_HARNESS_MODEL.id,
       ...(state.selectedThoughtLevel ? { variant: state.selectedThoughtLevel } : {}),
     }
@@ -80,12 +79,14 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
   if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
   const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
   if (!match) return undefined
-  const providerID = state.harness === "pi" ? state.selectedModelProvider : state.harness
+  const providerID = isNativeHarness(state.harness, "pi")
+    ? state.selectedModelProvider
+    : state.selectedModelProvider ?? harnessSelectionId(state.harness)
   if (!providerID) return undefined
   return {
     providerID,
     modelID: raw,
-    // Effort rides the model key's `variant`, the same field opencode uses. A
+    // Effort rides the model key's `variant` and travels with the prompt. A
     // harness turn is one `query()` and the SDK takes `effort` per query, so
     // the level travels WITH the prompt instead of being pushed at the running
     // process — which is why this needed no new transport.
@@ -99,7 +100,7 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
  * loading, and failed option discovery, so it never masks a broken connection.
  */
 export function harnessUsesManagedDefaultModel(state: HarnessSelectionState) {
-  return state.harness.startsWith("acp:") &&
+  return state.harness?.kind === "connection" &&
     state.selectedModel === DEFAULT_HARNESS_MODEL.id &&
     Array.isArray(state.dynamicModels) && state.dynamicModels.length === 0 &&
     !state.optionsLoading && !state.configError
@@ -112,11 +113,6 @@ export function harnessModelNameForSubmit(state: HarnessSelectionState) {
 }
 
 export function harnessReadyForSubmit(state: HarnessSelectionState) {
-  if (state.harness === "opencode") return true
   if (state.configError || state.readiness === "error" || state.readiness === "degraded" || state.optionsLoading) return false
   return !!harnessModelKeyForSubmit(state)
-}
-
-function binaryName(value: string) {
-  return (value.includes("/") ? value.split("/").pop()! : value).replace(/\.exe$/i, "")
 }

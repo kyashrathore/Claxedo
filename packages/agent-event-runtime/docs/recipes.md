@@ -36,7 +36,7 @@ for (const event of result.events) {
 ```ts
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { claudeSdkAdapter } from "@claxedo/agent-event-runtime/harnesses/claude"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 const runtime = createAgentEventRuntime({
   harness: "claude-sdk",
@@ -44,7 +44,7 @@ const runtime = createAgentEventRuntime({
   adapter: claudeSdkAdapter(),
 })
 
-const projection = createOpencodeCompatProjection({
+const projection = createClientPresentationProjection({
   sessionId: "thread_123",
   directory: "/workspace",
   assistantMessageId: "assistant_123",
@@ -58,7 +58,7 @@ const translated = runtime.ingest({
 const compatEvents = translated.events.flatMap((event) => projection.ingest(event))
 ```
 
-`opencode-compat` is a compatibility projection. It exists for hosts that need
+`client-presentation` is a compatibility projection. It exists for hosts that need
 an OpenCode-shaped event stream; it is not the canonical runtime event model.
 
 ## Create A Debug Trace

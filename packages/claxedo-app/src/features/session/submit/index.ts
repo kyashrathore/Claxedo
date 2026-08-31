@@ -26,8 +26,8 @@ export { waitForPendingWorktree, rollbackPromptDispatch, sendPromptRequest } fro
 export { applyCreatedSessionTargetEffects, applyOptimisticPromptHandoff } from "./handoff"
 export { recordPromptSubmission } from "./post-submit"
 export {
-  createOpencodeSessionWithLifecycle,
+  createSessionWithLifecycle,
   type ClaxedoLifecycleListener,
   type ClaxedoLifecycleListenerEvent,
-  type CreateOpencodeSessionTarget,
+  type CreatedSessionTarget,
 } from "./create-with-lifecycle"

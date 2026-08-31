@@ -26,8 +26,8 @@ export default defineConfig({
         replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url))),
       },
       {
-        find: "@claxedo/agent-event-runtime/opencode-compat",
-        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url))),
+        find: "@claxedo/agent-event-runtime/client-presentation",
+        replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/projections/client-presentation/index.ts", import.meta.url))),
       },
       {
         find: "@claxedo/agent-event-runtime",

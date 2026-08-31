@@ -196,11 +196,12 @@ function ModelListPanel(props: {
   )
 }
 
-export function HarnessModelPicker<H extends string>(props: {
+export function HarnessModelPicker<H>(props: {
   /** Harness section. */
-  harness: Accessor<H>
+  harness: Accessor<H | undefined>
   harnessOptions: readonly H[]
   harnessLabel: (harness: H) => string
+  harnessSelected?: (option: H, current: H | undefined) => boolean
   /**
    * Groups the harness rows. NOT decoration: operator ACP and native SDK rows
    * label as "Claude", as do the Codex and Cursor pairs, so a flat list shows
@@ -218,7 +219,7 @@ export function HarnessModelPicker<H extends string>(props: {
    * the footer still states which harness a session is on at a glance. Passed
    * in rather than derived here to keep this component free of harness types.
    */
-  harnessIcon: (harness: H) => JSX.Element
+  harnessIcon: (harness: H | undefined) => JSX.Element
 
   /** Model section — the same `PickerState` the standalone popover consumes. */
   model: Accessor<PickerState>
@@ -233,9 +234,9 @@ export function HarnessModelPicker<H extends string>(props: {
    */
   modelError?: Accessor<{ message: string; detail?: string; action?: { label: string; run: () => void } } | undefined>
   /**
-   * Whether this harness's model catalog can be managed from here. Only
-   * opencode and pi expose a manage-models dialog; the ACP/SDK harnesses take
-   * their model list from the runtime, so the action would be a dead end.
+   * Whether this harness's model catalog can be managed from here. Runtime-
+   * reported catalogs do not show this action when their provider owns model
+   * selection externally.
    */
   showManageModels: Accessor<boolean>
 
@@ -382,7 +383,7 @@ export function HarnessModelPicker<H extends string>(props: {
 
           <SectionHeader
             label="Harness"
-            value={props.harnessLabel(props.harness())}
+            value={props.harness() ? props.harnessLabel(props.harness()!) : "Select agent"}
             expanded={section() === "harness"}
             disabled={props.harnessDisabled()}
             hint={props.harnessHint?.()}
@@ -399,11 +400,11 @@ export function HarnessModelPicker<H extends string>(props: {
                     <For each={options}>
                       {(option) => (
                         <OptionRow
-                          selected={option === props.harness()}
+                          selected={props.harnessSelected?.(option, props.harness()) ?? option === props.harness()}
                           icon={props.harnessIcon(option)}
                           label={props.harnessLabel(option)}
                           onSelect={() => {
-                            if (option !== props.harness()) props.onHarnessSelect(option)
+                            if (!(props.harnessSelected?.(option, props.harness()) ?? option === props.harness())) props.onHarnessSelect(option)
                             // The point of the accordion: choosing a harness
                             // hands you the list it just produced, one motion.
                             setSection("model")

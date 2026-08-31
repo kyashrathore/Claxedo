@@ -93,7 +93,7 @@ A projection converts canonical runtime events into an output view.
 
 Examples:
 
-- `opencode-compat` turns canonical events into OpenCode-compatible envelopes.
+- `client-presentation` turns canonical events into Claxedo client-presentation envelopes.
 - `debug-trace` turns canonical events into compact diagnostic rows.
 - a host can write its own projection into app database rows.
 
@@ -134,7 +134,7 @@ raw frame correctly. For example, an adapter may remember partial tool input or
 previous text content.
 
 Projection state belongs to one output view. It helps produce incremental
-output. For example, the OpenCode compatibility projection tracks message parts
+output. For example, the Claxedo client-presentation projection tracks message parts
 and tool part ids.
 
 Keep these separate:
@@ -170,7 +170,7 @@ and continue from frame 4 instead of replaying the whole sequence.
 `ProjectionSnapshot` saves a projection's memory, so it can keep turning
 `AgentRuntimeEvent` values into the same output view after a restart.
 
-For example, the OpenCode compatibility projection may remember:
+For example, the Claxedo client-presentation projection may remember:
 
 ```text
 toolCallId abc -> message part id part_7
@@ -238,11 +238,11 @@ Those are host concerns.
 
 `AgentRuntimeEvent` is the canonical model.
 
-OpenCode-compatible events are a projection for hosts that need to speak an
+Claxedo client-presentation events are a projection for hosts that need to speak an
 OpenCode-shaped stream.
 
 New harness adapters should emit canonical events. New hosts should project
-canonical events into their own read models. Do not make OpenCode compatibility
+canonical events into their own read models. Do not make Claxedo client-presentation
 events the source of truth for a new system.
 
 ## What To Build Where

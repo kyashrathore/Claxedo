@@ -1,7 +1,7 @@
 import { Hono } from "hono"
-import { getEffectiveConfig } from "@claxedo/server-core/agent-config/index"
+import { getRuntimeConfigSnapshot } from "@claxedo/server-core/agent-config/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
-import { agentConfigAcpConnectionRoutes } from "./acp-connection-routes"
+import { agentConfigConnectionRoutes } from "./connection-routes"
 import { agentConfigCommandRoutes } from "./command-routes"
 import { agentConfigExtensionRoutes } from "./extension-routes"
 import { agentConfigHarnessRoutes } from "./harness-routes"
@@ -13,7 +13,7 @@ import { sandboxFetchOptions } from "./harness-routes"
 
 export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
-    .route("/", agentConfigAcpConnectionRoutes(options))
+    .route("/", agentConfigConnectionRoutes(options))
     .route("/", agentConfigHarnessRoutes(options))
     .route("/", agentConfigMcpRoutes(options))
     .route("/", agentConfigCommandRoutes(options))
@@ -27,7 +27,7 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
         label: "Local Agent Config",
       })
       if (localOnly) return localOnly
-      return c.json(await getEffectiveConfig())
+      return c.json(await getRuntimeConfigSnapshot())
     })
 
     .get("/agents", async (c) => {
@@ -38,7 +38,7 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
         label: "Local agent profile config",
       })
       if (localOnly) return localOnly
-      const directory = c.req.query("directory") || c.req.header("x-opencode-directory")
+      const directory = c.req.query("directory") || c.req.header("x-claxedo-directory")
       const workspaceId = c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
       const ws = await resolveWorkspace({
         workspaceId,

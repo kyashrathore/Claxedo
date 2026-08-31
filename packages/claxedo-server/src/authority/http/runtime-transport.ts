@@ -120,7 +120,7 @@ async function runtimeFetch(
   const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)
   const headers = new Headers(input.init?.headers)
   headers.set("authorization", `Bearer ${token.token}`)
-  headers.set("x-opencode-directory", `workspace:${input.workspaceId}`)
+  headers.set("x-claxedo-directory", `workspace:${input.workspaceId}`)
   return await fetch(
     `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
     {

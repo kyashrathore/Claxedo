@@ -39,9 +39,9 @@
       "status": "integration",
       "purpose": "Debug trace projection from canonical events."
     },
-    "@claxedo/agent-event-runtime/projections/opencode-compat": {
+    "@claxedo/agent-event-runtime/client-presentation": {
       "status": "compatibility",
-      "purpose": "OpenCode-compatible projection from canonical events."
+      "purpose": "Claxedo client-presentation projection from canonical events."
     }
   },
   "docs": {
@@ -94,11 +94,11 @@
       "kind": "function",
       "purpose": "Claude Agent SDK harness event adapter."
     },
-    "createOpencodeCompatProjection": {
+    "createClientPresentationProjection": {
       "status": "compatibility",
-      "import": "@claxedo/agent-event-runtime/projections/opencode-compat",
+      "import": "@claxedo/agent-event-runtime/client-presentation",
       "kind": "function",
-      "purpose": "Project canonical events to OpenCode-compatible events."
+      "purpose": "Project canonical events to Claxedo client-presentation events."
     }
   }
 }

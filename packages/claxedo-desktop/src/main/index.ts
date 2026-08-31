@@ -62,10 +62,7 @@ import { CHANNEL, IS_PACKAGED, UPDATER_ENABLED } from "./constants"
 import { resolveDevIdentity } from "./dev-identity"
 import { findFreePort, resolveBaseServerPort } from "./server-port"
 import { runRestart } from "../shared/restart-policy"
-import {
-  CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME,
-  OPENCODE_COMPILE_CACHE_DIR_NAME,
-} from "../shared/opencode-compile-cache"
+import { CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME } from "../shared/compile-cache"
 import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
@@ -110,7 +107,6 @@ import {
   setWslConfig,
 } from "./server"
 import {
-  createLoadingWindow,
   createMainWindow,
   isTrustedMainRendererUrl,
   loadMainWindow,
@@ -178,17 +174,7 @@ const diagnosticsSource = createProcessMetricsSource({
 const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
 const scanSessionMemory = createSessionMemoryScanner({
   workerPath: join(import.meta.dirname, "session-memory-worker.js"),
-  paths: {
-    databases: [
-      ...(["prod", "beta", "dev"] as const).map((channel) => ({
-        path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-engine", "opencode.db"),
-        profile: channel,
-      })),
-      ...(process.env.CLAXEDO_DATA_DIR
-        ? [{ path: join(process.env.CLAXEDO_DATA_DIR, "opencode-engine", "opencode.db"), profile: "configured" }]
-        : []),
-    ].filter((database, index, all) => all.findIndex((candidate) => candidate.path === database.path) === index),
-  },
+  paths: { databases: [] },
 })
 const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
@@ -295,34 +281,7 @@ function getClaxedoServerPath(): string {
     : join(MAIN_DIR, "../../resources/claxedo-server/index.js")
 }
 
-// The claxedo-server bundle externalizes `opencode/node-embed` (see
-// scripts/bundle-claxedo-server.ts), and the bundled chunk cannot resolve the
-// bare "opencode" specifier from its resources/ location — no node_modules up
-// that tree is guaranteed to contain it. Hand the artifact location to the
-// utility process explicitly.
-function getOpenCodeEmbedPath(): string {
-  return IS_PACKAGED
-    ? join(process.resourcesPath, "opencode-engine", "node.js")
-    : join(MAIN_DIR, "../../../opencode/dist/node/node.js")
-}
-
-// The prebuilt V8 compile cache for that artifact, generated at build time by
-// scripts/build-opencode-compile-cache.ts and shipped as an extraResources
-// sibling of the engine. The utility process seeds it into the running user's
-// own cache directory before the first engine import; see
-// src/shared/opencode-compile-cache.ts for why it cannot simply be copied.
-// Absent (a build that skipped generation) is not an error: the engine compiles
-// as it always did.
-function getOpenCodeCompileCachePath(): string {
-  return IS_PACKAGED
-    ? join(process.resourcesPath, OPENCODE_COMPILE_CACHE_DIR_NAME)
-    : join(MAIN_DIR, "../../resources", OPENCODE_COMPILE_CACHE_DIR_NAME)
-}
-
-// The same, for the server bundle's OWN 9.11 MB static closure. It is a second
-// shipped set rather than more entries in the engine's, because the two are
-// generated from different artifacts and their manifests are relative to
-// different roots — the engine's directory and the server bundle's directory.
+// Shipped compile cache for the server bundle's own static closure.
 function getClaxedoServerCompileCachePath(): string {
   return IS_PACKAGED
     ? join(process.resourcesPath, CLAXEDO_SERVER_COMPILE_CACHE_DIR_NAME)
@@ -340,31 +299,12 @@ function desktopServerDataDir() {
 async function startClaxedoServer(serverDataDir: string): Promise<{ url: string; discovery: ClaxedoDaemonDiscovery }> {
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
-  const openCodeEmbedPath = getOpenCodeEmbedPath()
-  const openCodeCompileCachePath = getOpenCodeCompileCachePath()
   const claxedoServerCompileCachePath = getClaxedoServerCompileCachePath()
-  // No worker path: the desktop runs the engine IN-PROCESS in the server child,
-  // deliberately. Splitting it into a forked worker was implemented and
-  // measured — six runs against a v5 control — and it regressed three gates:
-  // cold ready 1,875 -> 2,004 ms, peak family RSS ~1,930 -> 2,060 MiB, and
-  // quiescent CPU failed its 5% budget in two of six runs. The engine did move
-  // as designed (server child 374.6 -> ~190 MiB) but the worker costs 310 MiB,
-  // so one process became two for +125 MiB net. And the idle-exit that was
-  // supposed to repay it never fires: the worker was alive in all 18 process
-  // snapshots of a run, including the quiescent window. `peak_process_family_
-  // rss_mib` is a PEAK, so a process that exits later cannot reduce it even in
-  // principle. The worker transport itself is correct and stays — self-hosted
-  // uses it (`deployments/self-hosted-node/app.ts` calls
-  // `configureOpenCodeWorkerPath`). This product opts out.
-  logger.log("starting claxedo-server with in-process OpenCode", { serverPath, claxedoPort, openCodeEmbedPath })
+  logger.log("starting claxedo-server", { serverPath, claxedoPort })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)
   }
-  if (!existsSync(openCodeEmbedPath)) {
-    throw new Error(`OpenCode engine artifact was not found at ${openCodeEmbedPath}. Rebuild the desktop app and try again.`)
-  }
-
   // The native SDK harness spawns the user's installed Claude Code CLI. Resolve
   // it once here so a GUI-trimmed PATH still finds a standard install.
   if (!process.env.CLAUDE_CODE_EXECUTABLE) {
@@ -402,10 +342,6 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
         CLAXEDO_DAEMON_TOKEN: daemonToken,
         CLAXEDO_DAEMON_GENERATION: serverGeneration,
         CLAXEDO_DAEMON_DISCOVERY_PATH: daemonDiscovery,
-        CLAXEDO_CHILD_OPENCODE_EMBED_PATH: openCodeEmbedPath,
-        ...(existsSync(openCodeCompileCachePath)
-          ? { CLAXEDO_CHILD_OPENCODE_COMPILE_CACHE_DIR: openCodeCompileCachePath }
-          : {}),
         ...(existsSync(claxedoServerCompileCachePath)
           ? { CLAXEDO_CHILD_SERVER_COMPILE_CACHE_DIR: claxedoServerCompileCachePath }
           : {}),
@@ -573,8 +509,6 @@ async function setupServerConnection(): Promise<ServerConnection> {
 }
 
 async function initialize() {
-  const needsMigration = !sqliteFileExists()
-
   const loadingTask = (async () => {
     try {
       logger.log("setting up server connection")
@@ -621,51 +555,20 @@ async function initialize() {
     ...(process.env.CLAXEDO_PERF_STAGE ? { startupIsolationStage: process.env.CLAXEDO_PERF_STAGE } : {}),
   }
 
-  // The renderer's initialization IPC already waits for `serverReady`, so its
-  // module graph can load alongside the sidecar without opening a socket early.
-  // Keeping those independent cold paths serial added the whole renderer load
-  // after server readiness. A first-run migration retains the progress window
-  // because it owns a separate, potentially long-lived user-visible flow.
-  const startupWindow = needsMigration ? createLoadingWindow(globals) : undefined
-  if (startupWindow) {
-    await delay(1000)
-  } else {
-    logger.log("loading main window alongside embedded server")
-    mainWindow = createMainWindow(globals)
-    registerDiagnosticsWindow(mainWindow)
-    wireFullscreenEvents(mainWindow)
-    wireMenu()
-  }
+  logger.log("loading main window alongside embedded server")
+  mainWindow = createMainWindow(globals)
+  registerDiagnosticsWindow(mainWindow)
+  wireFullscreenEvents(mainWindow)
+  wireMenu()
 
   try {
     await loadingTask
   } catch (error) {
     logger.error("embedded server initialization failed", { error: String(error) })
     setInitStep({ phase: "done" })
-    if (startupWindow) {
-      showMainWindow(globals)
-      startupWindow.close()
-    }
     return
   }
   setInitStep({ phase: "done" })
-
-  if (startupWindow) {
-    await loadingComplete.promise
-    showMainWindow(globals)
-    startupWindow.close()
-  }
-}
-
-function showMainWindow(globals: Parameters<typeof createMainWindow>[0]) {
-  if (mainWindow) {
-    loadMainWindow(mainWindow)
-    return
-  }
-  mainWindow = createMainWindow(globals)
-  registerDiagnosticsWindow(mainWindow)
-  wireFullscreenEvents(mainWindow)
-  wireMenu()
 }
 
 function wireMenu() {
@@ -1121,10 +1024,6 @@ function cleanupLegacyDevCaches() {
   } catch (error) {
     logger.warn("failed to record legacy development cache cleanup", { marker, error: String(error) })
   }
-}
-
-function sqliteFileExists() {
-  return existsSync(join(desktopServerDataDir(), "opencode-engine", "opencode.db"))
 }
 
 function setupAutoUpdater() {

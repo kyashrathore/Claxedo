@@ -16,7 +16,7 @@ describe("adapter store lifecycle", () => {
   test("AcpHarnessAdapter closes adapter-created stores once", () => {
     let closed = 0
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: { kind: "process", command: "fake-acp" },
       harness: "test-acp",
       createStore: () => acpStore(() => {
         closed++
@@ -32,7 +32,7 @@ describe("adapter store lifecycle", () => {
   test("AcpHarnessAdapter leaves caller-owned stores open", () => {
     let closed = 0
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: { kind: "process", command: "fake-acp" },
       harness: "test-acp",
       store: acpStore(() => {
         closed++

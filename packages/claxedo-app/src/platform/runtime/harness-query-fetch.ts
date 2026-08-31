@@ -1,6 +1,8 @@
+import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
+
 export function harnessQueryFetch(input: {
   request?: typeof fetch
-  harnessType?: string
+  harnessType?: HarnessSelection
   baseUrl?: string
 }): typeof fetch {
   const request = input.request ?? fetch
@@ -10,7 +12,9 @@ export function harnessQueryFetch(input: {
   return async (requestInput, init) => {
     const next = requestInput instanceof Request ? new Request(requestInput, init) : undefined
     const url = new URL(next?.url ?? String(requestInput), baseUrl)
-    url.searchParams.set("harness", harnessType)
+    for (const [key, value] of Object.entries(harnessSelectionQuery(harnessType))) {
+      url.searchParams.set(key, value)
+    }
     if (!next) return request(url.toString(), init)
     const method = next.method.toUpperCase()
     return request(url.toString(), {

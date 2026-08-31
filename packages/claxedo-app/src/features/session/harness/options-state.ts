@@ -87,7 +87,7 @@ export function applyHarnessOptionsResponse(input: {
     // in that case model ownership stays with the agent (OpenClaw, for example,
     // uses its Gateway default). `default` is the runtime's protocol sentinel,
     // not a selectable row synthesized into the picker.
-    if (input.type.startsWith("acp:") && input.payload.source === "harness" &&
+    if (input.type.kind === "connection" && input.payload.source === "harness" &&
       !input.payload.stale && input.payload.options.length > 0) {
       // Such an agent can still NAME the model it resolved for itself. That
       // named model IS the picker's single row, so the control reads the real

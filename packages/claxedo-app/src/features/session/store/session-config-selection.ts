@@ -49,7 +49,6 @@ export function localSelectionStateFromSessionConfig(input: unknown): LocalSelec
 
 export function sessionConfigPatchFromLocalSelection(input: LocalSelectionState) {
   return {
-    harness: { id: "opencode", access: "native" },
     ...(input.agent ? { agent: input.agent } : {}),
     model: input.model ?? null,
     variant: input.variant ?? null,

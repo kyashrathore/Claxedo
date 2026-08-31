@@ -159,7 +159,7 @@ describe("credential writes are bound to the token's owner, not the request's cl
     ["?workspaceId=", { query: "&workspaceId=org_b" }],
     ["?workspace=", { query: "&workspace=org_b" }],
     ["x-workspace-id header", { headers: { "x-workspace-id": "org_b" } }],
-    ["x-opencode-directory header", { headers: { "x-opencode-directory": "/workspaces/org_b" } }],
+    ["x-claxedo-directory header", { headers: { "x-claxedo-directory": "/workspaces/org_b" } }],
     [
       "identity fields in the body",
       { body: JSON.stringify({ auth: { key: "sk-secret" }, subject: "user_b", orgId: "org_b", workspaceId: "org_b" }) },

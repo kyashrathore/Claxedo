@@ -26,7 +26,7 @@ type ReqCtx = {
 }
 
 function root(c: ReqCtx) {
-  return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
+  return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
 }
 
 function posix(input: string) {

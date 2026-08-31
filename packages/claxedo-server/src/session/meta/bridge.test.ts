@@ -5,11 +5,9 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 
-// Regression coverage for: a harness session's async auto-title (e.g. an ACP
-// harness's post-turn `maybeEmitTitle`, or opencode's own LLM-driven rename)
-// is published ONLY as an SSE event — `RuntimeEventHub.publishGlobal`, which
-// surfaces as a `session.updated` event on a workspace's `/global/event`
-// stream — never as an HTTP `PATCH /session/:id`. Before this fix,
+// Regression coverage for: a harness session's async auto-title is published
+// on WorkspaceRuntime's internal canonical event hub, never as an HTTP
+// `PATCH /session/:id`. Before this fix,
 // `services.projectionStore` (the persisted source `/api/control/session-list`
 // reads for the sidebar's own rows) had no write path for that event at all,
 // so a harness session's title reverted to "Untitled" after a server
@@ -20,7 +18,8 @@ import { randomUUID } from "crypto"
 // `embedded-workspace-runtime.test.ts` for the SSE-tap wiring itself). This
 // file proves the write path in isolation, against the real SQLite-backed
 // projection store, including that it survives a simulated server restart
-// (closing and reopening the SQLite connection).
+// (closing and reopening the SQLite connection). Conversation delivery remains
+// on `/api/wr/runtime-events`; this projection is an internal metadata tap.
 
 const root = path.join(realpathSync(os.tmpdir()), `session-meta-bridge-test-${randomUUID().slice(0, 8)}`)
 const prev = {

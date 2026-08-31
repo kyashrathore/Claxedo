@@ -5,7 +5,7 @@
  *
  * Steps:
  *   1. esbuild: bundle public entrypoints from src/*.ts → dist/*.mjs
- *      - Workspace deps (@opencode-ai/sdk) are bundled in
+ *      - Workspace dependencies are bundled in
  *      - Native modules and npm dependencies are externalized
  *   2. tsc: emit declaration files → dist/
  *
@@ -53,7 +53,6 @@ const EXTERNALS = [
 
 const DECLARATION_EXTERNALS = [
   /^@claxedo\//,
-  /^@opencode-ai\//,
   /^hono(\/.*)?$/,
   /^@hono\//,
   /^node:/,

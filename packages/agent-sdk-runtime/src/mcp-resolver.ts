@@ -8,7 +8,7 @@ import { normalizeHarnessIdentity } from "./harness-types"
 const claxedoDir = () => dataDir()
 const overridesFile = () => path.join(claxedoDir(), "managed-mcp-overrides.json")
 
-export const MCP_CAPABLE_AGENTS = ["opencode", "claude", "codex", "gemini", "cursor"] as const
+export const MCP_CAPABLE_AGENTS = ["claude", "codex", "gemini", "cursor"] as const
 export type McpCapableAgent = (typeof MCP_CAPABLE_AGENTS)[number]
 
 export type ManagedMcpServer = string
@@ -55,10 +55,6 @@ export type ManagedMcpStatus = {
 }
 
 export type ManagedMcpOverrides = Partial<Record<ManagedMcpServer, Partial<Record<McpCapableAgent, boolean>>>>
-export type McpControlOptions = {
-  externalOpencode?: boolean
-}
-
 export type ManagedMcpState = {
   port: number
   defaults: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>
@@ -115,9 +111,8 @@ const apply = (
 export const isManagedMcpServer = (value: string): value is ManagedMcpServer =>
   MANAGED_MCP_SERVERS.includes(value as ManagedMcpServer)
 
-export const mcpControl = (agent: McpCapableAgent, options: McpControlOptions = {}): ManagedMcpControl => {
+export const mcpControl = (agent: McpCapableAgent): ManagedMcpControl => {
   if (agent === "gemini") return "generated-config"
-  if (agent === "opencode" && options.externalOpencode) return "external-unmanaged"
   return "managed"
 }
 
@@ -279,27 +274,6 @@ export function resolveEffectiveMcp(input: {
     },
     status: managed.status,
   }
-}
-
-export function toOpencodeConfig(mcp: Record<string, ResolvedMcpServer>) {
-  const out: Record<string, unknown> = {}
-  for (const [name, cfg] of Object.entries(mcp)) {
-    if (cfg.transport === "stdio") {
-      out[name] = {
-        type: "local",
-        command: [cfg.command, ...cfg.args],
-        environment: cfg.env,
-      }
-      continue
-    }
-    out[name] = {
-      type: "remote",
-      url: cfg.url,
-      headers: cfg.headers,
-    }
-  }
-  if (!Object.keys(out).length) return {}
-  return { mcp: out }
 }
 
 export function toAcpMcpServers(mcp: Record<string, ResolvedMcpServer>): McpServer[] {

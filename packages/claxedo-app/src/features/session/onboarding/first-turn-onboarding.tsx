@@ -71,7 +71,7 @@ export function createFirstTurnOnboarding(input: {
       const harness = input.harnessRecovery?.()
       const controller = harness?.controller
       const selection = harness && controller ? controller.read(harness.scope) : undefined
-      if (harness && controller && selection && selection.harness !== "opencode") {
+      if (harness && controller && selection?.harness) {
         const next = nextHarnessRecoveryModel(selection)
         if (!next) return
         return Promise.resolve(controller.setModel(

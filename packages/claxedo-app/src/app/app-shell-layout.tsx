@@ -199,7 +199,7 @@ export type AppShellLayoutProps = ParentProps<{
 }>
 
 function AppShellLayoutBody(props: AppShellLayoutProps) {
-  const isolationStage = window.__OPENCODE__?.startupIsolationStage
+  const isolationStage = window.__CLAXEDO__?.startupIsolationStage
   const [sidebarMounted, setSidebarMounted] = createSignal(false)
   let sidebarMountFrame: number | undefined
   onMount(() => {
@@ -545,7 +545,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
 }
 
 export function AppShellLayout(props: AppShellLayoutProps) {
-  if (window.__OPENCODE__?.startupIsolationStage === "shell") {
+  if (window.__CLAXEDO__?.startupIsolationStage === "shell") {
     return (
       <div
         data-testid="startup-isolation-shell"

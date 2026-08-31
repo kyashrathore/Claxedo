@@ -26,7 +26,7 @@ type Options = {
 async function root(c: FileRouteContext, options: Options) {
   try {
     if (options.resolveRoot) return await options.resolveRoot(c)
-    return assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
+    return assertTarget(c.req.query("directory") || c.req.header("x-claxedo-directory"))
   } catch (err) {
     if (err instanceof WorkspaceTargetError) return
     throw err

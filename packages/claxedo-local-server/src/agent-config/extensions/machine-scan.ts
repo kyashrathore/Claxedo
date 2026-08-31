@@ -17,7 +17,7 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 
-export type MachineHarness = "opencode" | "claude" | "codex" | "cursor" | "agents"
+export type MachineHarness = "claude" | "codex" | "cursor" | "agents"
 
 export type MachineSkillKind = "skill" | "native-plugin" | "mcp"
 
@@ -43,7 +43,6 @@ type Probe = {
 
 const PROBES: Probe[] = [
   { harness: "claude", kind: "skill", root: path.join(HOME, ".claude", "skills"), marker: "SKILL.md" },
-  { harness: "opencode", kind: "skill", root: path.join(HOME, ".config", "opencode", "skills"), marker: "SKILL.md" },
   { harness: "codex", kind: "skill", root: path.join(HOME, ".codex", "skills"), marker: "SKILL.md" },
   { harness: "cursor", kind: "skill", root: path.join(HOME, ".cursor", "skills"), marker: "SKILL.md" },
   { harness: "agents", kind: "skill", root: path.join(HOME, ".agents", "skills"), marker: "SKILL.md" },

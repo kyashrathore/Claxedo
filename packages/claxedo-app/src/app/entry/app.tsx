@@ -171,7 +171,7 @@ type DesktopPerf = {
 declare global {
   interface Window {
     __NOSYNC__?: boolean
-    __OPENCODE__?: {
+    __CLAXEDO__?: {
       updaterEnabled?: boolean
       packaged?: boolean
       serverPassword?: string

@@ -62,7 +62,7 @@ export const ALL_NATIVE_MODULES: readonly string[] = [
  * `out` is everything electron-vite emits — main, preload, renderer, the
  * copied local-server bundle, and the workspace-runtime templates. Nothing in
  * `resources/` goes in the asar: the ACP adapters, the diagnostics helper, and
- * the OpenCode engine ship as `extraResources` beside it, because they are
+ * the diagnostics helpers ship as `extraResources` beside it, because they are
  * executed as separate processes and asar paths are not real filesystem paths.
  *
  * `resources/icons` is declared but currently contributes nothing: measured on

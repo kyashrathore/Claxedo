@@ -15,9 +15,8 @@ import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
 
 export type HarnessStoreState = {
-  harnessMode: "opencode" | "harness" | "unknown"
-  harnessBinary: string
-  harness: HarnessType
+  harnessMode: "harness" | "unknown"
+  harness?: HarnessType
   selectedModel: string
   selectedModelProvider?: string
   dynamicModels: HarnessModelOption[] | null
@@ -54,14 +53,13 @@ export function initialHarnessStoreState(input: {
   const type = initialHarness()
   return {
     harnessMode: harnessMode(type),
-    harnessBinary: "",
     harness: type,
     selectedModel: effectiveHarnessModel(type, ""),
     selectedModelProvider: type === "pi" ? undefined : type,
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
-    readiness: "ready",
+    readiness: type ? "ready" : "unresolved",
     optionsSource: "empty",
     optionsStale: false,
     optionsLoading: false,
@@ -84,12 +82,16 @@ export function harnessStatusPatch(input: {
   // is an "error", not "polling". Default (probe) keeps the connecting semantics.
   settled?: boolean
 }): HarnessStorePatch {
-  const want = desiredHarness(input.data) ?? input.current?.harness ?? "opencode"
-  // A non-opencode harness that reports ready:false without a hard failure
+  const want = desiredHarness(input.data) ?? input.current?.harness
+  if (!want) return {
+    harnessMode: "unknown",
+    readiness: input.data.ready === false || hardFailedHarness(input.data) ? "error" : "unresolved",
+    configError: input.data.error ?? undefined,
+  }
+  // A harness that reports ready:false without a hard failure
   // (status "error" or an error message) is still CONNECTING during a startup or
   // in-flight probe — surface that as "polling" so the selector renders a
-  // "Connecting" pill instead of a red "Unavailable". OpenCode is the
-  // always-available local default and never polls. A hard failure — or a
+  // "Connecting" pill instead of a red "Unavailable". A hard failure — or a
   // ready:false carried by a *settled* completed switch response — is "error".
   // A live-but-degraded harness (`/api/wr/health` reports `ok:true`/`ready:true`
   // while `harnessHealth.status` is degraded/unavailable — the harness process was
@@ -100,22 +102,20 @@ export function harnessStatusPatch(input: {
   // (`ready === false`, i.e. startup) stays "polling" — a genuinely process-lost
   // harness reports `ready:true`, so the two never legitimately coincide, and
   // ordering polling first avoids a startup flicker of "The agent stopped
-  // responding". OpenCode — the always-available local default — never degrades.
+  // responding".
   const health = input.data.harnessHealth?.status
   const readiness: HarnessStoreState["readiness"] = hardFailedHarness(input.data)
     ? "error"
-    : want !== "opencode" && input.data.ready === false
+    : input.data.ready === false
       ? (input.settled ? "error" : "polling")
-      : want !== "opencode" && (health === "degraded" || health === "unavailable")
+      : health === "degraded" || health === "unavailable"
         ? "degraded"
         : "ready"
   return {
     harnessMode: harnessMode(want),
-    harnessBinary: input.data.activeBinary ?? input.data.binary ?? "",
     harness: want,
-    selectedModel: input.data.model ?? (want === "opencode" ? "" : (input.current?.selectedModel ?? "")),
-    selectedModelProvider: input.data.modelProviderID ?? (want === "opencode" ? undefined : input.current?.selectedModelProvider),
-    ...(want === "opencode" ? emptyOptionsPatch() : {}),
+    selectedModel: input.data.model ?? input.current?.selectedModel ?? "",
+    selectedModelProvider: input.data.modelProviderID ?? input.current?.selectedModelProvider,
     readiness,
     configError: input.data.error ?? undefined,
     workspaceId: input.data.workspaceId ?? input.current?.workspaceId,
@@ -179,11 +179,11 @@ export function harnessSwitchStartPatch(input: {
  * 20s health poll from fighting hydration / harness-switch over readiness.
  */
 export function harnessHealthReadiness(input: {
-  harness: HarnessType
+  harness?: HarnessType
   current: HarnessReadiness
   health?: HarnessHealthStatus
 }): HarnessReadiness | undefined {
-  if (input.harness === "opencode") return undefined
+  if (!input.harness) return undefined
   if (input.health === "degraded" || input.health === "unavailable") {
     return input.current === "error" || input.current === "polling" ? undefined : "degraded"
   }

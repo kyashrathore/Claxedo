@@ -39,7 +39,7 @@ test("packaged Windows app completes a real Codex-authenticated session @live @s
       const api = (window as unknown as {
         api: { storeSet(name: string, key: string, value: string): Promise<void> }
       }).api
-      await api.storeSet("opencode.global.dat", "server", JSON.stringify({
+      await api.storeSet("claxedo.global.dat", "server", JSON.stringify({
         list: [],
         projects: { local: [{ worktree, expanded: true }] },
         lastProject: {},
