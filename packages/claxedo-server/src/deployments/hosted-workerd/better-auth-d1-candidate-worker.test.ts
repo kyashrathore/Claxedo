@@ -196,6 +196,33 @@ describe("Better Auth D1 candidate Worker", () => {
     expect(await validationAuth.json()).toEqual({ auth: true })
   })
 
+  test("canary exposes the descriptor and health to its own journey without a credential", async () => {
+    mocks.releaseState.mockResolvedValue(release("canary"))
+    const headers = { "x-claxedo-canary-journey-id": env().CLAXEDO_CANARY_JOURNEY_ID }
+
+    // A canary client must read the descriptor to learn how to authenticate,
+    // and the shell probes health before it mounts a login route. Requiring an
+    // authenticated principal here made canary sign-in impossible.
+    const descriptor = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/auth/descriptor", { headers }),
+      env(),
+    )
+    expect(await descriptor.json()).toEqual({ core: true })
+    const health = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/health", { headers }),
+      env(),
+    )
+    expect(await health.json()).toEqual({ core: true })
+    expect(mocks.authenticate).not.toHaveBeenCalled()
+
+    // Still exclusive to the admitted journey.
+    const denied = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/auth/descriptor"),
+      env(),
+    )
+    expect(await denied.json()).toEqual({ error: { code: "canary_journey_denied" } })
+  })
+
   test("multiplayer validation exposes only OAuth bootstrap, health, and CORS preflight without operation admission", async () => {
     mocks.releaseState.mockResolvedValue(release("multiplayer_validation"))
 
