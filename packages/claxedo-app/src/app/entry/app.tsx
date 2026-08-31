@@ -389,10 +389,14 @@ function AuthenticatedProviders(props: ParentProps) {
   const config = useConfigOptional()
 
   return (
-    <PrincipalProvider authEnabled={config?.authEnabled === true}>
-      {/* Inside PrincipalProvider so both read one session, and above every
-          account surface so none of them reaches the session directly. */}
-      <BoundAccountPortProvider>
+    <BoundAccountPortProvider>
+      {/* The principal reads BOTH signed sources through one provider stack:
+          the module-bound auth session (browser) and the account port
+          (desktop, where Electron main owns the credential and no auth
+          session is ever bound — the entry injects it because the auth layer
+          must not import the account layer). Every account surface sits
+          below, so none of them reaches either source directly. */}
+      <AccountPortPrincipalProvider authEnabled={config?.authEnabled === true}>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       {/* Removes the hosted contribution set when the account signs out.
@@ -405,8 +409,8 @@ function AuthenticatedProviders(props: ParentProps) {
           </Show>
         </CloudAuthGate>
       </RoutedClaxedoEventsProvider>
-      </BoundAccountPortProvider>
-    </PrincipalProvider>
+      </AccountPortPrincipalProvider>
+    </BoundAccountPortProvider>
   )
 }
 
@@ -415,6 +419,20 @@ function BoundAccountPortProvider(props: ParentProps) {
   const bridge = accountBridge()
   const port = bridge ? electronAccountPort(bridge) : browserAccountPort(auth, unboundHostedOperation)
   return <AccountPortProvider port={port}>{props.children}</AccountPortProvider>
+}
+
+/** PrincipalProvider with the account port injected as its second signed source. */
+function AccountPortPrincipalProvider(props: ParentProps<{ authEnabled: boolean }>) {
+  const account = useAccountPort()
+  const signedAccount = () => {
+    const state = account.state()
+    return state.status === "signed" ? { userId: state.identity.userId } : undefined
+  }
+  return (
+    <PrincipalProvider authEnabled={props.authEnabled} signedAccount={signedAccount}>
+      {props.children}
+    </PrincipalProvider>
+  )
 }
 
 const unboundHostedOperation: RunHostedOperation = async (operation) => {

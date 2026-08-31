@@ -13,6 +13,11 @@ export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
   const trimmed = tokenUrl.trim()
   if (!trimmed) return undefined
   if (trimmed.endsWith("/oauth/token")) return `${trimmed.slice(0, -"/oauth/token".length)}/oauth/userinfo`
+  // Better Auth serves its userinfo as a sibling of the token route. The
+  // generic relative-resolution below would yield `/oauth2/token/userinfo`,
+  // a 404 whose swallowed failure left every desktop identity as
+  // `{ userId: "" }` against Better Auth deployments.
+  if (trimmed.endsWith("/oauth2/token")) return `${trimmed.slice(0, -"/token".length)}/userinfo`
   try {
     return new URL("userinfo", trimmed.endsWith("/") ? trimmed : `${trimmed}/`).href
   } catch {
