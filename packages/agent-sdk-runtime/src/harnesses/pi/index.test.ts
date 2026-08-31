@@ -70,6 +70,15 @@ describe("PiHarnessAdapter", () => {
     ])
   })
 
+  test("does not replace an existing target session while preparing a handoff", async () => {
+    const adapter = new PiHarnessAdapter()
+    await adapter.createSession(undefined, "Prior target", "ses_existing")
+
+    await expect(adapter.createHandoffSession(undefined, "Replacement", "ses_existing"))
+      .rejects.toThrow("target session ses_existing already exists")
+    expect(await adapter.getSession("ses_existing", undefined)).toMatchObject({ title: "Prior target" })
+  })
+
   test("persists a child session's parent identity in canonical session reads", async () => {
     const adapter = new PiHarnessAdapter()
 

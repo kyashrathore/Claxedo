@@ -106,6 +106,7 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
+import { probeAcpConfigOptions } from "./config-probe"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -743,7 +744,21 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const { proc } = await this.getOrSpawnProcess(id, directory)
     const agentSessionId = await this.boot(proc, directory, title)
     this.store.bindSession({ sessionId: id, directory, title, agentSessionId, ownerKey: processKey })
-    return { id, agentSessionId, ownerKey: processKey }
+    let rolledBack = false
+    return {
+      id,
+      agentSessionId,
+      ownerKey: processKey,
+      rollback: async () => {
+        if (rolledBack) return
+        this.releaseSessionProcess(id, processKey)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(id: string, _agentSessionId: string, ownerKey: string | null, _directory: string) {
+    if (ownerKey) this.releaseSessionProcess(id, ownerKey)
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
@@ -797,6 +812,11 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async deleteSession(id: string, _directory: string): Promise<void> {
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
+    this.releaseSessionProcess(id, key)
+    this.store.deleteSession(id)
+  }
+
+  private releaseSessionProcess(id: string, key: string | null | undefined): void {
     const entry = key ? this.processMap().get(key) : undefined
     entry?.sessionIds.delete(id)
     this.sessionProcessMap().delete(id)
@@ -807,7 +827,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       entry.proc?.dispose()
       this.processMap().delete(key)
     }
-    this.store.deleteSession(id)
   }
 
   async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
@@ -1615,51 +1634,13 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
 
   async probeConfigOptions(directory: string): Promise<AgentConfigOptionRow[]> {
     directory = requireWorkspaceDirectory(directory)
-    const live = this.peekConfigOptions(directory)
-    if (live) {
-      log.info("probeConfigOptions: returning cached options from existing process")
-      return live
-    }
-    if (activePromptCount(this.harnessId()) > 0) {
-      throw new Error("ACP harness config options are temporarily unavailable while a prompt is active")
-    }
-    const wait = async <T>(label: string, run: Promise<T>) => {
-      const ms = probeTimeoutMs()
-      let id: ReturnType<typeof setTimeout> | undefined
-      try {
-        return await Promise.race([
-          run,
-          new Promise<T>((_, reject) => {
-            id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
-          }),
-        ])
-      } finally {
-        if (id) clearTimeout(id)
-      }
-    }
     try {
-      const proc = await wait("ACP mode probe", this.getOrSpawnProbe(directory))
-      if (proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOptionRow[]
-      await this.boot(proc, directory, undefined, probeTimeoutMs())
-      if (!proc.cachedConfigOptions) {
-        const ms = probeTimeoutMs()
-        await wait("ACP mode cache", new Promise<void>((resolve) => {
-          let check: ReturnType<typeof setInterval> | undefined
-          const done = () => {
-            clearTimeout(timeout)
-            if (check) clearInterval(check)
-            resolve()
-          }
-          const timeout = setTimeout(done, ms)
-          check = setInterval(() => {
-            if (proc.cachedConfigOptions) {
-              done()
-            }
-          }, 100)
-        }))
-      }
-      if (!proc.cachedConfigOptions) throw new Error("ACP harness did not return live config options")
-      return proc.cachedConfigOptions as AgentConfigOptionRow[]
+      return await probeAcpConfigOptions({
+        cached: () => this.peekConfigOptions(directory),
+        activePromptCount: () => activePromptCount(this.harnessId()),
+        spawn: () => this.getOrSpawnProbe(directory),
+        boot: (process, timeoutMs) => this.boot(process, directory, undefined, timeoutMs),
+      })
     } catch (err) {
       log.warn("probeConfigOptions: failed", {
         directory,

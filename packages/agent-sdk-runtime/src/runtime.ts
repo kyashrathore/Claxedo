@@ -1,5 +1,4 @@
 import { randomUUID } from "crypto"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
   AgentPermission,
@@ -13,18 +12,16 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
   SessionHarness,
-  AgentTurnOutcome,
 } from "./index"
 import type { AgentHarnessAdapter } from "./adapter-contract"
-import { renderSessionHandoff } from "./session-handoff"
 import { hasAdapterCapability } from "./capabilities"
-import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionError, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
-import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
-import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
+import { eventSessionId, type CompatEvent } from "./compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
-import { extractPromptTitleText, fallbackSessionTitle, hasConcreteSessionTitle } from "./session-title"
 import { resolveSessionModel } from "./session-model"
+import { executeHandoffTransaction } from "./runtime/handoff-transaction"
+import { createTitleMutationCoordinator } from "./runtime/title-mutations"
+import { runRuntimeTurn } from "./runtime/turn-runner"
 
 declare const agentRuntimeStore: unique symbol
 declare const agentHarnessFactory: unique symbol
@@ -179,10 +176,6 @@ function runtimeDirectory(directory: RuntimeDirectory) {
   return directory ?? CENTRAL_DIRECTORY
 }
 
-function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is AgentRuntimeEvent {
-  return !toCompatEvent(payload) && payload.type !== "server.heartbeat"
-}
-
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = createRuntimeEventHub()
   const store = input.store as unknown as RuntimeStoreInternal
@@ -192,6 +185,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     factory.create({ store, eventHub }),
   ]))
   const subscribers = new Set<Subscriber>()
+  const withTitleMutation = createTitleMutationCoordinator()
   const acquireTurnLease = (sessionId: string) => {
     const leaseId = store.acquireTurnLease(sessionId)
     if (!leaseId) throw new AgentRuntimeTurnConflictError(sessionId)
@@ -236,19 +230,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const commitAndPublish = (
     sessionId: string,
     directory: RuntimeDirectory,
-    payload: AgentRuntimeStreamEvent,
+    payload: CompatEvent,
     source: { dir: "in" | "out"; method: string },
-  ) => {
-    const compat = toCompatEvent(payload)
-    if (!compat) {
-      publish({ sessionId, directory, payload })
-      return payload
-    }
+  ): CompatEvent => {
     const agentSessionId = store.getAgentSessionId(sessionId) ?? undefined
     const committed = store.appendEvent({
       sessionId,
       ...(agentSessionId ? { agentSessionId } : {}),
-      payload: compat,
+      payload,
       source,
     }).payload
     publish({ sessionId, directory, payload: committed })
@@ -262,212 +251,18 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     adapter: AgentHarnessAdapter,
     openingUserAlreadyPublished = false,
     clearsHandoff = false,
-  ) => {
-    let outcome: AgentTurnOutcome | undefined
-    let titleEmitted = false
-    const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
-    const assistantAliases = new Map<string, string>()
-    const normalizeCompatEvent = (event: CompatEvent): CompatEvent => {
-      if (event.type === "message.updated" && event.properties.info.role === "assistant") {
-        const info = event.properties.info
-        if (info.id !== stableAssistantMessageId && info.parentID === prompt.userMessageId) {
-          assistantAliases.set(info.id, stableAssistantMessageId)
-          return {
-            ...event,
-            properties: {
-              ...event.properties,
-              info: { ...info, id: stableAssistantMessageId },
-            },
-          } as CompatEvent
-        }
-      }
-      if (event.type === "message.part.updated") {
-        if (
-          event.properties.part.messageID !== stableAssistantMessageId &&
-          event.properties.part.messageID !== prompt.userMessageId
-        ) {
-          assistantAliases.set(event.properties.part.messageID, stableAssistantMessageId)
-        }
-        const alias = assistantAliases.get(event.properties.part.messageID)
-        if (alias) {
-          return {
-            ...event,
-            properties: {
-              ...event.properties,
-              messageID: alias,
-              part: { ...event.properties.part, messageID: alias },
-            },
-          } as CompatEvent
-        }
-      }
-      if (event.type === "message.part.delta") {
-        if (event.properties.messageID !== stableAssistantMessageId && event.properties.messageID !== prompt.userMessageId) {
-          assistantAliases.set(event.properties.messageID, stableAssistantMessageId)
-        }
-        const alias = assistantAliases.get(event.properties.messageID)
-        if (alias) {
-          return {
-            ...event,
-            properties: { ...event.properties, messageID: alias },
-          } as CompatEvent
-        }
-      }
-      if (event.type === "message.completed") {
-        if (event.properties.messageID !== stableAssistantMessageId && event.properties.messageID !== prompt.userMessageId) {
-          assistantAliases.set(event.properties.messageID, stableAssistantMessageId)
-        }
-        const alias = assistantAliases.get(event.properties.messageID)
-        if (alias) {
-          return {
-            ...event,
-            properties: { ...event.properties, messageID: alias },
-          } as CompatEvent
-        }
-      }
-      if (event.type === "session.usage") {
-        // Usage emitted by the active parent turn belongs to the submitted
-        // assistant message even when a provider reports usage before its
-        // message metadata (ACP does this). Waiting for an observed provider
-        // alias creates a second, provisional metering fact keyed by the raw
-        // provider id. Child-session usage keeps its own identity.
-        if (event.properties.sessionID === sessionId) {
-          return {
-            ...event,
-            properties: { ...event.properties, messageID: stableAssistantMessageId },
-          } as CompatEvent
-        }
-      }
-      return event
-    }
-    const parentProjector = createTurnEventProjector({
-      store,
-      owner: {
-        sessionId,
-        getAgentSessionId: () => store.getAgentSessionId(sessionId) ?? sessionId,
-      },
-      directory: runtimeDirectory(directory),
-      input: prompt,
-      assistantMessageId: stableAssistantMessageId,
-      created: Date.now(),
-      onEvent: () => {},
-      onRuntimeEvent: (event) => publish({
-        sessionId: event.sessionId,
-        directory: event.directory,
-        payload: event.payload,
-      }),
-    })
-    const router = createChildEventRouter({
-      parent: parentProjector,
-      createChildProjector: (target) => createTurnEventProjector({
-        store,
-        owner: {
-          sessionId: target.sessionId,
-          getAgentSessionId: target.getAgentSessionId,
-        },
-        directory: runtimeDirectory(directory),
-        input: target.input,
-        assistantMessageId: target.assistantMessageId,
-        created: target.created,
-        onEvent: () => {},
-        onRuntimeEvent: (event) => publish({
-          sessionId: event.sessionId,
-          directory: event.directory,
-          payload: event.payload,
-        }),
-      }),
-      onDiagnostic: (payload) => publish({ sessionId, directory, payload }),
-    })
-    const maybeEmitTitle = async () => {
-      if (titleEmitted) return
-      titleEmitted = true
-      const session = store.getSession(sessionId) as { title?: string | null; time?: { created?: number } } | null
-      if (hasConcreteSessionTitle(session?.title)) return
-      const text = extractPromptTitleText(prompt.parts)
-      if (!text) return
-      const title = fallbackSessionTitle(text)
-      await adapter.updateSession(sessionId, { title }, directory)
-      commitAndPublish(sessionId, directory, sessionUpdated(buildSession({
-        id: sessionId,
-        directory: runtimeDirectory(directory),
-        title,
-        created: session?.time?.created,
-        updated: Date.now(),
-      })), { dir: "in", method: "auto-title" })
-    }
-    try {
-      let terminal = false
-      for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
-        terminal ||= isTerminalRuntimePayload(payload)
-        outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-        // A failed turn has one authoritative terminal publication path below.
-        // Publishing a provider terminal first makes the UI clear its working
-        // state before the store has committed the assistant error row.
-        if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
-        const compat = toCompatEvent(payload)
-        if (compat) {
-          if (
-            openingUserAlreadyPublished
-            && compat.type === "message.updated"
-            && compat.properties.info.role === "user"
-            && compat.properties.info.id === prompt.userMessageId
-          ) {
-            openingUserAlreadyPublished = false
-            continue
-          }
-          if (compat.type === "session.idle") await maybeEmitTitle()
-          if (adapter.commitsStreamEvents) {
-            publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
-          } else {
-            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" })
-          }
-          continue
-        }
-        if (isProjectableRuntimeEvent(payload)) {
-          router.project(payload, { dir: "in", method: "sendMessage" })
-          continue
-        }
-        publish({ sessionId, directory, payload })
-      }
-      await maybeEmitTitle()
-      if (!terminal) {
-        const payload = sessionIdle(sessionId)
-        outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" })
-      }
-      // Terminal compat events and the durable turn outcome are separate
-      // contracts. A committing adapter may already have journaled
-      // message.completed/session.idle, but only finishTurn records the
-      // replayable turn.finish outcome. Stores make this call idempotent and
-      // avoid duplicating terminal events that the adapter already committed.
-      const finished = store.finishTurn?.({
-        sessionId,
-        assistantMessageId: prompt.assistantMessageId,
-        outcome: outcome ?? { status: "completed", completedAt: Date.now() },
-      })
-      if (outcome?.status === "failed") {
-        if (finished?.events.length) {
-          for (const payload of finished.events) publish({ sessionId, directory, payload })
-        } else {
-          commitAndPublish(sessionId, directory, sessionError(outcome.error, sessionId), { dir: "out", method: "runtime.error" })
-        }
-      }
-      if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "turn failed"
-      const finished = store.finishTurn?.({
-        sessionId,
-        assistantMessageId: prompt.assistantMessageId,
-        outcome: { status: "failed", completedAt: Date.now(), error: message },
-      })
-      if (finished?.events.length) {
-        for (const payload of finished.events) publish({ sessionId, directory, payload })
-      } else {
-        commitAndPublish(sessionId, directory, sessionError(message, sessionId), { dir: "out", method: "runtime.error" })
-      }
-    } finally {
-      router.dispose()
-    }
-  }
+  ) => await runRuntimeTurn({
+    sessionId,
+    prompt,
+    directory,
+    adapter,
+    store,
+    openingUserAlreadyPublished,
+    clearsHandoff,
+    publish,
+    commit: (payload, source) => commitAndPublish(sessionId, directory, payload, source),
+    withTitleMutation,
+  })
 
   return {
     sessions: {
@@ -514,7 +309,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId, directory)
-        return await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
+        if (updates.title === undefined) return await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
+        return await withTitleMutation(
+          sessionId,
+          async () => await adapter.updateSession(sessionId, updates, directory) as AgentSession | null,
+        )
       },
       async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
         const current = store.getSessionConfig(sessionId)
@@ -526,88 +325,21 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
         if (!session) throw new Error(`Session ${sessionId} not found`)
         if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
-        const previousAgentSessionId = store.getAgentSessionId(sessionId)
-        if (!previousAgentSessionId) throw new Error(`Session ${sessionId} has no native harness session`)
-        const previousOwnerKey = store.getSessionOwnerKey?.(sessionId) ?? null
         const targetDirectory = directory ?? session.directory
         const source = await adapterFor(current!.harness)
-        const transcript = renderSessionHandoff(
-          await source.getMessages(sessionId, targetDirectory),
-          current!.harness,
-        )
         const target = await adapterFor(update.harness!)
-        if (!target.createHandoffSession) throw new Error(`Harness ${update.harness!.id} does not support conversation handoff`)
-        try {
-          const created = await target.createHandoffSession(
-            targetDirectory,
-            session.title ?? undefined,
-            sessionId,
-            { system: transcript },
-          )
-          store.bindSession({
-            sessionId,
-            directory: runtimeDirectory(targetDirectory),
-            title: session.title ?? undefined,
-            agentSessionId: created.agentSessionId ?? created.id,
-            ownerKey: created.ownerKey ?? null,
-          })
-          const configured = await target.updateSessionConfig(sessionId, {
-            ...update,
-            // Source-harness choices are never valid target-harness state.
-            // The caller may provide target choices atomically; otherwise the
-            // target starts from its defaults and the next prompt carries the
-            // selections made by the target harness UI.
-            ...(update.model === undefined ? { model: null } : {}),
-            ...(update.variant === undefined ? { variant: null } : {}),
-            ...(update.agent === undefined ? { agent: null } : {}),
-          }, targetDirectory)
-          const next = store.updateSessionConfig(sessionId, {
-            ...configured,
-            harness: update.harness!,
-            model: configured.model ?? null,
-            variant: configured.variant ?? null,
-            agent: configured.agent ?? null,
-            handoff: { from: current!.harness, pending: true, transcript },
-          })!
-          const markerId = `handoff-${randomUUID()}`
-          const createdAt = Date.now()
-          const markerModel = configured.model ?? {
-            providerID: update.harness!.id,
-            modelID: "default",
-          }
-          commitAndPublish(sessionId, targetDirectory, messageUpdated(buildUserMessage({
-            id: markerId,
-            sessionID: sessionId,
-            agent: configured.agent ?? "build",
-            model: markerModel,
-            created: createdAt,
-          })), { dir: "out", method: "session/handoff" })
-          commitAndPublish(sessionId, targetDirectory, messagePartUpdated({
-            id: `${markerId}-part`,
-            sessionID: sessionId,
-            messageID: markerId,
-            type: "handoff",
-            from: current!.harness,
-            to: update.harness!,
-          }), { dir: "out", method: "session/handoff" })
-          return next
-        } catch (error) {
-          store.bindSession({
-            sessionId,
-            directory: runtimeDirectory(session.directory),
-            title: session.title ?? undefined,
-            agentSessionId: previousAgentSessionId,
-            ownerKey: previousOwnerKey,
-          })
-          store.updateSessionConfig(sessionId, {
-            harness: current!.harness,
-            model: current!.model ?? null,
-            variant: current!.variant ?? null,
-            agent: current!.agent ?? null,
-            handoff: current!.handoff ?? null,
-          })
-          throw error
-        }
+        return await executeHandoffTransaction({
+          sessionId,
+          directory: targetDirectory,
+          session,
+          current: current!,
+          update: { ...update, harness: update.harness! },
+          store,
+          source,
+          target,
+          commit: (payload) => commitAndPublish(sessionId, targetDirectory, payload, { dir: "out", method: "session/handoff" }),
+          diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
+        })
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId, directory)
@@ -802,45 +534,6 @@ async function merge<T>(adapters: Map<string, AgentHarnessAdapter>, read: (adapt
     if (rows) out.push(...rows)
   }
   return out
-}
-
-function isTerminalRuntimePayload(payload: AgentRuntimeStreamEvent) {
-  if ("properties" in payload) return payload.type === "session.idle" || payload.type === "session.error"
-  return payload.type === "finish" || payload.type === "error" || payload.type === "session-status" && payload.status === "error"
-}
-
-function outcomeFromPayload(payload: AgentRuntimeStreamEvent): AgentTurnOutcome | undefined {
-  if ("properties" in payload) {
-    if (payload.type === "session.idle") return { status: "completed", completedAt: Date.now() }
-    if (payload.type === "session.error") return { status: "failed", completedAt: Date.now(), error: compatErrorMessage(payload.properties.error) }
-    return
-  }
-  if (payload.type === "finish") return { status: "completed", completedAt: Date.now() }
-  if (payload.type === "session-status" && payload.status === "idle") return { status: "completed", completedAt: Date.now() }
-  if (payload.type === "session-status" && payload.status === "error") return { status: "failed", completedAt: Date.now(), error: "session error" }
-  if (payload.type === "error") return { status: "failed", completedAt: Date.now(), error: payload.error }
-}
-
-function mergeOutcome(prev: AgentTurnOutcome | undefined, next: AgentTurnOutcome | undefined) {
-  if (!next) return prev
-  if (!prev) return next
-  if (prev.status === "failed" && next.status === "failed" && prev.error === "session error" && next.error) {
-    return { ...prev, error: next.error }
-  }
-  if (prev.status === "failed" || prev.status === "cancelled") return prev
-  if (next.status === "failed" || next.status === "cancelled") return next
-  return prev
-}
-
-function compatErrorMessage(input: unknown) {
-  if (!input || typeof input !== "object") return "session error"
-  const row = input as { data?: unknown; message?: unknown }
-  const data = row.data && typeof row.data === "object" ? row.data as { message?: unknown } : undefined
-  return typeof data?.message === "string"
-    ? data.message
-    : typeof row.message === "string"
-    ? row.message
-    : "session error"
 }
 
 function subscription(

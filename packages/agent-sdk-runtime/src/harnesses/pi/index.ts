@@ -236,8 +236,24 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async createHandoffSession(directory: RuntimeDirectory, title: string | undefined, id: string) {
-    if (this.sessions.has(id)) await this.deleteSession(id, directory)
-    return { ...await this.bindSession({ id, title, directory }), ownerKey: null }
+    if (this.sessions.has(id)) {
+      throw new Error(`Cannot prepare Pi handoff: target session ${id} already exists`)
+    }
+    const created = await this.bindSession({ id, title, directory })
+    let rolledBack = false
+    return {
+      ...created,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.deleteSession(created.id, directory)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(id: string, _agentSessionId: string, _ownerKey: string | null, directory: RuntimeDirectory) {
+    await this.deleteSession(id, directory)
   }
 
   async bindSession(input: { id: string; parentID?: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {

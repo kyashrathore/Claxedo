@@ -16,6 +16,7 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     setAuth() {},
     applyConfig() {},
     createAgentSession: async () => "thread-1",
+    deleteAgentSession() {},
     createRuntime() {
       const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
       return {
