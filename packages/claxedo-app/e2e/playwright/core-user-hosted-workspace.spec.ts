@@ -146,12 +146,12 @@
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
  *   e2e/INVARIANTS.md, exercised via the oracle in behavior 3); harness ownership (#1) is
- *   fixed to `opencode` throughout — this spec is about the CONNECTION layer, not harness
+ *   fixed to Pi throughout — this spec is about the CONNECTION layer, not harness
  *   selection. This spec's own pinned invariant: the gate's displayed state (pipeline step
  *   / offline / ready) is DERIVED FROM the connection authority's server-reported truth
  *   (mint + health probe results), never from client-side assumptions about elapsed time.
  *
- * HARNESS NOTES — none; harness stays `opencode` (default, no config-options harness) so
+ * HARNESS NOTES — none; harness stays Pi so
  *   the connect/relay-routing contract stays isolated from harness selection concerns
  *   (`core-harness-ownership-cloud`, spec 12, owns the harness matrix over the relay).
  *
@@ -176,7 +176,7 @@ import {
   sessionReservationStatus,
 } from "../helpers/contracts/session-registration"
 import { expect, test, type Page, type Route } from "@playwright/test"
-import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
 import { stampTestAuth } from "../playwright-global-setup"
 import {
   assertSessionConfigPatchResponse,
@@ -417,6 +417,7 @@ async function installUserHostedRuntimeMock(
       ]
       : []
   let promptCount = 0
+  let runtimeEventOrdinal = 0
   let healthAttempt = 0
   const requests = {
     createSessionCount: 0,
@@ -456,7 +457,7 @@ async function installUserHostedRuntimeMock(
   provisioningBus.emit({ directory: "global", payload: { type: "server.connected", properties: {} } })
 
   const sessionConfig = () => ({
-    harness: { id: "opencode", access: "native" },
+    harness: { id: "pi", access: "native" },
     model: { providerID: "opencode", modelID: BIG_PICKLE.id },
     agent: "build",
   })
@@ -576,6 +577,10 @@ async function installUserHostedRuntimeMock(
     if (url.pathname === "/api/claxedo/agent-config/connections") {
       return json(route, { connections: [] })
     }
+    if (url.pathname === "/api/claxedo/agent-config/harness") {
+      const selected = { kind: "native", harnessId: "pi" }
+      return json(route, { harness: selected, activeHarness: selected, model: BIG_PICKLE.id, ok: true, status: "ready", ready: true })
+    }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
     // ONE central stream under three spellings, exactly as both real servers
     // mount it (claxedo-local-server compat-routes/index.ts and
@@ -611,6 +616,17 @@ async function installUserHostedRuntimeMock(
       // `src/runtime/session-projection.ts` fire-and-forget projection pull —
       // bare origin by design (`getClaxedoServerUrl()`), not the relay lane.
       return json(route, { ok: true })
+    }
+    // Sharing is control-plane metadata, not a workspace runtime operation.
+    // Answer it before the ready-state routing oracle so the oracle remains
+    // scoped to requests that could legitimately have leaked off the relay.
+    if (/^\/api\/control\/sessions\/[^/]+\/shares$/.test(url.pathname) && method === "GET") {
+      return json(route, {
+        can_manage_shares: false,
+        grants: [],
+        participants: [],
+        teams: [],
+      })
     }
     // A `ws_...`-shaped workspaceId with no inventory entry defaults to
     // "user-hosted" (session-workspace-key.ts), but OTHER resolve calls for
@@ -678,12 +694,11 @@ async function installUserHostedRuntimeMock(
       // boundary — so the WHOLE page became "Something went wrong" and this spec
       // saw no composer at all rather than a broken one. The body below is
       // verbatim what workspace-runtime serves for a harness with no
-      // adapter-reported modes (routes/session-core.ts), which is opencode — the
-      // harness this spec's session config pins.
+      // adapter-reported modes (routes/session-core.ts).
       if (runtimePath === "/permission/modes") {
         return json(route, {
           modes: [],
-          unsupported: "opencode has no permission modes of its own",
+          unsupported: "Pi runs in a virtual sandbox and has no permission policy",
           appliesFrom: "next-turn",
         })
       }
@@ -764,7 +779,7 @@ async function installUserHostedRuntimeMock(
       if (/^\/session\/[^/]+\/permission-mode$/.test(runtimePath)) {
         return json(route, {
           modes: [],
-          unsupported: "opencode has no permission modes of its own",
+          unsupported: "Pi runs in a virtual sandbox and has no permission policy",
           appliesFrom: "next-turn",
         })
       }
@@ -892,8 +907,8 @@ async function installUserHostedRuntimeMock(
 
     // ---- Control-plane provider catalog (bare origin) ----
     // Production's unscoped `GET /provider` is empty (`emptyProvider()`); the
-    // workspace catalog is a relay read. The OpenCode composer list, however,
-    // is `useProviders()` → `GET /provider?harness=opencode&directory=…`, and
+    // workspace catalog is a relay read. The Pi composer list, however,
+    // is `useProviders("pi")` → `GET /provider?harness=pi&directory=…`, and
     // until that request is rewritten onto `/workspaces/:id/provider` the
     // picker is fed this bare response. Serving the same catalog the relay
     // lane returns keeps the draft selectable without inventing an app
@@ -901,7 +916,7 @@ async function installUserHostedRuntimeMock(
     // contract is still exercised.
     if (url.pathname === "/provider") {
       const harness = url.searchParams.get("harness")
-      if (harness === "opencode") {
+      if (harness === "pi") {
         return json(route, {
           all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
           default: { opencode: BIG_PICKLE.id },
@@ -1055,6 +1070,9 @@ test.describe("core user-hosted workspace @core", () => {
     // requires an explicit pick). Wait for the catalog first, then drive the picker.
     const modelControl = page.locator('[data-action="prompt-harness-model"]')
     await expect(modelControl).toBeEnabled({ timeout: CONTENTION_TIMEOUT })
+    // Remote workspaces no longer inherit a hardcoded local harness. Pick the
+    // native Pi connection explicitly, as a user must on a fresh workspace.
+    await selectComposerAgent(page, /^Pi$/)
     await expect(modelControl).toHaveAttribute("data-readiness", "ready", { timeout: CONTENTION_TIMEOUT })
     await ensureComposerModelSelected(page, { modelName: /Big Pickle/i, search: "Big Pickle" })
     await expect(modelControl).toContainText(/Big Pickle|big-pickle/i, {

@@ -7,6 +7,11 @@ import type {
 import { createHarnessStatusActions } from "./harness-status-actions"
 
 const scope = "draft:/repo:route"
+const CLAUDE_CONNECTION = { kind: "connection", connectionId: "claude-team" } as const
+const CODEX_CONNECTION = { kind: "connection", connectionId: "codex-team" } as const
+const CURSOR_CONNECTION = { kind: "connection", connectionId: "cursor-team" } as const
+const NATIVE_CODEX = { kind: "native", harnessId: "codex" } as const
+const NATIVE_CURSOR = { kind: "native", harnessId: "cursor" } as const
 
 let state: HarnessStoreState
 let patches: HarnessStorePatch[]
@@ -99,14 +104,14 @@ describe("harness status actions", () => {
 
   test("fetches model options without refreshing the directory for a healthy existing session", async () => {
     await actions().applyStatus("session:ses_1", {
-      type: "codex-app-server",
-      activeType: "codex-app-server",
+      type: NATIVE_CODEX,
+      activeType: NATIVE_CODEX,
       model: "gpt-5.6-sol",
     }, { directory: "/repo", sessionId: "ses_1" })
 
     expect(optionFetches).toEqual([{
       scope: "session:ses_1",
-      type: "codex-app-server",
+      type: NATIVE_CODEX,
       directory: "/repo",
       sessionId: "ses_1",
     }])
@@ -118,8 +123,8 @@ describe("harness status actions", () => {
     state.harness = "acp:cursor"
 
     await actions().applyStatus(scope, {
-      type: "cursor-sdk",
-      activeType: "cursor-sdk",
+      type: NATIVE_CURSOR,
+      activeType: NATIVE_CURSOR,
       error: "Cursor SDK requires an explicit cursor-sdk API key",
     }, { directory: "/repo", sessionId: "new" })
 
@@ -184,7 +189,7 @@ describe("harness status actions", () => {
     expect("optionsLoading" in patches[0]).toBe(false)
     expect(patches[1]).toMatchObject({
       harnessMode: "harness",
-      harness: "codex-app-server",
+      harness: NATIVE_CODEX,
       readiness: "polling",
       dynamicModels: null,
       optionsSource: "empty",

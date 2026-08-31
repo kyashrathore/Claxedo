@@ -1,4 +1,5 @@
 import { pickHarness, type HarnessType } from "@/features/session/harness/profile"
+import { sameHarnessSelection } from "@/platform/identity/harness-selection"
 
 export type ExistingSessionConfig = {
   harnessType: HarnessType
@@ -21,7 +22,7 @@ export function parseExistingSessionConfig(input: unknown): ExistingSessionConfi
 }
 
 export function sameExistingSessionConfig(left: ExistingSessionConfig, right: ExistingSessionConfig) {
-  return left.harnessType === right.harnessType &&
+  return sameHarnessSelection(left.harnessType, right.harnessType) &&
     left.agent === right.agent &&
     left.variant === right.variant &&
     left.model?.providerID === right.model?.providerID &&

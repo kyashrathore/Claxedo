@@ -3,6 +3,10 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { createSubmitTransportAdapter, submitWorkspaceBacking } from "./submit-transport"
 
+const PI = { kind: "native", harnessId: "pi" } as const
+const CODEX = { kind: "native", harnessId: "codex" } as const
+const EXTERNAL_OPENCODE = { kind: "connection", connectionId: "external-opencode" } as const
+
 describe("submit transport adapter", () => {
   const calls: Array<{ url: string; method: string; body?: string | null }> = []
   const toasts: Array<{ title: string; description?: string; variant?: "error" }> = []
@@ -84,21 +88,21 @@ describe("submit transport adapter", () => {
     await adapter.saveSessionConfig({
       sessionID: "session-1",
       directory: "/repo/main",
-      harnessType: "opencode",
+      harnessType: EXTERNAL_OPENCODE,
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })
     await adapter.saveSessionConfig({
       sessionID: "session-1",
       directory: "/repo/main",
-      harnessType: "opencode",
+      harnessType: EXTERNAL_OPENCODE,
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })
 
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
-      url: "https://control.example/session/session-1/config?directory=%2Frepo%2Fmain&harness=opencode",
+      url: "https://control.example/session/session-1/config?directory=%2Frepo%2Fmain&connectionId=external-opencode",
       method: "PATCH",
     })
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
@@ -272,10 +276,10 @@ describe("submit transport adapter", () => {
     await expect(adapter.readSessionConfig({
       sessionID: "session-central",
       directory: "/repo/main",
-      harnessType: "opencode",
+      harnessType: PI,
     })).resolves.toMatchObject({ harness: { id: "pi" } })
     expect(centralCalls).toEqual([
-      "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain&harness=opencode",
+      "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain&nativeHarness=pi",
     ])
     expect(toasts).toEqual([])
   })
@@ -290,7 +294,7 @@ describe("submit transport adapter", () => {
       request: async (input, init) => {
         const request = input instanceof Request ? input : new Request(String(input), init)
         runtimeCalls.push(`${request.method} ${request.url}`)
-        return Response.json({ harness: { type: "opencode" } })
+        return Response.json({ harness: { id: "external-opencode", access: "connection" } })
       },
       localRequest: async () => {
         throw new Error("filesystem workspace request bypassed the workspace runtime")
@@ -311,10 +315,10 @@ describe("submit transport adapter", () => {
     await expect(adapter.readSessionConfig({
       sessionID: "session-workspace",
       directory: "/repo/main",
-      harnessType: "opencode",
-    })).resolves.toMatchObject({ harness: { type: "opencode" } })
+      harnessType: EXTERNAL_OPENCODE,
+    })).resolves.toMatchObject({ harness: { id: "external-opencode", access: "connection" } })
     expect(runtimeCalls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-workspace/config?harness=opencode",
+      "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-workspace/config?connectionId=external-opencode",
     ])
     expect(toasts).toEqual([])
   })
@@ -340,7 +344,7 @@ describe("submit transport adapter", () => {
             tokenExpiresAt: Date.now() + 120_000,
           })
         }
-        return Response.json({ harness: { type: "opencode" } })
+        return Response.json({ harness: { id: "external-opencode", access: "connection" } })
       },
       localRequest: async () => {
         throw new Error("signed workspace request bypassed the relay")
@@ -366,8 +370,8 @@ describe("submit transport adapter", () => {
     await expect(adapter.readSessionConfig({
       sessionID: "session-signed",
       directory: "/repo/main",
-      harnessType: "opencode",
-    })).resolves.toMatchObject({ harness: { type: "opencode" } })
+      harnessType: EXTERNAL_OPENCODE,
+    })).resolves.toMatchObject({ harness: { id: "external-opencode", access: "connection" } })
 
     const promptClient = adapter.createRuntimePromptClient({
       signedControlPlane: true,
@@ -387,13 +391,13 @@ describe("submit transport adapter", () => {
       messageID: "message-signed",
       parts: [],
     })
-    await adapter.sessionClient("/repo/main", "opencode").session.status()
+    await adapter.sessionClient("/repo/main", EXTERNAL_OPENCODE).session.status()
 
     expect(runtimeCalls).toEqual([
       "GET http://127.0.0.1:4527/api/workspace/ws_signed/connection",
-      "GET https://relay.test/workspaces/ws_signed/session/session-signed/config?harness=opencode",
+      "GET https://relay.test/workspaces/ws_signed/session/session-signed/config?connectionId=external-opencode",
       "POST https://relay.test/workspaces/ws_signed/session/session-signed/prompt_async",
-      "GET https://relay.test/workspaces/ws_signed/session/status?harness=opencode",
+      "GET https://relay.test/workspaces/ws_signed/session/status?connectionId=external-opencode",
     ])
   })
 })

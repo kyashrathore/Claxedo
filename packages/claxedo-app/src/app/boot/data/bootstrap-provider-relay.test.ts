@@ -91,12 +91,13 @@ describe("bootstrapDirectory provider routing", () => {
       translate: (key) => key,
       fetch: trackingFetch(calls),
       baseUrl: CENTRAL,
+      harnessType: "pi",
       quiet: true,
     })
 
     const relayProvider = calls.filter((url) => url.startsWith(`${RELAY}/workspaces/${WS}/provider`))
     expect(relayProvider.length).toBeGreaterThan(0)
-    expect(relayProvider[0]).toContain("harness=opencode")
+    expect(relayProvider[0]).toContain("harness=pi")
     // The central global /provider route (404 on hosted centrals) is never hit.
     expect(calls.filter((url) => url.startsWith(`${CENTRAL}/provider`))).toEqual([])
 
@@ -104,7 +105,7 @@ describe("bootstrapDirectory provider routing", () => {
     // workspace catalogs are scoped to the workspace they were fetched for, so
     // the relay catalog lands under the workspace-scoped, harness-qualified key.
     const providers = queryClient.getQueryData<NormalizedProviderListResponse>(
-      queryKeys.controlPlane.providers(CENTRAL, `workspace:${WS}`, "opencode"),
+      queryKeys.controlPlane.providers(CENTRAL, `workspace:${WS}`, "pi"),
     )
     expect([...(providers?.all.keys() ?? [])]).toEqual(["opencode"])
   })
@@ -118,7 +119,7 @@ describe("bootstrapDirectory provider routing", () => {
       translate: (key) => key,
       fetch: trackingFetch(calls),
       baseUrl: CENTRAL,
-      harnessType: "opencode",
+      harnessType: "pi",
       quiet: true,
     })
 

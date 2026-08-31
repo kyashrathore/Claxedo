@@ -8,7 +8,7 @@ import {
 const prepared = {
   id: "ses_prepared",
   directory: "/repo",
-  harness: "claude-acp",
+  harness: { kind: "connection", connectionId: "claude-team" },
   model: "sonnet",
 } satisfies PreparedRuntimeSession
 
@@ -17,30 +17,30 @@ describe("prepared harness session planning", () => {
     expect(planPreparedHarnessSession({
       enabled: false,
       directory: "/repo",
-      state: { harness: "claude-acp", selectedModel: "sonnet" },
+      state: { harness: { kind: "connection", connectionId: "claude-team" }, selectedModel: "sonnet" },
     })).toEqual({ status: "disabled" })
 
     expect(planPreparedHarnessSession({
       enabled: true,
-      state: { harness: "claude-acp", selectedModel: "sonnet" },
+      state: { harness: { kind: "connection", connectionId: "claude-team" }, selectedModel: "sonnet" },
     })).toEqual({ status: "missing-directory" })
   })
 
-  test("does not prepare OpenCode or model-less harnesses", () => {
-    expect(preparedHarnessSessionModel({ harness: "opencode", selectedModel: "sonnet" })).toBeUndefined()
+  test("prepares generic connections but rejects model-less harnesses", () => {
+    expect(preparedHarnessSessionModel({ harness: { kind: "connection", connectionId: "external-opencode" }, selectedModel: "sonnet" })).toBe("sonnet")
     expect(planPreparedHarnessSession({
       enabled: true,
       directory: "/repo",
-      state: { harness: "claude-acp", selectedModel: "" },
+      state: { harness: { kind: "connection", connectionId: "claude-team" }, selectedModel: "" },
     })).toEqual({ status: "no-model" })
   })
 
   test("requires a selected Pi model before preparing a session", () => {
-    expect(preparedHarnessSessionModel({ harness: "pi" })).toBeUndefined()
+    expect(preparedHarnessSessionModel({ harness: { kind: "native", harnessId: "pi" } })).toBeUndefined()
     expect(planPreparedHarnessSession({
       enabled: true,
       directory: "/repo",
-      state: { harness: "pi" },
+      state: { harness: { kind: "native", harnessId: "pi" } },
     })).toEqual({ status: "no-model" })
   })
 
@@ -48,19 +48,19 @@ describe("prepared harness session planning", () => {
     expect(planPreparedHarnessSession({
       enabled: true,
       directory: "/repo",
-      state: { harness: "claude-acp", selectedModel: "sonnet" },
+      state: { harness: { kind: "connection", connectionId: "claude-team" }, selectedModel: "sonnet" },
       prepared,
     })).toEqual({ status: "reuse", item: prepared })
 
     expect(planPreparedHarnessSession({
       enabled: true,
       directory: "/repo",
-      state: { harness: "claude-acp", selectedModel: "opus" },
+      state: { harness: { kind: "connection", connectionId: "claude-team" }, selectedModel: "opus" },
       prepared,
     })).toEqual({
       status: "create",
       directory: "/repo",
-      harness: "claude-acp",
+      harness: { kind: "connection", connectionId: "claude-team" },
       model: "opus",
       stale: prepared,
     })
@@ -70,12 +70,12 @@ describe("prepared harness session planning", () => {
     expect(planPreparedHarnessSession({
       enabled: true,
       directory: "/other",
-      state: { harness: "claude-acp", selectedModel: "sonnet" },
+      state: { harness: { kind: "connection", connectionId: "claude-team" }, selectedModel: "sonnet" },
       prepared,
     })).toEqual({
       status: "create",
       directory: "/other",
-      harness: "claude-acp",
+      harness: { kind: "connection", connectionId: "claude-team" },
       model: "sonnet",
       stale: prepared,
     })

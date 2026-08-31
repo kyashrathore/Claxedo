@@ -241,11 +241,8 @@ async function sendMessage(page: Page, text: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Permission/question mutation routes — NOT covered by e2e/helpers/mock-runtime.ts
-// (it only stubs GET /permission and GET /question as always-empty lists). See
-// findings: the deprecated POST /session/:id/permissions/:id (permission decide),
-// POST /question/:id/reply, and POST /question/:id/reject endpoints have no shared
-// route; harvested shape from e2e-legacy/reload-message-flow.spec.ts.
+// Permission/question mutation overrides add server-sourced settling events and
+// per-test counters on top of the shared runtime's canonical route shapes.
 // ---------------------------------------------------------------------------
 
 type DockRequestCounters = {
@@ -274,7 +271,7 @@ async function installDockMutationRoutes(page: Page, mock: MockRuntimeHandles): 
     mock.emit({ type: "permission.replied", properties: { sessionID, requestID: permissionID } })
   })
 
-  await page.route("**/question/*/reply", async (route) => {
+  await page.route("**/question/*/reply**", async (route) => {
     if (route.request().method() !== "POST") return route.fallback()
     const match = new URL(route.request().url()).pathname.match(/^\/question\/([^/]+)\/reply$/)
     if (!match) return route.fallback()
@@ -288,7 +285,7 @@ async function installDockMutationRoutes(page: Page, mock: MockRuntimeHandles): 
     mock.emit({ type: "question.replied", properties: { sessionID: SESSION_ID, requestID: match[1] } })
   })
 
-  await page.route("**/question/*/reject", async (route) => {
+  await page.route("**/question/*/reject**", async (route) => {
     if (route.request().method() !== "POST") return route.fallback()
     const match = new URL(route.request().url()).pathname.match(/^\/question\/([^/]+)\/reject$/)
     if (!match) return route.fallback()

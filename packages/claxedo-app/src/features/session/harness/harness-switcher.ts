@@ -36,6 +36,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
   publishSessionConfig(params: ScopeInput, config: unknown): void
+  hasConfigOptions?(type: HarnessType): Promise<boolean>
   errorMessage(res: Response, fallback: string): Promise<string>
   runtime: {
     harnessSessionFetch(params?: ScopeInput): typeof fetch
@@ -95,6 +96,19 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     await switchExistingHarness(scope, type, params, active)
   }
 
+  const hasConfigOptions = async (scope: string, type: HarnessType) => {
+    try {
+      return input.hasConfigOptions ? await input.hasConfigOptions(type) : harnessHasConfigOptions(type)
+    } catch (error) {
+      input.applyPatch(scope, {
+        configError: error instanceof Error ? error.message : "Failed to load connection capabilities",
+        readiness: "error",
+        optionsLoading: false,
+      })
+      return undefined
+    }
+  }
+
   const switchDraftHarness = async (
     scope: string,
     type: HarnessType,
@@ -110,6 +124,14 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     if (!harnessHasConfigOptions(type)) {
       await input.refresh(params?.directory, undefined, { draft: true })
       if (!active()) return false
+      input.applyPatch(scope, {
+        selectedModel: "default",
+        dynamicModels: [],
+        optionsSource: "empty",
+        optionsStale: false,
+        optionsLoading: false,
+        configError: undefined,
+      })
       applyPostedStatus(scope, status)
       return true
     }
@@ -131,8 +153,12 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     await input.refresh(params.directory, undefined)
     if (!active()) return
     applyPostedStatus(scope, status)
-    if (!harnessHasConfigOptions(type)) {
+    const configOptions = await hasConfigOptions(scope, type)
+    if (configOptions === undefined) return
+    if (!configOptions) {
       input.applyPatch(scope, {
+        selectedModel: "default",
+        dynamicModels: [],
         optionsSource: "empty",
         optionsStale: false,
         optionsLoading: false,

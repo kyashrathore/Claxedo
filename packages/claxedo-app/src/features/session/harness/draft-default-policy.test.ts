@@ -1,41 +1,47 @@
 import { describe, expect, test } from "bun:test"
 import { resolveDraftDefault, shouldApplyDraftDefault } from "./draft-default-policy"
 
+const PI = { kind: "native", harnessId: "pi" } as const
+const CODEX = { kind: "native", harnessId: "codex" } as const
+const CLAUDE = { kind: "native", harnessId: "claude" } as const
+const TEAM_AGENT = { kind: "connection", connectionId: "team-agent" } as const
+const EXTERNAL_OPENCODE = { kind: "connection", connectionId: "external-opencode" } as const
+
 describe("draft default policy", () => {
   test("restores an exact eligible saved harness/model pair", () => {
     const models = [
       { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
       { providerID: "openai", modelID: "gpt-5.4" },
-      { providerID: "codex-acp", modelID: "gpt-5.5" },
-      { providerID: "claude-sdk", modelID: "opus" },
+      { providerID: "codex", modelID: "gpt-5.5" },
+      { providerID: "claude", modelID: "opus" },
     ]
 
     expect([
       resolveDraftDefault({
-        saved: { harness: "opencode", model: models[0] },
-        supportedHarnesses: ["opencode", "pi", "codex-acp", "claude-sdk"],
+        saved: { harness: EXTERNAL_OPENCODE, model: models[0] },
+        supportedHarnesses: [EXTERNAL_OPENCODE, PI, CODEX, CLAUDE],
         eligibleModels: models,
       }),
       resolveDraftDefault({
-        saved: { harness: "pi", model: models[1] },
-        supportedHarnesses: ["opencode", "pi", "codex-acp", "claude-sdk"],
+        saved: { harness: PI, model: models[1] },
+        supportedHarnesses: [EXTERNAL_OPENCODE, PI, CODEX, CLAUDE],
         eligibleModels: models,
       }),
       resolveDraftDefault({
-        saved: { harness: "codex-acp", model: models[2] },
-        supportedHarnesses: ["opencode", "pi", "codex-acp", "claude-sdk"],
+        saved: { harness: CODEX, model: models[2] },
+        supportedHarnesses: [EXTERNAL_OPENCODE, PI, CODEX, CLAUDE],
         eligibleModels: models,
       }),
       resolveDraftDefault({
-        saved: { harness: "claude-sdk", model: models[3] },
-        supportedHarnesses: ["opencode", "pi", "codex-acp", "claude-sdk"],
+        saved: { harness: CLAUDE, model: models[3] },
+        supportedHarnesses: [EXTERNAL_OPENCODE, PI, CODEX, CLAUDE],
         eligibleModels: models,
       }),
     ]).toEqual([
-      { harness: "opencode", model: models[0], state: "ready", source: "saved" },
-      { harness: "pi", model: models[1], state: "ready", source: "saved" },
-      { harness: "codex-acp", model: models[2], state: "ready", source: "saved" },
-      { harness: "claude-sdk", model: models[3], state: "ready", source: "saved" },
+      { harness: EXTERNAL_OPENCODE, model: models[0], state: "ready", source: "saved" },
+      { harness: PI, model: models[1], state: "ready", source: "saved" },
+      { harness: CODEX, model: models[2], state: "ready", source: "saved" },
+      { harness: CLAUDE, model: models[3], state: "ready", source: "saved" },
     ])
   })
 
@@ -43,11 +49,11 @@ describe("draft default policy", () => {
     const saved = { providerID: "openai", modelID: "gpt-5.4" }
 
     expect(resolveDraftDefault({
-      saved: { harness: "pi", model: saved },
-      supportedHarnesses: ["opencode", "pi"],
+      saved: { harness: PI, model: saved },
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
       eligibleModels: [{ providerID: "azure", modelID: "gpt-5.4" }],
     })).toEqual({
-      harness: "pi",
+      harness: PI,
       blockedModel: saved,
       state: "saved-model-unavailable",
       source: "saved",
@@ -58,11 +64,11 @@ describe("draft default policy", () => {
     const saved = { providerID: "openai", modelID: "gpt-5.4", variant: "high" }
 
     expect(resolveDraftDefault({
-      saved: { harness: "opencode", model: saved },
-      supportedHarnesses: ["opencode"],
+      saved: { harness: EXTERNAL_OPENCODE, model: saved },
+      supportedHarnesses: [EXTERNAL_OPENCODE],
       eligibleModels: [{ providerID: "openai", modelID: "gpt-5.4" }],
     })).toEqual({
-      harness: "opencode",
+      harness: EXTERNAL_OPENCODE,
       blockedModel: saved,
       state: "saved-model-unavailable",
       source: "saved",
@@ -70,34 +76,32 @@ describe("draft default policy", () => {
   })
 
   test("uses an eligible declared default when the saved harness has no model", () => {
-    const model = { providerID: "codex-acp", modelID: "default" }
+    const model = { providerID: "codex", modelID: "default" }
 
     expect(resolveDraftDefault({
-      saved: { harness: "codex-acp" },
-      supportedHarnesses: ["opencode", "codex-acp"],
+      saved: { harness: CODEX },
+      supportedHarnesses: [EXTERNAL_OPENCODE, CODEX],
       eligibleModels: [model],
       declaredDefaultModel: model,
     })).toEqual({
-      harness: "codex-acp",
+      harness: CODEX,
       model,
       state: "ready",
       source: "harness-default",
     })
   })
 
-  test("reuses the exact eligible OpenCode pair for Pi when Pi has no saved model", () => {
-    const currentOpenCodeModel = { providerID: "openai", modelID: "gpt-5.4" }
+  test("does not reuse an unrelated connection model for Pi", () => {
+    const connectionModel = { providerID: "openai", modelID: "gpt-5.4" }
 
     expect(resolveDraftDefault({
-      saved: { harness: "pi" },
-      supportedHarnesses: ["opencode", "pi"],
-      eligibleModels: [currentOpenCodeModel, { providerID: "azure", modelID: "gpt-5.4" }],
-      openCodeModel: currentOpenCodeModel,
+      saved: { harness: PI },
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
+      eligibleModels: [connectionModel, { providerID: "azure", modelID: "gpt-5.4" }],
     })).toEqual({
-      harness: "pi",
-      model: currentOpenCodeModel,
-      state: "ready",
-      source: "pi-opencode",
+      harness: PI,
+      state: "choose-model",
+      source: "harness-default",
     })
   })
 
@@ -105,13 +109,13 @@ describe("draft default policy", () => {
     const model = { providerID: "openai", modelID: "gpt-5.4" }
 
     expect(resolveDraftDefault({
-      saved: { harness: "pi" },
-      supportedHarnesses: ["opencode", "pi"],
+      saved: { harness: PI },
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
       eligibleModels: [model],
       connectedProviderIDs: ["openai"],
       providerDefaults: { openai: "gpt-5.4" },
     })).toEqual({
-      harness: "pi",
+      harness: PI,
       model,
       state: "ready",
       source: "pi-provider-default",
@@ -119,11 +123,11 @@ describe("draft default policy", () => {
   })
 
   test("does not guess when Pi provider defaults are ambiguous or absent from the catalog", () => {
-    const choose = { harness: "pi", state: "choose-model", source: "harness-default" }
+    const choose = { harness: PI, state: "choose-model", source: "harness-default" }
 
     expect(resolveDraftDefault({
-      saved: { harness: "pi" },
-      supportedHarnesses: ["opencode", "pi"],
+      saved: { harness: PI },
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
       eligibleModels: [
         { providerID: "openai", modelID: "gpt-5.4" },
         { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
@@ -132,15 +136,15 @@ describe("draft default policy", () => {
       providerDefaults: { openai: "gpt-5.4", anthropic: "claude-sonnet-4-5" },
     })).toEqual(choose)
     expect(resolveDraftDefault({
-      saved: { harness: "pi" },
-      supportedHarnesses: ["opencode", "pi"],
+      saved: { harness: PI },
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
       eligibleModels: [{ providerID: "openai", modelID: "gpt-5.4" }],
       connectedProviderIDs: ["openai"],
       providerDefaults: { openai: "removed-model" },
     })).toEqual(choose)
     expect(resolveDraftDefault({
-      saved: { harness: "pi" },
-      supportedHarnesses: ["opencode", "pi"],
+      saved: { harness: PI },
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
       eligibleModels: [
         { providerID: "openai", modelID: "gpt-5.4" },
         { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
@@ -152,12 +156,12 @@ describe("draft default policy", () => {
   })
 
   test("uses the placement-supported default without mutating the saved pair", () => {
-    const saved = { harness: "pi" as const, model: { providerID: "openai", modelID: "gpt-5.4" } }
-    const placementDefault = { harness: "opencode" as const, model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } }
+    const saved = { harness: PI, model: { providerID: "openai", modelID: "gpt-5.4" } }
+    const placementDefault = { harness: TEAM_AGENT, model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" } }
 
     expect(resolveDraftDefault({
       saved,
-      supportedHarnesses: ["opencode"],
+      supportedHarnesses: [TEAM_AGENT],
       eligibleModels: [],
       placementDefault,
     })).toEqual({
@@ -166,7 +170,7 @@ describe("draft default policy", () => {
       source: "placement-default",
     })
     expect(saved).toEqual({
-      harness: "pi",
+      harness: PI,
       model: { providerID: "openai", modelID: "gpt-5.4" },
     })
   })

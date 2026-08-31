@@ -153,6 +153,26 @@ export async function ensureComposerModelSelected(
   )
 }
 
+/** Selects an agent target through the same unified picker used by a real draft. */
+export async function selectComposerAgent(page: Page, agentName: string | RegExp) {
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(control, "the composer's harness+model control never appeared").toBeVisible({ timeout: 30_000 })
+  await expect(control, "the harness+model control stayed disabled").toBeEnabled({ timeout: 45_000 })
+  await control.click()
+
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  await expect(picker, "the harness/model picker popover never opened").toBeVisible({ timeout: 15_000 })
+  const harnessSection = picker.locator('[data-slot="harness-picker-section"]').first()
+  await expect(harnessSection, "the agent section never appeared in the picker").toBeVisible({ timeout: 20_000 })
+  await harnessSection.click()
+
+  const option = picker.getByRole("button", { name: agentName, exact: typeof agentName === "string" })
+  await expect(option, `agent ${String(agentName)} missing from the picker`).toBeVisible({ timeout: 20_000 })
+  await option.click()
+  if (await picker.isVisible().catch(() => false)) await page.keyboard.press("Escape")
+  await expect(picker, "the harness/model picker stayed open after agent selection").toBeHidden({ timeout: 10_000 })
+}
+
 /**
  * Layer (b): geometric truth. Scrolls the element into view, asserts a non-zero
  * bounding box inside the viewport, then hit-tests document.elementFromPoint at the

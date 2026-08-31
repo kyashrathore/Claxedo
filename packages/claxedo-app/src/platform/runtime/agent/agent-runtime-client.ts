@@ -657,7 +657,7 @@ export function createAgentRuntimeClient(options: {
         init: jsonInit("POST", { response: input.response }),
       })
     },
-    async answerQuestion(input: { directory: AgentRuntimeDirectory; sessionID?: string; questionID: string; answer: string }) {
+    async answerQuestion(input: { directory: AgentRuntimeDirectory; sessionID?: string; questionID: string; answers: string[][] }) {
       const url = new URL(`/question/${encodeURIComponent(input.questionID)}/reply`, agentRuntimeSessionUrl({
         serverUrl: serverUrl(),
         sessionID: input.sessionID ?? "runtime",
@@ -667,7 +667,7 @@ export function createAgentRuntimeClient(options: {
       return await fetchRuntimePath({
         directory: input.directory,
         path: `${url.pathname}${url.search}`,
-        init: jsonInit("POST", { answer: input.answer }),
+        init: jsonInit("POST", { answers: input.answers }),
       })
     },
     async rejectQuestion(input: { directory: AgentRuntimeDirectory; sessionID?: string; questionID: string }) {

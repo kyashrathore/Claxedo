@@ -180,6 +180,7 @@ describe("harness store policy", () => {
       type: "acp:codex",
       binary: "/tmp/codex-acp",
       model: "gpt-5.5",
+      modelProviderID: "codex",
       status: "ready",
       ready: true,
       activeType: "acp:codex",

@@ -122,11 +122,12 @@ export function harnessStatusPatch(input: {
   }
 }
 
-export function readyHarnessHydrationPatch(type: HarnessType): HarnessStorePatch {
+export function readyHarnessHydrationPatch(type: HarnessType, hasConfigOptions = harnessHasConfigOptions(type)): HarnessStorePatch {
   return {
+    harness: type,
     harnessMode: harnessMode(type),
     readiness: "ready",
-    ...(!harnessHasConfigOptions(type) ? emptyOptionsPatch() : {}),
+    ...(!hasConfigOptions ? emptyOptionsPatch(type) : {}),
   }
 }
 
@@ -191,9 +192,20 @@ export function harnessHealthReadiness(input: {
   return undefined
 }
 
-function emptyOptionsPatch() {
+function emptyOptionsPatch(type: HarnessType) {
+  // Pi's model catalog is provider-backed, not harness-config-backed. A saved
+  // draft model may be resolved before this hydration patch lands, so Pi must
+  // not erase that canonical provider/model pair merely because it has no
+  // harness config-options endpoint.
+  const model = type.kind === "native" && type.harnessId === "pi"
+    ? {}
+    : {
+        selectedModel: type.kind === "connection" ? "default" : "",
+        selectedModelProvider: undefined,
+      }
   return {
-    dynamicModels: null,
+    ...model,
+    dynamicModels: type.kind === "connection" ? [] : null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
     optionsSource: "empty" as const,

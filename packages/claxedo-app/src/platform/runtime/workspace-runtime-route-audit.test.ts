@@ -727,7 +727,11 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
       const text = codeOnly(await Bun.file(path.join(root, file)).text())
-      if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(text)) {
+      const productionLines = text
+        .split("\n")
+        .filter((line) => !line.trimStart().startsWith("//"))
+        .join("\n")
+      if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(productionLines)) {
         offenders.push(file)
       }
     }
@@ -1619,18 +1623,18 @@ describe("workspace runtime route audit", () => {
     expect(input).not.toMatch(/fallbackGuardScopeKey/)
     expect(toolbar).not.toMatch(/local\.model\.set\(/)
     expect(input).toMatch(/createModelSelectionPicker/)
-    expect(input).toMatch(
-      /write:\s*\(model, options\) => writeOpenCodeDraftModel\(\{[\s\S]{0,400}write:\s*local\.model\.set/,
-    )
+    expect(input).toMatch(/write:\s*local\.model\.set/)
+    expect(input).not.toMatch(/writeOpenCodeDraftModel/)
     expect(input).toMatch(/selectedModelForSubmit:\s*toolbarState\.currentModel/)
     expect(input).not.toMatch(/fallbackModel/)
     expect(strategy).toMatch(/export function selectRuntimeModel/)
     expect(submit).toMatch(/resolveSubmittedConfig/)
-    expect(submit).toMatch(/selectedModel:\s*submitSelectedModel/)
-    expect(submit).toMatch(/selectedModelForSubmit\?\.\(\)/)
+    expect(submit).toMatch(/const harnessModelMode = true/)
+    expect(submit).toMatch(/harnessController\.modelKeyForSubmit\(scope\)/)
+    expect(submit).not.toMatch(/local\.model\.current\(\)/)
     expect(submit).not.toMatch(/allowModelFallback/)
     expect(submit).not.toMatch(/fallbackModel/)
-    expect(submit).not.toMatch(/selectedModelForSubmit\?\.\(\)\s*\?\?\s*local\.model\.current\(\)/)
+    expect(submit).not.toMatch(/selectedModelForSubmit\?\.\(\)/)
     expect(submit).not.toMatch(/function selectRuntimeModel\(/)
     expect(submit).not.toMatch(/function runtimeProviders\(/)
     expect(submit).not.toMatch(/id: "big-pickle"/)
@@ -1649,8 +1653,9 @@ describe("workspace runtime route audit", () => {
     expect(harness).not.toMatch(/harnessModelForSubmit/)
 
     expect(submit).toMatch(
-      /harnessModelKey:\s*selectedHarnessMode\(scope\)\s*\?\s*harnessController\.modelKeyForSubmit\(scope\)\s*:\s*undefined/,
+      /harnessModelKey:\s*harnessModelMode\s*\?\s*harnessController\.modelKeyForSubmit\(scope\)\s*:\s*undefined/,
     )
+    expect(submit).toMatch(/const harnessModelMode = true/)
     expect(submit).not.toMatch(/harnessModel:\s*/)
     expect(submit).not.toMatch(/submitModelFromModelKey/)
 

@@ -15,26 +15,26 @@ import {
 
 describe("route bridge deep links", () => {
   test("parses open-project deep links", () => {
-    expect(parseDeepLink("opencode://open-project?directory=/repo/main")).toBe("/repo/main")
-    expect(parseDeepLink("opencode://new-session?directory=/repo/main")).toBeUndefined()
+    expect(parseDeepLink("claxedo://open-project?directory=/repo/main")).toBe("/repo/main")
+    expect(parseDeepLink("claxedo://new-session?directory=/repo/main")).toBeUndefined()
     expect(collectOpenProjectDeepLinks([
       "https://example.com",
-      "opencode://open-project?directory=/repo/main",
-      "opencode://open-project",
+      "claxedo://open-project?directory=/repo/main",
+      "claxedo://open-project",
     ])).toEqual(["/repo/main"])
   })
 
   test("parses new-session deep links with optional prompt payloads", () => {
-    expect(parseNewSessionDeepLink("opencode://new-session?directory=/repo/main")).toEqual({
+    expect(parseNewSessionDeepLink("claxedo://new-session?directory=/repo/main")).toEqual({
       directory: "/repo/main",
     })
-    expect(parseNewSessionDeepLink("opencode://new-session?directory=/repo/main&prompt=hello")).toEqual({
+    expect(parseNewSessionDeepLink("claxedo://new-session?directory=/repo/main&prompt=hello")).toEqual({
       directory: "/repo/main",
       prompt: "hello",
     })
     expect(collectNewSessionDeepLinks([
-      "opencode://open-project?directory=/repo/main",
-      "opencode://new-session?directory=/repo/next&prompt=ship",
+      "claxedo://open-project?directory=/repo/main",
+      "claxedo://new-session?directory=/repo/next&prompt=ship",
     ])).toEqual([{ directory: "/repo/next", prompt: "ship" }])
   })
 
@@ -53,11 +53,11 @@ describe("route bridge deep links", () => {
   test("drains pending window deep links exactly once", () => {
     const target = {
       __CLAXEDO__: {
-        deepLinks: ["opencode://open-project?directory=/repo/main"],
+        deepLinks: ["claxedo://open-project?directory=/repo/main"],
       },
     } as Window & { __CLAXEDO__: { deepLinks: string[] } }
 
-    expect(drainPendingDeepLinks(target)).toEqual(["opencode://open-project?directory=/repo/main"])
+    expect(drainPendingDeepLinks(target)).toEqual(["claxedo://open-project?directory=/repo/main"])
     expect(target.__CLAXEDO__.deepLinks).toEqual([])
     expect(drainPendingDeepLinks(target)).toEqual([])
   })

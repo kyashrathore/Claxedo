@@ -51,7 +51,7 @@ describe("harness profile", () => {
     ]
 
     for (const type of types) {
-      expect(HARNESS_DISPLAY_NAMES[type]).toBeTruthy()
+      expect(type.kind === "native" ? HARNESS_DISPLAY_NAMES[type.harnessId] : undefined).toBeTruthy()
     }
     expect(HARNESS_DISPLAY_NAMES["agent"]).toBe("Cursor")
     expect(HARNESS_DISPLAY_NAMES["cursor-agent"]).toBe("Cursor")
@@ -107,7 +107,7 @@ describe("harness profile", () => {
     })
   })
 
-  test("decodes legacy runner session config", () => {
+  test("does not decode removed runner session config", () => {
     expect(decodeSessionConfig({
       runner: {
         type: "codex-app-server",
@@ -127,7 +127,7 @@ describe("harness profile", () => {
     })
   })
 
-  test("decodes harness id session config", () => {
+  test("requires access when decoding wire harness identities", () => {
     expect(decodeSessionConfig({
       harness: {
         id: "claude-sdk",
@@ -147,44 +147,44 @@ describe("harness profile", () => {
     }).harness?.type).toBeUndefined()
   })
 
-  test("decodes structured native and ACP harness identities", () => {
+  test("decodes structured native and connection harness identities", () => {
     expect(decodeSessionConfig({
       harness: {
         id: "codex",
         access: "native",
-        ready: false,
       },
-    }).harness).toMatchObject({
-      type: "codex-app-server",
-      ready: false,
+    }).harness).toEqual({
+      type: { kind: "native", harnessId: "codex" },
+      activeType: { kind: "native", harnessId: "codex" },
     })
 
     expect(decodeSessionConfig({
       harness: {
-        id: "cursor",
-        access: "acp",
+        id: "remote-cursor",
+        access: "connection",
       },
     }).harness?.type).toBe("acp:cursor")
   })
 
   test("decodes harness health forwarded from the health route (T4)", () => {
     expect(decodeHarnessState({
-      type: "codex-app-server",
+      harness: { kind: "native", harnessId: "codex" },
       ready: true,
       harnessHealth: { status: "degraded", reason: "harness_process_lost" },
     })?.harnessHealth).toEqual({ status: "degraded", reason: "harness_process_lost" })
     // Unknown / malformed health status is dropped rather than carried through.
     expect(decodeHarnessState({
-      type: "codex-app-server",
+      harness: { kind: "native", harnessId: "codex" },
       harnessHealth: { status: "bogus" },
     })?.harnessHealth).toBeUndefined()
-    expect(decodeHarnessState({ type: "codex-app-server" })?.harnessHealth).toBeUndefined()
+    expect(decodeHarnessState({ harness: { kind: "native", harnessId: "codex" } })?.harnessHealth).toBeUndefined()
   })
 
   test("separates hard failures from not-ready status", () => {
-    expect(failedHarness({ type: "codex-app-server", status: "configured", ready: false })).toBe(true)
-    expect(hardFailedHarness({ type: "codex-app-server", status: "configured", ready: false })).toBe(false)
-    expect(hardFailedHarness({ type: "codex-app-server", error: "auth required" })).toBe(true)
+    const codex = { kind: "native", harnessId: "codex" } as const
+    expect(failedHarness({ type: codex, status: "configured", ready: false })).toBe(true)
+    expect(hardFailedHarness({ type: codex, status: "configured", ready: false })).toBe(false)
+    expect(hardFailedHarness({ type: codex, error: "auth required" })).toBe(true)
   })
 
   test("normalizes options response source and choices", () => {
@@ -281,7 +281,7 @@ describe("harness profile", () => {
   })
 
   test("profiles Pi as a catalog-backed harness", () => {
-    expect(harnessProfile("pi")).toEqual({
+    expect(harnessProfile({ kind: "native", harnessId: "pi" })).toEqual({
       displayName: "Pi",
       hasConfigOptions: false,
     })

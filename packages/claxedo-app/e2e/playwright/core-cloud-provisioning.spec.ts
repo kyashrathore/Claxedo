@@ -114,14 +114,14 @@
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
  *   e2e/INVARIANTS.md, exercised via the oracle in behavior 3/4); harness ownership (#1)
- *   is fixed to `opencode` throughout — the full cloud harness matrix is
+ *   is fixed to one configured connection throughout — the full cloud harness matrix is
  *   `core-harness-ownership-cloud` (spec 12). This spec's own invariant: the pipeline's
  *   displayed step is DERIVED FROM SERVER STATE (the resolve endpoint's `status` field
  *   and `provision` SSE events), never from client-side assumptions about how
  *   provisioning "should" progress — a reload must never regress the displayed step.
  *
- * HARNESS NOTES — none; harness stays `opencode` (default, no config-options harness) so
- *   the pipeline/relay-routing contract stays isolated from harness selection concerns.
+ * HARNESS NOTES — the fixture publishes one generic connection with model options so
+ *   the pipeline/relay-routing contract stays isolated from provider-specific behavior.
  *
  * OUT OF SCOPE — the create-workspace DIALOG's own pipeline/timeout/retry-banner UI
  *   (`core-workspace-lifecycle`, spec 18); harness ownership over the relay
@@ -156,6 +156,7 @@ const DIR = "/tmp/e2e-core-cloud-provisioning"
 const PROJECT_ID = "proj_core_cloud_provisioning"
 const WORKSPACE_ID = "ws_core_cloud_provisioning"
 const SESSION_ID = "ses_core_cloud_provisioning"
+const CONNECTION_ID = "cloud-agent"
 // Real, versioned, servable house-model id — NOT the bare "big-pickle", which
 // the app reserves as the non-selectable pre-provisioning placeholder
 // (`signed-workspace-model.ts`); serving that exact id as the only model leaves
@@ -220,6 +221,21 @@ async function selectCloudEnvironment(page: Page) {
   await expect(row).toContainText("Cloud")
   await row.click()
   await expect(trigger).toContainText("Cloud", { timeout: 10_000 })
+}
+
+async function selectCloudAgentConnection(page: Page) {
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(control).toBeEnabled({ timeout: 30_000 })
+  await control.click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  await expect(picker).toBeVisible({ timeout: 15_000 })
+  await picker.locator('[data-slot="harness-picker-section"]').first().click()
+  const option = picker.getByRole("button", { name: /^Cloud agent$/ })
+  await expect(option).toBeVisible({ timeout: 20_000 })
+  await option.click()
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden({ timeout: 10_000 })
+  await expect(control).toHaveAttribute("data-harness", CONNECTION_ID, { timeout: 20_000 })
 }
 
 function api(route: Route) {
@@ -338,7 +354,7 @@ async function installCloudRuntimeMock(
     connected: ["opencode"],
   })
   const sessionConfig = () => ({
-    harness: { id: "opencode", access: "native" },
+    harness: { id: CONNECTION_ID, access: "connection" },
     model: { providerID: "opencode", modelID: BIG_PICKLE.id },
     agent: "build",
   })
@@ -422,6 +438,42 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/provider/auth") return json(route, {})
     if (url.pathname === "/path") return json(route, { worktree: DIR })
     if (url.pathname === "/config") return json(route, { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } })
+    if (url.pathname === "/api/claxedo/agent-config/connections") {
+      return json(route, {
+        connections: [{
+          connectionId: CONNECTION_ID,
+          label: "Cloud agent",
+          enabled: true,
+          readiness: "ready",
+          capabilities: {
+            abort: true,
+            reconnect: true,
+            replay: true,
+            permissions: true,
+            questions: true,
+            todos: true,
+            commands: true,
+            fork: true,
+            revert: true,
+            unrevert: true,
+            configOptions: true,
+            subagents: true,
+          },
+          modelSelection: { status: "optional" },
+        }],
+      })
+    }
+    if (url.pathname === "/api/claxedo/agent-config/harness") {
+      const selection = { kind: "connection", connectionId: CONNECTION_ID }
+      return json(route, {
+        harness: selection,
+        activeHarness: selection,
+        model: BIG_PICKLE.id,
+        modelProviderID: "opencode",
+        status: "ready",
+        ready: true,
+      })
+    }
     // The ConnectionGate polls the claxedo health endpoint; a 598 here reads as
     // "server unreachable" and gates the whole app behind the error screen.
     if (url.pathname === "/health" || url.pathname === "/global/health" || url.pathname === "/api/claxedo/health") {
@@ -560,7 +612,7 @@ async function installCloudRuntimeMock(
       }
       if (runtimePath === "/api/wr/health") return json(route, { healthy: true })
       if (runtimePath === "/api/wr/harness-config-options") {
-        return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
+        return json(route, { source: "harness", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
       // Session-scoped event channels all carry the same cursor-resumed turn log.
       // The app subscribes to whichever channel its transport resolves.
@@ -693,8 +745,10 @@ test.describe("core cloud provisioning @core", () => {
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
     await expect(input).toHaveAttribute("contenteditable", "true")
-    // Product rule: drafts do not invent a catalog default. Drive the same
-    // picker a user would after the gate unlocks and the catalog is ready.
+    // Product rule: drafts do not invent a catalog default. Choose the
+    // operator-configured connection first, then its model, through the same
+    // picker a user drives after the provisioning gate unlocks.
+    await selectCloudAgentConnection(page)
     await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
 
     // Behavior 3/4: a send dispatches through the workspace-scoped relay lane

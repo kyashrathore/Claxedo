@@ -7,6 +7,11 @@ import { applyHarnessOptionsResponse } from "./options-state"
 import type { OptionsResponse } from "./profile"
 
 let storage: MemoryStorage
+const CODEX = { kind: "connection", connectionId: "codex-team" } as const
+const CLAUDE = { kind: "connection", connectionId: "claude-team" } as const
+const NATIVE_CODEX = { kind: "native", harnessId: "codex" } as const
+const PI = { kind: "native", harnessId: "pi" } as const
+const EXTERNAL_OPENCODE = { kind: "connection", connectionId: "external-opencode" } as const
 
 beforeEach(() => {
   storage = new MemoryStorage()
@@ -102,7 +107,7 @@ describe("harness store facade", () => {
       dynamicModels: [{ id: "opus", name: "Opus" }],
       optionsLoading: true,
       optionsStale: true,
-      configError: "missing binary",
+      configError: "connection unavailable",
     })
     store.applyPatch("draft:/repo:route", {
       selectedModel: "",
@@ -159,7 +164,7 @@ describe("harness store facade", () => {
       optionsSource: "harness",
       optionsStale: true,
       optionsLoading: true,
-      configError: "missing binary",
+      configError: "connection unavailable",
       workspaceId: "ws_1",
     })
 
@@ -178,7 +183,7 @@ describe("harness store facade", () => {
       optionsSource: "harness",
       optionsStale: true,
       optionsLoading: true,
-      configError: "missing binary",
+      configError: "connection unavailable",
       workspaceId: "ws_1",
     })
   })
@@ -216,7 +221,7 @@ describe("harness store facade", () => {
     expect(store.read("draft:one").configError).toBeUndefined()
   })
 
-  test("keeps the existing OpenCode draft behavior when no workspace default exists", () => {
+  test("keeps a draft unresolved when no workspace default exists", () => {
     const store = createHarnessStore(storage)
     const begun = store.beginDraftDefault("draft:one", {
       serverUrl: "http://localhost:4096",
@@ -225,12 +230,12 @@ describe("harness store facade", () => {
 
     expect(begun?.saved).toBeUndefined()
     expect(store.read("draft:one")).toMatchObject({
-      harness: "opencode",
       selectedModel: "",
-      draftDefaultAuthority: "defaulted",
-      draftDefaultState: "ready",
+      draftDefaultAuthority: "unresolved",
       optionsLoading: false,
     })
+    expect(store.read("draft:one").harness).toBeUndefined()
+    expect(store.read("draft:one").draftDefaultState).toBeUndefined()
     expect(store.read("draft:one").configError).toBeUndefined()
   })
 
@@ -279,7 +284,7 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
     store.applyPatch("session:one", {
       draftDefault: {
-        harness: "pi",
+        harness: PI,
         model: { providerID: "anthropic", modelID: "removed" },
       },
       draftDefaultState: "saved-model-unavailable",
@@ -299,7 +304,7 @@ describe("harness store facade", () => {
   test("explicit selection and promotion invalidate captured default work", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: PI, model: { providerID: "openai", modelID: "gpt-5.5" } },
     )
     const store = createHarnessStore(storage)
     const begun = store.beginDraftDefault("draft:one", {
@@ -312,7 +317,7 @@ describe("harness store facade", () => {
       { providerID: "anthropic", modelID: "opus" },
     )).toBe(true)
     expect(store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "pi"],
+      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
       eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
     })).toBe(false)
 
@@ -491,7 +496,7 @@ describe("harness store facade", () => {
   test("persists friendly recovery labels with an explicit model pair", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
-    store.applyPatch("draft:one", { harness: "pi" })
+    store.applyPatch("draft:one", { harness: PI })
 
     expect(store.rememberDraftModel(
       "draft:one",

@@ -7,6 +7,12 @@ import {
   pollingHarnessHydrationPatch,
   readyHarnessHydrationPatch,
 } from "./store-state"
+import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
+
+const claude = nativeHarness("claude")
+const codex = nativeHarness("codex")
+const pi = nativeHarness("pi")
+const openCode = connectionHarness("opencode")
 
 describe("harness store state projectors", () => {
   // The seed carries no remembered choice for ANY scope kind: a draft's comes
@@ -24,17 +30,11 @@ describe("harness store state projectors", () => {
     }
   })
 
-  test("seeds a fresh scope with the un-confirmed opencode placeholder", () => {
-    // Contract relied on by claxedo-ui/harness/harness-status-actions.ts's
-    // applyStatus guard (core-harness-ownership-local:468): a scope with no
-    // saved/legacy harness MUST seed harness "opencode". The guard treats that
-    // seed as NOT-user-confirmed, so a later failed status for the harness the
-    // scope is really configured with is applied (red dot) rather than silently
-    // swallowed. If this seed ever changed to a real harness id, that guard
-    // would misfire — hence pinning it here.
+  test("seeds a fresh scope unresolved without inventing a harness", () => {
     const seeded = initialHarnessStoreState({ scope: "draft:/repo:route" })
-    expect(seeded.harness).toBe("opencode")
-    expect(seeded.harnessMode).toBe("opencode")
+    expect(seeded.harness).toBeUndefined()
+    expect(seeded.harnessMode).toBe("unknown")
+    expect(seeded.readiness).toBe("unresolved")
     expect(seeded.selectedModel).toBe("")
   })
 
@@ -46,6 +46,7 @@ describe("harness store state projectors", () => {
         activeType: "acp:claude",
         activeBinary: "/bin/claude",
         model: "sonnet",
+        modelProviderID: "claude",
         workspaceId: "ws_1",
       },
     })).toMatchObject({
@@ -53,6 +54,7 @@ describe("harness store state projectors", () => {
       harnessBinary: "/bin/claude",
       harness: "acp:claude",
       selectedModel: "sonnet",
+      selectedModelProvider: "claude",
       readiness: "ready",
       configError: undefined,
       workspaceId: "ws_1",
@@ -60,22 +62,15 @@ describe("harness store state projectors", () => {
 
     expect(harnessStatusPatch({
       data: {
-        type: "opencode",
-        activeType: "opencode",
+        type: openCode,
+        activeType: openCode,
         error: "runner failed",
       },
     })).toMatchObject({
-      harnessMode: "opencode",
-      harness: "opencode",
-      selectedModel: "",
-      dynamicModels: null,
-      thoughtLevels: null,
-      selectedThoughtLevel: undefined,
+      harnessMode: "harness",
+      harness: openCode,
       readiness: "error",
       configError: "runner failed",
-      optionsSource: "empty",
-      optionsStale: false,
-      optionsLoading: false,
     })
 
     // A harness that is configured/applying but not yet ready is still
@@ -84,18 +79,18 @@ describe("harness store state projectors", () => {
     // error/ready binary made the polling UI unreachable).
     expect(harnessStatusPatch({
       data: {
-        type: "codex-app-server",
+        type: codex,
         status: "configured",
         ready: false,
       },
     })).toMatchObject({
       harnessMode: "harness",
-      harness: "codex-app-server",
+      harness: codex,
       readiness: "polling",
     })
     expect(harnessStatusPatch({
       data: {
-        type: "codex-app-server",
+        type: codex,
         status: "applying",
         ready: false,
       },
@@ -103,10 +98,10 @@ describe("harness store state projectors", () => {
 
     // A hard failure (status "error" or an error message) stays "error".
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "error" },
+      data: { type: codex, status: "error" },
     })).toMatchObject({ readiness: "error" })
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", error: "spawn failed", ready: false },
+      data: { type: codex, error: "spawn failed", ready: false },
     })).toMatchObject({ readiness: "error" })
 
     // `settled: true` marks a COMPLETED switch response (not a startup/in-flight
@@ -115,70 +110,63 @@ describe("harness store state projectors", () => {
     // it is "error", not "polling". This is the harness-switcher applyPostedStatus
     // path (core-harness-ownership-local, harness-switcher.test.ts:144).
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "configured", ready: false },
+      data: { type: codex, status: "configured", ready: false },
       settled: true,
     })).toMatchObject({ readiness: "error" })
     // Without `settled`, the same frame is an in-flight probe → still "polling".
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "configured", ready: false },
+      data: { type: codex, status: "configured", ready: false },
     })).toMatchObject({ readiness: "polling" })
     // A settled ready:true response is still "ready".
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "ready", ready: true },
+      data: { type: codex, status: "ready", ready: true },
       settled: true,
     })).toMatchObject({ readiness: "ready" })
 
     // A ready harness is ready.
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "ready", ready: true },
+      data: { type: codex, status: "ready", ready: true },
     })).toMatchObject({ readiness: "ready" })
-
-    // OpenCode is the always-available local default: never "polling" even if a
-    // status frame arrives with ready:false.
-    expect(harnessStatusPatch({
-      data: { type: "opencode", ready: false },
-    })).toMatchObject({ harnessMode: "opencode", readiness: "ready" })
 
     // A live-but-degraded harness (`/api/wr/health` reports ok:true while
     // harnessHealth.status is degraded/unavailable — process lost + recovering)
     // maps to the "degraded" readiness that drives the composer health peek +
     // Send gate (T4). This finally exercises the union member at selection.ts:9.
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "ready", ready: true, harnessHealth: { status: "degraded", reason: "harness_process_lost" } },
-    })).toMatchObject({ harness: "codex-app-server", readiness: "degraded" })
+      data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "degraded", reason: "harness_process_lost" } },
+    })).toMatchObject({ harness: codex, readiness: "degraded" })
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "ready", ready: true, harnessHealth: { status: "unavailable" } },
+      data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "unavailable" } },
     })).toMatchObject({ readiness: "degraded" })
     // A healthy harnessHealth report does not degrade a ready harness.
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "ready", ready: true, harnessHealth: { status: "ok" } },
+      data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "ok" } },
     })).toMatchObject({ readiness: "ready" })
     // A hard failure still wins over degraded health.
     expect(harnessStatusPatch({
-      data: { type: "codex-app-server", status: "error", harnessHealth: { status: "degraded" } },
+      data: { type: codex, status: "error", harnessHealth: { status: "degraded" } },
     })).toMatchObject({ readiness: "error" })
-    // OpenCode never degrades even if a stray health frame arrives.
+    // Connection-backed harnesses use the same health contract as native SDKs.
     expect(harnessStatusPatch({
-      data: { type: "opencode", ready: true, harnessHealth: { status: "degraded" } },
-    })).toMatchObject({ harnessMode: "opencode", readiness: "ready" })
+      data: { type: openCode, ready: true, harnessHealth: { status: "degraded" } },
+    })).toMatchObject({ harnessMode: "harness", readiness: "degraded" })
   })
 
   test("derives the standing health-probe readiness transition (T4)", () => {
     // Degraded/unavailable health degrades a settled harness.
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready", health: "degraded" })).toBe("degraded")
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready", health: "unavailable" })).toBe("degraded")
+    expect(harnessHealthReadiness({ harness: codex, current: "ready", health: "degraded" })).toBe("degraded")
+    expect(harnessHealthReadiness({ harness: codex, current: "ready", health: "unavailable" })).toBe("degraded")
     // Recovery: healthy health clears a prior degraded state back to ready.
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "degraded", health: "ok" })).toBe("ready")
+    expect(harnessHealthReadiness({ harness: codex, current: "degraded", health: "ok" })).toBe("ready")
     // No-op transitions leave readiness untouched (undefined).
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready", health: "ok" })).toBeUndefined()
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "degraded", health: "degraded" })).toBe("degraded")
+    expect(harnessHealthReadiness({ harness: codex, current: "ready", health: "ok" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: codex, current: "degraded", health: "degraded" })).toBe("degraded")
     // The probe never stomps a state owned by hydration / hard failure.
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "error", health: "degraded" })).toBeUndefined()
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "polling", health: "degraded" })).toBeUndefined()
-    // OpenCode never degrades.
-    expect(harnessHealthReadiness({ harness: "opencode", current: "ready", health: "degraded" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: codex, current: "error", health: "degraded" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: codex, current: "polling", health: "degraded" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: openCode, current: "ready", health: "degraded" })).toBe("degraded")
     // Missing health is a no-op.
-    expect(harnessHealthReadiness({ harness: "codex-app-server", current: "ready" })).toBeUndefined()
+    expect(harnessHealthReadiness({ harness: codex, current: "ready" })).toBeUndefined()
   })
 
   test("keeps hydration and switch patches aligned with options policy", () => {
@@ -186,8 +174,9 @@ describe("harness store state projectors", () => {
       harnessMode: "harness",
       readiness: "ready",
     })
-    expect(readyHarnessHydrationPatch("opencode")).toEqual({
-      harnessMode: "opencode",
+    expect(readyHarnessHydrationPatch(pi)).toEqual({
+      harness: pi,
+      harnessMode: "harness",
       readiness: "ready",
       dynamicModels: null,
       thoughtLevels: null,

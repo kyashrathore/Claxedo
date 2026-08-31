@@ -39,12 +39,12 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
 
     expect(calls.create).toBe(0)
     expect(unsignedCalls).toContainEqual(expect.objectContaining({
-      url: "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode",
+      url: "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&nativeHarness=pi",
       method: "PATCH",
       authorization: null,
     }))
     expect(JSON.parse(unsignedCalls.find((call) =>
-      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode" && call.method === "PATCH"
+      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&nativeHarness=pi" && call.method === "PATCH"
     )?.body ?? "{}")).toEqual({
       harness: { id: "opencode", access: "native" },
       agent: "review",
@@ -55,7 +55,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
       directory: "/repo/main",
       serverUrl: "http://localhost:3001",
     }))).toEqual({
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "pi", access: "native" },
       agent: "review",
       model: { providerID: "new-provider", modelID: "new-model" },
     })
@@ -78,7 +78,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
 
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    const configUrl = "http://localhost:3001/session/session-c1-dedup/config?directory=%2Frepo%2Fmain&harness=opencode"
+    const configUrl = "http://localhost:3001/session/session-c1-dedup/config?directory=%2Frepo%2Fmain&nativeHarness=pi"
     const firstCount = unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length
     expect(firstCount).toBe(1)
 
@@ -107,7 +107,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
 
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    const configUrl = "http://localhost:3001/session/session-c1-change/config?directory=%2Frepo%2Fmain&harness=opencode"
+    const configUrl = "http://localhost:3001/session/session-c1-change/config?directory=%2Frepo%2Fmain&nativeHarness=pi"
     expect(unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length).toBe(1)
 
     // Mid-session model change.

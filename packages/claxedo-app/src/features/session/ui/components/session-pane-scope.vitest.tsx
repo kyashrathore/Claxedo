@@ -163,7 +163,7 @@ describe("SessionPaneScope", () => {
           host: "workspace",
           workspaceId: "ws_backing",
           toolSandbox: { kind: "workspace", workspaceId: "ws_backing", hosting: "cloud" },
-          harness: { id: "codex-acp" },
+          harness: { kind: "native", harnessId: "codex" },
         })}
         sessionId={() => "fallback-session"}
         paneId={() => "pane-1"}
@@ -175,7 +175,7 @@ describe("SessionPaneScope", () => {
 
     expect(calls.directoryScopeProps?.directory).toBe("/repo/local")
     expect(calls.directoryScopeProps?.sessionId?.()).toBe("ses_1")
-    expect(calls.directoryScopeProps?.harnessType?.()).toBe("codex-acp")
+    expect(calls.directoryScopeProps?.harnessType?.()).toBe("codex")
     expect(calls.directoryScopeProps?.workspaceReady?.()).toBe(true)
     expect(calls.directoryScopeProps?.refreshDirectory).toBeTypeOf("function")
     await (calls.directoryScopeProps?.refreshDirectory as (directory: string, harnessType?: string) => unknown)(

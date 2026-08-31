@@ -518,6 +518,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           } catch {
             return null
           }
+          return false
         }),
         { timeout: 10_000 },
       )
@@ -621,23 +622,17 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           code: "unsupported_operation",
           operation: "harness_switch",
           capability: "session_harness",
-          harness: "opencode",
-          transport: "runtime",
+          harness: "pi",
+          transport: "pi",
           reason: "harness_switch_not_supported",
-          message: "opencode sessions cannot switch to claude through session config patch",
+          message: "pi sessions cannot switch to claude through session config patch",
         },
       },
     })
   })
 
-  // Behavior 7 (former fixme, deleted): the agent picker is now positively gated to the
-  // OpenCode harness — `showAgentSelector()` is `isOpenCodeHarness && agentCount > 0`
-  // (selector-visibility.ts, fed by `currentHarnessType(scope) === "opencode"` in
-  // composer.tsx). OpenCode drafts never enter `harnessPending()` (pending requires a
-  // non-OpenCode harness in "polling"), so a visible-and-disabled agent selector still
-  // cannot be produced. The positive "shows for OpenCode with agents" contract is pinned
-  // by behavior 6 above; the "hidden for non-OpenCode harnesses" half is
-  // core-harness-ownership-local's territory (this spec is plain-OpenCode only).
+  // Behavior 7 (former fixme, deleted): the multi-agent picker is driven by the
+  // runtime's advertised agent list, independent of the selected runtime binding.
 
   test(
     "failed initial config persistence preserves the unpublished draft — behavior 8",

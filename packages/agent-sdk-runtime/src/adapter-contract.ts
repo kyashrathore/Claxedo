@@ -93,9 +93,15 @@ export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 export interface AgentHarnessAdapterCore {
   readonly adapterCapabilities?: readonly AdapterCapability[]
   readonly commitsStreamEvents?: boolean
+  /**
+   * Where durable SessionConfig is authoritative. Most SDK harnesses own and
+   * read back their config. Protocol adapters whose choices are carried on
+   * each turn can delegate that state to the Claxedo runtime store.
+   */
+  readonly sessionConfigOwner?: "adapter" | "runtime"
 
   getSession(binding: AgentExecutionBinding): Promise<AgentSession | null>
-  createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
+  createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string; agentSessionId?: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
   createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
   /** Release the no-longer-authoritative source resources after a handoff commits. */
@@ -302,7 +308,7 @@ export interface SupportsPermissionModes {
 
 export interface SupportsQuestions {
   listQuestions(directory: RuntimeDirectory): Promise<AgentQuestion[]>
-  replyQuestion(binding: AgentExecutionBinding, qId: string, answer: string): Promise<AgentInteractionResult | void>
+  replyQuestion(binding: AgentExecutionBinding, qId: string, answers: AgentQuestionAnswer[]): Promise<AgentInteractionResult | void>
   rejectQuestion(binding: AgentExecutionBinding, qId: string): Promise<AgentInteractionResult | void>
 }
 

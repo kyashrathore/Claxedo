@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 import { createComposerPermissionMode } from "./permission-mode"
 import {
-  CLAXEDO_ALLOW_SAFE_ID,
-  CLAXEDO_ASK_ALWAYS_ID,
   type HarnessModeReport,
   type PermissionModeOption,
   type PermissionSelection,
@@ -18,13 +16,13 @@ import type { HarnessId } from "@/platform/identity/session-ref"
  * of rows. It is covered by its own test below rather than by these loops.
  */
 const ALL: HarnessId[] = [
-  "opencode",
-  "claude-sdk",
-  "claude-acp",
-  "codex-acp",
-  "codex-app-server",
-  "cursor-acp",
-  "cursor-sdk",
+  "claude",
+  "codex",
+  "cursor",
+  "acp:claude",
+  "acp:codex",
+  "acp:cursor",
+  "acp:generic",
 ]
 
 const REPORTED: HarnessModeReport = {
@@ -72,7 +70,7 @@ const rowFor = (control: ReturnType<typeof createComposerPermissionMode>, id: st
 describe("what the picker offers", () => {
   test("a reporting harness contributes its own rows, and Claxedo none", () => {
     createRoot((dispose) => {
-      const { control } = harness({ harness: "claude-acp", report: REPORTED })
+      const { control } = harness({ harness: "acp:claude", report: REPORTED })
       expect(control.groups()!.claxedo).toEqual([])
       expect(control.groups()!.harness.rows.map((row) => row.option.name)).toEqual([
         "Default",
@@ -101,12 +99,12 @@ describe("what the picker offers", () => {
     }
   })
 
-  test("a harness with nothing to report falls back to Claxedo's two, both selectable", () => {
+  test("an empty ACP report does not invent local permission modes", () => {
     createRoot((dispose) => {
-      const { control } = harness({ harness: "opencode", report: { modes: [], appliesFrom: "next-turn" } })
-      const claxedo = control.groups()!.claxedo
-      expect(claxedo.map((row) => row.option.id)).toEqual([CLAXEDO_ALLOW_SAFE_ID, CLAXEDO_ASK_ALWAYS_ID])
-      for (const row of claxedo) expect(row.selectable, row.option.id).toBe(true)
+      const { control } = harness({ harness: "acp:generic", report: { modes: [], appliesFrom: "next-turn" } })
+      expect(control.groups()!.claxedo).toEqual([])
+      expect(control.groups()!.harness.rows).toEqual([])
+      expect(control.current()).toBeUndefined()
       dispose()
     })
   })
@@ -128,7 +126,7 @@ describe("what the picker offers", () => {
   // Undefined now means genuinely in flight, and the copy says loading.
   test("before the fetch lands the harness group reads as loading", () => {
     createRoot((dispose) => {
-      const { control } = harness({ harness: "claude-acp" })
+      const { control } = harness({ harness: "acp:claude" })
       expect(control.groups()!.claxedo).toEqual([])
       expect(control.groups()!.harness.rows).toEqual([])
       expect(control.groups()!.harness.unavailable).toMatch(/loading/i)
@@ -141,7 +139,7 @@ describe("what the picker offers", () => {
 describe("selecting", () => {
   test("choosing a harness mode stores it by id and delivers it", () => {
     createRoot((dispose) => {
-      const { control, delivered, selection } = harness({ harness: "claude-acp", report: REPORTED })
+      const { control, delivered, selection } = harness({ harness: "acp:claude", report: REPORTED })
       control.select(rowFor(control, "full-access")!.option)
       expect(selection()).toEqual({ kind: "harness", modeId: "full-access" })
       expect(delivered.map((option) => option.id)).toEqual(["full-access"])
@@ -149,13 +147,11 @@ describe("selecting", () => {
     })
   })
 
-  test("choosing a Claxedo option stores it under the claxedo kind, not harness", () => {
+  test("an empty ACP report exposes no selectable substitute", () => {
     createRoot((dispose) => {
-      const { control, selection } = harness({ harness: "opencode", report: { modes: [], appliesFrom: "next-turn" } })
-      control.select(rowFor(control, CLAXEDO_ASK_ALWAYS_ID)!.option)
-      // Storing this as `harness` would later resolve against the harness's list
-      // and silently return nothing.
-      expect(selection()).toEqual({ kind: "claxedo", modeId: CLAXEDO_ASK_ALWAYS_ID })
+      const { control, selection } = harness({ harness: "acp:generic", report: { modes: [], appliesFrom: "next-turn" } })
+      expect(control.groups()!.harness.rows).toEqual([])
+      expect(selection()).toBeUndefined()
       dispose()
     })
   })
@@ -165,7 +161,7 @@ describe("selecting", () => {
   test("a draft stores the choice and sends nothing", () => {
     createRoot((dispose) => {
       const { control, delivered, selection } = harness({
-        harness: "claude-acp",
+        harness: "acp:claude",
         report: REPORTED,
         sessionId: "",
       })
@@ -178,7 +174,7 @@ describe("selecting", () => {
 
   test("a failed delivery is reported, not swallowed", async () => {
     await createRoot(async (dispose) => {
-      const { control, errors } = harness({ harness: "claude-acp", report: REPORTED, failDelivery: true })
+      const { control, errors } = harness({ harness: "acp:claude", report: REPORTED, failDelivery: true })
       control.select(rowFor(control, "auto")!.option)
       await Promise.resolve()
       await Promise.resolve()
@@ -195,7 +191,7 @@ describe("what shows as current", () => {
   test("with nothing stored, the harness's reported current mode is shown", () => {
     createRoot((dispose) => {
       const { control } = harness({
-        harness: "claude-acp",
+        harness: "acp:claude",
         report: { ...REPORTED, currentModeId: "default" },
       })
       expect(control.current()?.id).toBe("default")
@@ -208,7 +204,7 @@ describe("what shows as current", () => {
     createRoot((dispose) => {
       // The harness's own name for it, because that is the row the picker
       // renders. Naming it "Auto" would name a row that no longer exists.
-      const { control } = harness({ harness: "claude-acp", report: REPORTED })
+      const { control } = harness({ harness: "acp:claude", report: REPORTED })
       expect(control.current()?.id).toBe("auto")
       expect(control.current()?.name).toBe("Auto-review")
       expect(control.promptModeId()).toBeUndefined()
@@ -221,7 +217,7 @@ describe("what shows as current", () => {
   test("a stale stored mode resolves to undefined rather than falling back", () => {
     createRoot((dispose) => {
       const { control } = harness({
-        harness: "claude-acp",
+        harness: "acp:claude",
         report: REPORTED,
         stored: { kind: "harness", modeId: "a-mode-that-vanished" },
       })
@@ -233,7 +229,7 @@ describe("what shows as current", () => {
   test("does not submit a previous harness mode after switching harnesses", () => {
     createRoot((dispose) => {
       const { control } = harness({
-        harness: "codex-app-server",
+        harness: "codex",
         report: {
           modes: [
             { id: "read-only", name: "Read only", level: "ask" },

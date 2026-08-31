@@ -56,7 +56,11 @@ export function comparePickerProviderGroups(
 export type PickerState = {
   list: () => PickerItem[]
   current: () => PickerItem | undefined
-  visible: (item: { modelID: string; providerID: string }) => boolean
+  visible: (
+    item: { modelID: string; providerID: string },
+    /** Catalog-scoped defaults when the picker is rendering a harness-specific catalog. */
+    defaults?: Record<string, string>,
+  ) => boolean
   set: (item: { modelID: string; providerID: string } | undefined, options?: { recent?: boolean }) => void
   /**
    * PRODUCT DECISION (provider catalog as an index): the app boots on the

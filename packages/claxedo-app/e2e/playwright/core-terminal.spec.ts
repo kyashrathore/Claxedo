@@ -327,7 +327,13 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
           healthy: true,
           version: "1.0.0-test",
           path: { state: "", config: "", worktree: dir, directory: dir, home: "/tmp" },
-          project: [{ id: projectId, worktree: dir, name: "core-terminal", time: { created: Date.now(), updated: Date.now() } }],
+          project: [{
+            id: projectId,
+            worktree: dir,
+            name: "core-terminal",
+            workspaces: { [dir]: { workspaceId: projectId, kind: "local", directory: dir, available: true } },
+            time: { created: Date.now(), updated: Date.now() },
+          }],
           provider: { all: [{ id: "opencode", name: "opencode", env: [], models: {} }], default: {}, connected: ["opencode"] },
           provider_auth: {},
           config: { provider: { id: "opencode", model: "big-pickle" }, agent: { id: "build" } },
@@ -342,7 +348,13 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   await page.route("**/project**", (r) => {
     if (!api(r)) return r.continue()
     if (!["/project", "/experimental/project"].includes(new URL(r.request().url()).pathname)) return r.fallback()
-    return json(r, [{ id: projectId, worktree: dir, name: "core-terminal", time: { created: Date.now(), updated: Date.now() } }])
+    return json(r, [{
+      id: projectId,
+      worktree: dir,
+      name: "core-terminal",
+      workspaces: { [dir]: { workspaceId: projectId, kind: "local", directory: dir, available: true } },
+      time: { created: Date.now(), updated: Date.now() },
+    }])
   })
   await page.route("**/provider", (r) => (api(r) ? json(r, { all: [], default: {}, connected: [] }) : r.continue()))
   await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
@@ -394,7 +406,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
     return json(r, [])
   })
   await page.route(workspaceResolveRoute, (r) =>
-    api(r) ? json(r, { workspaceId: undefined, directory: dir, kind: "local", status: "ready" }) : r.continue(),
+    api(r) ? json(r, { workspaceId: projectId, directory: dir, kind: "local", status: "ready" }) : r.continue(),
   )
   await page.route("**/api/wr/diff/**", (r) => {
     if (!api(r)) return r.continue()
@@ -450,6 +462,11 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   claxedoEventBuses.set(page, claxedoEventBus)
   const claxedoEventsHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
+    const url = new URL(route.request().url())
+    if (url.searchParams.get("directory") !== dir) {
+      await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: ": heartbeat\n\n" }).catch(() => {})
+      return
+    }
     const batch = await claxedoEventBus.drain(4000)
     await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: claxedoSseBody(batch) }).catch(() => {})
   }
@@ -1039,7 +1056,12 @@ test.describe("core terminal panel @core", () => {
     // eventType:"UserActionRequired" -> "permission" on the just-created,
     // still-focused terminal flaked with "Received: working" every time).
     const id = await createPlainTerminal(page, api)
-    await createPlainTerminal(page, api)
+    const foregroundId = await createPlainTerminal(page, api)
+    // Terminal creation no longer guarantees focus transfer after the creator
+    // closes. Make the foreground/background relationship this behavior needs
+    // explicit so focus reconciliation cannot demote the first terminal's
+    // permission state back to working.
+    await sidebarTerminalRow(page, foregroundId).click()
     const dot = sidebarTerminalRow(page, id).locator("[data-sidebar-status]")
 
     await expect(dot).toHaveCount(0)

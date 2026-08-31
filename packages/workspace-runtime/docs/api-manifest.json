@@ -16,7 +16,6 @@
   "rootRuntimeExports": [
     "Pty",
     "SESSION_CORE_ROUTE_ACCESS",
-    "SESSION_V2_PROXY_ROUTE_ACCESS",
     "WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER",
     "WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL",
     "WorkspaceRuntimeRouteManifest",

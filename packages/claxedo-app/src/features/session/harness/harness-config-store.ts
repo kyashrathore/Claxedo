@@ -25,7 +25,6 @@ import {
 } from "./store-policy"
 import { decodeHarnessState } from "./profile"
 import { harnessHealthReadiness } from "./store-state"
-import { harnessConfigUrl } from "./harness-config-routes"
 import type {
   HarnessType,
   OptionsResponse,
@@ -36,6 +35,8 @@ import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 import { setSessionConfigRawQueryData } from "../store/session-config-query-cache"
+import { createHarnessConnectionsCatalog } from "@/platform/runtime/agent/connection-catalog"
+import { harnessHasConfigOptions } from "./profile"
 
 type ScopeInput = HarnessScopeInput
 type ClaimInput = ScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
@@ -60,6 +61,21 @@ export function createHarnessConfigStore() {
   const projectsQuery = useQuery(() => queryOptions.projects())
   const base = getClaxedoServerUrl()
   const request = authFetch
+  const connectionCatalog = createHarnessConnectionsCatalog({ base, request })
+  let connectionRefresh: Promise<void> | undefined
+  const hasConfigOptions = async (type: HarnessType) => {
+    if (type.kind === "native") return harnessHasConfigOptions(type)
+    let row = connectionCatalog.rows().find((item) => item.connectionId === type.connectionId)
+    if (!row) {
+      connectionRefresh ??= connectionCatalog.refresh().finally(() => { connectionRefresh = undefined })
+      await connectionRefresh
+      row = connectionCatalog.rows().find((item) => item.connectionId === type.connectionId)
+    }
+    if (!row) {
+      throw new Error(connectionCatalog.error() ?? `Connection ${type.connectionId} is unavailable`)
+    }
+    return row.capabilities.configOptions
+  }
   const harnessRuntime = createHarnessConfigRuntime({
     base,
     request,
@@ -115,6 +131,7 @@ export function createHarnessConfigStore() {
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
+    hasConfigOptions,
     bootstrap: async (params) => {
       await globalBootstrapActions.bootstrap(params)
     },
@@ -139,9 +156,13 @@ export function createHarnessConfigStore() {
     applyStatus: statusActions.applyStatus,
     setPollingHydration: statusActions.setPollingHydration,
     setReadyHydration: statusActions.setReadyHydration,
+    setCapabilityError: (scope, message) => {
+      harnessStore.applyPatch(scope, { configError: message, readiness: "error", optionsLoading: false })
+    },
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
+    hasConfigOptions,
     refresh: statusActions.refresh,
     workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? []),
     runtime: harnessRuntime,
@@ -196,6 +217,7 @@ export function createHarnessConfigStore() {
       void fetchConfigOptions(scope, type, input)
     },
     publishSessionConfig,
+    hasConfigOptions,
     errorMessage,
     runtime: harnessRuntime,
     cache: createHarnessSwitcherQueryCache(base),
@@ -311,6 +333,7 @@ export function createHarnessConfigStore() {
     draftDefaultState: harnessStore.draftDefaultState,
     draftDefaultLabels: harnessStore.draftDefaultLabels,
     draftDefaultModel: harnessStore.draftDefaultModel,
+    draftDefaultAuthority: harnessStore.draftDefaultAuthority,
     harnessModelKeyForSubmit: harnessStore.harnessModelKeyForSubmit,
     harnessModelNameForSubmit: harnessStore.harnessModelNameForSubmit,
     harnessReadyForSubmit: harnessStore.harnessReadyForSubmit,

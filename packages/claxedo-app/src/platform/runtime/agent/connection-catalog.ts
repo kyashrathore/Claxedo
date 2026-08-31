@@ -135,7 +135,6 @@ function decodeCapabilities(value: unknown): HarnessConnectionCapabilities | und
   if (
     !row
     || CAPABILITY_KEYS.some((key) => typeof row[key] !== "boolean")
-    || Object.keys(row).some((key) => !CAPABILITY_KEYS.includes(key as (typeof CAPABILITY_KEYS)[number]))
   ) return
   return {
     abort: row.abort === true,
@@ -155,7 +154,7 @@ function decodeCapabilities(value: unknown): HarnessConnectionCapabilities | und
 
 function decodeModelSelection(value: unknown): ModelSelection | undefined {
   const row = record(value)
-  if (!row || Object.keys(row).some((key) => key !== "status" && key !== "models")) return
+  if (!row) return
   if (row.status === "unsupported" && row.models === undefined) return { status: "unsupported" }
   if (row.status !== "required" && row.status !== "optional") return
   const models = row.models === undefined ? undefined : decodeModels(row.models)
@@ -181,7 +180,6 @@ function decodeModels(input: unknown): AgentModel[] | undefined {
       || typeof row.name !== "string"
       || !row.name
       || (row.description !== undefined && typeof row.description !== "string")
-      || Object.keys(row).some((key) => !["providerId", "modelId", "name", "description"].includes(key))
     ) return
     models.push({
       providerId: row.providerId,

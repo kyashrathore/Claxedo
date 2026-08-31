@@ -26,7 +26,15 @@ export function createPromptInputBootState(input: {
   const [boot, setBoot] = createSignal<PromptBootState>()
   const booting = createMemo(() => !!boot())
   const busy = createMemo(() => booting() || input.working())
-  const stoppable = createMemo(() => input.working() && input.canAbort())
+  // A newly-created session is abortable as soon as its first prompt starts
+  // dispatching. The canonical session status event can land a tick later, so
+  // waiting for `working()` leaves the UI showing Stop while Escape is inert.
+  // A pure boot (before a session id exists) is deliberately not abortable.
+  const sendingFirstPrompt = createMemo(() => {
+    const item = boot()
+    return item?.phase === "sending" && !!item.sessionID
+  })
+  const stoppable = createMemo(() => (input.working() || sendingFirstPrompt()) && input.canAbort())
   const bootText = createMemo(() => {
     const item = boot()
     if (!item) return ""

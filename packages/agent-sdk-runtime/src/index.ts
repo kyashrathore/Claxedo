@@ -5,6 +5,7 @@ import type {
   AgentMessage,
   AgentPermission,
   AgentQuestion,
+  AgentQuestionAnswer,
   AgentRuntimeEvent,
   AgentSession,
   AgentTurnOutcome,

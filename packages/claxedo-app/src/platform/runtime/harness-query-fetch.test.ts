@@ -17,11 +17,11 @@ describe("harnessQueryFetch", () => {
 
     await harnessQueryFetch({
       request,
-      harnessType: "claude",
+      harnessType: { kind: "native", harnessId: "claude" },
       baseUrl: "https://server.test",
     })("/session/ses_1?directory=/repo")
 
-    expect(calls).toEqual(["https://server.test/session/ses_1?directory=%2Frepo&harness=claude"])
+    expect(calls).toEqual(["https://server.test/session/ses_1?directory=%2Frepo&nativeHarness=claude"])
   })
 
   test("adds the harness query parameter to Request inputs and preserves request metadata", async () => {
@@ -34,7 +34,7 @@ describe("harnessQueryFetch", () => {
 
     await harnessQueryFetch({
       request,
-      harnessType: "opencode",
+      harnessType: { kind: "connection", connectionId: "external-opencode" },
     })(new Request("https://server.test/session/ses_1/message", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -42,7 +42,7 @@ describe("harnessQueryFetch", () => {
       signal: controller.signal,
     }))
 
-    expect(calls[0]?.url).toBe("https://server.test/session/ses_1/message?harness=opencode")
+    expect(calls[0]?.url).toBe("https://server.test/session/ses_1/message?connectionId=external-opencode")
     expect(calls[0]?.init?.method).toBe("POST")
     expect(calls[0]?.init?.headers).toBeInstanceOf(Headers)
     expect(calls[0]?.init?.signal).toBe(controller.signal)

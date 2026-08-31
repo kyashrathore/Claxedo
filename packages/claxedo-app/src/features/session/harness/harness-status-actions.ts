@@ -27,6 +27,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   applyPatch(scope: string, patch: HarnessStorePatch): void
   state(scope: string): HarnessStoreState | undefined
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
+  hasConfigOptions?(type: HarnessType): Promise<boolean>
   bootstrap(params: { harnessType?: string }): Promise<void>
   ensureDirectory(params: { directory: HarnessDirectory; harnessType?: string; quiet: boolean }): Promise<void>
   refreshDirectory(params: { directory: HarnessDirectory; harnessType?: string }): Promise<void>
@@ -64,7 +65,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     input.applyPatch(scope, harnessStatusPatch({ data, current }))
     if (shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
       input.fetchConfigOptions(scope, want, params)
-    } else if (harnessHasConfigOptions(want) && hardFailedHarness(data)) {
+    } else if (hasConfigOptions && hardFailedHarness(data)) {
       // A HARD-FAILED harness that has config options is the one case where the
       // flag can strand: `shouldFetchConfigOptionsForScope` declines the fetch,
       // and `harnessStatusPatch` does not touch `optionsLoading`, so a flag
@@ -88,6 +89,7 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     applyStatus,
     refresh,
     setPollingHydration: (scope: string, type?: HarnessType) => input.applyPatch(scope, pollingHarnessHydrationPatch(type)),
-    setReadyHydration: (scope: string, type: HarnessType) => input.applyPatch(scope, readyHarnessHydrationPatch(type)),
+    setReadyHydration: (scope: string, type: HarnessType, hasConfigOptions?: boolean) =>
+      input.applyPatch(scope, readyHarnessHydrationPatch(type, hasConfigOptions)),
   }
 }

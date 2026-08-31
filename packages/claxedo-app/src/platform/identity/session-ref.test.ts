@@ -4,7 +4,6 @@ import {
   centralSessionRef,
   hasBacking,
   HARNESS_IDS,
-  isHarnessId,
   localSessionRef,
   retargetSessionRef,
   sameSessionRef,
@@ -12,9 +11,9 @@ import {
   sessionHarness,
   sessionRefForWorkspaceSession,
   workspaceKey,
-  type HarnessId,
   type SessionRef,
 } from "./session-ref"
+import { isHarnessSelection } from "./harness-selection"
 
 describe("harness-id vocabulary (single source of truth)", () => {
   test("HARNESS_IDS enumerates all five canonical built-in harness kinds", () => {
@@ -27,35 +26,18 @@ describe("harness-id vocabulary (single source of truth)", () => {
     ])
   })
 
-  test("isHarnessId accepts every canonical kind, including pi and cursor-sdk", () => {
-    for (const id of HARNESS_IDS) expect(isHarnessId(id)).toBe(true)
-    expect(isHarnessId("pi")).toBe(true)
-    expect(isHarnessId("cursor-sdk")).toBe(true)
-  })
-
-  test("isHarnessId rejects unknown, renamed, and non-string values", () => {
-    expect(isHarnessId("not-a-harness")).toBe(false)
-    expect(isHarnessId("claude")).toBe(false)
-    expect(isHarnessId("")).toBe(false)
-    expect(isHarnessId(undefined)).toBe(false)
-    expect(isHarnessId(42)).toBe(false)
-  })
-
-  test("isHarnessId narrows an unknown string to HarnessId", () => {
-    const raw: unknown = "pi"
-    if (isHarnessId(raw)) {
-      const id: HarnessId = raw
-      expect(id).toBe("pi")
-    } else {
-      throw new Error("expected 'pi' to be a valid HarnessId")
-    }
+  test("structured selection accepts closed native ids and opaque connections", () => {
+    for (const harnessId of HARNESS_IDS) expect(isHarnessSelection({ kind: "native", harnessId })).toBe(true)
+    expect(isHarnessSelection({ kind: "connection", connectionId: "team-opencode" })).toBe(true)
+    expect(isHarnessSelection("opencode")).toBe(false)
+    expect(isHarnessSelection({ kind: "native", harnessId: "opencode" })).toBe(false)
   })
 })
 
 describe("SessionRef", () => {
   test("sameSessionRef includes authoritative harness identity", () => {
     const base = centralSessionRef({ sessionId: "ses_1" })
-    const pi = centralSessionRef({ sessionId: "ses_1", harness: { id: "pi" } })
+    const pi = centralSessionRef({ sessionId: "ses_1", harness: { kind: "native", harnessId: "pi" } })
 
     expect(sameSessionRef(base, pi)).toBe(false)
     expect(sameSessionRef(pi, { ...pi })).toBe(true)
@@ -162,7 +144,7 @@ describe("SessionRef", () => {
     })
   })
 
-  test("session harness defaults to opencode without materializing on refs", () => {
+  test("session harness stays unresolved when no authority supplied one", () => {
     const ref = centralSessionRef({ sessionId: "ses_central" })
 
     expect(ref).toEqual({
@@ -170,7 +152,7 @@ describe("SessionRef", () => {
       host: "central",
       toolSandbox: { kind: "virtual" },
     })
-    expect(ref && sessionHarness(ref)).toEqual({ id: "opencode" })
+    expect(ref && sessionHarness(ref)).toBeUndefined()
   })
 
   test("constructors preserve explicit harness identity", () => {
@@ -191,9 +173,9 @@ describe("SessionRef", () => {
     expect(localSessionRef({
       sessionId: "ses_local",
       cwd: "/repo/main",
-      harness: { id: "pi" },
+      harness: { kind: "native", harnessId: "pi" },
     })).toMatchObject({
-      harness: { id: "pi" },
+      harness: { kind: "native", harnessId: "pi" },
     })
   })
 

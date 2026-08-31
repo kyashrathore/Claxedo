@@ -40,6 +40,9 @@ import { shellDataKeys } from "@/platform/sync/keys"
 import type { HarnessSubmitController } from "../../harness/controller"
 import type { HarnessType } from "../../harness/profile"
 
+const PI = { kind: "native", harnessId: "pi" } as const
+const CLAUDE_CONNECTION = { kind: "connection", connectionId: "claude-team" } as const
+
 /** Structural view of `bun:test`'s `mock`, so this file needs no bun:test value type. */
 type ModuleMocker = { module: (specifier: string, factory: () => unknown) => void }
 
@@ -76,7 +79,7 @@ export const transportPromptAsyncCalls: unknown[] = []
 export const harnessClaimCalls: unknown[] = []
 export const sessionCreateCalls: Array<{ input: unknown; options?: { headers?: Record<string, string> } }> = []
 export const transportClients: Array<{ baseUrl?: string; directory?: string; fetch?: unknown }> = []
-export const harnessSetCalls: Array<{ scope: string; type: string; input?: { directory?: string; sessionId?: string } }> = []
+export const harnessSetCalls: Array<{ scope: string; type: HarnessType; input?: { directory?: string; sessionId?: string } }> = []
 export const buildRequestPartCalls: unknown[] = []
 export const shellCalls: unknown[] = []
 export const commandCalls: unknown[] = []
@@ -166,6 +169,7 @@ export const state: {
   harnessMode: boolean
   harnessClaimSession: { id: string } | Promise<{ id: string } | undefined> | undefined
   harnessSubmitModel: { key: { providerID: string; modelID: string }; name: string } | undefined
+  piSubmitModel: { key: { providerID: string; modelID: string }; name: string } | undefined
   transportGetSession: boolean
   transportPromptAsyncError: Error | undefined
   shellError: Error | undefined
@@ -280,15 +284,16 @@ export function testHarnessController(): HarnessSubmitController {
     harness: () => (state.harnessMode ? "claude-sdk" : "opencode"),
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
-    readyForSubmit: () => !state.harnessMode || !!state.harnessSubmitModel,
-    modelKeyForSubmit: () => (state.harnessMode ? state.harnessSubmitModel?.key : undefined),
+    readyForSubmit: () => !!(state.harnessMode ? state.harnessSubmitModel : state.piSubmitModel),
+    modelKeyForSubmit: () => (state.harnessMode ? state.harnessSubmitModel?.key : state.piSubmitModel?.key),
     claimSession: async (_scope, input) => {
       harnessClaimCalls.push(input)
-      return state.harnessMode ? await state.harnessClaimSession : undefined
+      if (state.sessionConfigSaveError) throw new Error(state.sessionConfigSaveError)
+      return await state.harnessClaimSession
     },
     setHarness: async (scope: string, type: HarnessType, input?: { directory?: string; sessionId?: string }) => {
       harnessSetCalls.push({ scope, type, input })
-      if (type === "opencode") state.harnessMode = false
+      state.harnessMode = !(type.kind === "native" && type.harnessId === "pi")
     },
     promote: () => undefined,
   }
@@ -619,7 +624,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         if (request.method === "PATCH" && init?.body) {
           state.localSessionConfig = canonicalSessionConfig(String(init.body))
         }
-        return Response.json(state.localSessionConfig ?? { harness: { id: "opencode", access: "native" } })
+        return Response.json(state.localSessionConfig ?? { harness: { id: "pi", access: "native" } })
       }
       if (/\/session\/[^/]+\/goal\/capabilities$/.test(new URL(request.url).pathname)) {
         return Response.json(state.goalCapabilities)
@@ -1040,6 +1045,10 @@ export function resetSubmitHarness() {
   state.harnessSubmitModel = {
     key: { providerID: "claude-sdk", modelID: "opus" },
     name: "Opus",
+  }
+  state.piSubmitModel = {
+    key: { providerID: "provider", modelID: "model" },
+    name: "Model",
   }
   state.transportGetSession = true
   state.transportPromptAsyncError = undefined

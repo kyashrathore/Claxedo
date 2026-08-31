@@ -8,10 +8,11 @@ import type { PreparedRuntimeSession } from "./prepared-session"
 import type { HarnessType } from "./profile"
 
 const scope = "draft:/repo:route"
+const claudeConnection = { kind: "connection", connectionId: "claude-team" } as const
 const prepared = {
   id: "ses_prepared",
   directory: "/repo",
-  harness: "claude-acp",
+  harness: claudeConnection,
   model: "sonnet",
 } satisfies PreparedRuntimeSession
 
@@ -44,7 +45,7 @@ describe("prepared runtime session store", () => {
     preparedCache[scope] = prepared
     const removed: PreparedRuntimeSession[] = []
     const store = storeFor({
-      state: { harness: "claude-acp", selectedModel: "opus" },
+      state: { harness: claudeConnection, selectedModel: "opus" },
       create: async () => "ses_next",
       remove: async (item) => removed.push(item),
     })
@@ -52,7 +53,7 @@ describe("prepared runtime session store", () => {
     await expect(store.prepare(scope, { directory: "/repo" })).resolves.toEqual({
       id: "ses_next",
       directory: "/repo",
-      harness: "claude-acp",
+      harness: claudeConnection,
       model: "opus",
     })
     expect(removed).toEqual([prepared])
@@ -140,10 +141,60 @@ describe("prepared runtime session store", () => {
     expect(errors).toHaveLength(1)
   })
 
+  test("claim surfaces the current create failure to the submit owner", async () => {
+    const failure = new Error("session config unavailable")
+    const subject = storeFor({
+      create: async () => {
+        throw failure
+      },
+    })
+
+    await expect(subject.claim(scope, { directory: "/repo" })).rejects.toBe(failure)
+  })
+
+  test("claim retains the create failure when error-state invalidation bumps the cache", async () => {
+    const failure = new Error("session config unavailable")
+    let subject!: ReturnType<typeof storeFor>
+    subject = storeFor({
+      create: async () => {
+        throw failure
+      },
+      setPrepareError: () => {
+        void subject.drop(scope)
+      },
+    })
+
+    await expect(subject.claim(scope, { directory: "/repo" })).rejects.toBe(failure)
+  })
+
+  test("claim uses its resolved harness and model when the destination scope has not hydrated", async () => {
+    const creates: Array<{ directory: string; harness: HarnessType }> = []
+    const subject = storeFor({
+      state: { harness: undefined },
+      create: async ({ directory, harness }) => {
+        creates.push({ directory, harness })
+        return "ses_claimed"
+      },
+    })
+
+    await expect(subject.claim(scope, {
+      directory: "/repo",
+      harness: { kind: "connection", connectionId: "virtual" },
+      sessionConfig: {
+        agent: "build",
+        model: { providerID: "virtual", modelID: "virtual" },
+      },
+    })).resolves.toEqual({ id: "ses_claimed" })
+    expect(creates).toEqual([{
+      directory: "/repo",
+      harness: { kind: "connection", connectionId: "virtual" },
+    }])
+  })
+
 })
 
 function storeFor(input: {
-  state?: { harness: HarnessType; selectedModel?: string }
+  state?: { harness?: HarnessType; selectedModel?: string }
   create?: (params: { directory: string; harness: HarnessType }) => Promise<string | undefined>
   remove?: (item: PreparedRuntimeSession) => Promise<void>
   setPrepareError?: (scope: string, err: unknown) => void
@@ -186,7 +237,7 @@ function preparedSession(id: string): PreparedRuntimeSession {
   return {
     id,
     directory: "/repo",
-    harness: "claude-acp",
+    harness: claudeConnection,
     model: "sonnet",
   }
 }

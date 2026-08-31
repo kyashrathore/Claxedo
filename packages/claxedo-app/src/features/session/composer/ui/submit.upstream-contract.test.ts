@@ -19,6 +19,7 @@ const {
   unsignedCalls,
   runtimeCalls,
   harnessSetCalls,
+  harnessClaimCalls,
 } = h
 
 beforeAll(async () => {
@@ -96,18 +97,18 @@ describe("upstream contract", () => {
     state.localCurrentModel = { id: "stale-model", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
     state.localSessionConfig = {
-      harness: { id: "opencode" },
+      harness: { id: "claude-team", access: "connection" },
       agent: "build",
-      model: { providerID: "opencode", modelID: "big-pickle" },
+      model: { providerID: "claude-team", modelID: "big-pickle" },
     }
 
     const submit = createSubmit({
       info: () => ({
         id: "session-1",
         config: {
-          harness: { id: "opencode" },
+          harness: { id: "claude-team", access: "connection" },
           agent: "build",
-          model: { providerID: "opencode", modelID: "big-pickle" },
+          model: { providerID: "claude-team", modelID: "big-pickle" },
         },
       }),
       sessionID: () => "session-1",
@@ -122,18 +123,18 @@ describe("upstream contract", () => {
       sessionID: "session-1",
       directory: "/repo/main",
       agent: "build",
-      model: { providerID: "opencode", modelID: "big-pickle" },
+      model: { providerID: "claude-team", modelID: "big-pickle" },
     })
     expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toEqual([])
   })
 
-  test("existing structured ACP follow-up does not fall back to OpenCode", async () => {
+  test("existing connection-backed follow-up keeps its authoritative config", async () => {
     state.demoMode = false
     state.harnessMode = false
-    state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
+    state.localCurrentModel = { id: "big-pickle", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
     state.localSessionConfig = {
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "claude-team", access: "connection" },
       agent: "build",
       model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
     }
@@ -142,7 +143,7 @@ describe("upstream contract", () => {
       info: () => ({
         id: "session-1",
         config: {
-          harness: { id: "claude", access: "acp" },
+          harness: { id: "claude-team", access: "connection" },
           agent: "build",
           model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
         },
@@ -168,7 +169,7 @@ describe("upstream contract", () => {
   test("existing workspace-runtime follow-up uses cached session config when info config is not hydrated", async () => {
     state.demoMode = false
     state.harnessMode = false
-    state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
+    state.localCurrentModel = { id: "big-pickle", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
     state.runtimeSessionConfig = {
       harness: { id: "codex", access: "acp" },
@@ -243,7 +244,8 @@ describe("upstream contract", () => {
     await submit.handleSubmit(submitEvent())
     await settleSubmitEffects()
 
-    expect(calls.create).toBe(1)
+    expect(calls.create).toBe(0)
+    expect(harnessClaimCalls).toHaveLength(1)
     expect(optimisticAdds).toHaveLength(1)
     expect(optimisticAdds[0]?.sessionID).toBe("session-1")
   })

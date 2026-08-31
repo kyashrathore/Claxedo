@@ -40,6 +40,13 @@ import {
 } from "./store-policy"
 import { syncHarnessSessionModel } from "./harness-query-cache"
 import { createHarnessConfigStore } from "./harness-config-store"
+import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
+
+const claude = nativeHarness("claude")
+const codex = nativeHarness("codex")
+const cursor = nativeHarness("cursor")
+const pi = nativeHarness("pi")
+const externalOpenCode = connectionHarness("external-opencode")
 
 afterEach(() => {
   queryClient.clear()
@@ -55,7 +62,7 @@ describe("harness config helpers", () => {
       expect(typeof syncHarnessSessionModel).toBe("function")
       expect(typeof pickHarness).toBe("function")
       expect(typeof harnessScope).toBe("function")
-      expect(HARNESS_DISPLAY_NAMES.opencode).toBe("OpenCode")
+      expect(HARNESS_DISPLAY_NAMES.pi).toBe("Pi")
     })
   })
 
@@ -108,6 +115,8 @@ describe("harness config helpers", () => {
 
     test("returns undefined for unknown type without a matching access", () => {
       expect(pickHarness("unknown")).toBeUndefined()
+      expect(pickHarness("opencode")).toBeUndefined()
+      expect(pickHarness({ kind: "connection", connectionId: "" })).toBeUndefined()
       expect(pickHarness(undefined)).toBeUndefined()
       expect(pickHarness(null)).toBeUndefined()
     })
@@ -158,6 +167,7 @@ describe("harness config helpers", () => {
       })).toEqual({
         type: "acp:codex",
         model: "gpt-5.5",
+        modelProviderID: "codex",
         status: "ready",
         ready: true,
         activeType: "acp:codex",
@@ -433,9 +443,9 @@ describe("harness config helpers", () => {
       expect(effectiveHarnessModel("acp:codex", "gpt-5.1")).toBe("gpt-5.1")
     })
 
-    test("does not invent a model for opencode provider mode", () => {
-      expect(effectiveHarnessModel("opencode", "gpt-5.1")).toBe("")
-      expect(effectiveHarnessModel("opencode", undefined)).toBe("")
+    test("does not invent a model for provider-backed Pi", () => {
+      expect(effectiveHarnessModel(pi, "gpt-5.1")).toBe("gpt-5.1")
+      expect(effectiveHarnessModel(pi, undefined)).toBe("")
     })
   })
 
@@ -501,24 +511,17 @@ describe("harness config helpers", () => {
       expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project" })).toBe(true)
     })
 
-    test("keeps OpenCode runner hint for raw workspace runtime scopes", () => {
+    test("keeps native harness hints for workspace refresh", () => {
       expect(refreshHarnessTypeForScope({
         directory: "ws_123",
-        harness: "opencode",
-      })).toBe("opencode")
+        harness: codex,
+      })).toBe("codex")
     })
 
-    test("keeps OpenCode runner hint for legacy workspace runtime scopes", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "workspace:ws_123",
-        harness: "opencode",
-      })).toBe("opencode")
-    })
-
-    test("omits OpenCode runner hint for filesystem scopes", () => {
+    test("omits connection ids from native refresh hints", () => {
       expect(refreshHarnessTypeForScope({
         directory: "/tmp/project",
-        harness: "opencode",
+        harness: externalOpenCode,
       })).toBeUndefined()
     })
 

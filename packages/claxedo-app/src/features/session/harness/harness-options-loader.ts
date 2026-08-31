@@ -64,7 +64,7 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       input.setOptionsLoading(scope, false)
       return undefined
     }
-    const superseded = () => input.cache.getSeq(scope) !== id || input.currentHarness(scope) !== type
+    const superseded = () => input.cache.getSeq(scope) !== id || !sameHarnessSelection(input.currentHarness(scope), type)
     try {
       const res = await input.fetch(type, params)
       if (!res.ok) {

@@ -27,10 +27,6 @@ export async function startHost(input: RegisteredHost, detached: boolean) {
       workspaceId: input.workspaceId,
       directory: input.directory,
     },
-    // This host serves the OpenCode-compatible surface (stock app / Claxedo
-    // app expect /mcp, /provider, /session/status proxying). The kit default
-    // is off; hosts opt in explicitly.
-    opencodeCompat: true,
     hostTunnel: {
       relayUrl: input.relayUrl,
       hostId: input.hostId,

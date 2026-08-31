@@ -136,6 +136,21 @@ async function chipOptionKeys(page: Page, slot: string) {
   return keys
 }
 
+async function selectAgentConnection(page: Page, connectionId: string) {
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(control).toBeEnabled({ timeout: 20_000 })
+  await control.click()
+  const picker = page.locator('[data-component="harness-model-picker"]')
+  await expect(picker).toBeVisible({ timeout: 15_000 })
+  await picker.locator('[data-slot="harness-picker-section"]').first().click()
+  const option = picker.getByRole("button", { name: new RegExp(`^${connectionId}$`, "i") })
+  await expect(option).toBeVisible({ timeout: 20_000 })
+  await option.click()
+  await page.keyboard.press("Escape")
+  await expect(picker).toBeHidden({ timeout: 10_000 })
+  await expect(control).toHaveAttribute("data-harness", connectionId, { timeout: 20_000 })
+}
+
 test.describe("core composer hosted chips @core", () => {
   test("the project chip shows the project's repo identity, never the '/workspace' basename — behavior 1", async ({ page }) => {
     await openCloudDraft(page)
@@ -229,6 +244,10 @@ test.describe("core composer hosted chips @core", () => {
     const prompt = "create from the selected hosted branch"
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await input.fill(prompt)
+    // A new generic workspace has no bundled/fallback agent. The user must
+    // choose one of the discovered connections before its model catalog has
+    // an owner; this is the same contract as a user-supplied external server.
+    await selectAgentConnection(page, "opencode")
     await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await page.locator(SELECTORS.submitControl).last().click()
     await expect.poll(() => mock.requests.workspaceCreateBodies, { timeout: 20_000 }).toEqual([{

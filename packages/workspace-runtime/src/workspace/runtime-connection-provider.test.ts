@@ -5,6 +5,9 @@ import { join } from "node:path"
 import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { ConnectionProvider, HarnessConnectionCapabilities } from "@claxedo/agent-sdk-runtime"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
+import { Hono } from "hono"
+import { loopbackWorkspaceRuntimeExposure } from "../exposure"
+import { withWorkspaceTarget } from "../target"
 import { createWorkspaceHost, WorkspaceHarnessUnavailableError } from "./runtime"
 
 const roots: string[] = []
@@ -140,6 +143,77 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     expect(resolvedSecrets).toEqual({ token: "vm-runtime-secret" })
     expect(JSON.stringify(host.detail())).not.toContain("vm-runtime-secret")
+    host.dispose()
+  })
+
+  test("rotates connection adapters when a VM secret lease changes", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
+    roots.push(root)
+    const createdWith: string[] = []
+    const disposed: string[] = []
+    const provider: ConnectionProvider<{ label: string }, { token: string }> = {
+      providerKey: "fixture",
+      validateConfig(input) { return input as { label: string } },
+      project(config) { return { label: config.label, readiness: "ready", capabilities } },
+      resolve({ secrets }) { return { config: { token: secrets.token! } } },
+      createAdapter({ resolved }) {
+        const token = resolved.config.token
+        return {
+          sessionConfigOwner: "runtime" as const,
+          async createSession(_directory, _title, id) {
+            createdWith.push(token)
+            return { id: id ?? `session-${createdWith.length}` }
+          },
+          async getSession(binding) { return { id: binding.sessionId } },
+          async updateSession(binding) { return { id: binding.sessionId } },
+          async deleteSession() {},
+          async getSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
+          async updateSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
+          async getMessages() { return [] },
+          readHarnessCapabilities() { return { ...capabilities, harness: "fixture-primary" } },
+          dispose() { disposed.push(token) },
+        }
+      },
+    }
+    const host = createWorkspaceHost({
+      target: { workspaceId: "ws-1", directory: root },
+      storeRoot: join(root, "store"),
+      connectionProviders: [provider],
+    })
+    const snapshot = (token: string) => ({
+      version: 3 as const,
+      mcp: {},
+      connections: [{
+        connectionId: "fixture-primary",
+        providerKey: "fixture",
+        configRevision: 1,
+        enabled: true,
+        config: { label: "Fixture" },
+        secretRefs: { token: "credential:fixture" },
+      }],
+      defaultHarness: { kind: "connection" as const, connectionId: "fixture-primary" },
+      auth: { "credential:fixture": token },
+    })
+    const app = new Hono()
+    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
+
+    await host.apply(snapshot("lease-one"))
+    const request = (id: string) => withWorkspaceTarget(
+      { workspaceId: "ws-1", directory: root },
+      () => app.request(`http://runtime.test/session?directory=${encodeURIComponent(root)}&connectionId=fixture-primary`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      }),
+    )
+    const first = await request("local-one")
+    expect(first.status, await first.clone().text()).toBe(201)
+
+    await host.apply(snapshot("lease-two"))
+    const second = await request("local-two")
+    expect(second.status, await second.clone().text()).toBe(201)
+    expect(createdWith).toEqual(["lease-one", "lease-two"])
+    expect(disposed).toContain("lease-one")
     host.dispose()
   })
 

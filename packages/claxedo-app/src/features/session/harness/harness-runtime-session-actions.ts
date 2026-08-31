@@ -36,7 +36,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
   }) => {
     const res = await createClient({
       serverUrl: input.base,
-      request: input.runtime.harnessSessionFetch(params.input),
+      ...input.runtime.agentRuntimeClientOptions(params.input),
     }).createSession({
       directory: params.directory,
       harness: params.harness,
@@ -52,7 +52,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
     if (!canUseRuntimeSession(scope)) return
     await createClient({
       serverUrl: input.base,
-      request: input.runtime.harnessSessionFetch(scope),
+      ...input.runtime.agentRuntimeClientOptions(scope),
     }).deleteSession({
       directory: item.directory,
       sessionID: item.id,

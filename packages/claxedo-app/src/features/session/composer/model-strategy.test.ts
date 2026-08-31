@@ -20,14 +20,14 @@ describe("model-strategy", () => {
     })).toEqual({ providerID: "openai", modelID: "gpt-5.3-chat-latest" })
   })
 
-  test("skips the stale OpenCode default when live free models are available", () => {
+  test("honors a configured default for an unranked provider", () => {
     expect(firstConnectedModel({
-      connected: [{ id: "opencode", models: {
+      connected: [{ id: "gateway", models: {
         "mimo-v2.5-free": { id: "mimo-v2.5-free" },
         "big-pickle": { id: "big-pickle" },
       } }],
-      defaults: { opencode: "big-pickle" },
-    })).toEqual({ providerID: "opencode", modelID: "mimo-v2.5-free" })
+      defaults: { gateway: "big-pickle" },
+    })).toEqual({ providerID: "gateway", modelID: "big-pickle" })
   })
 
   test("falls back to the first connected model", () => {
@@ -47,10 +47,10 @@ describe("model-strategy", () => {
     })).toEqual({ providerID: "opencode", modelID: "next-model" })
   })
 
-  test("prefers a credentialed provider over the zero-key OpenCode gateway", () => {
+  test("prefers a ranked provider over an unranked gateway", () => {
     expect(firstConnectedModel({
       connected: [
-        { id: "opencode", models: { "deepseek-v4-flash-free": { id: "deepseek-v4-flash-free" } } },
+        { id: "gateway", models: { "deepseek-v4-flash-free": { id: "deepseek-v4-flash-free" } } },
         { id: "google", models: { "gemini-3-pro-image-preview": { id: "gemini-3-pro-image-preview" } } },
         { id: "openai", models: { "gpt-5.3-chat-latest": { id: "gpt-5.3-chat-latest" } } },
       ],
@@ -63,7 +63,7 @@ describe("model-strategy", () => {
   test("a lone connected Anthropic credential wins the default over the gateway", () => {
     expect(firstConnectedModel({
       connected: [
-        { id: "opencode", models: { "north-mini-code-free": { id: "north-mini-code-free" } } },
+        { id: "gateway", models: { "north-mini-code-free": { id: "north-mini-code-free" } } },
         { id: "anthropic", models: { "claude-sonnet-4-5": { id: "claude-sonnet-4-5" } } },
       ],
       defaults: {},
@@ -72,19 +72,19 @@ describe("model-strategy", () => {
 
   test("the gateway still supplies the default when it is the only connected provider", () => {
     expect(firstConnectedModel({
-      connected: [{ id: "opencode", models: { "north-mini-code-free": { id: "north-mini-code-free" } } }],
+      connected: [{ id: "gateway", models: { "north-mini-code-free": { id: "north-mini-code-free" } } }],
       defaults: {},
-    })).toEqual({ providerID: "opencode", modelID: "north-mini-code-free" })
+    })).toEqual({ providerID: "gateway", modelID: "north-mini-code-free" })
   })
 
-  test("an unranked credentialed provider still outranks the gateway", () => {
+  test("unranked providers retain their input order", () => {
     expect(firstConnectedModel({
       connected: [
-        { id: "opencode", models: { "north-mini-code-free": { id: "north-mini-code-free" } } },
+        { id: "gateway", models: { "north-mini-code-free": { id: "north-mini-code-free" } } },
         { id: "openrouter", models: { "some-paid-model": { id: "some-paid-model" } } },
       ],
       defaults: {},
-    })).toEqual({ providerID: "openrouter", modelID: "some-paid-model" })
+    })).toEqual({ providerID: "gateway", modelID: "north-mini-code-free" })
   })
 
   test("returns undefined when no connected model exists", () => {

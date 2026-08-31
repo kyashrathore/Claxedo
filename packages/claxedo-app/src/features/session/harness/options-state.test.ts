@@ -1,10 +1,15 @@
 import { describe, expect, test } from "bun:test"
 import { applyHarnessOptionsResponse } from "./options-state"
 
+const CLAUDE_CONNECTION = { kind: "connection", connectionId: "claude-team" } as const
+const CODEX_CONNECTION = { kind: "connection", connectionId: "codex-team" } as const
+const OPENCLAW_CONNECTION = { kind: "connection", connectionId: "openclaw" } as const
+const NATIVE_CURSOR = { kind: "native", harnessId: "cursor" } as const
+
 describe("harness options state", () => {
   test("uses returned selectable models and current model", () => {
     expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 0,
       payload: {
@@ -44,7 +49,7 @@ describe("harness options state", () => {
 
   test("uses payload current model when selected model is absent", () => {
     expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "missing",
       tries: 0,
       payload: {
@@ -66,7 +71,7 @@ describe("harness options state", () => {
 
   test("does not substitute a protected explicit model removed from live options", () => {
     expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "removed",
       preserveSelectedModel: true,
       tries: 0,
@@ -99,7 +104,7 @@ describe("harness options state", () => {
 
   test("keeps stale usable models loading for bounded retry without warning dot", () => {
     expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 0,
       payload: {
@@ -133,7 +138,7 @@ describe("harness options state", () => {
 
   test("reports stale empty options until retry budget is exhausted", () => {
     expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 0,
       payload: { source: "empty", stale: true, options: [] },
@@ -151,7 +156,7 @@ describe("harness options state", () => {
     })
 
     expect(applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 5,
       payload: { source: "empty", stale: true, options: [] },
@@ -172,7 +177,7 @@ describe("harness options state", () => {
 
   test("clears the placeholder model for fresh empty configurable harness options", () => {
     expect(applyHarnessOptionsResponse({
-      type: "codex-acp",
+      type: CODEX_CONNECTION,
       selectedModel: "",
       tries: 0,
       payload: { source: "harness", stale: false, options: [] },
@@ -193,7 +198,7 @@ describe("harness options state", () => {
 
   test("uses an operator ACP's managed default when live config omits model selection", () => {
     expect(applyHarnessOptionsResponse({
-      type: "acp:openclaw",
+      type: OPENCLAW_CONNECTION,
       selectedModel: "",
       tries: 0,
       payload: {
@@ -273,7 +278,7 @@ describe("harness options state", () => {
 
   test("rejects native SDK static catalog backstops as a model load failure", () => {
     expect(applyHarnessOptionsResponse({
-      type: "cursor-sdk",
+      type: NATIVE_CURSOR,
       selectedModel: "",
       tries: 0,
       payload: {
@@ -308,7 +313,7 @@ describe("harness options state", () => {
 
   test("keeps retrying when model options contain no usable next id while stale", () => {
     expect(applyHarnessOptionsResponse({
-      type: "codex-acp",
+      type: CODEX_CONNECTION,
       selectedModel: "",
       tries: 0,
       payload: {
@@ -370,7 +375,7 @@ describe("harness options state — thought level", () => {
 
   test("carries the harness's effort levels alongside its models", () => {
     const result = applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 0,
       payload: { source: "harness", stale: false, options: [modelOption, effortOption] },
@@ -390,7 +395,7 @@ describe("harness options state — thought level", () => {
    */
   test("keeps effort levels when the model list comes back empty", () => {
     const result = applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 0,
       payload: { source: "harness", stale: false, options: [effortOption] },
@@ -404,7 +409,7 @@ describe("harness options state — thought level", () => {
 
   test("clears effort levels for a harness that offers none", () => {
     const result = applyHarnessOptionsResponse({
-      type: "claude-acp",
+      type: CLAUDE_CONNECTION,
       selectedModel: "sonnet",
       tries: 0,
       payload: { source: "harness", stale: false, options: [modelOption] },

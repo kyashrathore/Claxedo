@@ -5,10 +5,10 @@
   "description": "Direct HTTP/SSE AgentHarnessAdapter for an externally managed OpenCode server",
   "license": "MIT",
   "main": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
+      "types": "./src/index.ts",
       "bun": "./dist/index.mjs",
       "development": "./dist/index.mjs",
       "import": "./dist/index.mjs",
@@ -16,7 +16,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "build": "rm -rf dist && bun build src/index.ts --outfile dist/index.mjs --target bun --format esm --external '@claxedo/*' && tsc -p tsconfig.build.json",

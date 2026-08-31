@@ -164,6 +164,10 @@ export function useProviders(harnessType: HarnessInput, scope?: ScopeInput) {
   }
   return {
     state,
+    // Distinguish an authoritative empty catalog from the query's pre-fetch
+    // empty placeholder. Draft-default resolution must not declare a saved
+    // model unavailable before the first provider response arrives.
+    resolved: () => providerQuery.isFetched,
     loading: () => providerQuery.isLoading || providerQuery.isFetching,
     error: () => providerQuery.error instanceof Error ? providerQuery.error.message : undefined,
     refresh: () => providerQuery.refetch(),

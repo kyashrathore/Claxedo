@@ -1738,7 +1738,7 @@ describe("session prompt route", () => {
       { method: "POST", path: "/session/s1/fork", operation: "fork", body: { messageId: "m1" } },
       { method: "POST", path: "/session/s1/command", operation: "command", body: { command: "review" } },
       { method: "POST", path: "/session/s1/permissions/p1", operation: "permission_response", body: { response: "once" } },
-      { method: "POST", path: "/question/q1/reply", operation: "question_response", body: { answer: "yes" } },
+      { method: "POST", path: "/question/q1/reply", operation: "question_response", body: { answers: [["yes"]] } },
       { method: "POST", path: "/question/q1/reject", operation: "question_response" },
     ]) {
       const url = new URL(`http://localhost${item.path}`)
@@ -2118,10 +2118,14 @@ describe("session prompt route", () => {
   it("publishes question reply with the pending question session id", async () => {
     const directory = process.cwd()
     const seen: CompatEvent[] = []
+    const received: string[][][] = []
     const app = createSessionRoutes({
       resolveAdapter: async () => ({
         ...adapter({}),
         listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
+        replyQuestion: async (_binding, _questionId, answers) => {
+          received.push(answers)
+        },
       }),
       resolveDirectory: async () => directory,
       sessionBus: {
@@ -2138,19 +2142,47 @@ describe("session prompt route", () => {
     const res = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answer: "Continue" }),
+      body: JSON.stringify({ answers: [["Continue"], ["Alpha", "Bravo"]] }),
     })
 
     expect(res.status).toBe(200)
+    expect(received).toEqual([[["Continue"], ["Alpha", "Bravo"]]])
     expect(seen).toEqual([{
       id: "question.replied:q1",
       type: "question.replied",
       properties: {
         sessionID: "s1",
         requestID: "q1",
-        answers: [["Continue"]],
+        answers: [["Continue"], ["Alpha", "Bravo"]],
       },
     }])
+  })
+
+  it("rejects scalar and compatibility question replies before mutating the adapter", async () => {
+    const directory = process.cwd()
+    let replies = 0
+    const app = createSessionRoutes({
+      resolveAdapter: async () => ({
+        ...adapter({}),
+        listQuestions: async () => [{ id: "q1", sessionID: "s1", questions: [] }],
+        replyQuestion: async () => {
+          replies += 1
+        },
+      }),
+      resolveDirectory: async () => directory,
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+
+    for (const body of [{ answer: "Continue" }, { answers: ["Continue"] }, {}]) {
+      const response = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      expect(response.status).toBe(400)
+    }
+    expect(replies).toBe(0)
   })
 
   it("publishes question reject with the pending question session id", async () => {
@@ -2228,7 +2260,7 @@ describe("session prompt route", () => {
       const res = await app.request(`http://localhost${path}?directory=${encodeURIComponent(directory)}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer: "Continue" }),
+        body: JSON.stringify({ answers: [["Continue"]] }),
       })
 
       expect(res.status, path).toBe(403)
@@ -2269,7 +2301,7 @@ describe("session prompt route", () => {
     const res = await app.request(`http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ answer: "Continue" }),
+      body: JSON.stringify({ answers: [["Continue"]] }),
     })
 
     expect(res.status).toBe(403)
@@ -2305,7 +2337,7 @@ describe("session prompt route", () => {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer: "Continue" }),
+        body: JSON.stringify({ answers: [["Continue"]] }),
       },
     )
 
@@ -2343,7 +2375,7 @@ describe("session prompt route", () => {
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ answer: "Continue" }),
+          body: JSON.stringify({ answers: [["Continue"]] }),
         },
       )
 
@@ -2421,7 +2453,7 @@ describe("session prompt route", () => {
 
     const explicit = await app.request(
       `http://localhost/question/q1/reply?directory=${encodeURIComponent(directory)}&sessionId=s9`,
-      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answer: "x" }) },
+      { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ answers: [["x"]] }) },
     )
     expect(explicit.status).toBe(403)
     expect(resolvedAdapters).toBe(0)

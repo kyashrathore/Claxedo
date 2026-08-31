@@ -32,10 +32,9 @@
  *     Rendered/visible counts are exposed for tests as
  *     `data-session-rendered-user-count` / `data-session-visible-user-count` on
  *     `[data-testid="session-page-root"]` (`src/pages/session.tsx`).
- *   Prompt history (ArrowUp/ArrowDown recall): two independent, GLOBAL (not per-session)
- *     stacks persisted to `localStorage` via `Persist.global` —
- *     `claxedo.global.dat:prompt-history` (normal mode) and
- *     `claxedo.global.dat:prompt-history-shell` (shell mode) — written by
+ *   Prompt history (ArrowUp/ArrowDown recall): a GLOBAL (not per-session) stack persisted
+ *     to `localStorage` via `Persist.global` as
+ *     `claxedo.global.dat:prompt-history` — written by
  *     `createPromptHistoryController` (`src/components/prompt-input/history-controller.ts`).
  *     Every submit attempt calls `input.addToHistory(currentPrompt, userMode)`
  *     (`src/components/prompt-input/submit.ts:295`) BEFORE the network call — so an entry
@@ -100,12 +99,7 @@
  *   6. Prompt history is persisted to `localStorage`
  *      (`claxedo.global.dat:prompt-history`) and survives a reload: `ArrowUp`
  *      immediately after reload still recalls prompts that were sent before the reload.
- *   7. Shell-mode history (entered via `!` at cursor position 0,
- *      `src/components/prompt-input/editor-keymap.ts:66-73`) is tracked in an independent
- *      stack (`claxedo.global.dat:prompt-history-shell`) from normal-mode history;
- *      navigating history while in shell mode never surfaces a normal-mode entry, and a
- *      fresh normal-mode composer never surfaces a shell entry.
- *   8. A forced `prompt_async` dispatch failure removes the optimistic user row that was
+ *   7. A forced `prompt_async` dispatch failure removes the optimistic user row that was
  *      added before the request settled, restores the exact composer state that was in
  *      flight (text AND any image attachment) back into the composer, and shows an error
  *      toast (`prompt.toast.promptSendFailed.title` = "Failed to send prompt"). The user
@@ -114,7 +108,7 @@
  *      `packages/ui/src/components/toast.tsx:108-116`); the restored composer plus its own
  *      Send control IS the retry affordance, and that retry succeeds as an ordinary new
  *      turn.
- *   9. When a session has more turns than the initial render window (`turnInit = 4` user
+ *   8. When a session has more turns than the initial render window (`turnInit = 4` user
  *      turns worth of rows), scrolling the timeline up to within `turnScrollThreshold`
  *      (200px) of the top reveals the remaining, already-fetched-but-windowed-out turns
  *      (`backfillTurns`) without duplicating any row, and the scroll position is adjusted
@@ -406,56 +400,6 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await expect(input).toContainText("core turns persisted before reload")
   })
 
-  test("shell-mode and normal-mode prompt history are independent stacks — behavior 7", async ({ page }) => {
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: HARNESS_MODELS })
-    await seedOneProject(page, DIR)
-    await openDraftPrompt(page, DIR)
-
-    await sendAndProve(page, "core turns normal history entry", "ack 1: core turns normal history entry")
-
-    const input = composer(page)
-    await input.click()
-    await input.press("!") // enters shell mode at cursor 0 (editor-keymap.ts:66-73)
-    await input.type("core turns shell history entry")
-    await input.press("Enter")
-    await expect.poll(() => mock.requests.shellCount, { timeout: 10_000 }).toBe(1)
-    // Shell dispatch never produces an assistant reply in this mock (no SSE events are
-    // queued for it) — intentionally no oracle claim is made about this send; only its
-    // history side effect is under test here.
-
-    // Re-enter shell mode (a successful shell send resets mode to "normal") and confirm
-    // ArrowUp recalls the SHELL entry, not the normal one.
-    await input.click()
-    await input.press("!")
-    await input.press("ArrowUp")
-    await expect(input).toContainText("core turns shell history entry")
-    await expect(input).not.toContainText("core turns normal history entry")
-
-    // Reload for a clean, empty, normal-mode composer, then confirm ArrowUp in normal
-    // mode never surfaces the shell entry (both stacks persist independently). The
-    // composer's DRAFT (text + mode) is itself intentionally persisted across reload
-    // (see this spec's STATE MODEL — "draft text+chips survive reload"), so reloading
-    // with the just-recalled shell text still sitting in the box would legitimately
-    // restore that exact shell-mode draft rather than a clean composer — Escape (exits
-    // shell mode, editor-keymap.ts:83-88) + clearing the text is required first to get
-    // the "clean, empty, normal-mode" baseline this assertion actually needs.
-    await input.press("Escape")
-    await input.fill("")
-    await page.reload()
-    await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-    const inputAfterReload = composer(page)
-    await inputAfterReload.click()
-    await inputAfterReload.press("ArrowUp")
-    await expect(inputAfterReload).toContainText("core turns normal history entry")
-    await expect(inputAfterReload).not.toContainText("core turns shell history entry")
-
-    const normalHistory = await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history"))
-    const shellHistory = await page.evaluate(() => localStorage.getItem("claxedo.global.dat:prompt-history-shell"))
-    expect(normalHistory).toContain("core turns normal history entry")
-    expect(normalHistory).not.toContain("core turns shell history entry")
-    expect(shellHistory).toContain("core turns shell history entry")
-  })
-
   test("a forced dispatch failure restores composer text + attachment, toasts, and a resend succeeds — behavior 8", async ({
     page,
   }) => {
@@ -543,15 +487,15 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     await sendAndProve(page, "core turns chip dispatch failure setup", "ack 1: core turns chip dispatch failure setup")
 
     // Stub the composer's @-mention file-search endpoint (`searchFilesAndDirectories` ->
-    // `GET /find/file`, src/app/providers/file.tsx). installMockRuntime's own default
+    // `GET /api/wr/find/file`, src/app/providers/file.tsx). installMockRuntime's own default
     // (mock-runtime.ts) answers every query with `[]`; this override, registered AFTER
     // install, wins per Playwright's last-registered-first matching — same pattern as
     // core-composer-modes.spec.ts's overrideMentionAgents for the agent half of the same
     // popover.
     const MENTION_FILE_PATH = "src/chip-context-file.ts"
-    await page.route("**/find/file**", (route) => {
+    await page.route("**/api/wr/find/file**", (route) => {
       const url = new URL(route.request().url())
-      if (url.pathname !== "/find/file") return route.fallback()
+      if (url.pathname !== "/api/wr/find/file") return route.fallback()
       return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([MENTION_FILE_PATH]) })
     })
 

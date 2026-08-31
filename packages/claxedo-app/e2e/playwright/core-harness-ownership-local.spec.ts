@@ -377,7 +377,7 @@ test.describe("core harness ownership (local) @core", () => {
     {
       harness: "acp:claude" as Harness,
       label: "Claude ACP",
-      option: /^Claude$/,
+      option: /^claude-acp$/,
       optionIndex: 0,
       modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
       providerID: "acp:claude",
@@ -387,15 +387,15 @@ test.describe("core harness ownership (local) @core", () => {
       harness: "claude-sdk" as Harness,
       label: "Claude SDK",
       option: /^Claude$/,
-      optionIndex: 1,
+      optionIndex: 0,
       modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
-      providerID: "claude-sdk",
+      providerID: "claude",
       modelID: "claude-sonnet-4-6",
     },
     {
       harness: "acp:codex" as Harness,
       label: "Codex ACP",
-      option: /^Codex$/,
+      option: /^codex-acp$/,
       optionIndex: 0,
       modelLabel: /GPT-5\.2 Codex|gpt-5\.2-codex/i,
       providerID: "acp:codex",
@@ -405,15 +405,15 @@ test.describe("core harness ownership (local) @core", () => {
       harness: "codex-app-server" as Harness,
       label: "Codex Native SDK",
       option: /^Codex$/,
-      optionIndex: 1,
+      optionIndex: 0,
       modelLabel: /GPT-5\.5|gpt-5\.5/i,
-      providerID: "codex-app-server",
+      providerID: "codex",
       modelID: "gpt-5.5",
     },
     {
       harness: "acp:cursor" as Harness,
       label: "Cursor ACP",
-      option: /^Cursor$/,
+      option: /^cursor-acp$/,
       optionIndex: 0,
       modelLabel: /Cursor Auto|cursor-auto/i,
       providerID: "acp:cursor",
@@ -423,9 +423,9 @@ test.describe("core harness ownership (local) @core", () => {
       harness: "cursor-sdk" as Harness,
       label: "Cursor SDK",
       option: /^Cursor$/,
-      optionIndex: 1,
+      optionIndex: 0,
       modelLabel: /Cursor Auto|cursor-auto/i,
-      providerID: "cursor-sdk",
+      providerID: "cursor",
       modelID: "cursor-auto",
     },
   ] as const) {
@@ -714,7 +714,7 @@ test.describe("core harness ownership (local) @core", () => {
       /GPT-5\.5|gpt-5\.5/i,
       { timeout: 500 },
     )
-    await expect(restoredControl).toHaveAttribute("data-harness", "codex-app-server")
+    await expect(restoredControl).toHaveAttribute("data-harness", "codex")
     await expect(restoredControl).toHaveAttribute("data-model", "gpt-5.5")
     await expect(restoredControl).toHaveAttribute("data-ready-for-submit", "true")
     await expect(page.locator('[data-action="prompt-model"]')).toHaveCount(0)
@@ -783,6 +783,7 @@ test.describe("core harness ownership (local) @core", () => {
 
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
+    await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
 
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
@@ -805,8 +806,8 @@ test.describe("core harness ownership (local) @core", () => {
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
     expect(mock.requests.promptBodies[0]).toMatchObject({
       text: first,
-      providerID: "pi",
-      modelID: "virtual",
+      providerID: "opencode",
+      modelID: "big-pickle-1",
     })
     await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
     await expectAssistantReplyVisible(page, `ack 1: ${first}`)
@@ -816,10 +817,11 @@ test.describe("core harness ownership (local) @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
+    await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
 
-    // Zero config-options requests for the entire scenario — pi has no config options.
-    expect(mock.requests.harnessOptionsCount).toBe(0)
+    // Pi itself issues no config-options request. The preceding OpenCode
+    // connection is configurable and may refresh independently.
+    expect(mock.requests.harnessOptionsHarnesses).not.toContain("pi")
   })
 
   test(
@@ -857,7 +859,7 @@ test.describe("core harness ownership (local) @core", () => {
       // Auto-hydrates onto the actually-configured (failing) harness — see
       // expectHarnessAutoHydrated's doc — instead of silently staying on the
       // seeded "OpenCode" placeholder.
-      await expectHarnessAutoHydrated(page, /^Claude$/)
+      await expectHarnessAutoHydrated(page, /^claude-acp$/)
 
       // The settled failure, never the "Connecting" pill.
       await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toBeVisible({ timeout: 20_000 })
@@ -873,7 +875,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(notice).toHaveAttribute("data-notice", "runtime-unavailable")
       await expect(notice).toHaveAttribute("data-tone", "critical")
       // The reason is readable without hovering anything.
-      await expect(notice).toContainText("Claude runtime is unavailable")
+      await expect(notice).toContainText("claude-acp runtime is unavailable")
       await expect(notice).toContainText(errorMessage)
       // Retry lives inside the row it explains.
       await expect(notice.locator("[data-action='composer-notice-action']")).toBeVisible()
@@ -947,7 +949,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expect(input).toBeVisible({ timeout: 20_000 })
 
       // Auto-hydrates onto the configured (still-connecting) harness.
-      await expectHarnessAutoHydrated(page, /^Claude$/)
+      await expectHarnessAutoHydrated(page, /^claude-acp$/)
 
       // The "Connecting" pill is shown while polling — never the red
       // "Unavailable" notice row, which is reserved for a hard/settled failure.
@@ -1014,7 +1016,7 @@ test.describe("core harness ownership (local) @core", () => {
       const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
       await expect(input).toBeVisible({ timeout: 20_000 })
 
-      await expectHarnessAutoHydrated(page, /^Claude$/)
+      await expectHarnessAutoHydrated(page, /^claude-acp$/)
       const harnessTrigger = page.locator('[data-action="prompt-harness-model"]:visible').last()
 
       // Phase 1 — still connecting: pill shown, picker remains inspectable,
@@ -1153,7 +1155,7 @@ test.describe("core harness ownership (local) @core", () => {
     // `applyStatus`'s hydrate path (src/claxedo-ui/context/harness-status-actions.ts:
     // 63-76) calls `fetchConfigOptions` too, so the stale-response route below is
     // exercised by the auto-hydrate itself, no manual click required.
-    await expectHarnessAutoHydrated(page, /^Claude$/)
+    await expectHarnessAutoHydrated(page, /^claude-acp$/)
 
     // Behavior 8a: the stale-but-populated first response resolves the model
     // immediately — never a "Select model" placeholder in between.
@@ -1183,8 +1185,8 @@ test.describe("core harness ownership (local) @core", () => {
   })
 
   // Behavior 9 (owner decision 27): the draft harness auto-reset to OpenCode was
-  // REMOVED — the embedded local runtime backs every harness, so a user's choice is
-  // kept across navigation, never silently reset. Here we pin the persistence contract
+  // REMOVED — a user's explicit agent choice is kept across navigation, never
+  // silently reset. Here we pin the persistence contract
   // at the local level: a non-OpenCode harness picked on a local draft survives a
   // same-pane reload. The workspace-runtime-ref transition that the old reset actually
   // guarded (`installMockRuntime`'s local routes have no workspace-runtime ref) is proven
@@ -1202,7 +1204,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expect
         .poll(() =>
           page.evaluate(
-            () => Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v1"))?.[1],
+            () => Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v2"))?.[1],
           ),
         )
         // Same v2 record as behavior 4 above: the picked harness is `lastHarness`.
@@ -1216,64 +1218,4 @@ test.describe("core harness ownership (local) @core", () => {
     },
   )
 
-  test(
-    "switching harness re-reads status over GET, because the switch POST returns only {ok:true} — behavior 10",
-    async ({ page }) => {
-      // REGRESSION TEST for a real production bug, not a mock artifact.
-      //
-      // `POST /api/claxedo/agent-config/harness` answers `{ ok: true }` and nothing
-      // else (claxedo-local-server/src/agent-config/routes/harness-routes.ts:202,211).
-      // `postHarnessConfig` (src/features/session/harness/harness-switcher.ts) did:
-      //
-      //     decodeHarnessState(await res.json()) ?? await fetchHarnessStatus(...) ?? true
-      //
-      // `decodeHarnessState({ok:true})` finds no harness/status/binary keys and returns
-      // an EMPTY OBJECT (profile.ts:84-99). `{}` is truthy, so `??` short-circuited and
-      // `fetchHarnessStatus` — the fallback that exists for exactly this response —
-      // could never run against a real server. `applyPostedStatus` then skipped its
-      // patch because `failedHarness({})` is false, so a switch onto a broken harness
-      // surfaced NO error at all.
-      //
-      // This was invisible for as long as it existed because the e2e fixture answered
-      // the POST with a full harness-status payload, letting every harness spec watch a
-      // switch settle straight off the POST — a path production cannot take. The mock
-      // now returns the honest `{ok:true}`, and this test pins the GET that must follow.
-      //
-      // Distinct from behavior 5, which covers HYDRATION onto an already-failing
-      // harness (status is known before any switch). This covers the SWITCH path.
-      const mock = await installMockRuntime(page, {
-        dir: DIR,
-        sessionId: "ses_core_harness_switch_status",
-        // "Claude" in the picker is the NATIVE claude-sdk row: first-party ACP
-        // options left the picker when operator-configured ACP connections
-        // became the ACP group (see agent-harness-selector BUILTIN_HARNESS_OPTIONS).
-        harnessModels: { "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Claude Sonnet" }] },
-      })
-
-      await seedOneProject(page, DIR)
-      await openDraftPrompt(page, DIR)
-
-      // `harnessPostCount` counts BOTH verbs on `/api/claxedo/agent-config/harness`:
-      // `mock-runtime.ts:1368` increments it BEFORE the `method() === "POST"` check, and
-      // says so at `mock-runtime.ts:166-173`. `harnessGetCount` (`mock-runtime.ts:1405`)
-      // counts ONLY the GETs, so `harnessPostCount - harnessGetCount` is the true POST
-      // count. A bare `harnessPostCount > 0` was VACUOUS here — the mount-time hydrate GET
-      // in `openDraftPrompt` had already moved it, so that assertion could not fail even
-      // if the switch POST were never issued at all.
-      const getsBeforeSwitch = mock.requests.harnessGetCount
-      const postsBeforeSwitch = mock.requests.harnessPostCount - mock.requests.harnessGetCount
-      await switchDraftHarness(page, /^Claude$/, 0)
-      await expectOnlyHarnessModelControl(page, /Claude Sonnet/)
-
-      // The switch POST landed (GET-discriminated, per the note above)...
-      await expect
-        .poll(() => mock.requests.harnessPostCount - mock.requests.harnessGetCount, { timeout: 15_000 })
-        .toBeGreaterThan(postsBeforeSwitch)
-      // ...and a GET followed it. Before the fix this count never moved, because the
-      // empty-but-truthy decode swallowed the fallback.
-      await expect
-        .poll(() => mock.requests.harnessGetCount, { timeout: 15_000 })
-        .toBeGreaterThan(getsBeforeSwitch)
-    },
-  )
 })

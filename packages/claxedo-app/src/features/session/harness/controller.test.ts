@@ -9,11 +9,14 @@ import {
 function selectionStore(overrides: Partial<HarnessSelectionControllerStore> = {}): HarnessSelectionControllerStore {
   return {
     hydrate: () => undefined,
+    reprobe: () => undefined,
+    probeHealth: () => undefined,
+    markUnavailable: () => undefined,
     setHarness: () => undefined,
     setModel: () => undefined,
     rememberDraftModel: () => undefined,
     resolveDraftDefault: () => false,
-    harness: () => "codex-acp",
+    harness: () => ({ kind: "connection", connectionId: "codex-team" }),
     isHarnessMode: () => true,
     readiness: () => "ready",
     models: () => [{ id: "gpt-5.5", name: "GPT-5.5" }],
@@ -21,7 +24,7 @@ function selectionStore(overrides: Partial<HarnessSelectionControllerStore> = {}
     selectedThoughtLevel: () => "high",
     setThoughtLevel: () => {},
     selectedModel: () => "gpt-5.5",
-    selectedModelKey: () => ({ providerID: "codex-acp", modelID: "gpt-5.5" }),
+    selectedModelKey: () => ({ providerID: "codex-team", modelID: "gpt-5.5" }),
     optionsStale: () => false,
     optionsLoading: () => false,
     configError: () => undefined,
@@ -38,7 +41,7 @@ function submitStore(overrides: Partial<HarnessSubmitControllerStore> = {}): Har
     claimSession: async () => undefined,
     promote: () => undefined,
     harnessReadyForSubmit: () => true,
-    harnessModelKeyForSubmit: () => ({ providerID: "codex-acp", modelID: "gpt-5.5" }),
+    harnessModelKeyForSubmit: () => ({ providerID: "codex-team", modelID: "gpt-5.5" }),
     ...overrides,
   }
 }
@@ -46,21 +49,21 @@ function submitStore(overrides: Partial<HarnessSubmitControllerStore> = {}): Har
 describe("harness controller facade", () => {
   const sessionConfig = {
     agent: "build",
-    model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+    model: { providerID: "codex-team", modelID: "gpt-5.5" },
     variant: "high",
   }
 
   test("reads selector state from the backing store", () => {
     expect(createHarnessSelectionController(selectionStore()).read("scope")).toEqual({
-      harness: "codex-acp",
+      harness: { kind: "connection", connectionId: "codex-team" },
       isHarnessMode: true,
       readiness: "ready",
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       thoughtLevels: [{ id: "low", name: "Low" }, { id: "high", name: "High" }],
       selectedThoughtLevel: "high",
       selectedModel: "gpt-5.5",
-      selectedModelProvider: "codex-acp",
-      selectedModelKey: { providerID: "codex-acp", modelID: "gpt-5.5" },
+      selectedModelProvider: "codex-team",
+      selectedModelKey: { providerID: "codex-team", modelID: "gpt-5.5" },
       optionsStale: false,
       optionsLoading: false,
       configError: undefined,
@@ -84,36 +87,45 @@ describe("harness controller facade", () => {
     }))
 
     await controller.hydrate("scope", { directory: "/repo", sessionId: "new" })
-    await controller.setHarness("scope", "claude-acp", { directory: "/repo" }, "claude")
-    await controller.setModel("scope", { providerID: "anthropic", modelID: "sonnet" }, { sessionId: "ses_1" })
-    controller.rememberDraftModel("scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" })
+    await controller.setHarness("scope", { kind: "native", harnessId: "claude" }, { directory: "/repo" })
+    await controller.setModel("scope", { providerID: "claude", modelID: "sonnet" }, { sessionId: "ses_1" }, { model: "Sonnet" })
+    controller.rememberDraftModel("scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" }, { provider: "OpenAI" })
     controller.resolveDraftDefault("scope", {
-      supportedHarnesses: ["opencode", "pi"],
+      supportedHarnesses: [
+        { kind: "connection", connectionId: "external-opencode" },
+        { kind: "native", harnessId: "pi" },
+      ],
       eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
     })
 
     expect(calls).toEqual([
       ["hydrate", "scope", { directory: "/repo", sessionId: "new" }],
-      ["setHarness", "scope", "claude-acp", { directory: "/repo" }, "claude"],
-      ["setModel", "scope", { providerID: "anthropic", modelID: "sonnet" }, { sessionId: "ses_1" }],
-      ["rememberDraftModel", "scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" }],
+      ["setHarness", "scope", { kind: "native", harnessId: "claude" }, { directory: "/repo" }],
+      ["setModel", "scope", { providerID: "claude", modelID: "sonnet" }, { sessionId: "ses_1" }, { model: "Sonnet" }],
+      ["rememberDraftModel", "scope", { providerID: "openai", modelID: "gpt-5.5" }, { directory: "/repo" }, { provider: "OpenAI" }],
       ["resolveDraftDefault", "scope", {
-        supportedHarnesses: ["opencode", "pi"],
+        supportedHarnesses: [
+          { kind: "connection", connectionId: "external-opencode" },
+          { kind: "native", harnessId: "pi" },
+        ],
         eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
       }],
     ])
   })
 
-  test("submit controller defaults to OpenCode when the backing store is absent", async () => {
+  test("submit controller remains unresolved when the backing store is absent", async () => {
     const controller = createHarnessSubmitController(undefined)
 
-    expect(controller.harness("scope")).toBe("opencode")
+    expect(controller.harness("scope")).toBeUndefined()
     expect(controller.isHarnessMode("scope")).toBe(false)
-    expect(controller.readiness("scope")).toBe("ready")
-    expect(controller.readyForSubmit("scope")).toBe(true)
+    expect(controller.readiness("scope")).toBe("unresolved")
+    expect(controller.readyForSubmit("scope")).toBe(false)
     expect(controller.modelKeyForSubmit("scope")).toBeUndefined()
-    expect(await controller.claimSession("scope", { sessionConfig })).toBeUndefined()
-    await expect(controller.setHarness("scope", "opencode")).resolves.toBeUndefined()
+    expect(await controller.claimSession("scope", {
+      harness: { kind: "native", harnessId: "pi" },
+      sessionConfig,
+    })).toBeUndefined()
+    await expect(controller.setHarness("scope", { kind: "connection", connectionId: "external-opencode" })).resolves.toBeUndefined()
   })
 
   test("submit controller forwards claim, model, and promotion operations", async () => {
@@ -126,12 +138,20 @@ describe("harness controller facade", () => {
       promote: (...args) => calls.push(["promote", ...args]),
     }))
 
-    expect(controller.modelKeyForSubmit("scope")).toEqual({ providerID: "codex-acp", modelID: "gpt-5.5" })
-    expect(await controller.claimSession("scope", { directory: "/repo", sessionConfig })).toEqual({ id: "ses_harness" })
+    expect(controller.modelKeyForSubmit("scope")).toEqual({ providerID: "codex-team", modelID: "gpt-5.5" })
+    expect(await controller.claimSession("scope", {
+      directory: "/repo",
+      harness: { kind: "native", harnessId: "pi" },
+      sessionConfig,
+    })).toEqual({ id: "ses_harness" })
     controller.promote("draft", "session")
 
     expect(calls).toEqual([
-      ["claimSession", "scope", { directory: "/repo", sessionConfig }],
+      ["claimSession", "scope", {
+        directory: "/repo",
+        harness: { kind: "native", harnessId: "pi" },
+        sessionConfig,
+      }],
       ["promote", "draft", "session"],
     ])
   })

@@ -110,19 +110,20 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(calls.shell).toBe(1)
+    expect(calls.shell).toBe(0)
     expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
     expect(toasts).toContainEqual({
-      title: "prompt.toast.shellSendFailed.title",
-      description: "shell exploded",
+      title: "prompt.toast.promptSendFailed.title",
+      description: "runtime exploded",
     })
     expect(promptCalls.set.at(-1)?.prompt).toBe(promptValue)
     expect(promptCalls.set.at(-1)?.cursor).toBe(5)
-    expect(modes).toEqual(["normal", "shell"])
+    expect(modes[0]).toBe("normal")
+    expect(modes.at(-1)).toBe("shell")
   })
 
 
-  test("slash commands dispatch through the command phase with arguments and image parts", async () => {
+  test("slash-looking text uses the generic runtime prompt path", async () => {
     state.commandListResponse = [{ name: "build" }]
     await seedCommandList("/repo/main")
     promptValue.splice(0, promptValue.length, { type: "text", content: "/build --fast", start: 0, end: 13 })
@@ -142,35 +143,19 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(commandCalls).toHaveLength(1)
-    expect(commandCalls.at(-1)).toMatchObject({
-      sessionID: "session-existing",
-      directory: "/repo/main",
-      command: "build",
-      arguments: "--fast",
-      agent: "agent",
-      model: "provider/model",
-      variant: "high",
-      parts: [
-        {
-          type: "file",
-          mime: "image/png",
-          url: "data:image/png;base64,abc",
-          filename: "shot.png",
-        },
-      ],
-    })
+    expect(commandCalls).toEqual([])
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ mode: "sync" })
     expect(calls.async).toBe(0)
-    expect(calls.transportAsync).toBe(0)
-    expect(buildRequestPartCalls).toEqual([])
-    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "busy" })
+    expect(calls.transportAsync).toBe(1)
+    expect(buildRequestPartCalls).toHaveLength(1)
+    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
   })
 
 
-  test("slash command failure restores the draft and clears busy status", async () => {
+  test("runtime failure for slash-looking text restores the draft", async () => {
     state.commandListResponse = [{ name: "build" }]
     await seedCommandList("/repo/main")
-    state.commandError = new Error("command exploded")
+    state.transportPromptAsyncError = new Error("runtime exploded")
     promptValue.splice(0, promptValue.length, { type: "text", content: "/build --fast", start: 0, end: 13 })
     const submit = createSubmit({
       info: () => ({ id: "session-existing" }),
@@ -182,11 +167,11 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(commandCalls).toHaveLength(1)
+    expect(commandCalls).toEqual([])
     expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
     expect(toasts).toContainEqual({
-      title: "prompt.toast.commandSendFailed.title",
-      description: "command exploded",
+      title: "prompt.toast.promptSendFailed.title",
+      description: "runtime exploded",
     })
     expect(promptCalls.set.at(-1)?.prompt).toBe(promptValue)
     expect(promptCalls.set.at(-1)?.cursor).toBe(13)

@@ -341,13 +341,13 @@ export type MockRuntimeRequests = {
   questionReplies: QuestionReplyBody[]
   /** `POST /question/:id/reject` count. */
   questionRejectCount: number
-  shellCount: number
   slashCount: number
   configPatchCount: number
   configPatchBodies: ConfigPatchBody[]
   /** One entry per `PATCH /session/:sessionID` (the session ROW), in order. */
   sessionUpdateBodies: SessionUpdateBody[]
   harnessOptionsCount: number
+  harnessOptionsHarnesses: Harness[]
   harnessPostCount: number
   /**
    * GET probes of `/api/claxedo/agent-config/harness`, counted separately from
@@ -845,11 +845,15 @@ const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
  * pins `providerID: "acp:openclaw"` beside `harness: {id:"openclaw", access:"acp"}`).
  */
 function providerIdFor(harness: Harness): string {
-  return harness === "opencode" ? "opencode" : harness
+  const selection = harnessSelectionFor(harness)
+  return selection.kind === "native" ? selection.harnessId : selection.connectionId
 }
 
 function sessionHarnessFor(harness: Harness) {
-  const identity = normalizeHarnessIdentity(harness)
+  const selection = harnessSelectionFor(harness)
+  const identity = selection.kind === "native"
+    ? normalizeHarnessIdentity(selection.harnessId)
+    : normalizeHarnessIdentity({ id: selection.connectionId, access: "connection" })
   if (!identity) throw new Error(`Invalid mock harness identity: ${harness}`)
   return identity
 }
@@ -865,6 +869,20 @@ function harnessSelectionFor(harness: Harness) {
   if (harness === "cursor-sdk") return { kind: "native" as const, harnessId: "cursor" as const }
   if (harness === "pi") return { kind: "native" as const, harnessId: "pi" as const }
   return { kind: "connection" as const, connectionId: harness }
+}
+
+function harnessFixtureFromUrl(input: string | URL, fallback: Harness): Harness {
+  const url = input instanceof URL ? input : new URL(input)
+  const nativeHarness = url.searchParams.get("nativeHarness")
+  if (nativeHarness === "claude") return "claude-sdk"
+  if (nativeHarness === "codex") return "codex-app-server"
+  if (nativeHarness === "cursor") return "cursor-sdk"
+  if (nativeHarness === "pi") return "pi"
+  const connectionId = url.searchParams.get("connectionId")
+  if (connectionId && connectionId in DEFAULT_HARNESS_MODELS) {
+    return connectionId as Harness
+  }
+  return fallback
 }
 
 export function providerCatalogIndex(input: {
@@ -934,14 +952,37 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       available: true,
       directory: worktree.directory,
     }]))
-    const workspaces = { ...options.workspaces, ...createdWorkspaces }
+    // `GET /api/claxedo/bootstrap` returns `listProjects()`, and every local
+    // project produced by that store includes its root workspace in
+    // `project.workspaces`. Keep the shared E2E producer faithful to that
+    // contract: ClaxedoEventsProvider resolves its per-workspace event target
+    // from this inventory. Omitting the root made live turns depend on the
+    // compatibility subscriber's mount timing and lose events after reload.
+    const configuredWorkspaces = options.workspaces ?? {}
+    const configuredRoot = Object.values(configuredWorkspaces).some((workspace) => workspace.directory === DIR)
+    const rootWorkspace = configuredRoot
+      ? {}
+      : {
+          [LOCAL_WORKSPACE_ID]: {
+            id: LOCAL_WORKSPACE_ID,
+            workspaceId: LOCAL_WORKSPACE_ID,
+            project_id: PROJECT_ID,
+            kind: "local" as const,
+            available: true,
+            directory: DIR,
+          },
+        }
+    const workspaces = {
+      ...rootWorkspace,
+      ...options.workspaces,
+      ...createdWorkspaces,
+    }
     return {
       id: PROJECT_ID,
       worktree: DIR,
       name: PROJECT_NAME,
       ...(createdLocalWorktrees.length > 0 ? { sandboxes: createdLocalWorktrees.map((worktree) => worktree.directory) } : {}),
       ...(Object.keys(workspaces).length > 0 ? { workspaces } : {}),
-      ...(options.workspaceId ? { workspaceId: options.workspaceId } : {}),
       time: { created: Date.now(), updated: Date.now() },
     }
   }
@@ -991,12 +1032,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     permissionModeWrites: [],
     questionReplies: [],
     questionRejectCount: 0,
-    shellCount: 0,
     slashCount: 0,
     configPatchCount: 0,
     configPatchBodies: [],
     sessionUpdateBodies: [],
     harnessOptionsCount: 0,
+    harnessOptionsHarnesses: [],
     harnessPostCount: 0,
     harnessGetCount: 0,
     sessionReservations: [],
@@ -1036,6 +1077,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // real runtime-events route can never emit.
   const compatFanout = new FanoutBus()
   const runtimeFanout = new FanoutBus()
+  const busClaxedoEvents = new EventBus() // /api/claxedo/events (central flat-event bus)
   const busGlobal = compatFanout.channel() // /global/event + /event
   const busWrEvents = compatFanout.channel() // /api/wr/events (primary origin)
   const busRelayEvents = compatFanout.channel() // cloud relay compat/event mounts
@@ -1197,6 +1239,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const flatWrReplay: Array<{ payload: ClaxedoEvent; until: number }> = []
   const emitFlat = (payload: ClaxedoEvent) => {
     flatWrReplay.push({ payload, until: Date.now() + FLAT_WR_REPLAY_WINDOW_MS })
+    busClaxedoEvents.emitFlat(payload)
     compatFanout.emitFlat(payload)
   }
   const emitRuntime = (payload: RuntimeEventEnvelopeInput) => {
@@ -1212,9 +1255,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // the escape hatch and it has been removed. If a spec needs a wrapped frame
   // applied promptly, wait for the consumer rather than duplicating the frame.
 
-  // Seed the "connected" handshake so the very first /global/event connection resolves
-  // immediately instead of idling out.
+  // Seed the "connected" handshake so the first compat and central connections
+  // resolve immediately instead of idling until their heartbeat deadline.
   emit({ type: "server.connected", properties: {} }, "global")
+  busClaxedoEvents.emitFlat({ type: "server.connected", properties: {} })
 
   function harnessModel() {
     return harnessModels[harness]?.[0] ?? BIG_PICKLE
@@ -1606,14 +1650,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
-  function cloudProviderResponse() {
-    const activeProviderID = providerIdFor(cloudHarness)
-    const activeModels = harnessModels[cloudHarness] ?? [cloudHarnessModel()]
+  function cloudProviderResponse(harness: Harness = cloudHarness) {
+    const activeProviderID = providerIdFor(harness)
+    const activeModels = harnessModels[harness] ?? [BIG_PICKLE]
     return {
       all: [
         {
           id: activeProviderID,
-          name: cloudHarness,
+          name: harness,
           env: [],
           models: Object.fromEntries(
             activeModels.map((m) => [
@@ -1634,7 +1678,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           ),
         },
       ],
-      default: { [activeProviderID]: cloudHarnessModel().id },
+      default: { [activeProviderID]: activeModels[0]?.id ?? BIG_PICKLE.id },
       connected: [activeProviderID],
     }
   }
@@ -1961,6 +2005,20 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // right way round so the shadowing guard has nothing to allowlist.
   await contractRoute(page, "**/event?**", eventStreamHandler)
   await contractRoute(page, "**/global/event?**", eventStreamHandler)
+
+  const claxedoEventsHandler = async (route: Route) => {
+    if (!api(route)) return route.continue()
+    const url = new URL(route.request().url())
+    if (url.pathname !== "/api/claxedo/events") return route.fallback()
+    const cursor = lastEventIdOf(route)
+    const batch = await busClaxedoEvents.drain(sseIdleTimeoutMs, cursor)
+    await route.fulfill({
+      status: 200,
+      contentType: "text/event-stream",
+      body: sseBody(batch, () => centralStreamHeartbeat(cursor)),
+    }).catch(() => {})
+  }
+  await contractRoute(page, "**/api/claxedo/events**", claxedoEventsHandler)
 
   // Sessions on the /w/<workspaceId>/session/<id> route shape consume live events from
   // GET /api/wr/events (see src/app/providers/global-sdk/provider.tsx), NOT
@@ -2375,7 +2433,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  await contractRoute(page, "**/question/*/reply", async (route) => {
+  await contractRoute(page, "**/question/*/reply**", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() !== "POST") return route.fallback()
     requests.questionReplies.push(
@@ -2384,7 +2442,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, SESSION_INTERACTION_SUCCESS.body, SESSION_INTERACTION_SUCCESS.status)
   })
 
-  await contractRoute(page, "**/question/*/reject", async (route) => {
+  await contractRoute(page, "**/question/*/reject**", async (route) => {
     if (!api(route)) return route.continue()
     if (route.request().method() !== "POST") return route.fallback()
     parseQuestionRejectRequest(route.request().postDataJSON?.() ?? undefined, route.request().url())
@@ -2640,13 +2698,41 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/claxedo/agent-config/harness/options**", (r) => {
     if (!api(r)) return r.continue()
     requests.harnessOptionsCount += 1
-    return json(r, localHarnessOptionsResponse(harnessConfigOptions(harness, harnessModel())))
+    const type = harnessFixtureFromUrl(r.request().url(), harness)
+    requests.harnessOptionsHarnesses.push(type)
+    const model = harnessModels[type]?.[0] ?? BIG_PICKLE
+    return json(r, localHarnessOptionsResponse(harnessConfigOptions(type, model)))
   })
 
   // Sanitized generic agent-connection discovery for the Connections screen.
   await contractRoute(page, "**/api/claxedo/agent-config/connections**", (r) => {
     if (!api(r)) return r.continue()
-    return json(r, { connections: [] })
+    const connections = (Object.keys(harnessModels) as Harness[]).flatMap((candidate) => {
+      const selection = harnessSelectionFor(candidate)
+      if (selection.kind !== "connection") return []
+      return [{
+        connectionId: selection.connectionId,
+        label: candidate,
+        enabled: true,
+        readiness: "ready",
+        capabilities: {
+          abort: true,
+          reconnect: true,
+          replay: true,
+          permissions: true,
+          questions: true,
+          todos: true,
+          commands: true,
+          fork: true,
+          revert: true,
+          unrevert: true,
+          configOptions: true,
+          subagents: true,
+        },
+        modelSelection: { status: "optional" },
+      }]
+    })
+    return json(r, { connections })
   })
 
   // POST /api/claxedo/usage/sync — the usage outbox beacon
@@ -2751,14 +2837,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         ? body.model as Record<string, unknown>
         : undefined
       if (body.model === null) savedModel = null
-      if (typeof createModel?.providerID === "string" && typeof createModel.id === "string") {
-        savedModel = { providerID: createModel.providerID, modelID: createModel.id }
+      const createModelId = typeof createModel?.id === "string"
+        ? createModel.id
+        : typeof createModel?.modelID === "string"
+          ? createModel.modelID
+          : undefined
+      if (typeof createModel?.providerID === "string" && createModelId) {
+        savedModel = { providerID: createModel.providerID, modelID: createModelId }
       }
       if (typeof body.agent === "string" || body.agent === null) savedAgent = body.agent
       if (typeof body.variant === "string" || body.variant === null) savedVariant = body.variant
       if (!("variant" in body) && typeof createModel?.variant === "string") savedVariant = createModel.variant
-      const sessionHarness = new URL(url).searchParams.get("harness")
-      if (sessionHarness && sessionHarness !== "opencode") requests.harnessSessionCreateCount += 1
+      const sessionHarness = harnessFixtureFromUrl(url, harness)
+      if (sessionHarness !== "opencode") requests.harnessSessionCreateCount += 1
       else requests.opencodeSessionCreateCount += 1
       sessionCreated = true
       messages = []
@@ -2924,14 +3015,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, { ok: true, status: "cancelled" })
   })
 
-  await page.route("**/session/*/shell**", async (route) => {
-    if (!api(route)) return route.continue()
-    const url = new URL(route.request().url())
-    if (!url.pathname.match(/^\/session\/[^/]+\/shell$/)) return route.fallback()
-    requests.shellCount += 1
-    return route.fulfill({ status: 204, body: "" })
-  })
-
   await contractRoute(page, "**/session/*/command**", async (route) => {
     if (!api(route)) return route.continue()
     const url = new URL(route.request().url())
@@ -2954,7 +3037,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (!api(r)) return r.continue()
     const sessionId = decodeURIComponent(new URL(r.request().url()).pathname.split("/").at(-2) ?? "")
     const child = options.childSessions?.find((row) => row.id === sessionId)
-    return json(r, child ? childMessages(child) : messages)
+    return json(r, { messages: child ? childMessages(child) : messages, maxEventOrdinal: 0 })
   })
 
   await page.route("**/session/*", (r) => {
@@ -3183,11 +3266,15 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(r, pendingPermissions)
     })
     await page.route(`${base}/question**`, (r) => json(r, pendingQuestions))
-    await page.route(`${base}/provider`, (r) => json(r, cloudProviderResponse()))
-    await page.route(`${base}/provider?**`, (r) => json(r, cloudProviderResponse()))
+    const cloudProviderHandler = (route: Route) => {
+      const harness = harnessFixtureFromUrl(route.request().url(), cloudHarness)
+      return json(route, cloudProviderResponse(harness))
+    }
+    await page.route(`${base}/provider`, cloudProviderHandler)
+    await page.route(`${base}/provider?**`, cloudProviderHandler)
     await page.route(`${base}/provider/auth`, (r) => json(r, {}))
     await page.route(`${base}/provider/auth?**`, (r) => json(r, {}))
-    await contractRoute(page, `${base}/api/wr/health`, (r) => json(r, readyRuntimeHealthResponse(cloudHarness)))
+    await contractRoute(page, `${base}/api/wr/health**`, (r) => json(r, readyRuntimeHealthResponse(cloudHarness)))
     // Worktree admission on the cloud draft-submit path
     // (prepareWorkspaceSessionWorktree, src/platform/runtime/cloud/workspace-runtime-store.ts):
     // submit-directory.ts POSTs /api/wr/worktrees after the draft workspace resolves
@@ -3212,7 +3299,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     })
     await contractRoute(page, `${base}/api/wr/harness-config-options**`, (r) => {
       const url = new URL(r.request().url())
-      const type = (url.searchParams.get("harness") as Harness | null) ?? cloudHarness
+      const type = harnessFixtureFromUrl(url, cloudHarness)
       requests.cloudHarnessOptionsCount += 1
       requests.cloudHarnessOptionsHarnesses.push(type)
       const model = harnessModels[type]?.[0] ?? BIG_PICKLE
@@ -3326,7 +3413,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       }),
     )
     await page.route(`${base}/session/*/todo**`, (r) => json(r, sessionTodos))
-    await page.route(`${base}/session/*/message**`, (r) => json(r, cloudMessages))
+    await page.route(`${base}/session/*/message**`, (r) =>
+      json(r, { messages: cloudMessages, maxEventOrdinal: 0 }),
+    )
     await contractRoute(page, `${base}/session/*/prompt_async**`, async (route) => {
       if (!api(route)) return route.continue()
       requests.cloudPromptCount += 1

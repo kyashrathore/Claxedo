@@ -20,6 +20,7 @@ import type {
   AgentMessage,
   AgentPermission,
   AgentQuestion,
+  AgentQuestionAnswer,
   AgentRuntimeStreamEvent,
   AgentSession,
   PromptInput,

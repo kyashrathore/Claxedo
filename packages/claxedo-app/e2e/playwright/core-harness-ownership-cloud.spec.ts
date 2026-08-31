@@ -55,8 +55,8 @@
  *     not exist in `src/` any more — do not re-cite it. What isolates the two drafts now
  *     is the draft-default record's STORAGE SCOPE: `createDraftDefaultPreferences`
  *     (`src/features/session/harness/draft-defaults.ts`) keys every record by
- *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, i.e.
- *     `claxedo.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v1`
+ *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v2")`, i.e.
+ *     `claxedo.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v2`
  *     (`src/platform/persistence/persist.ts:223-233,382-384`) — a DIFFERENT localStorage
  *     key per (server, workspaceKey) pair. `rememberDraftHarness`
  *     (`src/features/session/harness/harness-store.ts:171-199`) writes that record when the
@@ -163,7 +163,7 @@
  * The shared runtime models the cloud session lane, so every behavior below executes.
  */
 import { expect, test, type Page } from "@playwright/test"
-import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
 import { decodeDraftDefaultRecord } from "../../src/features/session/harness/draft-defaults"
 
@@ -261,7 +261,11 @@ function draftDefaultHarness(raw: string | undefined) {
 }
 
 function visibleHarnessTrigger(page: Page, harness: Harness) {
-  return page.locator(`[data-action="prompt-harness-model"][data-harness="${harness}"]:visible`)
+  const selectionId = harness === "claude-sdk" ? "claude"
+    : harness === "codex-app-server" ? "codex"
+      : harness === "cursor-sdk" ? "cursor"
+        : harness
+  return page.locator(`[data-action="prompt-harness-model"][data-harness="${selectionId}"]:visible`)
 }
 
 // `:visible` (not a bare count): a same-pane cross-workspace navigation (behavior
@@ -278,8 +282,11 @@ async function expectOnlyHarnessModelControl(page: Page, modelName: string | Reg
   await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(0)
 }
 
-async function expectOnlyOpenCodeModelControl(page: Page) {
-  await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
+async function expectNoAgentSelected(page: Page) {
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(control).toBeVisible({ timeout: 20_000 })
+  await expect(control).toContainText(/Select agent/i)
+  await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(0)
   await expect(page.locator('[data-action="prompt-model"]:visible')).toHaveCount(0)
 }
 
@@ -293,16 +300,13 @@ async function expectHarnessSwitchable(page: Page, harness: Harness) {
 }
 
 test.describe("core harness ownership (cloud) @core", () => {
-  // The picker's built-in options are the native harnesses only — first-party
-  // ACP rows left it when operator-configured ACP connections became the ACP
-  // group (agent-harness-selector BUILTIN_HARNESS_OPTIONS). ACP harnesses stay
-  // valid SESSION identities (seeded/historical flows elsewhere in this file
-  // and in the rendering matrix), but a cloud DRAFT can no longer pick one, so
-  // this draft-path matrix covers exactly what the picker offers.
+  // Generic connections use their configured labels (for example
+  // `claude-acp`); the exact Claude/Codex/Cursor labels below identify native
+  // SDK modules and their canonical data-harness ids are claude/codex/cursor.
   for (const harnessCase of [
-    { harness: "claude-sdk" as Harness, option: /^Claude$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
-    { harness: "codex-app-server" as Harness, option: /^Codex$/, optionIndex: 0, modelLabel: /GPT-5\.5|gpt-5\.5/i, providerID: "codex-app-server", modelID: "gpt-5.5" },
-    { harness: "cursor-sdk" as Harness, option: /^Cursor$/, optionIndex: 0, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor-sdk", modelID: "cursor-auto" },
+    { harness: "claude-sdk" as Harness, option: /^Claude$/, optionIndex: 0, modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i, providerID: "claude", modelID: "claude-sonnet-4-6" },
+    { harness: "codex-app-server" as Harness, option: /^Codex$/, optionIndex: 0, modelLabel: /GPT-5\.5|gpt-5\.5/i, providerID: "codex", modelID: "gpt-5.5" },
+    { harness: "cursor-sdk" as Harness, option: /^Cursor$/, optionIndex: 0, modelLabel: /Cursor Auto|cursor-auto/i, providerID: "cursor", modelID: "cursor-auto" },
   ] as const) {
     test(`${harnessCase.harness} owns harness label, model, and payload through cloud draft, sends, and reload over the relay; locked after creation — behavior 1`, async ({ page }) => {
       const mock = await installMockRuntime(page, {
@@ -317,7 +321,7 @@ test.describe("core harness ownership (cloud) @core", () => {
       await page.waitForLoadState("domcontentloaded")
       const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
       await expect(input).toBeVisible({ timeout: 20_000 })
-      await expectOnlyOpenCodeModelControl(page)
+      await expectNoAgentSelected(page)
 
       await switchDraftHarness(page, harnessCase.option, harnessCase.optionIndex)
       await expect(visibleHarnessTrigger(page, harnessCase.harness)).toHaveCount(1, { timeout: 20_000 })
@@ -373,7 +377,7 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(visibleHarnessTrigger(page, "pi")).toHaveCount(1, { timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
+    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
 
@@ -385,7 +389,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "opencode", modelID: "big-pickle-1" })
+    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "pi", modelID: "virtual" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
 
     // Zero relay config-options requests for the entire scenario — pi has no config options.

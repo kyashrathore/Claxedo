@@ -14,6 +14,15 @@ export function connectionHarness(connectionId: string): HarnessSelection {
   return { kind: "connection", connectionId }
 }
 
+export function harnessSelectionFromId(id: string): HarnessSelection | undefined {
+  const value = id.trim()
+  if (!value) return undefined
+  if ((NATIVE_HARNESS_IDS as readonly string[]).includes(value)) {
+    return nativeHarness(value as NativeHarnessId)
+  }
+  return connectionHarness(value)
+}
+
 export function isHarnessSelection(input: unknown): input is HarnessSelection {
   if (!input || typeof input !== "object" || Array.isArray(input)) return false
   const row = input as Record<string, unknown>

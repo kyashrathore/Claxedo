@@ -1,7 +1,7 @@
 /**
  * SPEC: Per-harness message-part rendering matrix
  *
- * PURPOSE — every harness family (opencode native, claude-acp, codex-acp, cursor-acp,
+ * PURPOSE — every harness family (external OpenCode/ACP connections,
  * claude-sdk, codex-app-server, cursor-sdk, pi) ultimately streams its own raw event
  * shape into ONE canonical timeline. This spec proves that the timeline's dedicated
  * part renderers (`PART_MAPPING`/`ToolRegistry` in
@@ -172,7 +172,7 @@
  *      (the string is absent from the fixture, so it also passed on a blank page). It is
  *      kept only as a corollary.
  *  15. Cross-harness subagent task parts resolve only through explicit host-owned spawn
- *      edges. OpenCode native, Claude native/ACP, Codex native, valid Cursor native,
+ *      edges. External OpenCode, Claude native/ACP, Codex native, valid Cursor native,
  *      and model-backed Pi foreground/background rows progress Working -> Completed and
  *      open a read-only child transcript without replacing the parent. Codex ACP,
  *      Cursor ACP, and invalid Cursor native rows say `Transcript unavailable` and
@@ -338,7 +338,7 @@ import {
   type MockRuntimeHandles,
   type MockRuntimeSubagentRow,
 } from "../helpers/mock-runtime"
-import { ensureComposerModelSelected, expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, selectComposerAgent, SELECTORS } from "../helpers/turn-oracle"
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "harness-traces")
 
@@ -392,97 +392,6 @@ function loadFixtureFile(harness: string, assistantId: string): Record<string, u
 
 function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
-}
-
-// ---------------------------------------------------------------------------
-// SPEC-LOCAL WORKAROUND (shared-helper gap, mock-runtime.ts edits forbidden in
-// this pooled phase — see e2e/INVARIANTS.md "Authoring rules" #1 and the finding
-// filed for this spec's remediation).
-//
-// Root cause (source-verified, two layers):
-//  1. `installMockRuntime`'s EventBus/`emit()` only backs `**/global/event?**`/
-//     `**/event?**` (`e2e/helpers/mock-runtime.ts`'s `eventStreamHandler`). But
-//     in the CURRENT app, ANY session with a `directory` set — every seeded
-//     local session, not just cloud ones — has its `/global/event` fetch
-//     consumed from the central `/api/wr/events` stream
-//     (`src/context/global-sdk-event-fetch.ts` lines 54-98: `hosting:
-//     "workspace"` is unconditional once `session?.directory` is truthy) into a
-//     request against `/api/wr/events` on the workspace's loopback origin
-//     (`http://127.0.0.1:3001` by default, `src/index.tsx:96`) — confirmed via
-//     Playwright network trace (zero `/global/event` requests; `/api/wr/events`
-//     fires instead). Downstream parsing is unchanged
-//     (`compatEventEnvelope(item)`, `src/context/global-sdk.tsx` ~line 720) —
-//     the identical `{directory, payload}` SSE envelope shape `mock-runtime.ts`
-//     already produces for `/global/event`.
-//  2. `/api/wr/events` has TWO INDEPENDENT pollers: `global-sdk.tsx`'s main
-//     event loop (the one that actually calls `enqueue()`/updates
-//     `data.store`) AND `src/providers/claxedo-events.tsx`'s "central"
-//     notification stream (pty/process/worktree events only —
-//     `ClaxedoEvent` union, `isClaxedoEvent()` loosely accepts ANY
-//     `{type: string}` shape at runtime, so it happily "accepts" this spec's
-//     `message.part.*` envelopes then silently drops them — no handler is
-//     registered for those types, `on()`/`emit()` ~line 90-110). A naive
-//     drain-once queue (as `mock-runtime.ts`'s own EventBus does) hands the
-//     WHOLE batch to whichever poller's `fetch` happens to land first — if
-//     `claxedo-events.tsx` wins the race even once, it silently eats the batch
-//     and `global-sdk.tsx`'s loop never sees it, producing a confirmed-delivered
-//     (200, correct JSON body) but functionally invisible SSE payload. Fixed
-//     below with an append-only log + `Last-Event-ID`-keyed cursor per
-//     connection (mirrors real SSE resumption semantics,
-//     `sseJsonStream`/`onEventId` in `global-sdk.tsx`), so EVERY poller sees
-//     EVERY event exactly once, independent of which one asks first.
-// `/api/wr/runtime-events` is the separate canonical runtime channel. The
-// shared mock mounts it directly; U13 sends raw contract-versioned
-// `subagent-updated` envelopes there while ordinary translated parts continue
-// through this compat bridge.
-type SpecEvent = { directory: string; payload: unknown }
-
-function createSpecEventLog() {
-  const log: SpecEvent[] = []
-  let waiters: Array<() => void> = []
-  return {
-    push(event: SpecEvent) {
-      log.push(event)
-      const fire = waiters
-      waiters = []
-      for (const resolve of fire) resolve()
-    },
-    /** Returns events after `sinceId` (0-based count already seen), waiting up to `idleTimeoutMs` for at least one new one. */
-    async since(sinceId: number, idleTimeoutMs: number): Promise<SpecEvent[]> {
-      if (log.length <= sinceId) {
-        await Promise.race([
-          new Promise<void>((resolve) => waiters.push(resolve)),
-          new Promise<void>((resolve) => setTimeout(resolve, idleTimeoutMs)),
-        ])
-      }
-      return log.slice(sinceId)
-    },
-  }
-}
-
-/**
- * Mounts a spec-local `/api/wr/events` handler (any origin) backed by an
- * append-only log with a per-connection `Last-Event-ID` cursor (see the block
- * comment above for why a simple drain-once queue silently loses events to a
- * second, unrelated poller), and returns an `emit` function that feeds BOTH
- * that log and the original `mock.emit` (harmless belt-and-suspenders in case
- * anything still listens on `/global/event`).
- */
-async function installWorkspaceRuntimeEventsBridge(page: Page, mock: MockRuntimeHandles) {
-  const log = createSpecEventLog()
-  await page.route("**/api/wr/events**", async (route) => {
-    const lastEventId = Number(route.request().headers()["last-event-id"] ?? "0") || 0
-    const events = await log.since(lastEventId, 4000)
-    const body = events.length === 0
-      ? ": heartbeat\n\n"
-      : events.map((e, i) => `id: ${lastEventId + i + 1}\ndata: ${JSON.stringify(e)}\n\n`).join("")
-    await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
-  })
-  return (payload: unknown, directory?: string) => {
-    const dir = directory ?? mock.session.dir
-    log.push({ directory: dir, payload })
-    mock.emit(payload as never, dir)
-  }
 }
 
 const PROJECT_ID = "proj_harness_rendering_matrix"
@@ -604,11 +513,23 @@ async function primeHarness(
   })
   await seedOneProject(page, dir)
 
-  const bridgedEmit = await installWorkspaceRuntimeEventsBridge(page, mock)
-
   await page.goto(`/${slug(dir)}/session`)
   await page.waitForLoadState("domcontentloaded")
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+
+  // A fresh draft has no implicit agent. Select the configured connection or native
+  // SDK explicitly so this matrix exercises the same structured target contract as
+  // production instead of relying on the removed OpenCode fallback.
+  const agentName = harness === "claude-sdk"
+    ? "Claude"
+    : harness === "codex-app-server"
+      ? "Codex"
+      : harness === "cursor-sdk"
+        ? "Cursor"
+        : harness === "pi"
+          ? "Pi"
+          : harness
+  await selectComposerAgent(page, agentName)
 
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
@@ -638,7 +559,10 @@ async function primeHarness(
   await expect.poll(async () => {
     const rows = await page.evaluate(async (id) => {
       const response = await fetch(`/session/${id}/message`)
-      return response.json() as Promise<Array<{ info?: { id?: string; time?: { completed?: number } } }>>
+      const page = await response.json() as {
+        messages: Array<{ info?: { id?: string; time?: { completed?: number } } }>
+      }
+      return page.messages
     }, sessionId)
     const row = rows.find((item) => item.info?.id === assistantId)
     if (typeof row?.info?.time?.completed !== "number") return false
@@ -647,7 +571,7 @@ async function primeHarness(
   }, { timeout: 15_000 }).toBe(true)
 
   const { completed: _completed, ...openTime } = (assistantInfo!.time ?? {}) as Record<string, unknown>
-  bridgedEmit(
+  mock.emit(
     {
       type: "message.updated",
       properties: { sessionID: assistantInfo!.sessionID, info: { ...assistantInfo!, time: openTime } },
@@ -656,7 +580,7 @@ async function primeHarness(
   )
 
   return {
-    mock: { ...mock, emit: bridgedEmit as MockRuntimeHandles["emit"] },
+    mock,
     dir,
     sessionId,
     assistantId,
@@ -707,7 +631,7 @@ type SubagentHarnessCase = {
 }
 
 const subagentHarnessCases: SubagentHarnessCase[] = [
-  { name: "OpenCode native", harness: "opencode", providerKind: "opencode", providerId: "ses-child-opencode", transcript: { kind: "live", ref: "ses-child-opencode" }, openable: true },
+  { name: "External OpenCode", harness: "opencode", providerKind: "opencode", providerId: "ses-child-opencode", transcript: { kind: "live", ref: "ses-child-opencode" }, openable: true },
   { name: "Claude native", harness: "claude-sdk", providerKind: "claude-agent", providerId: "agent-42", transcript: { kind: "messages", ref: "agent-42" }, openable: true },
   { name: "Claude ACP", harness: "claude-acp", transcript: { kind: "messages", ref: "acp:agent-42" }, openable: true },
   { name: "Codex native", harness: "codex-app-server", providerKind: "codex", providerId: "thread-child-1", transcript: { kind: "live", ref: "thread-child-1" }, openable: true },
@@ -932,7 +856,7 @@ async function revealTurn(page: Page) {
 }
 
 test.describe("core harness rendering matrix @core", () => {
-  test("opencode native — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
+  test("external OpenCode connection — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -978,7 +902,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-slot="basic-tool-tool-title"]').filter({ hasText: /pdf/i })).toBeVisible()
   })
 
-  test("opencode native — apply_patch dedicated renderer, GenericTool fallback, compaction divider — behaviors 3,4,7,16", async ({ page }) => {
+  test("external OpenCode connection — apply_patch dedicated renderer, GenericTool fallback, compaction divider — behaviors 3,4,7,16", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -1010,7 +934,7 @@ test.describe("core harness rendering matrix @core", () => {
   // and "file" gaps — the part never entered the TanStack UIMessage and thus never
   // reached `getMsgParts`/`renderablePart`/`PART_MAPPING["compaction"]`. Fixed by adding
   // the lossless compaction round-trip to the projection (both directions).
-  test("opencode native — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
+  test("external OpenCode connection — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -1025,7 +949,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-component="compaction-part"] [data-slot="compaction-part-divider"]')).toBeVisible({ timeout: 45_000 })
   })
 
-  test("opencode native — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
+  test("external OpenCode connection — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo) // ends with the question part PENDING
@@ -1056,7 +980,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-slot="answer-text"]', { hasText: "staging" })).toBeVisible()
   })
 
-  test("opencode native — todowrite never renders a tool row — behavior 9", async ({ page }) => {
+  test("external OpenCode connection — todowrite never renders a tool row — behavior 9", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"]').count()
@@ -1073,7 +997,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect.poll(async () => content.locator('[data-component="tool-part-wrapper"]').count(), { timeout: 20_000 }).toBe(before)
   })
 
-  test("opencode native — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
+  test("external OpenCode connection — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
     const content = page.locator(assistantContent())
@@ -1101,7 +1025,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("exit code 1")).toBeVisible({ timeout: 30_000 })
   })
 
-  test("opencode native — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
+  test("external OpenCode connection — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"], [data-component="text-part"], [data-component="reasoning-part"]').count()
@@ -1463,7 +1387,7 @@ test.describe("core harness rendering matrix @core", () => {
   test("subagents — narrow child surface is read-only and returns focus to its spawn card — behavior 15", async ({ page }) => {
     test.slow()
     await page.setViewportSize({ width: 700, height: 900 })
-    const input = subagentHarnessCases.find((item) => item.name === "OpenCode native")!
+    const input = subagentHarnessCases.find((item) => item.name === "External OpenCode")!
     const scenario = subagentScenario(input)
     const primed = await primeHarness(page, input.harness, scenario.fixture)
     await replay(

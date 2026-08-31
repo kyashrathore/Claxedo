@@ -285,41 +285,19 @@ export class QuestionReplyContractError extends Error {
   }
 }
 
-/**
- * Mirror of the inline body cast at session-core.ts:858 —
- * `{ answer?: string; answers?: string[][] }`. Not type-bound; see the header.
- */
-export type QuestionReplyBody = { answer?: string; answers?: string[][] }
+/** Canonical question reply body consumed by the adapter and published to SSE. */
+export type QuestionReplyBody = { answers: string[][] }
 
 /**
  * Validates an intercepted `/question/:id/reply` body.
  *
- * TWO FIELDS, TWO DESTINATIONS — this is the subtle part. They are NOT alternatives:
- *
- *   :861  `adapter.replyQuestion!(id, body.answer ?? "", directory)`
- *           -> only `answer` ever reaches the harness.
- *   :867  `questionReplied(sid, id, body.answers ?? [[body.answer ?? ""]])`
- *           -> only `answers` (when present) reaches the UI event.
- *
- * So a body carrying `answers` but no `answer` tells the harness the empty string while
- * broadcasting the real selection to every SSE subscriber: the UI shows the question
- * answered correctly and the agent receives nothing. Both branches return 200. This
- * validator refuses that combination.
- *
- * A missing `answer` is likewise refused even though the server tolerates it — `?? ""`
- * at :861 means the agent is answered with an empty string, which no caller intends. An
- * `answer` that is explicitly `""` is allowed: a deliberate blank is a real user action
- * and is distinguishable from an omitted key.
- *
- * The app only ever sends `{ answer }` (`agent-runtime-client.ts:643`), so today the
- * `[[body.answer ?? ""]]` fallback at :867 is the live path and `answers` is unexercised
- * in production.
+ * The same structured `answers` value must reach the adapter and the compatibility
+ * event. A scalar compatibility field is deliberately not accepted.
  */
 export function parseQuestionReplyRequest(rawBody: unknown, url: string): QuestionReplyBody {
   if (rawBody === undefined || rawBody === null) {
     throw new QuestionReplyContractError(url, [
-      `no request body — \`.catch(() => ({}))\` (:858) parses this to {}, and :861 then answers `
-        + `the harness with the empty string while returning 200 {"ok":true}.`,
+      `no request body — the route requires { answers: string[][] }.`,
     ])
   }
   if (typeof rawBody !== "object" || Array.isArray(rawBody)) {
@@ -329,46 +307,25 @@ export function parseQuestionReplyRequest(rawBody: unknown, url: string): Questi
   const body = rawBody as Record<string, unknown>
   const problems: string[] = []
 
-  if (body.answer === undefined) {
-    problems.push(
-      `missing "answer" — :861 sends \`body.answer ?? ""\` to the harness, so the question is `
-        + `answered with an EMPTY STRING and the route still returns 200.`,
-    )
-  } else if (typeof body.answer !== "string") {
-    problems.push(`answer must be a string, got ${typeOf(body.answer)} (cast at :858)`)
-  }
-
-  if (body.answers !== undefined) {
-    if (!Array.isArray(body.answers)) {
-      problems.push(`answers must be an array of string arrays, got ${typeOf(body.answers)}`)
-    } else {
-      for (const [index, group] of body.answers.entries()) {
-        if (!Array.isArray(group)) {
-          problems.push(`answers[${index}] must be an array of strings, got ${typeOf(group)}`)
-          continue
-        }
-        for (const [inner, value] of (group as unknown[]).entries()) {
-          if (typeof value !== "string") {
-            problems.push(`answers[${index}][${inner}] must be a string, got ${typeOf(value)}`)
-          }
-        }
+  if (!Array.isArray(body.answers)) {
+    problems.push(`answers must be an array of string arrays, got ${typeOf(body.answers)}`)
+  } else {
+    for (const [index, group] of body.answers.entries()) {
+      if (!Array.isArray(group)) {
+        problems.push(`answers[${index}] must be an array of strings, got ${typeOf(group)}`)
+        continue
       }
-      if (body.answer === undefined) {
-        problems.push(
-          `"answers" was sent without "answer" — the two fields go to DIFFERENT places: the `
-            + `harness gets \`body.answer ?? ""\` (:861) and the SSE event gets \`body.answers\` (:867). `
-            + `The UI would render the question as answered while the agent received "".`,
-        )
+      for (const [inner, value] of (group as unknown[]).entries()) {
+        if (typeof value !== "string") {
+          problems.push(`answers[${index}][${inner}] must be a string, got ${typeOf(value)}`)
+        }
       }
     }
   }
 
   for (const field of Object.keys(body)) {
-    if (field === "answer" || field === "answers") continue
-    problems.push(
-      `unknown field "${field}" — the cast at :858 admits only "answer" and "answers"; anything `
-        + `else is silently DROPPED by the real server.`,
-    )
+    if (field === "answers") continue
+    problems.push(`unknown field "${field}" — only "answers" is accepted.`)
   }
 
   if (problems.length > 0) throw new QuestionReplyContractError(url, problems)

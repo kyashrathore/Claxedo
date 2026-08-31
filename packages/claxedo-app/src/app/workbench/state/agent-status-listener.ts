@@ -445,18 +445,26 @@ async function reconcileAgentStatuses(state: ClaxedoStateApi, request: typeof fe
     for (const [directory] of targets) {
       const workspace = await resolveWorkspaceRuntime(directory, request)
       const workspaceId = workspace?.workspaceId
+      const relayWorkspaceId = workspaceId && centralTransportForServer(getClaxedoServerUrl()) !== "loopback"
+        ? workspaceId
+        : undefined
       const ptys = await createTransport({
         placement: {
-          ...(workspaceId ? { workspaceId } : {}),
+          ...(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : {}),
           hosting: "workspace",
-          transport: workspaceId && centralTransportForServer(getClaxedoServerUrl()) !== "loopback" ? "workspace-relay" : "loopback",
+          transport: relayWorkspaceId ? "workspace-relay" : "loopback",
         },
         serverUrl: getClaxedoServerUrl(),
-        directory: workspaceId ? undefined : directory,
+        directory: relayWorkspaceId ? undefined : directory,
         request,
         resolveWorkspaceRuntime: ({ directory }) => resolveWorkspaceRuntime(directory, request),
       }).json<Array<{ id: string }>>(
-        terminalPtyApiPath(workspaceId ? { workspaceId } : { directory }),
+        // A local workspace can still have a stable workspaceId. That identity
+        // does not make its loopback HTTP surface relay-shaped: `/workspaces/:id`
+        // exists at the relay edge, while the local runtime is addressed by
+        // `?directory=...`. Using workspaceId here made every reconnect PTY
+        // reconcile 404, whose failure policy correctly cleared all indicators.
+        terminalPtyApiPath(relayWorkspaceId ? { workspaceId: relayWorkspaceId } : { directory }),
         { headers: { Accept: "application/json" } },
       )
       for (const pty of ptys) livePtyIds.add(pty.id)

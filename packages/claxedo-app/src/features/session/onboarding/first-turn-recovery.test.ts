@@ -12,18 +12,18 @@ import {
 describe("first-turn recovery", () => {
   test("chooses a genuinely different native harness model", () => {
     expect(nextHarnessRecoveryModel({
-      harness: "claude-sdk",
-      selectedModelKey: { providerID: "claude-sdk", modelID: "sonnet" },
+      harness: { kind: "native", harnessId: "claude" },
+      selectedModelKey: { providerID: "claude", modelID: "sonnet" },
       models: [
         { id: "sonnet", name: "Sonnet", providerID: "anthropic" },
         { id: "opus", name: "Opus", providerID: "anthropic" },
       ],
-    })).toEqual({ providerID: "claude-sdk", modelID: "opus" })
+    })).toEqual({ providerID: "claude", modelID: "opus" })
   })
 
   test("uses provider identity when Pi exposes the same model id from multiple providers", () => {
     expect(nextHarnessRecoveryModel({
-      harness: "pi",
+      harness: { kind: "native", harnessId: "pi" },
       selectedModelKey: { providerID: "anthropic", modelID: "sonnet" },
       models: [
         { id: "sonnet", name: "Sonnet", providerID: "anthropic" },

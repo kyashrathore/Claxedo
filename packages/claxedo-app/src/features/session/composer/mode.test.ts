@@ -17,7 +17,7 @@ describe("composer mode", () => {
         worktree: "main",
         workspaceKind: "local",
         signedControlPlane: false,
-        harness: { id: "claude-acp", binary: "claude" },
+        harness: { kind: "connection", connectionId: "acp:claude", binary: "claude" },
       },
     }
 
@@ -49,18 +49,18 @@ describe("composer mode", () => {
         worktree: "main",
         workspaceKind: "local",
         signedControlPlane: false,
-        harness: { id: "codex-acp" },
+        harness: { kind: "connection", connectionId: "acp:codex" },
       },
-    })).toBe("codex-acp")
+    })).toEqual({ kind: "connection", connectionId: "acp:codex" })
 
     expect(composerHarness({
       kind: "session",
       ref: {
         sessionId: "ses_1",
         host: "central",
-        harness: { id: "claude-acp", binary: "claude" },
+        harness: { kind: "connection", connectionId: "acp:claude", binary: "claude" },
       },
-    })).toEqual({ id: "claude-acp", binary: "claude" })
+    })).toEqual({ kind: "connection", connectionId: "acp:claude", binary: "claude" })
 
     expect(isComposerHarnessMode({
       kind: "draft",

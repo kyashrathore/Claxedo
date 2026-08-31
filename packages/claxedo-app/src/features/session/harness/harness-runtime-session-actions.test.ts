@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test"
 import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"
 import type { HarnessScopeInput } from "./store-policy"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
+import { connectionHarness } from "@/platform/identity/harness-selection"
 
 type ClaimInput = HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
 
@@ -36,14 +37,13 @@ describe("harness runtime session actions", () => {
     await expect(actions.create({
       input: { directory: "/repo", sessionConfig },
       directory: "/repo",
-      harness: "acp:claude",
+      harness: connectionHarness("claude-agent"),
     })).resolves.toBe("ses_created")
 
     expect(requests).toEqual([{
-      url: "http://127.0.0.1:3001/session?directory=%2Frepo",
+      url: "http://127.0.0.1:3001/session?directory=%2Frepo&connectionId=claude-agent",
       method: "POST",
       body: {
-        harness: { id: "claude", access: "acp" },
         agent: "build",
         model: { providerID: "claude-sdk", modelID: "sonnet" },
         variant: "high",
@@ -65,7 +65,7 @@ describe("harness runtime session actions", () => {
     await actions.remove({
       id: "ses_prepared",
       directory: "/repo",
-      harness: "acp:claude",
+      harness: connectionHarness("claude-agent"),
       model: "sonnet",
     })
 
@@ -83,7 +83,7 @@ describe("harness runtime session actions", () => {
     await expect(actions.create({
       input: { directory: "/repo", sessionConfig },
       directory: "/repo",
-      harness: "acp:claude",
+      harness: connectionHarness("claude-agent"),
     })).rejects.toMatchObject({ status: 502, code: "invalid_response" })
   })
 
@@ -105,7 +105,7 @@ describe("harness runtime session actions", () => {
     await expect(actions.remove({
       id: "ses_local",
       directory: "/repo",
-      harness: "acp:claude",
+      harness: connectionHarness("claude-agent"),
       model: "sonnet",
     })).rejects.toMatchObject({ status: 409, code: "delete_failed" })
 
@@ -131,11 +131,40 @@ describe("harness runtime session actions", () => {
     await actions.remove({
       id: "ses_workspace",
       directory: "workspace:ws_1",
-      harness: "acp:codex",
+      harness: connectionHarness("codex-agent"),
       model: "gpt-5.5",
     })
 
     expect(deletes).toEqual(["ses_workspace"])
+  })
+
+  test("applies the workspace relay prefix exactly once", async () => {
+    const urls: string[] = []
+    const request: typeof fetch = async (resource) => {
+      urls.push(String(resource))
+      return Response.json(canonicalSession)
+    }
+    const actions = createHarnessRuntimeSessionActions<ClaimInput>({
+      base: "http://127.0.0.1:3001",
+      runtime: runtime({
+        useLocal: false,
+        clientOptions: () => ({
+          request,
+          workspaceId: "ws_1",
+          workspaceKind: "cloud",
+        }),
+      }),
+    })
+
+    await expect(actions.create({
+      input: { directory: "workspace:ws_1", sessionConfig },
+      directory: "workspace:ws_1",
+      harness: connectionHarness("external-opencode"),
+    })).resolves.toBe("ses_created")
+
+    expect(urls).toEqual([
+      "http://127.0.0.1:3001/workspaces/ws_1/session?connectionId=external-opencode",
+    ])
   })
 })
 
@@ -155,6 +184,11 @@ async function successfulDelete(): Promise<{ ok: true }> {
 function runtime(input: {
   useLocal?: boolean | ((input?: HarnessScopeInput) => boolean)
   sessionFetch?: typeof fetch
+  clientOptions?: (input?: HarnessScopeInput) => {
+    request: typeof fetch
+    workspaceId?: string
+    workspaceKind?: "cloud" | "user-hosted"
+  }
 } = {}) {
   return {
     useLocalHarnessConfig: (params?: HarnessScopeInput) =>

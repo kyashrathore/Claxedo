@@ -16,9 +16,16 @@ type TestSession = {
 }
 
 function inventory(): SessionInventoryValue<TestSession> {
+  const sessions = [
+    { id: "ses-global", directory: "global", title: "Global" },
+    { id: "ses-global-keep", directory: "global", title: "Keep" },
+    { id: "ses-archive", directory: "/repo/a", projectID: "project_a" },
+    { id: "ses-keep", directory: "/repo/a", projectID: "project_a" },
+    { id: "ses-other", directory: "/repo/b", projectID: "project_b" },
+  ]
   return normalizeSessionInventory({
-    sessions: [],
-    sessionOrder: [],
+    sessions,
+    sessionOrder: sessions.map((session) => session.id),
     global: [
       { id: "ses-global", directory: "global", title: "Global" },
       { id: "ses-global-keep", directory: "global", title: "Keep" },

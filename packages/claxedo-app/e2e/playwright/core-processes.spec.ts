@@ -598,10 +598,12 @@ async function openProcessesNavigator(page: Page): Promise<Locator> {
     if ((await toggle.getAttribute("aria-label")) !== "Close Processes") await toggle.click()
   }
   await expect(overlay).toHaveAttribute("data-open", "true", { timeout: 10_000 })
-  const layout = await overlay.evaluate((element) => {
-    const content = Array.from(element.parentElement?.children ?? []).find(
-      (child): child is HTMLElement => child instanceof HTMLElement && getComputedStyle(child).flexGrow === "1",
-    )
+  const readLayout = () => overlay.evaluate((element) => {
+    // Measure the named Review surface instead of guessing that the first
+    // flex-growing sibling is its lane. During reload, retained/pending panel
+    // bodies can briefly satisfy that structural guess. Also let the 120ms
+    // navigator width transition settle before judging the final geometry.
+    const content = element.parentElement?.querySelector<HTMLElement>('[data-testid="review-pane-root"]')
     const navigatorBounds = element.getBoundingClientRect()
     const contentBounds = content?.getBoundingClientRect()
     return {
@@ -611,8 +613,8 @@ async function openProcessesNavigator(page: Page): Promise<Locator> {
         : true,
     }
   })
-  expect(layout.position).not.toBe("absolute")
-  expect(layout.overlapsReview).toBe(false)
+  await expect.poll(async () => (await readLayout()).position).not.toBe("absolute")
+  await expect.poll(async () => (await readLayout()).overlapsReview).toBe(false)
   return overlay
 }
 
@@ -924,12 +926,12 @@ test.describe("core processes @core", () => {
     // snapshots status at the moment the PTY spawned, server-side, before the
     // command necessarily finishes) — see `isStaleProcessSnapshot` in
     // `src/claxedo-ui/context/process-pane.tsx`. Reproduced deterministically
-    // (not a real-clock race): hold the app's first `/api/wr/events` (and
-    // `/api/wr/runtime-events`, belt-and-suspenders — either may be the one
-    // this harness's SSE consumer actually polls) connection open via a gate
-    // promise, release it only once the `start()` POST is confirmed in
-    // flight, and delay that POST's own response past the point the crash
-    // event lands.
+    // (not a real-clock race): hold the workspace-scoped `/api/wr/events`
+    // connection open via a gate promise, release it only once the `start()`
+    // POST is confirmed in flight, and delay that POST's own response past
+    // the point the crash event lands. Process events are workspace-runtime
+    // events; the bare central stream is a different authority and must not be
+    // used as a convenient injection fallback.
     let releaseCrashEvent: (() => void) | undefined
     const crashEventGate = new Promise<void>((resolve) => {
       releaseCrashEvent = resolve

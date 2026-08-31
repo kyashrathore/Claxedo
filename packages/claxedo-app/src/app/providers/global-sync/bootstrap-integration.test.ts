@@ -77,10 +77,11 @@ describe("global sync bootstrap integration", () => {
       },
       translate: (key) => key,
       baseUrl: "http://claxedo.test",
+      harnessType: "pi",
       fetch: async (input) => {
         const req = input instanceof Request ? input : new Request(String(input))
         calls.push(req.url.includes("/api/workspace/resolve") ? "workspace_resolve" : req.url)
-        if (req.url === "http://claxedo.test/provider?harness=opencode&directory=%2Ftmp%2Fws") {
+        if (req.url === "http://claxedo.test/provider?harness=pi&directory=%2Ftmp%2Fws") {
           return Response.json({ all: [], connected: [], default: {} })
         }
         return new Response("{}", { headers: { "Content-Type": "application/json" } })

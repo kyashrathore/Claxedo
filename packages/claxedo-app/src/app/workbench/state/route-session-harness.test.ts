@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { routeSessionHarness } from "./route-session-harness"
 
 describe("route session harness", () => {
-  test("recovers non-OpenCode harness refs from runtime config shapes", () => {
+  test("recovers harness refs from the canonical selection and runtime identity shapes", () => {
     expect(routeSessionHarness({
       config: {
         harness: {
@@ -38,11 +38,7 @@ describe("route session harness", () => {
     expect(routeSessionHarness({
       harness: {
         id: "claude",
-        access: "acp",
-        connection: {
-          kind: "process",
-          binary: "/opt/bin/claude",
-        },
+        access: "native",
       },
     })).toEqual({ id: "acp:claude", binary: "/opt/bin/claude" })
 
@@ -54,7 +50,7 @@ describe("route session harness", () => {
     })).toEqual({ id: "claude-sdk" })
   })
 
-  test("does not force an explicit harness ref for OpenCode sessions", () => {
+  test("does not revive removed legacy harness config shapes", () => {
     expect(routeSessionHarness({
       config: {
         harness: {
@@ -64,10 +60,10 @@ describe("route session harness", () => {
     })).toBeUndefined()
   })
 
-  test("recovers the canonical harness tag from durable central session metadata", () => {
+  test("does not infer harness identity from unrelated durable tags", () => {
     expect(routeSessionHarness({
       host: "central",
       tags: ["source-channel:telegram", "harness:pi"],
-    })).toEqual({ id: "pi" })
+    })).toBeUndefined()
   })
 })

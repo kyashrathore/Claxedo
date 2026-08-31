@@ -22,7 +22,8 @@ describe("workspace draft defaults", () => {
     ]
 
     for (const value of cases) {
-      expect(preferences.save({ serverUrl: "http://localhost:4096", workspaceKey: `/repo/${value.harness}` }, value)).toBe(true)
+      const { key, ...saved } = value
+      expect(preferences.save({ serverUrl: "http://localhost:4096", workspaceKey: `/repo/${key}` }, saved)).toBe(true)
       expect(createDraftDefaultPreferences(storage).read({
         serverUrl: "http://localhost:4096",
         workspaceKey: `/repo/${value.harness}`,
@@ -34,7 +35,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     expect(preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "pi", labels: { provider: "OpenAI Codex", model: "GPT-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, labels: { provider: "OpenAI Codex", model: "GPT-5.5" } },
     )).toBe(true)
 
     expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })).toEqual({
@@ -47,16 +48,16 @@ describe("workspace draft defaults", () => {
     const first = createDraftDefaultPreferences(storage)
     first.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_a" },
-      { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "gpt-5.5" } },
     )
     first.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_b" },
-      { harness: "opencode", model: { providerID: "anthropic", modelID: "opus" } },
+      { harness: { kind: "connection", connectionId: "external-opencode" }, model: { providerID: "anthropic", modelID: "opus" } },
     )
 
     const second = createDraftDefaultPreferences(storage)
-    expect(second.read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_a" })?.harness).toBe("pi")
-    expect(second.read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_b" })?.harness).toBe("opencode")
+    expect(second.read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_a" })?.harness).toEqual({ kind: "native", harnessId: "pi" })
+    expect(second.read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_b" })?.harness).toEqual({ kind: "connection", connectionId: "external-opencode" })
     expect(second.read({ serverUrl: "https://remote.example", workspaceKey: "ws_a" })).toBeUndefined()
   })
 
@@ -64,7 +65,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "gpt-5.5" } },
     )
 
     const value = preferences.read({
@@ -81,11 +82,11 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "pi", model: { providerID: "openai", modelID: "old" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "old" } },
     )
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { harness: "opencode", model: { providerID: "anthropic", modelID: "current" } },
+      { harness: { kind: "connection", connectionId: "external-opencode" }, model: { providerID: "anthropic", modelID: "current" } },
     )
 
     expect(preferences.read({
@@ -99,7 +100,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "gpt-5.5" } },
     )
     storage.failWrites = true
 
@@ -107,9 +108,9 @@ describe("workspace draft defaults", () => {
       serverUrl: "http://localhost:4096",
       workspaceKey: "ws_1",
       fallbackWorkspaceKey: "/repo",
-    })?.harness).toBe("pi")
+    })?.harness).toEqual({ kind: "native", harnessId: "pi" })
     storage.failWrites = false
-    expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })?.harness).toBe("pi")
+    expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })?.harness).toEqual({ kind: "native", harnessId: "pi" })
   })
 
   test("ignores malformed and structurally invalid records", () => {
@@ -195,7 +196,7 @@ describe("workspace draft defaults", () => {
     storage.failWrites = true
     expect(createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: "opencode" },
+      { harness: { kind: "connection", connectionId: "external-opencode" } },
     )).toBe(false)
   })
 })

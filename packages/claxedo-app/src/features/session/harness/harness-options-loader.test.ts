@@ -16,7 +16,7 @@ let loading: boolean[]
 beforeEach(() => {
   seq = {}
   tries = {}
-  harness = "claude-acp"
+  harness = connectionHarness("claude-acp")
   selectedModel = "sonnet"
   patches = []
   loading = []
@@ -40,7 +40,7 @@ describe("harness options loader", () => {
       }),
     })
 
-    await expect(loader.load(scope, "claude-acp")).resolves.toMatchObject({ source: "harness", stale: false })
+    await expect(loader.load(scope, connectionHarness("claude-acp"))).resolves.toMatchObject({ source: "harness", stale: false })
     expect(loading).toEqual([true])
     expect(tries[scope]).toBeUndefined()
     expect(patches.at(-1)).toMatchObject({
@@ -48,6 +48,34 @@ describe("harness options loader", () => {
       selectedModel: "sonnet",
       optionsLoading: false,
     })
+  })
+
+  test("keeps an equivalent generic connection current across structural copies", async () => {
+    harness = connectionHarness("cloud-agent")
+    const requested = connectionHarness("cloud-agent")
+    const loader = loaderFor({
+      fetch: async () => optionsResponse({
+        source: "harness",
+        stale: false,
+        options: [{
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "big-pickle-1",
+          selectOptions: [{ id: "big-pickle-1", name: "Big Pickle" }],
+        }],
+      }),
+    })
+
+    await loader.load(scope, requested)
+
+    expect(patches.at(-1)).toMatchObject({
+      dynamicModels: [{ id: "big-pickle-1", name: "Big Pickle" }],
+      selectedModel: "big-pickle-1",
+      optionsLoading: false,
+    })
+    expect(savedModels).toEqual(["big-pickle-1"])
   })
 
   test("keeps stale options loading and schedules bounded retry", async () => {
@@ -78,7 +106,7 @@ describe("harness options loader", () => {
       },
     })
 
-    await loader.load(scope, "claude-acp")
+    await loader.load(scope, connectionHarness("claude-acp"))
     expect(tries[scope]).toBe(1)
     expect(patches[0]).toMatchObject({
       dynamicModels: [],
@@ -113,8 +141,8 @@ describe("harness options loader", () => {
       },
     })
 
-    const first = loader.load(scope, "claude-acp", { name: "first" })
-    await loader.load(scope, "claude-acp", { name: "second" })
+    const first = loader.load(scope, connectionHarness("claude-acp"), { name: "first" })
+    await loader.load(scope, connectionHarness("claude-acp"), { name: "second" })
     resolveFirst(optionsResponse({
       source: "harness",
       stale: false,
@@ -138,7 +166,7 @@ describe("harness options loader", () => {
       errorMessage: async () => "server said no",
     })
 
-    await expect(loader.load(scope, "claude-acp")).resolves.toBeUndefined()
+    await expect(loader.load(scope, connectionHarness("claude-acp"))).resolves.toBeUndefined()
     expect(patches.at(-1)).toEqual({
       dynamicModels: [],
       selectedModel: "",
@@ -153,7 +181,7 @@ describe("harness options loader", () => {
         throw new Error("network")
       },
     })
-    await expect(throwing.load(scope, "claude-acp")).resolves.toBeUndefined()
+    await expect(throwing.load(scope, connectionHarness("claude-acp"))).resolves.toBeUndefined()
     expect(patches.at(-1)?.configError).toBe("Failed to load model options")
   })
 
@@ -166,9 +194,9 @@ describe("harness options loader", () => {
       }),
     })
 
-    const run = loader.load(scope, "claude-acp")
+    const run = loader.load(scope, connectionHarness("claude-acp"))
     await new Promise((resolve) => setTimeout(resolve, 0))
-    harness = "pi"
+    harness = nativeHarness("pi")
     finishMessage("stale failure")
 
     await expect(run).resolves.toBeUndefined()
@@ -183,8 +211,8 @@ describe("harness options loader", () => {
       }),
     })
 
-    const run = loader.load(scope, "claude-acp")
-    harness = "opencode"
+    const run = loader.load(scope, connectionHarness("claude-acp"))
+    harness = connectionHarness("another-agent")
     rejectFetch(new Error("stale failure"))
 
     await expect(run).resolves.toBeUndefined()
@@ -217,7 +245,7 @@ describe("harness options loader", () => {
       },
     })
 
-    await loader.load(scope, "claude-acp")
+    await loader.load(scope, connectionHarness("claude-acp"))
 
     expect(patches.at(-1)).toEqual({
       optionsSource: "harness",
@@ -229,7 +257,7 @@ describe("harness options loader", () => {
     expect(resolutions).toEqual([{
       application: captured,
       input: {
-        supportedHarnesses: ["opencode", "claude-acp"],
+        supportedHarnesses: [connectionHarness("claude-acp")],
         eligibleModels: [{ providerID: "claude-acp", modelID: "sonnet" }],
         declaredDefaultModel: { providerID: "claude-acp", modelID: "sonnet" },
       },
@@ -252,7 +280,7 @@ describe("harness options loader", () => {
       },
     })
 
-    await loader.load(scope, "claude-acp")
+    await loader.load(scope, connectionHarness("claude-acp"))
 
     expect(resolutions).toEqual([])
     expect(patches.at(-1)).toMatchObject({
@@ -275,12 +303,12 @@ describe("harness options loader", () => {
     const loader = loaderFor({
       fetch: async () => {
         // The switch happens while the request is in flight.
-        harness = "codex-acp"
+        harness = connectionHarness("codex-acp")
         return optionsResponse({ source: "harness", stale: false, options: [] })
       },
     })
 
-    await loader.load(scope, "claude-acp")
+    await loader.load(scope, connectionHarness("claude-acp"))
 
     expect(loading).toEqual([true, false])
   })
@@ -288,12 +316,12 @@ describe("harness options loader", () => {
   test("releases the loading flag when an abandoned load fails", async () => {
     const loader = loaderFor({
       fetch: async () => {
-        harness = "codex-acp"
+        harness = connectionHarness("codex-acp")
         return new Response("nope", { status: 500 })
       },
     })
 
-    await loader.load(scope, "claude-acp")
+    await loader.load(scope, connectionHarness("claude-acp"))
 
     expect(loading).toEqual([true, false])
   })
@@ -332,8 +360,8 @@ describe("harness options loader", () => {
       }),
     })
 
-    const slow = first.load(scope, "claude-acp")
-    await second.load(scope, "claude-acp")
+    const slow = first.load(scope, connectionHarness("claude-acp"))
+    await second.load(scope, connectionHarness("claude-acp"))
     const settled = patches.at(-1)
     release?.()
     await slow
@@ -345,25 +373,25 @@ describe("harness options loader", () => {
   test("releases the loading flag when an abandoned load throws", async () => {
     const loader = loaderFor({
       fetch: async () => {
-        harness = "codex-acp"
+        harness = connectionHarness("codex-acp")
         throw new Error("network down")
       },
     })
 
-    await loader.load(scope, "claude-acp")
+    await loader.load(scope, connectionHarness("claude-acp"))
 
     expect(loading).toEqual([true, false])
   })
 
   test("clears placeholder model ids when options loading fails", async () => {
-    harness = "cursor-sdk"
+    harness = nativeHarness("cursor")
     selectedModel = "default"
     const loader = loaderFor({
       fetch: async () => new Response(JSON.stringify({ error: "Cursor SDK requires an explicit cursor-sdk API key." }), { status: 502 }),
       errorMessage: async () => "Cursor SDK requires an explicit cursor-sdk API key.",
     })
 
-    await loader.load(scope, "cursor-sdk")
+    await loader.load(scope, nativeHarness("cursor"))
 
     expect(patches.at(-1)).toMatchObject({
       dynamicModels: [],
@@ -394,7 +422,7 @@ describe("harness options loader", () => {
       }),
     })
 
-    await loader.load(scope, "cursor-sdk")
+    await loader.load(scope, nativeHarness("cursor"))
 
     expect(patches).toEqual([])
     expect(loading).toEqual([true, false])

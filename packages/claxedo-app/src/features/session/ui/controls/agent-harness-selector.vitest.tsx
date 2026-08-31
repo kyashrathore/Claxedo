@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessSelection, SessionRef } from "@/platform/identity/session-ref"
 
 type PiProvider = {
   id: string
@@ -18,7 +18,7 @@ const openSettingsProviders = vi.hoisted(() => vi.fn())
 // Mocks
 // ---------------------------------------------------------------------------
 
-const setHarnessCalls: Array<{ scope: string; type: string }> = []
+const setHarnessCalls: Array<{ scope: string; type: HarnessSelection }> = []
 const setModelCalls: Array<{ scope: string; model: { providerID: string; modelID: string } }> = []
 const hydrateCalls: Array<{ scope: string; directory?: string; sessionId?: string; sessionRef?: SessionRef }> = []
 const resolveDefaultCalls: unknown[] = []
@@ -50,6 +50,7 @@ let harnessMode = true
 
 vi.mock("@/features/session/app-ports", () => ({
   useProviders: () => ({
+    resolved: () => true,
     all: () => piProviders,
     connected: () => piConnected.flatMap((id) => {
       const provider = piProviders.get(id)
@@ -87,7 +88,7 @@ vi.mock("@/features/session/preferences/pane", () => ({
 // it composes one picker — so this is where the seam moved.
 vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
   HarnessModelPicker: (props: any) => {
-    const options: string[] = [...props.harnessOptions]
+    const options: HarnessSelection[] = [...props.harnessOptions]
     const groups = options.reduce((result, opt) => {
       const group = harnessGroupForTest(opt)
       result.set(group, [...(result.get(group) ?? []), opt])
@@ -101,9 +102,9 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
         {[...groups.entries()].map(([group, opts]) => (
           <div data-testid={`select-group-${group}`}>
             <span>{group}</span>
-            {opts.map((opt: string) => (
-              <button data-testid={`select-option-${opt}`} onClick={() => props.onHarnessSelect?.(opt)}>
-                {props.harnessLabel?.(opt) ?? opt}
+            {opts.map((opt: HarnessSelection) => (
+              <button data-testid={`select-option-${harnessId(opt)}`} onClick={() => props.onHarnessSelect?.(opt)}>
+                {props.harnessLabel?.(opt) ?? harnessId(opt)}
               </button>
             ))}
           </div>
@@ -134,10 +135,12 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
 // Mirrors harnessOptionGroup in the component; the stub groups rows the same
 // way so the "groups harness choices by ACP / native SDK / direct" test still
 // describes what a user sees.
-function harnessGroupForTest(input: string) {
-  if (input.startsWith("acp:")) return "ACP"
-  if (input === "claude-sdk" || input === "codex-app-server" || input === "cursor-sdk") return "Native SDK"
-  return "Direct"
+function harnessId(input: HarnessSelection) {
+  return input.kind === "native" ? input.harnessId : input.connectionId
+}
+
+function harnessGroupForTest(input: HarnessSelection) {
+  return input.kind === "native" ? "Native SDK" : "Connections"
 }
 
 vi.mock("@opencode-ai/ui/v2/tooltip-v2", () => ({
@@ -160,25 +163,25 @@ import type { HarnessSelectionController } from "@/features/session/harness/cont
 function harnessController(): HarnessSelectionController {
   return {
     read: () => ({
-      harness: harnessType as ReturnType<HarnessSelectionController["read"]>["harness"],
+      harness: harnessType,
       readiness: readiness as ReturnType<HarnessSelectionController["read"]>["readiness"],
       isHarnessMode: harnessMode,
       models,
       selectedModel,
-      selectedModelKey: selectedModel ? { providerID: selectedModelProvider ?? harnessType, modelID: selectedModel } : undefined,
+      selectedModelKey: selectedModel ? { providerID: selectedModelProvider ?? harnessId(harnessType), modelID: selectedModel } : undefined,
       configError,
       optionsStale,
       optionsLoading,
       draftDefaultState,
       draftDefaultLabels,
       draftDefaultModel: selectedModel
-        ? { providerID: selectedModelProvider ?? harnessType, modelID: selectedModel }
+        ? { providerID: selectedModelProvider ?? harnessId(harnessType), modelID: selectedModel }
         : undefined,
     }),
     hydrate: (scope: string, input?: { directory?: string; sessionId?: string; sessionRef?: SessionRef }) => {
       hydrateCalls.push({ scope, directory: input?.directory, sessionId: input?.sessionId, sessionRef: input?.sessionRef })
     },
-    setHarness: (scope: string, type: string) => {
+    setHarness: (scope: string, type: HarnessSelection) => {
       setHarnessCalls.push({ scope, type })
     },
     setModel: (scope: string, model: { providerID: string; modelID: string }) => {
@@ -289,18 +292,18 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
   test("clicking an option calls setHarness when unlocked", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-codex']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
     expect(setHarnessCalls).toHaveLength(1)
-    expect(setHarnessCalls[0].type).toBe("codex-app-server")
+    expect(setHarnessCalls[0].type).toEqual({ kind: "native", harnessId: "codex" })
   })
 
   test("clicking the current harness does not call setHarness", () => {
-    harnessType = "claude-sdk"
+    harnessType = { kind: "native", harnessId: "claude" }
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const option = container.querySelector("[data-testid='select-option-claude-sdk']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-claude']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
@@ -309,27 +312,27 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
   test("clicking an option captures harness_selected with an id-only property allowlist", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
-    const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-codex']") as HTMLButtonElement
 
     fireEvent.click(option)
 
     const event = captured.find((entry) => entry.event === "harness_selected")
     expect(event).toBeDefined()
-    expect(event?.properties.harness).toBe("codex-app-server")
+    expect(event?.properties.harness).toBe("codex")
+    expect(event?.properties.targetKind).toBe("native")
     // The guard against future PII creep: this enumerates the exact allowed
     // keys. Tripwire — add a forbidden property (e.g. `title`) at the call site
     // in agent-harness-selector.tsx, watch this fail, then remove it.
     expect(Object.keys(event?.properties ?? {}).sort()).toEqual(
-      ["deployment_mode", "harness", "org_id", "surface", "user_id"].sort(),
+      ["deployment_mode", "harness", "org_id", "surface", "targetKind", "user_id"].sort(),
     )
   })
 
   test("does not capture harness_selected when the click is a no-op (the current harness)", () => {
-    harnessType = "claude-sdk"
+    harnessType = { kind: "native", harnessId: "claude" }
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    // claude-sdk is already current — re-picking it must not emit telemetry.
-    fireEvent.click(container.querySelector("[data-testid='select-option-claude-sdk']") as HTMLButtonElement)
+    fireEvent.click(container.querySelector("[data-testid='select-option-claude']") as HTMLButtonElement)
 
     expect(captured.filter((entry) => entry.event === "harness_selected")).toEqual([])
   })
@@ -346,17 +349,17 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
   test("clicking an option hands off an existing session", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
-    const option = container.querySelector("[data-testid='select-option-codex-app-server']") as HTMLButtonElement
+    const option = container.querySelector("[data-testid='select-option-codex']") as HTMLButtonElement
     expect(option).not.toBeNull()
 
     fireEvent.click(option)
-    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-app-server" }])
+    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: { kind: "native", harnessId: "codex" } }])
   })
 
   test("existing sessions can hand off to built-in harnesses", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={true} />)
 
-    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi"]) {
+    for (const runner of ["claude", "codex", "cursor", "pi"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
@@ -366,11 +369,11 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   test("only starts one runner switch while a switch is in flight", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
-    for (const runner of ["claude-sdk", "codex-app-server", "cursor-sdk", "pi"]) {
+    for (const runner of ["claude", "codex", "cursor", "pi"]) {
       const opt = container.querySelector(`[data-testid='select-option-${runner}']`) as HTMLButtonElement
       fireEvent.click(opt)
     }
-    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: "codex-app-server" }])
+    expect(setHarnessCalls).toEqual([{ scope: "test-scope", type: { kind: "native", harnessId: "codex" } }])
   })
 
   test("groups only the currently supported native choices", () => {
@@ -379,10 +382,9 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Claude")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Codex")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Cursor")
-    expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).toContain("Pi")
-    expect(container.querySelector("[data-testid='select-group-Direct']")?.textContent).not.toContain("OpenCode")
+    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Pi")
     expect(container.querySelector("[data-testid='select-option-opencode']")).toBeNull()
-    expect(container.querySelector("[data-testid='select-group-ACP']")).toBeNull()
+    expect(container.querySelector("[data-testid='select-group-Connections']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-claude-acp']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-codex-acp']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-cursor-acp']")).toBeNull()
@@ -496,7 +498,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("surfaces Cursor SDK auth requirements in the notice row", () => {
-    harnessType = "cursor-sdk"
+    harnessType = { kind: "native", harnessId: "cursor" }
     configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
     optionsStale = true
     models = []
@@ -527,7 +529,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("does not mark Cursor SDK models as configured when options failed to load", () => {
-    harnessType = "cursor-sdk"
+    harnessType = { kind: "native", harnessId: "cursor" }
     configError = "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
     models = []
     selectedModel = ""
@@ -643,11 +645,11 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     ))
 
     await waitFor(() => expect(hydrateCalls).toHaveLength(1))
-    setSessionRef({ host: "central", sessionId: "ses_1", harness: { id: "pi" } })
+    setSessionRef({ host: "central", sessionId: "ses_1", harness: { kind: "native", harnessId: "pi" } })
 
     await waitFor(() => {
       expect(hydrateCalls).toHaveLength(2)
-      expect(hydrateCalls[1]?.sessionRef?.harness?.id).toBe("pi")
+      expect(hydrateCalls[1]?.sessionRef?.harness).toEqual({ kind: "native", harnessId: "pi" })
     })
   })
 
@@ -694,7 +696,7 @@ describe("AgentHarnessSelector — readiness UI", () => {
   // end-to-end, not just that the selector renders a hardcoded readiness.
   test("startup status frame drives the store to 'polling', making the Connecting pill reachable [WP-B9]", () => {
     const patch = harnessStatusPatch({
-      data: { type: "codex-app-server", status: "configured", ready: false },
+      data: { type: { kind: "native", harnessId: "codex" }, status: "configured", ready: false },
     })
     expect(patch.readiness).toBe("polling")
     readiness = patch.readiness!
@@ -707,8 +709,95 @@ describe("AgentHarnessSelector — readiness UI", () => {
 })
 
 describe("AgentHarnessSelector — selectable Pi models", () => {
+  test("applies provider visibility preferences to the authoritative Pi catalog", () => {
+    harnessType = { kind: "native", harnessId: "pi" }
+    piConnected = ["pi"]
+    piProviders.set("pi", {
+      id: "pi",
+      name: "Pi",
+      models: {
+        virtual: { id: "virtual", name: "Virtual" },
+        legacy: { id: "legacy", name: "Legacy" },
+      },
+    })
+
+    const { container } = render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          list: () => [],
+          current: () => undefined,
+          visible: ({ modelID }) => modelID !== "legacy",
+          set: () => undefined,
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='model-option-virtual']")).not.toBeNull()
+    expect(container.querySelector("[data-testid='model-option-legacy']")).toBeNull()
+  })
+
+  test("evaluates Pi visibility against the Pi-scoped provider defaults", () => {
+    harnessType = { kind: "native", harnessId: "pi" }
+    piConnected = ["pi"]
+    piDefaults = { pi: "virtual" }
+    piProviders.set("pi", {
+      id: "pi",
+      name: "Pi",
+      models: { virtual: { id: "virtual", name: "Virtual" } },
+    })
+    const visible = vi.fn((_model, defaults?: Record<string, string>) => defaults?.pi === "virtual")
+
+    const { container } = render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          list: () => [],
+          current: () => undefined,
+          visible,
+          set: () => undefined,
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='model-option-virtual']")).not.toBeNull()
+    expect(visible).toHaveBeenCalledWith(
+      { providerID: "pi", modelID: "virtual" },
+      { pi: "virtual" },
+    )
+  })
+
+  test("projects the selected Pi model into the provider catalog used by submit", async () => {
+    harnessType = { kind: "native", harnessId: "pi" }
+    selectedModel = "virtual"
+    selectedModelProvider = "pi"
+    piConnected = ["pi"]
+    piProviders.set("pi", {
+      id: "pi",
+      name: "Pi",
+      models: { virtual: { id: "virtual", name: "Virtual" } },
+    })
+    const setProviderModel = vi.fn()
+
+    render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          // A remote workspace's directory-scoped picker list can still be
+          // empty; the explicit Pi catalog above remains authoritative.
+          list: () => [],
+          current: () => undefined,
+          visible: () => true,
+          set: setProviderModel,
+        })}
+      />
+    ))
+
+    await waitFor(() => expect(setProviderModel).toHaveBeenCalledWith(
+      { providerID: "pi", modelID: "virtual" },
+      { recent: false },
+    ))
+  })
+
   test("resolves an unresolved Pi workspace default from connected provider models", async () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     draftDefaultState = undefined
     piConnected = ["openai-codex"]
     piDefaults = { "openai-codex": "gpt-5.5" }
@@ -721,7 +810,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
 
     await waitFor(() => expect(resolveDefaultCalls).toContainEqual({
-      supportedHarnesses: expect.arrayContaining(["pi"]),
+      supportedHarnesses: expect.arrayContaining([{ kind: "native", harnessId: "pi" }]),
       eligibleModels: [{ providerID: "openai-codex", modelID: "gpt-5.5" }],
       connectedProviderIDs: ["openai-codex"],
       providerDefaults: { "openai-codex": "gpt-5.5" },
@@ -729,7 +818,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("keeps an unresolved Pi default pending while the provider catalog has failed", async () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     draftDefaultState = undefined
     piError = "catalog unavailable"
 
@@ -740,7 +829,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("keeps the friendly saved model label visible when the exact model disappeared", () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     selectedModel = "removed-model"
     selectedModelProvider = "openai-codex"
     draftDefaultState = "saved-model-unavailable"
@@ -782,7 +871,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("Pi renders models from the Pi-scoped provider catalog", () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     piConnected = ["anthropic"]
     piProviders.set("anthropic", {
       id: "anthropic",
@@ -798,7 +887,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("selecting a connected Pi model preserves its backend provider ID", () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     piConnected = ["anthropic"]
     piProviders.set("anthropic", {
       id: "anthropic",
@@ -816,7 +905,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("a disconnected Pi model opens Settings → Providers instead of a connect dialog", async () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     piProviders.set("anthropic", {
       id: "anthropic",
       name: "Anthropic",
@@ -830,7 +919,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("connection completion does not select a model removed during authentication", async () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     piProviders.set("anthropic", {
       id: "anthropic",
       name: "Anthropic",
@@ -844,7 +933,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("Pi shows an explicit empty catalog state", () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)
 
@@ -854,7 +943,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("Pi model selection is read-only after the first prompt", () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     selectedModel = "gpt-5.2"
     selectedModelProvider = "openai-codex"
     piConnected = ["openai-codex"]
@@ -886,7 +975,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("Pi catalog loading and retryable failure are explicit", () => {
-    harnessType = "pi"
+    harnessType = { kind: "native", harnessId: "pi" }
     piLoading = true
     const loading = render(() => <TestAgentHarnessSelector />)
     expect(loading.container.textContent).toContain("Loading models")

@@ -1,4 +1,4 @@
-import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type JSX } from "solid-js"
+import { Show, createEffect, createMemo, createSignal, onCleanup, untrack, type Accessor, type JSX } from "solid-js"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { type PickerItem, type PickerState } from "@/features/session/ui/model/select-model"
@@ -85,16 +85,35 @@ interface AgentHarnessSelectorProps {
   draftId?: string
   active?: boolean
   harnessController: HarnessSelectionController
+  /** Canonical provider-backed picker state used by Pi. */
+  providerModel?: Accessor<PickerState>
+  providerVariants?: Accessor<string[]>
+  providerVariant?: Accessor<string | undefined>
+  onProviderVariantSelect?: (value: string) => void
 }
 
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const dialog = useDialog()
   const connections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
-  let connectionsLoaded = false
+  const refreshConnections = () => {
+    let cancelled = false
+    let attempts = 0
+    let retry: ReturnType<typeof setTimeout> | undefined
+    const refresh = async () => {
+      attempts += 1
+      await connections.refresh()
+      if (cancelled || !connections.error() || attempts >= 3) return
+      retry = setTimeout(() => void refresh(), attempts * 500)
+    }
+    void refresh()
+    return () => {
+      cancelled = true
+      if (retry) clearTimeout(retry)
+    }
+  }
   createEffect(() => {
-    if (props.active === false || connectionsLoaded) return
-    connectionsLoaded = true
-    void connections.refresh()
+    if (props.active === false) return
+    onCleanup(refreshConnections())
   })
   const harnessOptions = createMemo<HarnessType[]>(() => [
     ...BUILTIN_HARNESS_OPTIONS,
@@ -192,6 +211,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const current = selection()
     if (current.draftDefaultState !== undefined) return
     if (current.harness && isNativeHarness(current.harness, "pi")) {
+      if (!piProviders.resolved()) return
       if (piProviders.loading() || piProviders.error()) return
       const catalog = piCatalog()
       props.harnessController.resolveDraftDefault(scope(), {
@@ -219,6 +239,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const currentHarness = harness()
     if (!currentHarness || !isNativeHarness(currentHarness, "pi")) return
     if (props.modelLocked || sessionLocked()) return
+    if (!piProviders.resolved()) return
     if (piProviders.loading() || piProviders.error()) return
     // Already submit-ready (auto-picked here, saved-default-resolved, or user-picked).
     if (selection().selectedModelKey || picked()) return
@@ -281,7 +302,19 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const rows = createMemo<Item[]>(() => {
     const currentHarness = harness()
     if (!currentHarness) return []
-    if (isNativeHarness(currentHarness, "pi")) return piCatalog().rows
+    // Pi's catalog is explicitly fetched for Pi and remains authoritative when
+    // the active workspace is remote. The generic provider picker accessor is
+    // the selection writer/current-value owner, but its directory-scoped list
+    // may legitimately be empty while a cloud workspace is still hydrating.
+    if (isNativeHarness(currentHarness, "pi")) {
+      const providerModel = props.providerModel?.()
+      return piCatalog().rows.filter((item) =>
+        providerModel?.visible(
+          { providerID: item.provider.id, modelID: item.id },
+          piProviders.default(),
+        ) ?? true
+      )
+    }
     return selection().models.map((item) => ({
       id: item.id,
       name: item.name,
@@ -295,6 +328,26 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     const next = rows().find((item) => item.id === selected?.modelID && item.provider.id === selected.providerID)
       ?? (harness() && isNativeHarness(harness()!, "pi") ? undefined : rows().find((item) => item.id === selection().selectedModel))
     return next
+  })
+  // Pi submits through the provider catalog, while the unified selector keeps
+  // the per-pane harness choice in the harness controller. Project every valid
+  // Pi harness selection into the provider picker as well so defaults and
+  // hydration have the same submit owner as an explicit model-row click.
+  createEffect(() => {
+    const currentHarness = harness()
+    if (!currentHarness || !isNativeHarness(currentHarness, "pi")) return
+    const selected = selection().selectedModelKey
+    const providerModel = props.providerModel?.()
+    if (!selected || !providerModel) return
+    const row = rows().find((item) =>
+      item.connected !== false &&
+      item.id === selected.modelID &&
+      item.provider.id === selected.providerID
+    )
+    if (!row) return
+    const current = providerModel.current()
+    if (current?.id === selected.modelID && current.provider.id === selected.providerID) return
+    providerModel.set(selected, { recent: false })
   })
   const modelSelection = createMemo(() =>
     createModelSelectionController({
@@ -315,14 +368,17 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     list: () => rows() as PickerItem[],
     current: () => picked() as PickerItem | undefined,
     visible: () => true,
-    set: (item) => {
+    set: (item, options) => {
       const modelKey = modelKeyFromPickerSelection(item)
       if (!modelKey) return
       const hit = rows().find((row) => row.id === modelKey.modelID && row.provider.id === modelKey.providerID)
       if (!hit) return
-      if (harness() && isNativeHarness(harness()!, "pi") && !hit.connected) {
+      if (harness() && isNativeHarness(harness()!, "pi") && hit.connected === false) {
         openProviders()
         return
+      }
+      if (harness() && isNativeHarness(harness()!, "pi")) {
+        props.providerModel?.().set({ providerID: hit.provider.id, modelID: hit.id }, options)
       }
       void modelSelection().set({
         scope: {
@@ -518,9 +574,16 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const activePicker = model
   const activeModelLabel = createMemo(() => modelLabel() || "Select model")
   const harnessThoughtLevels = createMemo(() => selection().thoughtLevels ?? [])
-  const activeShowEffort = createMemo(() => harnessThoughtLevels().length > 1)
-  const activeVariants = createMemo(() => harnessThoughtLevels().map((item) => item.id))
-  const activeCurrentVariant = createMemo(() => selection().selectedThoughtLevel)
+  const piSelected = createMemo(() => !!harness() && isNativeHarness(harness()!, "pi"))
+  const activeVariants = createMemo(() =>
+    piSelected()
+      ? props.providerVariants?.() ?? []
+      : harnessThoughtLevels().map((item) => item.id),
+  )
+  const activeShowEffort = createMemo(() => activeVariants().length > 1)
+  const activeCurrentVariant = createMemo(() =>
+    piSelected() ? props.providerVariant?.() : selection().selectedThoughtLevel,
+  )
   const harnessLevelName = (value: string) =>
     harnessThoughtLevels().find((item) => item.id === value)?.name ?? value
 
@@ -575,6 +638,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         currentVariant={activeCurrentVariant}
         variantLabel={harnessLevelName}
         onVariantSelect={(value) => {
+          if (piSelected()) {
+            props.onProviderVariantSelect?.(value)
+            return
+          }
           props.harnessController.setThoughtLevel(scope(), value === "default" ? undefined : value)
         }}
         triggerStyle={() => style(activeModelDisabled())}

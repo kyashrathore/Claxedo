@@ -100,7 +100,7 @@ describe("verified credential resolution", () => {
       setModel: async (model) => { applied.model = model },
     })).toBe(true)
     expect(applied).toEqual({
-      harness: "claude-sdk",
+      harness: "claude",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
     })
   })

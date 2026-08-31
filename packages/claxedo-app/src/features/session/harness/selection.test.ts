@@ -10,7 +10,6 @@ import {
 } from "./selection"
 
 const base = {
-  harnessBinary: "",
   selectedModel: "",
   dynamicModels: null,
   readiness: "ready",
@@ -44,7 +43,7 @@ describe("harness selection", () => {
   })
 
   test("requires a concrete provider/model selection for Pi", () => {
-    const state = { ...base, harness: "pi" } satisfies HarnessSelectionState
+    const state = { ...base, harness: { kind: "native", harnessId: "pi" } } satisfies HarnessSelectionState
 
     expect(harnessModelKeyForSubmit(state)).toBeUndefined()
     expect(harnessModelNameForSubmit(state)).toBeUndefined()
@@ -54,7 +53,7 @@ describe("harness selection", () => {
   test("preserves Pi's backend provider ID independently of the harness ID", () => {
     const state = {
       ...base,
-      harness: "pi",
+      harness: { kind: "native", harnessId: "pi" },
       selectedModel: "claude-sonnet-4-5",
       selectedModelProvider: "anthropic",
       dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5", providerID: "anthropic" }],
@@ -68,7 +67,7 @@ describe("harness selection", () => {
   test("does not submit a Pi model ID without its provider identity", () => {
     expect(harnessModelKeyForSubmit({
       ...base,
-      harness: "pi",
+      harness: { kind: "native", harnessId: "pi" },
       selectedModel: "claude-sonnet-4-5",
       dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
     })).toBeUndefined()
@@ -86,7 +85,7 @@ describe("harness selection", () => {
   test("submits an operator ACP through its managed default without fabricating a model row", () => {
     const state = {
       ...base,
-      harness: "acp:openclaw",
+      harness: { kind: "connection", connectionId: "openclaw" },
       selectedModel: "default",
       dynamicModels: [],
       selectedThoughtLevel: "adaptive",
@@ -94,7 +93,7 @@ describe("harness selection", () => {
 
     expect(harnessModels(state)).toEqual([])
     expect(harnessModelKeyForSubmit(state)).toEqual({
-      providerID: "acp:openclaw",
+      providerID: "openclaw",
       modelID: "default",
       variant: "adaptive",
     })
@@ -111,7 +110,7 @@ describe("harness selection", () => {
     })).toEqual([])
     expect(harnessModels({
       ...base,
-      harness: "cursor-sdk",
+      harness: { kind: "native", harnessId: "cursor" },
       selectedModel: "default",
       dynamicModels: [],
       configError: "Cursor SDK requires an explicit cursor-sdk API key.",
@@ -125,10 +124,10 @@ describe("harness selection", () => {
     })).toBeUndefined()
     expect(harnessModelKeyForSubmit({
       ...base,
-      harness: "cursor-sdk",
+      harness: { kind: "native", harnessId: "cursor" },
       selectedModel: "default",
       dynamicModels: [{ id: "default", name: "Default (recommended)" }],
-    })).toEqual({ providerID: "cursor-sdk", modelID: "default" })
+    })).toEqual({ providerID: "cursor", modelID: "default" })
   })
 
   test("blocks submit while model options are loading or errored", () => {
@@ -155,7 +154,7 @@ describe("harness selection", () => {
     })).toBe(false)
     expect(harnessReadyForSubmit({
       ...base,
-      harness: "codex-app-server",
+      harness: { kind: "native", harnessId: "codex" },
       selectedModel: "gpt-5.5",
       dynamicModels: [],
       readiness: "error",
@@ -164,17 +163,17 @@ describe("harness selection", () => {
     // valid model, so the composer health peek can name the condition first.
     expect(harnessReadyForSubmit({
       ...base,
-      harness: "codex-app-server",
+      harness: { kind: "native", harnessId: "codex" },
       selectedModel: "gpt-5.5",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       readiness: "degraded",
     })).toBe(false)
-    // OpenCode short-circuits to ready even if a degraded readiness leaks in.
+    // Connections do not bypass health gating.
     expect(harnessReadyForSubmit({
       ...base,
-      harness: "opencode",
+      harness: { kind: "connection", connectionId: "external-opencode" },
       readiness: "degraded",
-    })).toBe(true)
+    })).toBe(false)
   })
 
   test("returns canonical ModelKey for selectable harness models", () => {
@@ -192,7 +191,7 @@ describe("harness selection", () => {
 })
 
 /**
- * Effort travels on `ModelKey.variant` — the SAME field opencode already uses.
+ * Effort travels on the provider-neutral `ModelKey.variant` field.
  * A harness turn is one `query()` and the Claude SDK takes `effort` per query,
  * so the chosen level rides the prompt rather than being pushed at the process.
  * That is why no new transport was needed for this.

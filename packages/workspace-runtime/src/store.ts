@@ -2665,6 +2665,7 @@ export class RuntimeStore {
 
   private session(row: {
     id: string
+    workspace_id?: string | null
     parent_id?: string | null
     directory: string
     title: string | null
@@ -2689,6 +2690,7 @@ export class RuntimeStore {
     const harness = sessionHarness(row)
     return {
       id: row.id,
+      ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
       title: row.title,
       directory: row.directory,
       time: {
@@ -2784,9 +2786,10 @@ export class RuntimeStore {
         .prepare(
           `
         SELECT
-          id,
+          session.id,
+          binding.workspace_id,
           parent_id,
-          directory,
+	          session.directory,
 	          title,
 	          agent_session_id,
 	          process_key,
@@ -2806,12 +2809,14 @@ export class RuntimeStore {
           recovery_error,
           archived_at
         FROM session
-        WHERE directory = ?
+        LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
+        WHERE session.directory = ?
         ORDER BY created_at DESC
       `,
         )
         .all(directory) as Array<{
         id: string
+        workspace_id: string | null
         parent_id: string | null
         directory: string
         title: string | null
@@ -2915,9 +2920,10 @@ export class RuntimeStore {
       .prepare(
         `
         SELECT
-          id,
+          session.id,
+          binding.workspace_id,
           parent_id,
-          directory,
+	          session.directory,
 	          title,
 	          process_key,
 	          harness_id,
@@ -2937,11 +2943,13 @@ export class RuntimeStore {
           archived_at,
           agent_session_id
         FROM session
-        WHERE id = ?
+        LEFT JOIN session_execution_binding binding ON binding.session_id = session.id
+        WHERE session.id = ?
       `,
       )
       .get(id) as {
       id: string
+      workspace_id: string | null
       parent_id: string | null
       directory: string
       title: string | null

@@ -4,6 +4,7 @@ import type {
   AgentMessage,
   AgentPermission,
   AgentQuestion,
+  AgentQuestionAnswer,
   AgentRuntimeStreamEvent,
   AgentSession,
   HarnessCapabilities,
@@ -775,7 +776,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         const session = await adapter.createSession(create.directory, create.title, create.id)
         assertCreateBindingScope(session.id, create)
-        const upstreamSessionId = store.getAgentSessionId(session.id) ?? session.id
+        const upstreamSessionId = session.agentSessionId ?? store.getAgentSessionId(session.id) ?? session.id
         store.bindSession({
           sessionId: session.id,
           workspaceId: create.workspaceId,
@@ -992,12 +993,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async list(directory: RuntimeDirectory): Promise<AgentQuestion[]> {
         return merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as Promise<AgentQuestion[]>
       },
-      async answer(questionId: string, answer: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
+      async answer(questionId: string, answers: AgentQuestionAnswer[], directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
         const adapter = await interactionAdapter("replyQuestion", question?.sessionID)
         if (!adapter?.replyQuestion) throw new Error("No registered harness supports questions")
-        const result = await adapter.replyQuestion(executionBinding(question.sessionID, directory), questionId, answer)
+        const result = await adapter.replyQuestion(executionBinding(question.sessionID, directory), questionId, answers)
         publishInteractionEvents(result?.events, directory)
         return result
       },

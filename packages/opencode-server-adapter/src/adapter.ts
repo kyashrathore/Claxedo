@@ -20,6 +20,7 @@ const SSE_FRAME_BYTES = 1024 * 1024
 type OpenCodeServerRequest = (input: string | URL | Request, init?: RequestInit) => Promise<Response>
 
 export class OpenCodeServerAdapter implements AgentHarnessAdapter {
+  readonly sessionConfigOwner = "runtime" as const
   private readonly streams = new Map<string, AbortController>()
   private compatibility: Promise<void> | undefined
   private disposed = false
@@ -34,15 +35,15 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     return { harness: this.config.connectionId, modelSelection: { status: "unsupported" }, ...OPENCODE_SERVER_CONNECTION_CAPABILITIES }
   }
 
-  async createSession(directory: string | undefined, title?: string, id?: string): Promise<{ id: string }> {
+  async createSession(directory: string | undefined, title?: string, id?: string): Promise<{ id: string; agentSessionId: string }> {
     this.assertSourceDirectory(directory)
     await this.ensureCompatible()
     const data = await this.json("session.create", "/session", {
       method: "POST",
-      body: JSON.stringify({ ...(id ? { id } : {}), ...(title ? { title } : {}) }),
+      body: JSON.stringify({ ...(title ? { title } : {}) }),
     })
-    const session = this.session("session.create", data, id)
-    return { id: session.id }
+    const session = this.session("session.create", data)
+    return { id: id ?? session.id, agentSessionId: session.id }
   }
 
   async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
@@ -50,7 +51,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     const response = await this.request("session.get", `/session/${encodeURIComponent(binding.upstreamSessionId)}`)
     if (response.status === 404) return null
     await this.requireOk("session.get", response)
-    return this.session("session.get", await this.jsonBody("session.get", response), binding.upstreamSessionId) as AgentSession
+    return this.projectSession(this.session("session.get", await this.jsonBody("session.get", response), binding.upstreamSessionId), binding)
   }
 
   async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null> {
@@ -62,7 +63,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     })
     if (response.status === 404) return null
     await this.requireOk("session.update", response)
-    return this.session("session.update", await this.jsonBody("session.update", response), binding.upstreamSessionId) as AgentSession
+    return this.projectSession(this.session("session.update", await this.jsonBody("session.update", response), binding.upstreamSessionId), binding)
   }
 
   async deleteSession(binding: AgentExecutionBinding): Promise<void> {
@@ -77,7 +78,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     const data = await this.json("session.messages", `/session/${encodeURIComponent(binding.upstreamSessionId)}/message`)
     if (!Array.isArray(data)) throw this.error("invalid_response", "OpenCode session.messages response must be an array", "session.messages")
     this.validateMessages(data, binding.upstreamSessionId)
-    return data as AgentMessage[]
+    return data.map((item) => this.projectMessage(item as Record<string, unknown>, binding)) as AgentMessage[]
   }
 
   async getTodos(binding: AgentExecutionBinding) {
@@ -95,20 +96,11 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   async abort(binding: AgentExecutionBinding) {
     this.assertBinding(binding)
-    let result: { ok: true; status: "cancelled" } | { ok: false; status: "not_found"; message: string }
     try {
-      await this.ensureCompatible()
-      const response = await this.request("session.abort", `/session/${encodeURIComponent(binding.upstreamSessionId)}/abort`, { method: "POST" })
-      if (response.status === 404) {
-        result = { ok: false, status: "not_found", message: `Session ${binding.sessionId} was not found` }
-      } else {
-        await this.requireOk("session.abort", response)
-        result = { ok: true, status: "cancelled" }
-      }
+      return await this.abortUpstream(binding)
     } finally {
       this.streams.get(binding.upstreamSessionId)?.abort(new DOMException("Turn aborted", "AbortError"))
     }
-    return result
   }
 
   getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
@@ -160,9 +152,10 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
             const event = this.parseBoundEvent(frame.data, binding)
             if (!event) continue
             if (isUnsupportedInteractiveEvent(event)) {
+              await this.abortUpstream(binding).catch(() => undefined)
               throw this.error("unsupported_interaction", `OpenCode emitted unsupported ${event.type}`, "events.read")
             }
-            const translated = translateOpenCodeEvent(event, content)
+            const translated = this.projectEvent(translateOpenCodeEvent(event, content), binding)
             if (translated?.type === "error") translated.error = this.redact(translated.error)
             if (translated) yield translated
             if (event.type === "session.idle" || event.type === "session.error") return
@@ -200,7 +193,9 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
         parts: input.parts,
         ...(input.userMessageId ? { messageID: input.userMessageId } : {}),
         agent: input.agent,
-        model: input.model,
+        // External OpenCode owns its default model. This provider advertises
+        // modelSelection=unsupported, so Claxedo's internal `default`
+        // placeholder must never be serialized as an OpenCode model choice.
         ...(input.tools ? { tools: input.tools } : {}),
         ...(input.format ? { format: input.format } : {}),
         ...(input.system ? { system: input.system } : {}),
@@ -208,6 +203,16 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       }),
     })
     await this.requireOk("session.prompt", response)
+  }
+
+  private async abortUpstream(binding: AgentExecutionBinding) {
+    await this.ensureCompatible()
+    const response = await this.request("session.abort", `/session/${encodeURIComponent(binding.upstreamSessionId)}/abort`, { method: "POST" })
+    if (response.status === 404) {
+      return { ok: false as const, status: "not_found" as const, message: `Session ${binding.sessionId} was not found` }
+    }
+    await this.requireOk("session.abort", response)
+    return { ok: true as const, status: "cancelled" as const }
   }
 
   private async reconcile(binding: AgentExecutionBinding, content: Map<string, string>) {
@@ -227,7 +232,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       const info = record(row.info)!
       if (info.role !== "assistant") continue
       for (const part of row.parts as unknown[]) {
-        const translated = translateOpenCodeEvent({ type: "message.part.updated", properties: { part: record(part)! } }, content)
+        const translated = this.projectEvent(translateOpenCodeEvent({ type: "message.part.updated", properties: { part: record(part)! } }, content), binding)
         if (translated) events.push(translated)
       }
     }
@@ -236,7 +241,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       throw this.error("reconciliation_gap", "OpenCode status snapshot omitted the bound upstream session", "events.reconcile")
     }
     if (status.type === "idle") {
-      events.push({ type: "finish", sessionId: binding.upstreamSessionId })
+      events.push({ type: "finish", sessionId: binding.sessionId })
       return { events, terminal: true }
     }
     if (status.type === "error") {
@@ -289,13 +294,28 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     try { value = JSON.parse(data) } catch { throw this.error("invalid_event", "OpenCode event data is not valid JSON", "events.read") }
     const envelope = record(value)
     const payload = record(envelope?.payload)
-    const properties = record(payload?.properties)
-    if (!envelope || typeof envelope.directory !== "string" || !payload || typeof payload.id !== "string" || typeof payload.type !== "string" || !properties) {
+    if (!envelope || !payload || typeof payload.id !== "string" || typeof payload.type !== "string") {
       throw this.error("invalid_event", "OpenCode global event envelope is invalid", "events.read")
     }
-    if (envelope.directory !== this.config.targetDirectory) return
+    // Durable sync records share the global stream but are not live Session
+    // events and intentionally carry `syncEvent` instead of `properties`.
+    if (payload.type === "sync") return
+    const properties = record(payload.properties)
+    if (!properties) throw this.error("invalid_event", "OpenCode global event envelope is invalid", "events.read")
     const event = { type: payload.type, properties }
-    if (openCodeEventSessionId(event) !== binding.upstreamSessionId) return
+    const sessionId = openCodeEventSessionId(event)
+    // OpenCode's canonical global stream starts with server.connected and emits
+    // server.heartbeat events without a directory. They are intentionally
+    // installation-scoped and irrelevant to a bound turn. A session-bearing
+    // event must still include a directory so it cannot cross workspace scope.
+    if (typeof envelope.directory !== "string") {
+      if (sessionId !== undefined) {
+        throw this.error("invalid_event", "OpenCode session event omitted its workspace directory", "events.read")
+      }
+      return
+    }
+    if (envelope.directory !== this.config.targetDirectory) return
+    if (sessionId !== binding.upstreamSessionId) return
     return event
   }
 
@@ -321,6 +341,32 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       throw this.error("invalid_response", `OpenCode ${operation} response crossed its bound session or workspace`, operation)
     }
     return row as { id: string; [key: string]: unknown }
+  }
+
+  private projectSession(session: { id: string; [key: string]: unknown }, binding: AgentExecutionBinding): AgentSession {
+    return {
+      ...session,
+      id: binding.sessionId,
+      workspaceId: binding.workspaceId,
+      directory: binding.directory,
+    } as AgentSession
+  }
+
+  private projectMessage(message: Record<string, unknown>, binding: AgentExecutionBinding) {
+    const info = record(message.info)!
+    return {
+      ...message,
+      info: { ...info, sessionID: binding.sessionId },
+      parts: (message.parts as Record<string, unknown>[]).map((part) => ({
+        ...part,
+        sessionID: binding.sessionId,
+      })),
+    }
+  }
+
+  private projectEvent(event: AgentRuntimeStreamEvent | undefined, binding: AgentExecutionBinding) {
+    if (event?.type !== "finish") return event
+    return { ...event, sessionId: binding.sessionId }
   }
 
   private async json(operation: string, path: string, init?: RequestInit) {
@@ -385,7 +431,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   private assertBinding(binding: AgentExecutionBinding) {
     try { assertAgentExecutionBinding(binding) } catch { throw this.error("invalid_binding", "OpenCode operation requires a complete execution binding") }
-    if (binding.connectionId !== this.config.connectionId) throw this.error("invalid_binding", "Execution binding belongs to a different connection")
+    if (binding.connectionId !== `connection:${this.config.connectionId}`) throw this.error("invalid_binding", "Execution binding belongs to a different connection")
     this.assertSourceDirectory(binding.directory)
   }
 

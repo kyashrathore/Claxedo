@@ -100,7 +100,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/testing` | Small test management-auth helpers. |
 
 Root runtime value exports:
-`Pty`, `SESSION_CORE_ROUTE_ACCESS`, `SESSION_V2_PROXY_ROUTE_ACCESS`,
+`Pty`, `SESSION_CORE_ROUTE_ACCESS`,
 `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
 `WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
 `WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
@@ -510,7 +510,6 @@ contract.
 | `WORKSPACE_RUNTIME_DIRECTORY`, `WORKSPACE_RUNTIME_WORKSPACE_ID`, `WORKSPACE_RUNTIME_HOST_ID` | Runtime target identity. |
 | `WORKSPACE_RUNTIME_RUNNER`, `WORKSPACE_RUNTIME_ACP_BINARY` | Optional CLI launcher defaults for the initial harness. Runtime config apply can replace this after startup. |
 | `WORKSPACE_RUNTIME_ENABLE_ACP_REMOTE_TRANSPORT` | Enables remote ACP transport URLs in runner config. Disabled by default. |
-| `WORKSPACE_RUNTIME_OPENCODE_COMPAT` | Set to `0` by the host to disable the Claxedo client-presentation adapter and routes. The executable translates this process-boundary setting into the `opencodeCompat` host option. |
 | `WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS` | Retention window for terminal lifecycle session summaries. |
 | `WORKSPACE_RUNTIME_DISABLE_PORTLESS` | Disables optional Portless named-url discovery for managed processes. |
 | `WORKSPACE_RUNTIME_DATA_DIR`, `WORKSPACE_RUNTIME_STATE_DIR`, `WORKSPACE_RUNTIME_STORE_DIR`, `WORKSPACE_RUNTIME_PTY_HISTORY_DIR` | Neutral runtime-owned storage locations. Defaults are under `~/.workspace-runtime`. |

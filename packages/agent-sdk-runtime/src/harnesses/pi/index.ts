@@ -929,7 +929,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return []
   }
 
-  async replyQuestion(binding: AgentExecutionBinding, _questionId: string, _answer: string) {
+  async replyQuestion(binding: AgentExecutionBinding, _questionId: string, _answers: string[][]) {
     assertAgentExecutionBinding(binding)
   }
 

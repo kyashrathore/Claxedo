@@ -52,6 +52,13 @@ vi.mock("@/features/session/app-ports", () => ({
         }),
       },
     },
+    createClient: () => ({
+      session: {
+        list: () => new Promise((resolve) => {
+          state.resolveSessions = resolve
+        }),
+      },
+    }),
   }),
   useShellQueryOptions: () => ({ path: () => ({}) }),
   useLayout: () => ({

@@ -49,7 +49,7 @@ function binding(overrides: Partial<AgentExecutionBinding> = {}): AgentExecution
     workspaceId: "ws_1",
     directory: SOURCE,
     sessionId: "claxedo_ses_1",
-    connectionId: "external-opencode",
+    connectionId: "connection:external-opencode",
     upstreamSessionId: "ses_upstream",
     ...overrides,
   }
@@ -76,6 +76,22 @@ function envelope(directory: string, payload: Record<string, unknown>) {
 }
 
 describe("OpenCode server provider trust boundary", () => {
+  test("projects the Claxedo workspace identity without trusting the upstream project ID", async () => {
+    const baseUrl = serve(() => Response.json({
+      id: "ses_upstream",
+      directory: TARGET,
+      projectID: "opaque-opencode-project",
+    }))
+    const session = await (await connect({ descriptor: descriptor(baseUrl) })).getSession(binding())
+
+    expect(session).toMatchObject({
+      id: "claxedo_ses_1",
+      workspaceId: "ws_1",
+      directory: SOURCE,
+      projectID: "opaque-opencode-project",
+    })
+  })
+
   test("resolves secret references without placing values or lease generations in descriptor config", async () => {
     const seen: Array<string | null> = []
     const baseUrl = serve((request) => {
@@ -152,8 +168,8 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
       const url = new URL(request.url)
       if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
       if (url.pathname === "/session" && request.method === "POST") {
-        expect(await request.json()).toEqual({ id: "claxedo_ses_1", title: "Review" })
-        return Response.json({ id: "claxedo_ses_1", directory: TARGET })
+        expect(await request.json()).toEqual({ title: "Review" })
+        return Response.json({ id: "ses_upstream", directory: TARGET })
       }
       return new Response("missing", { status: 404 })
     })
@@ -165,7 +181,10 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     item.secretRefs = { password: "vault://password", apiKey: "vault://api-key" }
     const adapter = await connect({ descriptor: item, secrets: { password: "secret", apiKey: "key-1" } })
 
-    await expect(adapter.createSession(SOURCE, "Review", "claxedo_ses_1")).resolves.toEqual({ id: "claxedo_ses_1" })
+    await expect(adapter.createSession(SOURCE, "Review", "claxedo_ses_1")).resolves.toEqual({
+      id: "claxedo_ses_1",
+      agentSessionId: "ses_upstream",
+    })
     expect(calls.map((request) => new URL(request.url).pathname)).toEqual(["/global/health", "/session"])
     for (const request of calls) {
       expect(request.headers.get("authorization")).toBe(`Basic ${Buffer.from("alice:secret").toString("base64")}`)
@@ -178,21 +197,23 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
   test("never mutates an incompatible server and bounds and redacts its error", async () => {
     let mutations = 0
     const leaked = "do-not-leak"
+    const encoded = Buffer.from(`alice:${leaked}`).toString("base64")
     const baseUrl = serve((request) => {
       if (new URL(request.url).pathname === "/global/health") {
-        return new Response(`${leaked}:${"x".repeat(20_000)}`, { status: 502 })
+        return new Response(`Basic ${encoded}:${leaked}:${"x".repeat(20_000)}`, { status: 502 })
       }
       mutations += 1
       return Response.json({ id: "unexpected" })
     })
-    const item = descriptor(baseUrl, { auth: { type: "header", name: "X-Token", valueSecret: "token" } })
-    item.secretRefs = { token: "vault://token" }
-    const adapter = await connect({ descriptor: item, secrets: { token: leaked } })
+    const item = descriptor(baseUrl, { auth: { type: "basic", username: "alice", passwordSecret: "password" } })
+    item.secretRefs = { password: "vault://password" }
+    const adapter = await connect({ descriptor: item, secrets: { password: leaked } })
 
     let error: unknown
     try { await adapter.createSession(SOURCE) } catch (value) { error = value }
     expect(error).toMatchObject({ code: "compatibility_probe_failed" })
     expect(JSON.stringify(error)).not.toContain(leaked)
+    expect(JSON.stringify(error)).not.toContain(encoded)
     expect(JSON.stringify(error).length).toBeLessThan(6_000)
     expect(mutations).toBe(0)
   })
@@ -219,6 +240,8 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
         lastEventIds.push(request.headers.get("last-event-id"))
         if (streams === 1) {
           return new Response([
+            `data: ${JSON.stringify({ payload: { id: crypto.randomUUID(), type: "server.connected", properties: {} } })}\n\n`,
+            envelope(TARGET, { type: "sync", syncEvent: { id: crypto.randomUUID() } }),
             envelope("/foreign/repo", { type: "session.idle", properties: { sessionID: "ses_upstream" } }),
             envelope(TARGET, { type: "session.idle", properties: { sessionID: "foreign_session" } }),
             envelope(TARGET, { type: "session.idle", properties: {} }),
@@ -251,9 +274,27 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     await expect(collect(adapter.executeTurn!(binding(), prompt()))).resolves.toEqual([
       { type: "text-delta", delta: "hello" },
       { type: "text-delta", delta: " world" },
-      { type: "finish", sessionId: "ses_upstream" },
+      { type: "finish", sessionId: "claxedo_ses_1" },
     ])
     expect(lastEventIds).toEqual([null, null])
+  })
+
+  test("rejects a session-bearing global event that omits its workspace directory", async () => {
+    const baseUrl = serve((request) => {
+      const url = new URL(request.url)
+      if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname === "/global/event") {
+        return new Response(
+          `data: ${JSON.stringify({ payload: { id: crypto.randomUUID(), type: "session.idle", properties: { sessionID: "ses_upstream" } } })}\n\n`,
+          { headers: { "Content-Type": "text/event-stream" } },
+        )
+      }
+      if (url.pathname.endsWith("/prompt_async")) return new Response(null, { status: 204 })
+      return new Response("missing", { status: 404 })
+    })
+    const adapter = await connect({ descriptor: descriptor(baseUrl) })
+
+    await expect(collect(adapter.executeTurn!(binding(), prompt()))).rejects.toMatchObject({ code: "invalid_event" })
   })
 
   test("returns a typed gap instead of stale success when authoritative reconciliation cannot scope status", async () => {
@@ -277,6 +318,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
   })
 
   test("fails unsupported interactive events instead of yielding a request that cannot be answered", async () => {
+    let aborts = 0
     const baseUrl = serve((request) => {
       const url = new URL(request.url)
       if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
@@ -287,11 +329,16 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
         }), { headers: { "Content-Type": "text/event-stream" } })
       }
       if (url.pathname.endsWith("/prompt_async")) return new Response(null, { status: 204 })
+      if (url.pathname.endsWith("/abort")) {
+        aborts += 1
+        return Response.json(true)
+      }
       return new Response("missing", { status: 404 })
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
 
     await expect(collect(adapter.executeTurn!(binding(), prompt()))).rejects.toMatchObject({ code: "unsupported_interaction" })
+    expect(aborts).toBe(1)
   })
 
   test("uses full bindings for todos and cancels the local stream when remote abort fails", async () => {
@@ -331,7 +378,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
   test("rejects cross-workspace bindings and does not fabricate session configuration", async () => {
     const adapter = await connect({ descriptor: descriptor("https://opencode.example.test") })
     await expect(adapter.getSession(binding({ directory: "/local/other" }))).rejects.toMatchObject({ code: "invalid_directory" })
-    await expect(adapter.getSession(binding({ connectionId: "other" }))).rejects.toMatchObject({ code: "invalid_binding" })
+    await expect(adapter.getSession(binding({ connectionId: "connection:other" }))).rejects.toMatchObject({ code: "invalid_binding" })
     await expect(adapter.getSessionConfig(binding())).rejects.toMatchObject({ code: "unsupported_operation" })
     await expect(adapter.updateSessionConfig(binding(), { agent: "build" })).rejects.toMatchObject({ code: "unsupported_operation" })
   })

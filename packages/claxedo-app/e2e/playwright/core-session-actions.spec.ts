@@ -391,7 +391,6 @@ async function installRelayEventDrainWorkaround(page: Page, mock: MockRuntimeHan
 }
 
 async function sendFirstPrompt(page: Page, mock: MockRuntimeHandles, text: string) {
-  await installRelayEventDrainWorkaround(page, mock)
   await seedOneProject(page, DIR)
   await page.goto(`/${slug(DIR)}/session`)
   await page.waitForLoadState("domcontentloaded")
@@ -592,7 +591,7 @@ test.describe("core session actions: fork @core", () => {
     await sendFirstPrompt(page, mock, forkedText)
 
     let forkedSessionId = ""
-    await page.route("**/session/*/fork", async (route) => {
+    await page.route("**/session/*/fork**", async (route) => {
       if (route.request().method() !== "POST") return route.fallback()
       forkedSessionId = "ses_core_session_actions_forked"
       await route.fulfill({
@@ -634,7 +633,11 @@ test.describe("core session actions: fork @core", () => {
     await page.route("**/session/*/message**", async (route) => {
       const url = new URL(route.request().url())
       if (!forkedSessionId || !url.pathname.includes(forkedSessionId)) return route.fallback()
-      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages: [], maxEventOrdinal: 0 }),
+      })
     })
 
     // NOT a role+name locator: typing "/fork" opens the slash popover, at which
@@ -675,7 +678,7 @@ test.describe("core session actions: fork @core", () => {
     // `sessionUrlPattern` in core-harness-rendering-matrix.spec.ts. The
     // behavior under test is navigation onto the forked session plus the
     // restored draft below, not the slug encoding.
-    await expect(page).toHaveURL(new RegExp(`/s/${forkedSessionId}$`), { timeout: 15_000 })
+    await expect(page).toHaveURL(sessionUrlPattern(forkedSessionId), { timeout: 15_000 })
     // The forked message's original text is restored into the new session's draft.
     const forkedInput = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(forkedInput).toContainText(forkedText, { timeout: 10_000 })
@@ -712,7 +715,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
     await dismissJumpToBottom(page)
 
     let revertedMessageID = ""
-    await page.route("**/session/*/revert", async (route) => {
+    await page.route("**/session/*/revert**", async (route) => {
       if (route.request().method() !== "POST") return route.fallback()
       const body = route.request().postDataJSON() as { messageID?: string }
       revertedMessageID = body?.messageID ?? ""
@@ -759,7 +762,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
     await dismissJumpToBottom(page)
 
     let revertedMessageID = ""
-    await page.route("**/session/*/revert", async (route) => {
+    await page.route("**/session/*/revert**", async (route) => {
       if (route.request().method() !== "POST") return route.fallback()
       const body = route.request().postDataJSON() as { messageID?: string }
       revertedMessageID = body?.messageID ?? ""
@@ -767,7 +770,7 @@ test.describe("core session actions: revert / unrevert @core", () => {
       mock.emit({ type: "session.updated", properties: { info: await sessionRowWithRevert(mock, revertedMessageID) } })
     })
     let unrevertCount = 0
-    await page.route("**/session/*/unrevert", async (route) => {
+    await page.route("**/session/*/unrevert**", async (route) => {
       if (route.request().method() !== "POST") return route.fallback()
       unrevertCount += 1
       const canonical = await sessionRowWithRevert(mock, undefined)
@@ -900,7 +903,11 @@ test.describe("core session actions: subagent (child session) @core", () => {
     await page.route("**/session/*/message**", async (route) => {
       const url = new URL(route.request().url())
       if (!url.pathname.includes(CHILD_ID) && !url.pathname.includes(PARENT_ID)) return route.fallback()
-      return route.fulfill({ status: 200, contentType: "application/json", body: "[]" })
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ messages: [], maxEventOrdinal: 0 }),
+      })
     })
   }
 
@@ -962,7 +969,6 @@ test.describe("core session actions: subagent (child session) @core", () => {
     // control (dropping the emit) leaves the header absent and times out.
 
     const mock = await installMockRuntime(page, { dir: DIR, sessionId: PARENT_ID, projectId: PROJECT_ID, projectName: PROJECT_NAME })
-    await installRelayEventDrainWorkaround(page, mock)
     await installParentChildFixture(page)
     await seedOneProject(page, DIR)
     await openSession(page, DIR, PARENT_ID)
@@ -972,7 +978,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 15_000 })
 
     let replied: { sessionID: string; requestID: string } | undefined
-    await page.route("**/session/*/permissions/*", async (route) => {
+    await page.route("**/session/*/permissions/**", async (route) => {
       if (route.request().method() !== "POST") return route.fallback()
       const url = new URL(route.request().url())
       const parts = url.pathname.split("/")

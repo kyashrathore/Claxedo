@@ -87,9 +87,9 @@ describe("createCloudStartupController", () => {
 })
 
 describe("acquireSubmitSessionTarget", () => {
-  test("claims harness sessions without falling back to OpenCode create", async () => {
+  test("claims sessions without invoking an alternate direct-create client", async () => {
     const booted: string[] = []
-    const createClients: string[] = []
+    const createClients: unknown[] = []
 
     const target = await acquireSessionTarget({
       replaceSession: true,
@@ -116,7 +116,7 @@ describe("acquireSubmitSessionTarget", () => {
   test("harness claim failure is reported and does not fall back to OpenCode create", async () => {
     const booted: string[] = []
     const errors: unknown[] = []
-    const createClients: string[] = []
+    const createClients: unknown[] = []
 
     const target = await acquireSessionTarget({
       replaceSession: true,
@@ -144,34 +144,17 @@ describe("acquireSubmitSessionTarget", () => {
     expect(createClients).toEqual([])
   })
 
-  test("creates OpenCode sessions with draft lifecycle headers and selected harness type", async () => {
-    const creates: Array<{
-      directory: string
-      harnessType: string
-      config: Omit<Parameters<SubmitSessionCreateClient["session"]["create"]>[0], "directory">
-      headers: Record<string, string> | undefined
-    }> = []
+  test("creates selected-provider sessions through the canonical claim contract", async () => {
+    const claims: Array<Parameters<AcquireSessionTargetInput["claimHarnessSession"]>[0]> = []
 
     const target = await acquireSessionTarget({
       replaceSession: true,
       draftId: "draft-1",
-      sessionHarnessType: "codex-acp",
-      createSessionClient: (input) => submitSessionClient({
-        create: async (request, init) => {
-          creates.push({
-            directory: request.directory,
-            harnessType: input.harnessType,
-            config: {
-              harness: request.harness,
-              agent: request.agent,
-              model: request.model,
-              variant: request.variant,
-            },
-            headers: init?.headers,
-          })
-          return { data: { id: "created-1" } }
-        },
-      }),
+      sessionHarnessType: { kind: "connection", connectionId: "codex-team" },
+      claimHarnessSession: async (input) => {
+        claims.push(input)
+        return { id: "created-1" }
+      },
     })
 
     expect(target).toEqual({
@@ -179,15 +162,16 @@ describe("acquireSubmitSessionTarget", () => {
       replaceSession: true,
       created: true,
     })
-    expect(creates).toEqual([
+    expect(claims).toEqual([
       {
         directory: "/repo/main",
-        harnessType: "codex-acp",
-        config: {
+        scope: "scope-1",
+        sessionID: undefined,
+        sessionConfig: {
           agent: "build",
-          model: { providerID: "test", id: "fixture" },
+          model: { providerID: "test", modelID: "fixture" },
+          variant: undefined,
         },
-        headers: { "x-claxedo-draft-id": "draft-1" },
       },
     ])
   })
@@ -325,7 +309,7 @@ describe("acquireSubmitSessionTarget", () => {
   })
 
   test("preserves signed existing-session fallback without creating", async () => {
-    const creates: string[] = []
+    const creates: unknown[] = []
 
     const target = await acquireSessionTarget({
       explicitSessionID: "existing-1",
@@ -357,9 +341,7 @@ describe("acquireSubmitSessionTarget", () => {
       client: submitSessionClient({
         get: async () => ({ data: undefined }),
       }),
-      createSessionClient: () => submitSessionClient({
-        create: async () => ({ data: { id: "replacement-1" } }),
-      }),
+      claimHarnessSession: async () => ({ id: "replacement-1" }),
     })
 
     expect(target).toEqual({
@@ -381,7 +363,7 @@ describe("finalizeSubmitSessionTarget", () => {
       target: { created: true },
       draftId: "draft-1",
       runtimeWorkspaceRef: { workspaceId: "ws_1", kind: "cloud" },
-      harness: { id: "opencode" },
+      harness: { kind: "connection", connectionId: "external-opencode" },
       promoteSession: (_directory, sessionID, config) =>
         promoted.push({ sessionID, harness: config.harness, variant: config.variant }),
       scheduleProjectionPull: (input) => {
@@ -392,7 +374,11 @@ describe("finalizeSubmitSessionTarget", () => {
       navigate: (href) => navigations.push(href),
     })
 
-    expect(promoted).toEqual([{ sessionID: "session-1", harness: { id: "opencode" }, variant: "variant-a" }])
+    expect(promoted).toEqual([{
+      sessionID: "session-1",
+      harness: { kind: "connection", connectionId: "external-opencode" },
+      variant: "variant-a",
+    }])
     expect(scheduled).toEqual([
       {
         action: "register",
@@ -518,10 +504,10 @@ describe("finalizeSubmitSessionTarget", () => {
       target: { created: false },
       surfaceId: "surface-1",
       claxedoState: claxedoStateWithRefs({ surfaceRef: sessionRef("session-1", "ws_surface") }),
-      harness: { id: "claude-acp" },
+      harness: { kind: "connection", connectionId: "claude-team" },
     }).sessionRef).toEqual({
       ...sessionRef("session-1", "ws_surface"),
-      harness: { id: "claude-acp" },
+      harness: { kind: "connection", connectionId: "claude-team" },
     })
   })
 
@@ -554,7 +540,7 @@ function acquireSessionTarget(overrides: Partial<AcquireSessionTargetInput>) {
     sessionClient: () => submitSessionClient(),
     scope: "scope-1",
     draftId: undefined,
-    sessionHarnessType: "opencode",
+    sessionHarnessType: { kind: "native", harnessId: "pi" },
     sessionConfig: {
       agent: "build",
       model: { providerID: "test", modelID: "fixture" },

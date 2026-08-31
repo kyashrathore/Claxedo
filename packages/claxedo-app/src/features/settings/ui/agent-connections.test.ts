@@ -44,13 +44,15 @@ describe("generic harness connection discovery", () => {
     expect(serialized).not.toContain("secretRefs")
   })
 
-  test("drops malformed readiness, capability, and model-selection rows", () => {
+  test("drops malformed contract fields while accepting additive capability fields", () => {
     expect(decodeHarnessConnectionRefs({ connections: [
       { ...publicRow, readiness: "unknown" },
       { ...publicRow, modelSelection: { status: "guessed" } },
-      { ...publicRow, capabilities: { ...publicRow.capabilities, rawProxy: true } },
       { ...publicRow, connectionId: "" },
     ] })).toEqual([])
+    expect(decodeHarnessConnectionRefs({ connections: [
+      { ...publicRow, capabilities: { ...publicRow.capabilities, futureCapability: true } },
+    ] })).toEqual([publicRow])
   })
 
   test("loads and removes by opaque connection id without parsing or prefixing it", async () => {

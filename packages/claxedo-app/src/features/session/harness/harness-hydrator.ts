@@ -48,8 +48,10 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   markServer?(scope: string): void
   applyStatus(scope: string, data: HarnessState, params?: ScopeInput): Promise<void>
   setPollingHydration(scope: string, type?: HarnessType): void
-  setReadyHydration(scope: string, type: HarnessType): void
+  setReadyHydration(scope: string, type: HarnessType, hasConfigOptions?: boolean): void
+  setCapabilityError?(scope: string, message: string): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
+  hasConfigOptions?(type: HarnessType): Promise<boolean>
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
   workspaceRuntime(params?: ScopeInput): boolean
   runtime: {
@@ -155,7 +157,10 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           if (!active()) return
           const type = input.state(scope)?.harness ?? draftDefault.saved.harness
           input.setReadyHydration(scope, type)
-          if (harnessHasConfigOptions(type)) input.fetchConfigOptions(scope, type, params)
+          const configOptions = await hasConfigOptions(scope, type)
+          if (configOptions === undefined) return
+          if (configOptions) input.fetchConfigOptions(scope, type, params)
+          else input.setReadyHydration(scope, type, false)
           await input.refresh(params.directory, refreshHarnessTypeForScope({ directory: params.directory, harness: type }), { draft: true })
           if (active()) input.cache.setSeen(scope, key)
           return
@@ -174,7 +179,10 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
         const type = input.state(scope)?.harness
         if (type) {
           input.setReadyHydration(scope, type)
-          if (harnessHasConfigOptions(type)) input.fetchConfigOptions(scope, type, params)
+          const configOptions = await hasConfigOptions(scope, type)
+          if (configOptions === undefined) return
+          if (configOptions) input.fetchConfigOptions(scope, type, params)
+          else input.setReadyHydration(scope, type, false)
         } else {
           input.resetWorkspaceDraftHarness(scope)
         }

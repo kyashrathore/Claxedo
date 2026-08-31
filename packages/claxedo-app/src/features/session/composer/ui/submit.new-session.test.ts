@@ -10,6 +10,7 @@ const {
   runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
   buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
   sessionPromotionCalls,
+  harnessClaimCalls,
   promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
   promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
 } = h
@@ -67,11 +68,16 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       "draft:draft-1",
       "workspace:%2Frepo%2Fmain:session:session-1",
     ])
-    expect(sessionCreateCalls.at(-1)?.options?.headers?.["x-claxedo-draft-id"]).toBe("draft-1")
-    expect(sessionCreateCalls.at(-1)?.input).toEqual({
+    expect(sessionCreateCalls).toEqual([])
+    expect(harnessClaimCalls).toContainEqual({
       directory: "/repo/main",
-      agent: "agent",
-      model: { providerID: "provider", id: "model" },
+      sessionId: "new",
+      harness: { kind: "native", harnessId: "pi" },
+      sessionConfig: {
+        agent: "agent",
+        model: { providerID: "provider", modelID: "model" },
+        variant: undefined,
+      },
     })
     expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 0 }])
     expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
@@ -116,7 +122,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     ])
   })
 
-  test("does not publish or prompt a created session whose canonical config write fails", async () => {
+  test("does not publish or prompt when the canonical session claim fails", async () => {
     state.demoMode = false
     state.sessionConfigSaveError = "config unavailable"
 
@@ -142,7 +148,8 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await settleSubmitEffects()
 
-    expect(sessionCreateCalls).toHaveLength(1)
+    expect(harnessClaimCalls).toHaveLength(1)
+    expect(sessionCreateCalls).toEqual([])
     expect(sessionPromotionCalls).toEqual([])
     expect(optimisticAdds).toEqual([])
     expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
@@ -251,9 +258,11 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(sessionCreateCalls.at(-1)?.input).toMatchObject({
+    expect(harnessClaimCalls.at(-1)).toMatchObject({
       directory: "ws_1",
-      model: { providerID: "openai", id: "gpt-5.5-pro" },
+      sessionConfig: {
+        model: { providerID: "openai", modelID: "gpt-5.5-pro" },
+      },
     })
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       model: { providerID: "openai", modelID: "gpt-5.5-pro" },
@@ -766,7 +775,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(handoffCalls).toEqual([{ sessionKey: "workspace:%2Frepo%2Fmain:session:session-1", sessionID: "session-1" }])
     expect(navCalls).toHaveLength(1)
     expect(navCalls).toEqual(["/w/project-1/session/session-1"])
-    expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "opencode" }])
+    expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "pi" }])
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toEqual([
       { directory: "/repo/main", sessionID: "session-1" },
     ])
@@ -842,7 +851,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(showCalls).toEqual(["tab-added"])
     expect(navCalls).toHaveLength(1)
     expect(navCalls).toEqual(["/w/project-1/session/session-1"])
-    expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "opencode" }])
+    expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "pi" }])
   })
 
 

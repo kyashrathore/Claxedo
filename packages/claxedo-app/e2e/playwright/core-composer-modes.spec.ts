@@ -88,10 +88,8 @@
  *      editor for further editing instead of firing.
  *   3. Typing `!` at cursor 0 in normal mode enters shell mode without inserting the `!`;
  *      Backspace on an empty shell editor returns to normal mode.
- *   4. Submitting in shell mode dispatches `POST /session/:id/shell`; on success the
- *      editor clears and mode resets to `"normal"` with no toast.
- *   5. A forced shell-dispatch failure restores the EXACT text and shell mode, and shows
- *      the "Failed to send shell command" toast.
+ *   4/5. Retired with the OpenCode-specific `/session/:id/shell` backend route. Shell
+ *      execution has no generic AgentRuntime contract; this suite does not synthesize one.
  *   6. Escape closes an open `/`/`@` popover only — mode and text are untouched (cascade
  *      step 1).
  *   7. Escape exits shell mode back to normal when no popover is open and no turn is in
@@ -126,29 +124,9 @@
  *
  * INVARIANTS — submit-control's `data-icon`/`disabled` is the single source of truth for
  *   submittability (INVARIANTS.md #4) — this spec reads it instead of sleeping. Sends
- *   that reach a reply go through the shared oracle (`expectAssistantReplyVisible`); shell
- *   dispatch does NOT produce an assistant reply in this mock (no `driveTurn` is
- *   triggered by `POST /session/:id/shell`), so behaviors 4/5 are proven by request counts
- *   and DOM/toast state instead, per the ground rules (oracle applies to prompt sends that
- *   produce a reply).
- *   NOTE (harness scoping caveat for 4/5): both tests submit against an ALREADY-CREATED
- *   session (`openExistingSessionPrompt`), not a fresh draft. A draft's FIRST shell
- *   submission also creates the session and navigates to it
- *   (`submit-command-prompt.ts#applyCreatedSessionHandoff`, called BEFORE
- *   `dispatchShellCommand` is even awaited — see `src/session/submit/handoff.ts`'s
- *   `queueMicrotask(() => navigate(...))`), which remounts the whole `PromptInput`
- *   component and resets its in-memory `store.mode` back to `"normal"`. When that first
- *   submission then fails, `restoreInput()` (`submit.ts`) still runs and calls
- *   `setMode(userMode)`, but against the now-unmounted OLD component instance — the text
- *   restore is still visible (it flows through the directory+session-scoped persisted
- *   `Prompt` store, which any freshly-mounted composer reads reactively) but the shell-mode
- *   restore is not, because `store.mode` is NOT part of that persisted store (see STATE
- *   MODEL). This is a real, reproducible interaction between session-creation navigation
- *   and shell-mode restore, out of scope for THIS spec (session creation/navigation is
- *   `core-first-prompt-local`'s territory) but worth a product decision — see this file's
- *   returned findings.
+ *   that reach a reply go through the shared oracle (`expectAssistantReplyVisible`).
  *
- * HARNESS NOTES — this spec fixes the harness to the mock's default (`opencode`); harness
+ * HARNESS NOTES — this spec fixes the harness to the mock's generic default connection; harness
  *   switching does not change composer-mode mechanics and is `core-harness-ownership-*`'s
  *   territory.
  *
@@ -334,63 +312,6 @@ test.describe("core composer modes @core", () => {
     await page.keyboard.press("Backspace")
     await expect(editor).not.toHaveClass(/font-mono/)
     await expect(submit).toHaveAttribute("data-icon", "send")
-  })
-
-  test("shell dispatch success clears the editor and resets to normal mode — behavior 4", async ({ page }) => {
-    // Uses an EXISTING session (see openExistingSessionPrompt) so the shell submit
-    // never has to create-and-navigate a session first — that create/navigate handoff
-    // is a separate confound (core-first-prompt-local's territory), not this
-    // behavior's shell-mode mechanics.
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
-    await seedProjects(page, [DIR])
-    const editor = await openExistingSessionPrompt(page, DIR, SESSION_ID)
-    const submit = page.locator(SELECTORS.submitControl).last()
-
-    await editor.click()
-    await page.keyboard.press("!")
-    await page.keyboard.type("ls -la")
-    await submit.click()
-
-    await expect.poll(() => mock.requests.shellCount, { timeout: 10_000 }).toBe(1)
-    await expect(editor).toHaveText("", { timeout: 5_000 })
-    await expect(editor).not.toHaveClass(/font-mono/)
-    await expect(page.locator('[data-slot="toast-title"]')).toHaveCount(0)
-  })
-
-  test("forced shell dispatch failure restores the exact text/mode and toasts — behavior 5", async ({ page }) => {
-    // Uses an EXISTING session for the same reason as behavior 4 above: a draft's
-    // first shell submission creates the session and navigates immediately (before
-    // the shell dispatch's own success/failure is known — see
-    // `src/components/prompt-input/submit-command-prompt.ts`'s
-    // `applyCreatedSessionHandoff()` call, which runs BEFORE `dispatchShellCommand` is
-    // awaited), which remounts the composer and defeats mode restoration regardless of
-    // what `restoreInput()` does. That is a real, separately-worth-fixing interaction
-    // between session-creation navigation and shell-mode restore — see this file's
-    // findings, not a mechanic of THIS behavior, which is about shell-mode restore in
-    // isolation.
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harnessModels: PIN_MODELS })
-    await seedProjects(page, [DIR])
-    const editor = await openExistingSessionPrompt(page, DIR, SESSION_ID)
-    const submit = page.locator(SELECTORS.submitControl).last()
-
-    let shellAttempts = 0
-    await page.route("**/session/*/shell**", async (route) => {
-      const url = new URL(route.request().url())
-      if (!url.pathname.match(/^\/session\/[^/]+\/shell$/)) return route.fallback()
-      shellAttempts += 1
-      return route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "boom" }) })
-    })
-
-    await editor.click()
-    await page.keyboard.press("!")
-    await page.keyboard.type("git status")
-    await submit.click()
-
-    await expect.poll(() => shellAttempts, { timeout: 10_000 }).toBe(1)
-    await expect(page.getByText("Failed to send shell command")).toBeVisible({ timeout: 10_000 })
-    await expect(editor).toHaveText("git status", { timeout: 5_000 })
-    await expect(editor).toHaveClass(/font-mono/)
-    await expect(submit).toHaveAttribute("data-icon", "arrow-undo-down")
   })
 
   test("Escape closes an open popover without touching mode or text — behavior 6", async ({ page }) => {

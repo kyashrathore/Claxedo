@@ -2,8 +2,16 @@ import { describe, expect, test } from "bun:test"
 import { createHarnessHydrator, type HarnessHydratorCache } from "./harness-hydrator"
 import type { HarnessStoreState } from "./store-state"
 import type { HarnessScopeInput } from "./store-policy"
+import { harnessSelectionId, type HarnessType } from "./profile"
 
 type ScopeInput = HarnessScopeInput
+const CLAUDE_CONNECTION = { kind: "connection", connectionId: "claude-team" } as const
+const CODEX_CONNECTION = { kind: "connection", connectionId: "codex-team" } as const
+const CURSOR_CONNECTION = { kind: "connection", connectionId: "cursor-team" } as const
+const NATIVE_CODEX = { kind: "native", harnessId: "codex" } as const
+const NATIVE_PI = { kind: "native", harnessId: "pi" } as const
+
+const harnessId = (type: HarnessType | undefined) => type ? harnessSelectionId(type) : ""
 
 function response(body: unknown, init?: ResponseInit) {
   return Response.json(body, init)
@@ -112,7 +120,7 @@ describe("harness hydrator", () => {
     const subject = createSubject({
       local: false,
       workspaceRuntime: false,
-      sessionConfig: { harness: { type: "pi" }, model: { modelID: "default" } },
+      sessionConfig: { harness: { id: "pi", access: "native" }, model: { modelID: "default" } },
     })
 
     await expect(subject.hydrator.status({
@@ -122,9 +130,9 @@ describe("harness hydrator", () => {
         host: "central",
         sessionId: "ses_pi",
         toolSandbox: { kind: "virtual" },
-        harness: { id: "pi" },
+        harness: NATIVE_PI,
       },
-    })).resolves.toMatchObject({ type: "pi", model: "default", ready: true })
+    })).resolves.toMatchObject({ type: NATIVE_PI, model: "default", ready: true })
   })
 
   test("hydrates draft status through the local bridge and marks the scope seen", async () => {
@@ -219,14 +227,14 @@ describe("harness hydrator", () => {
 
   test("keeps an existing session polling and retries when canonical config is temporarily unavailable", async () => {
     const subject = createSubject({
-      state: harnessState({ harnessMode: "opencode", harness: "opencode", selectedModel: "" }),
+      state: harnessState({ harnessMode: "unknown", harness: undefined, selectedModel: "" }),
       sessionConfigs: [null, {
-        harness: { type: "codex-app-server" },
+        harness: { id: "codex", access: "native" },
         model: { modelID: "gpt-5.5" },
       }],
       // A directory default is not authoritative for an existing session and
       // must never replace its persisted Codex ownership.
-      statusBody: { type: "opencode", model: "" },
+      statusBody: { harness: { id: "pi", access: "native" }, model: "" },
     })
     const params: ScopeInput = {
       directory: "/repo",
@@ -235,29 +243,29 @@ describe("harness hydrator", () => {
         host: "central",
         sessionId: "ses_1",
         toolSandbox: { kind: "virtual" },
-        harness: { id: "codex-app-server" },
+        harness: NATIVE_CODEX,
       },
     }
 
     await subject.hydrator.hydrate("scope", params)
 
-    expect(subject.calls).toEqual(["seed:scope", "polling:codex-app-server"])
+    expect(subject.calls).toEqual(["seed:scope", "polling:codex"])
     expect(subject.cache.seen.has("scope")).toBe(false)
 
     await subject.hydrator.reprobe("scope", params)
 
     expect(subject.calls).toEqual([
       "seed:scope",
-      "polling:codex-app-server",
+      "polling:codex",
       "seed:scope",
-      "apply:codex-app-server:gpt-5.5",
+      "apply:codex:gpt-5.5",
     ])
     expect(subject.cache.seen.get("scope")).toContain("session:ses_1")
   })
 
   test("settles a successful config missing harness identity against the authoritative session ref", async () => {
     const subject = createSubject({
-      state: harnessState({ harnessMode: "opencode", harness: "opencode", selectedModel: "" }),
+      state: harnessState({ harnessMode: "unknown", harness: undefined, selectedModel: "" }),
       sessionConfig: {},
     })
 
@@ -268,24 +276,24 @@ describe("harness hydrator", () => {
         host: "central",
         sessionId: "ses_1",
         toolSandbox: { kind: "virtual" },
-        harness: { id: "codex-app-server" },
+        harness: NATIVE_CODEX,
       },
     }
 
     await expect(subject.hydrator.status(params)).resolves.toMatchObject({
-      type: "codex-app-server",
+      type: NATIVE_CODEX,
       status: "error",
       ready: false,
     })
     await subject.hydrator.hydrate("scope", params)
 
-    expect(subject.calls).toEqual(["seed:scope", "apply:codex-app-server:"])
+    expect(subject.calls).toEqual(["seed:scope", "apply:codex:"])
     expect(subject.cache.seen.get("scope")).toContain("session:ses_1")
   })
 
   test("rehydrates an existing session when its authoritative ref is upgraded", async () => {
     const subject = createSubject({
-      sessionConfig: { harness: { type: "pi" }, model: { modelID: "default" } },
+      sessionConfig: { harness: { id: "pi", access: "native" }, model: { modelID: "default" } },
     })
 
     await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "ses_1" })
@@ -296,7 +304,7 @@ describe("harness hydrator", () => {
         host: "central",
         sessionId: "ses_1",
         toolSandbox: { kind: "virtual" },
-        harness: { id: "pi" },
+        harness: NATIVE_PI,
       },
     })
 
@@ -307,7 +315,7 @@ describe("harness hydrator", () => {
       "apply:pi:default",
     ])
     expect(subject.cache.seen.get("scope")).toContain("\ncentral\n")
-    expect(subject.cache.seen.get("scope")).toEndWith("\npi\n")
+    expect(subject.cache.seen.get("scope")).toEndWith(`\n${JSON.stringify(NATIVE_PI)}`)
   })
 
   test("dedupes concurrent hydrate calls through the injected cache", async () => {
@@ -412,7 +420,7 @@ describe("harness hydrator", () => {
           await new Promise<void>((resolve) => {
             release = resolve
           })
-          return response({ type: "opencode" })
+          return response({ harness: { id: "pi", access: "native" } })
         },
       },
       cache: subject.cache,
@@ -440,8 +448,8 @@ describe("harness hydrator", () => {
       }),
       applyStatus: async () => subject.calls.push("status-selection"),
       setPollingHydration: () => {},
-      setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
-      fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
+      setReadyHydration: (_scope, type) => subject.calls.push(`ready:${harnessId(type)}`),
+      fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${harnessId(type)}`),
       refresh: async () => {},
       workspaceRuntime: () => false,
       runtime: {
@@ -470,8 +478,8 @@ describe("harness hydrator", () => {
       }),
       applyStatus: async (_scope, data) => subject.calls.push(`apply:${data.type ?? ""}:${data.model ?? ""}`),
       setPollingHydration: () => {},
-      setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
-      fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${type}`),
+      setReadyHydration: (_scope, type) => subject.calls.push(`ready:${harnessId(type)}`),
+      fetchConfigOptions: (_scope, type) => subject.calls.push(`options:${harnessId(type)}`),
       refresh: async (directory, harness, opts) => subject.calls.push(`refresh:${directory ?? ""}:${harness ?? ""}:${opts?.draft ? "draft" : ""}`),
       workspaceRuntime: () => false,
       runtime: {

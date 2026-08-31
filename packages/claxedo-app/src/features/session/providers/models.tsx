@@ -260,10 +260,10 @@ const modelsContextInput = {
       setStore("user", harness(), current.length, { ...model, visibility: state })
     }
 
-    const visible = (model: ModelKey) => {
+    const visible = (model: ModelKey, defaults: Record<string, string> = providers.default()) => {
       return resolveModelVisibility({
         model,
-        defaults: providers.default(),
+        defaults,
         user: visibility().get(modelKey(model)),
       })
     }

@@ -1,14 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import {
-  legacyTerminalReloadStorageKey,
   resolveTerminalReloadFlag,
   terminalReloadStorageKey,
 } from "./pty-key-migration"
 
-// Behavior spec for the one-time `opencode.pty.{id}.reload` ->
-// `claxedo.pty.{id}.reload` localStorage-key migration. The production
-// caller (terminal.tsx) treats this as a one-shot marker: reading it always
-// consumes (clears) both the legacy and current keys.
+// The caller treats this as a one-shot marker: reading it consumes the key.
 
 function createFakeStorage(initial: Record<string, string> = {}) {
   const data = new Map(Object.entries(initial))
@@ -30,31 +26,14 @@ function createFakeStorage(initial: Record<string, string> = {}) {
   return { storage, data, calls }
 }
 
-describe("terminalReloadStorageKey / legacyTerminalReloadStorageKey", () => {
+describe("terminalReloadStorageKey", () => {
   test("builds the current claxedo.pty.{id}.reload key", () => {
     expect(terminalReloadStorageKey("abc123")).toBe("claxedo.pty.abc123.reload")
   })
 
-  test("builds the legacy opencode.pty.{id}.reload key", () => {
-    expect(legacyTerminalReloadStorageKey("abc123")).toBe("opencode.pty.abc123.reload")
-  })
 })
 
 describe("resolveTerminalReloadFlag", () => {
-  test("legacy key present, current key absent: reload is honored, migrated to the new key, and the old key is removed", () => {
-    const id = "pty-1"
-    const { storage, data, calls } = createFakeStorage({
-      [legacyTerminalReloadStorageKey(id)]: "1",
-    })
-
-    const isReload = resolveTerminalReloadFlag(storage, id)
-
-    expect(isReload).toBe(true)
-    expect(calls).toContainEqual({ op: "set", key: terminalReloadStorageKey(id), value: "1" })
-    expect(data.has(legacyTerminalReloadStorageKey(id))).toBe(false)
-    expect(data.has(terminalReloadStorageKey(id))).toBe(false)
-  })
-
   test("current key present: reload is honored without touching the legacy key", () => {
     const id = "pty-2"
     const { storage, data, calls } = createFakeStorage({
@@ -75,20 +54,6 @@ describe("resolveTerminalReloadFlag", () => {
     const isReload = resolveTerminalReloadFlag(storage, id)
 
     expect(isReload).toBe(false)
-    expect(data.size).toBe(0)
-  })
-
-  test("both keys present: current key wins, both are cleared, no redundant write", () => {
-    const id = "pty-4"
-    const { storage, data, calls } = createFakeStorage({
-      [terminalReloadStorageKey(id)]: "1",
-      [legacyTerminalReloadStorageKey(id)]: "1",
-    })
-
-    const isReload = resolveTerminalReloadFlag(storage, id)
-
-    expect(isReload).toBe(true)
-    expect(calls.some((c) => c.op === "set")).toBe(false)
     expect(data.size).toBe(0)
   })
 

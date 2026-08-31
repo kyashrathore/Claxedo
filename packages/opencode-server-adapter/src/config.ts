@@ -117,6 +117,9 @@ export function resolveOpenCodeServerConnection(input: {
   const trustedHeaders: Record<string, string> = {}
   for (const [name, secret] of Object.entries(input.config.trustedHeaders ?? {})) trustedHeaders[name] = input.secrets[secret]!
   const { auth: _auth, trustedHeaders: _trustedHeaders, ...publicConfig } = input.config
+  const basicAuthorization = auth?.type === "basic"
+    ? `Basic ${Buffer.from(`${auth.username}:${auth.password}`, "utf8").toString("base64")}`
+    : undefined
   return {
     ...publicConfig,
     connectionId: input.connectionId,
@@ -124,7 +127,10 @@ export function resolveOpenCodeServerConnection(input: {
     targetDirectory: mapping.targetDirectory,
     ...(auth ? { auth } : {}),
     trustedHeaders,
-    redactions: [...new Set(Object.values(input.secrets))],
+    redactions: [...new Set([
+      ...Object.values(input.secrets),
+      ...(basicAuthorization ? [basicAuthorization, basicAuthorization.slice("Basic ".length)] : []),
+    ])],
   }
 }
 

@@ -632,7 +632,14 @@ async function openWorkspaceNavigator(page: Page, navigator: "Files" | "Changes"
 // /file/content with the same `repositoryFiles` map DocumentRuntime already
 // uses for `/documents/from-repo` and the indexed document's placement I/O —
 // one source of truth for "what's on disk" across both APIs.
-const FILE_API_PATHS = new Set(["/file", "/file/status", "/file/content", "/find", "/find/file", "/find/symbol"])
+const FILE_API_PATHS = new Set([
+  "/api/wr/file",
+  "/api/wr/file/status",
+  "/api/wr/file/content",
+  "/api/wr/find",
+  "/api/wr/find/file",
+  "/api/wr/find/symbol",
+])
 
 async function installRepositoryFilesystem(page: Page, files: Map<string, string>) {
   // Matched by an exact-pathname predicate, NOT a `**/file**` glob: this local
@@ -645,14 +652,15 @@ async function installRepositoryFilesystem(page: Page, files: Map<string, string
       const request = route.request()
       if (request.method() !== "GET") return route.fallback()
       const url = new URL(request.url())
-      if (url.pathname === "/file/content") {
+      const runtimePath = url.pathname.slice("/api/wr".length)
+      if (runtimePath === "/file/content") {
         const path = url.searchParams.get("path") ?? ""
         const content = files.get(path)
         if (content === undefined) return error(route, 404, "file_not_found", "File not found")
         return json(route, { type: "text", content })
       }
-      if (url.pathname === "/file/status") return json(route, [])
-      if (url.pathname === "/file") {
+      if (runtimePath === "/file/status") return json(route, [])
+      if (runtimePath === "/file") {
         const path = url.searchParams.get("path") ?? ""
         if (path !== "") return json(route, [])
         const entries = [...files.keys()].map((filePath) => ({
@@ -716,18 +724,16 @@ function unexpectedCanaryConsoleErrors(messages: string[]) {
 }
 
 function unexpectedCanaryRequestFailures(urls: string[]) {
-  // Same unmocked-central-origin gap as `unexpectedCanaryConsoleErrors` above:
-  // beyond the events stream, background inventory polling this canary
-  // incidentally triggers (`/api/control/sessions`, `/project/current`,
-  // `/project/:id`, ...) is not covered by `installMockRuntime` either and
-  // genuinely hits (and fails against) the real 127.0.0.1:3001 backend this
-  // Tier-M harness never runs. Filtered by origin, the same broad-brush way
-  // core-boot-deep-links-home.spec.ts's `fromUnmockedCentralOrigin` filters
-  // this identical class of noise, rather than chasing an ever-growing
-  // pathname allow-list.
+  // EventSource always has one long-poll request in flight. Closing the page
+  // aborts that request and Playwright reports it as `requestfailed`, even
+  // when the deterministic mock route owns the stream and every delivered
+  // frame was valid. Exclude only the canonical event-stream routes; ordinary
+  // request failures remain release-canary failures. The control-plane origin
+  // is not started by this Tier-M harness, so its incidental background
+  // inventory requests retain the existing origin exemption.
   return urls.filter((value) => {
     const pathname = new URL(value).pathname
-    if (["/api/wr/events", "/global/event", "/event"].includes(pathname)) return false
+    if (["/api/claxedo/events", "/api/wr/events", "/global/event", "/event"].includes(pathname)) return false
     return !value.includes("127.0.0.1:3001")
   })
 }

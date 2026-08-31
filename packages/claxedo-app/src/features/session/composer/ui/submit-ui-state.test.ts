@@ -19,6 +19,10 @@ describe("prompt input submit UI state", () => {
 
       boot.setBoot({ harness: "Claude", phase: "sending" })
       expect(boot.bootText()).toBe("Sending first message...")
+      expect(boot.stoppable()).toBe(false)
+
+      boot.setBoot({ harness: "Claude", sessionID: "session-1", phase: "sending" })
+      expect(boot.stoppable()).toBe(true)
 
       setWorking(true)
       await Promise.resolve()

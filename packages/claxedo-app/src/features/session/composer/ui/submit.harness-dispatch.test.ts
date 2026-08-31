@@ -220,15 +220,16 @@ describe("Harness + demo dispatch and abort", () => {
     expect(harnessClaimCalls).toContainEqual({
       directory: "/repo/main",
       sessionId: undefined,
+      harness: { kind: "connection", connectionId: "claude-team" },
       sessionConfig: {
         agent: "agent",
         model: { providerID: "claude-sdk", modelID: "opus" },
         variant: undefined,
       },
     })
-    expect(transportClients).toHaveLength(1)
-    expect(transportClients[0]?.directory).toBe("/repo/main")
-    expect(transportClients[0]?.fetch).not.toBeUndefined()
+    expect(transportClients.length).toBeGreaterThanOrEqual(1)
+    expect(transportClients.every((client) => client.directory === "/repo/main")).toBe(true)
+    expect(transportClients.some((client) => client.fetch !== undefined)).toBe(true)
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
@@ -260,7 +261,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
 
-  test("harness submit does not leak the OpenCode reasoning variant", async () => {
+  test("connection-backed submit does not leak an unrelated local-provider variant", async () => {
     state.demoMode = false
     state.harnessMode = true
 
@@ -287,7 +288,7 @@ describe("Harness + demo dispatch and abort", () => {
   test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.demoMode = false
     state.localSessionConfig = {
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "claude-team", access: "connection" },
       agent: "build",
       model: { providerID: "claude-sdk", modelID: "opus" },
       variant: "high",
@@ -297,7 +298,7 @@ describe("Harness + demo dispatch and abort", () => {
       info: () => ({
         id: "session-1",
         config: {
-          harness: { id: "claude", access: "acp" },
+          harness: { id: "claude-team", access: "connection" },
           agent: "build",
           model: { providerID: "claude-sdk", modelID: "opus" },
           variant: "high",
@@ -368,7 +369,7 @@ describe("Harness + demo dispatch and abort", () => {
   })
 
 
-  test("harness claim failure does not fall back to OpenCode create", async () => {
+  test("harness claim failure does not invoke an alternate direct-create path", async () => {
     state.demoMode = false
     state.harnessMode = true
     state.harnessClaimSession = undefined

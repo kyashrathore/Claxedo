@@ -159,7 +159,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
 
   const projectCatalog = () => globalProjects()
-
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
@@ -297,7 +296,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       },
     })
     if (!resolvedDirectory) return
-
     const sessionDirectory = resolvedDirectory.directory
     let client = sdk.client
 
@@ -350,6 +348,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
     const sessionHarnessType = existingSessionConfig?.harnessType ?? requestedHarnessType
+    // Every provider creates and sends through AgentRuntime, and the harness
+    // controller is the one submitted-model authority for every harness. Pi's
+    // provider catalog remains its picker/catalog source, but the selector
+    // projects that choice into this same controller before Send is enabled.
+    const harnessModelMode = true
     const harnessMode = true
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
     const signedWorkspaceId = signedControlPlane ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory) : undefined
@@ -413,9 +416,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           ...(existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
         }
       : await resolveSubmittedConfig({
-          harnessMode,
-          harnessModelKey: selectedHarnessMode(scope) ? harnessController.modelKeyForSubmit(scope) : undefined,
-          selectedModel: submitSelectedModel,
+          harnessMode: harnessModelMode,
+          harnessModelKey: harnessModelMode ? harnessController.modelKeyForSubmit(scope) : undefined,
+          selectedModel: undefined,
           currentAgent: local.agent.current(),
           defaultAgent: local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
           agentOverride: input.agent?.(),
@@ -432,7 +435,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const persistedHarnessType: HarnessSelection = sessionHarnessType
     const persistedHarnessRef = persistedHarnessType
     publishCloudHandoff("creating_session", "Creating session.")
-
     let session = input.info()
     let replaceSession = isNewSession
     const previousSessionId = explicitSessionID && !isNewSession ? explicitSessionID : "new"
@@ -444,7 +446,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     }
 
     if (replaceSession) boot()
-
     const target = await acquireSubmitSessionTarget({
       session,
       explicitSessionID,
@@ -474,6 +475,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         harnessController.claimSession(targetInput.scope, {
           directory: targetInput.directory,
           sessionId: targetInput.sessionID,
+          harness: sessionHarnessType,
           sessionConfig: targetInput.sessionConfig,
         }),
       onCreateError: (err) => {

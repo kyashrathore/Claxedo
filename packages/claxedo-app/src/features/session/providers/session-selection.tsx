@@ -522,8 +522,8 @@ const localContextInput = {
           }),
         )
       },
-      visible(item: ModelKey) {
-        return models.visible(item)
+      visible(item: ModelKey, defaults?: Record<string, string>) {
+        return models.visible(item, defaults)
       },
       setVisibility(item: ModelKey, visible: boolean) {
         models.setVisibility(item, visible)

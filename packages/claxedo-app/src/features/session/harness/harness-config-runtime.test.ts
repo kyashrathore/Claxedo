@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { createHarnessConfigRuntime, type ProjectInventoryItem } from "./harness-config-runtime"
+import { connectionHarness } from "@/platform/identity/harness-selection"
 
 const responseFetch = (label: string): typeof fetch =>
   async (input) => Response.json({ label, url: String(input) })
@@ -62,8 +63,29 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.harnessSessionFetch({ directory: "workspace:ws_1" })).toBe(sdkFetch)
   })
 
+  test("gives the agent runtime a raw request plus one resolved workspace placement", () => {
+    const request = responseFetch("request")
+    const sdkFetch = responseFetch("sdk")
+    const harnessRuntime = runtime({
+      request,
+      sdkFetch,
+      projects: [{
+        worktree: "/repo",
+        workspaces: {
+          ws_cloud: { workspaceId: "ws_cloud", kind: "cloud", directory: "/repo/cloud" },
+        },
+      }],
+    })
+
+    expect(harnessRuntime.agentRuntimeClientOptions({ directory: "workspace:ws_cloud" })).toEqual({
+      request,
+      workspaceId: "ws_cloud",
+      workspaceKind: "cloud",
+    })
+  })
+
   test("returns empty options without a directory", async () => {
-    const res = await runtime().configOptionsFetch("claude-acp")
+    const res = await runtime().configOptionsFetch(connectionHarness("claude-agent"))
 
     expect(await res.json()).toEqual({
       options: [],
@@ -81,10 +103,46 @@ describe("harness config runtime", () => {
       },
     })
 
-    await harnessRuntime.configOptionsFetch("codex-acp", { directory: "workspace:ws_cloud" })
+    await harnessRuntime.configOptionsFetch(connectionHarness("codex-agent"), { directory: "workspace:ws_cloud" })
 
     expect(urls).toEqual([
-      "/api/wr/harness-config-options?directory=workspace%3Aws_cloud&harness=codex-acp",
+      "/api/wr/harness-config-options?directory=workspace%3Aws_cloud&connectionId=codex-agent",
+    ])
+  })
+
+  test("reads relay-backed session health from that workspace runtime", async () => {
+    const urls: string[] = []
+    const harnessRuntime = runtime({
+      transportFetch: async (input) => {
+        urls.push(String(input))
+        return Response.json({ ok: true })
+      },
+    })
+
+    await harnessRuntime.harnessHealthFetch({
+      directory: "workspace:ws_cloud",
+      sessionId: "ses_cloud",
+    })
+
+    expect(urls).toEqual(["/api/wr/health?sessionId=ses_cloud"])
+  })
+
+  test("keeps local session health on the local harness-config route", async () => {
+    const urls: string[] = []
+    const harnessRuntime = runtime({
+      unsignedLocalFetch: async (input) => {
+        urls.push(String(input))
+        return Response.json({ ok: true })
+      },
+    })
+
+    await harnessRuntime.harnessHealthFetch({
+      directory: "/tmp/project",
+      sessionId: "ses_local",
+    })
+
+    expect(urls).toEqual([
+      "http://127.0.0.1:3001/api/claxedo/agent-config/harness?directory=%2Ftmp%2Fproject&sessionId=ses_local",
     ])
   })
 

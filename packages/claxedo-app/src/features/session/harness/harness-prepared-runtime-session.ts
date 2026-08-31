@@ -3,6 +3,7 @@ import {
   type PreparedHarnessSessionPlan,
   type PreparedHarnessSessionState,
   type PreparedRuntimeSession,
+  type PreparedRuntimeSessionConfig,
   type PreparedSessionDirectory,
 } from "./prepared-session"
 import type { HarnessType } from "./profile"
@@ -40,6 +41,8 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
   setPrepareError(scope: string, err: unknown): void
   cache: PreparedRuntimeSessionCache
 }) {
+  const prepareErrors = new Map<string, unknown>()
+
   const bump = (scope: string) => {
     const next = (input.cache.getSeq(scope) ?? 0) + 1
     input.cache.setSeq(scope, next)
@@ -60,10 +63,17 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
 
   const prepare = async (scope: string, params?: ScopeInput): Promise<PreparedRuntimeSession | undefined> => {
     const item = input.cache.getPrepared(scope)
+    const stored = input.state(scope)
     const plan = planPreparedHarnessSession({
       enabled: input.canUseRuntimeSession(params),
       directory: params?.directory,
-      state: input.state(scope),
+      // Submit already resolved the canonical runtime selection and model.
+      // Prefer that claim input over the UI store: directory preparation can
+      // move a draft to a new scope before that scope has hydrated.
+      state: {
+        harness: params?.harness ?? stored.harness,
+        selectedModel: params?.sessionConfig?.model.modelID ?? stored.selectedModel,
+      },
       ...(item ? { prepared: item } : {}),
     })
     if (plan.status !== "create") return plan.status === "reuse" ? plan.item : undefined
@@ -75,6 +85,7 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
 
     const promise = (async () => {
       try {
+        prepareErrors.delete(scope)
         const sessionID = await input.create({
           input: params,
           directory: plan.directory,
@@ -95,6 +106,7 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
         return next
       } catch (err) {
         if ((input.cache.getSeq(scope) ?? 0) !== id) return undefined
+        prepareErrors.set(scope, err)
         input.setPrepareError(scope, err)
         return undefined
       }
@@ -113,7 +125,6 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
    * sit in the composer with nothing said.
    */
   const claim = async (scope: string, params: ScopeInput): Promise<{ id: string } | undefined> => {
-    if (!input.state(scope).harness) return undefined
     const item = await prepare(scope, params)
     if (!item) {
       const plan = planPreparedHarnessSession({

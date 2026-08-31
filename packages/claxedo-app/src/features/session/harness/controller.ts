@@ -13,6 +13,7 @@ export type HarnessScopeInput = {
 }
 
 export type HarnessSessionClaimInput = HarnessScopeInput & {
+  harness: HarnessType
   sessionConfig: PreparedRuntimeSessionConfig
 }
 

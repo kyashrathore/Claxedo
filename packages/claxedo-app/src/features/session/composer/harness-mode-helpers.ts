@@ -17,7 +17,9 @@ export function createComposerHarnessMode(deps: {
 }) {
   const isHarnessMode = (scope: string) => {
     const mode = deps.composerMode()
-    if (mode.kind === "session") return isComposerHarnessMode(mode)
+    if (mode.kind === "session") {
+      return isComposerHarnessMode(mode) || deps.harnessController.isHarnessMode(scope)
+    }
     return deps.harnessController.isHarnessMode(scope) || isComposerHarnessMode(mode)
   }
   const toolbarHarnessMode = (scope: string) => {
@@ -30,7 +32,9 @@ export function createComposerHarnessMode(deps: {
   const harnessReadyForSubmit = (scope: string) => deps.harnessController.readyForSubmit(scope)
   const currentHarnessType = (scope: string) => {
     const mode = deps.composerMode()
-    if (mode.kind === "session") return composerHarnessId(mode)
+    if (mode.kind === "session") {
+      return composerHarnessId(mode) ?? deps.harnessController.harness(scope)
+    }
     const harness = deps.harnessController.harness(scope)
     return harness ?? composerHarnessId(mode)
   }

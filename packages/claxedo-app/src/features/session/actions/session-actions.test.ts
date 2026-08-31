@@ -79,11 +79,11 @@ function makeProps() {
     dialog: {},
     globalSDK: {
       url: "http://127.0.0.1:3001",
-      client: {
+      createClient: () => ({
         session: {
           create: async () => ({ data: { id: "ses_review_1" } }),
         },
-      },
+      }),
     },
     globalSync: {},
     directorySessionCacheActions: {
@@ -332,7 +332,9 @@ describe("createSessionActions", () => {
     // Sidebar selection updates browser history directly; focused workbench
     // state must still identify the active session if router params lag behind.
     props.params = {}
-    props.globalSDK.client.session.update = async () => ({ data: {} })
+    props.globalSDK.createClient = () => ({
+      session: { update: async () => ({ data: {} }) },
+    })
     props.workspaceRouteId = () => "ws_main"
     props.state.meta.find = () => ({
       id: "content-active",
@@ -360,7 +362,9 @@ describe("createSessionActions", () => {
   test("archiving the only active session navigates to its canonical workspace root", async () => {
     const { props, navs, nav } = makeProps()
     props.params = { id: "ses_active" }
-    props.globalSDK.client.session.update = async () => ({ data: {} })
+    props.globalSDK.createClient = () => ({
+      session: { update: async () => ({ data: {} }) },
+    })
     props.workspaceRouteId = () => "ws_main"
     props.state.meta.find = () => ({
       id: "content-active",
@@ -450,7 +454,9 @@ describe("createSessionActions", () => {
   test("archiving a background session keeps the current session URL", async () => {
     const { props, navs, nav } = makeProps()
     props.params = { id: "ses_active" }
-    props.globalSDK.client.session.update = async () => ({ data: {} })
+    props.globalSDK.createClient = () => ({
+      session: { update: async () => ({ data: {} }) },
+    })
 
     const archived = await createSessionActions(props, nav).handleArchiveSession({
       id: "ses_background",

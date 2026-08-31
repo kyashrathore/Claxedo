@@ -315,12 +315,12 @@ describe("routeCentralSessionRef", () => {
   test("builds a central identity from inventory workspace and harness fields", () => {
     expect(routeCentralSessionRef("ses_central", {
       workspaceId: "ws_1",
-      harness: { id: "pi" },
+      harness: { kind: "native", harnessId: "pi" },
     })).toMatchObject({
       sessionId: "ses_central",
       host: "central",
       workspaceId: "ws_1",
-      harness: { id: "pi" },
+      harness: { kind: "native", harnessId: "pi" },
     })
   })
 

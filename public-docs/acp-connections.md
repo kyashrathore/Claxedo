@@ -60,6 +60,52 @@ the descriptor and browser projection never contain the resolved value.
 There is no v1/v2 decoder, ACP map importer, built-in OpenCode row, or fallback
 connection.
 
+### Already-running OpenCode server
+
+An OpenCode HTTP server uses the same descriptor slot with provider key
+`opencode-server`; Claxedo never starts, discovers, or bundles that process.
+`workspacePaths` is required because the local Claxedo workspace path and the
+path understood by a remote VM may differ.
+
+```jsonc
+{
+  "connectionId": "team-opencode",
+  "providerKey": "opencode-server",
+  "configRevision": 1,
+  "enabled": true,
+  "config": {
+    "label": "Team OpenCode",
+    "baseUrl": "https://agents.example.com",
+    "workspacePaths": [
+      {
+        "sourceDirectory": "/Users/me/projects/app",
+        "targetDirectory": "/srv/workspaces/app"
+      }
+    ],
+    "auth": {
+      "type": "header",
+      "name": "X-API-Key",
+      "valueSecret": "apiKey"
+    },
+    "trustedHeaders": { "X-Agent-Gateway": "gatewayToken" },
+    "tenant": { "header": "X-Tenant", "value": "team-1" },
+    "reconnect": { "maxAttempts": 2, "delayMs": 100 },
+    "deadlines": { "requestMs": 15000, "streamIdleMs": 30000 }
+  },
+  "secretRefs": {
+    "apiKey": "credentials/team-opencode-api-key",
+    "gatewayToken": "credentials/agent-gateway-token"
+  }
+}
+```
+
+Basic authentication is also supported with
+`{ "type": "basic", "username": "opencode", "passwordSecret": "password" }`.
+Every secret name used by `auth` or `trustedHeaders` must have exactly one
+matching `secretRefs` entry. OpenCode owns model selection, so the connection
+advertises `modelSelection: { status: "unsupported" }`; the composer does not
+invent a model or call a config-options endpoint for it.
+
 ## Authenticated local API
 
 The local server exposes one generic route family under
@@ -145,4 +191,7 @@ connection unselectable. It must not install a compatibility string encoding.
 - Generic CRUD route:
   `packages/claxedo-local-server/src/agent-config/routes/connection-routes.ts`
 - Browser decoder/store:
-  `packages/claxedo-app/src/features/settings/ui/agent-connections.ts`
+  `packages/claxedo-app/src/platform/runtime/agent/connection-catalog.ts`
+- External OpenCode descriptor and adapter:
+  `packages/opencode-server-adapter/src/config.ts` and
+  `packages/opencode-server-adapter/src/adapter.ts`

@@ -48,7 +48,7 @@ mock.module("@lydell/node-pty", () => ({
 }))
 
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
-const previousOrphanTimeout = process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS
+const previousOrphanTimeout = process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
 
 let tmpDir: string
 let kill: ReturnType<typeof spyOn<typeof process, "kill">>
@@ -79,7 +79,7 @@ async function waitFor(check: () => boolean, timeoutMs = 2000) {
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "pty-history-restore-"))
   process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(tmpDir, "history")
-  process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS = "100000"
+  process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS = "100000"
   fakeProcesses.clear()
   kill = spyOn(process, "kill").mockImplementation(() => true)
 })
@@ -91,8 +91,8 @@ afterEach(async () => {
   fakeProcesses.clear()
   if (previousHistoryDir === undefined) delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
   else process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = previousHistoryDir
-  if (previousOrphanTimeout === undefined) delete process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS
-  else process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS = previousOrphanTimeout
+  if (previousOrphanTimeout === undefined) delete process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
+  else process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS = previousOrphanTimeout
   await fs.rm(tmpDir, { recursive: true, force: true })
 })
 

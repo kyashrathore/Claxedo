@@ -14,6 +14,7 @@ import {
 import type { HarnessType, OptionsResponse } from "./profile"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 export type WorkspaceBoot = {
   kind?: "local" | "cloud" | "user-hosted" | null
@@ -125,6 +126,21 @@ export function createHarnessConfigRuntime(input: {
     return workspaceRuntimeConfigFetch(params) ?? localHarnessConfigFetch(params)
   }
 
+  function agentRuntimeClientOptions(params?: HarnessScopeInput) {
+    const runtimeRef = params?.directory
+      ? sessionWorkspaceRuntimeRef({
+          directory: params.directory,
+          sessionRef: params.sessionRef,
+          projects: input.projects(),
+        })
+      : undefined
+    return {
+      request: localHarnessConfigFetch(params),
+      ...(params?.sessionRef ? { sessionRef: params.sessionRef } : {}),
+      ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
+    }
+  }
+
   async function workspace(params?: HarnessScopeInput): Promise<WorkspaceBoot | undefined> {
     if (!params?.directory) return undefined
     const workspace = await resolveWorkspaceRuntime({
@@ -167,6 +183,23 @@ export function createHarnessConfigRuntime(input: {
     }))
   }
 
+  function harnessHealthFetch(params?: HarnessScopeInput) {
+    if (useLocalHarnessConfig(params)) {
+      return localHarnessConfigFetch(params)(
+        harnessConfigUrl({
+          serverUrl: input.base,
+          directory: params?.directory,
+          sessionId: params?.sessionId,
+        }),
+      )
+    }
+    const url = new URL("/api/wr/health", "http://workspace-runtime.local")
+    if (params?.sessionId && params.sessionId !== "new") {
+      url.searchParams.set("sessionId", params.sessionId)
+    }
+    return workspaceHarnessTransport(params).fetch(`${url.pathname}${url.search}`)
+  }
+
   function workspaceKind(params?: HarnessScopeInput) {
     if (!params?.directory) return undefined
     const signedWorkspace = signedWorkspaceFromProjects(input.projects(), params.directory)
@@ -180,6 +213,8 @@ export function createHarnessConfigRuntime(input: {
 
   return {
     configOptionsFetch,
+    agentRuntimeClientOptions,
+    harnessHealthFetch,
     harnessSessionFetch,
     localHarnessConfigFetch,
     useLocalHarnessConfig,

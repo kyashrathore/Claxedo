@@ -2262,6 +2262,8 @@ describe("canonical execution binding", () => {
       connectionId: "native:pi",
       upstreamSessionId: "thread-1",
     })
+    assert.equal((store.getSession("session-1") as { workspaceId?: string })?.workspaceId, "workspace-1")
+    assert.equal((store.listSessions("/work/a")[0] as { workspaceId?: string })?.workspaceId, "workspace-1")
     const reopened = new RuntimeStore(root)
     assert.deepEqual(reopened.getExecutionBinding("session-1"), store.getExecutionBinding("session-1"))
     assert.equal(reopened.getExecutionBinding("provider-only"), null)

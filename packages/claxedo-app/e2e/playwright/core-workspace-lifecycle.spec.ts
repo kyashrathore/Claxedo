@@ -446,7 +446,9 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/session?**", handleSessionList)
   await page.route("**/experimental/session", handleSessionList)
   await page.route("**/experimental/session?**", handleSessionList)
-  await page.route("**/session/*/message**", (r) => (api(r.request()) ? json(r, []) : r.continue()))
+  await page.route("**/session/*/message**", (r) =>
+    api(r.request()) ? json(r, { messages: [], maxEventOrdinal: 0 }) : r.continue(),
+  )
   await page.route("**/session/*/capabilities**", (r) => (api(r.request()) ? json(r, { transport: "runtime" }) : r.continue()))
   await page.route("**/session/status**", (r) => (api(r.request()) ? json(r, {}) : r.continue()))
 
@@ -797,7 +799,8 @@ test.describe("core workspace lifecycle @core", () => {
     await page.getByRole("button", { name: "Destroy Sandbox", exact: true }).click()
 
     await expect.poll(() => sandboxDeleteCalls, { timeout: 10_000 }).toBe(1)
-    await expect(toastTitle(page)).toHaveText("Sandbox Destroyed", { timeout: 10_000 })
+    await expect(toastTitle(page).filter({ hasText: "Sandbox Destroyed" }))
+      .toHaveText("Sandbox Destroyed", { timeout: 10_000 })
   })
 
   test("kebab Remove project removes optimistically; forced server failure surfaces a toast without restoring it — behavior 6", async ({ page }) => {

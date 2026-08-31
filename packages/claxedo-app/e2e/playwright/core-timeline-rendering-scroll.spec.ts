@@ -573,7 +573,7 @@ async function installSeededSession(page: Page, rows: Array<{ info: AnyInfo; par
   const sessionRow = seededSessionRow()
   const listBody = JSON.stringify([sessionRow])
   const sessionBody = JSON.stringify(sessionRow)
-  const messageBody = JSON.stringify(rows)
+  const messageBody = JSON.stringify({ messages: rows, maxEventOrdinal: 0 })
   // Every pattern below needs a trailing `**` (even the ones with no query
   // params of their own) — Playwright's glob matching requires an exact
   // end-of-URL match unless the pattern ends in a wildcard, and the real app
@@ -682,7 +682,11 @@ async function installMutableSession(
   // requires an exact end-of-URL match, and the app appends `?directory=...`.
   await page.route(`**/session/${SESSION_ID}`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
   await page.route(`**/session/${SESSION_ID}?**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: sessionBody }))
-  await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(rows) }))
+  await page.route(`**/session/${SESSION_ID}/message**`, (route) => route.fulfill({
+    status: 200,
+    contentType: "application/json",
+    body: JSON.stringify({ messages: rows, maxEventOrdinal: 0 }),
+  }))
   await page.route("**/session/status**", (route) => route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ [SESSION_ID]: { type: status } }) }))
   return {
     mock,

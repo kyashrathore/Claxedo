@@ -1882,18 +1882,31 @@ export function createSessionRoutes(opts: Opts) {
       const admitted = await admitQuestionOperation(opts, c, "replyQuestion")
       if (admitted.rejected) return admitted.rejected
       const { id, directory, adapter, sessionId } = admitted
-      const body = (await c.req.json().catch(() => ({}))) as { answer?: string; answers?: string[][] }
+      const body = await c.req.json().catch(() => undefined)
+      if (
+        !body
+        || typeof body !== "object"
+        || Array.isArray(body)
+        || Object.keys(body).some((key) => key !== "answers")
+        || !Array.isArray((body as { answers?: unknown }).answers)
+        || (body as { answers: unknown[] }).answers.some((answer) =>
+          !Array.isArray(answer) || answer.some((value) => typeof value !== "string")
+        )
+      ) {
+        return c.json({ error: "answers must be an array of string arrays" }, 400)
+      }
+      const answers = (body as { answers: string[][] }).answers
       const result = await adapter.replyQuestion!(
         await requireExecutionBinding(opts, c, directory, sessionId, adapter),
         id,
-        body.answer ?? "",
+        answers,
       )
       publishInteractionEvents(
         opts.publishGlobal,
         directory,
         sessionId,
         result?.events,
-        questionReplied(sessionId, id, body.answers ?? [[body.answer ?? ""]]),
+        questionReplied(sessionId, id, answers),
       )
       return c.json({ ok: true })
     })

@@ -44,7 +44,7 @@ mock.module("@lydell/node-pty", () => ({
   },
 }))
 
-const previousOrphanTimeout = process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS
+const previousOrphanTimeout = process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
 const previousHistoryDir = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
 
 let tmpDir: string
@@ -52,7 +52,7 @@ let kill: ReturnType<typeof spyOn<typeof process, "kill">>
 
 beforeEach(async () => {
   tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-pty-"))
-  process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS = "5"
+  process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS = "5"
   process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR = path.join(tmpDir, "history")
   fakeProcesses.clear()
   nextSpawnPid = undefined
@@ -66,9 +66,9 @@ afterEach(async () => {
   kill.mockRestore()
   fakeProcesses.clear()
   if (previousOrphanTimeout === undefined) {
-    delete process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS
+    delete process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS
   } else {
-    process.env.OPENCODE_PTY_ORPHAN_TIMEOUT_MS = previousOrphanTimeout
+    process.env.CLAXEDO_PTY_ORPHAN_TIMEOUT_MS = previousOrphanTimeout
   }
   if (previousHistoryDir === undefined) {
     delete process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR

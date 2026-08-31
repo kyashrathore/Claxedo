@@ -52,7 +52,7 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(harnessSetCalls).toEqual([])
     expect(transportClients.length).toBeGreaterThanOrEqual(2)
     expect(transportClients.every((item) => item.directory === cloudDir)).toBe(true)
-    expect(refreshCalls).toEqual([{ directory: cloudDir, harnessType: "opencode" }])
+    expect(refreshCalls).toEqual([{ directory: cloudDir, harnessType: "pi" }])
   })
 
 
@@ -101,7 +101,7 @@ describe("Workspace-runtime transport + model resolution", () => {
     state.harnessMode = false
     state.localCurrentModel = undefined
     state.localCurrentAgent = { name: "build" }
-    state.runtimeSessionConfig = { harness: { id: "opencode", access: "native" }, agent: "build" }
+    state.runtimeSessionConfig = { harness: { id: "pi", access: "native" }, agent: "build" }
     state.runtimeProviderResponse = {
       all: {
         google: {
@@ -187,7 +187,7 @@ describe("Workspace-runtime transport + model resolution", () => {
   test("signed control-plane existing normal submit reuses canonical config on runtime transport", async () => {
     state.demoMode = false
     state.runtimeSessionConfig = {
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "pi", access: "native" },
       agent: "agent",
       model: { providerID: "provider", modelID: "model" },
     }
@@ -209,7 +209,7 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.transportAsync).toBe(1)
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "signed-existing" })
     expect(runtimeCalls).toContainEqual(expect.objectContaining({
-      input: "/session/signed-existing/config?directory=%2Frepo%2Fmain&harness=opencode",
+      input: "/session/signed-existing/config?directory=%2Frepo%2Fmain&nativeHarness=pi",
       method: "GET",
     }))
     expect(runtimeCalls.some((call) => call.method === "PATCH")).toBe(false)

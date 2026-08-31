@@ -1162,6 +1162,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const sessionAdapters = new Map<string, AgentHarnessAdapter>()
   const sessionRuntimes = new Map<string, AgentRuntime>()
   const sessionAdapterRunners = new Map<string, RuntimeRunner>()
+  const adapterRuntimeKeys = new WeakMap<AgentHarnessAdapter, string>()
   const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, string>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
   let checkpointState: "active" | "freezing" | "frozen" = "active"
@@ -1274,12 +1275,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       const key = `${descriptor.providerKey}:${descriptor.connectionId}:${generation}`
       const existing = sessionAdapters.get(key)
       if (existing) {
+        adapterRuntimeKeys.set(existing, key)
         resolved.adapter.dispose()
         await configureAdapter(existing, nextRunner)
         return existing
       }
       sessionAdapters.set(key, resolved.adapter)
       sessionAdapterRunners.set(key, nextRunner)
+      adapterRuntimeKeys.set(resolved.adapter, key)
+      retireSupersededConnectionAdapters(nextRunner, key)
       enabled = true
       await configureAdapter(resolved.adapter, nextRunner)
       if (runner && harnessKey(nextRunner) === harnessKey(runner)) adapter = resolved.adapter
@@ -1289,12 +1293,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const existing = sessionAdapters.get(key)
     if (existing) {
       sessionAdapterRunners.set(key, nextRunner)
+      adapterRuntimeKeys.set(existing, key)
       await configureAdapter(existing, nextRunner)
       return existing
     }
     const next = createAdapter(nextRunner, hostOptions, harnessRegistry)
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
+    adapterRuntimeKeys.set(next, key)
     enabled = true
     await configureAdapter(next, nextRunner)
     if (runner && harnessKey(nextRunner) === harnessKey(runner)) adapter = next
@@ -1362,10 +1368,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   async function runtimeForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
     const config = sessionConfigFor(input)
     const nextRunner = config?.harness ?? input?.harness ?? currentRunner()
-    const key = adapterKey(nextRunner)
+    const nextAdapter = await ensureSessionAdapter(nextRunner)
+    const key = adapterRuntimeKeys.get(nextAdapter) ?? adapterKey(nextRunner)
     const existing = sessionRuntimes.get(key)
     if (existing) return existing
-    const nextAdapter = await ensureSessionAdapter(nextRunner)
     const runtime = createAgentRuntime({
       store: store() as unknown as AgentRuntimeStore,
       harnesses: [{
@@ -1380,6 +1386,29 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     })
     sessionRuntimes.set(key, runtime)
     return runtime
+  }
+
+  function retireSupersededConnectionAdapters(nextRunner: RuntimeRunner, keepKey: string) {
+    if (nextRunner.access !== "connection") return
+    for (const [key, target] of sessionAdapters) {
+      if (key === keepKey || sessionAdapterRunners.get(key)?.id !== nextRunner.id) continue
+      const retire = () => {
+        if (sessionAdapters.get(key) !== target) return
+        const runtime = sessionRuntimes.get(key)
+        if (runtime) runtime.dispose()
+        else target.dispose()
+        sessionRuntimes.delete(key)
+        sessionAdapters.delete(key)
+        sessionAdapterRunners.delete(key)
+        activeTurns.delete(target)
+      }
+      const turns = activeTurns.get(target)
+      if (!turns?.size) {
+        retire()
+        continue
+      }
+      void Promise.all([...turns].map((turn) => turn.done)).then(retire)
+    }
   }
 
   async function listSessions(input: {
@@ -2268,40 +2297,61 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ...(requested ? { harness: requested } : {}),
           })
           const session = await adapter.createSession(directory, title, id)
-          assertSessionDirectory(session.id, directory)
           const selectedHarness = requested
             ?? sessionConfigFor({ sessionId: session.id, directory })?.harness
             ?? currentRunner()
-          // The agent session id belongs to the HARNESS, never to this
-          // write-through. An adapter that persists into this store has
-          // already bound the id its process answers to: a codex
-          // `thread/start` id, an ACP `session/new` id, or the `claude-sdk:`
-          // sentinel that means "no SDK conversation exists yet". Re-binding
-          // `session.id` over it told the harness to resume a conversation
-          // that never existed, so the FIRST turn of every native-SDK session
-          // died with `thread not found` / `No conversation found with session
-          // ID` (ACP hid it by booting a replacement session). `session.id` is
-          // only the placeholder for adapters that keep their sessions
-          // elsewhere and left nothing here to preserve.
-          store().bindSession({
+          const upstreamSessionId = session.agentSessionId ?? store().getAgentSessionId(session.id) ?? session.id
+          const binding = assertAgentExecutionBinding({
             sessionId: session.id,
             workspaceId: workspaceId(),
             directory,
             connectionId: connectionIdForHarness(selectedHarness),
-            upstreamSessionId: store().getAgentSessionId(session.id) ?? session.id,
-            ...(title ? { title } : {}),
-            agentSessionId: store().getAgentSessionId(session.id) ?? session.id,
+            upstreamSessionId,
           })
-          if (!store().getSessionConfig(session.id)) {
-            const accepted = await adapter.getSessionConfig(
-              executionBindingForHarness(session.id, directory, selectedHarness),
-            )
-            store().updateSessionConfig(session.id, {
-              ...accepted,
-              harness: selectedHarness,
-            }, { directory })
+          try {
+            assertSessionDirectory(session.id, directory)
+            // The agent session id belongs to the HARNESS, never to this
+            // write-through. An adapter that persists into this store has
+            // already bound the id its process answers to: a codex
+            // `thread/start` id, an ACP `session/new` id, or the `claude-sdk:`
+            // sentinel that means "no SDK conversation exists yet". Re-binding
+            // `session.id` over it told the harness to resume a conversation
+            // that never existed, so the FIRST turn of every native-SDK session
+            // died with `thread not found` / `No conversation found with session
+            // ID` (ACP hid it by booting a replacement session). `session.id` is
+            // only the placeholder for adapters that keep their sessions
+            // elsewhere and left nothing here to preserve.
+            store().bindSession({
+              ...binding,
+              ...(title ? { title } : {}),
+              agentSessionId: upstreamSessionId,
+            })
+            if (!store().getSessionConfig(session.id)) {
+              const accepted = adapter.sessionConfigOwner === "runtime"
+                ? { harness: selectedHarness, model: null, variant: null, agent: null }
+                : await adapter.getSessionConfig(binding)
+              store().updateSessionConfig(session.id, {
+                ...accepted,
+                harness: selectedHarness,
+              }, { directory })
+            }
+            return session
+          } catch (cause) {
+            // The route-level rollback only begins after this hook returns. If
+            // binding or initial config persistence fails after the provider
+            // has created a remote session, this hook must compensate it using
+            // the known upstream id or the remote conversation is orphaned.
+            try {
+              await adapter.deleteSession(binding)
+              if (store().getSession(session.id)) store().deleteSession(session.id)
+            } catch (cleanupError) {
+              throw new AggregateError(
+                [cause, cleanupError],
+                "Session creation failed and provider rollback also failed",
+              )
+            }
+            throw cause
           }
-          return session
         },
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
@@ -2376,6 +2426,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // complete `SessionConfig` from every harness, so a single write after
         // acceptance loses nothing.
         updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
+          if (adapter.sessionConfigOwner === "runtime") {
+            const accepted = store().updateSessionConfig(sessionId, update, { directory })
+            if (!accepted) throw new HTTPException(404, { message: "Session not found" })
+            return accepted
+          }
           const adapterConfig = await adapter.updateSessionConfig(canonicalExecutionBinding(sessionId, directory), update)
           return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
         },

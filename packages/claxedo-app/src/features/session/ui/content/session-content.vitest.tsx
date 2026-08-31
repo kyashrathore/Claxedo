@@ -133,7 +133,7 @@ describe("SessionContent", () => {
             sessionRef: {
               sessionId: "ses_pi",
               host: "central",
-              harness: { id: "pi" },
+              harness: { kind: "native", harnessId: "pi" },
               toolSandbox: { kind: "virtual" },
             },
           },

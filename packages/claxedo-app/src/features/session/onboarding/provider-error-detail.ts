@@ -142,6 +142,9 @@ const PROVIDER_NAMES: Record<string, string> = {
   "claude-sdk": "Claude",
   "codex-app-server": "Codex",
   "cursor-sdk": "Cursor",
+  claude: "Claude",
+  codex: "Codex",
+  cursor: "Cursor",
 }
 
 function record(value: unknown): Record<string, unknown> | undefined {

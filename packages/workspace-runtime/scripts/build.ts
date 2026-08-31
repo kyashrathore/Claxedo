@@ -79,7 +79,7 @@ function bundleJS() {
   const esbuild = path.join(ROOT, "node_modules/.bin/esbuild")
   const libraryExternals = [...LIBRARY_EXTERNALS, ...EXTERNALS].flatMap((m) => [`--external:${m}`])
   const cliExternals = [...LIBRARY_EXTERNALS, ...EXTERNALS].flatMap((m) => [`--external:${m}`])
-  const shared = [
+  const nodeShared = [
     "--bundle",
     "--platform=node",
     "--format=esm",
@@ -94,10 +94,14 @@ function bundleJS() {
       esbuild,
       [
         `src/${entry}.ts`,
-        ...shared,
+        ...(entry === "client"
+          ? ["--bundle", "--platform=browser", "--format=esm", "--target=es2022"]
+          : nodeShared),
         `--outfile=${path.join(DIST, `${entry}.mjs`)}`,
         ...libraryExternals,
-        "--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);",
+        ...(entry === "client"
+          ? []
+          : ["--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);"]),
       ],
     )
   }
@@ -105,7 +109,7 @@ function bundleJS() {
     esbuild,
     [
       "src/cli.ts",
-      ...shared,
+      ...nodeShared,
       `--outfile=${path.join(DIST, "cli.mjs")}`,
       ...cliExternals,
       "--banner:js=import {createRequire as __cr} from 'module';var require=__cr(import.meta.url);",
