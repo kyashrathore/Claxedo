@@ -19,6 +19,7 @@ import { createDesktopNativeAuth } from "./desktop-native-auth"
 import { noConnectionReuseFetch } from "./no-reuse-fetch"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
+import { createIdentityResolver, userInfoUrlFromTokenUrl } from "./identity"
 import type { OAuthSeams } from "./oauth-flow"
 
 /** How long to wait for the browser callback before failing the attempt. */
@@ -99,6 +100,15 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     if (canaryJourneyId && !headers.has("x-claxedo-canary-journey-id")) {
       headers.set("x-claxedo-canary-journey-id", canaryJourneyId)
     }
+    // The canary gate serializes the release's FIRST product write and demands
+    // every mutation name an operation id; without one the gate throws and the
+    // Worker answers 503 deployment_candidate_unavailable — which is exactly
+    // what "Share workspace" hit. One stable id per journey suffices: the gate
+    // records the first write's id and admits later mutations by identity.
+    const unsafe = next.method !== "GET" && next.method !== "HEAD" && next.method !== "OPTIONS"
+    if (canaryJourneyId && unsafe && !headers.has("x-claxedo-canary-mutation-operation-id")) {
+      headers.set("x-claxedo-canary-mutation-operation-id", `${canaryJourneyId}-desktop-write`)
+    }
     return noConnectionReuseFetch(new Request(next, { headers }))
   }
 
@@ -135,6 +145,21 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     store,
     fetch: (url, init) => controlPlaneFetch(url, init),
     now: () => Math.floor(Date.now() / 1000),
+    // Without this the service short-circuits and every signed account keeps
+    // the empty identity it starts with, so account surfaces show the literal
+    // word "Account" instead of the person. The userinfo URL is not a config
+    // value: it is derived from the live descriptor's token endpoint, which is
+    // the same trust anchor the rest of this flow uses.
+    resolveIdentity: async (accessToken) => {
+      const descriptor = await auth.discover()
+      const userInfoUrl = userInfoUrlFromTokenUrl(descriptor.tokenUrl)
+      if (!userInfoUrl) return { userId: "" }
+      return await createIdentityResolver({
+        userInfoUrl,
+        fetch: controlPlaneFetch,
+        ...(input.onError ? { onError: (error) => input.onError?.("identity", error) } : {}),
+      })(accessToken)
+    },
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
   })
