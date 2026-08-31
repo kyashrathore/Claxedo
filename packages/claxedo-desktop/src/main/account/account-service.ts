@@ -50,6 +50,14 @@ export type AccountState =
 
 type Credential = { ok: true; token: string } | { ok: false; detail: string }
 
+/**
+ * After a refresh fails, further renewals answer with that failure instead of
+ * re-running the exchange, for this long. Boot issues its hosted operations
+ * serially, and each would otherwise wait out a full bounded refresh against a
+ * deployment that is already known to be stalling.
+ */
+const REFRESH_FAILURE_COOLDOWN_MS = 20_000
+
 export type AccountServiceOptions = {
   auth: DesktopNativeAuth
   store: CredentialStore
@@ -73,6 +81,7 @@ export function createAccountService(options: AccountServiceOptions) {
   let state: AccountState = { status: "unsigned" }
   let credential: StoredDesktopCredential | undefined
   let renewing: Promise<Credential> | undefined
+  let renewFailure: { at: number; detail: string } | undefined
   let logoutInFlight: Promise<void> | undefined
   let era = 0
   const activeRequests = new Set<AbortController>()
@@ -92,6 +101,7 @@ export function createAccountService(options: AccountServiceOptions) {
 
   const clearLocal = () => {
     credential = undefined
+    renewFailure = undefined
     options.store.clear()
   }
 
@@ -107,6 +117,7 @@ export function createAccountService(options: AccountServiceOptions) {
     try {
       const stored = options.store.save(next, expectedRevision)
       credential = stored
+      renewFailure = undefined
       return { ok: true, credential: stored }
     } catch (error) {
       options.onError?.("persist", error)
@@ -196,9 +207,26 @@ export function createAccountService(options: AccountServiceOptions) {
     // for a profile. The promise serializes that process; the persisted
     // revision rejects stale ownership/re-entrancy. This is not claimed as a
     // cross-process filesystem CAS (rename alone cannot provide one).
-    renewing ??= exchangeRefresh(held).finally(() => {
-      renewing = undefined
-    })
+    if (renewing) return renewing
+    // A failed refresh answers for the next window instead of re-running.
+    // Hosted operations arrive serially during boot, and each one otherwise
+    // re-attempts the full bounded refresh; when the deployment is stalling
+    // (see hosted-transport.ts), that chained the splash screen behind one
+    // ~30s refresh per operation for minutes. Failing fast lets the shell
+    // bootstrap fall back and render while the account stays degraded.
+    if (renewFailure && options.now() - renewFailure.at < REFRESH_FAILURE_COOLDOWN_MS) {
+      return Promise.resolve<Credential>({ ok: false, detail: renewFailure.detail })
+    }
+    renewing = exchangeRefresh(held)
+      .then((result) => {
+        renewFailure = result.ok || result.detail === "not signed in"
+          ? undefined
+          : { at: options.now(), detail: result.detail }
+        return result
+      })
+      .finally(() => {
+        renewing = undefined
+      })
     return renewing
   }
 

@@ -290,6 +290,36 @@ describe("bound desktop account lifecycle", () => {
     expect(h.store.held()).toMatchObject(CREDENTIAL)
   })
 
+  test("a failed refresh answers later operations without re-running until the cool-down passes", async () => {
+    let clock = 1_000
+    let refreshAttempts = 0
+    const selectedAuth = authHarness({
+      refresh: async () => {
+        refreshAttempts += 1
+        return { ok: false, reason: "unavailable", detail: "refresh request failed: stalled" }
+      },
+    })
+    const store = memoryStore({ ...CREDENTIAL, tokens: { ...CREDENTIAL.tokens, expiresAt: 1_001 } })
+    const service = createAccountService({
+      auth: selectedAuth.auth,
+      store,
+      now: () => clock,
+      fetch: async () => Response.json({ ok: true }),
+    })
+    await service.restore()
+
+    await expect(service.run("account.get")).rejects.toThrow("could not renew the session")
+    // Boot issues hosted operations serially; each must NOT wait out another
+    // full refresh against a deployment already known to be stalling.
+    await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
+    await expect(service.run("org.list")).rejects.toThrow("could not renew the session")
+    expect(refreshAttempts).toBe(1)
+
+    clock += 21_000
+    await expect(service.run("account.get")).rejects.toThrow("could not renew the session")
+    expect(refreshAttempts).toBe(2)
+  })
+
   test("a 401 ends the session without refresh-and-retry", async () => {
     const selectedAuth = authHarness()
     const h = harness({
