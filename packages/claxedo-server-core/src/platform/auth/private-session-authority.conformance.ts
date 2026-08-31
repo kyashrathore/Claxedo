@@ -1,5 +1,6 @@
 import type { SignedControlPlaneAuth } from "./auth"
 import type { PrivateSessionAuthority, PrivateSessionRuntimePrincipal } from "./private-session-authority"
+import type { SessionTurnAuthority } from "./session-turn-authority"
 
 export const PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS = [
   "reservation-reconciliation-compensation",
@@ -10,6 +11,7 @@ export const PRIVATE_SESSION_AUTHORITY_CONFORMANCE_SCENARIOS = [
 
 export type PrivateSessionAuthorityConformanceHarness = {
   authority: PrivateSessionAuthority
+  turnAuthority?: SessionTurnAuthority
   workspaceId: string
   creator: {
     auth: SignedControlPlaneAuth
@@ -114,10 +116,31 @@ export async function exercisePrivateSessionAuthorityConformance(
     action: "read",
   })
 
+  let fencingToken: number | undefined
+  if (harness.turnAuthority) {
+    for (const turnId of ["message_canonical_actor", "message_forged_actor"]) {
+      const lease = await harness.turnAuthority.acquireSessionTurn({
+        ...participant.runtime,
+        sessionId,
+        workspaceId,
+        turnId,
+      })
+      fencingToken = lease.fencingToken
+      await harness.turnAuthority.releaseSessionTurn({
+        ...participant.runtime,
+        sessionId,
+        workspaceId,
+        turnId,
+        leaseId: lease.leaseId,
+        fencingToken: lease.fencingToken,
+      })
+    }
+  }
   await authority.syncSessionMessages(participant.auth, {
     sessionId,
     workspaceId,
     maxEventOrdinal: 1,
+    ...(fencingToken === undefined ? {} : { fencingToken }),
     messages: [
       {
         info: {
@@ -155,7 +178,12 @@ export async function exercisePrivateSessionAuthorityConformance(
       canonicalAuthor.name === undefined,
     "canonical actor attribution trusted caller-supplied display metadata",
   )
-  invariant(forgedAuthor === undefined, "message projection preserved a forged actor")
+  invariant(
+    harness.turnAuthority
+      ? forgedAuthor?.id === participant.runtime.actorId && forgedAuthor.kind === participant.runtime.actorKind
+      : forgedAuthor === undefined,
+    "message projection preserved a forged actor",
+  )
 
   const revoked = await authority.revokeSessionParticipant(creator.auth, {
     sessionId,

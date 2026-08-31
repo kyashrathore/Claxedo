@@ -15,8 +15,12 @@ import {
 const MIGRATIONS = [
   fileURLToPath(new URL("../../../../migrations/control-plane/0001_service_installations.sql", import.meta.url)),
   fileURLToPath(new URL("../../../../migrations/control-plane/0002_workspace_authority.sql", import.meta.url)),
+  fileURLToPath(new URL("../../../../migrations/control-plane/0003_private_sessions.sql", import.meta.url)),
   fileURLToPath(
     new URL("../../../../migrations/control-plane/0008_user_deployed_owner_bootstrap.sql", import.meta.url),
+  ),
+  fileURLToPath(
+    new URL("../../../../migrations/control-plane/0013_org_team_session_sharing.sql", import.meta.url),
   ),
 ]
 const active: Miniflare[] = []

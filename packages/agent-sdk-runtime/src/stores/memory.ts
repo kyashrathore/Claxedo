@@ -20,6 +20,7 @@ import type {
   AgentRuntimeStoreWithRecovery,
   AgentRuntimeTurnStartOutput,
 } from "../harnesses/shared/runtime-store"
+import { AgentRuntimeStaleTurnError } from "../harnesses/shared/runtime-store"
 import {
   createMemorySubagentAdmissionStore,
   type AdmittedSubagentObservation,
@@ -41,6 +42,7 @@ type SessionRow = {
     seq?: number
     createdAt?: number
     agentSessionId?: string
+    fencingToken?: number
   }
   lastTurn?: AgentTurnOutcome
 }
@@ -210,10 +212,17 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     actorId?: string
     actorKind?: "human" | "agent"
     author?: PromptInput["author"]
+    fencingToken?: number
   }): AgentRuntimeTurnStartOutput {
     const session = this.sessions.get(input.sessionId)
     const activeTurn = session?.activeTurn
+    if (
+      input.fencingToken !== undefined
+      && activeTurn?.fencingToken !== undefined
+      && input.fencingToken < activeTurn.fencingToken
+    ) throw new AgentRuntimeStaleTurnError(input.sessionId)
     if (session && activeTurn?.assistantMessageId === input.assistantMessageId) {
+      if (input.fencingToken !== activeTurn.fencingToken) throw new AgentRuntimeStaleTurnError(input.sessionId)
       return {
         sessionId: input.sessionId,
         seq: activeTurn.seq ?? this.seq.get(input.sessionId) ?? 0,
@@ -265,6 +274,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
           seq,
           createdAt,
           ...(input.agentSessionId ? { agentSessionId: input.agentSessionId } : {}),
+          ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
         },
       })
     }
@@ -281,6 +291,9 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     const prev = this.sessions.get(input.sessionId)
     if (!prev?.activeTurn) return
+    if (input.fencingToken !== undefined && input.fencingToken !== prev.activeTurn.fencingToken) {
+      throw new AgentRuntimeStaleTurnError(input.sessionId)
+    }
     if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
     const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
     const status = input.outcome.status === "failed" ? "error" : null
@@ -315,7 +328,12 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     agentSessionId?: string
     payload: CompatEvent
     source?: unknown
+    fencingToken?: number
   }): AgentRuntimeCommittedCompatOutput {
+    const activeTurn = this.sessions.get(input.sessionId)?.activeTurn
+    if (input.fencingToken !== undefined && input.fencingToken !== activeTurn?.fencingToken) {
+      throw new AgentRuntimeStaleTurnError(input.sessionId)
+    }
     this.applyEvent(input.sessionId, input.payload)
     this.afterChange()
     return {

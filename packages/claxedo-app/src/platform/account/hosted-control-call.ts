@@ -7,15 +7,41 @@ import { decodeHostedResult } from "./hosted-operations"
  *
  * Present only when preload exposed a complete `api.account` bridge.
  */
-export function accountRun():
-  | ((operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>)
-  | undefined {
+type AccountOperationBridge = {
+  state: () => Promise<{ status: string }>
+  run: (operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
+}
+
+function accountOperationBridge(): AccountOperationBridge | undefined {
   const account = (globalThis as { api?: { account?: Record<string, unknown> } }).api?.account
   if (!account) return undefined
   for (const member of ["state", "onState", "signIn", "signOut", "run"] as const) {
     if (typeof account[member] !== "function") return undefined
   }
-  return account.run as (operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>
+  return {
+    state: account.state as AccountOperationBridge["state"],
+    run: account.run as AccountOperationBridge["run"],
+  }
+}
+
+/** Raw bridge capability check for adapters that already hold account state. */
+export function accountRunBridge():
+  | ((operation: HostedOperationName, input?: Record<string, unknown>) => Promise<unknown>)
+  | undefined {
+  return accountOperationBridge()?.run
+}
+
+/**
+ * Returns the desktop operation bridge only while Electron main says the
+ * account is signed. An installed preload is not account authority: it exists
+ * before sign-in and after sign-out. Callers use their local/browser producer
+ * when this returns undefined.
+ */
+export async function signedAccountRun() {
+  const account = accountOperationBridge()
+  if (!account) return undefined
+  const state = await account.state()
+  return state.status === "signed" ? account.run : undefined
 }
 
 /**
@@ -51,7 +77,7 @@ export async function hostedControlCall<T>(
   input: Record<string, unknown>,
   fallback: () => Promise<T>,
 ): Promise<T> {
-  const run = accountRun()
+  const run = await signedAccountRun()
   if (!run) return fallback()
   return decodeHostedResult<T>(operation, await run(operation, input))
 }

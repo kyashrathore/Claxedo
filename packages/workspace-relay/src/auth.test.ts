@@ -19,7 +19,7 @@ async function keys() {
 }
 
 const base = {
-  subject: "user_1",
+  principalKind: "user" as const,
   actorId: "actor_1",
   actorKind: "human" as const,
   actorPublicId: "usr_public_1",
@@ -43,7 +43,7 @@ describe("workspace relay auth", () => {
     })).resolves.toMatchObject({
       iss: "claxedo-control-plane",
       aud: "workspace-relay",
-      sub: "user_1",
+      principal_kind: "user",
       actor_id: "actor_1",
       actor_kind: "human",
       actor_public_id: "usr_public_1",
@@ -56,7 +56,7 @@ describe("workspace relay auth", () => {
     })
   })
 
-  test("accepts legacy Runtime Access Tokens without actor claims during the in-flight migration", async () => {
+  test("rejects legacy Runtime Access Tokens without canonical actor claims", async () => {
     const key = await keys()
     const token = await new SignJWT({
       org_id: base.orgId,
@@ -67,7 +67,7 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
+      .setSubject("legacy-user")
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti("legacy_jti")
@@ -76,16 +76,13 @@ describe("workspace relay auth", () => {
     await expect(verifyRuntimeAccessToken(token, key.publicKey, {
       workspaceId: "ws_1",
       hostId: "host_1",
-    })).resolves.toMatchObject({
-      sub: "user_1",
-      actor_id: undefined,
-      actor_kind: undefined,
-    })
+    })).rejects.toMatchObject({ code: "relay_token_claims_invalid" })
   })
 
   test("rejects tokens that carry only one actor claim", async () => {
     const key = await keys()
     const token = await new SignJWT({
+      principal_kind: base.principalKind,
       org_id: base.orgId,
       workspace_id: base.workspaceId,
       host_id: base.hostId,
@@ -95,7 +92,6 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti("partial_actor_jti")
@@ -110,6 +106,7 @@ describe("workspace relay auth", () => {
   test("rejects incomplete signed actor display profiles", async () => {
     const key = await keys()
     const token = await new SignJWT({
+      principal_kind: base.principalKind,
       org_id: base.orgId,
       workspace_id: base.workspaceId,
       host_id: base.hostId,
@@ -121,7 +118,6 @@ describe("workspace relay auth", () => {
       .setProtectedHeader({ alg: "EdDSA" })
       .setIssuer(runtimeAccessTokenIssuer)
       .setAudience(runtimeAccessTokenAudience)
-      .setSubject(base.subject)
       .setIssuedAt()
       .setExpirationTime("30m")
       .setJti("incomplete_profile")

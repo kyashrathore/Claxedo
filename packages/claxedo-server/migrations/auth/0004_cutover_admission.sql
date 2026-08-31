@@ -137,24 +137,24 @@ create unique index "deploymentCutoverEvidence_one_source_boundary"
 
 create trigger "deploymentCutoverCanaryAdmission_no_update"
 before update on "deploymentCutoverCanaryAdmission"
-begin
+BEGIN
   select raise(abort, 'cutover canary admissions are append-only');
 end;
 
 create trigger "deploymentCutoverCanaryAdmission_no_delete"
 before delete on "deploymentCutoverCanaryAdmission"
-begin
+BEGIN
   select raise(abort, 'cutover canary admissions are append-only');
 end;
 
 create trigger "deploymentCutoverEvidenceReceipt_no_update"
 before update on "deploymentCutoverEvidenceReceipt"
-begin
+BEGIN
   select raise(abort, 'cutover evidence receipts are append-only');
 end;
 
 create trigger "deploymentCutoverEvidenceReceipt_no_delete"
 before delete on "deploymentCutoverEvidenceReceipt"
-begin
+BEGIN
   select raise(abort, 'cutover evidence receipts are append-only');
 end;

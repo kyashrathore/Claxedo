@@ -9,22 +9,47 @@ import {
   SignJWT,
   type JWTVerifyGetKey,
 } from "jose"
-import type { RelayHostTokenClaims } from "@claxedo/workspace-relay"
-import type { ControlPlaneServices } from "../authority/services"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { bearerToken, ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import {
+  privateSessionRuntimeProof,
+  type PrivateSessionAuthority,
+  type PrivateSessionRuntimePrincipal,
+  type RelayHostPrivateSessionClaims,
+} from "@claxedo/server-core/platform/auth/private-session-authority"
+import {
+  SessionTurnConflictError,
+  SessionTurnLeaseLostError,
+  type SessionTurnAuthority,
+} from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { SESSION_STREAM_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 
-type RelayProofKey = JWTVerifyGetKey
-const sessionAuthorityBodyLimitBytes = 16 * 1024
+const bodyLimitBytes = 16 * 1024
+const streamLeaseIssuer = "claxedo-control-plane"
+const streamLeaseAudience = "workspace-runtime-session-stream"
+const turnLeaseIssuer = "claxedo-control-plane"
+const turnLeaseAudience = "workspace-runtime-session-turn"
 
-type StreamLeaseClaims = {
-  actorId: string
-  actorKind: "human" | "agent"
+type RuntimeSessionAuthorityPort = Pick<
+  PrivateSessionAuthority,
+  | "registerRuntimeSession"
+  | "markSessionRegistrationAmbiguous"
+  | "beginSessionCompensation"
+  | "completeSessionCompensation"
+  | "authorizeRuntimeSession"
+> & {
+  runtimeAccessTokenActive: (input: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    minimumRole?: "viewer" | "editor" | "admin" | "owner"
+  }) => Promise<unknown>
+}
+
+type StreamLeaseClaims = PrivateSessionRuntimePrincipal & {
   orgId: string
   workspaceId: string
   hostId: string
-  parentJti: string
+  parentRuntimeAccessTokenJti: string
   sessionId: string
   action: "read" | "write"
 }
@@ -38,193 +63,270 @@ type TurnLeaseClaims = StreamLeaseClaims & {
 }
 
 export type RuntimeSessionAuthorityOptions = {
+  authority: RuntimeSessionAuthorityPort
+  /** Durable prompt admission is selected independently from session visibility. */
+  turnAuthority?: SessionTurnAuthority
   env?: Record<string, string | undefined>
-  verifyRelayProof?: (token: string) => Promise<RelayHostTokenClaims>
+  verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
   mintStreamLease?: (claims: StreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyStreamLease?: (lease: string) => Promise<StreamLeaseClaims>
   mintTurnLease?: (claims: TurnLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyTurnLease?: (lease: string) => Promise<TurnLeaseClaims>
 }
 
-type WorkspaceSessionAuthorityRequest = {
-  actorId: string
-  actorKind: "human" | "agent"
-  workspaceId: string
-  sessionId: string
-  action: "read" | "write" | "register"
-  title?: string
-}
-
-export type WorkspaceSessionAuthorityDecision =
-  | { allowed: true }
-  | { allowed: false; status: 401 | 403 | 503; code: string; message: string }
-
-export async function decideWorkspaceSessionAuthority(
-  authority: WorkspaceAuthority,
-  input: WorkspaceSessionAuthorityRequest,
-): Promise<WorkspaceSessionAuthorityDecision> {
-  try {
-    if (input.action === "register") {
-      if (!authority.registerRuntimeSession) throw new Error("runtime session registration is unavailable")
-      await authority.registerRuntimeSession({
-        actorId: input.actorId,
-        actorKind: input.actorKind,
-        sessionId: input.sessionId,
-        workspaceId: input.workspaceId,
-        ...(input.title ? { title: input.title } : {}),
-      })
-    } else {
-      if (!authority.authorizeRuntimeSession) throw new Error("runtime session authority is unavailable")
-      await authority.authorizeRuntimeSession({
-        actorId: input.actorId,
-        actorKind: input.actorKind,
-        sessionId: input.sessionId,
-        workspaceId: input.workspaceId,
-        action: input.action,
-      })
-    }
-    return { allowed: true }
-  } catch (error) {
-    if (error instanceof ControlPlaneAuthError) {
-      return {
-        allowed: false,
-        status: error.status === 401 ? 401 : error.status === 503 ? 503 : 403,
-        code: error.code,
-        message: error.message,
-      }
-    }
-    return {
-      allowed: false,
-      status: 503,
-      code: "session_authority_unavailable",
-      message: "Session authority is temporarily unavailable",
-    }
-  }
-}
-
 /**
- * Narrow authority oracle used by isolated workspace runtimes. The presented
- * proof is an RHT that the runtime already verified at request establishment;
- * this endpoint verifies the relay signature again and derives actor/workspace
- * identity exclusively from those signed claims.
+ * Narrow provider-neutral oracle for isolated workspace runtimes.
  *
- * RHT expiry is enforced at connection establishment. Long-lived transports
- * then renew a short control-plane lease whose parent is the durable RAT jti;
- * each renewal checks both RAT revocation and current session authority.
+ * Identity comes only from a verified RHT (or a short lease minted from one),
+ * never from request JSON. Every stream renewal checks the durable parent RAT
+ * and current private-session membership before issuing another lease.
  */
-export function RuntimeSessionAuthorityRoutes(
-  services?: ControlPlaneServices,
-  options: RuntimeSessionAuthorityOptions = {},
-) {
+export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOptions) {
+  const env = options.env ?? process.env
   const limitedBody = bodyLimit({
-    maxSize: sessionAuthorityBodyLimitBytes,
-    onError: (c) => c.json({
+    maxSize: bodyLimitBytes,
+    onError: (context) => context.json({
       error: {
         code: "request_body_too_large",
-        message: `Request body exceeds the ${sessionAuthorityBodyLimitBytes}-byte limit`,
+        message: `Request body exceeds the ${bodyLimitBytes}-byte limit`,
       },
     }, 413),
   })
-  return new Hono().post("/session-authorize", limitedBody, async (c) => {
-    const body = await c.req.json().catch(() => undefined) as {
-      sessionId?: unknown
-      action?: unknown
-      title?: unknown
-      stream?: unknown
-      lease?: unknown
-    } | undefined
-    if (
-      typeof body?.sessionId !== "string"
-      || !body.sessionId.trim()
-      || !["read", "write", "register"].includes(String(body.action))
-      || (body.title !== undefined && typeof body.title !== "string")
-      || (body.stream !== undefined && typeof body.stream !== "boolean")
-      || (body.lease !== undefined && typeof body.lease !== "string")
-      || (body.lease !== undefined && body.stream !== true)
-      || (body.stream === true && body.action === "register")
-    ) {
-      return c.json({ error: { code: "session_authority_request_invalid", message: "sessionId and a valid action are required" } }, 400)
-    }
-    const env = options.env ?? process.env
-    const streamClaims = typeof body.lease === "string"
-      ? await (options.verifyStreamLease ?? streamLeaseVerifier(env))(body.lease).catch(() => undefined)
-      : undefined
-    const token = bearerToken(c.req.header("authorization") ?? null)
-    if (!streamClaims && !token) {
-      return c.json({ error: { code: "relay_host_token_required", message: "Relay Host Token is required" } }, 401)
-    }
-    const relayClaims = streamClaims
-      ? undefined
-      : await (options.verifyRelayProof ?? relayProofVerifier(env))(token!).catch(() => undefined)
-    if (!streamClaims && !relayClaims) {
-      return c.json({ error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" } }, 401)
-    }
-    if (streamClaims && (streamClaims.sessionId !== body.sessionId || streamClaims.action !== body.action)) {
-      return c.json({ error: { code: "session_stream_lease_mismatch", message: "Session stream lease does not match the request" } }, 401)
-    }
-    if (relayClaims && (!("actor_id" in relayClaims) || !("actor_kind" in relayClaims))) {
-      return c.json({ error: { code: "session_actor_required", message: "Verified actor claims are required" } }, 403)
-    }
-    const attributedRelayClaims = relayClaims as (RelayHostTokenClaims & {
-      actor_id: string
-      actor_kind: "human" | "agent"
-    }) | undefined
-    const claims: StreamLeaseClaims = streamClaims ?? {
-      actorId: attributedRelayClaims!.actor_id,
-      actorKind: attributedRelayClaims!.actor_kind,
-      orgId: attributedRelayClaims!.org_id,
-      workspaceId: attributedRelayClaims!.workspace_id,
-      hostId: attributedRelayClaims!.host_id,
-      parentJti: attributedRelayClaims!.jti,
-      sessionId: body.sessionId,
-      action: body.action as "read" | "write",
-    }
-    try {
-      const authority = requireAuthority(services)
-      if (body.action === "register") {
-        const decision = await decideWorkspaceSessionAuthority(authority, {
-          actorId: claims.actorId,
-          actorKind: claims.actorKind,
-          sessionId: body.sessionId,
-          workspaceId: claims.workspaceId,
-          action: "register",
-          ...(typeof body.title === "string" && body.title.trim() ? { title: body.title.trim() } : {}),
-        })
-        return decision.allowed
-          ? c.json({ allowed: true })
-          : c.json({ error: { code: decision.code, message: decision.message } }, decision.status)
+
+  return new Hono().post("/session-authorize", limitedBody, async (context) => {
+    const body = await context.req.json().catch(() => undefined) as Record<string, unknown> | undefined
+    const sessionId = text(body?.sessionId)
+    const action = body?.action
+    const operationId = text(body?.operationId)
+    const reason = optionalText(body?.reason)
+    const title = optionalText(body?.title)
+    const stream = body?.stream === true
+    const lease = text(body?.lease)
+    const turnId = text(body?.turnId)
+    const turnLeaseId = text(body?.leaseId)
+    const fencingToken = positiveInteger(body?.fencingToken)
+    if (isHostAuthorityAction(action)) {
+      if (body && Object.keys(body).some((key) => key !== "action")) {
+        return context.json({
+          error: { code: "host_authority_request_invalid", message: "Host authority accepts only its action" },
+        }, 400)
       }
-      if (body.stream === true) {
-        if (!authority.runtimeAccessTokenActive) throw new Error("runtime token authority is unavailable")
-        const active = await authority.runtimeAccessTokenActive({
-          jti: claims.parentJti,
+      const token = bearerToken(context.req.header("authorization") ?? null)
+      if (!token) {
+        return context.json({ error: { code: "relay_host_token_required", message: "Relay Host Token is required" } }, 401)
+      }
+      const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
+      if (!verified) {
+        return context.json({ error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" } }, 401)
+      }
+      const minimumRole = action === "host_admin" ? "admin" as const : "viewer" as const
+      if (!verified.role || roleRank(verified.role) < roleRank(minimumRole)) {
+        return context.json({
+          error: { code: "host_authority_denied", message: `Workspace ${minimumRole} authority is required` },
+        }, 403)
+      }
+      const proof = privateSessionRuntimeProof(verified)
+      const active = asRecord(await options.authority.runtimeAccessTokenActive({
+        jti: proof.parentRuntimeAccessTokenJti,
+        workspaceId: proof.workspaceId,
+        hostId: proof.hostId,
+        minimumRole,
+      }))
+      if (active?.active !== true) {
+        return context.json({
+          error: {
+            code: text(active?.code) ?? "runtime_access_token_inactive",
+            message: text(active?.reason) ?? "Runtime Access Token is inactive",
+          },
+        }, 401)
+      }
+      return context.json({ allowed: true })
+    }
+    if (
+      !sessionId
+      || !isAuthorityAction(action)
+      || (isRegistrationAction(action) && !operationId)
+      || (isTransitionAction(action) && !reason)
+      || (body?.title !== undefined && title === undefined)
+      || (body?.reason !== undefined && reason === undefined)
+      || (body?.stream !== undefined && typeof body.stream !== "boolean")
+      || (body?.lease !== undefined && !lease)
+      || (!!lease && !stream)
+      || (stream && action !== "read" && action !== "write")
+      || (isTurnAction(action) && !turnId)
+      || ((action === "turn_renew" || action === "turn_release") && (!turnLeaseId || !fencingToken))
+      || (action === "turn_acquire" && (body?.leaseId !== undefined || body?.fencingToken !== undefined))
+    ) {
+      return context.json({
+        error: {
+          code: "session_authority_request_invalid",
+          message: "sessionId, action, and exact registration operation fields are required",
+        },
+      }, 400)
+    }
+
+    let claims: StreamLeaseClaims
+    let ownedTurn: TurnLeaseClaims | undefined
+    if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
+      const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
+      if (
+        !verified
+        || verified.sessionId !== sessionId
+        || verified.turnId !== turnId
+        || verified.fencingToken !== fencingToken
+      ) {
+        return context.json({
+          error: { code: "session_turn_lease_invalid", message: "Session turn lease is invalid or mismatched" },
+        }, 401)
+      }
+      ownedTurn = verified
+      claims = verified
+    } else if (lease) {
+      const verified = await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
+      if (!verified || verified.sessionId !== sessionId || verified.action !== action) {
+        return context.json({
+          error: { code: "session_stream_lease_invalid", message: "Session stream lease is invalid or mismatched" },
+        }, 401)
+      }
+      claims = verified
+    } else {
+      const token = bearerToken(context.req.header("authorization") ?? null)
+      if (!token) {
+        return context.json({ error: { code: "relay_host_token_required", message: "Relay Host Token is required" } }, 401)
+      }
+      const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
+      if (!verified) {
+        return context.json({
+          error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" },
+        }, 401)
+      }
+      try {
+        const proof = privateSessionRuntimeProof(verified)
+        const principal: PrivateSessionRuntimePrincipal = proof.principalKind === "user"
+          ? { principalKind: "user", actorId: proof.actorId, actorKind: "human" }
+          : { principalKind: "service", actorId: proof.actorId, actorKind: "agent" }
+        claims = {
+          ...principal,
+          orgId: proof.orgId,
+          workspaceId: proof.workspaceId,
+          hostId: proof.hostId,
+          parentRuntimeAccessTokenJti: proof.parentRuntimeAccessTokenJti,
+          sessionId,
+          action: action === "write" ? "write" : "read",
+        }
+      } catch {
+        return context.json({
+          error: { code: "relay_host_token_invalid", message: "Relay Host Token claims are invalid" },
+        }, 401)
+      }
+    }
+
+    try {
+      const principal: PrivateSessionRuntimePrincipal = claims.principalKind === "user"
+        ? { principalKind: "user", actorId: claims.actorId, actorKind: "human" }
+        : { principalKind: "service", actorId: claims.actorId, actorKind: "agent" }
+      if (action === "register") {
+        await options.authority.registerRuntimeSession({
+          ...principal,
+          operationId: operationId!,
+          sessionId,
+          workspaceId: claims.workspaceId,
+          ...(title ? { title } : {}),
+        })
+        return context.json({ allowed: true })
+      }
+      if (isTransitionAction(action)) {
+        const input = {
+          ...principal,
+          operationId: operationId!,
+          sessionId,
+          workspaceId: claims.workspaceId,
+          reason: reason!,
+        }
+        if (action === "registration_ambiguous") {
+          await options.authority.markSessionRegistrationAmbiguous(input)
+        } else if (action === "compensation_begin") {
+          await options.authority.beginSessionCompensation(input)
+        } else {
+          await options.authority.completeSessionCompensation(input)
+        }
+        return context.json({ allowed: true })
+      }
+
+      if (stream || isTurnAction(action)) {
+        const active = asRecord(await options.authority.runtimeAccessTokenActive({
+          jti: claims.parentRuntimeAccessTokenJti,
           workspaceId: claims.workspaceId,
           hostId: claims.hostId,
-        }) as { active?: unknown; code?: unknown; reason?: unknown }
-        if (active.active !== true) {
-          return c.json({
+        }))
+        if (active?.active !== true) {
+          return context.json({
             error: {
-              code: typeof active.code === "string" ? active.code : "runtime_access_token_inactive",
-              message: typeof active.reason === "string" ? active.reason : "Runtime Access Token is inactive",
+              code: text(active?.code) ?? "runtime_access_token_inactive",
+              message: text(active?.reason) ?? "Runtime Access Token is inactive",
             },
           }, 401)
         }
       }
-      const decision = await decideWorkspaceSessionAuthority(authority, {
-        actorId: claims.actorId,
-        actorKind: claims.actorKind,
-        sessionId: body.sessionId,
+
+      if (isTurnAction(action)) {
+        if (!options.turnAuthority) {
+          return context.json({
+            error: {
+              code: "session_turn_authority_unavailable",
+              message: "Durable session turn authority is not configured",
+            },
+          }, 503)
+        }
+        const turn = {
+          ...principal,
+          sessionId,
+          workspaceId: claims.workspaceId,
+          turnId: turnId!,
+        }
+        if (action === "turn_acquire") {
+          const acquired = await options.turnAuthority.acquireSessionTurn(turn)
+          const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
+            ...claims,
+            action: "write",
+            turnId: acquired.turnId,
+            authorityLeaseId: acquired.leaseId,
+            fencingToken: acquired.fencingToken,
+            acquiredAt: acquired.acquiredAt,
+            expiresAt: acquired.expiresAt,
+          })
+          return context.json({ ...acquired, leaseId: proof.lease, expiresAt: proof.expiresAt })
+        }
+        const owned = {
+          ...turn,
+          leaseId: ownedTurn!.authorityLeaseId,
+          fencingToken: ownedTurn!.fencingToken,
+        }
+        if (action === "turn_renew") {
+          const renewed = await options.turnAuthority.renewSessionTurn(owned)
+          const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
+            ...ownedTurn!,
+            authorityLeaseId: renewed.leaseId,
+            fencingToken: renewed.fencingToken,
+            acquiredAt: renewed.acquiredAt,
+            expiresAt: renewed.expiresAt,
+          })
+          return context.json({ ...renewed, leaseId: proof.lease, expiresAt: proof.expiresAt })
+        }
+        return context.json(await options.turnAuthority.releaseSessionTurn(owned))
+      }
+
+      await options.authority.authorizeRuntimeSession({
+        ...principal,
+        sessionId,
         workspaceId: claims.workspaceId,
-        action: body.action as "read" | "write",
+        action,
       })
-      if (!decision.allowed) {
-        return c.json({ error: { code: decision.code, message: decision.message } }, decision.status)
-      }
-      if (body.stream === true) {
-        const minted = await (options.mintStreamLease ?? streamLeaseMinter(env))(claims)
-        return c.json({ allowed: true, ...minted })
-      }
-      return c.json({ allowed: true })
+      if (!stream) return context.json({ allowed: true })
+      return context.json({
+        allowed: true,
+        ...await (options.mintStreamLease ?? streamLeaseMinter(env))(claims),
+      })
     } catch (error) {
       if (error instanceof SessionTurnConflictError || error instanceof SessionTurnLeaseLostError) {
         return context.json({
@@ -238,16 +340,51 @@ export function RuntimeSessionAuthorityRoutes(
         }, 409)
       }
       if (error instanceof ControlPlaneAuthError) {
-        return c.json(controlPlaneAuthErrorBody(error), error.status as 401 | 403 | 503)
+        return context.json(controlPlaneAuthErrorBody(error), error.status as 401 | 403 | 503)
       }
-      return c.json({ error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" } }, 503)
+      return context.json({
+        error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" },
+      }, 503)
     }
   })
 }
 
-const streamLeaseIssuer = "claxedo-control-plane"
-const streamLeaseAudience = "workspace-runtime-session-stream"
-const streamLeaseTtlSeconds = 15
+type AuthorityAction =
+  | "read"
+  | "write"
+  | "register"
+  | "registration_ambiguous"
+  | "compensation_begin"
+  | "compensation_complete"
+  | "turn_acquire"
+  | "turn_renew"
+  | "turn_release"
+
+type HostAuthorityAction = "host_read" | "host_admin"
+
+function isHostAuthorityAction(value: unknown): value is HostAuthorityAction {
+  return value === "host_read" || value === "host_admin"
+}
+
+function isAuthorityAction(value: unknown): value is AuthorityAction {
+  return value === "read"
+    || value === "write"
+    || value === "register"
+    || value === "registration_ambiguous"
+    || value === "compensation_begin"
+    || value === "compensation_complete"
+    || value === "turn_acquire"
+    || value === "turn_renew"
+    || value === "turn_release"
+}
+
+function isTransitionAction(value: AuthorityAction): value is Exclude<AuthorityAction, "read" | "write" | "register"> {
+  return value === "registration_ambiguous" || value === "compensation_begin" || value === "compensation_complete"
+}
+
+function isRegistrationAction(value: AuthorityAction) {
+  return value === "register" || isTransitionAction(value)
+}
 
 function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" {
   return value === "turn_acquire" || value === "turn_renew" || value === "turn_release"
@@ -255,18 +392,19 @@ function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_r
 
 function streamLeaseMinter(env: Record<string, string | undefined>) {
   return async (claims: StreamLeaseClaims) => {
-    const pem = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM?.replaceAll("\\n", "\n").trim()
-    if (!pem) throw new Error("stream lease signing key is unavailable")
+    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
+    if (!pem) throw new Error("Stream lease signing key is unavailable")
     const now = Math.floor(Date.now() / 1_000)
     const ttlSeconds = SESSION_STREAM_LEASE_TTL_MS / 1_000
     const expiresAt = (now + ttlSeconds) * 1_000
     const lease = await new SignJWT({
+      principal_kind: claims.principalKind,
       actor_id: claims.actorId,
       actor_kind: claims.actorKind,
       org_id: claims.orgId,
       workspace_id: claims.workspaceId,
       host_id: claims.hostId,
-      parent_jti: claims.parentJti,
+      parent_jti: claims.parentRuntimeAccessTokenJti,
       session_id: claims.sessionId,
       action: claims.action,
     })
@@ -283,72 +421,187 @@ function streamLeaseMinter(env: Record<string, string | undefined>) {
 
 function streamLeaseVerifier(env: Record<string, string | undefined>) {
   return async (lease: string): Promise<StreamLeaseClaims> => {
-    const pem = env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.replaceAll("\\n", "\n").trim()
-    if (!pem) throw new Error("stream lease verification key is unavailable")
+    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+    if (!pem) throw new Error("Stream lease verification key is unavailable")
     const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
       algorithms: ["EdDSA"],
       issuer: streamLeaseIssuer,
       audience: streamLeaseAudience,
     })
+    const principalKind = payload.principal_kind
+    const actorKind = payload.actor_kind
     if (
-      typeof payload.actor_id !== "string"
-      || !["human", "agent"].includes(String(payload.actor_kind))
-      || typeof payload.org_id !== "string"
-      || typeof payload.workspace_id !== "string"
-      || typeof payload.host_id !== "string"
-      || typeof payload.parent_jti !== "string"
-      || typeof payload.session_id !== "string"
-      || !["read", "write"].includes(String(payload.action))
-    ) throw new Error("stream lease claims are invalid")
+      (principalKind !== "user" && principalKind !== "service")
+      || (actorKind !== "human" && actorKind !== "agent")
+      || (principalKind === "user" && actorKind !== "human")
+      || (principalKind === "service" && actorKind !== "agent")
+    ) throw new Error("Stream lease principal is invalid")
+    const actorId = text(payload.actor_id)
+    const orgId = text(payload.org_id)
+    const workspaceId = text(payload.workspace_id)
+    const hostId = text(payload.host_id)
+    const parentRuntimeAccessTokenJti = text(payload.parent_jti)
+    const sessionId = text(payload.session_id)
+    const action = payload.action
+    if (!actorId || !orgId || !workspaceId || !hostId || !parentRuntimeAccessTokenJti || !sessionId
+      || (action !== "read" && action !== "write")) throw new Error("Stream lease claims are invalid")
+    const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
+      ? { principalKind: "user", actorId, actorKind: "human" }
+      : { principalKind: "service", actorId, actorKind: "agent" }
     return {
-      actorId: payload.actor_id,
-      actorKind: payload.actor_kind as "human" | "agent",
-      orgId: payload.org_id,
-      workspaceId: payload.workspace_id,
-      hostId: payload.host_id,
-      parentJti: payload.parent_jti,
-      sessionId: payload.session_id,
-      action: payload.action as "read" | "write",
+      ...principal,
+      orgId,
+      workspaceId,
+      hostId,
+      parentRuntimeAccessTokenJti,
+      sessionId,
+      action,
     }
   }
 }
 
+function turnLeaseMinter(env: Record<string, string | undefined>) {
+  return async (claims: TurnLeaseClaims) => {
+    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
+    if (!pem) throw new Error("Turn lease signing key is unavailable")
+    const now = Math.floor(Date.now() / 1_000)
+    const expiry = Math.floor(claims.expiresAt / 1_000)
+    if (expiry <= now) throw new Error("Turn lease already expired before proof minting")
+    const lease = await new SignJWT({
+      principal_kind: claims.principalKind,
+      actor_id: claims.actorId,
+      actor_kind: claims.actorKind,
+      org_id: claims.orgId,
+      workspace_id: claims.workspaceId,
+      host_id: claims.hostId,
+      parent_jti: claims.parentRuntimeAccessTokenJti,
+      session_id: claims.sessionId,
+      action: "write",
+      turn_id: claims.turnId,
+      authority_lease_id: claims.authorityLeaseId,
+      fencing_token: claims.fencingToken,
+      acquired_at: claims.acquiredAt,
+      authority_expires_at: claims.expiresAt,
+    })
+      .setProtectedHeader({ alg: "EdDSA" })
+      .setIssuer(turnLeaseIssuer)
+      .setAudience(turnLeaseAudience)
+      .setIssuedAt(now)
+      .setExpirationTime(expiry)
+      .setJti(crypto.randomUUID())
+      .sign(await importPKCS8(pem, "EdDSA"))
+    return { lease, expiresAt: expiry * 1_000 }
+  }
+}
+
+function turnLeaseVerifier(env: Record<string, string | undefined>) {
+  return async (lease: string): Promise<TurnLeaseClaims> => {
+    const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
+    if (!pem) throw new Error("Turn lease verification key is unavailable")
+    const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
+      algorithms: ["EdDSA"],
+      issuer: turnLeaseIssuer,
+      audience: turnLeaseAudience,
+    })
+    const principalKind = payload.principal_kind
+    const actorKind = payload.actor_kind
+    if (
+      (principalKind !== "user" && principalKind !== "service")
+      || (actorKind !== "human" && actorKind !== "agent")
+      || (principalKind === "user" && actorKind !== "human")
+      || (principalKind === "service" && actorKind !== "agent")
+    ) throw new Error("Turn lease principal is invalid")
+    const actorId = text(payload.actor_id)
+    const orgId = text(payload.org_id)
+    const workspaceId = text(payload.workspace_id)
+    const hostId = text(payload.host_id)
+    const parentRuntimeAccessTokenJti = text(payload.parent_jti)
+    const sessionId = text(payload.session_id)
+    const turnId = text(payload.turn_id)
+    const authorityLeaseId = text(payload.authority_lease_id)
+    const fencingToken = positiveInteger(payload.fencing_token)
+    const acquiredAt = finiteTimestamp(payload.acquired_at)
+    const expiresAt = finiteTimestamp(payload.authority_expires_at)
+    if (
+      !actorId || !orgId || !workspaceId || !hostId || !parentRuntimeAccessTokenJti
+      || !sessionId || !turnId || !authorityLeaseId || !fencingToken
+      || acquiredAt === undefined || expiresAt === undefined || expiresAt <= acquiredAt
+    ) throw new Error("Turn lease claims are invalid")
+    const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
+      ? { principalKind: "user", actorId, actorKind: "human" }
+      : { principalKind: "service", actorId, actorKind: "agent" }
+    return {
+      ...principal,
+      orgId,
+      workspaceId,
+      hostId,
+      parentRuntimeAccessTokenJti,
+      sessionId,
+      action: "write",
+      turnId,
+      authorityLeaseId,
+      fencingToken,
+      acquiredAt,
+      expiresAt,
+    }
+  }
+}
+
+type RelayProofKey = JWTVerifyGetKey
 const relayKeys = new Map<string, RelayProofKey | Promise<RelayProofKey>>()
 
-function relayProofVerifier(env: Record<string, string | undefined>) {
-  return async (token: string) => {
-    const result = await jwtVerify(token, await relayProofKey(env), {
+export function relayProofVerifier(env: Record<string, string | undefined>) {
+  return async (token: string): Promise<RelayHostPrivateSessionClaims> => {
+    const { payload } = await jwtVerify(token, await relayProofKey(env), {
       algorithms: ["EdDSA", "ES256", "RS256"],
       issuer: "workspace-relay",
       audience: "workspace-host-service",
     })
-    const claims = result.payload
+    const principalKind = payload.principal_kind
+    const actorKind = payload.actor_kind
+    const role = payload.role
+    const access = payload.access
+    const backing = payload.backing
+    const claims = {
+      principal_kind: principalKind,
+      actor_id: text(payload.actor_id),
+      actor_kind: actorKind,
+      org_id: text(payload.org_id),
+      workspace_id: text(payload.workspace_id),
+      host_id: text(payload.host_id),
+      jti: text(payload.jti),
+      parent_jti: text(payload.parent_jti),
+      role,
+    }
     if (
-      typeof claims.sub !== "string"
-      || typeof claims.org_id !== "string"
-      || typeof claims.workspace_id !== "string"
-      || typeof claims.host_id !== "string"
-      || typeof claims.jti !== "string"
-      || typeof claims.exp !== "number"
-      || typeof claims.iat !== "number"
-      || !["viewer", "editor", "admin", "owner"].includes(String(claims.role))
-      || !((claims.access === "cloud" && claims.backing === "cloud-vm")
-        || (claims.access === "user-hosted" && claims.backing === "local-worktree"))
-      || !((typeof claims.actor_id === "string" && ["human", "agent"].includes(String(claims.actor_kind)))
-        || (claims.actor_id === undefined && claims.actor_kind === undefined))
-    ) throw new Error("relay proof claims are invalid")
-    return claims as RelayHostTokenClaims
+      (principalKind !== "user" && principalKind !== "service")
+      || (actorKind !== "human" && actorKind !== "agent")
+      || !claims.actor_id
+      || !claims.org_id
+      || !claims.workspace_id
+      || !claims.host_id
+      || !claims.jti
+      || !claims.parent_jti
+      || (role !== "viewer" && role !== "editor" && role !== "admin" && role !== "owner")
+      || !((access === "cloud" && backing === "cloud-vm")
+        || (access === "user-hosted" && backing === "local-worktree"))
+    ) throw new Error("Relay proof claims are invalid")
+    return claims as RelayHostPrivateSessionClaims
   }
 }
 
+function roleRank(role: "viewer" | "editor" | "admin" | "owner") {
+  return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
+}
+
 function relayProofKey(env: Record<string, string | undefined>): RelayProofKey | Promise<RelayProofKey> {
-  const jwksUrl = env.CLAXEDO_RELAY_JWKS_URL?.trim()
+  const jwksUrl = text(env.CLAXEDO_RELAY_JWKS_URL)
   if (jwksUrl) return cachedKey(`jwks:${jwksUrl}`, () => createRemoteJWKSet(new URL(jwksUrl)))
-  const pem = env.CLAXEDO_RELAY_HOST_VERIFY_PEM?.trim()
+  const pem = keyPem(env.CLAXEDO_RELAY_HOST_VERIFY_PEM)
   if (pem) return cachedKey(`pem:${pem}`, () => async () => await importSPKI(pem, "EdDSA"))
-  const jwk = env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK?.trim()
+  const jwk = text(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_JWK)
   if (jwk) return cachedKey(`jwk:${jwk}`, () => async () => await importJWK(JSON.parse(jwk), "EdDSA"))
-  throw new Error("relay proof verification is not configured")
+  throw new Error("Relay proof verification is not configured")
 }
 
 function cachedKey(key: string, create: () => RelayProofKey | Promise<RelayProofKey>) {
@@ -357,4 +610,31 @@ function cachedKey(key: string, create: () => RelayProofKey | Promise<RelayProof
   const value = create()
   relayKeys.set(key, value)
   return value
+}
+
+function text(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined
+}
+
+function optionalText(value: unknown) {
+  if (value === undefined) return ""
+  return text(value)
+}
+
+function positiveInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined
+}
+
+function finiteTimestamp(value: unknown) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined
+}
+
+function keyPem(value: string | undefined) {
+  return text(value)?.replaceAll("\\n", "\n")
+}
+
+function asRecord(value: unknown): Record<string, unknown> | undefined {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : undefined
 }

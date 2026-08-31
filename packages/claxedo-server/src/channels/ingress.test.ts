@@ -14,6 +14,7 @@ import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
+import { testManagedSessionAuthority } from "../test-support/managed-session-authority"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -99,13 +100,11 @@ function services(input: {
     // first statement. That mismatch, not any channels behavior, is what broke
     // these tests; the flag was always describing the wrong composition.
     localExecution: { enabled: true },
-    ...(input.signed
+    authority: testManagedSessionAuthority(input.signed
       ? {
-          authority: {
             authorizeChannelProject: input.authorizeChannelProject ?? vi.fn(async () => ({ ok: true, role: "editor", orgId: "org_1" })),
             authorizeChannelWorkspace: vi.fn(async () => {}),
-          } as never,
-        }
+        } as never
       : {}),
   }
 }

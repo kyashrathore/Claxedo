@@ -83,7 +83,7 @@ export type SessionPromptTurnInput = {
   publishUserMessage?: boolean
   streamErrorMessage?: (error: unknown) => string
   /** Current durable lease generation, checked before every producer publish. */
-  turnAdmission?: { valid(): boolean }
+  turnAdmission?: { valid(): boolean; fencingToken(): number }
 }
 
 export type RuntimePromptTurnInput = {
@@ -97,6 +97,8 @@ export type RuntimePromptTurnInput = {
   createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
   onAdmissionSettled?: (error?: unknown) => void
+  /** Current durable lease generation, checked before every producer publish. */
+  turnAdmission?: { valid(): boolean; fencingToken(): number }
   actor?: { actorId: string; actorKind: "human" | "agent" }
   author?: {
     id: string
@@ -288,6 +290,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
       ...(input.author ? { author: input.author } : {}),
+      ...(input.turnAdmission ? { admission: input.turnAdmission } : {}),
     } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
     turn = await (input.actor
       ? input.runtime.turns.start({

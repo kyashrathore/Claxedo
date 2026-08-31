@@ -63,9 +63,13 @@ export const serverCloudNode: Policy = {
   // pricing catalog used by the dashboard; no local-server edge is permitted.
   // Org→Team + session-people Worker-safe routers add two measured modules:
   // 137 + 2 = 139 modules, still no package edge.
-  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
-  // 139 + 1 = 140 modules, still no package edge.
-  ceilings: { modules: 140, packages: 27 },
+  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one.
+  // The reviewed multiplayer composition reaches the retained-provider owner,
+  // the canonical private-session reservation route, and the provider-neutral
+  // runtime authority support they require. The relay-protocol package owns
+  // the shared stream/turn lease TTL contract; no local-server edge is added.
+  // Full `verify:closure` measures the exact hosted Node graph at 146/28.
+  ceilings: { modules: 146, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -139,9 +143,13 @@ export const serverWorkerd: Policy = {
   // 112 + 1 = 113 modules, still no package edge.
   // Org→Team + session-people control routers (Worker-safe; no supervisor):
   // 113 + 2 = 115 modules, still no package edge.
-  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
-  // 115 + 1 = 116 modules, still no package edge.
-  ceilings: { modules: 116, packages: 13 },
+  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one.
+  // The reviewed multiplayer composition reaches the retained-provider owner,
+  // the canonical private-session reservation route, and the provider-neutral
+  // runtime authority support they require. The relay-protocol package owns
+  // the shared stream/turn lease TTL contract; the graph remains Worker-safe.
+  // Full `verify:closure` measures the exact workerd graph at 122/14.
+  ceilings: { modules: 122, packages: 14 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
@@ -209,9 +217,11 @@ export const serverSelfHosted: Policy = {
   },
   // Nine modules complete the single-binary usage pipeline: central/local
   // routes, durable revision/provenance stores, outbox, scanner, pricing, and
-  // host identity. Package reach includes `posthog-node` via platform
-  // telemetry (`platform/telemetry/errors/posthog.ts`) — measured 34 packages.
-  ceilings: { modules: 150, packages: 34 },
+  // host identity. The canonical private-session reservation route adds one
+  // source module. Runtime authority now consumes the relay-protocol package's
+  // shared stream/turn lease TTL contract, so the exact measured graph is
+  // 150 modules and 35 packages (including `posthog-node` telemetry).
+  ceilings: { modules: 150, packages: 35 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

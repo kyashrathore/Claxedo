@@ -1,5 +1,5 @@
 import { apiBearerToken, getClaxedoServerUrl, authFetch, normalizeUrl } from "@/platform/api/api"
-import { accountRun } from "@/platform/account/hosted-control-call"
+import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { queryClient } from "@/platform/query/query-client"
 
@@ -302,7 +302,7 @@ async function fetchConnectionBody(
     : undefined
 
   if (!options.request) {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (run) {
       try {
         const hostedParams: Record<string, unknown> = { id: params.id }

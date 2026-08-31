@@ -7,11 +7,17 @@
 
 // @refresh reload
 import { render } from "solid-js/web"
+import { lazy, Suspense } from "solid-js"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
 import { browserAuthAdapter } from "#browser-auth-adapter"
-import { authFetch, configureApiRuntime, getClaxedoServerUrl } from "@/platform/api/api"
+import {
+  authFetch,
+  configureApiRuntime,
+  getClaxedoServerUrl,
+  releaseValidationOperation,
+} from "@/platform/api/api"
 import { configureAuthSession } from "@/platform/auth/auth-session"
 import {
   initPostHog,
@@ -28,6 +34,13 @@ import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
 import { hostedServiceContributionLoaders } from "@/app/composition/hosted-contribution-loader"
+
+const OAuthConsentPage = lazy(() => import("@/app/routes/oauth-consent"))
+const HostedOAuthConsentRoute = () => (
+  <Suspense>
+    <OAuthConsentPage request={authFetch} apiOrigin={getClaxedoServerUrl()} />
+  </Suspense>
+)
 
 /**
  * Bind the hosted workspace-startup implementation.
@@ -74,9 +87,19 @@ configureHttpMachineRemoteAccess((path, init) => authFetch(new URL(path, getClax
  * modules during bootstrap, and a binding installed during render would leave
  * the earliest calls unauthenticated.
  */
+const selectedReleaseValidationOperation = releaseValidationOperation(
+  import.meta.env.VITE_CLAXEDO_RELEASE_VALIDATION_OPERATION,
+)
+
 configureApiRuntime({
   bearerToken: browserAuthAdapter.transport === "bearer" ? browserAuthAdapter.getToken : null,
   browserCredentials: browserAuthAdapter.transport === "cookie" ? "include" : null,
+  releaseValidation: selectedReleaseValidationOperation
+    ? {
+        coreOrigin: getClaxedoServerUrl(),
+        operation: selectedReleaseValidationOperation,
+      }
+    : null,
 })
 
 /**
@@ -112,27 +135,6 @@ const config = {
   serviceContributionLoaders: hostedServiceContributionLoaders,
 }
 initClaxedo(config)
-
-// The hosted entry starts the identity provider. `initClaxedo` deliberately
-// does not — see the note there; a shared init that imports Clerk puts it in
-// the local build too.
-//
-// Playwright preview builds bake `VITE_CLAXEDO_E2E=1` and inject
-// `__CLAXEDO_TEST_AUTH_*` (see auth-client testAuth). Without initializeClerk()
-// the user signal stays null and the rail shows "Account". Only hydrate that
-// path when the e2e flag is set AND a test principal is actually present —
-// never on a real ship artifact that accidentally inherits the flag alone.
-const e2eTestPrincipal = (() => {
-  if (import.meta.env.VITE_CLAXEDO_E2E !== "1" || typeof window === "undefined") return false
-  const w = window as typeof window & {
-    __CLAXEDO_TEST_AUTH_TOKEN__?: string
-    __CLAXEDO_TEST_AUTH_USER__?: unknown
-  }
-  return !!(w.__CLAXEDO_TEST_AUTH_TOKEN__ || w.__CLAXEDO_TEST_AUTH_USER__)
-})()
-if (config.authEnabled || e2eTestPrincipal) {
-  initializeClerk().catch(() => {})
-}
 
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {
@@ -374,7 +376,7 @@ async function startApp() {
       <ConfigProvider config={config}>
         <PlatformProvider value={platform}>
           <AppBaseProviders>
-            <AppInterface />
+            <AppInterface oauthConsent={HostedOAuthConsentRoute} />
           </AppBaseProviders>
         </PlatformProvider>
       </ConfigProvider>

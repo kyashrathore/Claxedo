@@ -69,7 +69,6 @@ export type WorkspaceRuntimeServiceExposure = {
 }
 
 export type WorkspaceRuntimeServerOptions = {
-  sessionAccessPolicy?: SessionAccessPolicy
   /** Optional local owner observer. Remote/relay compositions omit it. */
   processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
@@ -557,7 +556,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
-  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes(options.processObserver, sessionAccessPolicy))
+  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes(options.processObserver))
   app.route("/", RuntimeDocumentHydrationRoutes({
     trustedTransport: options.exposure?.kind === "relay",
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),

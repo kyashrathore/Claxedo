@@ -970,17 +970,10 @@ built.app.get("/__fixture/authority-identity", async (c) => {
     return c.json({ error: "role must be one of viewer|editor|admin" }, 400)
   }
   const tokenIdentifier = `${jwksIssuer.issuer}|${subject}`
-  // `grantWorkspaceShare` refuses unknown targets (`requireExisting: true`).
-  // Upsert the teammate first so a fresh `sub` is a real user row, the same
-  // way the product invite flow resolves the collaborator before writing the grant.
-  await authority.usersMe({
-    mode: "signed",
-    token: "",
-    user: {
-      subject,
-      tokenIdentifier,
-      issuer: jwksIssuer.issuer,
-    },
+  await authority.grantWorkspaceShare(browserAuth, {
+    workspaceId,
+    role,
+    target: { kind: "actor", actorId: tokenIdentifier },
   })
   if (joinOrg) {
     if (!collaborativeOrgName || fixtureOrgId === "personal") {

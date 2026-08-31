@@ -23,4 +23,23 @@ describe("readAccountConfig", () => {
       missing: [expect.stringContaining("exact HTTPS origin")],
     })
   })
+
+  test("accepts only a typed release-validation operation", () => {
+    expect(
+      readAccountConfig({
+        CLAXEDO_CORE_ORIGIN: "https://core.example",
+        CLAXEDO_RELEASE_VALIDATION_OPERATION: "private_session",
+      }),
+    ).toEqual({
+      configured: true,
+      coreOrigin: "https://core.example",
+      releaseValidationOperation: "private_session",
+    })
+    expect(
+      readAccountConfig({
+        CLAXEDO_CORE_ORIGIN: "https://core.example",
+        CLAXEDO_RELEASE_VALIDATION_OPERATION: "anything",
+      }),
+    ).toMatchObject({ configured: false, missing: [expect.stringContaining("not recognized")] })
+  })
 })

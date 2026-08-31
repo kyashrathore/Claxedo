@@ -91,6 +91,9 @@ describe("static hosted product roots", () => {
     const app = createUserDeployedProductApp(plane(), {
       ...core,
       cloudWorkspaceAdmission: async () => undefined,
+      userDeployedIdentityAdmission: {
+        admit: vi.fn(async () => ({ state: "active" as const, userId: "user-2", actorId: "actor-2" })),
+      },
     })
     expect(app.routes.map((route) => route.path).filter((route) => route.startsWith("/api/billing"))).toEqual([])
     const response = await app.fetch(new Request("https://core.test/api/claxedo/mode"))

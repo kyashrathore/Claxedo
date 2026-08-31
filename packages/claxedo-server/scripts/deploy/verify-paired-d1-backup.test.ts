@@ -45,6 +45,10 @@ async function exports(phase = "provider_sync") {
     "0007_paired_recovery_epoch.sql",
     "0008_user_deployed_owner_bootstrap.sql",
     "0009_optional_service_deployment.sql",
+    "0010_session_turn_leases.sql",
+    "0011_session_turn_producers.sql",
+    "0012_cold_local_host_challenges.sql",
+    "0013_org_team_session_sharing.sql",
   ])}
     insert into control_plane_recovery_epochs values
       ('${deploymentId}', '${releaseId}', '${recoveryEpoch}', '2026-08-28T00:00:00.000Z');`
@@ -76,6 +80,24 @@ describe("paired D1 export backup verifier", () => {
     })
     expect(evidence.databases[0]?.tables.find((table) => table.table === "deploymentRecoveryEpoch")?.rows).toBe(1)
     expect(evidence.databases[1]?.tables.find((table) => table.table === "control_plane_recovery_epochs")?.rows).toBe(1)
+  })
+
+  test("restores a D1 export whose trigger precedes its target view", async () => {
+    const fixture = await exports()
+    const outOfOrderSchema = `
+CREATE TRIGGER export_order_trigger
+INSTEAD OF INSERT ON export_order_view
+BEGIN
+  SELECT 1;
+END;
+CREATE VIEW export_order_view AS SELECT 1 AS value;
+`
+    const evidence = verifyPairedD1BackupExports({
+      ...input,
+      authSql: fixture.auth,
+      controlPlaneSql: new TextEncoder().encode(`${outOfOrderSchema}\n${new TextDecoder().decode(fixture.control)}`),
+    })
+    expect(evidence.databases[1]).toMatchObject({ binding: "CONTROL_PLANE_DB", integrity: "ok" })
   })
 
   test("rejects an epoch mismatch, pre-provider-sync capture, schema loss, and unsafe export SQL", async () => {

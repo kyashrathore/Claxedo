@@ -123,8 +123,8 @@ describe("JwksRoutes", () => {
 
     const sign = runtimeAccessTokenSigner()
     const minted = await sign({
-      subject: "u",
-      actorId: "actor_1",
+      principalKind: "user",
+      actorId: "u",
       actorKind: "human",
       orgId: "o",
       workspaceId: "w",

@@ -171,7 +171,7 @@ describe("Better Auth D1 request authentication", () => {
       adapter: "better-auth",
       issuer: descriptor.issuer,
       subject: "better_auth_user_1",
-    })
+    }, expect.any(Request))
   })
 
   test("verifies a native opaque bearer through Better Auth introspection", async () => {

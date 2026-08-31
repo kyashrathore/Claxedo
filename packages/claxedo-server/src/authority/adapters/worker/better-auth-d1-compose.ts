@@ -1,7 +1,10 @@
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
+import { Hono } from "hono"
 import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+import type { AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
+import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
 
 import { createD1CoreAuthority, type D1CoreAuthorityBoundary } from "../d1/core-authority"
 import { USER_DEPLOYED_OWNER_CLAIM_HEADER, type D1AuthorityProductPolicy } from "../d1/workspace-authority"
@@ -92,6 +95,7 @@ export type BetterAuthD1UserDeployedComposition = {
   options: Omit<HostedCoreAppOptions, "liveSyncRoom" | "sharedRateLimitStore">
   /** Better Auth owns browser and native protocol routes plus AUTH_DB state. */
   authHandler(request: Request): Promise<Response>
+  verifyIdentity(request: Request): Promise<AuthIdentity>
   serviceInstallations: D1ServiceInstallationStore
   product: (typeof STATIC_PRODUCT_DESCRIPTORS)["user-deployed"]
   billing: "absent"
@@ -138,6 +142,14 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     database: requiredDatabase(input.authDatabase),
     configuration: configured,
     resource: betterAuthNativeResource(configured.public.apiOrigin),
+  })
+  const authProtocol = new Hono()
+  authProtocol.use(browserAuthHttpSecurity(descriptor.browser))
+  authProtocol.all("*", (context) => {
+    if (context.req.path === "/.well-known/oauth-authorization-server") {
+      return oauthProviderAuthServerMetadata(foundation)(context.req.raw)
+    }
+    return foundation.handler(context.req.raw)
   })
   const authentication = createBetterAuthD1RequestAuthenticationAdapter({
     descriptor,
@@ -206,13 +218,12 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       }),
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: [],
+      userDeployedIdentityAdmission: {
+        admit: (auth, admission) => authority.admitUserDeployedIdentity(auth, admission),
+      },
     },
-    async authHandler(request) {
-      if (new URL(request.url).pathname === "/.well-known/oauth-authorization-server") {
-        return oauthProviderAuthServerMetadata(foundation)(request)
-      }
-      return foundation.handler(request)
-    },
+    verifyIdentity: (request) => authentication.verifyIdentity(request),
+    authHandler: (request) => authProtocol.fetch(request),
     serviceInstallations,
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     billing: "absent",

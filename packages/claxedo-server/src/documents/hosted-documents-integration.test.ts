@@ -339,7 +339,7 @@ function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAut
   return {
     auth: { config: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" }, verifier: async () => auth },
     authority: {
-      usersMe: async () => ({ id: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" }),
+      usersMe: async () => ({ id: "user_1", actor_id: "user_1", actor_kind: "human" as const }),
       resolveOrgId: async () => "org_1",
       authorizeProject: async () => ({ ok: true, role: "editor", orgId: "org_1" }),
       resolveSession: async (_auth: SignedControlPlaneAuth, input: { sessionId: string }) => ({ workspace_id: "cloud_ws", session_id: input.sessionId }),

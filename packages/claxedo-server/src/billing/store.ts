@@ -22,6 +22,8 @@ import type {
   EntitlementState,
 } from "./store-contract"
 
+export type { BillingStore } from "./store-contract"
+
 export class BillingStoreUnavailableError extends Error {
   constructor(message: string) {
     super(message)

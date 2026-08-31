@@ -126,8 +126,12 @@ export const appLocal: Policy = {
   // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
   // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
   // modules. Provider-settings translations are split into one lazy feature
-  // dictionary per non-English locale: 923 + 16 = 939, still no package edge.
-  ceilings: { modules: 939, packages: 41 },
+  // dictionary per non-English locale: 923 + 16 = 939. The reviewed auth and
+  // Cloudflare-deployable flow adds the service-contribution catalog,
+  // bootstrap-owner route, and canonical private-session reservation client.
+  // `@claxedo/service-contract` is their dependency-neutral vocabulary owner.
+  // The exact source closure is 942 modules and 38 packages.
+  ceilings: { modules: 942, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

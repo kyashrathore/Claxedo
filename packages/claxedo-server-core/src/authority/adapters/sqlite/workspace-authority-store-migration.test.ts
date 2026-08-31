@@ -16,7 +16,7 @@ describe("SQLite workspace authority tenancy migration", () => {
     expect(required(database, "workspaces", "org_id")).toBe(true)
     expect(required(database, "workspaces", "project_id")).toBe(true)
     expect(required(database, "workspace_share_grants", "target_key")).toBe(true)
-    expect(database.pragma("user_version", { simple: true })).toBe(3)
+    expect(database.pragma("user_version", { simple: true })).toBe(4)
     database.prepare(`
       INSERT INTO users (token_identifier, public_id, kind, created_at, updated_at)
       VALUES ('owner', 'usr_owner', 'human', 1, 1)
@@ -159,8 +159,8 @@ describe("SQLite workspace authority tenancy migration", () => {
     legacy.close()
 
     const database = openAuthorityDb({ path: file })()
-    expect(fs.existsSync(`${file}.pre-tenancy-v3.bak`)).toBe(true)
-    const backup = new Database(`${file}.pre-tenancy-v3.bak`, { readonly: true })
+    expect(fs.existsSync(`${file}.pre-tenancy-v4.bak`)).toBe(true)
+    const backup = new Database(`${file}.pre-tenancy-v4.bak`, { readonly: true })
     expect((backup.prepare("PRAGMA table_info(users)").all() as Array<{ name: string }>)
       .some((column) => column.name === "public_id")).toBe(false)
     expect(backup.prepare("SELECT org_id, project_id FROM workspaces WHERE workspace_id = 'ws_missing_project'").get())

@@ -6,8 +6,8 @@
  * reassembles them into a `Response` the existing SSE readers already consume.
  */
 
-import { accountRun } from "./hosted-control-call"
-import type { HostedOperationName } from "./account-port"
+import { accountRunBridge } from "./hosted-control-call"
+import type { AccountState, HostedOperationName } from "./account-port"
 
 type StreamBridge = {
   streamOpen: (operation: string, input?: Record<string, unknown>) => Promise<{ streamId: string }>
@@ -44,11 +44,13 @@ function streamBridge(): StreamBridge | undefined {
 }
 
 /**
- * Present when the Electron account bridge exposes stream IPC. Unsigned /
- * browser builds keep `authFetch`.
+ * Present only when the authoritative account state is signed and Electron
+ * exposes the complete stream IPC bridge. Bridge presence is a capability,
+ * not evidence of a usable account: preload installs it before sign-in and
+ * keeps it installed after sign-out.
  */
-export function accountStreamAvailable() {
-  return Boolean(accountRun() && streamBridge())
+export function accountStreamAvailable(accountState: AccountState) {
+  return accountState.status === "signed" && Boolean(accountRunBridge() && streamBridge())
 }
 
 export async function openAccountStreamResponse(input: {

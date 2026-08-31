@@ -22,6 +22,8 @@ const env = {
   CLAXEDO_STAGING_API_ORIGIN: "https://api-staging.claxedo.test",
   CLAXEDO_PRODUCTION_APP_ORIGIN: "https://app.claxedo.test",
   CLAXEDO_STAGING_APP_ORIGIN: "https://app-staging.claxedo.test",
+  CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL: "https://relay.claxedo.test",
+  CLAXEDO_STAGING_WORKSPACE_RELAY_URL: "https://relay-staging.claxedo.test",
   GITHUB_CLIENT_ID: "github-client",
   BETTER_AUTH_SECRET: "better-auth-secret-at-least-32-characters",
   CLAXEDO_AUTH_INTROSPECTION_SECRET: "introspection-secret-at-least-32-characters",
@@ -54,6 +56,10 @@ describe("greenfield user-deployed Cloudflare preflight", () => {
         "BETTER_AUTH_SECRET",
         "CLAXEDO_AUTH_INTROSPECTION_SECRET",
         "CLAXEDO_RELEASE_OPERATOR_SECRET",
+        "CLAXEDO_RELAY_RESOLVER_TOKEN",
+        "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM",
+        "CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM",
+        "CLAXEDO_RELAY_HOST_VERIFY_PEM",
         "GITHUB_CLIENT_SECRET",
       ],
       callbackUrls: [
@@ -89,27 +95,31 @@ describe("greenfield user-deployed Cloudflare preflight", () => {
     }
   })
 
-  test("generates the exact locked deployment sequence without claiming the blocked open phases", () => {
+  test("generates the locked bootstrap and same-version cutover sequence without claiming unverified evidence", () => {
     const guide = renderGreenfieldUserDeployedGuide(greenfieldUserDeployedPreflight(env, "production"))
 
     expect(guide).toContain("one organization")
     expect(guide).toContain("multiplayer")
     expect(guide).toContain("Better Auth + D1")
-    expect(guide).toContain("Current ceiling: `locked` — not open")
+    expect(guide).toContain("same Cloudflare")
     expect(guide).toContain("bun run deploy:user-cloudflare:preflight")
     expect(guide).toContain("bun run scripts/deploy/release-better-auth-d1.ts --deploy --bootstrap")
     expect(guide).toContain("bun run scripts/deploy/release-better-auth-d1.ts --deploy")
+    expect(guide).toContain("bun run scripts/deploy/release-better-auth-d1.ts --deploy --cutover")
     expect(guide).toContain("GITHUB_CLIENT_ID")
     expect(guide).toContain("GITHUB_CLIENT_SECRET")
     expect(guide).toContain("BETTER_AUTH_SECRET")
     expect(guide).toContain("CLAXEDO_AUTH_INTROSPECTION_SECRET")
+    expect(guide).toContain("CLAXEDO_STAGING_WORKSPACE_RELAY_URL")
+    expect(guide).toContain("CLAXEDO_RELAY_RESOLVER_TOKEN")
     expect(guide).toContain("export BETTER_AUTH_SECRET='<deployment-owned secret of at least 32 characters>'")
     expect(guide).toContain(
       "export CLAXEDO_AUTH_INTROSPECTION_SECRET='<different deployment-owned secret of at least 32 characters>'",
     )
     expect(guide).toContain("cutover-better-auth-d1.ts --status")
     expect(guide).toContain("has no raw phase or arbitrary evidence input")
-    expect(guide).toContain("both the client and Worker reject `--begin-canary`")
+    expect(guide).toContain("/__release/canary/identity")
+    expect(guide).toContain("provision-user-deployed-owner-claim.ts --provision")
     expect(guide).not.toContain("GOOGLE_CLIENT_ID")
     expect(guide).not.toContain("GOOGLE_CLIENT_SECRET")
 
@@ -145,6 +155,10 @@ describe("greenfield user-deployed Cloudflare preflight", () => {
       "BETTER_AUTH_SECRET",
       "CLAXEDO_AUTH_INTROSPECTION_SECRET",
       "CLAXEDO_RELEASE_OPERATOR_SECRET",
+      "CLAXEDO_RELAY_RESOLVER_TOKEN",
+      "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM",
+      "CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM",
+      "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       "GOOGLE_CLIENT_SECRET",
     ])
     expect(guide).toContain("GOOGLE_CLIENT_ID")

@@ -97,6 +97,10 @@ describe("Convex workspace share revoke policy", () => {
         "org_memberships",
         stamped({ org_id: orgId, user_id: ownerId, role: "owner" }) as never,
       )
+      await ctx.db.insert(
+        "org_memberships",
+        stamped({ org_id: orgId, user_id: targetId, role: "member" }) as never,
+      )
 
       const workspaceId = await ctx.db.insert("workspaces", stamped({
         workspace_id: "ws_1",
@@ -119,7 +123,14 @@ describe("Convex workspace share revoke policy", () => {
         jti: "jti_target_active",
         workspace_id: workspaceId,
         host_id: "host_1",
+        principal_kind: "user",
+        actor_id: String(targetId),
+        actor_kind: "human",
+        role: "editor",
         minted_for_user_id: targetId,
+        minted_for_actor_id: String(targetId),
+        minted_for_actor_kind: "human",
+        workspace_role: "editor",
         expires_at: 999_999,
         created_at: 1,
       } as never)
@@ -127,7 +138,14 @@ describe("Convex workspace share revoke policy", () => {
         jti: "jti_target_revoked",
         workspace_id: workspaceId,
         host_id: "host_1",
+        principal_kind: "user",
+        actor_id: String(targetId),
+        actor_kind: "human",
+        role: "editor",
         minted_for_user_id: targetId,
+        minted_for_actor_id: String(targetId),
+        minted_for_actor_kind: "human",
+        workspace_role: "editor",
         expires_at: 999_999,
         revoked_at: 42,
         created_at: 1,
@@ -136,7 +154,14 @@ describe("Convex workspace share revoke policy", () => {
         jti: "jti_other_active",
         workspace_id: workspaceId,
         host_id: "host_1",
+        principal_kind: "user",
+        actor_id: String(otherId),
+        actor_kind: "human",
+        role: "editor",
         minted_for_user_id: otherId,
+        minted_for_actor_id: String(otherId),
+        minted_for_actor_kind: "human",
+        workspace_role: "editor",
         expires_at: 999_999,
         created_at: 1,
       } as never)
@@ -166,7 +191,7 @@ describe("Convex workspace share revoke policy", () => {
   test("grant is idempotent and a revoke removes every legacy duplicate", async () => {
     vi.spyOn(Date, "now").mockReturnValue(123_456)
     const t = convexTest(schema, modules)
-    await t.run(async (ctx) => {
+    const targetId = await t.run(async (ctx) => {
       const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
       const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token" }) as never)
       const orgId = await ctx.db.insert(
@@ -176,6 +201,10 @@ describe("Convex workspace share revoke policy", () => {
       await ctx.db.insert(
         "org_memberships",
         stamped({ org_id: orgId, user_id: ownerId, role: "owner" }) as never,
+      )
+      await ctx.db.insert(
+        "org_memberships",
+        stamped({ org_id: orgId, user_id: targetId, role: "member" }) as never,
       )
       const workspaceId = await ctx.db.insert("workspaces", stamped({
         workspace_id: "ws_1",
@@ -194,14 +223,15 @@ describe("Convex workspace share revoke policy", () => {
           created_at: createdAt,
         } as never)
       }
+      return targetId
     })
     const owner = t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
 
     await owner.mutation(api.workspaceShares.grant, {
       workspace_id: "ws_1",
       role: "viewer",
-      granted_to_token_identifier: "target_token",
-    } as never)
+      target_user_id: targetId,
+    })
     await t.run(async (ctx) => {
       const active = (await ctx.db.query("workspace_share_grants").collect()).filter((row) => !row.revoked_at)
       expect(active).toHaveLength(1)
@@ -210,18 +240,18 @@ describe("Convex workspace share revoke policy", () => {
 
     await expect(owner.mutation(api.workspaceShares.revoke, {
       workspace_id: "ws_1",
-      granted_to_token_identifier: "target_token",
-    } as never)).resolves.toMatchObject({ revoked: true })
+      target_user_id: targetId,
+    })).resolves.toMatchObject({ revoked: true })
     await t.run(async (ctx) => {
       expect((await ctx.db.query("workspace_share_grants").collect()).filter((row) => !row.revoked_at)).toEqual([])
     })
   })
 
-  test("rejects ambiguous targets at the public Convex mutation boundary", async () => {
+  test("rejects ambiguous canonical targets at the public Convex mutation boundary", async () => {
     const t = convexTest(schema, modules)
-    await t.run(async (ctx) => {
+    const targetId = await t.run(async (ctx) => {
       const ownerId = await ctx.db.insert("users", stamped({ token_identifier: "owner_token" }) as never)
-      await ctx.db.insert("users", stamped({ token_identifier: "target_token", clerk_subject: "target_subject" }) as never)
+      const targetId = await ctx.db.insert("users", stamped({ token_identifier: "target_token", clerk_subject: "target_subject" }) as never)
       await ctx.db.insert("workspaces", stamped({
         workspace_id: "ws_1",
         owner_user_id: ownerId,
@@ -229,14 +259,15 @@ describe("Convex workspace share revoke policy", () => {
         access: "cloud",
         display_name: "Workspace 1",
       }) as never)
+      return targetId
     })
     const owner = t.withIdentity({ tokenIdentifier: "owner_token", subject: "owner_subject" })
 
     await expect(owner.mutation(api.workspaceShares.grant, {
       workspace_id: "ws_1",
       role: "editor",
-      granted_to_token_identifier: "target_token",
-      granted_to_clerk_subject: "target_subject",
-    } as never)).rejects.toThrow("Share target must be exactly one user, org, or team")
+      target_actor_id: targetId,
+      target_user_id: targetId,
+    })).rejects.toThrow("Workspace share requires exactly one canonical target")
   })
 })

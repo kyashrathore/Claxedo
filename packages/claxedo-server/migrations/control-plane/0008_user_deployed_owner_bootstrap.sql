@@ -33,6 +33,6 @@ when old.consumed_at is not null and (
   or new.consumed_issuer is not old.consumed_issuer
   or new.consumed_subject is not old.consumed_subject
 )
-begin
+BEGIN
   select raise(abort, 'bootstrap owner identity is immutable');
 end;

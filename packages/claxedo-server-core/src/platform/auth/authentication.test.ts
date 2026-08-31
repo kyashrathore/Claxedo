@@ -152,11 +152,30 @@ describe("provider-neutral control-plane authentication", () => {
         subject: "provider_subject_1",
       },
     })
-    expect(resolveIdentity).toHaveBeenCalledWith({
+    expect(resolveIdentity).toHaveBeenCalledWith(
+      {
+        adapter: "better-auth",
+        issuer: "https://auth.example.test",
+        subject: "provider_subject_1",
+      },
+      expect.any(Request),
+    )
+  })
+
+  test("verifies an enrollment identity without creating or resolving an application account", async () => {
+    const verify = vi.fn(async () => browserSession())
+    const resolveIdentity = vi.fn(activeIdentity)
+    const selected = adapter({ verify, resolveIdentity })
+
+    await expect(selected.verifyIdentity(new Request("https://api.example.test", {
+      headers: { cookie: "better-auth.session_token=opaque" },
+    }))).resolves.toEqual({
       adapter: "better-auth",
       issuer: "https://auth.example.test",
       subject: "provider_subject_1",
     })
+    expect(verify).toHaveBeenCalledOnce()
+    expect(resolveIdentity).not.toHaveBeenCalled()
   })
 
   test("uses the selected adapter once and preserves invalid proof versus verifier outage", async () => {

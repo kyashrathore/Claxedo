@@ -5,6 +5,7 @@ import Database from "better-sqlite3"
 import { afterEach, describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { exercisePrivateSessionAuthorityConformance } from "@claxedo/server-core/platform/auth/private-session-authority.conformance"
+import { exerciseSessionTurnAuthorityConformance } from "@claxedo/server-core/platform/auth/session-turn-authority.conformance"
 import { createSqliteWorkspaceAuthority } from "./workspace-authority"
 
 function auth(subject: string): SignedControlPlaneAuth {
@@ -48,6 +49,7 @@ describe("SQLite private-session authority", () => {
 
     await expect(exercisePrivateSessionAuthorityConformance({
       authority: store,
+      turnAuthority: store,
       workspaceId: "workspace_main",
       creator: {
         auth: creator,
@@ -70,6 +72,72 @@ describe("SQLite private-session authority", () => {
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })
+  })
+
+  test("satisfies durable session-turn conformance across reconstructed adapters", async () => {
+    const directory = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-session-turn-conformance-"))
+    temporaryDirectories.push(directory)
+    const databasePath = path.join(directory, "authority.db")
+    const creator = auth("creator")
+    const participant = auth("participant")
+    const first = createSqliteWorkspaceAuthority({ path: databasePath })
+    const reconstructed = createSqliteWorkspaceAuthority({ path: databasePath })
+    openAuthorities.push(first, reconstructed)
+    await first.usersMe(participant)
+    await first.createCloudWorkspace(creator, { workspaceId: "workspace_main", displayName: "Main" })
+    await first.reserveSession(creator, {
+      operationId: "operation_turns",
+      sessionId: "session_turns",
+      workspaceId: "workspace_main",
+      kind: "create",
+    })
+    await first.registerRuntimeSession({
+      principalKind: "user",
+      actorId: creator.user.tokenIdentifier,
+      actorKind: "human",
+      operationId: "operation_turns",
+      sessionId: "session_turns",
+      workspaceId: "workspace_main",
+    })
+    await first.grantWorkspaceShare(creator, {
+      workspaceId: "workspace_main",
+      role: "editor",
+      target: { kind: "actor", actorId: participant.user.tokenIdentifier },
+    })
+    await first.grantSessionParticipant(creator, {
+      sessionId: "session_turns",
+      workspaceId: "workspace_main",
+      participantActorId: participant.user.tokenIdentifier,
+    })
+    let currentTime = Date.now()
+    const originalNow = Date.now
+    Date.now = () => currentTime
+    try {
+      await expect(exerciseSessionTurnAuthorityConformance({
+        authority: first,
+        reconstructed,
+        workspaceId: "workspace_main",
+        sessionId: "session_turns",
+        actor: {
+          principalKind: "user",
+          actorId: creator.user.tokenIdentifier,
+          actorKind: "human",
+        },
+        competitor: {
+          principalKind: "user",
+          actorId: participant.user.tokenIdentifier,
+          actorKind: "human",
+        },
+        advancePast(expiresAt) {
+          currentTime = expiresAt + 1
+        },
+      })).resolves.toMatchObject({
+        exclusion: { concurrentDenied: true, reconstructionDenied: true },
+        recovery: { expiryTakeover: true, staleReleaseFenced: true },
+      })
+    } finally {
+      Date.now = originalNow
+    }
   })
 
   test("rejects changed operation retries and visibility writes without registration", async () => {

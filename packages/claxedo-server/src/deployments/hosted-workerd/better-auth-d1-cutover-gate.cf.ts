@@ -297,19 +297,36 @@ export async function provisionDeploymentCanaryAdmission(
     on release."deploymentId" = state."deploymentId" and release."releaseId" = state."releaseId"
   where active."singleton" = 1 and state."phase" = 'locked' and state."firstTargetWriteAt" is null
     and state."stateRevision" = ? and state."phaseRevision" = ? and ${exactIdentityPredicate()}
-    and exists (
-      select 1 from "deploymentCutoverEvidenceReceipt" as evidence
-      where evidence."deploymentId" = release."deploymentId" and evidence."releaseId" = release."releaseId"
-        and evidence."workerBuildId" = release."workerBuildId"
-        and evidence."platformVersionId" = release."platformVersionId"
-        and evidence."browserBuildId" = release."browserBuildId"
-        and evidence."relayBuildId" = release."relayBuildId"
-        and evidence."authConfigurationId" = release."authConfigurationId"
-        and evidence."adapterProfile" = release."adapterProfile"
-        and evidence."productPosture" = release."productPosture"
-        and evidence."sandboxPosture" = release."sandboxPosture"
-        and evidence."serviceManifestId" = release."serviceManifestId"
-        and evidence."evidenceKind" in ('migration_conservation_verified', 'greenfield_source_absence_verified')
+    and (
+      exists (
+        select 1 from "deploymentCutoverEvidenceReceipt" as evidence
+        where evidence."deploymentId" = release."deploymentId" and evidence."releaseId" = release."releaseId"
+          and evidence."workerBuildId" = release."workerBuildId"
+          and evidence."platformVersionId" = release."platformVersionId"
+          and evidence."browserBuildId" = release."browserBuildId"
+          and evidence."relayBuildId" = release."relayBuildId"
+          and evidence."authConfigurationId" = release."authConfigurationId"
+          and evidence."adapterProfile" = release."adapterProfile"
+          and evidence."productPosture" = release."productPosture"
+          and evidence."sandboxPosture" = release."sandboxPosture"
+          and evidence."serviceManifestId" = release."serviceManifestId"
+          and evidence."evidenceKind" in ('migration_conservation_verified', 'greenfield_source_absence_verified')
+      ) or (
+        state."transitionKind" in ('locked_replacement', 'open_rollforward')
+        and state."previousStateRevision" is not null
+        and exists (
+          select 1 from "deploymentReleaseStateHistory" as predecessor
+          join "deploymentRelease" as predecessorRelease
+            on predecessorRelease."deploymentId" = predecessor."deploymentId"
+            and predecessorRelease."releaseId" = predecessor."releaseId"
+          where predecessor."deploymentId" = state."deploymentId"
+            and predecessor."stateRevision" = state."previousStateRevision"
+            and predecessorRelease."releaseSequence" < release."releaseSequence"
+            and predecessorRelease."adapterProfile" = release."adapterProfile"
+            and predecessorRelease."productPosture" = release."productPosture"
+            and predecessorRelease."sandboxPosture" = release."sandboxPosture"
+        )
+      )
     )
   on conflict do nothing`,
     )
@@ -326,7 +343,7 @@ export async function provisionDeploymentCanaryAdmission(
     )
     .run()
   if (!result.success) throw new Error("canary admission persistence failed")
-  const row = await requireCanaryAdmission(database, identity)
+  const row = await requireDeploymentCanaryAdmission(database, identity)
   if (
     row.receiptId !== input.receiptId ||
     row.operationId !== input.operationId ||
@@ -339,7 +356,10 @@ export async function provisionDeploymentCanaryAdmission(
   return row
 }
 
-async function requireCanaryAdmission(database: D1Database, identity: DeploymentReleaseIdentity) {
+export async function requireDeploymentCanaryAdmission(
+  database: D1Database,
+  identity: DeploymentReleaseIdentity,
+) {
   const row = await database
     .prepare(
       `select admission."receiptId", admission."operationId",
@@ -498,7 +518,7 @@ export async function recordDeploymentCutoverEvidence(
   if (evidence.kind === "canary_journey_complete") {
     if (state.firstTargetWriteAt === null)
       throw new Error("canary completion requires the serialized first-write boundary")
-    const admission = await requireCanaryAdmission(database, identity)
+    const admission = await requireDeploymentCanaryAdmission(database, identity)
     if (admission.canaryIdentityHash !== evidence.canaryIdentityHash || admission.journeyId !== evidence.journeyId) {
       throw new Error("canary completion does not belong to the admitted journey")
     }
@@ -587,7 +607,7 @@ export async function recordDeploymentCanaryFirstWrite(
     state.previousStateRevision === envelope.binding.stateRevision &&
     state.phase === "canary"
   if (!isExactRetry) requireExactBinding(state, envelope.binding)
-  const admission = await requireCanaryAdmission(database, identity)
+  const admission = await requireDeploymentCanaryAdmission(database, identity)
   if (
     admission.canaryIdentityHash !== envelope.operation.canaryIdentityHash ||
     admission.journeyId !== envelope.operation.journeyId
@@ -715,7 +735,7 @@ export async function admitDeploymentOperation(
   if (operation.kind === "probe") return Object.freeze({ allowed: true as const, state })
   if (state.phase === "locked") throw new Error("locked admits non-mutating probes only")
   if (state.phase === "canary" && operation.kind === "canary_journey") {
-    const admission = await requireCanaryAdmission(database, identity)
+    const admission = await requireDeploymentCanaryAdmission(database, identity)
     if (admission.canaryIdentityHash !== operation.canaryIdentityHash || admission.journeyId !== operation.journeyId) {
       throw new Error("request does not belong to the exclusive canary journey")
     }

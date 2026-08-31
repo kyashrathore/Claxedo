@@ -186,7 +186,7 @@ for (const harness of [
   {
     name: "ACP",
     slug: "acp",
-    runner: { type: "codex-acp" as const },
+    runner: { id: "codex", access: "acp" as const },
     harnesses: [{ match: () => true, create: () => acpFixture() }] satisfies WorkspaceHarnessRegistry,
     model: { providerID: "codex", modelID: "fixture" },
     text: "hello",
@@ -195,7 +195,7 @@ for (const harness of [
     ? [{
         name: "ACP live",
         slug: "acp_live",
-        runner: { type: "codex-acp" as const },
+        runner: { id: "codex", access: "acp" as const },
         harnesses: undefined,
         model: { providerID: "codex-acp", modelID: "default" },
         text: "Reply with exactly: ACP reply. Do not call tools.",

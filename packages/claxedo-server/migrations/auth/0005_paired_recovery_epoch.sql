@@ -16,12 +16,12 @@ create table "deploymentRecoveryEpoch" (
 
 create trigger "deploymentRecoveryEpoch_no_update"
 before update on "deploymentRecoveryEpoch"
-begin
+BEGIN
   select raise(abort, 'deployment recovery epochs are append-only');
 end;
 
 create trigger "deploymentRecoveryEpoch_no_delete"
 before delete on "deploymentRecoveryEpoch"
-begin
+BEGIN
   select raise(abort, 'deployment recovery epochs are append-only');
 end;

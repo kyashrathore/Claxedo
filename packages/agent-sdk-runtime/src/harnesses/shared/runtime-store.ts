@@ -3,6 +3,15 @@ import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../..
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { AdmittedSubagentObservation, SubagentObservation } from "../../subagent-admission"
 
+export class AgentRuntimeStaleTurnError extends Error {
+  readonly code = "session_turn_fence_stale"
+
+  constructor(readonly sessionId: string) {
+    super(`Session ${sessionId} rejected a stale turn generation`)
+    this.name = "AgentRuntimeStaleTurnError"
+  }
+}
+
 export type AgentRuntimeSessionBinding = {
   sessionId: string
   directory: string
@@ -33,6 +42,7 @@ export type AgentRuntimeTurnFinishInput = {
   sessionId: string
   assistantMessageId?: string
   outcome: AgentTurnOutcome
+  fencingToken?: number
 }
 
 export type AgentRuntimeTurnFinishOutput = {
@@ -58,6 +68,7 @@ export type AgentRuntimeStoreCore = {
     agentSessionId?: string
     payload: CompatEvent
     source?: RuntimeAppendSource
+    fencingToken?: number
   }): AgentRuntimeCommittedCompatOutput
   getMessages(id: string): unknown[]
   getTodos(sessionId: string): Array<{ content: string; status: string; priority: string }>

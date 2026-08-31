@@ -63,7 +63,7 @@ describe("credential verification integration", () => {
   test("refreshes a stale Codex credential through the route and persists the renewed secret", async () => {
     setBackendOverride(createTestBackend())
     const credential = await putCredential({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "local_only",
       label: "Synced from local Codex auth",
@@ -110,7 +110,7 @@ describe("credential verification integration", () => {
   test("a Codex credential whose refresh token is rejected stays expired", async () => {
     setBackendOverride(createTestBackend())
     const credential = await putCredential({
-      provider_id: "codex-acp",
+      provider_id: "codex-app-server",
       kind: "oauth_token",
       source: "local_only",
       account_id: "acct_revoked",

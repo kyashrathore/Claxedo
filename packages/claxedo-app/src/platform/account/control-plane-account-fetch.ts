@@ -6,7 +6,7 @@
  * for those.
  */
 import { authFetch } from "@/platform/api/api"
-import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
+import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -50,7 +50,7 @@ async function readJsonBody(input: RequestInfo | URL, init?: RequestInit): Promi
 
 export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetch): typeof fetch {
   return async (input, init) => {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (!run) return fallback(input, init)
 
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url)

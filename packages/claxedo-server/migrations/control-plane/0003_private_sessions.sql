@@ -111,7 +111,7 @@ when new.session_id != old.session_id
   or new.parent_session_id is not old.parent_session_id
   or new.requested_title is not old.requested_title
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'session registration intent is immutable');
 end;
 
@@ -122,7 +122,7 @@ when new.state != old.state and not (
   or (old.state = 'reconciliation_required' and new.state in ('registered', 'compensation_pending'))
   or (old.state = 'compensation_pending' and new.state in ('compensated', 'reconciliation_required'))
 )
-begin
+BEGIN
   select raise(abort, 'invalid session registration state transition');
 end;
 
@@ -137,7 +137,7 @@ when new.operation_id != old.operation_id
   or new.creator_actor_id != old.creator_actor_id
   or new.lifecycle_generation != old.lifecycle_generation
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'session scope is immutable');
 end;
 
@@ -151,6 +151,6 @@ when new.session_id != old.session_id
   or new.actor_id != old.actor_id
   or new.role != old.role
   or new.granted_at != old.granted_at
-begin
+BEGIN
   select raise(abort, 'session participant scope is immutable');
 end;

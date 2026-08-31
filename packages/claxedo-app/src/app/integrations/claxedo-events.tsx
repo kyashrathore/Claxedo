@@ -19,6 +19,7 @@ import {
   accountStreamAvailable,
   openAccountStreamResponse,
 } from "@/platform/account/account-stream-fetch"
+import type { AccountState } from "@/platform/account/account-port"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
@@ -293,6 +294,8 @@ export function claxedoEventStreamTargets(input: {
   directory?: string
   projects?: ProjectCache
   sessionID?: string
+  /** The central control-plane stream exists only for a signed account. */
+  includeCentral?: boolean
 }): ClaxedoEventStreamTarget[] {
   const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
   const central: ClaxedoEventStreamTarget = {
@@ -322,16 +325,17 @@ export function claxedoEventStreamTargets(input: {
       // minted for a workspace that needs none.
       ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
 
-  if (!workspace) return [central]
+  const base = input.includeCentral === false ? [] : [central]
+  if (!workspace) return base
   const sessionID = input.sessionID?.trim()
   // Relay-backed runtimes expose managed-private event streams. A workspace
   // route alone is not authority to observe every session in that workspace;
   // wait until the canonical route carries a real session instead of opening
   // an unscoped stream that the runtime must reject. Local runtimes preserve
   // their existing broad workspace stream.
-  if (workspace.kind !== "local" && (!sessionID || sessionID === "new")) return [central]
+  if (workspace.kind !== "local" && (!sessionID || sessionID === "new")) return base
   return [
-    central,
+    ...base,
     {
       kind: "workspace",
       serverUrl,
@@ -415,10 +419,13 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
 export function eventStreamFetch(
   target: ClaxedoEventStreamTarget,
   init: RequestInit,
-  overrides?: { request?: typeof fetch; relayRequest?: typeof fetch },
+  options?: { request?: typeof fetch; relayRequest?: typeof fetch; accountState?: AccountState },
 ) {
   if (target.kind === "central") {
-    if (!overrides?.request && accountStreamAvailable()) {
+    if (
+      !options?.request &&
+      accountStreamAvailable(options?.accountState ?? { status: "unsigned" })
+    ) {
       const lastEventId = new Headers(init.headers).get("Last-Event-ID") ?? undefined
       return openAccountStreamResponse({
         operation: "session.events",
@@ -426,10 +433,10 @@ export function eventStreamFetch(
         signal: init.signal ?? undefined,
       })
     }
-    return (overrides?.request ?? authFetch)(target.url, init)
+    return (options?.request ?? authFetch)(target.url, init)
   }
   const serverTransport = centralTransportForServer(target.serverUrl)
-  const request = overrides?.request ?? authFetch
+  const request = options?.request ?? authFetch
   const runtimeUrl = new URL(CLAXEDO_EVENTS_RELAY_PATH, "http://workspace-runtime.local")
   if (target.workspaceKind === "local" && target.directory) {
     runtimeUrl.searchParams.set("directory", target.directory)
@@ -447,7 +454,7 @@ export function eventStreamFetch(
     directory: target.directory,
     ...(target.workspaceKind ? { workspace: { kind: target.workspaceKind, workspaceId: target.workspaceId } } : {}),
     request,
-    ...(overrides?.relayRequest ? { relayRequest: overrides.relayRequest } : {}),
+    ...(options?.relayRequest ? { relayRequest: options.relayRequest } : {}),
   }).fetch(runtimePath, init)
 }
 
@@ -461,14 +468,20 @@ function routeDirectory(pathname: string) {
   if (configured) return configured
 }
 
-export function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
-  if (target.kind === "central") return `central:${target.url.href}`
+export function eventStreamTargetKey(
+  target: ClaxedoEventStreamTarget,
+  options: { accountSigned?: boolean } = {},
+) {
+  if (target.kind === "central") {
+    return `central:${target.url.href}:${options.accountSigned === true ? "signed" : "unsigned"}`
+  }
   return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}:${target.sessionID ?? ""}`
 }
 
 export function ClaxedoEventsProvider(props: ParentProps<{
   pathname: () => string
   serverUrl: () => string
+  accountState: () => AccountState
 }>) {
   const emitter = createEventEmitter()
   const connectivity = createStreamConnectivity()
@@ -500,7 +513,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     })
   }
 
-  const connectTarget = (target: ClaxedoEventStreamTarget) => {
+  const connectTarget = (target: ClaxedoEventStreamTarget, accountState: AccountState) => {
     const state = {
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
@@ -598,7 +611,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       void eventStreamFetch(target, {
         headers,
         signal: state.abort.signal,
-      }).then(async (res) => {
+      }, { accountState }).then(async (res) => {
         if (!res.ok || !res.body) {
           // The relay seam maps a failed relay connection to a synthetic 502
           // whose BODY carries the underlying error (e.g. the real
@@ -707,13 +720,22 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   }
 
   const reconcileTargets = () => {
+    const accountState = props.accountState()
+    const accountSigned = accountState.status === "signed"
     const targets = claxedoEventStreamTargets({
       serverUrl: props.serverUrl(),
       directory: routeDirectory(props.pathname()),
       sessionID: claxedoEventRouteSessionID(props.pathname()),
       projects: queryClient.getQueryData<ProjectCache>(queryKeys.controlPlane.projects(props.serverUrl())) ?? [],
+      // Desktop preload exposes hosted stream methods before sign-in, while the
+      // unsigned local product intentionally has no unscoped
+      // `/api/claxedo/events` control-plane route. Opening it anyway produced a
+      // permanent 404 retry loop. Account state is the authority for whether
+      // this stream exists; local workspace events remain on their own runtime
+      // stream below.
+      includeCentral: accountSigned,
     })
-    const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
+    const next = new Map(targets.map((target) => [eventStreamTargetKey(target, { accountSigned }), target]))
     for (const [key, cleanup] of connections) {
       if (next.has(key)) continue
       cleanup()
@@ -721,7 +743,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
     for (const [key, target] of next) {
       if (connections.has(key)) continue
-      connections.set(key, connectTarget(target))
+      connections.set(key, connectTarget(target, accountState))
     }
   }
 

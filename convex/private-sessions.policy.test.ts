@@ -1,6 +1,7 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { convexTest } from "convex-test"
 import { exercisePrivateSessionAuthorityConformance } from "../packages/claxedo-server-core/src/platform/auth/private-session-authority.conformance"
+import { exerciseSessionTurnAuthorityConformance } from "../packages/claxedo-server-core/src/platform/auth/session-turn-authority.conformance"
 import type { SignedControlPlaneAuth } from "../packages/claxedo-server-core/src/platform/auth/auth"
 import { createConvexAuthority } from "../packages/claxedo-server/src/authority/adapters/convex/workspace-authority"
 import schema from "./schema"
@@ -82,7 +83,7 @@ describe("Convex private-session authority", () => {
         created_at: now,
         updated_at: now,
       } as never)
-      return { creatorId: String(creatorId), participantId: String(participantId) }
+      return { creatorId: String(creatorId), participantId: String(participantId), adminId: String(adminId) }
     })
 
     const identities = {
@@ -104,6 +105,7 @@ describe("Convex private-session authority", () => {
 
     await expect(exercisePrivateSessionAuthorityConformance({
       authority,
+      turnAuthority: authority,
       workspaceId: "ws_private_conformance",
       creator: {
         auth: signed("creator-token"),
@@ -118,6 +120,31 @@ describe("Convex private-session authority", () => {
       access: { deniedBeforeGrant: true, allowedAfterGrant: true, deniedAfterRevoke: true },
       attribution: { canonicalActorPreserved: true, forgedActorRemoved: true },
     })
+    vi.useFakeTimers()
+    try {
+      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
+      await expect(exerciseSessionTurnAuthorityConformance({
+        authority,
+        reconstructed: createConvexAuthority({
+          serviceToken,
+          executorForAuth: (auth) => {
+            const client: any = auth ? identities[auth.user.tokenIdentifier as keyof typeof identities] : t
+            return { query: (fn, args) => client.query(fn, args), mutation: (fn, args) => client.mutation(fn, args) }
+          },
+        }),
+        workspaceId: "ws_private_conformance",
+        sessionId: "ses_private_session_contract",
+        actor: { principalKind: "user", actorId: seeded.creatorId, actorKind: "human" },
+        competitor: { principalKind: "user", actorId: seeded.adminId, actorKind: "human" },
+        advancePast: (expiresAt) => { vi.setSystemTime(expiresAt + 1) },
+      })).resolves.toMatchObject({
+        exclusion: { concurrentDenied: true, reconstructionDenied: true },
+        retry: { idempotent: true },
+        recovery: { expiryTakeover: true, staleReleaseFenced: true },
+      })
+    } finally {
+      vi.useRealTimers()
+    }
     await expect(authority.authorizeSessionWrite(signed("admin-token"), {
       sessionId: "ses_private_session_contract",
       workspaceId: "ws_private_conformance",

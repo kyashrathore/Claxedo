@@ -17,11 +17,12 @@ describe("lazy account production wiring", () => {
     expect(broker).toContain('import("./index")')
   })
 
-  test("restored account state settles before the renderer initializes", () => {
-    const ready = main.indexOf("await account.ready")
+  test("restored account state does not gate the local renderer", () => {
+    const ready = main.indexOf("void account.ready.catch")
     const initialize = main.indexOf("await initialize()", ready)
     expect(ready).toBeGreaterThan(-1)
     expect(initialize).toBeGreaterThan(ready)
+    expect(main).not.toContain("await account.ready")
   })
 
   test("a signed-to-unsigned transition pauses Host Connector publication", () => {

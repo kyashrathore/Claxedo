@@ -15,6 +15,15 @@ const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-ea
 export const D1_WORKSPACE_AUTHORITY_METHODS = [
   "usersMe",
   "listOrgs",
+  "createOrg",
+  "listTeams",
+  "createTeamInOrg",
+  "ensureDefaultTeam",
+  "addTeamMember",
+  "removeTeamMember",
+  "listTeamMembers",
+  "grantTeamProject",
+  "revokeTeamProject",
   "resolveOrgId",
   "projectRole",
   "authorizeProject",
@@ -49,7 +58,7 @@ export type D1WorkspaceAuthorityOptions = {
   deploymentId: string
   product: D1AuthorityProductPolicy
   now?: () => number
-  randomId?: (prefix: "usr" | "act" | "org" | "prj" | "assert") => string
+  randomId?: (prefix: "usr" | "act" | "org" | "prj" | "team" | "assert") => string
 }
 
 export type D1WorkspaceCreateArgs = {
@@ -119,12 +128,9 @@ export class D1WorkspaceAuthorityError extends Error {
 }
 
 /**
- * Worker-safe first D1 authority slice.
- *
- * It intentionally implements only the identity/org/project/workspace portion
- * of `WorkspaceAuthority`. Later D1 capability modules can be spread beside
- * this one, matching the existing Convex adapter composition, without putting
- * placeholder implementations behind the full port.
+ * Worker-safe identity, organization, team, project, and workspace authority.
+ * Session-scoped state stays in `D1SessionAuthority`; both modules evaluate
+ * the same canonical D1 rows at decision time.
  */
 export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
   private readonly now: () => number
@@ -669,6 +675,340 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return await this.organizationRows(who.userId)
   }
 
+  async createOrg(auth: SignedControlPlaneAuth, args: { name: string }) {
+    return await this.createHostedOrganization(auth, args)
+  }
+
+  async listTeams(auth: SignedControlPlaneAuth, args: { orgId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const orgId = requireText(args.orgId, "orgId")
+    if (!(await this.activeOrgMembership(who.userId, orgId))) return []
+    const result = await this.database
+      .prepare(
+        `
+      select team_id, org_id, name, is_default
+      from teams
+      where org_id = ? and deleted_at is null
+      order by name, team_id
+    `,
+      )
+      .bind(orgId)
+      .all<{ team_id: string; org_id: string; name: string; is_default: number }>()
+    return result.results.map((row) => ({ ...row, is_default: row.is_default === 1 }))
+  }
+
+  async createTeamInOrg(auth: SignedControlPlaneAuth, args: { orgId: string; name: string }) {
+    const who = await this.requirePrincipal(auth)
+    const orgId = requireText(args.orgId, "orgId")
+    const name = requireText(args.name, "name")
+    this.assertOrganizationAllowed(orgId)
+    const org = await this.database
+      .prepare(`select kind from orgs where org_id = ? and deleted_at is null`)
+      .bind(orgId)
+      .first<{ kind: OrgRow["kind"] }>()
+    if (!org) throw teamAuthorityError("organization_not_found")
+    if (org.kind === "personal") throw teamAuthorityError("team_not_allowed_on_personal_org")
+    if (!(await this.canAdminOrganization(who.userId, orgId))) throw teamAuthorityError("org_admin_required")
+    const teamId = this.randomId("team")
+    const now = this.now()
+    await this.database.batch([
+      this.database
+        .prepare(
+          `
+        insert into teams (
+          team_id, org_id, name, is_default, created_by_user_id, created_at, updated_at, deleted_at
+        )
+        select ?, o.org_id, ?, 0, ?, ?, ?, null
+        from orgs o
+        left join org_memberships m
+          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
+        where o.org_id = ? and o.deleted_at is null
+          and (o.owner_user_id = ? or m.role in ('owner', 'admin'))
+        on conflict (team_id) do nothing
+      `,
+        )
+        .bind(teamId, name, who.userId, now, now, who.userId, orgId, who.userId),
+      this.database
+        .prepare(
+          `
+        insert into team_memberships (
+          team_id, user_id, role, created_at, updated_at, revoked_at
+        )
+        select t.team_id, ?, 'owner', ?, ?, null
+        from teams t where t.team_id = ? and t.org_id = ? and t.deleted_at is null
+        on conflict (team_id, user_id) do update set
+          role = 'owner', updated_at = excluded.updated_at, revoked_at = null
+      `,
+        )
+        .bind(who.userId, now, now, teamId, orgId),
+    ])
+    const created = await this.database
+      .prepare(`select team_id from teams where team_id = ? and org_id = ? and deleted_at is null`)
+      .bind(teamId, orgId)
+      .first()
+    if (!created) throw new D1WorkspaceAuthorityError("resource_conflict", "Team creation authority changed")
+    return { team_id: teamId, org_id: orgId, name, role: "owner" as const }
+  }
+
+  async ensureDefaultTeam(auth: SignedControlPlaneAuth, args: { orgId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const orgId = requireText(args.orgId, "orgId")
+    this.assertOrganizationAllowed(orgId)
+    const org = await this.database
+      .prepare(
+        `
+      select o.name, o.kind
+      from orgs o
+      left join org_memberships m
+        on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
+      where o.org_id = ? and o.deleted_at is null
+        and (o.owner_user_id = ? or m.user_id is not null)
+    `,
+      )
+      .bind(who.userId, orgId, who.userId)
+      .first<{ name: string; kind: OrgRow["kind"] }>()
+    if (!org) throw teamAuthorityError("org_membership_required")
+    if (org.kind === "personal") return { skipped: true as const }
+    const existing = await this.database
+      .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
+      .bind(orgId)
+      .first<{ team_id: string }>()
+    const teamId = existing?.team_id ?? this.randomId("team")
+    const now = this.now()
+    await this.database.batch([
+      this.database
+        .prepare(
+          `
+        insert into teams (
+          team_id, org_id, name, is_default, created_by_user_id, created_at, updated_at, deleted_at
+        )
+        select ?, o.org_id, ?, 1, ?, ?, ?, null
+        from orgs o
+        left join org_memberships m
+          on m.org_id = o.org_id and m.user_id = ? and m.revoked_at is null
+        where o.org_id = ? and o.deleted_at is null
+          and (o.owner_user_id = ? or m.user_id is not null)
+          and not exists (
+            select 1 from teams current
+            where current.org_id = o.org_id and current.is_default = 1 and current.deleted_at is null
+          )
+        on conflict (team_id) do nothing
+      `,
+        )
+        .bind(teamId, org.name || "Everyone", who.userId, now, now, who.userId, orgId, who.userId),
+      this.database
+        .prepare(
+          `
+        insert into team_memberships (
+          team_id, user_id, role, created_at, updated_at, revoked_at
+        )
+        select ?, om.user_id,
+          case when om.role in ('owner', 'admin') then om.role else 'member' end,
+          ?, ?, null
+        from org_memberships om
+        join users u on u.user_id = om.user_id and u.state = 'active'
+        join teams t on t.team_id = ? and t.org_id = om.org_id and t.deleted_at is null
+        where om.org_id = ? and om.revoked_at is null
+        on conflict (team_id, user_id) do update set
+          role = excluded.role, updated_at = excluded.updated_at, revoked_at = null
+      `,
+        )
+        .bind(teamId, now, now, teamId, orgId),
+      this.database
+        .prepare(
+          `
+        insert into team_project_grants (
+          team_id, project_id, role, created_by_user_id, created_at, updated_at, revoked_at
+        )
+        select ?, p.project_id, 'editor', ?, ?, ?, null
+        from projects p
+        join teams t on t.team_id = ? and t.org_id = p.org_id and t.deleted_at is null
+        where p.org_id = ? and p.deleted_at is null
+        on conflict (team_id, project_id) do update set
+          role = excluded.role,
+          created_by_user_id = excluded.created_by_user_id,
+          updated_at = excluded.updated_at,
+          revoked_at = null
+      `,
+        )
+        .bind(teamId, who.userId, now, now, teamId, orgId),
+    ])
+    const selected = await this.database
+      .prepare(`select team_id from teams where org_id = ? and is_default = 1 and deleted_at is null`)
+      .bind(orgId)
+      .first<{ team_id: string }>()
+    if (!selected) throw new D1WorkspaceAuthorityError("resource_conflict", "Default team creation raced")
+    return {
+      team_id: selected.team_id,
+      org_id: orgId,
+      workspace_shares_retargeted: 0,
+      session_shares_retargeted: 0,
+    }
+  }
+
+  async addTeamMember(
+    auth: SignedControlPlaneAuth,
+    args: {
+      teamId: string
+      tokenIdentifier?: string
+      clerkSubject?: string
+      userPublicId?: string
+      role?: "member" | "admin" | "owner"
+    },
+  ) {
+    const who = await this.requirePrincipal(auth)
+    const teamId = requireText(args.teamId, "teamId")
+    const team = await this.team(teamId)
+    if (!team) throw teamAuthorityError("team_not_found")
+    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
+    const target = await this.resolveTeamUser(args)
+    if (!target) throw teamAuthorityError("team_member_not_found")
+    if (!(await this.activeOrgMembership(target.user_id, team.org_id))) {
+      throw teamAuthorityError("team_member_org_membership_required")
+    }
+    const role = args.role ?? "member"
+    const now = this.now()
+    await this.database
+      .prepare(
+        `
+      insert into team_memberships (team_id, user_id, role, created_at, updated_at, revoked_at)
+      select t.team_id, ?, ?, ?, ?, null
+      from teams t
+      join org_memberships target on target.org_id = t.org_id and target.user_id = ? and target.revoked_at is null
+      where t.team_id = ? and t.deleted_at is null and ${organizationAdminSql("t.org_id", "?")}
+      on conflict (team_id, user_id) do update set
+        role = excluded.role, updated_at = excluded.updated_at, revoked_at = null
+    `,
+      )
+      .bind(target.user_id, role, now, now, target.user_id, teamId, who.userId, who.userId)
+      .run()
+    const active = await this.database
+      .prepare(`select role from team_memberships where team_id = ? and user_id = ? and revoked_at is null`)
+      .bind(teamId, target.user_id)
+      .first<{ role: string }>()
+    if (!active || active.role !== role) {
+      throw new D1WorkspaceAuthorityError("resource_conflict", "Team membership authority changed")
+    }
+    return { team_id: teamId, user_id: target.user_id, public_id: target.user_id, role }
+  }
+
+  async removeTeamMember(
+    auth: SignedControlPlaneAuth,
+    args: { teamId: string; tokenIdentifier?: string; clerkSubject?: string; userPublicId?: string },
+  ) {
+    const who = await this.requirePrincipal(auth)
+    const teamId = requireText(args.teamId, "teamId")
+    const team = await this.team(teamId)
+    if (!team) throw teamAuthorityError("team_not_found")
+    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
+    const target = await this.resolveTeamUser(args)
+    if (!target) return { removed: false }
+    const now = this.now()
+    const result = await this.database
+      .prepare(
+        `
+      update team_memberships set revoked_at = ?, updated_at = ?
+      where team_id = ? and user_id = ? and revoked_at is null
+        and ${organizationAdminSql("(select org_id from teams where team_id = team_memberships.team_id)", "?")}
+    `,
+      )
+      .bind(now, now, teamId, target.user_id, who.userId, who.userId)
+      .run()
+    return { removed: (result.meta.changes ?? 0) > 0 }
+  }
+
+  async listTeamMembers(auth: SignedControlPlaneAuth, args: { teamId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const teamId = requireText(args.teamId, "teamId")
+    const team = await this.team(teamId)
+    if (!team || !(await this.activeOrgMembership(who.userId, team.org_id))) return []
+    const result = await this.database
+      .prepare(
+        `
+      select tm.user_id, tm.user_id as public_id, tm.role,
+        (select ai.issuer || '|' || ai.subject from auth_identities ai
+          where ai.user_id = tm.user_id and ai.unlinked_at is null
+          order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as token_identifier,
+        (select ai.subject from auth_identities ai
+          where ai.user_id = tm.user_id and ai.unlinked_at is null
+          order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as clerk_subject
+      from team_memberships tm
+      join users u on u.user_id = tm.user_id and u.state = 'active'
+      join org_memberships om on om.user_id = tm.user_id and om.org_id = ? and om.revoked_at is null
+      where tm.team_id = ? and tm.revoked_at is null
+      order by case tm.role when 'owner' then 3 when 'admin' then 2 else 1 end desc, tm.user_id
+    `,
+      )
+      .bind(team.org_id, teamId)
+      .all<Record<string, unknown>>()
+    return result.results
+  }
+
+  async grantTeamProject(
+    auth: SignedControlPlaneAuth,
+    args: { teamId: string; projectId: string; role: "viewer" | "editor" | "admin" },
+  ) {
+    const who = await this.requirePrincipal(auth)
+    const teamId = requireText(args.teamId, "teamId")
+    const projectId = requireText(args.projectId, "projectId")
+    const team = await this.team(teamId)
+    if (!team) throw teamAuthorityError("team_not_found")
+    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
+    const project = await this.database
+      .prepare(`select org_id from projects where project_id = ? and deleted_at is null`)
+      .bind(projectId)
+      .first<{ org_id: string }>()
+    if (!project || project.org_id !== team.org_id) throw teamAuthorityError("project_not_found")
+    const now = this.now()
+    await this.database
+      .prepare(
+        `
+      insert into team_project_grants (
+        team_id, project_id, role, created_by_user_id, created_at, updated_at, revoked_at
+      )
+      select t.team_id, p.project_id, ?, ?, ?, ?, null
+      from teams t join projects p on p.org_id = t.org_id and p.project_id = ? and p.deleted_at is null
+      where t.team_id = ? and t.deleted_at is null and ${organizationAdminSql("t.org_id", "?")}
+      on conflict (team_id, project_id) do update set
+        role = excluded.role,
+        created_by_user_id = excluded.created_by_user_id,
+        updated_at = excluded.updated_at,
+        revoked_at = null
+    `,
+      )
+      .bind(args.role, who.userId, now, now, projectId, teamId, who.userId, who.userId)
+      .run()
+    const active = await this.database
+      .prepare(`select role from team_project_grants where team_id = ? and project_id = ? and revoked_at is null`)
+      .bind(teamId, projectId)
+      .first<{ role: string }>()
+    if (!active || active.role !== args.role) {
+      throw new D1WorkspaceAuthorityError("resource_conflict", "Team project authority changed")
+    }
+    return { team_id: teamId, project_id: projectId, role: args.role }
+  }
+
+  async revokeTeamProject(auth: SignedControlPlaneAuth, args: { teamId: string; projectId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const teamId = requireText(args.teamId, "teamId")
+    const projectId = requireText(args.projectId, "projectId")
+    const team = await this.team(teamId)
+    if (!team) throw teamAuthorityError("team_not_found")
+    if (!(await this.canAdminOrganization(who.userId, team.org_id))) throw teamAuthorityError("org_admin_required")
+    const now = this.now()
+    const result = await this.database
+      .prepare(
+        `
+      update team_project_grants set revoked_at = ?, updated_at = ?
+      where team_id = ? and project_id = ? and revoked_at is null
+        and ${organizationAdminSql("(select org_id from teams where team_id = team_project_grants.team_id)", "?")}
+    `,
+      )
+      .bind(now, now, teamId, projectId, who.userId, who.userId)
+      .run()
+    return { revoked: (result.meta.changes ?? 0) > 0 }
+  }
+
   async resolveOrgId(auth: SignedControlPlaneAuth) {
     const who = await this.requirePrincipal(auth)
     const orgs = await this.organizationRows(who.userId)
@@ -717,7 +1057,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     const who = await this.requirePrincipal(auth)
     const result = await this.database
       .prepare(workspaceAccessSql("w.deleted_at is null"))
-      .bind(who.userId, who.userId, who.userId, who.userId, who.userId, who.userId)
+      .bind(who.userId, who.userId, who.userId, who.userId, who.userId, who.userId, who.userId)
       .all<WorkspaceAccessRow>()
     return result.results
       .filter((row) => row.role_rank >= 1)
@@ -1083,6 +1423,52 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       .first())
   }
 
+  private async team(teamId: string) {
+    return await this.database
+      .prepare(`select team_id, org_id, name, is_default from teams where team_id = ? and deleted_at is null`)
+      .bind(teamId)
+      .first<{ team_id: string; org_id: string; name: string; is_default: number }>()
+  }
+
+  private async resolveTeamUser(args: {
+    tokenIdentifier?: string
+    clerkSubject?: string
+    userPublicId?: string
+  }) {
+    const selectors = [args.tokenIdentifier, args.clerkSubject, args.userPublicId].filter(
+      (value): value is string => typeof value === "string" && !!value.trim(),
+    )
+    if (selectors.length !== 1) throw teamAuthorityError("team_member_target_required")
+    if (args.userPublicId) {
+      return await this.database
+        .prepare(`select user_id from users where user_id = ? and state = 'active'`)
+        .bind(requireText(args.userPublicId, "userPublicId"))
+        .first<{ user_id: string }>()
+    }
+    const tokenIdentifier = args.tokenIdentifier?.trim()
+    if (tokenIdentifier) {
+      return await this.database
+        .prepare(
+          `
+        select ai.user_id from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
+        where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
+      `,
+        )
+        .bind(requireText(tokenIdentifier, "tokenIdentifier"))
+        .first<{ user_id: string }>()
+    }
+    return await this.database
+      .prepare(
+        `
+      select ai.user_id from auth_identities ai join users u on u.user_id = ai.user_id and u.state = 'active'
+      where ai.subject = ? and ai.unlinked_at is null
+      order by ai.linked_at, ai.adapter, ai.issuer limit 1
+    `,
+      )
+      .bind(requireText(args.clerkSubject!, "clerkSubject"))
+      .first<{ user_id: string }>()
+  }
+
   private async projectAccess(userId: string, projectId: string, orgId?: string) {
     return await this.database
       .prepare(
@@ -1091,6 +1477,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
         max(
           case when p.owner_user_id = ? then 4 else 0 end,
           coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
+          coalesce((
+            select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
+            from team_project_grants tg
+            join team_memberships tm
+              on tm.team_id = tg.team_id and tm.user_id = ? and tm.revoked_at is null
+            join teams t on t.team_id = tg.team_id and t.org_id = p.org_id and t.deleted_at is null
+            where tg.project_id = p.project_id and tg.revoked_at is null
+          ), 0),
           case when o.owner_user_id = ? then 3
             when om.role in ('owner', 'admin') then 3
             when om.role = 'member' then 1 else 0 end
@@ -1105,14 +1499,14 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
         and (o.owner_user_id = ? or om.user_id is not null)
     `,
       )
-      .bind(userId, userId, userId, userId, projectId, orgId ?? null, orgId ?? null, userId)
+      .bind(userId, userId, userId, userId, userId, projectId, orgId ?? null, orgId ?? null, userId)
       .first<ProjectAccessRow>()
   }
 
   private async workspaceAccess(userId: string, workspaceId: string) {
     const row = await this.database
       .prepare(workspaceAccessSql("w.workspace_id = ? and w.deleted_at is null"))
-      .bind(userId, userId, userId, userId, userId, workspaceId, userId)
+      .bind(userId, userId, userId, userId, userId, userId, workspaceId, userId)
       .first<WorkspaceAccessRow>()
     return row && row.role_rank >= 1 ? row : null
   }
@@ -1143,6 +1537,14 @@ function workspaceAccessSql(predicate: string) {
         case when w.owner_user_id = ? then 4 else 0 end,
         coalesce(case wm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
         coalesce(case pm.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 when 'owner' then 4 end, 0),
+        coalesce((
+          select max(case tg.role when 'viewer' then 1 when 'editor' then 2 when 'admin' then 3 end)
+          from team_project_grants tg
+          join team_memberships tm
+            on tm.team_id = tg.team_id and tm.user_id = ? and tm.revoked_at is null
+          join teams t on t.team_id = tg.team_id and t.org_id = w.org_id and t.deleted_at is null
+          where tg.project_id = w.project_id and tg.revoked_at is null
+        ), 0),
         case when o.owner_user_id = ? then 3
           when om.role in ('owner', 'admin') then 3
           when om.role = 'member' then 1 else 0 end
@@ -1281,7 +1683,11 @@ function batchAssertionFailed(error: unknown): boolean {
   return batchAssertionFailed(error.cause)
 }
 
-function randomId(prefix: "usr" | "act" | "org" | "prj" | "assert") {
+function randomId(prefix: "usr" | "act" | "org" | "prj" | "team" | "assert") {
   const bytes = crypto.getRandomValues(new Uint8Array(16))
   return `${prefix}_${Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("")}`
+}
+
+function teamAuthorityError(code: string) {
+  return new Error(code)
 }

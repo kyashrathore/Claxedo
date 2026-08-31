@@ -53,9 +53,11 @@ export const desktopMainComposition: Policy = {
   // daemon-exit lifecycle owner. Account identity resolution (`account/identity.ts`,
   // reached through the lazy account composition the source walk includes)
   // publishes display name/email after OAuth. Account IPC and service timing
-  // share `account/account-perf.ts` as the single diagnostics owner; keep the
-  // measured closure ceiling exact with no headroom.
-  ceilings: { modules: 79, packages: 23 },
+  // share `account/account-perf.ts` as the single diagnostics owner. The
+  // credential-bound auth descriptor and native refresh owner replace the old
+  // userinfo identity module, a reviewed net +1 module with no package growth.
+  // Keep the measured closure exact with no headroom.
+  ceilings: { modules: 80, packages: 22 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -213,8 +215,13 @@ export const desktopRendererUnsigned: Policy = {
   // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
   // documents/WorkGraph) + 1 (control-plane fetch) + 1 (SSE stream) + 1
   // (agent-config extensions) = 1007. The 16 lazy provider-settings locale
-  // dictionaries shared with app-local bring this to 1023, with no package edge.
-  ceilings: { modules: 1023, packages: 62 },
+  // dictionaries shared with app-local bring this to 1023. The reviewed
+  // deployable-service split adds the service contribution catalog, Documents
+  // and WorkGraph contribution roots, bootstrap-owner route, and canonical
+  // private-session reservation client while retiring the monolithic hosted
+  // contribution loader: net +5 modules. `@claxedo/service-contract` is the
+  // one dependency-neutral package addition. Exact closure: 1028/59.
+  ceilings: { modules: 1028, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -253,35 +260,26 @@ export const desktopHostedContribution: Policy = {
   permittedOutsideRoots: MANIFEST_READS,
   permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
   control: {
-    minModules: 250,
+    minModules: 4,
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
-    requiredPackages: ["solid-js", "@claxedo/workgraph"],
+    requiredPackages: [],
   },
-  // The hosted task composer now reaches the existing canonical config owner.
-  // Tenant-aware multiplayer adds the agent-runtime request-error mapper to
-  // the already reachable hosted contribution graph: 301 + 1 = 302 modules.
-  // Workspace resolve + connection mint/refresh AccountPort wiring pulls in the
-  // shared bridge (`hosted-control-call`) and result decoders (`hosted-operations`)
-  // through `workspace-runtime-record` / `workspace-relay-connection`:
-  // 302 + 2 = 304 modules, still no package edge.
-  // Control-plane AccountPort fetch adapter:
-  // 304 + 1 = 305 modules, still no package edge.
-  // AccountPort SSE stream adapter for central `session.events`:
-  // 305 + 1 = 306. The 16 lazy provider-settings locale dictionaries shared
-  // with app-local bring this to 322, still no package edge.
-  ceilings: { modules: 322, packages: 40 },
+  // Optional service renderers now have independent catalog-driven roots. This
+  // activation entry owns only desktop machine remote access and its shared
+  // contract, so the reviewed closure deliberately shrinks from 322/40 to 4/0.
+  ceilings: { modules: 4, packages: 0 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
-    minModules: 500,
-    minChunks: 50,
+    minModules: 4,
+    minChunks: 1,
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],

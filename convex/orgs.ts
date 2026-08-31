@@ -742,6 +742,25 @@ const ORG_SESSION_CASCADE: ParentCascade = {
   ],
 }
 
+/**
+ * Canonical private-session state is workspace-owned, but every dependent row
+ * is indexed by the immutable session id rather than by organization. Drain
+ * those children before the session row so an interrupted batched purge can
+ * never strand transcript, participant, registration, or fencing state.
+ */
+export const ORG_PRIVATE_SESSION_CASCADE: ParentCascade = {
+  table: "private_sessions",
+  index: "by_workspace_updated",
+  field: "workspace_id",
+  children: [
+    { table: "private_session_registrations", index: "by_session_id", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_participants", index: "by_session_actor", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_messages", index: "by_session_ordinal", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_turn_leases", index: "by_session_id", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_turn_producers", index: "by_session_turn", field: "session_id", parentKey: "session_id" },
+  ],
+}
+
 const ORG_PROJECT_CASCADE: ParentCascade = {
   table: "projects",
   index: "by_org",
@@ -792,7 +811,13 @@ export const ORG_PURGED_TABLES: readonly string[] = [
   ...ORG_CLERK_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_DOC_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_PUBLIC_TABLES.map((plan) => plan.table),
-  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_TEAM_CASCADE, ORG_CONNECTION_CASCADE].flatMap((cascade) => [
+  ...[
+    ORG_SESSION_CASCADE,
+    ORG_PRIVATE_SESSION_CASCADE,
+    ORG_PROJECT_CASCADE,
+    ORG_TEAM_CASCADE,
+    ORG_CONNECTION_CASCADE,
+  ].flatMap((cascade) => [
     cascade.table,
     ...cascade.children.map((child) => child.table),
   ]),
@@ -884,6 +909,12 @@ export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
   // as authority over the purged org — the resulting connection rows and their
   // credentials ARE reaped, by `ORG_CONNECTION_CASCADE`.
   connection_attempts: "short-lived, untenanted connect handshakes; self-expiring and reaped on a cron",
+  // Service installation state is keyed by deployment identity, not by an org
+  // or workspace. One deployment can serve many organizations, so deleting it
+  // for one tenant would disable shared infrastructure. Neither table contains
+  // user identity or grants authority over tenant data.
+  service_installations: "deployment-wide service topology; not org-owned",
+  service_installation_audit: "deployment-wide service lifecycle audit; not org-owned",
   // W4.4: infrastructure mutual exclusion, one row per cron LANE (a logical name
   // like "workgraph_reconcile"), never per tenant. `holder` is an
   // isolate/invocation identity. Purging a lane's lease because some org was
@@ -1029,6 +1060,7 @@ async function drainWorkspaces(ctx: any, orgId: unknown, state: BatchState) {
     if (!workspace) return true
     // Sessions carry their own children, so they cascade before the flat lists.
     if (!(await drainCascade(ctx, ORG_SESSION_CASCADE, workspace._id, state))) return false
+    if (!(await drainCascade(ctx, ORG_PRIVATE_SESSION_CASCADE, workspace._id, state))) return false
     if (!(await drainAll(ctx, ORG_WORKSPACE_DOC_TABLES, workspace._id, state))) return false
     if (!(await drainAll(ctx, ORG_WORKSPACE_PUBLIC_TABLES, workspace.workspace_id, state))) return false
     if (state.remaining === 0) return false

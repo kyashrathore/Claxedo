@@ -412,8 +412,8 @@ describe("control plane integration", () => {
     expect(body.project).toEqual([])
     expect(body.provider).toEqual(indexedUpstreamProvider)
     expect(body.provider_auth).toMatchObject({
-      "claude-acp": [{ type: "api", label: "API Key" }],
-      "codex-acp": [
+      "claude-sdk": [{ type: "api", label: "API Key" }],
+      "codex-app-server": [
         { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },
         { type: "api", label: "API Key" },
       ],
@@ -810,6 +810,7 @@ describe("control plane integration", () => {
         eventType: "Start",
       }),
     })
+
     expect(res.status).toBe(200)
 
     const event = await stream.event
@@ -896,7 +897,7 @@ describe("control plane integration", () => {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        type: "claude-acp",
+        type: "acp:claude",
         sessionId: session.id,
         workspaceId: ws.id,
         directory: ws.directory,

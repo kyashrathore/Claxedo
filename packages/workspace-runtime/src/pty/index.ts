@@ -97,6 +97,9 @@ export namespace Pty {
       actor: SessionAccessActor
       authority: SessionWorkspaceAuthority
     }
+    sessionId: string
+    authorityLease: string
+    authorityExpiresAt: number
   }
   const log = Log.create({ service: "pty" })
 
@@ -549,8 +552,18 @@ export namespace Pty {
     for (const [terminalId, session] of sessions) {
       if (session.exited || session.removed) continue
       if (session.agentHookAccess?.token !== token) continue
-      return { terminalId, context: session.agentHookAccess.context }
+      return { terminalId, ...session.agentHookAccess }
     }
+  }
+
+  export function renewAgentHookAccess(token: string, lease: { authorityLease: string; authorityExpiresAt: number }) {
+    for (const session of sessions.values()) {
+      if (session.exited || session.removed || session.agentHookAccess?.token !== token) continue
+      session.agentHookAccess.authorityLease = lease.authorityLease
+      session.agentHookAccess.authorityExpiresAt = lease.authorityExpiresAt
+      return true
+    }
+    return false
   }
 
   export function agentHookToken(id: string) {

@@ -416,6 +416,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // ones, since a room's retention ring is shared by every member of an org.
       const authorize = async () => {
         const auth = await controlPlaneAuthContext(c.req.raw, {
+          authentication: options.authentication,
           config: options.authConfig,
           ...(options.verifier ? { verifier: options.verifier } : {}),
         })

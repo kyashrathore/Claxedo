@@ -20,8 +20,6 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-import { Hono } from "hono"
-import type { SessionAccessPolicy } from "../session-access-policy"
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
@@ -174,6 +172,59 @@ function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAcc
 }
 
 describe("createSessionRoutes private-session lifecycle", () => {
+  test("managed event revocation ends the reader and ignores later private frames", async () => {
+    let authorityCalls = 0
+    let listener: ((event: unknown) => void) | undefined
+    const policy = managedPolicy({
+      authorizeStream: async () => {
+        authorityCalls += 1
+        return authorityCalls === 1
+          ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+          : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+      },
+    })
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => "/workspace",
+      sessionAccessPolicy: policy,
+      sessionBus: {
+        publish: () => {},
+        subscribe: (next) => {
+          listener = next
+          return () => {
+            listener = undefined
+          }
+        },
+      },
+      publishGlobal: () => {},
+    })
+    const wrapped = new Hono()
+    wrapped.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+    wrapped.route("/", app)
+
+    const response = await wrapped.request("http://localhost/event?sessionID=ses_private")
+    const reader = response.body!.getReader()
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    listener?.({ type: "session.updated", properties: { info: { id: "ses_private" } } })
+
+    expect(response.status).toBe(200)
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
+  })
+
   test("requires a preassigned session and reservation operation before runtime mutation", async () => {
     let creates = 0
     const fixture = { ...adapter(), getSession: async () => null, createSession: async () => {
@@ -399,6 +450,49 @@ describe("createSessionRoutes private-session lifecycle", () => {
     expect(response.status).toBe(409)
     expect(await response.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
     expect(sends).toBe(0)
+  })
+
+  test("holds the durable turn through checkpoint and final message publication", async () => {
+    const calls: string[] = []
+    const assistant = {
+      info: { id: "assistant_1", sessionID: "ses_private", role: "assistant" },
+      parts: [],
+    } as AgentMessageRow
+    const fixture = adapter({
+      events: [
+        messageUpdated(assistant.info as Message),
+        sessionIdle("ses_private"),
+      ],
+      messages: [assistant],
+    })
+    const response = await managedRoutes({
+      policy: managedPolicy({
+        releaseTurn: async () => {
+          calls.push("release")
+          return { released: true }
+        },
+      }),
+      adapter: fixture,
+      afterMessageCheckpoint: () => {
+        calls.push("checkpoint")
+      },
+      publishGlobal: (event) => {
+        calls.push(`publish:${event.payload.type}`)
+      },
+    }).request("/session/ses_private/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageID: "user_1", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    expect(response.status).toBe(200)
+    const checkpoint = calls.indexOf("checkpoint")
+    const finalPublish = calls.lastIndexOf("publish:message.updated")
+    const release = calls.indexOf("release")
+    expect(checkpoint).toBeGreaterThanOrEqual(0)
+    expect(finalPublish).toBeGreaterThanOrEqual(0)
+    expect(release).toBeGreaterThan(checkpoint)
+    expect(release).toBeGreaterThan(finalPublish)
   })
 })
 
@@ -662,6 +756,9 @@ function registrationPolicy(
     authorizePrefix: async () => ({ allowed: true }),
     filterSessions: async (input) => input.sessionIds,
     registerSession,
+    markRegistrationAmbiguous: async () => ({ allowed: true }),
+    beginRegistrationCompensation: async () => ({ allowed: true }),
+    completeRegistrationCompensation: async () => ({ allowed: true }),
   }
 }
 
@@ -760,10 +857,14 @@ describe("createSessionRoutes directory-less sessions", () => {
           ? { allowed: false, status: 403, code: "session_private", message: "Registration denied" }
           : { allowed: true }
       }),
+      getSession: (_directory, id) => persisted.has(id)
+        ? { id, title: "Private", time: { created: 1, updated: 1 } }
+        : null,
     })
 
     const request = () => app.request("http://localhost/session", {
       method: "POST",
+      headers: { "x-claxedo-session-registration-operation": "op_stable" },
       body: JSON.stringify({ id: "session_stable" }),
     })
     expect((await request()).status).toBe(403)
@@ -775,7 +876,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     ])
   })
 
-  test("reconciles a timeout after registration commit before compensating", async () => {
+  test("preserves an ambiguous registration for exact-operation retry", async () => {
     const calls: string[] = []
     let registrations = 0
     const item = adapter()
@@ -792,9 +893,14 @@ describe("createSessionRoutes directory-less sessions", () => {
       }),
     })
 
-    const response = await app.request("http://localhost/session", { method: "POST", body: "{}" })
+    const request = () => app.request("http://localhost/session", {
+      method: "POST",
+      headers: { "x-claxedo-session-registration-operation": "op_committed" },
+      body: JSON.stringify({ id: "session_committed" }),
+    })
 
-    expect(response.status).toBe(201)
+    expect((await request()).status).toBe(503)
+    expect((await request()).status).toBe(201)
     expect(registrations).toBe(2)
     expect(calls).toEqual([])
   })
@@ -821,7 +927,8 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     const response = await app.request("http://localhost/session/session_parent/fork", {
       method: "POST",
-      body: JSON.stringify({ messageId: "message_1" }),
+      headers: { "x-claxedo-session-registration-operation": "op_fork_child" },
+      body: JSON.stringify({ id: "session_child", messageId: "message_1" }),
     })
 
     expect(response.status).toBe(201)
@@ -849,7 +956,8 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     const response = await app.request("http://localhost/session/session_parent/fork", {
       method: "POST",
-      body: "{}",
+      headers: { "x-claxedo-session-registration-operation": "op_fork_denied" },
+      body: JSON.stringify({ id: "session_child" }),
     })
 
     expect(response.status).toBe(403)
@@ -870,6 +978,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   test("filters transcript-bearing collections through the verified relay actor", async () => {
     const calls: Array<{ operation: string; actorId?: string; sessionIds: string[] }> = []
     const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
       authorizePrefix: async () => ({ allowed: true }),
       filterSessions: async (input) => {

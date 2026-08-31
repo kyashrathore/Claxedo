@@ -3,9 +3,13 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { RelayRole } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
-import type { RelayRole } from "@claxedo/workspace-relay"
+
+function workspaceRoleAllowsWrite(role: unknown) {
+  return role === "editor" || role === "admin" || role === "owner"
+}
 
 class HostedSessionPullError extends Error {
   constructor(
@@ -34,12 +38,8 @@ function requireSignedAuth(auth: ControlPlaneAuthContext | undefined) {
   throw new HostedSessionPullError(401, "signed_auth_required", "Signed auth is required")
 }
 
-function workspaceRole(input: unknown): RelayRole | undefined {
-  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
-}
-
-function workspaceRoleAllowsWrite(input: unknown) {
-  return input === "editor" || input === "admin" || input === "owner"
+function relayRole(value: unknown): RelayRole | undefined {
+  return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
 function sessionStamp(input: Record<string, unknown>) {
@@ -75,6 +75,7 @@ function messagesPayload(input: unknown) {
     )
   }
   const maxEventOrdinal = row.maxEventOrdinal
+  const fencingToken = row.fencingToken
   if (
     maxEventOrdinal !== undefined
     && (typeof maxEventOrdinal !== "number" || !Number.isInteger(maxEventOrdinal) || maxEventOrdinal < 0)
@@ -85,9 +86,20 @@ function messagesPayload(input: unknown) {
       "Workspace runtime returned an invalid message snapshot",
     )
   }
+  if (
+    fencingToken !== undefined
+    && (typeof fencingToken !== "number" || !Number.isSafeInteger(fencingToken) || fencingToken <= 0)
+  ) {
+    throw new HostedSessionPullError(
+      502,
+      "workspace_runtime_snapshot_invalid",
+      "Workspace runtime returned an invalid message snapshot fence",
+    )
+  }
   return {
     messages: row.messages,
     maxEventOrdinal,
+    fencingToken,
     session: row.session,
   }
 }
@@ -129,7 +141,7 @@ async function hostedWorkspaceForPull(
   const signed = requireSignedAuth(auth)
   const authority = requireAuthority(services)
   const opened = await authority.openWorkspace(signed, { workspaceId })
-  const role = workspaceRole(rec(opened)?.role)
+  const role = relayRole(rec(opened)?.role)
   if (!role) throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace access is denied")
   const workspace = rec(rec(opened)?.workspace)
   const orgId =
@@ -180,11 +192,8 @@ async function runtimeFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: input.hostId,
-    subject: auth?.mode === "signed" ? auth.user.subject : "control-plane",
-    principalKind: auth?.mode === "signed" ? "user" : "service",
-    ...(auth?.mode === "signed"
-      ? await resolveRuntimeActor(requireAuthority(services), auth)
-      : { actorId: "control-plane", actorKind: "agent" as const }),
+    principalKind: "user",
+    ...await resolveRuntimeActor(requireAuthority(services), requireSignedAuth(auth)),
     orgId,
     role: input.role,
     ttlMs: 10 * 60_000,
@@ -301,7 +310,7 @@ export async function pullHostedControlSessionMessages(
   })
   const payload = messagesPayload(pulled)
   assertPulledSession(payload.session, input.sessionId)
-  const syncAuthority = async () => {
+  const syncAuthority = async (messages: unknown[], maxEventOrdinal: number, fencingToken?: number) => {
     const intakeReady = await runtimeJson<unknown>(services, signed, {
       ...target,
       path: "/session/status",
@@ -309,21 +318,17 @@ export async function pullHostedControlSessionMessages(
       (status) => sessionIsIdle(status, input.sessionId),
       () => false,
     )
-    while (true) {
-      const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
-      await requireAuthority(services).syncSessionMessages(signed, {
-        workspaceId: target.workspaceId,
-        sessionId: input.sessionId,
-        messages: services.projectionStore.read_session_messages(input.sessionId),
-        maxEventOrdinal,
-        intakeReady,
-      })
-      if (services.projectionStore.read_session_max_event_ordinal(input.sessionId) === maxEventOrdinal) return
-    }
+    await requireAuthority(services).syncSessionMessages(signed, {
+      workspaceId: target.workspaceId,
+      sessionId: input.sessionId,
+      messages,
+      maxEventOrdinal,
+      ...(fencingToken === undefined ? {} : { fencingToken }),
+      intakeReady,
+    })
   }
   const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
   if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
-    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -338,7 +343,6 @@ export async function pullHostedControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    await syncAuthority()
     await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
     return {
       ok: true,
@@ -349,7 +353,6 @@ export async function pullHostedControlSessionMessages(
     }
   }
   if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
-    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -365,7 +368,6 @@ export async function pullHostedControlSessionMessages(
     })
   if (applied === false) {
     const canonicalOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
-    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -374,7 +376,11 @@ export async function pullHostedControlSessionMessages(
       ...(payload.maxEventOrdinal === undefined ? {} : { snapshotOrdinal: payload.maxEventOrdinal }),
     }
   }
-  await syncAuthority()
+  await syncAuthority(
+    payload.messages,
+    payload.maxEventOrdinal ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),
+    payload.fencingToken,
+  )
   await syncHostedSessionMetadata(services, signed, target, input.sessionId, payload.session)
   return {
     ok: true,

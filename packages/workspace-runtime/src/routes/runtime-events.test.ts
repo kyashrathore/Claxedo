@@ -108,6 +108,34 @@ function bootstrapId(text: string) {
 }
 
 describe("runtimeBusEventsHandler — /api/wr/events replay", () => {
+  test("managed revocation ends the reader and ignores later private frames", async () => {
+    const bus = createBus<WorkspaceRuntimeEvent>()
+    let authorityCalls = 0
+    const policy = managedPolicy()
+    policy.authorizeStream = async () => {
+      authorityCalls += 1
+      return authorityCalls === 1
+        ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+        : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+    }
+    const app = mount(bus, { sessionAccessPolicy: policy })
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/api/wr/events?sessionID=session-a", {
+      signal: controller.signal,
+    })
+    const reader = response.body!.getReader()
+    expect((await reader.read()).done).toBe(false)
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    bus.publish({ type: "session.lifecycle", phase: "created", directory: "/repo", sessionID: "session-a", ts: 1 })
+
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
+    controller.abort()
+  })
+
   test("isolates PTY transcript events between private-session editors", async () => {
     const bus = createBus<WorkspaceRuntimeEvent>()
     const policy: SessionAccessPolicy = {

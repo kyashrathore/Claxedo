@@ -10,10 +10,7 @@ export type SandboxFetchOptions = {
   relayProvider?: RelayProvider
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
-  subject?: string
-  principalKind?: "user" | "service"
-  actorId?: string
-  actorKind?: "human" | "agent"
+  runtimeActor?: Pick<RelayTokenInput, "principalKind" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
   orgId?: string
   role?: RelayTokenInput["role"]
   /** Inspect an already-ready runtime without waking or reprovisioning it. */
@@ -49,19 +46,11 @@ export async function sandboxFetch(
   if (!orgId) {
     throw new Error(`workspace org required for runtime token minting: ${ws.id}`)
   }
-  if (!options.principalKind) {
-    throw new Error(`runtime principal kind required for runtime token minting: ${ws.id}`)
-  }
-  if (!options.subject || !options.actorId || !options.actorKind || !options.role) {
-    throw new Error(`complete runtime principal required for runtime token minting: ${ws.id}`)
-  }
+  if (!options.role) throw new Error(`runtime role required for runtime token minting: ${ws.id}`)
   const token = await options.relayProvider.mintRuntimeAccessToken({
     workspaceId: ws.id,
     hostId: target.hostId,
-    subject: options.subject,
-    principalKind: options.principalKind,
-    actorId: options.actorId,
-    actorKind: options.actorKind,
+    ...(options.runtimeActor ?? CONTROL_PLANE_RUNTIME_ACTOR),
     orgId,
     role: options.role,
     ttlMs: 10 * 60_000,

@@ -45,10 +45,11 @@ describe("sandboxFetch", () => {
         sandboxManager: sandboxManager as never,
         relayProvider: relayProvider as never,
         defaultHomeRegion: "eu-west",
-        subject: "control-plane",
-        principalKind: "service",
-        actorId: "control-plane",
-        actorKind: "agent",
+        runtimeActor: {
+          principalKind: "service",
+          actorId: "control-plane",
+          actorKind: "agent",
+        },
         role: "owner",
       },
     )
@@ -58,7 +59,6 @@ describe("sandboxFetch", () => {
     expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledWith({
       workspaceId: "ws_1",
       hostId: "host_1",
-      subject: "control-plane",
       principalKind: "service",
       actorId: "control-plane",
       actorKind: "agent",
@@ -108,10 +108,11 @@ describe("sandboxFetch", () => {
       {
         sandboxManager: sandboxManager as never,
         relayProvider: relayProvider as never,
-        subject: "control-plane",
-        principalKind: "service",
-        actorId: "control-plane",
-        actorKind: "agent",
+        runtimeActor: {
+          principalKind: "service",
+          actorId: "control-plane",
+          actorKind: "agent",
+        },
         role: "owner",
         resume: false,
       },
@@ -121,7 +122,7 @@ describe("sandboxFetch", () => {
     expect(sandboxManager.ensure).not.toHaveBeenCalled()
   })
 
-  test("rejects an incomplete service principal instead of synthesizing owner authority", async () => {
+  test("requires an explicit runtime role for the canonical service principal", async () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({
         status: "ready" as const,
@@ -152,9 +153,8 @@ describe("sandboxFetch", () => {
       {
         sandboxManager: sandboxManager as never,
         relayProvider: relayProvider as never,
-        principalKind: "service",
       },
-    )).rejects.toThrow("complete runtime principal required for runtime token minting: ws_1")
+    )).rejects.toThrow("runtime role required for runtime token minting: ws_1")
 
     expect(relayProvider.mintRuntimeAccessToken).not.toHaveBeenCalled()
   })

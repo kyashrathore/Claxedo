@@ -26,6 +26,8 @@ import {
  */
 export function useRemoteAccessController(input: {
   serverUrl: string
+  /** A hosted account can be entered even before its connector adapter loads. */
+  signInAvailable?: () => boolean
   emit?: (event: Extract<OnboardingFunnelEvent, { name: "remote_access_enabled" | "second_device_open" }>) => void
 }) {
   const platform = usePlatform()
@@ -34,18 +36,31 @@ export function useRemoteAccessController(input: {
   // first loaded.
   const port = () => machineRemoteAccess()
   const status = useQuery(() => ({
-    queryKey: ["claxedo", "remote-access", "status", input.serverUrl] as const,
-    // Absent port = this build cannot publish a machine. Reported as the
-    // "nothing is configured" status, which `remoteAccessAvailability` already
-    // renders as a locked panel with a reason — not swallowed, and not an
-    // error state that would read as "something went wrong".
-    queryFn: async () => await port()?.status() ?? {
-      deviceLoginConfigured: false,
-      relayConfigured: false,
-      hostedSignedIn: false,
-      enabled: false,
-      enrolled: false,
-      secondDeviceOpen: false,
+    queryKey: [
+      "claxedo",
+      "remote-access",
+      "status",
+      input.serverUrl,
+      input.signInAvailable?.() === true,
+    ] as const,
+    // The port loads only after desktop account activation. The build's sign-in
+    // capability distinguishes that pre-auth state from a product that truly
+    // has no remote-access implementation.
+    queryFn: async () => {
+      const remote = port()
+      if (remote) return await remote.status()
+      const signInAvailable = input.signInAvailable?.() === true
+      return {
+        // A signed-capable desktop deliberately loads the connector adapter only
+        // after account activation. Before sign-in, the missing port therefore
+        // means "authenticate first", not "this feature was not built".
+        deviceLoginConfigured: signInAvailable,
+        relayConfigured: signInAvailable,
+        hostedSignedIn: false,
+        enabled: false,
+        enrolled: false,
+        secondDeviceOpen: false,
+      }
     },
     retry: false,
   }))

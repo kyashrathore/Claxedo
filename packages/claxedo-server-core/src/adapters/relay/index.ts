@@ -83,7 +83,7 @@ export function createControlPlaneRelayProvider(options: ControlPlaneRelayProvid
       validateRuntimeTokenInput(input)
       const ttlSeconds = clampedRelayTtlSeconds(input.ttlMs, RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS)
       const token = await options.runtimeAccessTokenSigner({
-        subject: input.subject,
+        principalKind: input.principalKind,
         actorId: input.actorId,
         actorKind: input.actorKind,
         ...(input.actorPublicId && input.actorName

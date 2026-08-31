@@ -1,5 +1,4 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import type {
   HostEnrollment,
   OrgId,
@@ -7,7 +6,10 @@ import type {
   ProjectRoleResult,
   SessionShareFanoutTarget,
   WorkspaceAuthority,
+  WorkspaceShareTarget,
 } from "@claxedo/server-core/platform/auth/authority"
+import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
   authorizeProjectForUser,
@@ -351,6 +353,20 @@ function shareTarget(db: SqliteAuthorityDb, args: {
   }
 }
 
+function canonicalShareTarget(
+  db: SqliteAuthorityDb,
+  target: WorkspaceShareTarget,
+  options: { requireExisting: boolean },
+) {
+  if (target.kind === "actor") {
+    return shareTarget(db, { grantedToTokenIdentifier: requiredText(target.actorId, "actorId") }, options)
+  }
+  if (target.kind === "user") {
+    return shareTarget(db, { grantedToTokenIdentifier: requiredText(target.userId, "userId") }, options)
+  }
+  return shareTarget(db, { grantedToClerkOrgId: requiredText(target.orgId, "orgId") }, options)
+}
+
 function jsonText(input: unknown) {
   try {
     return JSON.stringify(input) ?? "null"
@@ -437,7 +453,7 @@ type HostLinkRow = {
 
 export function createSqliteWorkspaceAuthority(
   options: SqliteWorkspaceAuthorityOptions = {},
-): WorkspaceAuthority & PrivateSessionAuthority & { close(): void } {
+): WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority & { close(): void } {
   const database = openAuthorityDb(options)
 
   const user = (auth: SignedControlPlaneAuth): AuthorityUser => {
@@ -490,7 +506,7 @@ export function createSqliteWorkspaceAuthority(
     for (const tokenIdentifier of tokenIdentifiers) {
       revoked += db.prepare(`
         UPDATE runtime_access_tokens SET revoked_at = ?
-        WHERE workspace_id = ? AND minted_for_token_identifier = ? AND revoked_at IS NULL
+        WHERE workspace_id = ? AND actor_id = ? AND revoked_at IS NULL
       `).run(now, workspaceId, tokenIdentifier).changes
     }
     return revoked
@@ -540,7 +556,7 @@ export function createSqliteWorkspaceAuthority(
   type SessionRow = {
     session_id: string
     workspace_id: string
-    created_by_token_identifier: string
+    creator_actor_id: string
     title: string | null
     created_at: number
     updated_at: number
@@ -555,9 +571,9 @@ export function createSqliteWorkspaceAuthority(
     workspaceRole: WorkspaceRole,
     isOrgAdmin?: boolean,
   ) => {
-    if (session.created_by_token_identifier === who.token_identifier) return workspaceRole
+    if (session.creator_actor_id === who.token_identifier) return workspaceRole
     const participant = db.prepare(`
-      SELECT revoked_at FROM session_participants WHERE session_id = ? AND actor_token_identifier = ?
+      SELECT revoked_at FROM session_participants WHERE session_id = ? AND participant_actor_id = ?
     `).get(session.session_id, who.token_identifier) as { revoked_at: number | null } | undefined
     if (participant && !participant.revoked_at) return workspaceRole
     if (sessionShareAllowsUser(db, who, session.session_id)) return workspaceRole
@@ -652,48 +668,7 @@ export function createSqliteWorkspaceAuthority(
     }))
   }
 
-  const upsertVisibilityRows = (db: SqliteAuthorityDb, input: {
-    who: AuthorityUser
-    workspace: WorkspaceRow
-    sessions: SessionVisibility[]
-  }) => {
-    for (const session of input.sessions) {
-      const now = Date.now()
-      const existing = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`)
-        .get(session.sessionId) as SessionRow | undefined
-      if (existing && existing.workspace_id !== input.workspace.workspace_id) throw new Error("Session not found")
-      if (existing && !sessionRole(db, input.workspace, existing, input.who, "write")) denied()
-      if (existing) {
-        db.prepare(`
-          UPDATE session_history SET title = ?, updated_at = ?, deleted_at = NULL WHERE session_id = ?
-        `).run(session.title ?? null, session.updatedAt ?? now, session.sessionId)
-        continue
-      }
-      db.prepare(`
-        INSERT INTO session_history (session_id, workspace_id, created_by_token_identifier, title, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?)
-      `).run(
-        session.sessionId,
-        input.workspace.workspace_id,
-        input.who.token_identifier,
-        session.title ?? null,
-        session.createdAt ?? now,
-        session.updatedAt ?? now,
-      )
-      db.prepare(`
-        INSERT INTO session_participants (
-          session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at
-        ) VALUES (?, ?, ?, ?, ?)
-        ON CONFLICT (session_id, actor_token_identifier) DO NOTHING
-      `).run(
-        session.sessionId,
-        input.workspace.workspace_id,
-        input.who.token_identifier,
-        input.who.token_identifier,
-        now,
-      )
-    }
-  }
+  const privateSessions = createSqlitePrivateSessionAuthority({ database, principal: user })
 
   const workspaceAuthority: Omit<WorkspaceAuthority, keyof PrivateSessionAuthority> & { close(): void } = {
     close() {
@@ -1088,6 +1063,56 @@ export function createSqliteWorkspaceAuthority(
           : {}),
       }
     },
+    async bindChannelIdentity(auth, args) {
+      const db = database()
+      const who = user(auth)
+      const channel = requiredText(args.channel, "channel")
+      const externalUserId = requiredText(args.externalUserId, "externalUserId")
+      const existing = db.prepare(`
+        SELECT binding_id, token_identifier FROM channel_identities
+        WHERE channel = ? AND external_user_id = ? AND revoked_at IS NULL
+      `).get(channel, externalUserId) as { binding_id: string; token_identifier: string } | undefined
+      if (existing && existing.token_identifier !== who.token_identifier) {
+        throw new Error("Channel identity is already bound")
+      }
+      const bindingId = existing?.binding_id ?? `channel_${randomToken()}`
+      if (!existing) {
+        db.prepare(`
+          INSERT INTO channel_identities (
+            binding_id, channel, external_user_id, token_identifier, created_at, revoked_at
+          ) VALUES (?, ?, ?, ?, ?, NULL)
+        `).run(bindingId, channel, externalUserId, who.token_identifier, Date.now())
+      }
+      return {
+        bindingId,
+        created: !existing,
+        userId: who.token_identifier,
+        actorId: who.token_identifier,
+        actorKind: "human" as const,
+      }
+    },
+    async revokeChannelIdentity(auth, args) {
+      const db = database()
+      const who = user(auth)
+      const channel = requiredText(args.channel, "channel")
+      const externalUserId = requiredText(args.externalUserId, "externalUserId")
+      const result = db.prepare(`
+        UPDATE channel_identities SET revoked_at = ?
+        WHERE channel = ? AND external_user_id = ? AND token_identifier = ? AND revoked_at IS NULL
+      `).run(
+        Date.now(),
+        channel,
+        externalUserId,
+        who.token_identifier,
+      )
+      if (result.changes > 0) return { revoked: true }
+      const latest = db.prepare(`
+        SELECT token_identifier FROM channel_identities
+        WHERE channel = ? AND external_user_id = ?
+        ORDER BY created_at DESC, rowid DESC LIMIT 1
+      `).get(channel, externalUserId) as { token_identifier: string } | undefined
+      return { revoked: latest?.token_identifier === who.token_identifier }
+    },
 
     // --- workspaces (convex/workspaces.ts, convex/workspaceShares.ts) ------
     async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args) {
@@ -1248,7 +1273,7 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
-      const target = shareTarget(db, args, { requireExisting: true })
+      const target = canonicalShareTarget(db, args.target, { requireExisting: true })
       return db.transaction(() => {
         const active = target.activeKeys.flatMap((targetKey) => db.prepare(`
             SELECT grant_id, role FROM workspace_share_grants
@@ -1263,8 +1288,8 @@ export function createSqliteWorkspaceAuthority(
           }
           const tokenIdentifiers = target.tokenIdentifier
             ? [target.tokenIdentifier]
-            : args.grantedToClerkSubject
-              ? [userBySubject(db, args.grantedToClerkSubject)?.token_identifier]
+            : target.subject
+              ? [userBySubject(db, target.subject)?.token_identifier]
                 .filter((item): item is string => !!item)
               : target.teamId
                 ? (db.prepare(`SELECT user_token_identifier FROM team_memberships WHERE team_id = ?`)
@@ -1300,16 +1325,10 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
-      const selectorCount = [
-        args.grantId,
-        args.grantedToTokenIdentifier,
-        args.grantedToClerkSubject,
-        args.grantedToClerkOrgId,
-        args.grantedToTeamId,
-        args.grantedToTeamPublicId,
-      ].filter(Boolean).length
-      if (selectorCount !== 1) throw new Error("Share revoke target must be exactly one grant, user, org, or team")
-      const target = args.grantId ? undefined : shareTarget(db, args, { requireExisting: false })
+      if (!!args.grantId === !!args.target) {
+        throw new Error("Share revoke target must be exactly one grant or canonical target")
+      }
+      const target = args.grantId ? undefined : canonicalShareTarget(db, args.target!, { requireExisting: false })
       const grants = (args.grantId
         ? db.prepare(`SELECT * FROM workspace_share_grants WHERE workspace_id = ? AND grant_id = ? AND revoked_at IS NULL`)
           .all(args.workspaceId, args.grantId)
@@ -1755,115 +1774,6 @@ export function createSqliteWorkspaceAuthority(
     },
 
     // --- sessions (convex/sessions.ts) --------------------------------------
-    async authorizeSessionRead(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace) denied()
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!sessionRole(db, workspace, session, who, "read")) denied()
-    },
-    async authorizeSessionWrite(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!sessionRole(db, workspace, session, who, "write")) denied()
-    },
-    async authorizeRuntimeSession(args) {
-      const db = database()
-      const who = db.prepare(`SELECT * FROM users WHERE token_identifier = ?`).get(args.actorId) as AuthorityUser | undefined
-      if (!who || (who.kind ?? "human") !== args.actorKind) denied()
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!sessionRole(db, workspace, session, who, args.action)) denied()
-    },
-    async registerRuntimeSession(args) {
-      const db = database()
-      const who = db.prepare(`SELECT * FROM users WHERE token_identifier = ?`).get(args.actorId) as AuthorityUser | undefined
-      if (!who || (who.kind ?? "human") !== args.actorKind) denied()
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "write")) denied()
-      return db.transaction(() => {
-        const existing = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`)
-          .get(args.sessionId) as SessionRow | undefined
-        if (
-          existing
-          && (existing.workspace_id !== args.workspaceId || existing.created_by_token_identifier !== who.token_identifier)
-        ) denied()
-        const now = Date.now()
-        if (existing) {
-          db.prepare(`
-            UPDATE session_history
-            SET title = COALESCE(?, title), updated_at = ?, deleted_at = NULL
-            WHERE session_id = ?
-          `).run(args.title ?? null, now, args.sessionId)
-        } else {
-          db.prepare(`
-            INSERT INTO session_history (
-              session_id, workspace_id, created_by_token_identifier, title, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?)
-          `).run(args.sessionId, args.workspaceId, who.token_identifier, args.title ?? null, now, now)
-        }
-        db.prepare(`
-          INSERT INTO session_participants (
-            session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at, revoked_at
-          ) VALUES (?, ?, ?, ?, ?, NULL)
-          ON CONFLICT (session_id, actor_token_identifier) DO UPDATE SET
-            workspace_id = excluded.workspace_id,
-            added_by_token_identifier = excluded.added_by_token_identifier,
-            revoked_at = NULL
-        `).run(args.sessionId, args.workspaceId, who.token_identifier, who.token_identifier, now)
-        return { registered: !existing }
-      })()
-    },
-    async addSessionParticipant(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
-      if (
-        session.created_by_token_identifier !== who.token_identifier
-        && !orgAdminForUser(db, who, workspace.org_id)
-      ) denied()
-      const participant = db.prepare(`SELECT token_identifier, subject FROM users WHERE token_identifier = ?`)
-        .get(args.participantTokenIdentifier) as AuthorityUser | undefined
-      if (!participant || !authorizeWorkspaceForUser(db, workspace, participant, "read")) denied()
-      const now = Date.now()
-      db.prepare(`
-        INSERT INTO session_participants (
-          session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at, revoked_at
-        ) VALUES (?, ?, ?, ?, ?, NULL)
-        ON CONFLICT (session_id, actor_token_identifier) DO UPDATE SET
-          added_by_token_identifier = excluded.added_by_token_identifier,
-          created_at = excluded.created_at,
-          revoked_at = NULL
-      `).run(args.sessionId, args.workspaceId, participant.token_identifier, who.token_identifier, now)
-      return { participant_id: `${args.sessionId}:${participant.token_identifier}` }
-    },
-    async removeSessionParticipant(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
-      if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
-      if (
-        session.created_by_token_identifier !== who.token_identifier
-        && !orgAdminForUser(db, who, workspace.org_id)
-      ) denied()
-      if (args.participantTokenIdentifier === session.created_by_token_identifier) return { removed: false }
-      const result = db.prepare(`
-        UPDATE session_participants SET revoked_at = ?
-        WHERE session_id = ? AND actor_token_identifier = ? AND revoked_at IS NULL
-      `).run(Date.now(), args.sessionId, args.participantTokenIdentifier)
-      return { removed: result.changes > 0 }
-    },
     async grantSessionShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
@@ -1872,7 +1782,7 @@ export function createSqliteWorkspaceAuthority(
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
       if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       if (
-        session.created_by_token_identifier !== who.token_identifier
+        session.creator_actor_id !== who.token_identifier
         && !orgAdminForUser(db, who, workspace.org_id)
         && !teamAdminForProject(db, who, workspace)
       ) throw new Error("session_share_admin_required")
@@ -1957,7 +1867,7 @@ export function createSqliteWorkspaceAuthority(
       if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) denied()
       if (!authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       if (
-        session.created_by_token_identifier !== who.token_identifier
+        session.creator_actor_id !== who.token_identifier
         && !orgAdminForUser(db, who, workspace.org_id)
         && !teamAdminForProject(db, who, workspace)
       ) throw new Error("session_share_admin_required")
@@ -2056,7 +1966,7 @@ export function createSqliteWorkspaceAuthority(
       const workspaceRole = authorizeWorkspaceForUser(db, workspace, who, "read")
       if (!workspaceRole) throw new Error("session_share_admin_required")
       const isOrgAdmin = orgAdminForUser(db, who, workspace.org_id)
-      const canManageShares = session.created_by_token_identifier === who.token_identifier
+      const canManageShares = session.creator_actor_id === who.token_identifier
         || isOrgAdmin
         || teamAdminForProject(db, who, workspace)
       if (
@@ -2075,7 +1985,7 @@ export function createSqliteWorkspaceAuthority(
         ORDER BY created_at ASC
       `).all(args.sessionId) as Array<Record<string, unknown>>
       const participants = db.prepare(`
-        SELECT actor_token_identifier AS user_id, added_by_token_identifier AS added_by_user_id, created_at
+        SELECT participant_actor_id AS user_id, added_by_actor_id AS added_by_user_id, created_at
         FROM session_participants
         WHERE session_id = ? AND revoked_at IS NULL
         ORDER BY created_at ASC
@@ -2093,242 +2003,6 @@ export function createSqliteWorkspaceAuthority(
       }))
       return { can_manage_shares: true, grants, participants, teams }
     },
-    async listSessions(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) return []
-      const canAdminSessions = orgAdminForUser(db, who, workspace.org_id)
-      const participantSessions = new Set((db.prepare(`
-        SELECT session_id FROM session_participants
-        WHERE workspace_id = ? AND actor_token_identifier = ? AND revoked_at IS NULL
-      `).all(args.workspaceId, who.token_identifier) as Array<{ session_id: string }>).map((row) => row.session_id))
-      return (db.prepare(`
-        SELECT * FROM session_history
-        WHERE workspace_id = ? AND deleted_at IS NULL
-        ORDER BY updated_at DESC
-      `).all(args.workspaceId) as SessionRow[]).filter((session) =>
-        session.created_by_token_identifier === who.token_identifier
-        || canAdminSessions
-        || participantSessions.has(session.session_id)
-        || sessionShareAllowsUser(db, who, session.session_id)
-      ).map((session) => {
-        // Owner favicon is for shared/other-user rows only — creators don't need
-        // their own face on sessions they already own.
-        const showOwner = session.created_by_token_identifier !== who.token_identifier
-        const creator = showOwner
-          ? db.prepare(`
-              SELECT public_id, name, image_url FROM users WHERE token_identifier = ?
-            `).get(session.created_by_token_identifier) as {
-              public_id: string | null
-              name: string | null
-              image_url: string | null
-            } | undefined
-          : undefined
-        return {
-          session_id: session.session_id,
-          workspace_id: session.workspace_id,
-          title: session.title,
-          created_at: session.created_at,
-          updated_at: session.updated_at,
-          ...(creator?.name ? { owner_name: creator.name } : {}),
-          ...(creator?.image_url ? { owner_avatar_url: creator.image_url } : {}),
-          ...(creator?.public_id ? { owner_public_id: creator.public_id } : {}),
-        }
-      })
-    },
-    async readSessionMessages(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      const role = workspace && session && session.workspace_id === args.workspaceId && !session.deleted_at
-        ? sessionRole(db, workspace, session, who, "read")
-        : undefined
-      if (!role) return { allowed: false, messages: [] }
-      if (args.before !== undefined && args.limit === undefined) {
-        throw new AgentMessagePageError(400, "Message page limit is required with a cursor")
-      }
-      if (args.limit !== undefined && (
-        !Number.isSafeInteger(args.limit)
-        || args.limit < 1
-        || args.limit > MAX_MESSAGE_PAGE_LIMIT
-      )) {
-        throw new AgentMessagePageError(400, `Message page limit must be between 1 and ${MAX_MESSAGE_PAGE_LIMIT}`)
-      }
-      type MessageAuthorRow = {
-        data: string
-        public_id: string | null
-        name: string | null
-        image_url: string | null
-        kind: string | null
-      }
-      if (args.limit === undefined) {
-        const rows = db.prepare(`
-          SELECT m.data, u.public_id, u.name, u.image_url, u.kind
-          FROM session_messages m
-          LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-          WHERE m.session_id = ? AND m.workspace_id = ? ORDER BY m.ordinal ASC
-        `).all(args.sessionId, args.workspaceId) as MessageAuthorRow[]
-        return {
-          allowed: true,
-          role,
-          messages: rows.map((row) => messageWithPublicAuthor(JSON.parse(row.data) as unknown, row)),
-        }
-      }
-      const beforeOrdinal = args.before === undefined
-        ? undefined
-        : decodeMessagePageCursor(args.sessionId, args.before)
-      const rows = (beforeOrdinal === undefined
-        ? db.prepare(`
-            SELECT m.ordinal, m.data, u.public_id, u.name, u.image_url, u.kind
-            FROM session_messages m
-            LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-            WHERE m.session_id = ? AND m.workspace_id = ?
-            ORDER BY m.ordinal DESC LIMIT ?
-          `).all(args.sessionId, args.workspaceId, args.limit + 1)
-        : db.prepare(`
-            SELECT m.ordinal, m.data, u.public_id, u.name, u.image_url, u.kind
-            FROM session_messages m
-            LEFT JOIN users u ON u.token_identifier = m.author_actor_id
-            WHERE m.session_id = ? AND m.workspace_id = ? AND m.ordinal < ?
-            ORDER BY m.ordinal DESC LIMIT ?
-          `).all(args.sessionId, args.workspaceId, beforeOrdinal, args.limit + 1)) as Array<MessageAuthorRow & { ordinal: number }>
-      const hasMore = rows.length > args.limit
-      const selected = rows.slice(0, args.limit).reverse()
-      return {
-        allowed: true,
-        role,
-        messages: selected.map((row) => messageWithPublicAuthor(JSON.parse(row.data) as unknown, row)),
-        ...(hasMore && selected[0]
-          ? { nextCursor: encodeMessagePageCursor(args.sessionId, selected[0].ordinal) }
-          : {}),
-      }
-    },
-    async syncSessionMessages(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "write")
-      const now = Date.now()
-      return db.transaction(() => {
-        const existing = db.prepare(`
-          SELECT session_id, workspace_id, created_by_token_identifier, deleted_at, max_event_ordinal
-          FROM session_history WHERE session_id = ?
-        `).get(args.sessionId) as SessionRow & {
-          max_event_ordinal: number
-        } | undefined
-        if (existing && existing.workspace_id !== args.workspaceId) throw new Error("Session not found")
-        if (existing && !sessionRole(db, workspace, existing, who, "write")) denied()
-        if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal < (existing?.max_event_ordinal ?? 0)) {
-          return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
-        }
-        if (args.maxEventOrdinal !== undefined && args.maxEventOrdinal === (existing?.max_event_ordinal ?? 0)) {
-          const stored = db.prepare(`
-            SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ? AND workspace_id = ?
-          `).get(args.sessionId, args.workspaceId) as { count: number }
-          if (stored.count > 0 && args.messages.length <= stored.count) {
-            return { ok: true, applied: false, maxEventOrdinal: existing?.max_event_ordinal ?? 0 }
-          }
-        }
-        if (existing) {
-          if (existing.deleted_at) {
-            db.prepare(`UPDATE session_history SET deleted_at = NULL WHERE session_id = ?`).run(args.sessionId)
-          }
-          if (args.maxEventOrdinal !== undefined) {
-            db.prepare(`UPDATE session_history SET max_event_ordinal = ? WHERE session_id = ?`)
-              .run(args.maxEventOrdinal, args.sessionId)
-          }
-        } else {
-          db.prepare(`
-            INSERT INTO session_history (
-              session_id, workspace_id, created_by_token_identifier, created_at, updated_at, max_event_ordinal
-            ) VALUES (?, ?, ?, ?, ?, ?)
-          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, now, now, args.maxEventOrdinal ?? 0)
-          db.prepare(`
-            INSERT INTO session_participants (
-              session_id, workspace_id, actor_token_identifier, added_by_token_identifier, created_at
-            ) VALUES (?, ?, ?, ?, ?)
-          `).run(args.sessionId, workspace.workspace_id, who.token_identifier, who.token_identifier, now)
-        }
-        const existingAuthors = new Map((db.prepare(`
-          SELECT message_id, author_actor_id FROM session_messages WHERE session_id = ? AND workspace_id = ?
-        `).all(args.sessionId, args.workspaceId) as Array<{ message_id: string; author_actor_id: string | null }>)
-          .map((row) => [row.message_id, row.author_actor_id]))
-        // Replace-all: observable read shape (ordered `data` payloads) matches
-        // the Convex per-row diffing without carrying its patch bookkeeping.
-        deleteMessageRows(db, args.sessionId, args.workspaceId)
-        const insert = db.prepare(`
-          INSERT INTO session_messages (
-            session_id, workspace_id, message_id, author_actor_id, role, ordinal, data, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (session_id, message_id) DO UPDATE SET
-            author_actor_id = COALESCE(session_messages.author_actor_id, excluded.author_actor_id),
-            role = excluded.role, ordinal = excluded.ordinal, data = excluded.data, updated_at = excluded.updated_at
-        `)
-        for (let ordinal = 0; ordinal < args.messages.length; ordinal += 1) {
-          const message = args.messages[ordinal]
-          const row = object(message)
-          const info = object(row?.info)
-          const messageId = txt(row?.id) ?? txt(info?.id) ?? `${args.sessionId}:${ordinal}`
-          const role = txt(row?.role) ?? txt(info?.role) ?? null
-          const author = role === "user"
-            ? existingAuthors.get(messageId)
-              ?? producerAuthorTokenIdentifier(db, message, who.token_identifier)
-              ?? null
-            : null
-          insert.run(args.sessionId, args.workspaceId, messageId, author, role, ordinal, jsonText(message), now, now)
-        }
-        return args.maxEventOrdinal === undefined
-          ? { ok: true }
-          : { ok: true, applied: true, maxEventOrdinal: args.maxEventOrdinal }
-      })()
-    },
-    async upsertSessionVisibility(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "write")
-      db.transaction(() => {
-        upsertVisibilityRows(db, { who, workspace, sessions: args.sessions })
-      })()
-      return { ok: true }
-    },
-    async replaceSessionVisibility(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "write")
-      db.transaction(() => {
-        upsertVisibilityRows(db, { who, workspace, sessions: args.sessions })
-        const incoming = new Set(args.sessions.map((session) => session.sessionId))
-        const now = Date.now()
-        const rows = db.prepare(`
-          SELECT * FROM session_history
-          WHERE workspace_id = ? AND created_by_token_identifier = ? AND deleted_at IS NULL
-        `).all(args.workspaceId, who.token_identifier) as SessionRow[]
-        for (const row of rows.filter((item) => !incoming.has(item.session_id))) {
-          db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ?`)
-            .run(now, now, row.session_id)
-          deleteMessageRows(db, row.session_id, args.workspaceId)
-        }
-      })()
-      return { ok: true }
-    },
-    async deleteSessionVisibility(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "write")
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`)
-        .get(args.sessionId) as SessionRow | undefined
-      if (!session || session.workspace_id !== args.workspaceId) return { ok: true }
-      if (!sessionRole(db, workspace, session, who, "write")) denied()
-      db.transaction(() => {
-        const now = Date.now()
-        db.prepare(`UPDATE session_history SET deleted_at = ?, updated_at = ? WHERE session_id = ?`)
-          .run(now, now, args.sessionId)
-        deleteMessageRows(db, args.sessionId, args.workspaceId)
-      })()
-      return { ok: true }
-    },
-
     // --- runtime tokens (convex/runtimeAccessTokens.ts) ---------------------
     async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -2341,9 +2015,9 @@ export function createSqliteWorkspaceAuthority(
       if (existing) throw new Error("Runtime Access Token already recorded")
       db.prepare(`
         INSERT INTO runtime_access_tokens
-          (jti, workspace_id, host_id, minted_for_token_identifier, principal_kind, minted_for_actor_kind, workspace_role, expires_at, created_at)
-        VALUES (?, ?, ?, ?, 'user', ?, ?, ?, ?)
-      `).run(args.jti, args.workspaceId, args.hostId, who.token_identifier, args.actorKind, args.role, args.expiresAt, Date.now())
+          (jti, workspace_id, host_id, principal_kind, actor_id, actor_kind, role, minted_for_token_identifier, expires_at, created_at)
+        VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)
+      `).run(args.jti, args.workspaceId, args.hostId, args.actorId, args.actorKind, args.role, who.token_identifier, args.expiresAt, Date.now())
       return { ok: true }
     },
     async recordRuntimeAccessTokenForService(args) {
@@ -2368,9 +2042,20 @@ export function createSqliteWorkspaceAuthority(
       if (existing) throw new Error("Runtime Access Token already recorded")
       db.prepare(`
         INSERT INTO runtime_access_tokens
-          (jti, workspace_id, host_id, minted_for_token_identifier, principal_kind, minted_for_actor_kind, workspace_role, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(args.jti, args.workspaceId, args.hostId, args.actorId, args.principalKind, args.actorKind, args.role, args.expiresAt, Date.now())
+          (jti, workspace_id, host_id, principal_kind, actor_id, actor_kind, role, minted_for_token_identifier, expires_at, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        args.jti,
+        args.workspaceId,
+        args.hostId,
+        args.principalKind,
+        args.actorId,
+        args.actorKind,
+        args.role,
+        args.principalKind === "user" ? args.actorId : null,
+        args.expiresAt,
+        Date.now(),
+      )
       return { ok: true }
     },
     async runtimeAccessTokenActive(args) {
@@ -2378,10 +2063,11 @@ export function createSqliteWorkspaceAuthority(
       const token = db.prepare(`SELECT * FROM runtime_access_tokens WHERE jti = ?`).get(args.jti) as {
         workspace_id: string
         host_id: string
-        minted_for_token_identifier: string
-        principal_kind: "user" | "service" | null
-        minted_for_actor_kind: "human" | "agent" | null
-        workspace_role: "viewer" | "editor" | "admin" | "owner" | null
+        minted_for_token_identifier: string | null
+        principal_kind: "user" | "service"
+        actor_id: string
+        actor_kind: "human" | "agent"
+        role: "viewer" | "editor" | "admin" | "owner"
         expires_at: number
         revoked_at: number | null
       } | undefined
@@ -2400,24 +2086,25 @@ export function createSqliteWorkspaceAuthority(
       const workspace = workspaceByPublicId(db, args.workspaceId)
       const who = token.principal_kind === "user"
         ? db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`)
-            .get(token.minted_for_token_identifier) as AuthorityUser | undefined
+            .get(token.actor_id) as AuthorityUser | undefined
         : undefined
       const currentRole = workspace && who ? workspaceRoleForUser(db, workspace, who) : undefined
       const authorizationChanged = !workspace
         || !!workspace.deleted_at
-        || !token.workspace_role
-        || !token.principal_kind
         || (token.principal_kind === "user" && (
           !who
-          || who.kind !== token.minted_for_actor_kind
+          || who.kind !== token.actor_kind
           || !currentRole
-          || !roleAtLeast(currentRole, token.workspace_role)
+          || !roleAtLeast(currentRole, token.role)
         ))
         || (token.principal_kind === "service" && (
-          token.workspace_role !== "owner"
-          || token.minted_for_actor_kind !== "agent"
-          || !token.minted_for_token_identifier.trim()
+          token.role !== "owner"
+          || token.actor_kind !== "agent"
+          || !token.actor_id.trim()
         ))
+        || (args.minimumRole && (token.principal_kind === "user"
+          ? !currentRole || !roleAtLeast(currentRole, args.minimumRole)
+          : !roleAtLeast(token.role, args.minimumRole)))
       if (authorizationChanged) {
         return {
           active: false,

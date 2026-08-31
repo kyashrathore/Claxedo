@@ -1,11 +1,11 @@
 import { anyApi } from "convex/server"
-import type { ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
+import type { ActiveSandboxLeaseCounter } from "../../../workspace/runtime-token-guards"
 
-import { requireExecutor, requireServiceToken } from "../../authority/adapters/convex/workspace-authority/executor"
-import { recordSandboxLeaseTenant } from "../../authority/adapters/convex/usage-ledger"
-import { emitSandboxLeaseOpened } from "../../platform/telemetry/product/metering"
-import { productIdentity } from "../../platform/telemetry/product/product"
-import type { HostedWorkspaceRouteOptions } from "./workspace"
+import { requireExecutor, requireServiceToken } from "./workspace-authority/executor"
+import { recordSandboxLeaseTenant } from "./usage-ledger"
+import { emitSandboxLeaseOpened } from "../../../platform/telemetry/product/metering"
+import { productIdentity } from "../../../platform/telemetry/product/product"
+import type { HostedWorkspaceRouteOptions } from "../../../routes/hosted/workspace"
 
 const leaseApi = anyApi as unknown as {
   sandboxLeases: { countActiveForOrg: unknown }

@@ -93,12 +93,21 @@ describe("sqlite Org→Team + session share", () => {
     await authority.grantWorkspaceShare(alice, {
       workspaceId: "ws_team_share",
       role: "editor",
-      grantedToTeamId: org.default_team_id,
+      target: { kind: "actor", actorId: bob.user.tokenIdentifier },
     })
 
+    await authority.reserveSession(alice, {
+      operationId: "op_team_private",
+      sessionId: "ses_private",
+      workspaceId: "ws_team_share",
+      kind: "create",
+      title: "Private",
+    })
     await authority.registerRuntimeSession!({
+      principalKind: "user",
       actorId: alice.user.tokenIdentifier,
       actorKind: "human",
+      operationId: "op_team_private",
       workspaceId: "ws_team_share",
       sessionId: "ses_private",
       title: "Private",
@@ -278,12 +287,21 @@ describe("sqlite Org→Team + session share", () => {
     await authority.grantWorkspaceShare(alice, {
       workspaceId: "ws_retarget",
       role: "editor",
-      grantedToClerkOrgId: org.org_id,
+      target: { kind: "org", orgId: org.org_id },
     })
 
+    await authority.reserveSession(alice, {
+      operationId: "op_org_share",
+      sessionId: "ses_org_share",
+      workspaceId: "ws_retarget",
+      kind: "create",
+      title: "Shared via org",
+    })
     await authority.registerRuntimeSession!({
+      principalKind: "user",
       actorId: alice.user.tokenIdentifier,
       actorKind: "human",
+      operationId: "op_org_share",
       workspaceId: "ws_retarget",
       sessionId: "ses_org_share",
       title: "Shared via org",

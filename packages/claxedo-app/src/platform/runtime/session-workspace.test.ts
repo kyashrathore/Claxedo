@@ -55,12 +55,41 @@ describe("session workspace key", () => {
       workspaceId: "ws_prefixed",
       kind: "user-hosted",
     })
-    expect(sessionWorkspaceRuntimeRef({ directory: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toEqual({
-      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
-      kind: "user-hosted",
-    })
+    expect(sessionWorkspaceRuntimeRef({ directory: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toBeUndefined()
     expect(sessionWorkspaceRuntimeRef({ directory: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e" })).toBeUndefined()
     expect(sessionWorkspaceRuntimeRef({ directory: "/repo/local" })).toBeUndefined()
+  })
+
+  test("does not mint a relay connection for a local association ref", () => {
+    const localRef = {
+      sessionId: "ses_local",
+      host: "workspace" as const,
+      cwd: "/repo/local",
+      toolSandbox: { kind: "local" as const, cwd: "/repo/local" },
+    }
+
+    expect(sessionWorkspaceRuntimeRef({
+      directory: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
+      sessionRef: localRef,
+    })).toBeUndefined()
+  })
+
+  test("lets canonical local inventory override a transient workspace-backed session ref", () => {
+    const workspaceId = "608c72e3-405a-4d2a-bf7f-883b8c76ea8e"
+    expect(sessionWorkspaceRuntimeRef({
+      directory: "/repo/local",
+      sessionRef: {
+        sessionId: "ses_local",
+        host: "workspace",
+        workspaceId,
+        toolSandbox: { kind: "workspace", workspaceId, hosting: "user-hosted" },
+      },
+      projects: [{
+        workspaces: {
+          [workspaceId]: { id: workspaceId, workspaceId, directory: "/repo/local", kind: "local" },
+        },
+      }],
+    })).toBeUndefined()
   })
 
   test("resolves the real kind from the signed inventory when present", () => {

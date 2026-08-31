@@ -108,7 +108,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
   const surfaceId = () => input.surfaceId?.()
   const optimisticTimeline = createSubmitOptimisticTimeline()
-
   const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
 
   const commentActions = createSubmitCommentActions(prompt.context)

@@ -62,7 +62,7 @@ describe("managed workspace SessionAccessPolicy composition", () => {
     host.dispose()
   })
 
-  test("registers Session V2 creates and filters signed collection responses", async () => {
+  test("rejects unfenced Session V2 creates and filters signed collection responses", async () => {
     const registered: string[] = []
     const filterCalls: string[][] = []
     const policy: SessionAccessPolicy = {
@@ -107,9 +107,11 @@ describe("managed workspace SessionAccessPolicy composition", () => {
       headers: { "content-type": "application/json", authorization: "Bearer signed-rht" },
       body: JSON.stringify({ title: "Managed" }),
     })
-    expect(created.status).toBe(201)
-    expect(await created.json()).toEqual({ data: { id: "ses_created" } })
-    expect(registered).toEqual(["ses_created"])
+    expect(created.status).toBe(503)
+    expect(await created.json()).toMatchObject({
+      error: { code: "session_v2_managed_creation_unavailable" },
+    })
+    expect(registered).toEqual([])
 
     const listed = await app.request("http://localhost/api/session", {
       headers: { authorization: "Bearer signed-rht" },

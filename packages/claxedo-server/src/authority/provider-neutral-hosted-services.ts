@@ -260,7 +260,7 @@ export type HostedControlPlaneAdapterBindings = {
 /**
  * Provider-neutral hosted composition. Authentication and persistence adapters
  * are selected by the static entrypoint and injected as ports; this graph has
- * no Clerk, Convex, Better Auth, or D1 implementation imports.
+ * no identity-provider or persistence implementation imports.
  */
 export function composeProviderNeutralHostedControlPlane(
   env: HostedWorkerEnv,

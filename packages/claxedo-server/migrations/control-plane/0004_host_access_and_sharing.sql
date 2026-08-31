@@ -56,7 +56,7 @@ when not (
     where actor.actor_id = new.target_actor_id and actor.state = 'active'
   ))
 )
-begin
+BEGIN
   select raise(abort, 'workspace share target belongs to another tenant');
 end;
 
@@ -74,7 +74,7 @@ when new.workspace_id != old.workspace_id
   or new.role != old.role
   or new.created_by_actor_id != old.created_by_actor_id
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'workspace share intent is immutable');
 end;
 
@@ -122,7 +122,7 @@ from ranked;
 
 create trigger workspace_memberships_insert
 instead of insert on workspace_memberships
-begin
+BEGIN
   insert into workspace_direct_memberships (
     workspace_id, user_id, role, created_at, updated_at, revoked_at
   ) values (new.workspace_id, new.user_id, new.role, new.created_at, new.updated_at, new.revoked_at)
@@ -132,7 +132,7 @@ end;
 
 create trigger workspace_memberships_update
 instead of update on workspace_memberships
-begin
+BEGIN
   update workspace_direct_memberships set
     role = new.role, updated_at = new.updated_at, revoked_at = new.revoked_at
   where workspace_id = old.workspace_id and user_id = old.user_id;
@@ -140,7 +140,7 @@ end;
 
 create trigger workspace_memberships_delete
 instead of delete on workspace_memberships
-begin
+BEGIN
   delete from workspace_direct_memberships
   where workspace_id = old.workspace_id and user_id = old.user_id;
 end;
@@ -268,7 +268,7 @@ when new.workspace_id != old.workspace_id or new.org_id != old.org_id or new.pro
   or new.owner_user_id != old.owner_user_id or new.owner_actor_id != old.owner_actor_id
   or new.host_id != old.host_id or new.nonce != old.nonce
   or new.expires_at != old.expires_at or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'host challenge intent is immutable');
 end;
 
@@ -278,7 +278,7 @@ on local_host_links
 when new.workspace_id != old.workspace_id or new.org_id != old.org_id or new.project_id != old.project_id
   or new.host_id != old.host_id or new.owner_user_id != old.owner_user_id
   or new.owner_actor_id != old.owner_actor_id or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'local host link scope is immutable');
 end;
 
@@ -287,7 +287,7 @@ before update of owner_user_id, owner_actor_id, host_id, nonce, created_at
 on host_enrollment_requests
 when new.owner_user_id != old.owner_user_id or new.owner_actor_id != old.owner_actor_id
   or new.host_id != old.host_id or new.nonce != old.nonce or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'host enrollment request intent is immutable');
 end;
 
@@ -297,7 +297,7 @@ on host_enrollments
 when new.enrollment_id != old.enrollment_id or new.owner_user_id != old.owner_user_id
   or new.owner_actor_id != old.owner_actor_id or new.host_id != old.host_id
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'host enrollment scope is immutable');
 end;
 
@@ -310,6 +310,6 @@ when new.jti != old.jti or new.workspace_id != old.workspace_id
   or new.host_id != old.host_id or new.minted_for_user_id != old.minted_for_user_id
   or new.minted_for_actor_id != old.minted_for_actor_id
   or new.expires_at != old.expires_at or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'runtime access token intent is immutable');
 end;

@@ -15,6 +15,8 @@ const MIGRATIONS = [
   "0002_workspace_authority.sql",
   "0003_private_sessions.sql",
   "0010_session_turn_leases.sql",
+  "0011_session_turn_producers.sql",
+  "0013_org_team_session_sharing.sql",
 ].map(
   (name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)),
 )
@@ -173,6 +175,7 @@ describe("D1 private multiplayer session authority", () => {
     await expect(
       exercisePrivateSessionAuthorityConformance({
         authority: input.sessions,
+        turnAuthority: input.sessions,
         workspaceId: "ws_main",
         creator: {
           auth: alice,
@@ -519,7 +522,7 @@ describe("D1 private multiplayer session authority", () => {
         info: {
           id: "m1",
           role: "user",
-          claxedo: { author: { id: bob.principal!.actorId, name: "untrusted" } },
+          claxedo: { author: { id: alice.principal!.actorId, name: "forged" } },
         },
         parts: [{ type: "text", text: "hello" }],
       },
@@ -527,7 +530,7 @@ describe("D1 private multiplayer session authority", () => {
         info: {
           id: "m2",
           role: "user",
-          claxedo: { author: { id: alice.principal!.actorId, name: "forged" } },
+          claxedo: { author: { id: bob.principal!.actorId, name: "forged" } },
         },
         parts: [{ type: "text", text: "forged" }],
       },
@@ -540,12 +543,49 @@ describe("D1 private multiplayer session authority", () => {
         parts: [{ type: "text", text: "reply" }],
       },
     ]
+    const bobTurn = await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m1",
+    })
+    await input.sessions.releaseSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m1",
+      leaseId: bobTurn.leaseId,
+      fencingToken: bobTurn.fencingToken,
+    })
+    const aliceTurn = await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m2",
+    })
+    await input.sessions.releaseSessionTurn({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m2",
+      leaseId: aliceTurn.leaseId,
+      fencingToken: aliceTurn.fencingToken,
+    })
     await expect(
       input.sessions.syncSessionMessages(bob, {
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages,
         maxEventOrdinal: 7,
+        fencingToken: aliceTurn.fencingToken,
       }),
     ).resolves.toEqual({ ok: true, applied: true, maxEventOrdinal: 7 })
 
@@ -555,7 +595,10 @@ describe("D1 private multiplayer session authority", () => {
       limit: 2,
     })) as { messages: Array<Record<string, any>>; nextCursor?: string }
     expect(page.messages.map((message) => message.info.id)).toEqual(["m2", "m3"])
-    expect(page.messages[0].info.claxedo).toBeUndefined()
+    expect(page.messages[0].info.claxedo.author).toEqual({
+      id: alice.principal!.actorId,
+      kind: "human",
+    })
     expect(page.messages[1].info.claxedo).toBeUndefined()
     expect(page.nextCursor).toEqual(expect.any(String))
     const earlier = (await input.sessions.readSessionMessages(alice, {
@@ -576,6 +619,7 @@ describe("D1 private multiplayer session authority", () => {
         workspaceId: "ws_main",
         messages,
         maxEventOrdinal: 7,
+        fencingToken: aliceTurn.fencingToken,
       }),
     ).resolves.toEqual({ ok: true, applied: false, maxEventOrdinal: 7 })
     await expect(
@@ -584,14 +628,34 @@ describe("D1 private multiplayer session authority", () => {
         workspaceId: "ws_main",
         messages: [...messages, { info: { id: "m4", role: "assistant" }, parts: [] }],
         maxEventOrdinal: 7,
+        fencingToken: aliceTurn.fencingToken,
       }),
     ).rejects.toMatchObject({ code: "resource_conflict" })
+    const takeover = await input.sessions.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_messages",
+      workspaceId: "ws_main",
+      turnId: "m5",
+    })
+    await expect(
+      input.sessions.syncSessionMessages(bob, {
+        sessionId: "ses_messages",
+        workspaceId: "ws_main",
+        messages,
+        maxEventOrdinal: 8,
+        fencingToken: aliceTurn.fencingToken,
+      }),
+    ).rejects.toMatchObject({ code: "resource_conflict", message: expect.stringContaining("stale") })
+    expect(takeover.fencingToken).toBeGreaterThan(aliceTurn.fencingToken)
     await expect(
       input.sessions.syncSessionMessages(bob, {
         sessionId: "ses_messages",
         workspaceId: "ws_main",
         messages: [{ info: { role: "user" }, parts: [] }],
         maxEventOrdinal: 8,
+        fencingToken: takeover.fencingToken,
       }),
     ).rejects.toMatchObject({ code: "invalid_input" })
     await expect(
@@ -600,6 +664,7 @@ describe("D1 private multiplayer session authority", () => {
         workspaceId: "ws_main",
         messages,
         maxEventOrdinal: 8,
+        fencingToken: takeover.fencingToken,
       }),
     ).rejects.toMatchObject({ status: 403 })
     expect(await input.database.prepare("select 1 from sessions where session_id = 'ses_unknown'").first()).toBeNull()

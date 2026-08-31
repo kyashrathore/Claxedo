@@ -30,6 +30,12 @@ import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-r
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
+import {
+  UserDeployedIdentityAdmissionRoutes,
+  type UserDeployedIdentityAdmission,
+} from "../../routes/user-deployed-identity-admission"
+import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
+import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
 import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
@@ -47,7 +53,11 @@ import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
-import type { LiveSyncRoomNamespace } from "../hosted-workerd/live-sync-room.cf"
+import {
+  liveSyncRoomNameForPrincipal,
+  nudgeLiveSyncRoom,
+  type LiveSyncRoomNamespace,
+} from "../../platform/http/live-sync-publish"
 import type { StaticProductDescriptor } from "./deployment-profile"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
@@ -66,6 +76,7 @@ export type HostedCoreAppOptions = {
   product: StaticProductDescriptor
   requestGuardExemptions: readonly RouteGuardExemption[]
   productWorkspace?: HostedCoreProductWorkspaceOptions
+  userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
 }
 
 export function configuredCoreAppOrigins(raw: string | undefined) {
@@ -117,6 +128,9 @@ export function assertHostedCoreBootConfig(plane: HostedControlPlane, options: P
   if (!options.cloudWorkspaceAdmission) failures.push("cloud workspace admission policy is not composed")
   if (!options.product) failures.push("static product descriptor is not composed")
   if (!options.requestGuardExemptions) failures.push("product request-guard inventory is not composed")
+  if (options.product?.productPosture === "user-deployed" && !options.userDeployedIdentityAdmission) {
+    failures.push("user-deployed identity admission is not composed")
+  }
   if (failures.length) {
     throw new HostedWorkerCompositionError(
       "hosted_core_composition_invalid",
@@ -255,6 +269,44 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       authority: plane.privateSessionAuthority!,
       authentication: options.authentication,
       services,
+    }),
+  )
+  // The user-deployed product keeps provider verification and application
+  // membership separate. Only this explicit owner/admin lifecycle route may
+  // turn a provider-verified subject into a canonical app principal.
+  if (options.userDeployedIdentityAdmission) {
+    app.route(
+      "/api/control",
+      UserDeployedIdentityAdmissionRoutes({
+        authentication: options.authentication,
+        admission: options.userDeployedIdentityAdmission,
+      }),
+    )
+  }
+  app.route(
+    "/api/control",
+    OrgTeamControlRoutes(services, {
+      authentication: options.authentication,
+      authConfig,
+      cliTokenEnv: plane.env,
+    }),
+  )
+  app.route(
+    "/api/control",
+    SessionPeopleControlRoutes(services, {
+      authentication: options.authentication,
+      authConfig,
+      cliTokenEnv: plane.env,
+      sessionShareChangedSink: (event) =>
+        nudgeLiveSyncRoom(
+          options.liveSyncRoom,
+          liveSyncRoomNameForPrincipal(
+            event.orgId
+              ? { orgId: event.orgId }
+              : { ownerUserId: event.ownerUserId },
+          ),
+          event,
+        ),
     }),
   )
   if (plane.runtimeSessionAuthority) {

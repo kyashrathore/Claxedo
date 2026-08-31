@@ -151,6 +151,98 @@ export default defineSchema({
   // transaction-visible fence while a batched purge runs, plus a durable
   // receipt that outlives the org row and therefore carries HASHES only.
 
+  private_session_registrations: defineTable({
+    operation_id: v.string(),
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    workspace_public_id: v.string(),
+    creator_actor_id: v.id("users"),
+    operation_kind: v.union(v.literal("create"), v.literal("fork")),
+    parent_session_id: v.optional(v.string()),
+    requested_title: v.optional(v.string()),
+    state: v.union(
+      v.literal("reserved"),
+      v.literal("reconciliation_required"),
+      v.literal("registered"),
+      v.literal("compensation_pending"),
+      v.literal("compensated"),
+    ),
+    state_reason: v.optional(v.string()),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_operation_id", ["operation_id"])
+    .index("by_session_id", ["session_id"]),
+
+  private_sessions: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    workspace_public_id: v.string(),
+    org_id: v.optional(v.id("orgs")),
+    project_id: v.optional(v.id("projects")),
+    creator_actor_id: v.id("users"),
+    operation_id: v.string(),
+    title: v.optional(v.string()),
+    created_at: v.number(),
+    updated_at: v.number(),
+    deleted_at: v.optional(v.number()),
+    max_event_ordinal: v.number(),
+  })
+    .index("by_session_id", ["session_id"])
+    .index("by_workspace_updated", ["workspace_id", "updated_at"])
+    .index("by_workspace_creator_updated", ["workspace_id", "creator_actor_id", "updated_at"]),
+
+  private_session_participants: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    participant_actor_id: v.id("users"),
+    added_by_actor_id: v.id("users"),
+    created_at: v.number(),
+    revoked_at: v.optional(v.number()),
+  })
+    .index("by_session_actor", ["session_id", "participant_actor_id"])
+    .index("by_actor", ["participant_actor_id"]),
+
+  private_session_messages: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    message_id: v.string(),
+    author_actor_id: v.optional(v.id("users")),
+    role: v.string(),
+    ordinal: v.number(),
+    data: v.any(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_session_ordinal", ["session_id", "ordinal"])
+    .index("by_session_message", ["session_id", "message_id"]),
+
+  private_session_turn_leases: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    workspace_public_id: v.string(),
+    turn_id: v.string(),
+    lease_id: v.string(),
+    fencing_token: v.number(),
+    actor_id: v.id("users"),
+    acquired_at: v.number(),
+    expires_at: v.number(),
+    released_at: v.optional(v.number()),
+  })
+    .index("by_session_id", ["session_id"])
+    .index("by_lease_id", ["lease_id"]),
+
+  private_session_turn_producers: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    turn_id: v.string(),
+    fencing_token: v.number(),
+    actor_id: v.id("users"),
+    admitted_at: v.number(),
+  })
+    .index("by_session_turn", ["session_id", "turn_id"])
+    .index("by_session_fence", ["session_id", "fencing_token"]),
+
   /**
    * The durable record of one org purge. `org_key_hash` is
    * `sha256(orgDocId \0 clerkOrgId)` and `operation_hash` is `sha256(operationId)`
@@ -506,7 +598,6 @@ export default defineSchema({
     role: workspaceRole,
     minted_for_user_id: v.optional(v.id("users")),
     minted_for_subject: v.optional(v.string()),
-    principal_kind: v.optional(v.union(v.literal("user"), v.literal("service"))),
     minted_for_actor_id: v.optional(v.string()),
     minted_for_actor_kind: v.optional(v.union(v.literal("human"), v.literal("agent"))),
     // EXPAND: tokens minted before live role validation do not carry the role

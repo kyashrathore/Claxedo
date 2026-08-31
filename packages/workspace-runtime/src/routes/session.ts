@@ -108,7 +108,6 @@ export function SessionRoutes(
     eventHub?: RuntimeEventHub
     sessionAccessPolicy?: SessionAccessPolicy
     beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
-    sessionAccessPolicy?: SessionAccessPolicy
     resolveRuntime?: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentRuntime | Promise<AgentRuntime | undefined> | undefined
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermissionRow[]>
     listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestionRow[]>

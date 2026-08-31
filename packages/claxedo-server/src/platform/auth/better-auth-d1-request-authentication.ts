@@ -6,6 +6,7 @@ import {
   type AuthAssurance,
   type AuthenticationEvidenceMethod,
   type RequestAuthenticationAdapter,
+  type RequestIdentityVerificationAdapter,
   type VerifiedAuthSession,
 } from "@claxedo/server-core/platform/auth/authentication"
 
@@ -284,7 +285,7 @@ function assertComposition(input: BetterAuthD1RequestAuthenticationInput) {
  */
 export function createBetterAuthD1RequestAuthenticationAdapter(
   input: BetterAuthD1RequestAuthenticationInput,
-): RequestAuthenticationAdapter {
+): RequestAuthenticationAdapter & RequestIdentityVerificationAdapter {
   assertComposition(input)
   return createControlPlaneAuthenticationAdapter({
     descriptor: input.descriptor,

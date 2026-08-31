@@ -708,6 +708,13 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             signature: body.signature,
             ...(body.displayName ? { displayName: body.displayName } : {}),
             ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
+            ...(body.orgId ? { orgId: body.orgId } : {}),
+            ...(body.projectId ? { projectId: body.projectId } : {}),
+            ...(body.repoUrl ? { repoUrl: body.repoUrl } : {}),
+            ...(body.repoName ? { repoName: body.repoName } : {}),
+            ...(body.gitBranch ? { gitBranch: body.gitBranch } : {}),
+            ...(body.remoteDirectory ? { remoteDirectory: body.remoteDirectory } : {}),
+            ...(options.defaultHomeRegion ? { homeRegion: options.defaultHomeRegion } : {}),
           })
           // Only after host proof: register/refresh the workspace for sharing.
           const workspace = await authority.registerLocalForSharing(auth, {

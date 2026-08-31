@@ -10,8 +10,8 @@
 
 export const CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS = [
   "user-deployed-better-auth-d1-locked",
+  "user-deployed-better-auth-d1-live-sync-migration-bridge",
   "user-deployed-better-auth-d1-candidate",
-  "user-deployed-better-auth-d1-open",
 ] as const
 
 export type CertifiedHostedWorkerArtifactId = (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[number]
@@ -39,7 +39,8 @@ export function requireNonLegacyWorkerName(name: string) {
 }
 
 const LOCKED_ENTRYPOINT = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
-const OPEN_ENTRYPOINT = "src/deployments/hosted-workerd/better-auth-d1-open-worker.cf.ts"
+const LIVE_SYNC_MIGRATION_BRIDGE_ENTRYPOINT =
+  "src/deployments/hosted-workerd/better-auth-d1-live-sync-migration-bridge.cf.ts"
 const CANDIDATE_ENTRYPOINT = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
 
 const ARTIFACTS = Object.freeze({
@@ -65,16 +66,16 @@ const ARTIFACTS = Object.freeze({
       sandboxDriver: false as const,
     }),
   }),
-  "user-deployed-better-auth-d1-open": Object.freeze({
-    artifactId: "user-deployed-better-auth-d1-open" as const,
+  "user-deployed-better-auth-d1-candidate": Object.freeze({
+    artifactId: "user-deployed-better-auth-d1-candidate" as const,
     adapterProfile: "better-auth-d1" as const,
     productPosture: "user-deployed" as const,
     sandboxPosture: "control-plane-only" as const,
-    entrypointFromPackageRoot: OPEN_ENTRYPOINT,
-    entrypointFromPackageChild: `../${OPEN_ENTRYPOINT}`,
+    entrypointFromPackageRoot: CANDIDATE_ENTRYPOINT,
+    entrypointFromPackageChild: `../${CANDIDATE_ENTRYPOINT}`,
     workerNames: Object.freeze({
-      production: "claxedo-user-deployed-core",
-      staging: "claxedo-user-deployed-core-staging",
+      production: "claxedo-user-deployed-locked",
+      staging: "claxedo-user-deployed-locked-staging",
     }),
     resources: Object.freeze({
       authDatabase: true as const,
@@ -86,16 +87,16 @@ const ARTIFACTS = Object.freeze({
       sandboxDriver: false as const,
     }),
   }),
-  "user-deployed-better-auth-d1-candidate": Object.freeze({
-    artifactId: "user-deployed-better-auth-d1-candidate" as const,
+  "user-deployed-better-auth-d1-live-sync-migration-bridge": Object.freeze({
+    artifactId: "user-deployed-better-auth-d1-live-sync-migration-bridge" as const,
     adapterProfile: "better-auth-d1" as const,
     productPosture: "user-deployed" as const,
     sandboxPosture: "control-plane-only" as const,
-    entrypointFromPackageRoot: CANDIDATE_ENTRYPOINT,
-    entrypointFromPackageChild: `../${CANDIDATE_ENTRYPOINT}`,
+    entrypointFromPackageRoot: LIVE_SYNC_MIGRATION_BRIDGE_ENTRYPOINT,
+    entrypointFromPackageChild: `../${LIVE_SYNC_MIGRATION_BRIDGE_ENTRYPOINT}`,
     workerNames: Object.freeze({
-      production: "claxedo-user-deployed-candidate",
-      staging: "claxedo-user-deployed-candidate-staging",
+      production: "claxedo-user-deployed-locked",
+      staging: "claxedo-user-deployed-locked-staging",
     }),
     resources: Object.freeze({
       authDatabase: true as const,

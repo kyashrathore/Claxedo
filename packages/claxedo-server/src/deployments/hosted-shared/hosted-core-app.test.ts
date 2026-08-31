@@ -36,6 +36,7 @@ function plane(): HostedControlPlane {
       resolveOrgId: vi.fn(async () => "org-1"),
       usersMe: vi.fn(async () => ({ id: "user-1", user_id: "user-1" })),
       listOrgs: vi.fn(async () => [{ org_id: "org-1", name: "Test organization" }]),
+      listSessionShares: vi.fn(async () => [{ grant_id: "share-1", granted_to_user_id: "user-2" }]),
       listWorkspaces: vi.fn(async () => []),
       auditAllow: vi.fn(async () => ({})),
     },
@@ -77,6 +78,13 @@ const options = {
   }),
   product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
   requestGuardExemptions: [],
+  userDeployedIdentityAdmission: {
+    admit: vi.fn(async (_auth, input) => ({
+      state: "active" as const,
+      userId: `user:${input.identity.subject}`,
+      actorId: `actor:${input.identity.subject}`,
+    })),
+  },
 }
 
 describe("resource-closed hosted core app", () => {
@@ -90,6 +98,12 @@ describe("resource-closed hosted core app", () => {
       "/api/claxedo/bootstrap",
       "/api/claxedo/events",
       "/api/control/sessions",
+      "/api/control/orgs",
+      "/api/control/orgs/:orgId/teams",
+      "/api/control/teams/:teamId/members",
+      "/api/control/sessions/:sessionId/participants",
+      "/api/control/sessions/:sessionId/shares",
+      "/api/control/user-deployed/identity-admissions",
       "/api/control/session-registrations/reserve",
       "/api/runtime-authority/session-authorize",
       "/api/workspace/:id/connection",
@@ -103,6 +117,51 @@ describe("resource-closed hosted core app", () => {
       route.startsWith("/documents") ||
       route.startsWith("/api/billing")
     )).toEqual([])
+  })
+
+  test("authenticates org and session-share routes through the Better Auth cookie adapter", async () => {
+    const app = createHostedCoreApp(plane(), options)
+    const headers = { cookie: "__Secure-claxedo.session_token=browser-session" }
+
+    const orgs = await app.fetch(new Request("https://core.test/api/control/orgs", { headers }))
+    expect(orgs.status).toBe(200)
+    await expect(orgs.json()).resolves.toEqual([{ org_id: "org-1", name: "Test organization" }])
+
+    const shares = await app.fetch(new Request(
+      "https://core.test/api/control/sessions/session-1/shares?workspaceId=workspace-1",
+      { headers },
+    ))
+    expect(shares.status).toBe(200)
+    await expect(shares.json()).resolves.toEqual([{ grant_id: "share-1", granted_to_user_id: "user-2" }])
+  })
+
+  test("admits a provider-verified subject through the authenticated user-deployed lifecycle", async () => {
+    const app = createHostedCoreApp(plane(), options)
+    const response = await app.fetch(new Request(
+      "https://core.test/api/control/user-deployed/identity-admissions",
+      {
+        method: "POST",
+        headers: {
+          cookie: "__Secure-claxedo.session_token=browser-session",
+          origin: "https://app.test",
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ subject: "better-auth-member", role: "member" }),
+      },
+    ))
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({
+      admitted: true,
+      role: "member",
+      user: { id: "user:better-auth-member" },
+    })
+    expect(options.userDeployedIdentityAdmission.admit).toHaveBeenCalledWith(
+      expect.objectContaining({ principal: expect.objectContaining({ userId: "browser-user" }) }),
+      {
+        identity: { adapter: "better-auth", issuer: "https://auth.test", subject: "better-auth-member" },
+        role: "member",
+      },
+    )
   })
 
   test("has no static WorkGraph, wakes, Documents, billing, or Polar implementation edge", () => {
@@ -134,6 +193,7 @@ describe("resource-closed hosted core app", () => {
       "cloudWorkspaceAdmission",
       "product",
       "requestGuardExemptions",
+      "userDeployedIdentityAdmission",
     ] as const) {
       expect(() => createHostedCoreApp(plane(), { ...options, [missing]: undefined } as never)).toThrow(missing === "liveSyncRoom"
         ? /LIVE_SYNC_ROOM/
@@ -146,6 +206,8 @@ describe("resource-closed hosted core app", () => {
                 ? "service catalog"
                 : missing === "cloudWorkspaceAdmission"
                   ? "admission policy"
+                  : missing === "userDeployedIdentityAdmission"
+                    ? "identity admission"
                   : missing === "product"
                     ? "product descriptor"
                     : "request-guard inventory",

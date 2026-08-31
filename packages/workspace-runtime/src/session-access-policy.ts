@@ -55,6 +55,10 @@ export type SessionAccessOperation =
   | "pty_write"
   | "agent_lifecycle_read"
   | "agent_lifecycle_write"
+  | "agent_setup_read"
+  | "agent_setup_write"
+  | "worktree_read"
+  | "worktree_write"
 
 export type SessionAccessPolicyInput = {
   actor?: SessionAccessActor
@@ -66,16 +70,18 @@ export type SessionAccessPolicyInput = {
   operation: SessionAccessOperation
   sessionId?: string
   sessionTitle?: string
+  /** Immutable reserve/register operation created before runtime creation. */
+  registrationOperationId?: string
   method?: string
   path?: string
 }
 
 export type SessionAccessDecision =
   | { allowed: true }
-  | { allowed: false; status: 401 | 403 | 503; code: string; message: string }
+  | { allowed: false; status: 401 | 403 | 409 | 503; code: string; message: string }
 
 export type SessionAccessStreamDecision =
-  | { allowed: true; lease?: string; expiresAt: number }
+  | { allowed: true; lease: string; expiresAt: number }
   | Exclude<SessionAccessDecision, { allowed: true }>
 export type SessionTurnLeaseDecision =
   | {
@@ -93,14 +99,26 @@ export type SessionTurnReleaseDecision =
 
 export type SessionAccessPolicy = {
   /** Composition marker: non-loopback managed hosts require private-session authority. */
-  sessionAuthority?: "local" | "managed-private"
+  sessionAuthority: "local" | "managed-private"
   authorize(input: SessionAccessPolicyInput): Promise<SessionAccessDecision> | SessionAccessDecision
   filterSessions(
     input: SessionAccessPolicyInput & { sessionIds: readonly string[] },
   ): Promise<readonly string[]> | readonly string[]
   authorizePrefix(input: SessionAccessPolicyInput & { method: string; path: string }): Promise<SessionAccessDecision> | SessionAccessDecision
+  authorizeHost?(
+    input: SessionAccessPolicyInput & { minimumRole: "viewer" | "editor" | "admin" | "owner" },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
   registerSession?(
-    input: SessionAccessPolicyInput & { sessionId: string },
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
+  markRegistrationAmbiguous?(
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
+  beginRegistrationCompensation?(
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
+  completeRegistrationCompensation?(
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision
   authorizeStream?(
     input: SessionAccessPolicyInput & { sessionId: string },
@@ -209,6 +227,8 @@ const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
   "tool_write",
   "pty_write",
   "agent_lifecycle_write",
+  "agent_setup_write",
+  "worktree_write",
 ])
 
 const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const

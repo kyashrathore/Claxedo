@@ -3,6 +3,7 @@ import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -94,15 +95,20 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
     )
   const kind = input.environmentKind ?? workspace?.kind
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
+  // The project inventory is authoritative for a workspace it already knows.
+  // A `workspace:<uuid>` navigation ref is also how the local sidecar associates
+  // sessions with a project; it is not evidence of relay hosting. Previously the
+  // optimistic branch below overruled this `local` record during every sidebar
+  // click, briefly fabricating a user-hosted SessionRef before route hydration
+  // restored the real local ref.
+  if (workspace?.kind === "local") return
   if (kind === "cloud" || kind === "user-hosted") {
     return workspaceId ? { workspaceId, kind } : undefined
   }
   if (!input.workspaceId) return
-  // Project and runtime environment labels can still say `local` for a
-  // user-hosted workspace: its owner executes it locally while browsers reach
-  // it through the relay. Canonical central/local refs above are placement;
-  // these labels are not. An explicit workspace row with no signed kind stays
-  // optimistically relay-backed until signed inventory hydrates.
+  if (localWorkspaceAssociationId(input.workspaceId)) return
+  // An unknown `ws_*` row can still predate signed inventory hydration. UUIDs
+  // and inventory-confirmed local records have already returned above.
   return { workspaceId: input.workspaceId, kind: "user-hosted" }
 }
 

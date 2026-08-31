@@ -73,24 +73,24 @@ create table "deploymentReleaseActive" (
 
 create trigger "deploymentRelease_no_update"
 before update on "deploymentRelease"
-begin
+BEGIN
   select raise(abort, 'deployment releases are append-only');
 end;
 
 create trigger "deploymentRelease_no_delete"
 before delete on "deploymentRelease"
-begin
+BEGIN
   select raise(abort, 'deployment releases are append-only');
 end;
 
 create trigger "deploymentReleaseStateHistory_no_update"
 before update on "deploymentReleaseStateHistory"
-begin
+BEGIN
   select raise(abort, 'deployment release history is append-only');
 end;
 
 create trigger "deploymentReleaseStateHistory_no_delete"
 before delete on "deploymentReleaseStateHistory"
-begin
+BEGIN
   select raise(abort, 'deployment release history is append-only');
 end;

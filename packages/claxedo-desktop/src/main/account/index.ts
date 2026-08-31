@@ -18,7 +18,6 @@ import { credentialFile, loopbackListener, nodeTimer, refreshExchange, tokenExch
 import { createDesktopNativeAuth } from "./desktop-native-auth"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
-import { createIdentityResolver, userInfoUrlFromTokenUrl } from "./identity"
 import type { OAuthSeams } from "./oauth-flow"
 
 /** How long to wait for the browser callback before failing the attempt. */
@@ -82,13 +81,31 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     ...(input.onError ? { onRejected: (reason) => input.onError?.("credential", reason) } : {}),
   })
 
+  const releaseValidationOperation = config.releaseValidationOperation
+  const controlPlaneFetch: typeof fetch = releaseValidationOperation
+    ? (request, init) => {
+        const next = new Request(request, init)
+        if (new URL(next.url).origin !== config.coreOrigin) return fetch(next)
+        const headers = new Headers(next.headers)
+        if (!headers.has("x-claxedo-multiplayer-validation-operation")) {
+          headers.set("x-claxedo-multiplayer-validation-operation", releaseValidationOperation)
+        }
+        return fetch(new Request(next, { headers }))
+      }
+    : fetch
+
   const seams: OAuthSeams = {
     // The system browser, never an in-app window: an embedded window rendering
     // the provider's password field is indistinguishable from phishing, and
     // cannot use the user's existing session or password manager.
     openExternal: (url) => shell.openExternal(url),
     listen: loopbackListener(),
-    exchange: tokenExchange(),
+    // The exchange is a request to the selected core just like descriptor,
+    // refresh, revoke, and hosted operations. Release-validation builds must
+    // identify it through the same canonical fetch; bypassing that fetch made
+    // the public token request indistinguishable from an unbound multiplayer
+    // request after cutover.
+    exchange: tokenExchange(controlPlaneFetch),
     safeStorage: () => ({
       available: safeStorage.isEncryptionAvailable(),
       backend: safeStorage.getSelectedStorageBackend?.() ?? "unknown",
@@ -100,26 +117,15 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
   const auth = createDesktopNativeAuth({
     coreOrigin: config.coreOrigin,
     seams,
-    refresh: refreshExchange(),
-    fetch,
+    refresh: refreshExchange(controlPlaneFetch),
+    fetch: controlPlaneFetch,
     timeoutMs: SIGN_IN_TIMEOUT_MS,
   })
-
-  const userInfoUrl = userInfoUrlFromTokenUrl(config.tokenUrl)
-  const resolveIdentity = userInfoUrl
-    ? createIdentityResolver({
-        userInfoUrl,
-        fetch,
-        ...(input.onError ? { onError: (error) => input.onError?.("identity", error) } : {}),
-      })
-    : undefined
 
   const service = createAccountService({
     auth,
     store,
-    fetch: (url, init) => fetch(url, init),
-    refresh: (refreshToken) => refresh({ tokenUrl: config.tokenUrl, clientId: config.clientId, refreshToken }),
-    ...(resolveIdentity ? { resolveIdentity } : {}),
+    fetch: (url, init) => controlPlaneFetch(url, init),
     now: () => Math.floor(Date.now() / 1000),
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),

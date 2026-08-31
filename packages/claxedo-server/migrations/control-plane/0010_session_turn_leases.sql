@@ -29,6 +29,6 @@ when new.session_id != old.session_id
   or new.workspace_id != old.workspace_id
   or new.org_id != old.org_id
   or new.project_id != old.project_id
-begin
+BEGIN
   select raise(abort, 'session turn lease scope is immutable');
 end;

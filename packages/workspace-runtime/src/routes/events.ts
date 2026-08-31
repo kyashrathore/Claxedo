@@ -3,6 +3,13 @@ import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtim
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import type { RuntimeEventEnvelope, RuntimeEventHub } from "../runtime-event-hub"
 import type { Context } from "hono"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  isSessionEventScopeResponse,
+  scopedReplay,
+  waitForSessionEventStream,
+} from "./session-event-privacy"
 import {
   createIdentityAwareEventSource,
   defaultEventDeliveryPolicy,
@@ -27,7 +34,9 @@ export type RuntimeEventAuthorization = {
   resolveParentSessionId: (event: RuntimeEventEnvelope) => string | undefined
 }
 
-export type RuntimeEventOptions = EventDeliveryOptions<RuntimeEventEnvelope> & Partial<RuntimeEventAuthorization>
+export type RuntimeEventOptions = EventDeliveryOptions<RuntimeEventEnvelope>
+  & Partial<RuntimeEventAuthorization>
+  & { sessionAccessPolicy?: SessionAccessPolicy }
 
 export function runtimeEventsHandler(
   eventHub: RuntimeEventHub,
@@ -42,9 +51,12 @@ export function runtimeEventsHandler(
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
   return async function handler(c: Context) {
     const parentSessionId = c.req.query("parentSessionId")
-    if (parentSessionId && (!options.authorizeParent || !await options.authorizeParent(c, parentSessionId))) {
+    const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy, "parentSessionId")
+    if (isSessionEventScopeResponse(scope)) return scope
+    if (parentSessionId && options.authorizeParent && !await options.authorizeParent(c, parentSessionId)) {
       return c.json({ error: "Forbidden" }, 403)
     }
+    if (parentSessionId && !options.authorizeParent && !scope.managed) return c.json({ error: "Forbidden" }, 403)
     const allows = (event: RuntimeEventEnvelope) => {
       const eventParentSessionId = options.resolveParentSessionId?.(event)
       if (eventParentSessionId) return eventParentSessionId === parentSessionId
@@ -53,8 +65,8 @@ export function runtimeEventsHandler(
     }
     const opened = source.open(await (options.principal?.(c) ?? eventDeliveryPrincipal(c)))
     await opened.ready
-    const scopedReplay = parentSessionId || options.resolveParentSessionId
-      ? filterReplay(opened.replay, allows)
+    const replayForScope = parentSessionId || options.resolveParentSessionId
+      ? scopedReplay(opened.replay, allows)
       : opened.replay
     return streamSSE(c, async (stream) => {
       const heartbeat = { type: "heartbeat" } as const
@@ -93,7 +105,7 @@ export function runtimeEventsHandler(
           },
         }),
       })
-      await waitForSessionEventStream(stream, scope, sessionAccessPolicy, cleanup)
+      await waitForSessionEventStream(stream, scope, options.sessionAccessPolicy, cleanup)
     })
   }
 }

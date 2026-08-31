@@ -45,6 +45,6 @@ create index service_deployment_steps_workflow_idx
 
 create trigger service_deployment_steps_no_delete
 before delete on service_deployment_steps
-begin
+BEGIN
   select raise(abort, 'service deployment receipts are append-only');
 end;

@@ -13,6 +13,7 @@ import {
 } from "./better-auth-d1-foundation"
 import { resolveBetterAuthConfiguration } from "./better-auth-configuration"
 import {
+  BETTER_AUTH_DESKTOP_REDIRECT_URI,
   betterAuthNativeResource,
   provisionBetterAuthNativeClients,
 } from "./better-auth-native-clients"
@@ -35,6 +36,11 @@ const WORKER_PATH = fileURLToPath(new URL("./better-auth-d1-worker-spike.cf.ts",
 
 function body(input: Record<string, string>) {
   return new URLSearchParams(input).toString()
+}
+
+async function pkceChallenge(verifier: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier))
+  return Buffer.from(digest).toString("base64url")
 }
 
 function executableMigration(sql: string) {
@@ -153,7 +159,7 @@ describe("Better Auth + D1 inside Workerd", () => {
       }),
       expect.objectContaining({
         clientId: "claxedo-desktop",
-        redirectUris: JSON.stringify(["http://127.0.0.1/callback"]),
+        redirectUris: JSON.stringify([BETTER_AUTH_DESKTOP_REDIRECT_URI]),
         requirePKCE: 1,
       }),
     ])
@@ -816,21 +822,62 @@ describe("Better Auth + D1 inside Workerd", () => {
       .first<{ attackedRefresh: number; orphanedAccess: number; unaffectedRefresh: number }>()
     expect(familyCounts).toEqual({ attackedRefresh: 0, orphanedAccess: 0, unaffectedRefresh: 1 })
 
+    const desktopRedirectUri = "http://127.0.0.1:49152/claxedo/auth/callback"
+    const desktopCodeVerifier = "desktop-pkce-verifier-that-is-forty-three-bytes"
     const pkce = await miniflare.dispatchFetch(
       `${API_ORIGIN}/api/auth/oauth2/authorize?${new URLSearchParams({
         client_id: "claxedo-desktop",
         response_type: "code",
-        redirect_uri: "http://127.0.0.1:49152/callback",
-        scope: "workspace:read",
+        redirect_uri: desktopRedirectUri,
+        scope: "offline_access workspace:read workspace:write",
         resource: NATIVE_RESOURCE,
         state: "desktop-state",
-        code_challenge: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        code_challenge: await pkceChallenge(desktopCodeVerifier),
         code_challenge_method: "S256",
       })}`,
       { headers: { cookie: sessionCookie.value, origin: APP_ORIGIN }, redirect: "manual" },
     )
-    expect([200, 302]).toContain(pkce.status)
-    expect(pkce.headers.get("location") ?? "").not.toContain("error=")
+    expect(pkce.status, await pkce.clone().text()).toBe(200)
+    const authorization = (await pkce.json()) as { redirect?: unknown; url?: unknown }
+    expect(authorization.redirect).toBe(true)
+    expect(typeof authorization.url).toBe("string")
+    const consentUrl = new URL(String(authorization.url))
+    expect(`${consentUrl.origin}${consentUrl.pathname}`).toBe(`${APP_ORIGIN}/oauth/consent`)
+    const consent = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/consent`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        cookie: sessionCookie.value,
+        origin: APP_ORIGIN,
+      },
+      body: JSON.stringify({ accept: true, oauth_query: consentUrl.search }),
+    })
+    expect(consent.status, await consent.clone().text()).toBe(200)
+    const consentResult = (await consent.json()) as { redirect?: unknown; url?: unknown }
+    expect(consentResult.redirect).toBe(true)
+    expect(typeof consentResult.url).toBe("string")
+    const callback = new URL(String(consentResult.url))
+    expect(`${callback.origin}${callback.pathname}`).toBe(desktopRedirectUri)
+    expect(callback.searchParams.get("state")).toBe("desktop-state")
+    const authorizationCode = callback.searchParams.get("code")
+    expect(authorizationCode).toBeTruthy()
+
+    const desktopToken = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body({
+        grant_type: "authorization_code",
+        client_id: "claxedo-desktop",
+        code: authorizationCode!,
+        code_verifier: desktopCodeVerifier,
+        redirect_uri: desktopRedirectUri,
+        resource: NATIVE_RESOURCE,
+      }),
+    })
+    expect(desktopToken.status, await desktopToken.clone().text()).toBe(200)
+    const desktopTokens = (await desktopToken.json()) as { access_token?: unknown; refresh_token?: unknown }
+    expect(desktopTokens.access_token).toEqual(expect.any(String))
+    expect(desktopTokens.refresh_token).toEqual(expect.any(String))
 
     const signOut = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-out`, {
       method: "POST",

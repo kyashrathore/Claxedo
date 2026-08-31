@@ -15,6 +15,8 @@ import {
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const FORBIDDEN_EXPORT_SQL = /\b(?:attach|detach|load_extension)\b|\bvacuum\s+into\b|\bpragma\s+writable_schema\b/i
+const CREATE_TRIGGER_SQL = /^CREATE TRIGGER\b[\s\S]*?\bEND;\s*$/gim
+const CREATE_TRIGGER_START = /^CREATE TRIGGER\b/gim
 
 type Binding = Readonly<{ deploymentId: string; releaseId: string; recoveryEpoch: string }>
 
@@ -43,6 +45,17 @@ function digest(bytes: Uint8Array) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`
 }
 
+function dependencyOrderedExport(sql: string) {
+  const triggerCount = sql.match(CREATE_TRIGGER_START)?.length ?? 0
+  const triggers = sql.match(CREATE_TRIGGER_SQL) ?? []
+  if (triggers.length !== triggerCount) {
+    throw new Error(`SQLite export contained ${triggerCount} triggers but only ${triggers.length} complete trigger blocks`)
+  }
+  const deferred = triggers.filter((trigger) => /\bINSTEAD\s+OF\b/i.test(trigger))
+  if (deferred.length === 0) return sql
+  return `${sql.replace(CREATE_TRIGGER_SQL, (trigger) => (/\bINSTEAD\s+OF\b/i.test(trigger) ? "" : trigger))}\n${deferred.join("\n")}\n`
+}
+
 function restoreExport(input: {
   label: "AUTH_DB" | "CONTROL_PLANE_DB"
   sql: string
@@ -54,8 +67,14 @@ function restoreExport(input: {
   }
   const database = new Database(":memory:")
   try {
+    // D1 exports schema objects alphabetically, so an INSTEAD OF trigger can
+    // precede the view it targets. Replay the original bytes in dependency-safe
+    // order without changing the immutable backup artifact or its digest.
+    database.pragma("foreign_keys = OFF")
+    database.exec(dependencyOrderedExport(input.sql))
+    const foreignKeyFailures = database.pragma("foreign_key_check") as unknown[]
+    if (foreignKeyFailures.length !== 0) throw new Error(`${input.label} restored foreign-key check failed`)
     database.pragma("foreign_keys = ON")
-    database.exec(input.sql)
     const integrity = database.pragma("integrity_check", { simple: true })
     if (integrity !== "ok") throw new Error(`${input.label} restored integrity check failed`)
     const schemaTables = database

@@ -69,7 +69,7 @@ async function harness(
     forwarded,
     auditEvents,
     token: (role: "viewer" | "editor" | "admin" | "owner" = "editor") => mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       orgId: "org_1",
@@ -112,7 +112,7 @@ describe("workspace relay server", () => {
         workspaceId: "ws_1",
         hostId: "host_1",
       })).resolves.toMatchObject({
-        jti: decodeJwt(runtimeAccessToken).jti,
+        parent_jti: decodeJwt(runtimeAccessToken).jti,
         role: "editor",
         access: "cloud",
         backing: "cloud-vm",
@@ -121,7 +121,7 @@ describe("workspace relay server", () => {
         action: "relay.request.accepted",
         result: "allow",
         principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
         role: "editor",
         workspaceId: "ws_1",
@@ -234,7 +234,7 @@ describe("workspace relay server", () => {
             claims: {
               iss: "claxedo-control-plane",
               aud: "workspace-relay",
-              sub: "shared-subject",
+              principal_kind: "user",
               actor_id: token === "actor-a-token" ? "actor_a" : "actor_b",
               actor_kind: "human",
               actor_public_id: token === "actor-a-token" ? "usr_public_a" : "usr_public_b",
@@ -311,7 +311,7 @@ describe("workspace relay server", () => {
           verifyCalls++
           return {
             principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
             scopes: ["workspace:write"],
             claims: {
@@ -368,7 +368,7 @@ describe("workspace relay server", () => {
           verifyCalls++
           return {
             principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
             scopes: ["workspace:write"],
             claims: {
@@ -418,7 +418,7 @@ describe("workspace relay server", () => {
           verifyCalls++
           return {
             principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
             scopes: ["workspace:write"],
             claims: {
@@ -494,7 +494,7 @@ describe("workspace relay server", () => {
 
     const token = await mintRuntimeAccessToken({
       principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_2",
@@ -554,7 +554,7 @@ describe("workspace relay server", () => {
       result: "deny",
       reason: "relay_role_denied",
       principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
       role: "viewer",
       workspaceId: "ws_1",
@@ -712,7 +712,7 @@ describe("workspace relay server", () => {
       result: "deny",
       reason: "runtime_access_token_revoked",
       principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
       role: "editor",
       workspaceId: "ws_1",
@@ -860,7 +860,7 @@ describe("workspace relay server", () => {
       result: "deny",
       reason: "user_hosted_app_offline",
       principalKind: "user",
-      actorId: "user_1",
+      actorId: "actor_1",
       actorKind: "human",
       role: "editor",
       workspaceId: "ws_1",

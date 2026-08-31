@@ -48,8 +48,28 @@ export type RelayHostAuthOptions = {
 }
 
 export type RelayHostAuthContext = {
-  relayHostAuth?: RelayHostTokenClaims
+  relayHostAuth?: RelayHostTokenClaims | EmbeddedRelayHostIdentity
   relayHostDirectAuth?: true
+}
+
+/**
+ * Verified actor identity stamped by the in-process local-server boundary.
+ * This is deliberately not a Relay Host Token: it has no signature lifecycle,
+ * issuer, audience, or token identifiers to synthesize.
+ */
+export type EmbeddedRelayHostIdentity = {
+  principal_kind: "user" | "service"
+  actor_id: string
+  actor_kind: "human" | "agent"
+  actor_public_id: string
+  actor_name: string
+  actor_avatar_url?: string
+  org_id: string
+  workspace_id: string
+  role: "viewer" | "editor" | "admin" | "owner"
+  host_id?: string
+  access?: "cloud" | "user-hosted"
+  backing?: "cloud-vm" | "local-worktree"
 }
 
 export type RelayHostAuthAuditEvent = {
@@ -103,11 +123,6 @@ function validateRelayHostVerifierClaims(
   }
 
   const principal_kind = stringClaim(payload, "principal_kind")
-  const actor_id = stringClaim(payload, "actor_id")
-  const actor_kind = stringClaim(payload, "actor_kind")
-  const actor_public_id = stringClaim(payload, "actor_public_id")
-  const actor_name = stringClaim(payload, "actor_name")
-  const actor_avatar_url = stringClaim(payload, "actor_avatar_url")
   const org_id = stringClaim(payload, "org_id")
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
@@ -139,6 +154,7 @@ function validateRelayHostVerifierClaims(
     || !exp
     || !iat
     || !jti
+    || !parent_jti
     || (!!actor_id !== !!actor_kind)
     || (!!actor_public_id !== !!actor_name)
     || (!!actor_avatar_url && (!actor_public_id || !actor_name))
@@ -169,16 +185,9 @@ function validateRelayHostVerifierClaims(
     exp,
     iat,
     jti,
+    parent_jti,
   } as const
-  if (actor_id && actor_kind) return {
-    ...claims,
-    actor_id,
-    actor_kind,
-    ...(actor_public_id && actor_name
-      ? { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
-      : {}),
-  }
-  return { ...claims, actor_id: undefined, actor_kind: undefined }
+  return claims
 }
 
 /**

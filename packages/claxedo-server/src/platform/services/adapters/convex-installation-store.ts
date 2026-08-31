@@ -15,7 +15,7 @@ import {
   type InstallationRevision,
   type ServiceInstallationAuditEvent,
   type ServiceInstallationStore,
-} from "../installation-store"
+} from "../installation-ledger"
 
 type Scope = Pick<DeploymentWorkflowIdentity, "environmentId" | "deploymentId">
 

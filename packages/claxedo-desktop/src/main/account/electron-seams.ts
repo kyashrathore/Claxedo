@@ -243,7 +243,12 @@ async function postToTokenEndpoint(
  */
 function decodeTokenPayload(payload: TokenPayload, fallbackRefreshToken?: string): TokenSet | undefined {
   const accessToken = controlPlaneBearerFromTokenPayload(payload)
-  if (!accessToken) return undefined
+  if (
+    !accessToken ||
+    typeof payload.expires_in !== "number" ||
+    !Number.isFinite(payload.expires_in) ||
+    payload.expires_in <= 0
+  ) return undefined
   const refreshToken = payload.refresh_token ?? fallbackRefreshToken
   return {
     accessToken,
@@ -279,7 +284,7 @@ export function tokenExchange(
     // Throwing, unlike the refresh grant below: this one runs inside a sign-in
     // attempt that already has a failure channel, and there is no existing
     // session whose fate depends on telling the causes apart.
-    if (!tokens) throw new Error("token exchange returned no access token")
+    if (!tokens) throw new Error("token exchange returned no valid access token and lifetime")
     return tokens
   }
 }

@@ -2010,24 +2010,33 @@ describe("workspace runtime auth helpers", () => {
     expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
   })
 
-  test("managed proxied event streams drop malformed frames while preserving public heartbeats", async () => {
+  test("managed event streams use the canonical filtered hub instead of an untrusted upstream", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-events-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const encoder = new TextEncoder()
-    const handler: OpenCodeRequestFn = async () => new Response(new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
-        controller.enqueue(encoder.encode("data: not-json\n\n"))
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
-        controller.close()
-      },
-    }), { headers: { "Content-Type": "text/event-stream" } })
+    let upstreamRequests = 0
+    const handler: OpenCodeRequestFn = async () => {
+      upstreamRequests += 1
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
+          controller.enqueue(encoder.encode("data: not-json\n\n"))
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
+          controller.close()
+        },
+      }), { headers: { "Content-Type": "text/event-stream" } })
+    }
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
       authorizePrefix: async () => ({ allowed: true }),
       filterSessions: async (input) => input.sessionIds,
+      authorizeStream: async () => ({
+        allowed: true,
+        lease: "lease_managed_events",
+        expiresAt: Date.now() + 60_000,
+      }),
     }
     const host = createWorkspaceHost({
       opencodeRequest: handler,
@@ -2052,16 +2061,75 @@ describe("workspace runtime auth helpers", () => {
     })
     await host.apply({ version: 1, runner: { type: "opencode" }, auth: {}, mcp: {} })
 
-    const response = await app.request("http://localhost/global/event", {
+    const response = await app.request("http://localhost/global/event?sessionID=session_public_heartbeat", {
       headers: { Accept: "text/event-stream" },
     })
-    const body = await response.text()
+    const reader = response.body!.getReader()
+    const first = await reader.read()
+    const body = new TextDecoder().decode(first.value)
+    await reader.cancel()
 
     expect(response.status).toBe(200)
-    expect(body).toContain("server.heartbeat")
+    expect(body).toContain("server.connected")
     expect(body).not.toContain("not-json")
     expect(body).not.toContain("future.transcript")
     expect(body).not.toContain("secret")
+    expect(upstreamRequests).toBe(0)
+    host.dispose()
+  })
+
+  test("managed global event revocation ends the reader and ignores later private frames", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-global-revoke-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const hub = createRuntimeEventHub()
+    let authorityCalls = 0
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async () => ({ allowed: true }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => input.sessionIds,
+      authorizeStream: async () => {
+        authorityCalls += 1
+        return authorityCalls === 1
+          ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+          : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+      },
+    }
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        workspace_id: "workspace_1",
+        org_id: "org_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+    const host = mountTestHost(app, { eventHub: hub, sessionAccessPolicy: policy })
+
+    const response = await app.request("http://localhost/global/event?sessionID=ses_private", {
+      headers: { Accept: "text/event-stream" },
+    })
+    const reader = response.body!.getReader()
+    expect((await reader.read()).done).toBe(false)
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    hub.publishGlobal({
+      directory: "/repo",
+      payload: {
+        type: "session.updated",
+        properties: { info: { id: "ses_private" } },
+      } as CompatEvent,
+    })
+
+    expect(response.status).toBe(200)
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
     host.dispose()
   })
 
@@ -4055,7 +4123,7 @@ describe("global compatibility stream (Unit 4)", () => {
       ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
@@ -4067,6 +4135,7 @@ describe("global compatibility stream (Unit 4)", () => {
         exp: now + 60,
         iat: now,
         jti: "rat_1",
+        parent_jti: "parent_rat_1",
       })
       await next()
     })
@@ -4253,6 +4322,9 @@ describe("session create workspace isolation (Unit 4)", () => {
           created
             .filter((row) => row.directory === directory)
             .map((row) => ({ id: row.id, time: { created: 1, updated: 2 } })),
+        getSession: async (id: string, directory: string) => created.some((row) => row.id === id && row.directory === directory)
+          ? { id, time: { created: 1, updated: 2 } }
+          : null,
         createSession: async (directory: string, _title?: string, id?: string) => {
           const next = { id: id ?? `ses_${created.length}`, directory }
           created.push(next)
@@ -4278,7 +4350,8 @@ describe("session create workspace isolation (Unit 4)", () => {
     }
 
     try {
-      expect((await create(home, { id: "ses_home", title: "Home" })).status).toBe(201)
+      const homeCreated = await create(home, { id: "ses_home", title: "Home" })
+      expect(homeCreated.status).toBe(201)
       expect(await listIds(home)).toContain("ses_home")
       expect(await listIds(other)).not.toContain("ses_home")
 

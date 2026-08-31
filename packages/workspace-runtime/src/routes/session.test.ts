@@ -364,6 +364,23 @@ describe("session prompt route", () => {
         registered.add(input.sessionId)
         return { allowed: true }
       },
+      acquireTurn: async (input) => ({
+        allowed: true,
+        turnId: input.turnId,
+        leaseId: "lease_1",
+        fencingToken: 1,
+        acquiredAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      renewTurn: async (input) => ({
+        allowed: true,
+        turnId: input.turnId,
+        leaseId: input.leaseId,
+        fencingToken: input.fencingToken,
+        acquiredAt: Date.now(),
+        expiresAt: Date.now() + 60_000,
+      }),
+      releaseTurn: async () => ({ released: true }),
     }
     const routes = createSessionRoutes({
       resolveAdapter: async () => ({
@@ -399,15 +416,19 @@ describe("session prompt route", () => {
 
     expect((await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", authorization: "Bearer signed-rht" },
-      body: JSON.stringify({ title: "Managed" }),
+      headers: {
+        "Content-Type": "application/json",
+        authorization: "Bearer signed-rht",
+        "x-claxedo-session-registration-operation": "op_managed_create",
+      },
+      body: JSON.stringify({ id: "ses_managed_create", title: "Managed" }),
     })).status).toBe(201)
     expect(registered).toEqual(new Set(["ses_managed_create"]))
 
     expect((await app.request(`http://localhost/session/ses_managed_create/prompt_async?directory=${encodeURIComponent(directory)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json", authorization: "Bearer signed-rht" },
-      body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
+      body: JSON.stringify({ messageID: "msg_managed_1", parts: [{ type: "text", text: "hello" }] }),
     })).status).toBe(204)
   })
 

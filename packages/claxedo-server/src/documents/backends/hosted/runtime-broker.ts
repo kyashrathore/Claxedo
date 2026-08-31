@@ -1,6 +1,5 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../../authority/services"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { mintDocumentRelayJobToken, mintDocumentSessionToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import type { DocumentIndexEntry } from "../../index-store"
@@ -49,7 +48,6 @@ export function createHostedDocumentRuntimeBroker(
       const access = await provider.mintRuntimeAccessToken({
         workspaceId,
         hostId: target.hostId,
-        subject: input.auth.user.subject,
         principalKind: "user",
         ...await resolveRuntimeActor(authority, input.auth),
         orgId,
@@ -193,7 +191,6 @@ export function createHostedDocumentRuntimeBroker(
       const access = await provider.mintRuntimeAccessToken({
         workspaceId,
         hostId: target.hostId,
-        subject: input.auth.user.subject,
         principalKind: "user",
         ...await resolveRuntimeActor(authority, input.auth),
         orgId: input.entry.org_id,

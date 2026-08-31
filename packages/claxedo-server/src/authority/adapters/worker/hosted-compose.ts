@@ -20,6 +20,7 @@ import { cliSessionTokenAuthority } from "../convex/cli-session-tokens"
 import { createUserHostedTargetResolver } from "../convex/user-hosted-relay-target"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import {
   authorityCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
@@ -102,7 +103,7 @@ export function composeWorkerSandboxManager(input: {
 }
 
 /** Build the hosted workspace authority from env. */
-export function composeWorkerAuthority(env: HostedWorkerEnv): WorkspaceAuthority & PrivateSessionAuthority {
+export function composeWorkerAuthority(env: HostedWorkerEnv): WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority {
   return createConvexAuthority({
     url: storageUrl(env),
     serviceToken: required(

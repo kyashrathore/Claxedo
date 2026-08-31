@@ -33,7 +33,7 @@ when new.deployment_id != old.deployment_id
   or new.actor_id != old.actor_id
   or new.bound_by_actor_id != old.bound_by_actor_id
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'channel identity binding intent is immutable');
 end;
 
@@ -87,6 +87,6 @@ when new.deployment_id != old.deployment_id
   or new.minted_for_user_id is not old.minted_for_user_id
   or new.expires_at != old.expires_at
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'runtime access token intent is immutable');
 end;

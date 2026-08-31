@@ -1503,7 +1503,7 @@ export default function SessionPage() {
                   firstFoldReady={firstFoldReady}
                   directory={dir}
                   sessionId={sessionID}
-                  workspaceId={signedWorkspaceId}
+                  eventWorkspaceId={replayWorkspaceId}
                 />
               }
               registerRetry={firstTurnOnboarding.registerRetry}

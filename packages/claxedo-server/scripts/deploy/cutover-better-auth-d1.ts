@@ -3,7 +3,11 @@ import { fileURLToPath } from "node:url"
 
 import { MULTIPLAYER_VALIDATION_EVIDENCE_KINDS } from "../../src/deployments/hosted-workerd/better-auth-d1-cutover-gate.cf"
 import { LOCKED_BROWSER_BUILD_ID } from "../../src/deployments/hosted-workerd/better-auth-d1-release-state.cf"
-import { betterAuthD1ReleaseInputs, type BetterAuthD1ReleaseEnvironment } from "./release-better-auth-d1"
+import {
+  betterAuthD1ReleaseInputs,
+  fetchReleaseProbe,
+  type BetterAuthD1ReleaseEnvironment,
+} from "./release-better-auth-d1"
 
 const ACTIONS = [
   "status",
@@ -174,7 +178,7 @@ export function selectedBetterAuthD1CutoverAction(argv: readonly string[]) {
 }
 
 async function operatorFetch(apiOrigin: string, secret: string, request: BetterAuthD1OperatorRequest) {
-  const response = await fetch(`${apiOrigin}${request.path}`, {
+  const response = await fetchReleaseProbe(`${apiOrigin}${request.path}`, {
     method: request.method,
     headers: {
       authorization: `Bearer ${secret}`,

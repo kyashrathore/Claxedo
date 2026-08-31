@@ -98,6 +98,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
       merged,
       storedMessage(message) ?? ({ id: message.id, role: message.role } as Message),
       indexById,
+      options?.canonicalMessageIDs,
       distinctSnapshotReplies,
     )
     if (index === -1) {
@@ -372,6 +373,7 @@ function assistantTurnIndex(
   current: UIMessage[],
   message: Message,
   indexById?: Map<string, number>,
+  canonicalMessageIDs?: ReadonlySet<string>,
   distinctSnapshotReplies?: ReadonlySet<string>,
 ) {
   const byId = indexById ? (indexById.get(message.id) ?? -1) : current.findIndex((item) => item.id === message.id)

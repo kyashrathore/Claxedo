@@ -5,6 +5,7 @@ import { isTerminalRuntimeEvent, runtimeEventsHandler } from "./events"
 import { createWorkspaceHost } from "../workspace"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 const event = (sessionId: string, delta: string): Omit<RuntimeEventEnvelope, "contractVersion"> => ({
   directory: "/workspace",
@@ -61,7 +62,9 @@ function managedMount(authorize: SessionAccessPolicy["authorize"] = () => ({ all
     })
     await next()
   })
-  app.get("/runtime-events", runtimeEventsHandler(hub, undefined, managedPolicy(authorize)))
+  app.get("/runtime-events", runtimeEventsHandler(hub, {
+    sessionAccessPolicy: managedPolicy(authorize),
+  }))
   return { app, hub }
 }
 
@@ -78,6 +81,43 @@ async function readUntil(response: Response, value: string) {
 }
 
 describe("runtime event parent authorization", () => {
+  test("managed revocation ends the reader and ignores later private frames", async () => {
+    const app = new Hono()
+    const hub = createRuntimeEventHub()
+    let authorityCalls = 0
+    const accessPolicy = managedPolicy(() => ({ allowed: true }))
+    accessPolicy.authorizeStream = async () => {
+      authorityCalls += 1
+      return authorityCalls === 1
+        ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+        : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+    }
+    app.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+    app.get("/runtime-events", runtimeEventsHandler(hub, { sessionAccessPolicy: accessPolicy }))
+
+    const response = await app.request("http://localhost/runtime-events?parentSessionId=parent-a")
+    const reader = response.body!.getReader()
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    hub.publishRuntime(event("parent-a", "must-not-write"))
+
+    expect(response.status).toBe(200)
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
+  })
+
   test("retains every terminal subagent lifecycle update for replay", () => {
     for (const status of ["completed", "failed", "killed", "interrupted"] as const) {
       expect(isTerminalRuntimeEvent({

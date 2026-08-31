@@ -76,6 +76,12 @@ export type PrivateSessionVisibility = {
   updatedAt?: number
 }
 
+export type PrivateSessionInventoryRow = {
+  session_id: string
+  workspace_id?: string
+  [field: string]: unknown
+}
+
 /**
  * Signed RHT claims needed by a future runtime-session oracle.
  *
@@ -93,6 +99,7 @@ export type RelayHostPrivateSessionClaims = {
   host_id: string
   jti: string
   parent_jti: string
+  role?: "viewer" | "editor" | "admin" | "owner"
 }
 
 export type PrivateSessionRuntimeProof = PrivateSessionRuntimePrincipal & {
@@ -176,7 +183,10 @@ export type PrivateSessionAuthority = {
     input: PrivateSessionParticipantInput,
   ) => Promise<{ removed: boolean }>
 
-  listSessions: (auth: SignedControlPlaneAuth, input: { workspaceId: string }) => Promise<unknown>
+  listSessions: (
+    auth: SignedControlPlaneAuth,
+    input: { workspaceId: string },
+  ) => Promise<PrivateSessionInventoryRow[]>
   resolveSession: (auth: SignedControlPlaneAuth, input: { sessionId: string }) => Promise<unknown>
   readSessionMessages: (
     auth: SignedControlPlaneAuth,
@@ -190,6 +200,7 @@ export type PrivateSessionAuthority = {
       messages: unknown[]
       intakeReady?: boolean
       maxEventOrdinal?: number
+      fencingToken?: number
     },
   ) => Promise<unknown>
   upsertSessionVisibility: (

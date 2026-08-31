@@ -1,4 +1,6 @@
+import { createHash } from "node:crypto"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
+import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type {
   PrivateSessionAuthority,
@@ -7,6 +9,14 @@ import type {
   ReservePrivateSessionInput,
   TransitionPrivateSessionRegistrationInput,
 } from "@claxedo/server-core/platform/auth/private-session-authority"
+import {
+  SessionTurnConflictError,
+  SessionTurnLeaseLostError,
+  type OwnedSessionTurnInput,
+  type SessionTurnAuthority,
+  type SessionTurnLease,
+} from "@claxedo/server-core/platform/auth/session-turn-authority"
+import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
   authorizeWorkspaceForUser,
   workspaceByPublicId,
@@ -40,6 +50,7 @@ type SessionRow = {
   created_at: number
   updated_at: number
   max_event_ordinal: number
+  snapshot_hash: string | null
   deleted_at: number | null
 }
 type MessageRow = {
@@ -67,8 +78,8 @@ export function createSqlitePrivateSessionAuthority(input: {
   database: () => SqliteAuthorityDb
   principal(auth: SignedControlPlaneAuth): AuthorityUser
   now?: () => number
-}): PrivateSessionAuthority {
-  const now = input.now ?? Date.now
+}): PrivateSessionAuthority & SessionTurnAuthority {
+  const now = input.now ?? (() => Date.now())
   const actorForAuth = (auth: SignedControlPlaneAuth) => input.principal(auth)
 
   const workspaceAccess = (
@@ -111,7 +122,13 @@ export function createSqlitePrivateSessionAuthority(input: {
       LEFT JOIN org_memberships m ON m.org_id = o.org_id AND m.token_identifier = ?
       WHERE o.org_id = ? AND o.deleted_at IS NULL
     `).get(actorId, workspace.org_id) as { owner_token_identifier: string | null; role: string | null } | undefined
-    return row?.owner_token_identifier === actorId || row?.role === "owner" || row?.role === "admin"
+    if (!row) return false
+    // A durable owner id covers legacy/recovery cases where the membership row
+    // is absent. Once a current membership exists, its role is authoritative;
+    // a demoted owner must not retain private-session administration through
+    // the historical ownership column.
+    if (row.role !== null) return row.role === "owner" || row.role === "admin"
+    return row.owner_token_identifier === actorId
   }
 
   const hasPrivateAccess = (db: SqliteAuthorityDb, actorId: string, row: SessionRow, workspace: WorkspaceRow) => {
@@ -120,7 +137,24 @@ export function createSqlitePrivateSessionAuthority(input: {
       SELECT 1 FROM session_participants
       WHERE session_id = ? AND workspace_id = ? AND participant_actor_id = ? AND revoked_at IS NULL
     `).get(row.session_id, row.workspace_id, actorId)
-    return !!participant
+    if (participant) return true
+    const grants = db.prepare(`
+      SELECT granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
+      FROM session_share_grants WHERE session_id = ? AND workspace_id = ? AND revoked_at IS NULL
+    `).all(row.session_id, row.workspace_id) as Array<{
+      granted_to_user_token_identifier: string | null
+      granted_to_org_id: string | null
+      granted_to_team_id: string | null
+    }>
+    return grants.some((grant) => {
+      if (grant.granted_to_user_token_identifier === actorId) return true
+      if (grant.granted_to_org_id && db.prepare(`
+        SELECT 1 FROM org_memberships WHERE org_id = ? AND token_identifier = ?
+      `).get(grant.granted_to_org_id, actorId)) return true
+      return !!grant.granted_to_team_id && !!db.prepare(`
+        SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
+      `).get(grant.granted_to_team_id, actorId)
+    })
   }
 
   const requireSessionAccess = (
@@ -224,6 +258,85 @@ export function createSqlitePrivateSessionAuthority(input: {
 
   return {
     reserveSession,
+    async acquireSessionTurn(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const sessionId = required(value.sessionId, "sessionId")
+      const workspaceId = required(value.workspaceId, "workspaceId")
+      const turnId = required(value.turnId, "turnId")
+      const at = now()
+      return db.transaction(() => {
+        requireSessionAccess(db, actor, sessionId, workspaceId, "write")
+        const current = turnLease(db, sessionId)
+        if (current && current.released_at === null && current.expires_at > at) {
+          if (current.turn_id === turnId && current.actor_id === actor.token_identifier) return publicTurnLease(current)
+          throw new SessionTurnConflictError(sessionId, current.expires_at)
+        }
+        const fencingToken = (current?.fencing_token ?? 0) + 1
+        const leaseId = `turn_${randomToken()}`
+        const expiresAt = at + SESSION_TURN_LEASE_TTL_MS
+        const producer = db.prepare(`
+          SELECT actor_id FROM session_turn_producers WHERE session_id = ? AND turn_id = ?
+        `).get(sessionId, turnId) as { actor_id: string } | undefined
+        if (producer) throw new SessionTurnConflictError(sessionId)
+        db.prepare(`
+          INSERT INTO session_turn_leases (
+            session_id, workspace_id, turn_id, lease_id, fencing_token,
+            actor_id, acquired_at, expires_at, released_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
+          ON CONFLICT (session_id) DO UPDATE SET
+            workspace_id = excluded.workspace_id,
+            turn_id = excluded.turn_id,
+            lease_id = excluded.lease_id,
+            fencing_token = excluded.fencing_token,
+            actor_id = excluded.actor_id,
+            acquired_at = excluded.acquired_at,
+            expires_at = excluded.expires_at,
+            released_at = NULL
+        `).run(sessionId, workspaceId, turnId, leaseId, fencingToken, actor.token_identifier, at, expiresAt)
+        db.prepare(`
+          INSERT INTO session_turn_producers (
+            session_id, workspace_id, turn_id, fencing_token, actor_id, admitted_at
+          ) VALUES (?, ?, ?, ?, ?, ?)
+        `).run(sessionId, workspaceId, turnId, fencingToken, actor.token_identifier, at)
+        return publicTurnLease(turnLease(db, sessionId)!)
+      })()
+    },
+    async renewSessionTurn(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const owned = ownedTurn(value)
+      const at = now()
+      return db.transaction(() => {
+        requireSessionAccess(db, actor, owned.sessionId, owned.workspaceId, "write")
+        const current = turnLease(db, owned.sessionId)
+        if (!ownsTurn(current, owned, actor.token_identifier) || current.expires_at <= at) {
+          throw new SessionTurnLeaseLostError(owned.sessionId)
+        }
+        db.prepare(`UPDATE session_turn_leases SET expires_at = ? WHERE session_id = ?`)
+          .run(at + SESSION_TURN_LEASE_TTL_MS, owned.sessionId)
+        return publicTurnLease(turnLease(db, owned.sessionId)!)
+      })()
+    },
+    async releaseSessionTurn(value) {
+      const db = input.database()
+      const actor = runtimeActor(db, value)
+      const owned = ownedTurn(value)
+      const at = now()
+      return db.transaction(() => {
+        const current = turnLease(db, owned.sessionId)
+        if (ownsTurn(current, owned, actor.token_identifier)) {
+          db.prepare(`UPDATE session_turn_leases SET released_at = ? WHERE session_id = ?`).run(at, owned.sessionId)
+        }
+        const released = turnLease(db, owned.sessionId)
+        return {
+          released: Boolean(matchesTurn(released, owned, actor.token_identifier) && released.released_at !== null),
+          sessionId: owned.sessionId,
+          turnId: owned.turnId,
+          fencingToken: owned.fencingToken,
+        }
+      })()
+    },
     async registerRuntimeSession(value) {
       const db = input.database()
       const actor = runtimeActor(db, value)
@@ -328,7 +441,9 @@ export function createSqlitePrivateSessionAuthority(input: {
       const rows = db.prepare(`
         SELECT * FROM session_history WHERE workspace_id = ? AND deleted_at IS NULL ORDER BY updated_at DESC
       `).all(value.workspaceId) as SessionRow[]
-      return rows.filter((row) => hasPrivateAccess(db, actor.token_identifier, row, workspace)).map(publicSession)
+      return rows
+        .filter((row) => hasPrivateAccess(db, actor.token_identifier, row, workspace))
+        .map((row) => publicSession(db, row, actor.token_identifier))
     },
     async resolveSession(auth, value) {
       const db = input.database()
@@ -341,7 +456,7 @@ export function createSqlitePrivateSessionAuthority(input: {
         if (error instanceof ControlPlaneAuthError) return null
         throw error
       }
-      return { ...publicSession(row), workspace_id: row.workspace_id }
+      return { ...publicSession(db, row, actor.token_identifier), workspace_id: row.workspace_id }
     },
     async readSessionMessages(auth, value) {
       const db = input.database()
@@ -392,22 +507,42 @@ export function createSqlitePrivateSessionAuthority(input: {
     async syncSessionMessages(auth, value) {
       const db = input.database()
       const actor = actorForAuth(auth)
-      const current = requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "write")
+      const messages = value.messages.map(canonicalMessage)
+      const hasUserMessages = messages.some((message) => message.role === "user")
+      const fencingToken = value.fencingToken === undefined ? undefined : positiveFence(value.fencingToken)
+      if (hasUserMessages && fencingToken === undefined) {
+        throw new SqlitePrivateSessionAuthorityError("invalid_input", "Session snapshots with user messages require a fencing token")
+      }
+      const snapshotHash = createHash("sha256").update(JSON.stringify(messages.map((message) => message.value))).digest("hex")
       return db.transaction(() => {
+        const current = requireSessionAccess(db, actor, value.sessionId, value.workspaceId, "write")
+        if (fencingToken !== undefined) {
+          const lease = turnLease(db, value.sessionId)
+          if (!lease || lease.workspace_id !== value.workspaceId || lease.fencing_token !== fencingToken) {
+            throw new SqlitePrivateSessionAuthorityError("resource_conflict", "Session snapshot fencing token is stale")
+          }
+        }
         if (value.maxEventOrdinal !== undefined && value.maxEventOrdinal < current.row.max_event_ordinal) {
           return { ok: true, applied: false, maxEventOrdinal: current.row.max_event_ordinal }
         }
         if (value.maxEventOrdinal !== undefined && value.maxEventOrdinal === current.row.max_event_ordinal) {
-          const count = db.prepare(`SELECT COUNT(*) AS count FROM session_messages WHERE session_id = ?`)
-            .get(value.sessionId) as { count: number }
-          if (count.count > 0 && value.messages.length <= count.count) {
-            return { ok: true, applied: false, maxEventOrdinal: current.row.max_event_ordinal }
+          if (current.row.snapshot_hash !== null && current.row.snapshot_hash !== snapshotHash) {
+            throw new SqlitePrivateSessionAuthorityError("resource_conflict", "Equal session event ordinals carry different snapshots")
           }
+          if (current.row.snapshot_hash !== null) return { ok: true, applied: false, maxEventOrdinal: current.row.max_event_ordinal }
         }
-        const existing = new Map((db.prepare(`
-          SELECT message_id, author_actor_id FROM session_messages WHERE session_id = ? AND workspace_id = ?
-        `).all(value.sessionId, value.workspaceId) as Array<{ message_id: string; author_actor_id: string | null }>)
-          .map((row) => [row.message_id, row.author_actor_id]))
+        const canonicalAuthors = new Map<string, string>()
+        for (const message of messages) {
+          if (message.role !== "user") continue
+          const producer = db.prepare(`
+            SELECT actor_id FROM session_turn_producers
+            WHERE session_id = ? AND workspace_id = ? AND turn_id = ?
+          `).get(value.sessionId, value.workspaceId, message.id) as { actor_id: string } | undefined
+          if (!producer) {
+            throw new SqlitePrivateSessionAuthorityError("resource_conflict", `User message ${message.id} has no admitted producer`)
+          }
+          canonicalAuthors.set(message.id, producer.actor_id)
+        }
         db.prepare(`DELETE FROM session_messages WHERE session_id = ? AND workspace_id = ?`)
           .run(value.sessionId, value.workspaceId)
         const insert = db.prepare(`
@@ -416,18 +551,24 @@ export function createSqlitePrivateSessionAuthority(input: {
           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         const at = now()
-        for (let ordinal = 0; ordinal < value.messages.length; ordinal += 1) {
-          const message = value.messages[ordinal]
-          const id = messageId(message, value.sessionId, ordinal)
-          const role = messageRole(message)
-          const claimed = messageAuthorId(message)
-          const authorId = existing.get(id) ?? (role === "user" && claimed === actor.token_identifier ? actor.token_identifier : null)
-          insert.run(value.sessionId, value.workspaceId, id, authorId, role, ordinal, json(message), at, at)
+        for (let ordinal = 0; ordinal < messages.length; ordinal += 1) {
+          const message = messages[ordinal]
+          insert.run(
+            value.sessionId,
+            value.workspaceId,
+            message.id,
+            canonicalAuthors.get(message.id) ?? null,
+            message.role,
+            ordinal,
+            json(message.value),
+            at,
+            at,
+          )
         }
         db.prepare(`
-          UPDATE session_history SET max_event_ordinal = COALESCE(?, max_event_ordinal), updated_at = ?
+          UPDATE session_history SET max_event_ordinal = COALESCE(?, max_event_ordinal), snapshot_hash = ?, updated_at = ?
           WHERE session_id = ? AND workspace_id = ?
-        `).run(value.maxEventOrdinal ?? null, at, value.sessionId, value.workspaceId)
+        `).run(value.maxEventOrdinal ?? null, snapshotHash, at, value.sessionId, value.workspaceId)
         return value.maxEventOrdinal === undefined
           ? { ok: true }
           : { ok: true, applied: true, maxEventOrdinal: value.maxEventOrdinal }
@@ -537,19 +678,26 @@ function result(row: RegistrationRow, changed: boolean): PrivateSessionRegistrat
   }
 }
 
-function publicSession(row: SessionRow) {
+function publicSession(db: SqliteAuthorityDb, row: SessionRow, viewerActorId: string) {
+  const creator = row.creator_actor_id === viewerActorId
+    ? undefined
+    : db.prepare(`SELECT public_id, name, image_url FROM users WHERE token_identifier = ?`)
+        .get(row.creator_actor_id) as { public_id: string | null; name: string | null; image_url: string | null } | undefined
   return {
     session_id: row.session_id,
     title: row.title ?? undefined,
     created_at: row.created_at,
     updated_at: row.updated_at,
+    ...(creator?.public_id ? { owner_public_id: creator.public_id } : {}),
+    ...(creator?.name ? { owner_name: creator.name } : {}),
+    ...(creator?.image_url ? { owner_avatar_url: creator.image_url } : {}),
   }
 }
 
-function messageId(value: unknown, sessionId: string, ordinal: number) {
+function messageId(value: unknown) {
   const row = record(value)
   const info = record(row?.info)
-  return optional(row?.id) ?? optional(info?.id) ?? `${sessionId}:${ordinal}`
+  return optional(row?.id) ?? optional(info?.id)
 }
 
 function messageRole(value: unknown) {
@@ -558,10 +706,73 @@ function messageRole(value: unknown) {
   return optional(row?.role) ?? optional(info?.role) ?? null
 }
 
-function messageAuthorId(value: unknown) {
-  const info = record(record(value)?.info)
-  const claxedo = record(info?.claxedo)
-  return optional(record(claxedo?.author)?.id)
+function canonicalMessage(value: unknown) {
+  const id = messageId(value)
+  const role = messageRole(value)
+  if (!id || !role) {
+    throw new SqlitePrivateSessionAuthorityError("invalid_input", "Session messages require canonical ids and roles")
+  }
+  return { id, role, value }
+}
+
+type TurnLeaseRow = {
+  session_id: string
+  workspace_id: string
+  turn_id: string
+  lease_id: string
+  fencing_token: number
+  actor_id: string
+  acquired_at: number
+  expires_at: number
+  released_at: number | null
+}
+
+function turnLease(db: SqliteAuthorityDb, sessionId: string) {
+  return db.prepare(`SELECT * FROM session_turn_leases WHERE session_id = ?`).get(sessionId) as TurnLeaseRow | undefined
+}
+
+function publicTurnLease(row: TurnLeaseRow): SessionTurnLease {
+  return {
+    sessionId: row.session_id,
+    workspaceId: row.workspace_id,
+    turnId: row.turn_id,
+    leaseId: row.lease_id,
+    fencingToken: row.fencing_token,
+    acquiredAt: row.acquired_at,
+    expiresAt: row.expires_at,
+  }
+}
+
+function ownedTurn(value: OwnedSessionTurnInput) {
+  return {
+    sessionId: required(value.sessionId, "sessionId"),
+    workspaceId: required(value.workspaceId, "workspaceId"),
+    turnId: required(value.turnId, "turnId"),
+    leaseId: required(value.leaseId, "leaseId"),
+    fencingToken: positiveFence(value.fencingToken),
+  }
+}
+
+function ownsTurn(row: TurnLeaseRow | undefined, value: ReturnType<typeof ownedTurn>, actorId: string): row is TurnLeaseRow {
+  return matchesTurn(row, value, actorId) && row.released_at === null
+}
+
+function matchesTurn(row: TurnLeaseRow | undefined, value: ReturnType<typeof ownedTurn>, actorId: string): row is TurnLeaseRow {
+  return Boolean(
+    row
+      && row.workspace_id === value.workspaceId
+      && row.turn_id === value.turnId
+      && row.lease_id === value.leaseId
+      && row.fencing_token === value.fencingToken
+      && row.actor_id === actorId,
+  )
+}
+
+function positiveFence(value: number) {
+  if (!Number.isSafeInteger(value) || value < 1) {
+    throw new SqlitePrivateSessionAuthorityError("invalid_input", "fencingToken must be a positive integer")
+  }
+  return value
 }
 
 function publicMessage(row: MessageRow) {

@@ -21,6 +21,29 @@ function fetchDouble(handler: (input: RequestInfo | URL, init?: RequestInit) => 
 }
 
 describe("claxedoEventStreamTargets", () => {
+  test("omits the absent central control-plane stream while unsigned", () => {
+    expect(claxedoEventStreamTargets({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/local",
+      includeCentral: false,
+      projects: [{
+        workspaces: {
+          "/repo/local": {
+            workspaceId: "ws_local",
+            kind: "local",
+            directory: "/repo/local",
+          },
+        },
+      }],
+    })).toEqual([{
+      kind: "workspace",
+      serverUrl: "http://127.0.0.1:3001",
+      workspaceId: "ws_local",
+      workspaceKind: "local",
+      directory: "/repo/local",
+    }])
+  })
+
   test("adds a workspace runtime stream for local workspaces", () => {
     expect(claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
@@ -165,6 +188,16 @@ describe("claxedoEventStreamTargets", () => {
     }
     expect(eventStreamTargetKey({ ...base, sessionID: "session-a" }))
       .not.toBe(eventStreamTargetKey({ ...base, sessionID: "session-b" }))
+  })
+
+  test("replaces the central stream when account authority changes", () => {
+    const central = {
+      kind: "central" as const,
+      url: new URL("http://127.0.0.1:3001/api/claxedo/events"),
+    }
+
+    expect(eventStreamTargetKey(central, { accountSigned: false }))
+      .not.toBe(eventStreamTargetKey(central, { accountSigned: true }))
   })
 })
 

@@ -7,6 +7,7 @@ import { createSelfHostedApp } from "./app"
 import { DuplicateRouteOwner, withRouteOwnership } from "../route-ownership"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 
 /**
  * Who owns what in the self-hosted composition.
@@ -48,7 +49,7 @@ function selfHosted() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   )
 }
@@ -73,6 +74,7 @@ const SELF_HOSTED_MOUNTS = [
   { prefix: "/api/claxedo/remote-access", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/workspace", owner: "self-hosted-node" },
   { prefix: "/api/control", owner: "self-hosted-node" },
+  { prefix: "/api/control/session-registrations", owner: "self-hosted-node" },
   { prefix: "/api/runtime-authority", owner: "self-hosted-node" },
   { prefix: "/api/workspace", owner: "self-hosted-node" },
   { prefix: "/documents", owner: "self-hosted-node" },

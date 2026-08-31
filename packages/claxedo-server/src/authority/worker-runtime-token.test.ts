@@ -43,8 +43,8 @@ describe("Worker-compatible token signing", () => {
     } as unknown as NodeJS.ProcessEnv
 
     const result = await runtimeAccessTokenSigner(env)({
-      subject: "user_1",
-      actorId: "actor_1",
+      principalKind: "user",
+      actorId: "user_1",
       actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",

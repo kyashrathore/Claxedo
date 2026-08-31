@@ -63,10 +63,10 @@ export function renderHostedCoreWranglerConfig(input: HostedCoreConfigInput) {
   const artifact = certifiedHostedWorkerArtifact(input.artifactId, input.limiter.environment)
   if (input.limiter.owner !== "core") throw new Error("the core config requires a core-owned limiter namespace")
   if (artifact.resources.liveSyncRoom && !input.userDeployedOrganization) {
-    throw new Error("the open user-deployed core requires its one organization identity")
+    throw new Error("the cutover-capable user-deployed core requires its one organization identity")
   }
   if (!artifact.resources.liveSyncRoom && input.userDeployedOrganization) {
-    throw new Error("the locked artifact must not receive open-product organization configuration")
+    throw new Error("the locked-only artifact must not receive cutover product organization configuration")
   }
   const productVariables = input.userDeployedOrganization
     ? `

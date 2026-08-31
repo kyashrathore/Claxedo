@@ -136,7 +136,7 @@ describe("railWorkspaceSessionBacking", () => {
     })).toBeUndefined()
   })
 
-  test("uses optimistic relay placement before signed inventory hydration", () => {
+  test("keeps known-local and UUID workspace associations off the relay", () => {
     const pending = project({
       worktree: "/repo/main",
       workspaces: {
@@ -155,17 +155,22 @@ describe("railWorkspaceSessionBacking", () => {
       sessionRef: "workspace:ws_pending:session:ses_pending",
       environmentKind: "local",
       project: pending,
-    })).toEqual({ workspaceId: "ws_pending", kind: "user-hosted" })
+    })).toBeUndefined()
 
     expect(railWorkspaceSessionBacking({
       directory: "/runtime/repo",
       workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
       sessionRef: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e:session:ses_uuid",
       project: pending,
-    })).toEqual({
-      workspaceId: "608c72e3-405a-4d2a-bf7f-883b8c76ea8e",
-      kind: "user-hosted",
-    })
+    })).toBeUndefined()
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "ws_pending",
+      sessionRef: "workspace:ws_pending:session:ses_pending",
+      environmentKind: "local",
+      project: project({ worktree: "/repo/main" }),
+    })).toEqual({ workspaceId: "ws_pending", kind: "user-hosted" })
   })
 
   test("keeps canonical central and local session refs off the relay", () => {

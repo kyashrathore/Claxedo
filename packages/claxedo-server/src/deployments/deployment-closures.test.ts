@@ -64,7 +64,10 @@ const ENTRIES = [
   // durable facts. The only package edges are Node `fs` for that durable local
   // ledger and the pinned, read-only `tokentracker-cli` pricing catalog.
   // Combined with dev's sandbox-contract split, the exact package count is 28.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 140, packages: 28 },
+  // The reviewed multiplayer graph adds the canonical private-session
+  // reservation route and retained-provider/runtime-authority composition;
+  // all remain hosted owners and the exact source closure is now 146 modules.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 146, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
   // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
@@ -76,11 +79,21 @@ const ENTRIES = [
   // +1 module (111 -> 112): the 236-byte `agent-sdk-runtime/message-page`
   // contract. It replaces runtime imports of the 6.7 MB all-adapters barrel,
   // stays dependency-free in the emitted Worker graph, and adds no package.
-  // +3 modules (113 -> 116): the reviewed workspace extension mutation owner,
-  // its shared enablement contract, and the Convex adapter now reached by the
-  // hosted shell. These routes make extension policy canonical in the signed
-  // control plane and add no package edge.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 116, packages: 13 },
+  // +1 module (112 -> 113): hosted billing/Convex usage ownership moved out of
+  // the provider-neutral workspace route into one explicit legacy-product
+  // adapter. This keeps the future user-deployed core from closing over it;
+  // the legacy hosted entry deliberately injects it until static product roots
+  // replace this entry.
+  // +1 dependency-neutral package (13 -> 14): the authenticated bootstrap now
+  // publishes the fixed service catalog through @claxedo/service-contract.
+  // The closure must contain the vocabulary, but never either implementation.
+  // +3 modules (113 -> 116): provider-neutral hosted composition, its
+  // fail-closed composition error, and the retained sandbox-driver adapter.
+  // The clean Better Auth+D1 roots below prove these retained provider edges
+  // do not leak into user-deployed artifacts.
+  // The same reviewed multiplayer owners are Worker-safe and bring no optional
+  // provider SDK into this root. The exact source closure is now 122 modules.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 122, packages: 14 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
@@ -88,15 +101,16 @@ const ENTRIES = [
   // self-host-only history/provenance adapters, durable outbox, and Convex
   // ledger adapter. The one package edge is the pinned, read-only
   // `tokentracker-cli` scanner/pricing library. Combined with dev's
-  // sandbox-contract split, the exact package count is 34. These are exact,
-  // not headroom.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 153, packages: 34 },
+  // sandbox-contract split, then runtime authority reaches the canonical
+  // `@claxedo/workspace-relay-protocol` lease TTL contract. The private-session
+  // reservation route is the reviewed source owner. These exact 150/35 values
+  // are measurements, not headroom.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 150, packages: 35 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */
 const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
 const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
-const BETTER_AUTH_D1_OPEN_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-open-worker.cf.ts"
 const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
 const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
 
@@ -168,7 +182,6 @@ describe("server deployment entry closures", () => {
     const forbiddenFiles = files.filter((file) =>
       [
         "authority/hosted-services",
-        "better-auth-d1-open-worker",
         "core-worker.cf",
         "deployments/hosted-shared/hosted-app",
         "hosts/workgraph",
@@ -196,48 +209,7 @@ describe("server deployment entry closures", () => {
     ).toEqual([])
   })
 
-  it("keeps the open Better Auth D1 user-deployed root free of retained and optional providers", () => {
-    const result = closure(BETTER_AUTH_D1_OPEN_ENTRY, { runtimeOnly: true })
-    const files = result.modules.map((module) => module.relative)
-    expect(files).toContain(BETTER_AUTH_D1_OPEN_ENTRY)
-    expect(files).toContain("src/authority/provider-neutral-hosted-services.ts")
-    expect(files).toContain("src/authority/adapters/worker/better-auth-d1-compose.ts")
-    expect(files).toContain("src/deployments/hosted-workerd/core-worker.cf.ts")
-    expect(files).toContain("src/routes/runtime-session-authority.ts")
-    expect(result.unresolved).toEqual([])
-    expect(result.opaque).toEqual([])
-
-    expect(
-      files.filter((file) =>
-        [
-          "authority/adapters/convex/",
-          "authority/adapters/worker/hosted-compose",
-          "authority/adapters/worker/retained-sandbox-driver",
-          "sandbox/stores/convex",
-          "platform/auth/clerk-adapter",
-          "better-auth-d1-locked-worker",
-          "billing/",
-          "hosts/workgraph/",
-          "documents/",
-        ].some((value) => file.toLowerCase().includes(value)),
-      ),
-    ).toEqual([])
-    expect(
-      result.packages.filter((name) =>
-        [
-          "convex",
-          "@clerk/backend",
-          "@claxedo/workgraph",
-          "@claxedo/workgraph-service",
-          "@claxedo/documents-service",
-          "@claxedo/wakes",
-          "@polar-sh/sdk",
-        ].includes(name),
-      ),
-    ).toEqual([])
-  })
-
-  it("keeps the phase-gated candidate separate from locked and optional provider implementations", () => {
+  it("keeps the phase-gated cutover Worker separate from locked and optional provider implementations", () => {
     const result = closure(BETTER_AUTH_D1_CANDIDATE_ENTRY, { runtimeOnly: true })
     const files = result.modules.map((module) => module.relative)
     expect(files).toContain(BETTER_AUTH_D1_CANDIDATE_ENTRY)

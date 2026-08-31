@@ -1,6 +1,6 @@
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
 import { normalizeProjectList } from "@/platform/query/control-plane"
-import { accountRun } from "@/platform/account/hosted-control-call"
+import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 
 export type ShellBootstrap = {
@@ -30,7 +30,7 @@ export async function fetchShellBootstrap(input: {
   baseUrl: string
   request: typeof fetch
 }): Promise<ShellBootstrap | undefined> {
-  const run = accountRun()
+  const run = await signedAccountRun()
   // Desktop signed mode: shell bootstrap is account.get with scope=shell.
   if (run) {
     try {

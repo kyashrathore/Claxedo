@@ -1,6 +1,7 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type { ProjectRole, WorkspaceAuthority, WorkspaceVisibility } from "@claxedo/server-core/platform/auth/authority"
 import type {
   PrivateSessionActor,
@@ -22,6 +23,11 @@ import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 
 export const D1_SESSION_AUTHORITY_METHODS = [
   "authorizeSessionRead",
+  "grantSessionParticipant",
+  "revokeSessionParticipant",
+  "grantSessionShare",
+  "revokeSessionShare",
+  "listSessionShares",
   "listSessions",
   "resolveSession",
   "readSessionMessages",
@@ -42,7 +48,7 @@ export type D1SessionAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_SESSION
 export type D1SessionAuthorityOptions = {
   deploymentId: string
   now?: () => number
-  randomId?: (prefix: "assert" | "snapshot" | "turn") => string
+  randomId?: (prefix: "assert" | "snapshot" | "turn" | "share") => string
   turnLeaseTtlMs?: number
 }
 
@@ -116,6 +122,25 @@ type MessageRow = {
   author_kind: "human" | "agent" | null
 }
 
+type SessionShareRow = {
+  grant_id: string
+  session_id: string
+  workspace_id: string
+  org_id: string
+  project_id: string
+  target_user_id: string | null
+  target_org_id: string | null
+  target_team_id: string | null
+  granted_by_actor_id: string
+  granted_at: number
+  revoked_at: number | null
+}
+
+type SessionShareTarget =
+  | { kind: "user"; id: string }
+  | { kind: "org"; id: string }
+  | { kind: "team"; id: string }
+
 type TurnLeaseRow = {
   session_id: string
   workspace_id: string
@@ -145,14 +170,17 @@ const MAX_MESSAGE_BYTES = 256 * 1024
 const MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 const MAX_VISIBILITY_ROWS = 500
 
-export class D1SessionAuthorityError extends Error {
+export class D1SessionAuthorityError extends ClaxedoError {
   constructor(
-    public readonly code:
+    code:
       "invalid_input" | "resource_conflict" | "registration_transition_denied" | "actor_authorization_denied",
     message: string,
   ) {
-    super(message)
-    this.name = "D1SessionAuthorityError"
+    super({
+      code,
+      message,
+      status: code === "invalid_input" ? 400 : code === "resource_conflict" ? 409 : 403,
+    })
   }
 }
 
@@ -228,7 +256,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             ...repeat(who.actorId, 7),
             intent.kind,
             intent.parentSessionId ?? null,
-            ...repeat(who.actorId, 10),
+            ...repeat(who.actorId, 11),
           ),
         this.registrationAssertion(assertionId, intent, workspace, who.actorId, "reserved"),
         this.deleteAssertion(assertionId),
@@ -366,7 +394,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         expiresAt,
         sessionId,
         workspaceId,
-        ...repeat(actor.actorId, 10),
+        ...repeat(actor.actorId, 11),
         now,
       )
       .run()
@@ -420,7 +448,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         fencingToken,
         actor.actorId,
         now,
-        ...repeat(actor.actorId, 10),
+        ...repeat(actor.actorId, 11),
       )
       .run()
     const row = await this.turnLease(sessionId)
@@ -607,6 +635,330 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     return { removed: true }
   }
 
+  async grantSessionShare(
+    auth: SignedControlPlaneAuth,
+    args: {
+      sessionId: string
+      workspaceId: string
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToUserId?: string
+      grantedToClerkOrgId?: string
+      grantedToOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
+    },
+  ) {
+    const administrator = await this.requirePrincipal(auth)
+    const sessionId = requireText(args.sessionId, "sessionId")
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    const session = await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+    const target = await this.resolveShareTarget(args)
+    if (!target) throw sessionShareError("session_share_target_not_found")
+    if (target.kind === "user") {
+      const actor = await this.activeHumanActorForUser(target.id)
+      if (!actor) throw sessionShareError("session_share_target_not_found")
+      try {
+        await this.requireWorkspaceAccess(actor, workspaceId, "read")
+      } catch (error) {
+        if (isDenied(error)) throw sessionShareError("session_participant_workspace_access_required")
+        throw error
+      }
+    }
+    if (target.kind === "org" && target.id !== session.org_id) {
+      throw sessionShareError("session_share_org_mismatch")
+    }
+    if (target.kind === "team") {
+      const team = await this.database
+        .prepare(`select org_id from teams where team_id = ? and deleted_at is null`)
+        .bind(target.id)
+        .first<{ org_id: string }>()
+      if (!team) throw sessionShareError("session_share_target_not_found")
+      if (team.org_id !== session.org_id) throw sessionShareError("session_share_team_org_mismatch")
+    }
+    const existing = await this.activeShareForTarget(sessionId, target)
+    if (existing) return { grant_id: existing.grant_id }
+    const grantId = this.randomId("share")
+    const assertionId = this.randomId("assert")
+    const now = this.now()
+    const targetGuard = target.kind === "user"
+      ? `exists (
+          select 1 from actors target_actor
+          join users target_user on target_user.user_id = target_actor.user_id and target_user.state = 'active'
+          join workspaces target_workspace
+            on target_workspace.workspace_id = s.workspace_id and target_workspace.deleted_at is null
+          where target_actor.user_id = ? and target_actor.kind = 'human' and target_actor.state = 'active'
+            and ${actorWorkspaceAccessSql("target_actor.actor_id", "target_workspace", 1)}
+        )`
+      : target.kind === "org"
+        ? `s.org_id = ? and exists (
+            select 1 from orgs target_org where target_org.org_id = ? and target_org.deleted_at is null
+          )`
+        : `exists (
+            select 1 from teams target_team
+            where target_team.team_id = ? and target_team.org_id = s.org_id and target_team.deleted_at is null
+          )`
+    const targetGuardBindings = target.kind === "org" ? [target.id, target.id] : [target.id]
+    try {
+      await this.guardedBatch(
+        [
+          this.database
+            .prepare(
+              `
+        insert into session_share_grants (
+          grant_id, session_id, workspace_id, org_id, project_id,
+          target_user_id, target_org_id, target_team_id,
+          granted_by_actor_id, granted_at, revoked_at
+        )
+        select ?, s.session_id, s.workspace_id, s.org_id, s.project_id,
+          ?, ?, ?, ?, ?, null
+        from sessions s
+        where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
+          and ${participantAdministratorSql("?", "s")}
+          and ${targetGuard}
+      `,
+            )
+            .bind(
+              grantId,
+              target.kind === "user" ? target.id : null,
+              target.kind === "org" ? target.id : null,
+              target.kind === "team" ? target.id : null,
+              administrator.actorId,
+              now,
+              sessionId,
+              workspaceId,
+              ...repeat(administrator.actorId, 9),
+              ...targetGuardBindings,
+            ),
+          this.database
+            .prepare(
+              `
+          insert into authority_batch_assertions (assertion_id, passed)
+          values (?, case when exists (
+            select 1 from session_share_grants g
+            join sessions s on s.session_id = g.session_id and s.workspace_id = g.workspace_id
+            where g.grant_id = ? and g.session_id = ? and g.workspace_id = ? and g.revoked_at is null
+              and s.deleted_at is null and ${participantAdministratorSql("?", "s")}
+          ) then 1 else 0 end)
+        `,
+            )
+            .bind(assertionId, grantId, sessionId, workspaceId, ...repeat(administrator.actorId, 9)),
+          this.deleteAssertion(assertionId),
+        ],
+        "Session share grant raced with an authority change",
+      )
+    } catch (error) {
+      if (String(error).includes("UNIQUE constraint failed")) {
+        await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+        const raced = await this.activeShareForTarget(sessionId, target)
+        if (raced && raced.workspace_id === workspaceId) return { grant_id: raced.grant_id }
+      }
+      throw error
+    }
+    return { grant_id: grantId }
+  }
+
+  async revokeSessionShare(
+    auth: SignedControlPlaneAuth,
+    args: {
+      sessionId: string
+      workspaceId: string
+      grantId?: string
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToUserId?: string
+      grantedToClerkOrgId?: string
+      grantedToOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
+    },
+  ) {
+    const administrator = await this.requirePrincipal(auth)
+    const sessionId = requireText(args.sessionId, "sessionId")
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    await this.requireParticipantAdministrator(administrator, sessionId, workspaceId)
+    const selectorCount = shareSelectorCount(args)
+    if ((args.grantId && selectorCount !== 0) || (!args.grantId && selectorCount !== 1)) {
+      throw sessionShareError("session_share_target_required")
+    }
+    let grants: SessionShareRow[]
+    if (args.grantId) {
+      const result = await this.database
+        .prepare(
+          `
+        select * from session_share_grants
+        where grant_id = ? and session_id = ? and workspace_id = ? and revoked_at is null
+      `,
+        )
+        .bind(requireText(args.grantId, "grantId"), sessionId, workspaceId)
+        .all<SessionShareRow>()
+      grants = result.results
+    } else {
+      const target = await this.resolveShareTarget(args, true)
+      if (!target) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+      const existing = await this.activeShareForTarget(sessionId, target)
+      grants = existing && existing.workspace_id === workspaceId ? [existing] : []
+    }
+    if (grants.length === 0) return { revoked: false, runtime_tokens_revoked: 0, revokedTargets: [] }
+    const now = this.now()
+    let runtimeTokensRevoked = 0
+    for (const grant of grants) {
+      const assertionId = this.randomId("assert")
+      const revokeTokens = grant.target_user_id
+        ? this.database
+            .prepare(
+              `
+            update runtime_access_tokens set revoked_at = ?
+            where workspace_id = ? and minted_for_user_id = ? and revoked_at is null
+              and exists (
+                select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?
+              )
+          `,
+            )
+            .bind(now, workspaceId, grant.target_user_id, grant.grant_id, now)
+        : grant.target_team_id
+          ? this.database
+              .prepare(
+                `
+              update runtime_access_tokens set revoked_at = ?
+              where workspace_id = ? and revoked_at is null and minted_for_user_id in (
+                select tm.user_id from team_memberships tm
+                join teams t on t.team_id = tm.team_id and t.deleted_at is null
+                join org_memberships om
+                  on om.org_id = t.org_id and om.user_id = tm.user_id and om.revoked_at is null
+                where tm.team_id = ? and tm.revoked_at is null
+              )
+                and exists (
+                  select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?
+                )
+            `,
+              )
+              .bind(now, workspaceId, grant.target_team_id, grant.grant_id, now)
+          : this.database
+              .prepare(
+                `
+              update runtime_access_tokens set revoked_at = ?
+              where workspace_id = ? and revoked_at is null and minted_for_user_id in (
+                select user_id from org_memberships where org_id = ? and revoked_at is null
+              )
+                and exists (
+                  select 1 from session_share_grants g where g.grant_id = ? and g.revoked_at = ?
+                )
+            `,
+              )
+              .bind(now, workspaceId, grant.target_org_id, grant.grant_id, now)
+      const results = await this.guardedBatch(
+        [
+          this.database
+            .prepare(
+              `
+            update session_share_grants set revoked_at = ?
+            where grant_id = ? and session_id = ? and workspace_id = ? and revoked_at is null
+              and exists (
+                select 1 from sessions s
+                where s.session_id = session_share_grants.session_id
+                  and s.workspace_id = session_share_grants.workspace_id
+                  and s.deleted_at is null
+                  and ${participantAdministratorSql("?", "s")}
+              )
+          `,
+            )
+            .bind(now, grant.grant_id, sessionId, workspaceId, ...repeat(administrator.actorId, 9)),
+          revokeTokens,
+          this.database
+            .prepare(
+              `
+            insert into authority_batch_assertions (assertion_id, passed)
+            values (?, case when exists (
+              select 1 from session_share_grants g
+              join sessions s on s.session_id = g.session_id and s.workspace_id = g.workspace_id
+              where g.grant_id = ? and g.session_id = ? and g.workspace_id = ? and g.revoked_at = ?
+                and s.deleted_at is null and ${participantAdministratorSql("?", "s")}
+            ) then 1 else 0 end)
+          `,
+            )
+            .bind(assertionId, grant.grant_id, sessionId, workspaceId, now, ...repeat(administrator.actorId, 9)),
+          this.deleteAssertion(assertionId),
+        ],
+        "Session share revocation raced with an authority change",
+      )
+      runtimeTokensRevoked += results[1]?.meta.changes ?? 0
+    }
+    return {
+      revoked: true,
+      runtime_tokens_revoked: runtimeTokensRevoked,
+      revokedTargets: grants.map(shareFanoutTarget),
+    }
+  }
+
+  async listSessionShares(auth: SignedControlPlaneAuth, args: { sessionId: string; workspaceId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const sessionId = requireText(args.sessionId, "sessionId")
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    const session = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
+    const canManage = !!(await this.database
+      .prepare(
+        `
+      select 1 from sessions s
+      where s.session_id = ? and s.workspace_id = ? and s.deleted_at is null
+        and ${participantAdministratorSql("?", "s")}
+    `,
+      )
+      .bind(sessionId, workspaceId, ...repeat(who.actorId, 9))
+      .first())
+    if (!canManage) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+    const [grants, participants, teams] = await Promise.all([
+      this.database
+        .prepare(
+          `
+        select grant_id, session_id, workspace_id,
+          target_user_id as granted_to_user_id,
+          target_org_id as granted_to_org_id,
+          target_team_id as granted_to_team_id,
+          granted_by_actor_id as created_by_user_id,
+          granted_at as created_at,
+          revoked_at
+        from session_share_grants
+        where session_id = ? and workspace_id = ? and revoked_at is null
+        order by granted_at, grant_id
+      `,
+        )
+        .bind(sessionId, workspaceId)
+        .all<Record<string, unknown>>(),
+      this.database
+        .prepare(
+          `
+        select actor_id as user_id, granted_by_actor_id as added_by_user_id, granted_at as created_at
+        from session_participants
+        where session_id = ? and workspace_id = ? and revoked_at is null
+        order by granted_at, actor_id
+      `,
+        )
+        .bind(sessionId, workspaceId)
+        .all<Record<string, unknown>>(),
+      this.database
+        .prepare(
+          `
+        select t.team_id, t.name,
+          case when exists (
+            select 1 from session_share_grants g
+            where g.session_id = ? and g.target_team_id = t.team_id and g.revoked_at is null
+          ) then 1 else 0 end as is_shared
+        from teams t where t.org_id = ? and t.deleted_at is null
+        order by t.name, t.team_id
+      `,
+        )
+        .bind(sessionId, session.org_id)
+        .all<{ team_id: string; name: string; is_shared: number }>(),
+    ])
+    return {
+      can_manage_shares: true,
+      grants: grants.results,
+      participants: participants.results,
+      teams: teams.results.map((team) => ({ ...team, is_shared: team.is_shared === 1 })),
+    }
+  }
+
   async listSessions(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
@@ -625,7 +977,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       order by s.updated_at desc, s.session_id
     `,
       )
-      .bind(workspaceId, ...repeat(who.actorId, 10))
+      .bind(workspaceId, ...repeat(who.actorId, 11))
       .all<SessionRow>()
     return result.results.map(sessionJson)
   }
@@ -701,6 +1053,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       messages: unknown[]
       intakeReady?: boolean
       maxEventOrdinal?: number
+      fencingToken?: number
     },
   ) {
     const who = await this.requirePrincipal(auth)
@@ -711,7 +1064,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       throw new D1SessionAuthorityError("invalid_input", "Session intake is not owned by the D1 session authority")
     }
     const maxEventOrdinal = optionalOrdinal(args.maxEventOrdinal)
-    const messages = canonicalMessages(args.messages, who.actorId)
+    const messages = canonicalMessages(args.messages)
+    const hasUserMessages = messages.some((message) => message.role === "user")
+    const fencingToken = args.fencingToken === undefined ? undefined : positiveFence(args.fencingToken)
+    if (hasUserMessages && fencingToken === undefined) {
+      throw new D1SessionAuthorityError("invalid_input", "Session snapshots with user messages require a fencing token")
+    }
     const snapshotJson = JSON.stringify(messages)
     if (byteLength(snapshotJson) > MAX_SNAPSHOT_BYTES) {
       throw new D1SessionAuthorityError("invalid_input", `Session snapshot exceeds ${MAX_SNAPSHOT_BYTES} bytes`)
@@ -719,6 +1077,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const snapshotHash = await sha256(snapshotJson)
     const current = await this.session(sessionId)
     if (!current || current.workspace_id !== workspaceId || current.deleted_at !== null) throw denied()
+    if (fencingToken !== undefined) {
+      const lease = await this.turnLease(sessionId)
+      if (!lease || lease.workspace_id !== workspaceId || lease.fencing_token !== fencingToken) {
+        throw new D1SessionAuthorityError("resource_conflict", "Session snapshot fencing token is stale")
+      }
+    }
     if (maxEventOrdinal !== undefined && maxEventOrdinal < current.max_event_ordinal) {
       return { ok: true, applied: false, maxEventOrdinal: current.max_event_ordinal }
     }
@@ -741,6 +1105,13 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         ? "1 = 1"
         : "(max_event_ordinal < ? or (max_event_ordinal = ? and snapshot_hash is null))"
     const eventBindings = maxEventOrdinal === undefined ? [] : [maxEventOrdinal, maxEventOrdinal]
+    const updateFenceGuard = fencingToken === undefined
+      ? "1 = 1"
+      : "exists (select 1 from session_turn_leases l where l.session_id = sessions.session_id and l.workspace_id = sessions.workspace_id and l.fencing_token = ?)"
+    const assertionFenceGuard = fencingToken === undefined
+      ? "1 = 1"
+      : "exists (select 1 from session_turn_leases l where l.session_id = s.session_id and l.workspace_id = s.workspace_id and l.fencing_token = ?)"
+    const fenceBindings = fencingToken === undefined ? [] : [fencingToken]
     try {
       await this.guardedBatch(
         [
@@ -755,6 +1126,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             updated_at = ?
           where session_id = ? and workspace_id = ? and deleted_at is null
             and ${eventGuard}
+            and ${updateFenceGuard}
             and ${actorSessionAccessSql("?", "sessions", 2)}
         `,
             )
@@ -766,7 +1138,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
               sessionId,
               workspaceId,
               ...eventBindings,
-              ...repeat(who.actorId, 10),
+              ...fenceBindings,
+              ...repeat(who.actorId, 11),
             ),
           this.database
             .prepare(
@@ -777,7 +1150,12 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           )
           select s.session_id, s.workspace_id, s.org_id, s.project_id,
             json_extract(j.value, '$.id'),
-            json_extract(j.value, '$.authorActorId'),
+            case when json_extract(j.value, '$.role') = 'user' then (
+              select p.actor_id from session_turn_producers p
+              where p.session_id = s.session_id
+                and p.workspace_id = s.workspace_id
+                and p.turn_id = json_extract(j.value, '$.id')
+            ) else null end,
             json_extract(j.value, '$.role'),
             json_extract(j.value, '$.ordinal'),
             json_extract(j.value, '$.dataJson'),
@@ -814,11 +1192,26 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           values (?, case when exists (
             select 1 from sessions s where s.session_id = ? and s.workspace_id = ?
               and s.snapshot_token = ? and s.snapshot_hash = ? and s.deleted_at is null
+              and ${assertionFenceGuard}
               and ${actorSessionAccessSql("?", "s", 2)}
+              and not exists (
+                select 1 from session_messages m
+                where m.session_id = s.session_id
+                  and m.snapshot_generation = s.snapshot_generation
+                  and m.role = 'user' and m.author_actor_id is null
+              )
           ) then 1 else 0 end)
         `,
             )
-            .bind(assertionId, sessionId, workspaceId, snapshotToken, snapshotHash, ...repeat(who.actorId, 10)),
+            .bind(
+              assertionId,
+              sessionId,
+              workspaceId,
+              snapshotToken,
+              snapshotHash,
+              ...fenceBindings,
+              ...repeat(who.actorId, 11),
+            ),
           this.deleteAssertion(assertionId),
         ],
         "Session snapshot raced with another write or authority change",
@@ -871,7 +1264,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
           and ${actorSessionAccessSql("?", "sessions", 2)}
       `,
           )
-          .bind(now, now, sessionId, workspaceId, ...repeat(who.actorId, 10)),
+          .bind(now, now, sessionId, workspaceId, ...repeat(who.actorId, 11)),
         this.database.prepare(`delete from session_messages where session_id = ?`).bind(sessionId),
         this.database
           .prepare(
@@ -976,7 +1369,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         ) then 1 else 0 end)
       `,
           )
-          .bind(assertionId, registration.operation_id, actor.actorId, ...repeat(actor.actorId, 10)),
+          .bind(assertionId, registration.operation_id, actor.actorId, ...repeat(actor.actorId, 11)),
         this.deleteAssertion(assertionId),
       ],
       "Session registration raced with an authority change",
@@ -1072,7 +1465,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         and ${actorSessionAccessSql("?", "sessions", 2)}
     `,
         )
-        .bind(row.title ?? null, row.updatedAt ?? null, now, row.sessionId, workspaceId, ...repeat(who.actorId, 10)),
+        .bind(row.title ?? null, row.updatedAt ?? null, now, row.sessionId, workspaceId, ...repeat(who.actorId, 11)),
     )
     if (replace) {
       statements.push(
@@ -1091,7 +1484,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
             workspaceId,
             who.actorId,
             JSON.stringify(rows.map((row) => row.sessionId)),
-            ...repeat(who.actorId, 10),
+            ...repeat(who.actorId, 11),
           ),
       )
       statements.push(
@@ -1120,10 +1513,115 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       then 1 else 0 end)
     `,
         )
-        .bind(assertionId, JSON.stringify(rows.map((row) => row.sessionId)), workspaceId, ...repeat(who.actorId, 10)),
+        .bind(assertionId, JSON.stringify(rows.map((row) => row.sessionId)), workspaceId, ...repeat(who.actorId, 11)),
     )
     statements.push(this.deleteAssertion(assertionId))
     await this.guardedBatch(statements, "Session visibility raced with an authority change")
+  }
+
+  private async resolveShareTarget(
+    args: {
+      grantedToTokenIdentifier?: string
+      grantedToClerkSubject?: string
+      grantedToUserId?: string
+      grantedToClerkOrgId?: string
+      grantedToOrgId?: string
+      grantedToTeamId?: string
+      grantedToTeamPublicId?: string
+    },
+    allowMissing = false,
+  ): Promise<SessionShareTarget | undefined> {
+    if (shareSelectorCount(args) !== 1) throw sessionShareError("session_share_target_required")
+    const userSelector = args.grantedToTokenIdentifier ?? args.grantedToClerkSubject ?? args.grantedToUserId
+    if (userSelector) {
+      const value = requireText(userSelector, "share user target")
+      const user = args.grantedToUserId
+        ? await this.database
+            .prepare(`select user_id from users where user_id = ? and state = 'active'`)
+            .bind(value)
+            .first<{ user_id: string }>()
+        : args.grantedToTokenIdentifier
+          ? await this.database
+              .prepare(
+                `
+              select ai.user_id from auth_identities ai
+              join users u on u.user_id = ai.user_id and u.state = 'active'
+              where ai.issuer || '|' || ai.subject = ? and ai.unlinked_at is null
+            `,
+              )
+              .bind(value)
+              .first<{ user_id: string }>()
+          : await this.database
+              .prepare(
+                `
+              select ai.user_id from auth_identities ai
+              join users u on u.user_id = ai.user_id and u.state = 'active'
+              where ai.subject = ? and ai.unlinked_at is null
+              order by ai.linked_at, ai.adapter, ai.issuer limit 1
+            `,
+              )
+              .bind(value)
+              .first<{ user_id: string }>()
+      if (!user) {
+        if (allowMissing) return
+        throw sessionShareError("session_share_target_not_found")
+      }
+      return { kind: "user", id: user.user_id }
+    }
+    const orgSelector = args.grantedToOrgId ?? args.grantedToClerkOrgId
+    if (orgSelector) {
+      const orgId = requireText(orgSelector, "share organization target")
+      const org = await this.database
+        .prepare(`select org_id from orgs where org_id = ? and deleted_at is null`)
+        .bind(orgId)
+        .first<{ org_id: string }>()
+      if (!org) {
+        if (allowMissing) return
+        throw sessionShareError("session_share_target_not_found")
+      }
+      return { kind: "org", id: org.org_id }
+    }
+    const teamId = requireText(args.grantedToTeamId ?? args.grantedToTeamPublicId!, "share team target")
+    const team = await this.database
+      .prepare(`select team_id from teams where team_id = ? and deleted_at is null`)
+      .bind(teamId)
+      .first<{ team_id: string }>()
+    if (!team) {
+      if (allowMissing) return
+      throw sessionShareError("session_share_target_not_found")
+    }
+    return { kind: "team", id: team.team_id }
+  }
+
+  private async activeHumanActorForUser(userId: string): Promise<Principal | undefined> {
+    const row = await this.database
+      .prepare(
+        `
+      select a.actor_id, a.user_id from actors a join users u on u.user_id = a.user_id and u.state = 'active'
+      where a.user_id = ? and a.kind = 'human' and a.state = 'active'
+    `,
+      )
+      .bind(userId)
+      .first<{ actor_id: string; user_id: string }>()
+    return row ? { userId: row.user_id, actorId: row.actor_id, actorKind: "human" } : undefined
+  }
+
+  private async activeShareForTarget(sessionId: string, target: SessionShareTarget) {
+    return await this.database
+      .prepare(
+        `
+      select * from session_share_grants
+      where session_id = ? and revoked_at is null
+        and target_user_id is ? and target_org_id is ? and target_team_id is ?
+    `,
+      )
+      .bind(
+        sessionId,
+        target.kind === "user" ? target.id : null,
+        target.kind === "org" ? target.id : null,
+        target.kind === "team" ? target.id : null,
+      )
+      .first<SessionShareRow>()
   }
 
   private async requireParticipantAdministrator(actor: Principal, sessionId: string, workspaceId: string) {
@@ -1158,7 +1656,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
         and ${actorSessionAccessSql("?", "s", action === "read" ? 1 : 2)}
     `,
       )
-      .bind(...repeat(actor.actorId, 6), sessionId, workspaceId, ...repeat(actor.actorId, 10))
+      .bind(...repeat(actor.actorId, 6), sessionId, workspaceId, ...repeat(actor.actorId, 11))
       .first<SessionRow & { role_rank: number }>()
     if (!session) throw denied()
     return session
@@ -1391,6 +1889,37 @@ function actorSessionAccessSql(actorExpression: string, sessionAlias: string, ra
       select 1 from session_participants sap
       where sap.session_id = ${sessionAlias}.session_id and sap.actor_id = ${actorExpression} and sap.revoked_at is null
     )
+    or exists (
+      select 1 from session_share_grants share
+      join actors share_actor on share_actor.actor_id = ${actorExpression}
+        and share_actor.kind = 'human' and share_actor.state = 'active'
+      join users share_user on share_user.user_id = share_actor.user_id and share_user.state = 'active'
+      where share.session_id = ${sessionAlias}.session_id and share.revoked_at is null
+        and (
+          share.target_user_id = share_user.user_id
+          or (
+            share.target_org_id = ${sessionAlias}.org_id
+            and exists (
+              select 1 from org_memberships share_org_member
+              where share_org_member.org_id = share.target_org_id
+                and share_org_member.user_id = share_user.user_id
+                and share_org_member.revoked_at is null
+            )
+          )
+          or exists (
+            select 1 from team_memberships share_team_member
+            join teams share_team on share_team.team_id = share_team_member.team_id
+              and share_team.org_id = ${sessionAlias}.org_id and share_team.deleted_at is null
+            join org_memberships share_team_org_member
+              on share_team_org_member.org_id = share_team.org_id
+              and share_team_org_member.user_id = share_team_member.user_id
+              and share_team_org_member.revoked_at is null
+            where share_team_member.team_id = share.target_team_id
+              and share_team_member.user_id = share_user.user_id
+              and share_team_member.revoked_at is null
+          )
+        )
+    )
     or ${organizationAdministratorSql(actorExpression, `${sessionAlias}.org_id`)}
   )`
 }
@@ -1419,6 +1948,36 @@ function organizationAdministratorSql(actorExpression: string, orgExpression: st
     where oa.actor_id = ${actorExpression} and oa.state = 'active'
       and (oo.owner_user_id = ou.user_id or oom.role in ('owner', 'admin'))
   )`
+}
+
+function shareSelectorCount(args: {
+  grantedToTokenIdentifier?: string
+  grantedToClerkSubject?: string
+  grantedToUserId?: string
+  grantedToClerkOrgId?: string
+  grantedToOrgId?: string
+  grantedToTeamId?: string
+  grantedToTeamPublicId?: string
+}) {
+  return [
+    args.grantedToTokenIdentifier,
+    args.grantedToClerkSubject,
+    args.grantedToUserId,
+    args.grantedToClerkOrgId,
+    args.grantedToOrgId,
+    args.grantedToTeamId,
+    args.grantedToTeamPublicId,
+  ].filter((value) => typeof value === "string" && !!value.trim()).length
+}
+
+function shareFanoutTarget(grant: SessionShareRow) {
+  if (grant.target_user_id) return { grantedToUserId: grant.target_user_id }
+  if (grant.target_team_id) return { grantedToTeamId: grant.target_team_id }
+  return { grantedToOrgId: grant.target_org_id! }
+}
+
+function sessionShareError(code: string) {
+  return new Error(code)
 }
 
 function normalizeReservation(input: ReserveSessionInput) {
@@ -1497,7 +2056,7 @@ function visibilityRows(input: WorkspaceVisibility[]) {
   })
 }
 
-function canonicalMessages(input: unknown[], producerActorId: string): CanonicalMessage[] {
+function canonicalMessages(input: unknown[]): CanonicalMessage[] {
   if (!Array.isArray(input) || input.length > MAX_SNAPSHOT_MESSAGES) {
     throw new D1SessionAuthorityError(
       "invalid_input",
@@ -1531,14 +2090,12 @@ function canonicalMessages(input: unknown[], producerActorId: string): Canonical
     if (dataJson === undefined || byteLength(dataJson) > MAX_MESSAGE_BYTES) {
       throw new D1SessionAuthorityError("invalid_input", `Session message exceeds ${MAX_MESSAGE_BYTES} bytes`)
     }
-    const author = record(record(info?.claxedo)?.author)
-    const claimedActorId = typeof author?.id === "string" ? author.id.trim() : ""
     return {
       id,
       role,
       ordinal,
       dataJson,
-      authorActorId: role === "user" && claimedActorId === producerActorId ? producerActorId : null,
+      authorActorId: null,
     }
   })
 }

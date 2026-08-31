@@ -23,9 +23,9 @@ const lockedCoreBoundary = {
   },
 }
 
-const openCoreBoundary = {
+const cutoverCoreBoundary = {
   ...lockedCoreBoundary,
-  artifactId: "user-deployed-better-auth-d1-open" as const,
+  artifactId: "user-deployed-better-auth-d1-candidate" as const,
   userDeployedOrganization: { id: "org_deployment", name: "My deployment" },
 }
 
@@ -53,17 +53,30 @@ describe("certified core resource ownership", () => {
     expect(artifact.entrypointFromPackageRoot).not.toBe("src/deployments/hosted-workerd/core-worker.cf.ts")
   })
 
-  test("the open artifact owns a fresh LiveSyncRoom v1 history and no optional-service resource", async () => {
-    const artifact = certifiedHostedWorkerArtifact(openCoreBoundary.artifactId, "production")
+  test("the cutover artifact adds LiveSyncRoom v1 to the same release train and no optional-service resource", async () => {
+    const artifact = certifiedHostedWorkerArtifact(cutoverCoreBoundary.artifactId, "production")
     const source = await readFile(path.join(packageRoot, artifact.entrypointFromPackageRoot), "utf8")
-    const config = renderHostedCoreWranglerConfig(openCoreBoundary)
+    const config = renderHostedCoreWranglerConfig(cutoverCoreBoundary)
 
     expect(source).toMatch(/export default handler/)
     expect(source).toMatch(/export \{ LiveSyncRoom \}/)
-    expect(config).toContain('name = "claxedo-user-deployed-core"')
+    expect(config).toContain('name = "claxedo-user-deployed-locked"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
     expect(config).not.toMatch(/WORKGRAPH|WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
+  })
+
+  test("the lifecycle bridge adds only LiveSyncRoom while retaining the fail-closed bootstrap handler", async () => {
+    const artifact = certifiedHostedWorkerArtifact(
+      "user-deployed-better-auth-d1-live-sync-migration-bridge",
+      "production",
+    )
+    const source = await readFile(path.join(packageRoot, artifact.entrypointFromPackageRoot), "utf8")
+
+    expect(source).toContain('export { default } from "./better-auth-d1-bootstrap-gate.cf"')
+    expect(source).toContain('export { LiveSyncRoom } from "./live-sync-room.cf"')
+    expect(artifact.workerName).toBe("claxedo-user-deployed-locked")
+    expect(artifact.resources).toMatchObject({ liveSyncRoom: true, optionalServices: false, billing: false })
   })
 
   test("does not rewrite or reuse the legacy WorkGraph/Wake DO migration history", async () => {
@@ -75,6 +88,6 @@ describe("certified core resource ownership", () => {
     expect(legacy).toContain('tag = "v2"\nnew_sqlite_classes = ["ClaxedoWakeLane"]')
     expect(legacy).toContain('tag = "v3"\nnew_sqlite_classes = ["LiveSyncRoom"]')
     expect(renderHostedCoreWranglerConfig(lockedCoreBoundary)).toContain('name = "claxedo-user-deployed-locked"')
-    expect(renderHostedCoreWranglerConfig(openCoreBoundary)).toContain('name = "claxedo-user-deployed-core"')
+    expect(renderHostedCoreWranglerConfig(cutoverCoreBoundary)).toContain('name = "claxedo-user-deployed-locked"')
   })
 })

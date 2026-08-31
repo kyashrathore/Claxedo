@@ -5,6 +5,7 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
 import { centralSessionRef, retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
+import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
 

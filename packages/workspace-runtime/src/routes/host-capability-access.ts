@@ -24,6 +24,7 @@ export async function authorizeHostCapability(
   options: HostCapabilityAccessOptions,
   operation: SessionAccessOperation,
   verifiedContext: ReturnType<typeof sessionAccessContext> = sessionAccessContext(c),
+  sessionId?: string,
 ) {
   const context = verifiedContext
   if (!context.authority && !options.sessionAccessPolicy) return
@@ -35,9 +36,29 @@ export async function authorizeHostCapability(
       message: "Workspace host capability authority is unavailable",
     })
   }
+  if (context.authority && (operation === "agent_setup_read" || operation === "agent_setup_write")) {
+    if (!options.sessionAccessPolicy.authorizeHost) {
+      return sessionAccessDenied({
+        allowed: false,
+        status: 503,
+        code: "host_authority_required",
+        message: "Current workspace host authority is unavailable",
+      })
+    }
+    const decision = await options.sessionAccessPolicy.authorizeHost({
+      ...context,
+      operation,
+      minimumRole: operation === "agent_setup_write" ? "admin" : "viewer",
+      method: c.req.method,
+      path: c.req.path,
+    })
+    if (!decision.allowed) return sessionAccessDenied(decision)
+    return
+  }
   const decision = await options.sessionAccessPolicy.authorize({
     ...context,
     operation,
+    ...(sessionId ? { sessionId } : {}),
     method: c.req.method,
     path: c.req.path,
   })

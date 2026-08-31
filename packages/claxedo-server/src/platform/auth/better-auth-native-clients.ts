@@ -6,6 +6,12 @@ import { BETTER_AUTH_NATIVE_SCOPES } from "./better-auth-d1-foundation"
 export const BETTER_AUTH_CLI_CLIENT_ID = "claxedo-cli"
 export const BETTER_AUTH_DESKTOP_CLIENT_ID = "claxedo-desktop"
 export const BETTER_AUTH_INTROSPECTION_CLIENT_ID = "claxedo-control-plane"
+/**
+ * The desktop binds an ephemeral port for every authorization attempt. Better
+ * Auth applies RFC 8252 loopback matching and ignores that port, while still
+ * requiring the registered scheme, host, path, and query to match exactly.
+ */
+export const BETTER_AUTH_DESKTOP_REDIRECT_URI = "http://127.0.0.1/claxedo/auth/callback"
 
 const BETTER_AUTH_REQUIRED_SCHEMA = {
   user: ["id", "name", "email", "emailVerified", "image", "createdAt", "updatedAt"],
@@ -393,7 +399,7 @@ function betterAuthNativeClientStatementDefinitions(apiOrigin: string, introspec
         0,
         "public",
         scopes,
-        JSON.stringify(["http://127.0.0.1/callback"]),
+        JSON.stringify([BETTER_AUTH_DESKTOP_REDIRECT_URI]),
         "none",
         "native",
         JSON.stringify(["authorization_code", "refresh_token"]),
@@ -633,12 +639,12 @@ export async function requireBetterAuthNativeClientClosure(
       .prepare(
         `select count(*) as "count" from "oauthClient"
       where "id" = 'client_desktop' and "clientId" = ? and "disabled" = 0 and "skipConsent" = 0
-        and "subjectType" = 'public' and "scopes" = ? and "redirectUris" = '["http://127.0.0.1/callback"]'
+        and "subjectType" = 'public' and "scopes" = ? and "redirectUris" = ?
         and "tokenEndpointAuthMethod" = 'none' and "applicationType" = 'native'
         and "grantTypes" = '["authorization_code","refresh_token"]'
         and "responseTypes" = '["code"]' and "requirePKCE" = 1`,
       )
-      .bind(BETTER_AUTH_DESKTOP_CLIENT_ID, scopes)
+      .bind(BETTER_AUTH_DESKTOP_CLIENT_ID, scopes, JSON.stringify([BETTER_AUTH_DESKTOP_REDIRECT_URI]))
       .first<{ count: number }>(),
     database
       .prepare(

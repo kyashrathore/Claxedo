@@ -48,7 +48,7 @@ import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
-import { AccountPortProvider } from "@/platform/account/account-provider"
+import { AccountPortProvider, useAccountPort } from "@/platform/account/account-provider"
 import { browserAccountPort, type RunHostedOperation } from "@/platform/account/browser-account-port"
 import { accountBridge, electronAccountPort } from "@/platform/account/electron-account-port"
 import { queryClient } from "@/platform/query/query-client"
@@ -398,11 +398,13 @@ function AuthenticatedProviders(props: ParentProps) {
       {/* Removes the hosted contribution set when the account signs out.
           Before this, hosted surfaces stayed registered until a reload. */}
       <HostedContributionSync />
-      <CloudAuthGate>
-        <Show when={config?.authEnabled} fallback={props.children}>
-          <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
-        </Show>
-      </CloudAuthGate>
+      <RoutedClaxedoEventsProvider>
+        <CloudAuthGate>
+          <Show when={config?.authEnabled} fallback={props.children}>
+            <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
+          </Show>
+        </CloudAuthGate>
+      </RoutedClaxedoEventsProvider>
       </BoundAccountPortProvider>
     </PrincipalProvider>
   )
@@ -422,9 +424,14 @@ const unboundHostedOperation: RunHostedOperation = async (operation) => {
 function RoutedClaxedoEventsProvider(props: ParentProps) {
   const location = useLocation()
   const server = useServer()
+  const account = useAccountPort()
 
   return (
-    <ClaxedoEventsProvider pathname={() => location.pathname} serverUrl={() => server.url}>
+    <ClaxedoEventsProvider
+      pathname={() => location.pathname}
+      serverUrl={() => server.url}
+      accountState={account.state}
+    >
       {props.children}
     </ClaxedoEventsProvider>
   )
@@ -464,27 +471,27 @@ function AuthenticatedLayout(
 
   return (
     <ServerProvider defaultServer={defaultServer} servers={props.servers}>
-      <RoutedClaxedoEventsProvider>
-        <AuthenticatedProviders>
-          <ConnectionGate>
-            <Suspense fallback={<BootSplash />}>
-              <RuntimeProviders>{props.children}</RuntimeProviders>
-            </Suspense>
-          </ConnectionGate>
-        </AuthenticatedProviders>
-      </RoutedClaxedoEventsProvider>
+      <AuthenticatedProviders>
+        <ConnectionGate>
+          <Suspense fallback={<BootSplash />}>
+            <RuntimeProviders>{props.children}</RuntimeProviders>
+          </Suspense>
+        </ConnectionGate>
+      </AuthenticatedProviders>
     </ServerProvider>
   )
 }
 
 export function AppInterface(props: {
   children?: JSX.Element
+  oauthConsent?: Component
   defaultServer?: ServerConnection.Key
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
 }) {
   const base = isDemoMode() ? "/demo" : undefined
   const RouterComponent = props.router ?? Router
+  const OAuthConsentRoute = props.oauthConsent ?? (() => <Navigate href="/" />)
 
   return (
     <RouterComponent base={base}>
@@ -503,13 +510,17 @@ export function AppInterface(props: {
         )}
       />
       <Route
+        path="/oauth/consent"
+        component={OAuthConsentRoute}
+      />
+      <Route
         path="/bootstrap-owner"
         component={() => (
-          <AccountPortProvider>
+          <BoundAccountPortProvider>
             <Suspense fallback={<Loading />}>
               <BootstrapOwnerPage />
             </Suspense>
-          </AccountPortProvider>
+          </BoundAccountPortProvider>
         )}
       />
       <Route

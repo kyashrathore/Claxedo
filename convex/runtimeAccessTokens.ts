@@ -33,7 +33,6 @@ export const recordMint = authedMutation({
       actor_kind: "human",
       role: args.role,
       minted_for_user_id: user._id,
-      principal_kind: "user",
       minted_for_actor_id: args.actor_id,
       minted_for_actor_kind: args.actor_kind,
       workspace_role: args.role,
@@ -56,9 +55,6 @@ export const recordMintForService = serviceMutation({
     expires_at: v.number(),
   },
   handler: async (ctx, args) => {
-    if (args.principal_kind !== "service" || args.actor_id !== "control-plane" || args.actor_kind !== "agent" || args.role !== "owner") {
-      throw new Error("Invalid runtime service actor")
-    }
     const existing = await ctx.db
       .query("runtime_access_tokens")
       .withIndex("by_jti", (q: any) => q.eq("jti", args.jti))
@@ -94,6 +90,9 @@ export const recordMintForService = serviceMutation({
       ...(user?.clerk_subject ? { minted_for_subject: user.clerk_subject } : {}),
       ...(user ? { minted_for_user_id: user._id } : {}),
       principal_kind: args.principal_kind,
+      actor_id: args.actor_id,
+      actor_kind: args.actor_kind,
+      role: args.role,
       minted_for_actor_id: args.actor_id,
       minted_for_actor_kind: args.actor_kind,
       workspace_role: args.role,
@@ -113,6 +112,7 @@ export const active = serviceQuery({
     jti: v.string(),
     workspace_id: v.string(),
     host_id: v.string(),
+    minimum_role: v.optional(workspaceRole),
   },
   handler: async (ctx, args) => {
     const token = await ctx.db
@@ -171,6 +171,9 @@ export const active = serviceQuery({
         || token.minted_for_actor_kind !== "agent"
         || !token.minted_for_actor_id?.trim()
       ))
+      || (args.minimum_role && (token.principal_kind === "user"
+        ? !currentRole || !roleAtLeast(currentRole, args.minimum_role)
+        : !roleAtLeast(token.workspace_role, args.minimum_role)))
     if (authorizationChanged) {
       return {
         active: false,

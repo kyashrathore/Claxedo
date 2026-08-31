@@ -15,6 +15,13 @@ const MIGRATIONS = [
   "0004_host_access_and_sharing.sql",
   "0005_agent_extensions_and_audit.sql",
   "0006_channel_identity_and_canonical_runtime.sql",
+  "0007_paired_recovery_epoch.sql",
+  "0008_user_deployed_owner_bootstrap.sql",
+  "0009_optional_service_deployment.sql",
+  "0010_session_turn_leases.sql",
+  "0011_session_turn_producers.sql",
+  "0012_cold_local_host_challenges.sql",
+  "0013_org_team_session_sharing.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -143,6 +150,14 @@ describe("composed Better Auth + D1 authority", () => {
       workspaceId: "ws_acme",
       title: "Bob's session",
     })
+    const turn = await authority.acquireSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_bob",
+      workspaceId: "ws_acme",
+      turnId: "msg_1",
+    })
     await authority.syncSessionMessages(bob, {
       sessionId: "ses_bob",
       workspaceId: "ws_acme",
@@ -154,6 +169,17 @@ describe("composed Better Auth + D1 authority", () => {
         },
       ],
       maxEventOrdinal: 1,
+      fencingToken: turn.fencingToken,
+    })
+    await authority.releaseSessionTurn({
+      principalKind: "user",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      sessionId: "ses_bob",
+      workspaceId: "ws_acme",
+      turnId: "msg_1",
+      leaseId: turn.leaseId,
+      fencingToken: turn.fencingToken,
     })
     const transcript = (await authority.readSessionMessages(bob, {
       sessionId: "ses_bob",
@@ -192,6 +218,116 @@ describe("composed Better Auth + D1 authority", () => {
         hostId: "host_bob",
       }),
     ).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+  })
+
+  test("persists team session sharing and revokes the shared user's live authority", async () => {
+    const { authority } = await setup()
+    const alice = await signed(authority, "team-alice")
+    const bob = await signed(authority, "team-bob")
+    const outsider = await signed(authority, "team-outsider")
+
+    await authority.createHostedOrganization(alice, { name: "Team sharing", orgId: "org_team_sharing" })
+    await authority.addOrganizationMember(alice, {
+      orgId: "org_team_sharing",
+      userId: bob.principal!.userId,
+      role: "member",
+    })
+    await authority.createHostedOrganization(outsider, { name: "Other org", orgId: "org_other" })
+    await authority.createWorkspace(alice, {
+      workspaceId: "ws_team_sharing",
+      orgId: "org_team_sharing",
+      displayName: "Team sharing workspace",
+      backing: "cloud-vm",
+      access: "cloud",
+    })
+
+    const defaultTeam = await authority.ensureDefaultTeam!(alice, { orgId: "org_team_sharing" }) as {
+      team_id: string
+    }
+    await authority.addTeamMember!(alice, {
+      teamId: defaultTeam.team_id,
+      userPublicId: bob.principal!.userId,
+      role: "member",
+    })
+    await expect(authority.openWorkspace(bob, { workspaceId: "ws_team_sharing" })).resolves.toMatchObject({
+      role: "editor",
+    })
+    const otherTeam = await authority.ensureDefaultTeam!(outsider, { orgId: "org_other" }) as {
+      team_id: string
+    }
+
+    await authority.reserveSession(alice, {
+      operationId: "op_team_sharing",
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+      kind: "create",
+      title: "Private team session",
+    })
+    await authority.registerRuntimeSession({
+      principalKind: "user",
+      actorId: alice.principal!.actorId,
+      actorKind: "human",
+      operationId: "op_team_sharing",
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+      title: "Private team session",
+    })
+
+    expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toEqual([])
+    await expect(
+      authority.grantSessionShare!(alice, {
+        sessionId: "ses_team_sharing",
+        workspaceId: "ws_team_sharing",
+        grantedToTeamId: otherTeam.team_id,
+      }),
+    ).rejects.toThrow("session_share_team_org_mismatch")
+
+    const firstGrant = await authority.grantSessionShare!(alice, {
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+      grantedToTeamId: defaultTeam.team_id,
+    }) as { grant_id: string }
+    expect(await authority.grantSessionShare!(alice, {
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+      grantedToTeamPublicId: defaultTeam.team_id,
+    })).toEqual(firstGrant)
+    expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toMatchObject([
+      { session_id: "ses_team_sharing", title: "Private team session" },
+    ])
+    await expect(authority.readSessionMessages(bob, {
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+    })).resolves.toMatchObject({ allowed: true, messages: [] })
+    await expect(authority.listSessionShares!(alice, {
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+    })).resolves.toMatchObject({
+      can_manage_shares: true,
+      grants: [{ grant_id: firstGrant.grant_id, granted_to_team_id: defaultTeam.team_id }],
+      teams: [{ team_id: defaultTeam.team_id, is_shared: true }],
+    })
+
+    await authority.recordRuntimeAccessToken(bob, {
+      jti: "jti_team_bob",
+      workspaceId: "ws_team_sharing",
+      hostId: "host_team",
+      actorId: bob.principal!.actorId,
+      actorKind: "human",
+      role: "viewer",
+      expiresAt: Date.now() + 60_000,
+    })
+    await expect(authority.revokeSessionShare!(alice, {
+      sessionId: "ses_team_sharing",
+      workspaceId: "ws_team_sharing",
+      grantId: firstGrant.grant_id,
+    })).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    expect(await authority.listSessions(bob, { workspaceId: "ws_team_sharing" })).toEqual([])
+    expect(await authority.runtimeAccessTokenActive({
+      jti: "jti_team_bob",
+      workspaceId: "ws_team_sharing",
+      hostId: "host_team",
+    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
   })
 
   test("has no unimplemented full-authority capabilities", () => {

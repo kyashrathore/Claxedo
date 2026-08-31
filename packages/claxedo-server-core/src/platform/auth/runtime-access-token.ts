@@ -63,7 +63,6 @@ export const RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS = { min: 15 * 60, max: 60 *
 export const HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS = { min: 60, max: 30 * 60 } as const
 
 type RuntimeAccessTokenSignerBaseInput = {
-  subject: string
   orgId: string
   workspaceId: string
   hostId: string
@@ -76,15 +75,9 @@ type RuntimeAccessTokenSignerBaseInput = {
   role: RelayRole
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
-  actorPublicId?: string
-  actorName?: string
-  actorAvatarUrl?: string
 }
 
-export type RuntimeAccessTokenSignerInput = RuntimeAccessTokenSignerBaseInput & {
-  actorId: string
-  actorKind: "human" | "agent"
-}
+export type RuntimeAccessTokenSignerInput = RuntimeAccessTokenSignerBaseInput
 
 export type RuntimeAccessTokenSignerResult = {
   runtimeAccessToken: string
@@ -228,6 +221,7 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
     const kid = await resolveMintKid(env, privateKey)
     const issuedAt = Math.floor(now / 1000)
     const token = await new SignJWT({
+      principal_kind: input.principalKind,
       actor_id: input.actorId,
       actor_kind: input.actorKind,
       ...(input.actorPublicId && input.actorName

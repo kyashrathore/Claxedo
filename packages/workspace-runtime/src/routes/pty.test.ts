@@ -30,8 +30,6 @@ function relayAuth(
     workspace_id: "ws_1",
     host_id: "host_1",
     role,
-    actor_id: actorId,
-    actor_kind: "human",
     access: "cloud",
     backing: "cloud-vm",
     exp: now + 60,
@@ -44,7 +42,7 @@ function relayAuth(
 function privateSessionPolicy(owners: Record<string, string>): SessionAccessPolicy {
   const allowed = (actorId: string | undefined, sessionId: string | undefined) =>
     !!sessionId && owners[sessionId] === actorId
-  return {
+  const policy: SessionAccessPolicy = {
     sessionAuthority: "managed-private",
     authorize: async (input) => allowed(input.actor?.actorId, input.sessionId)
       ? { allowed: true }
@@ -52,15 +50,19 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
     filterSessions: async (input) => input.sessionIds.filter((sessionId) => allowed(input.actor?.actorId, sessionId)),
     authorizePrefix: async () => ({ allowed: true }),
   }
+  policy.authorizeStream = async (input, lease) => allowed(input.actor?.actorId, input.sessionId)
+    ? { allowed: true, lease: lease ?? "terminal-capability", expiresAt: Date.now() + 15_000 }
+    : { allowed: false, status: 403, code: "private_session", message: "Session is private" }
+  return policy
 }
 
 function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
   const app = new Hono<{ Variables: RelayHostAuthContext }>()
   app.use("*", async (c, next) => {
-    c.set("relayHostAuth", relayAuth(role, actorId))
+    c.set("relayHostAuth", relayAuth(role))
     return await next()
   })
-  app.route("/", PtyRoutes(upgradeWebSocket, { sessionAccessPolicy: accessPolicy }))
+  app.route("/", PtyRoutes(upgradeWebSocket))
   return app
 }
 
@@ -354,6 +356,8 @@ describe("PtyRoutes", () => {
       status: "running" as const,
       pid: 1,
     }))
+    const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
+    const commit = spyOn(Pty, "commit").mockReturnValue(undefined)
     const app = appForActor("editor_a", privateSessionPolicy({ session_a: "editor_a" }))
 
     try {
@@ -381,8 +385,14 @@ describe("PtyRoutes", () => {
       expect(allowed.status).toBe(200)
       await expect(allowed.json()).resolves.toMatchObject({ sessionId: "session_a" })
       expect(create).toHaveBeenCalledTimes(1)
+      expect(create.mock.calls[0]?.[2]).toMatchObject({
+        sessionId: "session_a",
+        authorityLease: "terminal-capability",
+      })
     } finally {
       create.mockRestore()
+      bind.mockRestore()
+      commit.mockRestore()
     }
   })
 

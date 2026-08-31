@@ -233,8 +233,8 @@ function services(): ControlPlaneServices {
       resolveOrgId: vi.fn(async () => "org_1" as never),
       authorizeSessionRead: vi.fn(async () => {}),
       authorizeSessionWrite: vi.fn(async () => {}),
-      addSessionParticipant: vi.fn(async () => ({})),
-      removeSessionParticipant: vi.fn(async () => ({})),
+      grantSessionParticipant: vi.fn(async () => ({ participant_id: "participant_1" })),
+      revokeSessionParticipant: vi.fn(async () => ({ removed: true })),
       authorizeWorkspaceOpen: vi.fn(async () => {}),
       projectRole: vi.fn(async () => ({ ok: false as const })),
       authorizeProject: vi.fn(async () => ({ ok: false as const })),
@@ -1870,7 +1870,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(sandbox.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
@@ -1974,7 +1974,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
@@ -2119,25 +2119,15 @@ describe("workspace routes signed control plane authority", () => {
     expect(ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "us-east" })
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(signer).toHaveBeenCalledWith({
-      subject: "local",
-      actorId: "actor_1",
-      actorKind: "human",
-      actorPublicId: "usr_public_1",
-      actorName: "Test User",
+      principalKind: "service",
+      actorId: "control-plane",
+      actorKind: "agent",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_manager",
       role: "owner",
     })
-    expect(svc.authority?.usersMe).toHaveBeenCalledWith({
-      mode: "signed",
-      token: "",
-      user: {
-        subject: "local",
-        tokenIdentifier: "local:default",
-        issuer: "claxedo-local",
-      },
-    })
+    expect(svc.authority?.usersMe).not.toHaveBeenCalled()
     expect(svc.authority?.openWorkspace).not.toHaveBeenCalled()
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
   })
@@ -2329,7 +2319,7 @@ describe("workspace routes signed control plane authority", () => {
       workspaceId: "ws_shared",
     })
     expect(signer).toHaveBeenCalledWith({
-      subject: "user_2",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
@@ -2611,7 +2601,7 @@ describe("workspace routes signed control plane authority", () => {
       role: "owner",
     })
     expect(signer).toHaveBeenCalledWith({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
@@ -3391,14 +3381,14 @@ describe("workspace routes signed control plane authority", () => {
     expect(revoke.status).toBe(400)
     await expect(grant.json()).resolves.toEqual({
       error: {
-        code: "workspace_share_target_ambiguous",
-        message: "Share target must be exactly one user, org, or team",
+        code: "workspace_share_target_invalid",
+        message: "Share target is invalid",
       },
     })
     await expect(revoke.json()).resolves.toEqual({
       error: {
         code: "workspace_share_target_ambiguous",
-        message: "Share revoke target must be exactly one grant, user, org, or team",
+        message: "Share revoke target must be exactly one grant or canonical target",
       },
     })
     expect(svc.authority?.grantWorkspaceShare).not.toHaveBeenCalled()

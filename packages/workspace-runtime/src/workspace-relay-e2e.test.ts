@@ -250,7 +250,7 @@ async function relayHarness() {
     sessionId: PTY_SESSION_ID,
     authorityRequests: authority.requests,
     runtimeAccessToken: await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       orgId: "org_1",
@@ -259,7 +259,7 @@ async function relayHarness() {
       role: "editor",
     }, runtime.privateKey, "EdDSA"),
     viewerRuntimeAccessToken: await mintRuntimeAccessToken({
-      subject: "viewer_1",
+      principalKind: "user",
       actorId: "actor_viewer",
       actorKind: "human",
       orgId: "org_1",
@@ -268,7 +268,7 @@ async function relayHarness() {
       role: "viewer",
     }, runtime.privateKey, "EdDSA"),
     revokedRuntimeAccessToken: await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       orgId: "org_1",
@@ -278,7 +278,7 @@ async function relayHarness() {
       jti: revokedJti,
     }, runtime.privateKey, "EdDSA"),
     expiredRuntimeAccessToken: await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       orgId: "org_1",
@@ -411,7 +411,7 @@ async function processSeparatedRelayHarness() {
     sessionId: PTY_SESSION_ID,
     authorityRequests: authority.requests,
     runtimeAccessToken: await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       orgId: "org_1",

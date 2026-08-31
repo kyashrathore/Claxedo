@@ -1,4 +1,5 @@
 import { v } from "convex/values"
+import { SESSION_TURN_LEASE_TTL_MS } from "@claxedo/workspace-relay-protocol"
 import {
   authedMutation,
   authedQuery,
@@ -225,7 +226,7 @@ function transition(
   to: "reconciliation_required" | "compensation_pending" | "compensated",
   from: readonly string[],
 ) {
-  return serviceMutation({
+  return {
     args: {
       ...runtimePrincipal,
       operation_id: v.string(),
@@ -233,7 +234,7 @@ function transition(
       workspace_id: v.string(),
       reason: v.string(),
     },
-    handler: async (ctx, args) => {
+    handler: async (ctx: any, args: any) => {
       const actor = await runtimeActor(ctx, args)
       const row = await registration(ctx, required(args.operation_id, "operation_id"))
       if (
@@ -251,12 +252,12 @@ function transition(
       })
       return registrationResult({ ...row, state: to }, true)
     },
-  })
+  }
 }
 
-export const markRegistrationAmbiguous = transition("reconciliation_required", ["reserved"])
-export const beginCompensation = transition("compensation_pending", ["reserved", "reconciliation_required"])
-export const completeCompensation = transition("compensated", ["compensation_pending"])
+export const markRegistrationAmbiguous = serviceMutation(transition("reconciliation_required", ["reserved"]))
+export const beginCompensation = serviceMutation(transition("compensation_pending", ["reserved", "reconciliation_required"]))
+export const completeCompensation = serviceMutation(transition("compensated", ["compensation_pending"]))
 
 export const authorizeRead = authedQuery({
   args: { session_id: v.string(), workspace_id: v.string() },
@@ -286,6 +287,120 @@ export const authorizeRuntime = serviceQuery({
     return { allowed: true as const }
   },
 })
+
+const ownedTurn = {
+  ...runtimePrincipal,
+  session_id: v.string(),
+  workspace_id: v.string(),
+  turn_id: v.string(),
+  lease_id: v.string(),
+  fencing_token: v.number(),
+}
+
+export const acquireTurn = serviceMutation({
+  args: {
+    ...runtimePrincipal,
+    session_id: v.string(),
+    workspace_id: v.string(),
+    turn_id: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await runtimeActor(ctx, args)
+    const current = await requireSessionAccess(ctx, actor, args.session_id, args.workspace_id, "write")
+    const now = Date.now()
+    const existing = await ctx.db.query("private_session_turn_leases")
+      .withIndex("by_session_id", (q: any) => q.eq("session_id", args.session_id))
+      .unique()
+    if (existing && !existing.released_at && existing.expires_at > now) {
+      if (existing.turn_id === args.turn_id && existing.actor_id === actor._id) return turnLease(existing)
+      throw new Error(`session_turn_in_progress:${existing.expires_at}`)
+    }
+    const fencingToken = (existing?.fencing_token ?? 0) + 1
+    const priorProducer = await ctx.db.query("private_session_turn_producers")
+      .withIndex("by_session_turn", (q: any) => q.eq("session_id", args.session_id).eq("turn_id", args.turn_id))
+      .unique()
+    if (priorProducer) throw new Error("session_turn_id_reused")
+    const row = {
+      session_id: args.session_id,
+      workspace_id: current.workspace._id,
+      workspace_public_id: args.workspace_id,
+      turn_id: args.turn_id,
+      lease_id: crypto.randomUUID(),
+      fencing_token: fencingToken,
+      actor_id: actor._id,
+      acquired_at: now,
+      expires_at: now + SESSION_TURN_LEASE_TTL_MS,
+      released_at: undefined,
+    }
+    if (existing) await ctx.db.patch(existing._id, row)
+    else await ctx.db.insert("private_session_turn_leases", row)
+    await ctx.db.insert("private_session_turn_producers", {
+      session_id: args.session_id,
+      workspace_id: current.workspace._id,
+      turn_id: args.turn_id,
+      fencing_token: fencingToken,
+      actor_id: actor._id,
+      admitted_at: now,
+    })
+    return turnLease(row)
+  },
+})
+
+export const renewTurn = serviceMutation({
+  args: ownedTurn,
+  handler: async (ctx, args) => {
+    const actor = await runtimeActor(ctx, args)
+    await requireSessionAccess(ctx, actor, args.session_id, args.workspace_id, "write")
+    const now = Date.now()
+    const row = await ctx.db.query("private_session_turn_leases")
+      .withIndex("by_session_id", (q: any) => q.eq("session_id", args.session_id))
+      .unique()
+    if (
+      !row || row.workspace_public_id !== args.workspace_id || row.turn_id !== args.turn_id
+      || row.lease_id !== args.lease_id || row.fencing_token !== args.fencing_token
+      || row.actor_id !== actor._id || row.released_at || row.expires_at <= now
+    ) throw new Error("session_turn_lease_lost")
+    const expiresAt = now + SESSION_TURN_LEASE_TTL_MS
+    await ctx.db.patch(row._id, { expires_at: expiresAt })
+    return turnLease({ ...row, expires_at: expiresAt })
+  },
+})
+
+export const releaseTurn = serviceMutation({
+  args: ownedTurn,
+  handler: async (ctx, args) => {
+    const actor = await runtimeActor(ctx, args)
+    await requireSessionAccess(ctx, actor, args.session_id, args.workspace_id, "write")
+    const row = await ctx.db.query("private_session_turn_leases")
+      .withIndex("by_session_id", (q: any) => q.eq("session_id", args.session_id))
+      .unique()
+    const released = Boolean(
+      row && row.workspace_public_id === args.workspace_id && row.turn_id === args.turn_id
+      && row.lease_id === args.lease_id && row.fencing_token === args.fencing_token
+      && row.actor_id === actor._id,
+    )
+    if (released && row && !row.released_at) await ctx.db.patch(row._id, { released_at: Date.now() })
+    return { released, sessionId: args.session_id, turnId: args.turn_id, fencingToken: args.fencing_token }
+  },
+})
+
+function turnLease(row: {
+  session_id: string
+  turn_id: string
+  lease_id: string
+  fencing_token: number
+  acquired_at: number
+  expires_at: number
+}) {
+  return {
+    sessionId: row.session_id,
+    turnId: row.turn_id,
+    leaseId: row.lease_id,
+    fencingToken: row.fencing_token,
+    acquiredAt: row.acquired_at,
+    expiresAt: row.expires_at,
+  }
+}
 
 export const grantParticipant = authedMutation({
   args: { session_id: v.string(), workspace_id: v.string(), participant_actor_id: v.string() },
@@ -407,11 +522,28 @@ export const syncMessages = authedMutation({
     messages: v.array(v.any()),
     intake_ready: v.optional(v.boolean()),
     max_event_ordinal: v.optional(v.number()),
+    fencing_token: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const actor = await upsertUser(ctx)
     const current = await requireSessionAccess(ctx, actor, args.session_id, args.workspace_id, "write")
     if (args.intake_ready) throw new Error("private_session_intake_not_supported")
+    const normalized = args.messages.map((value: unknown, ordinal: number) => {
+      const data = jsonValue(value)
+      return { data, messageId: idOf(data), role: roleOf(data), ordinal }
+    })
+    const hasUserMessages = normalized.some((message: { role: string }) => message.role === "user")
+    if (hasUserMessages && (!Number.isSafeInteger(args.fencing_token) || Number(args.fencing_token) <= 0)) {
+      throw new Error("session_snapshot_fence_required")
+    }
+    if (args.fencing_token !== undefined) {
+      const lease = await ctx.db.query("private_session_turn_leases")
+        .withIndex("by_session_id", (q: any) => q.eq("session_id", args.session_id))
+        .unique()
+      if (!lease || lease.workspace_public_id !== args.workspace_id || lease.fencing_token !== args.fencing_token) {
+        throw new Error("session_snapshot_fence_stale")
+      }
+    }
     if (args.max_event_ordinal !== undefined && args.max_event_ordinal < current.session.max_event_ordinal) {
       return { ok: true, applied: false, maxEventOrdinal: current.session.max_event_ordinal }
     }
@@ -427,20 +559,22 @@ export const syncMessages = authedMutation({
     const authors = new Map(existing.map((row: any) => [row.message_id, row.author_actor_id]))
     for (const row of existing) await ctx.db.delete(row._id)
     const now = Date.now()
-    for (let ordinal = 0; ordinal < args.messages.length; ordinal += 1) {
-      const data = jsonValue(args.messages[ordinal])
-      const messageId = idOf(data, args.session_id, ordinal)
-      const role = roleOf(data)
-      const claimed = authorOf(data)
-      const authorActorId = authors.get(messageId) ?? (role === "user" && claimed === String(actor._id) ? actor._id : undefined)
+    for (const message of normalized) {
+      const producer = message.role === "user"
+        ? await ctx.db.query("private_session_turn_producers")
+            .withIndex("by_session_turn", (q: any) => q.eq("session_id", args.session_id).eq("turn_id", message.messageId))
+            .unique()
+        : undefined
+      const authorActorId = authors.get(message.messageId) ?? producer?.actor_id
+      if (message.role === "user" && !authorActorId) throw new Error("session_message_producer_missing")
       await ctx.db.insert("private_session_messages", {
         session_id: args.session_id,
         workspace_id: current.workspace._id,
-        message_id: messageId,
+        message_id: message.messageId,
         author_actor_id: authorActorId,
-        role,
-        ordinal,
-        data,
+        role: message.role,
+        ordinal: message.ordinal,
+        data: message.data,
         created_at: now,
         updated_at: now,
       })
@@ -456,9 +590,9 @@ export const syncMessages = authedMutation({
 })
 
 function visibilityMutation(replace: boolean) {
-  return authedMutation({
+  return {
     args: { workspace_id: v.string(), sessions: v.array(visibility) },
-    handler: async (ctx, args) => {
+    handler: async (ctx: any, args: any) => {
       const actor = await upsertUser(ctx)
       const workspace = await requireWorkspace(ctx, actor, args.workspace_id, "write")
       const incoming = new Set<string>()
@@ -487,11 +621,11 @@ function visibilityMutation(replace: boolean) {
       }
       return { ok: true }
     },
-  })
+  }
 }
 
-export const upsertVisibility = visibilityMutation(false)
-export const replaceVisibility = visibilityMutation(true)
+export const upsertVisibility = authedMutation(visibilityMutation(false))
+export const replaceVisibility = authedMutation(visibilityMutation(true))
 
 export const deleteVisibility = authedMutation({
   args: { session_id: v.string(), workspace_id: v.string() },
@@ -531,20 +665,18 @@ async function publicMessage(ctx: any, row: any) {
   return { ...value, info: { ...safeInfo, ...(Object.keys(canonical).length ? { claxedo: canonical } : {}) } }
 }
 
-function idOf(value: unknown, sessionId: string, ordinal: number) {
+function idOf(value: unknown) {
   const row = rec(value)
-  return optional(row?.id) ?? optional(rec(row?.info)?.id) ?? `${sessionId}:${ordinal}`
+  const id = optional(row?.id) ?? optional(rec(row?.info)?.id)
+  if (!id) throw new Error("session_message_id_required")
+  return id
 }
 
 function roleOf(value: unknown) {
   const row = rec(value)
-  return optional(row?.role) ?? optional(rec(row?.info)?.role)
-}
-
-function authorOf(value: unknown) {
-  const info = rec(rec(value)?.info)
-  const claxedo = rec(info?.claxedo)
-  return optional(rec(claxedo?.author)?.id)
+  const role = optional(row?.role) ?? optional(rec(row?.info)?.role)
+  if (!role) throw new Error("session_message_role_required")
+  return role
 }
 
 function jsonValue(value: unknown) {

@@ -151,27 +151,27 @@ create table authority_batch_assertions (
 create trigger auth_identities_user_immutable
 before update of user_id on auth_identities
 when new.user_id != old.user_id
-begin
+BEGIN
   select raise(abort, 'auth identity user is immutable');
 end;
 
 create trigger actors_identity_immutable
 before update of user_id, kind on actors
 when new.user_id is not old.user_id or new.kind != old.kind
-begin
+BEGIN
   select raise(abort, 'actor identity is immutable');
 end;
 
 create trigger projects_scope_immutable
 before update of org_id, repo_key on projects
 when new.org_id != old.org_id or new.repo_key != old.repo_key
-begin
+BEGIN
   select raise(abort, 'project scope is immutable');
 end;
 
 create trigger workspaces_scope_immutable
 before update of org_id, project_id on workspaces
 when new.org_id != old.org_id or new.project_id != old.project_id
-begin
+BEGIN
   select raise(abort, 'workspace scope is immutable');
 end;

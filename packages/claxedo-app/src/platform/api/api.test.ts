@@ -20,6 +20,7 @@ const calls: Array<{
   cache: RequestCache
   credentials: RequestCredentials
   dir: string | null
+  validation: string | null
   url: string
 }> = []
 const originalFetch = globalThis.fetch
@@ -114,6 +115,7 @@ beforeEach(() => {
       cache: init?.cache ?? req.cache ?? "default",
       credentials: init?.credentials ?? req.credentials,
       dir: req.headers.get("x-opencode-directory"),
+      validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
       url: req.url,
     })
     return new Response("{}", {
@@ -219,6 +221,26 @@ describe("authFetch", () => {
     expect(calls[0]?.auth).toBeNull()
   })
 
+  test("identifies validation-build requests only to the exact control-plane origin", async () => {
+    configureApiRuntime({
+      releaseValidation: {
+        coreOrigin: "https://api.example.test",
+        operation: "private_session",
+      },
+    })
+
+    await authFetch("https://api.example.test/api/claxedo/auth/profile")
+    await authFetch("https://relay.example.test/api/session")
+
+    expect(calls.map((call) => call.validation)).toEqual(["private_session", null])
+  })
+
+  test("does not identify ordinary builds as release validation traffic", async () => {
+    await authFetch("https://api.example.test/api/claxedo/auth/profile")
+
+    expect(calls[0]?.validation).toBeNull()
+  })
+
   test("force-refreshes the bearer once when the server rejects it as invalid", async () => {
     // The retry that keeps a stale Clerk JWT from wedging every panel in
     // "loading" forever. It is also the only caller that passes an option
@@ -233,6 +255,7 @@ describe("authFetch", () => {
         cache: init?.cache ?? req.cache ?? "default",
         credentials: init?.credentials ?? req.credentials,
         dir: req.headers.get("x-opencode-directory"),
+        validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
         url: req.url,
       })
       if (calls.length === 1) {
@@ -282,6 +305,7 @@ describe("authFetch", () => {
         cache: init?.cache ?? req.cache ?? "default",
         credentials: init?.credentials ?? req.credentials,
         dir: req.headers.get("x-opencode-directory"),
+        validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
         url: req.url,
       })
       if (calls.length === 1) {

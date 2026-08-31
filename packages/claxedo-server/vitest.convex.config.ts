@@ -34,6 +34,10 @@ export default defineConfig({
     alias: {
       "convex-test": path.join(packageModules, "convex-test"),
       convex: path.join(packageModules, "convex"),
+      "@claxedo/workspace-relay-protocol": path.resolve(
+        import.meta.dirname,
+        "../workspace-relay-protocol/src/index.ts",
+      ),
     },
   },
   test: {

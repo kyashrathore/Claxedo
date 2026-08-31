@@ -262,7 +262,7 @@ export const HOSTED_OPERATIONS = {
   "session.participants.add": {
     method: "POST",
     path: "/api/control/sessions/:sessionId/participants",
-    body: ["workspaceId", "participantTokenIdentifier"],
+    body: ["workspaceId", "participantActorId"],
   },
   "org.list": { method: "GET", path: "/api/control/orgs" },
   "org.create": {

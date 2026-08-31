@@ -1,5 +1,6 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
   ProjectAction,
   ProjectRole,
@@ -31,10 +32,9 @@ export type D1ChannelRuntimeAuthorityOptions = {
   randomId?: () => string
 }
 
-export class D1ChannelRuntimeAuthorityError extends Error {
-  constructor(public readonly code: "invalid_input" | "resource_conflict", message: string) {
-    super(message)
-    this.name = "D1ChannelRuntimeAuthorityError"
+export class D1ChannelRuntimeAuthorityError extends ClaxedoError {
+  constructor(code: "invalid_input" | "resource_conflict", message: string) {
+    super({ code, message, status: code === "invalid_input" ? 400 : 409 })
   }
 }
 
@@ -236,7 +236,12 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     }
   }
 
-  async runtimeAccessTokenActive(args: { jti: string; workspaceId: string; hostId: string }) {
+  async runtimeAccessTokenActive(args: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    minimumRole?: "viewer" | "editor" | "admin" | "owner"
+  }) {
     const jti = requireText(args.jti, "jti")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
@@ -258,6 +263,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         || row.role !== "owner"
         || row.minted_for_user_id !== null
         || !await this.workspaceExists(row.workspace_id)
+        || (args.minimumRole && roleRank(row.role) < roleRank(args.minimumRole))
       ) return inactive("runtime_access_token_revoked", "Runtime Access Token service authority has been revoked")
       return { active: true }
     }
@@ -270,7 +276,7 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
         and actor.state = 'active' and user.state = 'active'
     `).bind(row.actor_id, row.minted_for_user_id).first()
     const access = actor ? await this.workspaceAccess(row.minted_for_user_id, row.workspace_id) : null
-    if (!access || access.role_rank < roleRank(row.role)) {
+    if (!access || access.role_rank < roleRank(row.role) || (args.minimumRole && access.role_rank < roleRank(args.minimumRole))) {
       return inactive("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
     }
     return { active: true }

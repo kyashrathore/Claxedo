@@ -20,15 +20,18 @@
  * session is over, and the disposition for it is sign-out. See `run()`.
  */
 
-import { createOAuthFlow, type OAuthConfig, type OAuthSeams, type SignInResult } from "./oauth-flow"
+import { DesktopAuthDescriptorError, type BoundDesktopCredential } from "./auth-descriptor"
+import { CredentialStoreConflict, type CredentialStore, type StoredDesktopCredential } from "./credential-store"
+import type { DesktopNativeAuth, RefreshOutcome } from "./desktop-native-auth"
 import { shouldRefresh } from "./secure-storage"
 import {
   isStreamHostedOperation,
   resolveHostedOperation,
   type HostedOperationName,
 } from "./hosted-operations"
-import type { CredentialStore, TokenSet } from "./credential-store"
 import { accountPerfMark, accountPerfNow } from "./account-perf"
+
+export type { RefreshOutcome } from "./desktop-native-auth"
 
 export type AccountIdentity = {
   userId: string
@@ -53,8 +56,6 @@ export type AccountServiceOptions = {
     url: string,
     init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
   ) => Promise<Response>
-  /** Exchanges a refresh token. Absent means refresh is unsupported. */
-  refresh?: (refreshToken: string) => Promise<RefreshOutcome>
   /**
    * Loads display identity for a live access token (OIDC userinfo).
    *
@@ -274,10 +275,15 @@ export function createAccountService(options: AccountServiceOptions) {
         }
         const stored = options.store.load(options.now())
         if (!stored) return state
-        tokens = stored
+        if (stored.persistenceState === "revocation-pending") {
+          await reconcilePendingRevocation()
+          return state
+        }
+        if (!(await validated(stored))) return state
+        credential = stored
         const startedIn = era
         // Profile is best-effort and must not delay launch.
-        publishSigned(stored.accessToken, startedIn)
+        publishSigned(stored.tokens.accessToken, startedIn)
       } catch (error) {
         options.onError?.("restore", error)
         setState({
@@ -321,10 +327,15 @@ export function createAccountService(options: AccountServiceOptions) {
         }
         // timeout / callback-failed — back to unsigned so the rail can offer
         // Sign in again instead of resting on a dead `pending`/`unavailable`.
-        setState({ status: "unsigned" })
+        // Keep the non-secret failure detail on the authoritative state. The
+        // IPC intentionally returns state rather than the OAuth result, so
+        // dropping it here made a failed token exchange look exactly like a
+        // user who never clicked Sign in and left no live diagnostic.
+        options.onError?.("sign-in", result.detail)
+        setState({ status: "unsigned", detail: result.detail })
         return result
       }
-      const adopted = adopt(result.tokens)
+      const adopted = adopt(result.credential)
       if (!adopted.ok) {
         // `adopt` has already put the service in `unavailable`. Reporting
         // success here would leave the caller believing in a session that was
@@ -332,8 +343,8 @@ export function createAccountService(options: AccountServiceOptions) {
         // that is over.
         return { ok: false, reason: "no-secure-storage", detail: adopted.detail }
       }
-      publishSigned(result.tokens.accessToken, startedIn)
-      return result
+      publishSigned(result.credential.tokens.accessToken, startedIn)
+      return { ok: true as const }
     },
 
     async signOut() {
@@ -445,7 +456,7 @@ export function createAccountService(options: AccountServiceOptions) {
         // 401 is not staleness — it is revocation, and a retry loop against a
         // revoked token is how a signed-out desktop hammers the control plane
         // while showing the user nothing.
-        signOutLocally("revoked", "the server rejected this session")
+        invalidate("the server rejected this session")
         throw new Error("session rejected")
       }
       if (!response.ok) {
@@ -500,9 +511,10 @@ export function createAccountService(options: AccountServiceOptions) {
         throw new Error(`hosted operation "${input.name}" is not a stream`)
       }
       const startedIn = era
-      const credential = await currentAccessToken()
-      if (!credential.ok) throw new Error(credential.detail)
-      if (startedIn !== era) throw new Error("not signed in")
+      const access = await currentAccessToken()
+      if (!access.ok) throw new Error(access.detail)
+      const held = credential
+      if (startedIn !== era || !held) throw new Error("not signed in")
       const request = resolveHostedOperation(input.name, input.params ?? {})
       const controller = new AbortController()
       activeRequests.add(controller)
@@ -512,10 +524,10 @@ export function createAccountService(options: AccountServiceOptions) {
       let firstChunk = true
       let httpOkAt: number | undefined
       try {
-        const response = await options.fetch(`${options.serverOrigin}${request.path}`, {
+        const response = await options.fetch(`${held.binding.controlPlaneOrigin}${request.path}`, {
           method: request.method,
           headers: {
-            authorization: `Bearer ${credential.token}`,
+            authorization: `Bearer ${access.token}`,
             Accept: "text/event-stream",
             ...(request.headers ?? {}),
           },
@@ -523,7 +535,7 @@ export function createAccountService(options: AccountServiceOptions) {
         })
         if (startedIn !== era) throw new Error("not signed in")
         if (response.status === 401) {
-          signOutLocally("revoked", "the server rejected this session")
+          invalidate("the server rejected this session")
           throw new Error("session rejected")
         }
         if (!response.ok || !response.body) {

@@ -768,6 +768,22 @@ describe("createCentralSessionRuntime", () => {
 
   test("persists auto-title updates for central runtime sessions", async () => {
     const svc = services()
+    let meta: Awaited<ReturnType<typeof svc.projectionStore.session_meta>>
+    const sessionMeta = svc.projectionStore.session_meta as ReturnType<typeof vi.fn>
+    const putSessionMeta = svc.projectionStore.put_session_meta as ReturnType<typeof vi.fn>
+    sessionMeta.mockImplementation(async () => meta)
+    putSessionMeta.mockImplementation(async (sessionID, input) => {
+      meta = {
+        sessionID,
+        host: "central",
+        createdAt: meta?.createdAt ?? 1,
+        updatedAt: 2,
+        tags: [],
+        attachments: [],
+        ...(meta ?? {}),
+        ...(input.title !== undefined ? { title: input.title } : {}),
+      }
+    })
     const runtime = createCentralSessionRuntime(svc)
     const session = await runtime.createHybridSession({ title: "New session - 2026-07-08T09:09:30.378Z" })
 

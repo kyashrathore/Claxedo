@@ -19,6 +19,8 @@ const MIGRATIONS = [
   "0002_workspace_authority.sql",
   "0003_private_sessions.sql",
   "0004_host_access_and_sharing.sql",
+  "0012_cold_local_host_challenges.sql",
+  "0013_org_team_session_sharing.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -44,6 +46,7 @@ async function setup() {
     now,
     randomId: (prefix) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
     randomNonce: () => `nonce_${String(++sequence).padStart(4, "0")}`,
+    registerLocalForSharing: (auth, input) => workspace.registerLocalForSharing(auth, input),
   })
   return {
     database,
@@ -214,6 +217,57 @@ describe("D1 host access and workspace sharing authority", () => {
     expect(await database.prepare(`
       select name from sqlite_master where type = 'index' and name = 'workspace_direct_memberships_by_user'
     `).first()).toEqual({ name: "workspace_direct_memberships_by_user" })
+  })
+
+  test("creates a cold user-hosted workspace only after a valid host challenge signature", async () => {
+    const input = await setup()
+    const alice = await signed(input.workspace, "cold-owner")
+    const key = await hostKey()
+    const challenge = await input.hostAccess.createLocalHostLinkChallenge(alice, {
+      workspaceId: "ws_cold",
+      hostId: "host-cold",
+    })
+
+    expect(await input.database.prepare(
+      "select 1 from workspaces where workspace_id = 'ws_cold'",
+    ).first()).toBeNull()
+
+    const signature = await key.sign(localHostRegistrationPayload({
+      workspaceId: "ws_cold",
+      hostId: "host-cold",
+      challengeId: challenge.challenge_id,
+      nonce: challenge.nonce,
+    }))
+    await expect(input.hostAccess.registerLocalHostLink(alice, {
+      workspaceId: "ws_cold",
+      hostId: "host-cold",
+      publicKey: key.publicKey,
+      challengeId: challenge.challenge_id,
+      signature,
+      displayName: "Cold workspace",
+      repoUrl: "https://github.com/acme/cold.git",
+      remoteDirectory: "/workspace/cold",
+      homeRegion: "apac-south",
+    })).resolves.toMatchObject({ workspace_id: "ws_cold", host_id: "host-cold" })
+
+    await expect(input.workspace.registerLocalForSharing(alice, {
+      workspaceId: "ws_cold",
+      displayName: "Cold workspace",
+      repoUrl: "https://github.com/acme/cold.git",
+      remoteDirectory: "/workspace/cold",
+      homeRegion: "apac-south",
+    })).resolves.toMatchObject({ workspace_id: "ws_cold" })
+
+    await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_cold" })).resolves.toMatchObject({
+      workspace: {
+        backing: "local-worktree",
+        access: "user-hosted",
+        display_name: "Cold workspace",
+        repo_url: "https://github.com/acme/cold.git",
+        remote_directory: "/workspace/cold",
+        home_region: "apac-south",
+      },
+    })
   })
 
   test("binds local host links to tenant scope and consumes every attestation signature once", async () => {

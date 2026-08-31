@@ -98,6 +98,29 @@ CREATE TABLE session_messages (
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   PRIMARY KEY (session_id, message_id)
+);
+CREATE TABLE session_turn_leases (
+  session_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  lease_id TEXT NOT NULL UNIQUE,
+  fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+  actor_id TEXT NOT NULL,
+  acquired_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL CHECK (expires_at > acquired_at),
+  released_at INTEGER
+);
+CREATE INDEX session_turn_leases_by_expiry
+  ON session_turn_leases (released_at, expires_at, session_id);
+CREATE TABLE session_turn_producers (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+  actor_id TEXT NOT NULL,
+  admitted_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, turn_id),
+  UNIQUE (session_id, fencing_token)
 );`
 
 const SCHEMA = `
@@ -396,7 +419,99 @@ CREATE TABLE IF NOT EXISTS audit_events (
 ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")}
 `
 
-const SQLITE_TENANCY_SCHEMA_VERSION = 3
+const SQLITE_TENANCY_SCHEMA_VERSION = 4
+
+function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
+  const columns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
+  const canonical = columns.some((column) => column.name === "creator_actor_id")
+    && columns.some((column) => column.name === "operation_id")
+  if (canonical) {
+    if (!tableExists(db, "session_registration_operations")) {
+      throw new Error("private_session_registration_schema_missing")
+    }
+    ensureSessionTurnSchema(db)
+    return
+  }
+
+  for (const archive of [
+    "legacy_session_history_pre_private_sessions",
+    "legacy_session_messages_pre_private_sessions",
+    "legacy_session_participants_pre_private_sessions",
+  ]) {
+    if (tableExists(db, archive)) throw new Error(`private_session_archive_collision:${archive}`)
+  }
+
+  // Legacy workspace-visible rows have no canonical registration operation or
+  // actor provenance. Preserve them as an operator-inspectable archive, but do
+  // not project them into the private-session authority by inventing either.
+  db.exec(`
+    DROP INDEX IF EXISTS session_history_by_creator;
+    DROP INDEX IF EXISTS session_history_by_workspace_creator;
+    DROP INDEX IF EXISTS session_participants_by_actor;
+    ALTER TABLE session_history RENAME TO legacy_session_history_pre_private_sessions;
+    ALTER TABLE session_messages RENAME TO legacy_session_messages_pre_private_sessions;
+    ALTER TABLE session_participants RENAME TO legacy_session_participants_pre_private_sessions;
+    ${CANONICAL_PRIVATE_SESSIONS_SCHEMA}
+  `)
+  ensureSessionTurnSchema(db)
+}
+
+function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_turn_leases (
+      session_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      lease_id TEXT NOT NULL UNIQUE,
+      fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+      actor_id TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL CHECK (expires_at > acquired_at),
+      released_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS session_turn_leases_by_expiry
+      ON session_turn_leases (released_at, expires_at, session_id);
+    CREATE TABLE IF NOT EXISTS session_turn_producers (
+      session_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+      actor_id TEXT NOT NULL,
+      admitted_at INTEGER NOT NULL,
+      PRIMARY KEY (session_id, turn_id),
+      UNIQUE (session_id, fencing_token)
+    );
+  `)
+  addColumn(db, "session_history", "snapshot_hash", "TEXT")
+}
+
+function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {
+  const columns = db.prepare("PRAGMA table_info(runtime_access_tokens)").all() as Array<{ name: string }>
+  if (["principal_kind", "actor_id", "actor_kind", "role"].every((name) => columns.some((column) => column.name === name))) {
+    return
+  }
+  const archive = "legacy_runtime_access_tokens_pre_canonical_actor"
+  if (tableExists(db, archive)) throw new Error(`runtime_access_token_archive_collision:${archive}`)
+  // A legacy row cannot prove canonical actor kind and role. Archiving it
+  // revokes it at the schema boundary instead of fabricating those claims.
+  db.exec(`
+    ALTER TABLE runtime_access_tokens RENAME TO ${archive};
+    ${CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA}
+  `)
+}
+
+function migrateChannelIdentitySchema(db: SqliteAuthorityDb) {
+  const columns = db.prepare("PRAGMA table_info(channel_identities)").all() as Array<{ name: string }>
+  if (columns.some((column) => column.name === "binding_id")) return
+  const archive = "legacy_channel_identities_pre_canonical_actor"
+  if (tableExists(db, archive)) throw new Error(`channel_identity_archive_collision:${archive}`)
+  // Legacy token-identifier bindings have no stable binding identity. Archive
+  // them so reopening the authority cannot silently treat them as canonical.
+  db.exec(`
+    ALTER TABLE channel_identities RENAME TO ${archive};
+    ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA}
+  `)
+}
 
 /**
  * Upgrades pre-tenant local authority databases in one SQLite transaction.
@@ -677,6 +792,9 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
     rebuildUsersIfNeeded(db)
     rebuildProjectsIfNeeded(db)
     rebuildWorkspacesIfNeeded(db)
+    migratePrivateSessionSchema(db)
+    migrateRuntimeAccessTokenSchema(db)
+    migrateChannelIdentitySchema(db)
     db.exec(`
       CREATE INDEX IF NOT EXISTS users_by_subject ON users (subject);
       CREATE UNIQUE INDEX IF NOT EXISTS users_by_public_id ON users (public_id);
@@ -886,20 +1004,11 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
           db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
         }
-        const sessionHistoryColumns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
-        if (!sessionHistoryColumns.some((column) => column.name === "max_event_ordinal")) {
-          db.exec("ALTER TABLE session_history ADD COLUMN max_event_ordinal INTEGER NOT NULL DEFAULT 0")
-        }
         migrateAuthorityTenancySchema(db)
         const messageColumns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>
         if (!messageColumns.some((column) => column.name === "author_actor_id")) {
           db.exec("ALTER TABLE session_messages ADD COLUMN author_actor_id TEXT")
         }
-        db.exec("CREATE INDEX IF NOT EXISTS session_history_by_creator ON session_history (created_by_token_identifier)")
-        db.exec(`
-          CREATE INDEX IF NOT EXISTS session_history_by_workspace_creator
-          ON session_history (workspace_id, created_by_token_identifier, updated_at DESC)
-        `)
       } catch (error) {
         db.close()
         throw error

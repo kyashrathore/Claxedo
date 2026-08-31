@@ -4,7 +4,7 @@
  * Maps `/api/claxedo/agent-config/extensions*` onto named read/write ops.
  */
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
+import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
 
 const PREFIX = "/api/claxedo/agent-config/extensions"
@@ -42,7 +42,7 @@ export function createAgentConfigAccountFetch(
   baseUrl: string = getClaxedoServerUrl(),
 ): typeof fetch {
   return async (input, init) => {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (!run) return fallback(input, init)
 
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, baseUrl)

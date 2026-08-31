@@ -83,6 +83,13 @@ import {
   sessionAccessDenied,
   type SessionAccessPolicy,
 } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  compatEnvelopeSessionId,
+  isSessionEventScopeResponse,
+  scopedReplay,
+  watchSessionEventLease,
+} from "../routes/session-event-privacy"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -108,6 +115,7 @@ export type WorkspaceRuntimeStore =
     getMessages(id: string): AgentMessage[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
+    getSessionFencingToken?: (sessionId: string) => number | undefined
     listSubagents?: (parentSessionId: string) => unknown[]
     bindSession(input: {
       sessionId: string
@@ -149,8 +157,6 @@ export type WorkspaceRuntimeStore =
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
 export type WorkspaceHostOptions = {
-  /** Required when mounting a non-loopback managed session surface. */
-  sessionAccessPolicy?: SessionAccessPolicy
   /** Optional, local-only lifecycle observer supplied by an embedding host. */
   processObserver?: ProcessObserver
   /** Host observer for the durable turn.finish outcome after store commit. */
@@ -2044,7 +2050,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           exposure: options.exposure,
           sessionAccessPolicy,
           processObserver: hostOptions.processObserver,
-          sessionAccessPolicy: hostOptions.sessionAccessPolicy,
           runtimeEventAuthorization: hostOptions.runtimeEventAuthorization,
           transcripts: hostOptions.transcripts,
         })
@@ -2201,6 +2206,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/global/event", async (c) => {
+        const scope = await authorizeSessionEventScope(c, sessionAccessPolicy, "sessionID")
+        if (isSessionEventScopeResponse(scope)) return scope
+        const allows = scope.managed
+          ? (event: CompatEnvelope) => compatEnvelopeSessionId(event) === scope.sessionId
+          : (_event: CompatEnvelope) => true
         const principal = eventDeliveryPrincipal(c)
         // Two changes meet here and BOTH are load-bearing.
         //
@@ -2291,25 +2301,21 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
         const opened = globalEvents.open(principal)
         await opened.ready
-        let cleanup: () => void = () => {}
         cleanup = attachSseFanout({
-          subscribe: (listener) => opened.subscribe(listener, () => {
-            cleanup()
-            try {
-              ctrl?.close()
-            } catch {}
-          }),
+          subscribe: (listener) => opened.subscribe((event) => {
+            if (allows(event)) listener(event)
+          }, close),
           write: async (event, meta) => {
             ctrl?.enqueue(encodeSseData(event, meta?.id))
           },
           heartbeat: { payload: { type: "server.heartbeat", properties: {} } },
           heartbeatMs: 10_000,
           lastEventId: c.req.header("last-event-id"),
-          replay: opened.replay,
+          replay: scope.managed ? scopedReplay(opened.replay, allows) : opened.replay,
           replayLive: false,
         })
 
-        stopLeaseWatch = watchSessionEventLease(scope, hostOptions.sessionAccessPolicy, close)
+        stopLeaseWatch = watchSessionEventLease(scope, sessionAccessPolicy, close)
         c.req.raw.signal.addEventListener("abort", close, { once: true })
 
         return new Response(body, { headers: sseHeaders() })
@@ -2318,67 +2324,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // Session V2 and its model catalog are the durable agent-control
       // contracts used by hosted WorkGraph. Keep them on the authenticated
       // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
-      const proxySessionV2 = async (c: Context) => {
-        const decision = await sessionAccessPolicy.authorizePrefix({
-          ...sessionAccessContext(c as never),
-          operation: "session_v2_proxy",
-          method: c.req.method,
-          path: c.req.path,
-          ...(c.req.path.startsWith("/api/session/")
-            ? { sessionId: decodeURIComponent(c.req.path.slice("/api/session/".length).split("/")[0] ?? "") }
-            : {}),
-        })
-        if (!decision.allowed) return sessionAccessDenied(decision)
+      const forwardSessionV2 = async (c: Context) => {
         const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
           return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
         }
-        const response = (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-        if (!response.ok || c.req.path !== "/api/session") return response
-        if (c.req.method === "POST") {
-          const payload = await response.clone().json().catch(() => undefined)
-          const sessionId = sessionV2CreatedId(payload)
-          if (!sessionId) {
-            return c.json({ error: { code: "session_create_response_invalid", message: "Session V2 create response is missing an id" } }, 502)
-          }
-          if (!sessionAccessPolicy.registerSession) {
-            return sessionAccessDenied({
-              allowed: false,
-              status: 403,
-              code: "session_authority_required",
-              message: "Managed session creation requires creator registration authority",
-            })
-          }
-          const registration = await sessionAccessPolicy.registerSession({
-            ...sessionAccessContext(c as never),
-            operation: "session_create",
-            sessionId,
-            method: c.req.method,
-            path: c.req.path,
-          })
-          if (!registration.allowed) return sessionAccessDenied(registration)
-          return response
-        }
-        if (c.req.method !== "GET") return response
-        const payload = await response.clone().json().catch(() => undefined)
-        const collection = sessionV2Collection(payload)
-        if (!collection) {
-          return c.json({ error: { code: "session_list_response_invalid", message: "Session V2 list response is invalid" } }, 502)
-        }
-        const allowed = new Set(await sessionAccessPolicy.filterSessions({
-          ...sessionAccessContext(c as never),
-          operation: "session_list",
-          method: c.req.method,
-          path: c.req.path,
-          sessionIds: collection.rows.map(sessionV2RowId).filter(Boolean),
-        }))
-        return sessionV2JsonResponse(
-          response,
-          collection.rebuild(collection.rows.filter((row) => allowed.has(sessionV2RowId(row)))),
-        )
+        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       }
       const proxySessionV2 = sessionV2Proxy({
-        ...(hostOptions.sessionAccessPolicy ? { policy: hostOptions.sessionAccessPolicy } : {}),
+        policy: sessionAccessPolicy,
         forward: forwardSessionV2,
       })
       app.all("/api/model", proxySessionV2)
@@ -2502,13 +2456,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           if (!store().getSession(sessionId)) return undefined
           const messages = store().getMessages(sessionId)
           if (!messages.length) return undefined
+          const fencingToken = store().getSessionFencingToken?.(sessionId) ?? 0
           return {
             messages,
             maxEventOrdinal: store().getSessionMaxSeq(sessionId),
+            ...(fencingToken === 0 ? {} : { fencingToken }),
           }
         },
         getSession: async ({ adapter, directory, sessionId }) => {
-          return store().getSession(sessionId) ?? await adapter.getSession(sessionId, directory)
+          const stored = store().getSession(sessionId) as { directory?: string } | null
+          if (stored) return (stored.directory ?? "") === (directory ?? "") ? stored as AgentSession : null
+          return await adapter.getSession(sessionId, directory)
         },
         getTodos: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined

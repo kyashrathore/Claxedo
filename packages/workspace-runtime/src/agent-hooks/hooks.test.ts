@@ -25,7 +25,8 @@ describe("generateNotifyScript", () => {
 
   it("posts lifecycle mutations with the terminal-scoped capability", () => {
     const script = generateNotifyScript(7860)
-    expect(script).toContain('curl -sG -X POST "$HOOK_URL"')
+    expect(script).toContain('curl -s "$HOOK_URL"')
+    expect(script).toContain('--request POST')
     expect(script).toContain('Authorization: Bearer $CLAXEDO_AGENT_HOOK_TOKEN')
   })
 })

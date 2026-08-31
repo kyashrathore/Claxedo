@@ -29,8 +29,9 @@ export type TokenVerifierBaseClaims = {
 export type RuntimeAccessVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
-  actor_id?: string
-  actor_kind?: "human" | "agent"
+  principal_kind: "user" | "service"
+  actor_id: string
+  actor_kind: "human" | "agent"
   actor_public_id?: string
   actor_name?: string
   actor_avatar_url?: string
@@ -39,11 +40,14 @@ export type RuntimeAccessVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> &
 export type RelayHostVerifierClaims = Omit<TokenVerifierBaseClaims, "sub"> & {
   org_id: string
   role: "viewer" | "editor" | "admin" | "owner"
-  actor_id?: string
-  actor_kind?: "human" | "agent"
+  principal_kind: "user" | "service"
+  actor_id: string
+  actor_kind: "human" | "agent"
   actor_public_id?: string
   actor_name?: string
   actor_avatar_url?: string
+  /** Durable Runtime Access Token id; distinct from this short-lived RHT jti. */
+  parent_jti: string
 } & (
   | { access: "cloud"; backing: "cloud-vm" }
   | { access: "user-hosted"; backing: "local-worktree" }

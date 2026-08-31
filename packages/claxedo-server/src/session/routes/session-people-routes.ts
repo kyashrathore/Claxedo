@@ -4,10 +4,11 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthContext,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { signedOrError } from "../../workspace/route-support"
 import {
   notifySessionShareChanged,
   peopleErrorResponse,
@@ -16,6 +17,7 @@ import {
 } from "../session-people-contract"
 
 type Options = {
+  authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   cliTokenEnv?: Record<string, string | undefined>
@@ -24,12 +26,21 @@ type Options = {
 
 const bodyLimitBytes = 16 * 1024
 
-async function signedAuth(req: Request, options: Options) {
-  const auth = await controlPlaneAuthContext(req, {
-    config: options.authConfig,
+async function signedAuth(req: Request, options: Options, services: ControlPlaneServices) {
+  const authResult = await signedOrError(req, {
+    authentication: options.authentication,
+    authConfig: options.authConfig,
     verifier: options.verifier,
-  })
-  if (auth?.mode === "signed") return auth
+    requireSigned: true,
+  }, services)
+  if ("error" in authResult) {
+    const status = authResult.status ?? 401
+    throw Object.assign(
+      new ControlPlaneAuthError(status, "invalid_bearer_token", "Signed auth required"),
+      { response: authResult },
+    )
+  }
+  if (authResult.auth) return authResult.auth
   throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
 }
 
@@ -38,11 +49,11 @@ async function participantBody(req: Request) {
   if (!body || typeof body !== "object" || Array.isArray(body)) return
   const input = body as Record<string, unknown>
   const workspaceId = typeof input.workspaceId === "string" ? input.workspaceId.trim() : ""
-  const participantTokenIdentifier = typeof input.participantTokenIdentifier === "string"
-    ? input.participantTokenIdentifier.trim()
+  const participantActorId = typeof input.participantActorId === "string"
+    ? input.participantActorId.trim()
     : ""
-  if (!workspaceId || !participantTokenIdentifier) return
-  return { workspaceId, participantTokenIdentifier }
+  if (!workspaceId || !participantActorId) return
+  return { workspaceId, participantActorId }
 }
 
 function shareTargetFromBody(body: Record<string, unknown>): SessionShareFanoutTarget {
@@ -83,16 +94,16 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         return c.json({
           error: {
             code: "session_participant_input_required",
-            message: "workspaceId and participantTokenIdentifier are required",
+            message: "workspaceId and participantActorId are required",
           },
         }, 400)
       }
       try {
-        const auth = await signedAuth(c.req.raw, options)
-        return c.json(await requireAuthority(services).addSessionParticipant(auth, {
+        const auth = await signedAuth(c.req.raw, options, services)
+        return c.json(await requireAuthority(services).grantSessionParticipant(auth, {
           sessionId: c.req.param("sessionId"),
           workspaceId: body.workspaceId,
-          participantTokenIdentifier: body.participantTokenIdentifier,
+          participantActorId: body.participantActorId,
         }))
       } catch (err) {
         return peopleErrorResponse(c, err)
@@ -104,16 +115,16 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         return c.json({
           error: {
             code: "session_participant_input_required",
-            message: "workspaceId and participantTokenIdentifier are required",
+            message: "workspaceId and participantActorId are required",
           },
         }, 400)
       }
       try {
-        const auth = await signedAuth(c.req.raw, options)
-        return c.json(await requireAuthority(services).removeSessionParticipant(auth, {
+        const auth = await signedAuth(c.req.raw, options, services)
+        return c.json(await requireAuthority(services).revokeSessionParticipant(auth, {
           sessionId: c.req.param("sessionId"),
           workspaceId: body.workspaceId,
-          participantTokenIdentifier: body.participantTokenIdentifier,
+          participantActorId: body.participantActorId,
         }))
       } catch (err) {
         return peopleErrorResponse(c, err)
@@ -130,7 +141,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         }, 400)
       }
       try {
-        const auth = await signedAuth(c.req.raw, options)
+        const auth = await signedAuth(c.req.raw, options, services)
         const list = requireAuthority(services).listSessionShares
         if (!list) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
         return c.json(await list(auth, {
@@ -153,7 +164,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         }, 400)
       }
       try {
-        const auth = await signedAuth(c.req.raw, options)
+        const auth = await signedAuth(c.req.raw, options, services)
         const authority = requireAuthority(services)
         const grant = authority.grantSessionShare
         if (!grant) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)
@@ -189,7 +200,7 @@ export function SessionPeopleControlRoutes(services: ControlPlaneServices, optio
         }, 400)
       }
       try {
-        const auth = await signedAuth(c.req.raw, options)
+        const auth = await signedAuth(c.req.raw, options, services)
         const authority = requireAuthority(services)
         const revoke = authority.revokeSessionShare
         if (!revoke) return c.json({ error: { code: "not_implemented", message: "Session shares unavailable" } }, 501)

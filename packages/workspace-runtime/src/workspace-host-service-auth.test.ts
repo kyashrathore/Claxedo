@@ -34,7 +34,7 @@ async function app(input: { trustedDirectToken?: string } = {}) {
 }
 
 const tokenInput = {
-  subject: "user_1",
+  principalKind: "user" as const,
   actorId: "actor_1",
   actorKind: "human" as const,
   orgId: "org_1",
@@ -620,7 +620,9 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
           claims: {
             iss: "workspace-relay",
             aud: "workspace-host-service",
-            sub: "u-static",
+            principal_kind: "user",
+            actor_id: "u-static",
+            actor_kind: "human",
             org_id: "org_static",
             workspace_id: "ws_static",
             host_id: "host_static",
@@ -631,6 +633,7 @@ describe("x-forwarded-by: workspace-relay marker enforcement", () => {
             iat: now,
             exp: now + 60,
             jti: "jti-static",
+            parent_jti: "rat-jti-static",
           } as RelayHostVerifierClaims,
         },
       },

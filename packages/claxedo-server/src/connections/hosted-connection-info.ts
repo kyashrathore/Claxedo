@@ -2,7 +2,6 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/ser
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -27,7 +26,6 @@ export async function hostedConnectionInfo(
   previousJti?: string,
 ) {
   const authority = requireAuthority(services)
-  const actor = await resolveRuntimeActor(authority, auth)
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
@@ -164,7 +162,7 @@ export async function hostedConnectionInfo(
   const signer = configuredRuntimeAccessTokenSigner(options)
   const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
   const token = await signer({
-    subject: auth.user.subject,
+    principalKind: "user",
     ...actor,
     orgId,
     workspaceId,

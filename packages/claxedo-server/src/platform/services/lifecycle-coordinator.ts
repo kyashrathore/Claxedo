@@ -17,7 +17,7 @@ import {
   type InstallationRevision,
   type ServiceInstallationAuditEvent,
   type ServiceInstallationStore,
-} from "./installation-store"
+} from "./installation-ledger"
 
 export type ServiceDeploymentStep =
   | "provision_resources"

@@ -8,11 +8,16 @@ afterEach(() => {
   else (globalThis as { api?: unknown }).api = originalApi
 })
 
-function installBridge(run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>) {
+function installBridge(
+  run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>,
+  status: "signed" | "unsigned" = "signed",
+) {
   ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
     account: {
       run,
-      state: async () => ({ status: "signed" }),
+      state: async () => status === "signed"
+        ? { status: "signed", identity: { userId: "user_1" } }
+        : { status: "unsigned" },
       onState: () => () => undefined,
       signIn: async () => ({ status: "signed" }),
       signOut: async () => ({ status: "unsigned" }),
@@ -47,5 +52,22 @@ describe("hostedControlCall", () => {
     })
 
     expect(fallback).toHaveBeenCalledTimes(1)
+  })
+
+  test("uses the local caller path when Electron is installed but unsigned", async () => {
+    const run = mock(async () => ({ can_manage_shares: true, grants: [], participants: [], teams: [] }))
+    const fallback = mock(async () => ({
+      can_manage_shares: true,
+      grants: ["local"],
+      participants: [],
+      teams: [],
+    }))
+    installBridge(run, "unsigned")
+
+    await expect(hostedControlCall("session.shares.list", {}, fallback)).resolves.toMatchObject({
+      grants: ["local"],
+    })
+    expect(run).not.toHaveBeenCalled()
+    expect(fallback).toHaveBeenCalledOnce()
   })
 })

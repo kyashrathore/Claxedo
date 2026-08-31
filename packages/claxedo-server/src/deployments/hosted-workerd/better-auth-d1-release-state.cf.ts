@@ -55,7 +55,7 @@ export type DeploymentReleaseTransition = {
   operationId: string
   previousReleaseId: string
   previousStateRevision: number
-  previousPhase: "locked" | "open"
+  previousPhase: DeploymentReleasePhase
   previousPhaseRevision: number
 }
 
@@ -133,8 +133,11 @@ join "deploymentRelease" as "target"
 where "active"."singleton" = 1 and "active"."deploymentId" = ?
   and "active"."stateRevision" = ? and "current"."releaseId" = ?
   and "current"."phase" = ? and "current"."phaseRevision" = ?
-  and ("current"."phase" = 'open' or
-    ("current"."phase" = 'locked' and "current"."firstTargetWriteAt" is null))
+  and ("current"."phase" in ('provider_sync', 'multiplayer_validation', 'open') or
+    ("current"."phase" = 'canary' and "current"."firstTargetWriteAt" is not null) or
+    ("current"."phase" = 'locked' and (
+      "current"."firstTargetWriteAt" is null
+    )))
   and "target"."releaseSequence" > "previous"."releaseSequence"
   and "target"."releaseSequence" = ? and "target"."workerBuildId" = ?
   and "target"."platformVersionId" = ?
@@ -159,21 +162,55 @@ const PREWRITE_ROLLBACK_STATE_INSERT_SQL = `insert into "deploymentReleaseStateH
 select "current"."deploymentId", "current"."stateRevision" + 1, ?, "previous"."releaseId",
   "current"."stateRevision", "previous"."stateRevision", 'prewrite_rollback',
   "previous"."phase", "previous"."phaseRevision", "previous"."firstTargetWriteAt", ?
-from "deploymentReleaseActive" as "active"
-join "deploymentReleaseStateHistory" as "current"
-  on "current"."deploymentId" = "active"."deploymentId"
-  and "current"."stateRevision" = "active"."stateRevision"
+from "deploymentReleaseStateHistory" as "current"
 join "deploymentReleaseStateHistory" as "previous"
   on "previous"."deploymentId" = "current"."deploymentId"
   and "previous"."stateRevision" = "current"."previousStateRevision"
+join "deploymentReleaseActive" as "active"
+  on "active"."deploymentId" = "current"."deploymentId"
 where "active"."singleton" = 1 and "active"."deploymentId" = ?
-  and "active"."stateRevision" = ? and "current"."releaseId" = ?
+  and "active"."stateRevision" in (?, ?) and "current"."stateRevision" = ?
+  and "current"."releaseId" = ?
   and "current"."phase" = 'locked' and "current"."phaseRevision" = 0
   and "current"."firstTargetWriteAt" is null
 on conflict do nothing`
 const PREWRITE_ROLLBACK_ACTIVE_CAS_SQL = `update "deploymentReleaseActive"
 set "stateRevision" = ?, "updatedAt" = ?
-where "singleton" = 1 and "deploymentId" = ? and "stateRevision" = ?
+where "singleton" = 1 and "deploymentId" = ? and "stateRevision" in (?, ?)
+  and exists (
+    select 1 from "deploymentReleaseStateHistory" as "rollback"
+    where "rollback"."deploymentId" = ? and "rollback"."stateRevision" = ?
+      and "rollback"."operationId" = ? and "rollback"."transitionKind" = 'prewrite_rollback'
+      and "rollback"."previousStateRevision" = ? and "rollback"."restoredStateRevision" = ?
+  )`
+const CANARY_PREWRITE_ROLLBACK_STATE_INSERT_SQL = `insert into "deploymentReleaseStateHistory" (
+  "deploymentId", "stateRevision", "operationId", "releaseId", "previousStateRevision",
+  "restoredStateRevision", "transitionKind", "phase", "phaseRevision", "firstTargetWriteAt", "createdAt"
+)
+select "current"."deploymentId", "current"."stateRevision" + 1, ?, "previous"."releaseId",
+  "current"."stateRevision", "previous"."stateRevision", 'prewrite_rollback',
+  "previous"."phase", "previous"."phaseRevision", "previous"."firstTargetWriteAt", ?
+from "deploymentReleaseActive" as "active"
+join "deploymentReleaseStateHistory" as "current"
+  on "current"."deploymentId" = "active"."deploymentId"
+  and "current"."stateRevision" = "active"."stateRevision"
+join "deploymentReleaseStateHistory" as "candidate"
+  on "candidate"."deploymentId" = "current"."deploymentId"
+  and "candidate"."stateRevision" = "current"."previousStateRevision"
+join "deploymentReleaseStateHistory" as "previous"
+  on "previous"."deploymentId" = "candidate"."deploymentId"
+  and "previous"."stateRevision" = "candidate"."previousStateRevision"
+where "active"."singleton" = 1 and "active"."deploymentId" = ?
+  and "active"."stateRevision" = ? and "current"."stateRevision" = ?
+  and "current"."releaseId" = ? and "current"."phase" = 'canary'
+  and "current"."phaseRevision" = 1 and "current"."firstTargetWriteAt" is null
+  and "candidate"."releaseId" = "current"."releaseId"
+  and "candidate"."phase" = 'locked' and "candidate"."phaseRevision" = 0
+  and "candidate"."firstTargetWriteAt" is null
+on conflict do nothing`
+const CANARY_PREWRITE_ROLLBACK_ACTIVE_CAS_SQL = `update "deploymentReleaseActive"
+set "stateRevision" = ?, "updatedAt" = ?
+where "singleton" = 1 and "deploymentId" = ? and "stateRevision" in (?, ?)
   and exists (
     select 1 from "deploymentReleaseStateHistory" as "rollback"
     where "rollback"."deploymentId" = ? and "rollback"."stateRevision" = ?
@@ -274,8 +311,8 @@ function assertTransition(identity: DeploymentReleaseIdentity, transition: Deplo
   ] as const) {
     if (!Number.isSafeInteger(value) || value < 0) throw new Error(`${name} must be a non-negative integer`)
   }
-  if (transition.previousPhase !== "locked" && transition.previousPhase !== "open") {
-    throw new Error("successor transition source phase must be locked or open")
+  if (!DEPLOYMENT_RELEASE_PHASES.includes(transition.previousPhase)) {
+    throw new Error("successor transition source phase must be a deployment release phase")
   }
 }
 
@@ -422,7 +459,15 @@ function rollbackDefinitions(input: DeploymentReleaseRollback, now: Date): SqlDe
   return [
     {
       sql: PREWRITE_ROLLBACK_STATE_INSERT_SQL,
-      values: [input.operationId, timestamp, input.deploymentId, input.expectedStateRevision, input.expectedReleaseId],
+      values: [
+        input.operationId,
+        timestamp,
+        input.deploymentId,
+        input.expectedStateRevision,
+        restoredRevision,
+        input.expectedStateRevision,
+        input.expectedReleaseId,
+      ],
     },
     {
       sql: PREWRITE_ROLLBACK_ACTIVE_CAS_SQL,
@@ -431,6 +476,43 @@ function rollbackDefinitions(input: DeploymentReleaseRollback, now: Date): SqlDe
         timestamp,
         input.deploymentId,
         input.expectedStateRevision,
+        restoredRevision,
+        input.deploymentId,
+        rollbackRevision,
+        input.operationId,
+        input.expectedStateRevision,
+        restoredRevision,
+      ],
+    },
+  ]
+}
+
+function canaryRollbackDefinitions(input: DeploymentReleaseRollback, now: Date): SqlDefinition[] {
+  assertRollback(input)
+  if (input.expectedStateRevision < 2) throw new Error("canary rollback requires a successor canary revision")
+  const timestamp = now.toISOString()
+  const rollbackRevision = input.expectedStateRevision + 1
+  const restoredRevision = input.expectedStateRevision - 2
+  return [
+    {
+      sql: CANARY_PREWRITE_ROLLBACK_STATE_INSERT_SQL,
+      values: [
+        input.operationId,
+        timestamp,
+        input.deploymentId,
+        input.expectedStateRevision,
+        input.expectedStateRevision,
+        input.expectedReleaseId,
+      ],
+    },
+    {
+      sql: CANARY_PREWRITE_ROLLBACK_ACTIVE_CAS_SQL,
+      values: [
+        rollbackRevision,
+        timestamp,
+        input.deploymentId,
+        input.expectedStateRevision,
+        rollbackRevision,
         input.deploymentId,
         rollbackRevision,
         input.operationId,
@@ -572,6 +654,10 @@ export function lockedDeploymentPrewriteRollbackStatements(input: DeploymentRele
   return rollbackDefinitions(input, now).map(render)
 }
 
+export function canaryDeploymentPrewriteRollbackStatements(input: DeploymentReleaseRollback, now = new Date()) {
+  return canaryRollbackDefinitions(input, now).map(render)
+}
+
 export async function registerLockedDeploymentReleaseCandidate(
   database: D1Database,
   identity: DeploymentReleaseIdentity,
@@ -632,6 +718,35 @@ export async function rollbackLockedDeploymentReleaseCandidate(
     state.restoredStateRevision !== input.expectedStateRevision - 1
   )
     throw new Error("deployment release rollback did not restore the immediate predecessor")
+  return state
+}
+
+export async function rollbackDeploymentCanaryBeforeWrite(
+  database: D1Database,
+  input: DeploymentReleaseRollback,
+  now = new Date(),
+) {
+  const definitions = canaryRollbackDefinitions(input, now)
+  const results = await database.batch(
+    definitions.map((definition) => database.prepare(definition.sql).bind(...definition.values)),
+  )
+  if (results.some((result) => !result.success)) throw new Error("deployment canary rollback failed")
+  const state = await database
+    .prepare(
+      `${RELEASE_STATE_COLUMNS}
+    ${RELEASE_STATE_FROM_ACTIVE}
+    where "active"."singleton" = 1 and "active"."deploymentId" = ?
+      and "state"."operationId" = ? and "state"."transitionKind" = 'prewrite_rollback'`,
+    )
+    .bind(input.deploymentId, input.operationId)
+    .first<DeploymentReleaseState>()
+  if (
+    !state ||
+    state.stateRevision !== input.expectedStateRevision + 1 ||
+    state.previousStateRevision !== input.expectedStateRevision ||
+    state.restoredStateRevision !== input.expectedStateRevision - 2
+  )
+    throw new Error("deployment canary rollback did not restore the pre-candidate predecessor")
   return state
 }
 
@@ -716,7 +831,31 @@ async function requireDeploymentCutoverEvidence(
         identity.serviceManifestId,
       )
       .first<{ count: number }>()
-    if (migrationEvidence?.count !== 1) {
+    const successorContinuity =
+      migrationEvidence?.count === 0
+        ? await database
+            .prepare(
+              `select count(*) as "count"
+        from "deploymentReleaseStateHistory" as "current"
+        join "deploymentRelease" as "release"
+          on "release"."deploymentId" = "current"."deploymentId" and "release"."releaseId" = "current"."releaseId"
+        join "deploymentReleaseStateHistory" as "predecessor"
+          on "predecessor"."deploymentId" = "current"."deploymentId"
+          and "predecessor"."stateRevision" = "current"."previousStateRevision"
+        join "deploymentRelease" as "predecessorRelease"
+          on "predecessorRelease"."deploymentId" = "predecessor"."deploymentId"
+          and "predecessorRelease"."releaseId" = "predecessor"."releaseId"
+        where "current"."deploymentId" = ? and "current"."stateRevision" = ?
+          and "current"."releaseId" = ? and "current"."transitionKind" in ('locked_replacement', 'open_rollforward')
+          and "predecessorRelease"."releaseSequence" < "release"."releaseSequence"
+          and "predecessorRelease"."adapterProfile" = "release"."adapterProfile"
+          and "predecessorRelease"."productPosture" = "release"."productPosture"
+          and "predecessorRelease"."sandboxPosture" = "release"."sandboxPosture"`,
+            )
+            .bind(identity.deploymentId, state.stateRevision, identity.releaseId)
+            .first<{ count: number }>()
+        : undefined
+    if (migrationEvidence?.count !== 1 && successorContinuity?.count !== 1) {
       throw new Error("canary requires exactly one release-bound source-boundary evidence receipt")
     }
     const admission = await database

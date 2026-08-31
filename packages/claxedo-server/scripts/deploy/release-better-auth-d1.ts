@@ -1,6 +1,8 @@
 import { spawn } from "node:child_process"
 import { createHash } from "node:crypto"
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises"
+import { Resolver } from "node:dns/promises"
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
+import { request as httpsRequest } from "node:https"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -18,10 +20,20 @@ import {
   certifiedHostedWorkerArtifact,
   type CertifiedHostedWorkerEnvironment,
 } from "../../src/deployments/hosted-workerd/certified-worker-artifacts"
+import { isTransientWranglerFailure } from "./prepare-better-auth-d1"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const VERSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-const BETTER_AUTH_D1_RELEASE_ARTIFACT = "user-deployed-better-auth-d1-locked" as const
+const BETTER_AUTH_D1_LOCKED_ARTIFACT = "user-deployed-better-auth-d1-locked" as const
+const BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT =
+  "user-deployed-better-auth-d1-live-sync-migration-bridge" as const
+const BETTER_AUTH_D1_CUTOVER_ARTIFACT = "user-deployed-better-auth-d1-candidate" as const
+const publicDnsResolver = new Resolver()
+publicDnsResolver.setServers(["1.1.1.1", "1.0.0.1"])
+
+function resolvePublicIpv4(hostname: string) {
+  return publicDnsResolver.resolve4(hostname)
+}
 
 function required(env: NodeJS.ProcessEnv, name: string) {
   const value = env[name]?.trim()
@@ -33,6 +45,15 @@ function positiveInteger(env: NodeJS.ProcessEnv, name: string) {
   const value = required(env, name)
   const parsed = Number(value)
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`)
+  return value
+}
+
+export function futureUnixMilliseconds(env: NodeJS.ProcessEnv, name: string, now = Date.now()) {
+  const value = required(env, name)
+  const parsed = Number(value)
+  if (!Number.isSafeInteger(parsed) || parsed <= now) {
+    throw new Error(`${name} must be a future Unix timestamp in milliseconds`)
+  }
   return value
 }
 
@@ -54,9 +75,10 @@ function exactHttpsOrigin(env: NodeJS.ProcessEnv, name: string) {
 }
 
 export type BetterAuthD1ReleaseEnvironment = CertifiedHostedWorkerEnvironment
+export type BetterAuthD1ReleaseMode = "locked" | "cutover"
 
 export function betterAuthD1WorkerName(environment: BetterAuthD1ReleaseEnvironment) {
-  return certifiedHostedWorkerArtifact(BETTER_AUTH_D1_RELEASE_ARTIFACT, environment).workerName
+  return certifiedHostedWorkerArtifact(BETTER_AUTH_D1_LOCKED_ARTIFACT, environment).workerName
 }
 
 export function betterAuthD1DeploymentManifestPath(
@@ -94,8 +116,8 @@ export function betterAuthD1DeploymentManifest(input: {
     sandboxPosture: "control-plane-only" as const,
     workerBuildId: input.workerBuildId,
     platformVersionId: input.platformVersionId,
-    browserBuildId: LOCKED_BROWSER_BUILD_ID,
-    relayBuildId: LOCKED_RELAY_BUILD_ID,
+    browserBuildId: input.release.browserBuildId,
+    relayBuildId: input.release.relayBuildId,
     authConfigurationId: input.authConfigurationId,
     serviceManifestId: LOCKED_SERVICE_MANIFEST_ID,
     recoveryEpoch: variable("CLAXEDO_RECOVERY_EPOCH"),
@@ -148,6 +170,7 @@ function assertIsolatedDeploymentResources(env: NodeJS.ProcessEnv) {
     "DEPLOYMENT_ID",
     "API_ORIGIN",
     "APP_ORIGIN",
+    "WORKSPACE_RELAY_URL",
     "AUTH_D1_DATABASE_ID",
     "AUTH_D1_DATABASE_NAME",
     "CONTROL_PLANE_D1_DATABASE_ID",
@@ -187,7 +210,11 @@ function assertIsolatedDeploymentResources(env: NodeJS.ProcessEnv) {
   }
 }
 
-export function betterAuthD1ReleaseInputs(env: NodeJS.ProcessEnv, environment: BetterAuthD1ReleaseEnvironment) {
+export function betterAuthD1ReleaseInputs(
+  env: NodeJS.ProcessEnv,
+  environment: BetterAuthD1ReleaseEnvironment,
+  options: Readonly<{ mode: BetterAuthD1ReleaseMode; browserBuildId?: string }> = { mode: "locked" },
+) {
   const profile = resolveDeploymentProfileFromEnv(env)
   if (
     profile.adapterProfile !== "better-auth-d1" ||
@@ -195,8 +222,12 @@ export function betterAuthD1ReleaseInputs(env: NodeJS.ProcessEnv, environment: B
     profile.sandboxPosture !== "control-plane-only"
   )
     throw new Error("Better Auth D1 release supports only user-deployed control-plane-only")
-  if (env.CLAXEDO_WORKER_BUILD_ID?.trim()) {
-    throw new Error("CLAXEDO_WORKER_BUILD_ID is derived from the emitted Worker and must not be supplied")
+  if (env.CLAXEDO_WORKER_BUILD_ID?.trim() || env.CLAXEDO_BROWSER_BUILD_ID?.trim()) {
+    throw new Error("Worker and browser build IDs are derived from emitted artifacts and must not be supplied")
+  }
+  const browserBuildId = options.mode === "locked" ? LOCKED_BROWSER_BUILD_ID : options.browserBuildId?.trim()
+  if (!browserBuildId || (options.mode === "cutover" && !/^sha256:[0-9a-f]{64}$/.test(browserBuildId))) {
+    throw new Error("cutover release requires a derived SHA-256 browser build identity")
   }
   assertIsolatedDeploymentResources(env)
   const methods = resolveBetterAuthMethodSelection(required(env, "CLAXEDO_AUTH_METHODS"))
@@ -265,7 +296,25 @@ export function betterAuthD1ReleaseInputs(env: NodeJS.ProcessEnv, environment: B
     previousStateRevision === undefined ? `initialize:${releaseId}` : required(env, "CLAXEDO_RELEASE_OPERATION_ID")
   const appOriginName = `CLAXEDO_${environment.toUpperCase()}_APP_ORIGIN`
   const appOrigin = exactHttpsOrigin(env, appOriginName).origin
+  const relayUrlName = `CLAXEDO_${environment.toUpperCase()}_WORKSPACE_RELAY_URL`
+  const relayUrl = exactHttpsOrigin(env, relayUrlName).origin
+  const cutoverVariables =
+    options.mode === "cutover"
+      ? ([
+          [
+            "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT",
+            futureUnixMilliseconds(env, "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT"),
+          ],
+          ["CLAXEDO_ENVIRONMENT_ID", required(env, "CLAXEDO_ENVIRONMENT_ID")],
+          ["CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID", required(env, "CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID")],
+          ["CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME", required(env, "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME")],
+          ["CLAXEDO_CANARY_JOURNEY_ID", required(env, "CLAXEDO_CANARY_JOURNEY_ID")],
+        ] as const)
+      : []
   return {
+    mode: options.mode,
+    browserBuildId,
+    relayBuildId: LOCKED_RELAY_BUILD_ID,
     environment,
     apiOrigin: apiOrigin.origin,
     authDatabaseId,
@@ -285,9 +334,14 @@ export function betterAuthD1ReleaseInputs(env: NodeJS.ProcessEnv, environment: B
       "BETTER_AUTH_SECRET",
       "CLAXEDO_AUTH_INTROSPECTION_SECRET",
       "CLAXEDO_RELEASE_OPERATOR_SECRET",
+      "CLAXEDO_RELAY_RESOLVER_TOKEN",
+      "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM",
+      "CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM",
+      "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       ...methods.map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
     ],
     runtimeVariables: [
+      ["CLAXEDO_DEPLOYMENT_MODE", "hosted"],
       ["CLAXEDO_DEPLOYMENT_ID", deploymentId],
       ["CLAXEDO_RELEASE_SEQUENCE", positiveInteger(env, "CLAXEDO_RELEASE_SEQUENCE")],
       ["CLAXEDO_RELEASE_ID", releaseId],
@@ -296,28 +350,52 @@ export function betterAuthD1ReleaseInputs(env: NodeJS.ProcessEnv, environment: B
       ["CLAXEDO_AUTH_METHODS", methods.join(",")],
       ["CLAXEDO_REQUEST_LIMITER_NAMESPACE_ID", namespaceId],
       ["CLAXEDO_RECOVERY_EPOCH", recoveryEpoch],
+      ["CLAXEDO_BROWSER_BUILD_ID", browserBuildId],
+      ["CLAXEDO_RELAY_BUILD_ID", LOCKED_RELAY_BUILD_ID],
       ["BETTER_AUTH_URL", apiOrigin.origin],
       ["CLAXEDO_APP_ORIGIN", appOrigin],
+      ["CLAXEDO_WORKSPACE_RELAY_URL", relayUrl],
+      ...cutoverVariables,
       ...publicProviderVariables,
     ] as Array<readonly [string, string]>,
   }
 }
 
-export function renderBetterAuthD1WranglerConfig(input: {
+type BetterAuthD1WranglerConfigInput = {
   staging: boolean
+  mode?: BetterAuthD1ReleaseMode
   authDatabaseId: string
   authDatabaseName: string
   controlPlaneDatabaseId: string
   controlPlaneDatabaseName: string
   namespaceId: string
-}) {
+}
+
+function renderBetterAuthD1WranglerConfigForArtifact(
+  input: BetterAuthD1WranglerConfigInput,
+  artifactId:
+    | typeof BETTER_AUTH_D1_LOCKED_ARTIFACT
+    | typeof BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT
+    | typeof BETTER_AUTH_D1_CUTOVER_ARTIFACT,
+  liveSyncResources: boolean,
+) {
   const quote = (value: string) => JSON.stringify(value)
-  const artifact = certifiedHostedWorkerArtifact(
-    BETTER_AUTH_D1_RELEASE_ARTIFACT,
-    input.staging ? "staging" : "production",
-  )
-  return `name = ${quote(artifact.workerName)}
-main = ${quote(artifact.entrypointFromPackageChild)}
+  const environment = input.staging ? "staging" : "production"
+  const releaseTrain = certifiedHostedWorkerArtifact(BETTER_AUTH_D1_LOCKED_ARTIFACT, environment)
+  const entrypoint = certifiedHostedWorkerArtifact(artifactId, environment).entrypointFromPackageChild
+  const liveSyncConfiguration = liveSyncResources
+    ? `
+[[durable_objects.bindings]]
+name = "LIVE_SYNC_ROOM"
+class_name = "LiveSyncRoom"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["LiveSyncRoom"]
+`
+    : ""
+  return `name = ${quote(releaseTrain.workerName)}
+main = ${quote(entrypoint)}
 compatibility_date = "2025-05-01"
 compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 workers_dev = false
@@ -352,11 +430,117 @@ namespace_id = ${quote(input.namespaceId)}
 [ratelimits.simple]
 limit = 600
 period = 60
+${liveSyncConfiguration}
 `
+}
+
+export function renderBetterAuthD1WranglerConfig(input: BetterAuthD1WranglerConfigInput) {
+  return renderBetterAuthD1WranglerConfigForArtifact(
+    input,
+    input.mode === "cutover" ? BETTER_AUTH_D1_CUTOVER_ARTIFACT : BETTER_AUTH_D1_LOCKED_ARTIFACT,
+    input.mode === "cutover",
+  )
+}
+
+export function renderBetterAuthD1LiveSyncMigrationBridgeWranglerConfig(input: BetterAuthD1WranglerConfigInput) {
+  return renderBetterAuthD1WranglerConfigForArtifact(input, BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT, true)
+}
+
+export function betterAuthD1ReleaseSubprocessEnvironment(input: {
+  env: NodeJS.ProcessEnv
+  release: ReturnType<typeof betterAuthD1ReleaseInputs>
+  workerBuildId: string
+  platformVersionId: string
+  authConfigurationId: string
+  wranglerConfig: string
+}) {
+  const variable = (name: string) => {
+    const value = input.release.runtimeVariables.find(([candidate]) => candidate === name)?.[1]
+    if (!value) throw new Error(`Better Auth D1 release subprocess is missing ${name}`)
+    return value
+  }
+  return {
+    ...input.env,
+    CLAXEDO_DEPLOYMENT_ID: variable("CLAXEDO_DEPLOYMENT_ID"),
+    CLAXEDO_RECOVERY_EPOCH: variable("CLAXEDO_RECOVERY_EPOCH"),
+    CLAXEDO_BROWSER_BUILD_ID: variable("CLAXEDO_BROWSER_BUILD_ID"),
+    CLAXEDO_RELAY_BUILD_ID: variable("CLAXEDO_RELAY_BUILD_ID"),
+    CLAXEDO_AUTH_D1_DATABASE_ID: input.release.authDatabaseId,
+    CLAXEDO_AUTH_D1_DATABASE_NAME: input.release.authDatabaseName,
+    CLAXEDO_CONTROL_PLANE_D1_DATABASE_ID: input.release.controlPlaneDatabaseId,
+    CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: input.release.controlPlaneDatabaseName,
+    CLAXEDO_REQUEST_LIMITER_NAMESPACE_ID: input.release.namespaceId,
+    BETTER_AUTH_URL: input.release.apiOrigin,
+    CLAXEDO_APP_ORIGIN: input.release.authConfiguration.appOrigin,
+    CLAXEDO_WORKER_BUILD_ID: input.workerBuildId,
+    CLAXEDO_PLATFORM_VERSION_ID: input.platformVersionId,
+    CLAXEDO_AUTH_CONFIGURATION_ID: input.authConfigurationId,
+    CLAXEDO_WRANGLER_CONFIG: input.wranglerConfig,
+  } satisfies NodeJS.ProcessEnv
 }
 
 export function workerArtifactBuildId(bytes: Uint8Array) {
   return `sha256:${createHash("sha256").update(bytes).digest("hex")}`
+}
+
+const BROWSER_BUILD_ATTESTATION = "claxedo-browser-build.json"
+
+export async function prepareBrowserArtifactsForWorkers(directory: string) {
+  const root = path.resolve(directory)
+  await rm(path.join(root, "_redirects"), { force: true })
+  const removeSourceMaps = async (current: string): Promise<void> => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name)
+      if (entry.isDirectory()) await removeSourceMaps(absolute)
+      else if (entry.isFile() && entry.name.endsWith(".map")) await rm(absolute)
+    }
+  }
+  await removeSourceMaps(root)
+}
+
+export async function browserArtifactBuildId(directory: string) {
+  const root = path.resolve(directory)
+  const files: string[] = []
+  const visit = async (current: string) => {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const absolute = path.join(current, entry.name)
+      if (entry.isSymbolicLink()) throw new Error("browser artifacts must not contain symbolic links")
+      if (entry.isDirectory()) await visit(absolute)
+      else if (entry.isFile()) files.push(path.relative(root, absolute).split(path.sep).join("/"))
+      else throw new Error("browser artifacts must contain only directories and regular files")
+    }
+  }
+  await visit(root)
+  const selected = files.filter((file) => file !== BROWSER_BUILD_ATTESTATION).sort()
+  if (selected.length === 0) throw new Error("browser artifact directory is empty")
+  const digest = createHash("sha256")
+  for (const relative of selected) {
+    const bytes = await readFile(path.join(root, relative))
+    digest.update(`path:${Buffer.byteLength(relative)}:${relative}\nbytes:${bytes.byteLength}\n`)
+    digest.update(bytes)
+    digest.update("\n")
+  }
+  return `sha256:${digest.digest("hex")}`
+}
+
+export function betterAuthBrowserWorkerName(environment: BetterAuthD1ReleaseEnvironment) {
+  return environment === "staging" ? "claxedo-user-deployed-app-staging" : "claxedo-user-deployed-app"
+}
+
+export function renderBetterAuthBrowserWranglerConfig(input: {
+  environment: BetterAuthD1ReleaseEnvironment
+  browserDirectory: string
+}) {
+  return `name = ${JSON.stringify(betterAuthBrowserWorkerName(input.environment))}
+compatibility_date = "2025-05-01"
+workers_dev = false
+preview_urls = false
+
+[assets]
+directory = ${JSON.stringify(path.resolve(input.browserDirectory))}
+not_found_handling = "single-page-application"
+html_handling = "auto-trailing-slash"
+`
 }
 
 export function requireSecretInventory(output: string, requiredSecrets: string[]) {
@@ -364,6 +548,114 @@ export function requireSecretInventory(output: string, requiredSecrets: string[]
   const available = new Set(parsed.map((item) => item.name))
   const missing = requiredSecrets.filter((name) => !available.has(name))
   if (missing.length > 0) throw new Error(`missing remote Worker secrets: ${missing.join(", ")}`)
+}
+
+export function isAbsentWorkerProbe(stderr: string) {
+  return /has no deployments|not found|worker does not exist/i.test(stderr)
+}
+
+export async function verifyBootstrapGate(
+  apiOrigin: string,
+  options: Readonly<{
+    attempts?: number
+    intervalMs?: number
+    fetcher?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+    wait?: (milliseconds: number) => Promise<void>
+  }> = {},
+) {
+  const attempts = options.attempts ?? 120
+  const intervalMs = options.intervalMs ?? 3_000
+  const fetcher = options.fetcher ?? ((input, init) => fetchReleaseProbe(String(input), init))
+  const wait = options.wait ?? ((milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds)))
+  let lastFailure: unknown = new Error("bootstrap gate was not queried")
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const response = await fetcher(apiOrigin, { signal: AbortSignal.timeout(15_000) })
+      const body = (await response.json()) as { error?: { code?: string } }
+      if (response.status === 503 && body.error?.code === "deployment_bootstrap") return
+      lastFailure = new Error("bootstrap gate returned an unexpected response")
+    } catch (error) {
+      lastFailure = error
+    }
+    if (attempt < attempts) await wait(intervalMs)
+  }
+  throw new Error("bootstrap gate did not become the exact fail-closed production deployment", {
+    cause: lastFailure,
+  })
+}
+
+async function fetchHttpsAddress(url: string, address: string, init: RequestInit) {
+  const target = new URL(url)
+  if (target.protocol !== "https:") throw new Error("release probes require HTTPS")
+  return await new Promise<Response>((resolve, reject) => {
+    const request = httpsRequest(
+      target,
+      {
+        method: init.method ?? "GET",
+        headers: init.headers as Record<string, string> | undefined,
+        lookup: (_hostname, options, callback) => {
+          if (typeof options === "object" && options.all) {
+            callback(null, [{ address, family: 4 }])
+            return
+          }
+          callback(null, address, 4)
+        },
+      },
+      (response) => {
+        const chunks: Buffer[] = []
+        response.on("data", (chunk: Buffer) => chunks.push(chunk))
+        response.on("error", reject)
+        response.on("end", () => {
+          const headers = new Headers()
+          for (let index = 0; index < response.rawHeaders.length; index += 2) {
+            headers.append(response.rawHeaders[index]!, response.rawHeaders[index + 1]!)
+          }
+          resolve(
+            new Response(Buffer.concat(chunks), {
+              status: response.statusCode ?? 500,
+              statusText: response.statusMessage,
+              headers,
+            }),
+          )
+        })
+      },
+    )
+    request.setTimeout(15_000, () => request.destroy(new Error("release probe timed out")))
+    if (init.signal) {
+      if (init.signal.aborted) request.destroy(init.signal.reason)
+      else init.signal.addEventListener("abort", () => request.destroy(init.signal?.reason), { once: true })
+    }
+    request.on("error", reject)
+    request.end()
+  })
+}
+
+export async function fetchReleaseProbe(
+  url: string,
+  init: RequestInit = {},
+  dependencies: Readonly<{
+    fetcher?: (input: string, init?: RequestInit) => Promise<Response>
+    resolver?: (hostname: string) => Promise<readonly string[]>
+    addressFetcher?: (url: string, address: string, init: RequestInit) => Promise<Response>
+  }> = {},
+) {
+  try {
+    return await (dependencies.fetcher ?? fetch)(url, init)
+  } catch (primaryFailure) {
+    const target = new URL(url)
+    const addresses = await (dependencies.resolver ?? resolvePublicIpv4)(target.hostname)
+    let lastFailure: unknown = primaryFailure
+    for (const address of addresses) {
+      try {
+        return await (dependencies.addressFetcher ?? fetchHttpsAddress)(url, address, init)
+      } catch (error) {
+        lastFailure = error
+      }
+    }
+    throw new Error("release probe failed through normal and authoritative DNS resolution", {
+      cause: lastFailure,
+    })
+  }
 }
 
 export function parseVersionUploadOutput(output: string, workerName: string) {
@@ -429,11 +721,76 @@ export function cloudflareVersionOverride(workerName: string, versionId: string)
   return `${workerName}="${versionId}"`
 }
 
-export function candidateVersionTag(releaseSequence: string, buildId: string) {
+export function candidateVersionTag(
+  releaseSequence: string,
+  buildId: string,
+  secretBundleId?: string,
+  browserBuildId?: string,
+  configurationId?: string,
+) {
   if (!/^\d+$/.test(releaseSequence) || !/^sha256:[0-9a-f]{64}$/.test(buildId)) {
     throw new Error("candidate version tag requires a release sequence and SHA-256 build identity")
   }
-  return `claxedo-${releaseSequence}-${buildId.slice("sha256:".length, "sha256:".length + 16)}`
+  if (secretBundleId !== undefined && !/^sha256:[0-9a-f]{64}$/.test(secretBundleId)) {
+    throw new Error("candidate version tag secret bundle must be a SHA-256 identity")
+  }
+  if (browserBuildId !== undefined && !/^sha256:[0-9a-f]{64}$/.test(browserBuildId)) {
+    throw new Error("candidate version tag browser build must be a SHA-256 identity")
+  }
+  if (configurationId !== undefined && !/^sha256:[0-9a-f]{64}$/.test(configurationId)) {
+    throw new Error("candidate version tag configuration must be a SHA-256 identity")
+  }
+  const secretSuffix = secretBundleId ? `-${secretBundleId.slice("sha256:".length, "sha256:".length + 12)}` : ""
+  const browserSuffix = browserBuildId ? `-${browserBuildId.slice("sha256:".length, "sha256:".length + 12)}` : ""
+  const configurationSuffix = configurationId
+    ? `-${configurationId.slice("sha256:".length, "sha256:".length + 12)}`
+    : ""
+  return `claxedo-${releaseSequence}-${buildId.slice("sha256:".length, "sha256:".length + 16)}${secretSuffix}${browserSuffix}${configurationSuffix}`
+}
+
+export function candidateConfigurationId(variables: ReadonlyMap<string, string>) {
+  const canonical = JSON.stringify([...variables].sort(([left], [right]) => left.localeCompare(right)))
+  return `sha256:${createHash("sha256").update(canonical).digest("hex")}`
+}
+
+export async function resolveReleaseSecretsFile(env: NodeJS.ProcessEnv, requiredSecrets: readonly string[]) {
+  const configured = env.CLAXEDO_RELEASE_SECRETS_FILE?.trim()
+  if (!configured) return undefined
+  const file = path.resolve(configured)
+  const metadata = await stat(file)
+  if (!metadata.isFile()) throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must be a regular JSON file")
+  if ((metadata.mode & 0o077) !== 0) {
+    throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must not be accessible by group or others")
+  }
+  const parsed = JSON.parse(await readFile(file, "utf8")) as unknown
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must contain one JSON object")
+  }
+  const entries = Object.entries(parsed)
+  if (entries.length === 0) throw new Error("CLAXEDO_RELEASE_SECRETS_FILE must contain at least one secret")
+  const allowed = new Set(requiredSecrets)
+  for (const [name, value] of entries) {
+    if (!allowed.has(name)) throw new Error(`CLAXEDO_RELEASE_SECRETS_FILE contains unexpected secret ${name}`)
+    if (typeof value !== "string" || !value) {
+      throw new Error(`CLAXEDO_RELEASE_SECRETS_FILE secret ${name} must be a non-empty string`)
+    }
+  }
+  const canonical = JSON.stringify(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))))
+  return Object.freeze({
+    file,
+    bundleId: `sha256:${createHash("sha256").update(canonical).digest("hex")}`,
+  })
+}
+
+export function taggedCandidateVersionId(output: string, tag: string) {
+  const versions = JSON.parse(output) as Array<{ id?: string; annotations?: Record<string, string> }>
+  if (!Array.isArray(versions)) throw new Error("Wrangler versions list did not return an array")
+  const matching = versions.filter((version) => version.annotations?.["workers/tag"] === tag)
+  if (matching.length === 0) return undefined
+  if (matching.length !== 1) throw new Error("candidate version tag resolves to more than one Worker version")
+  const versionId = matching[0]?.id
+  if (!versionId || !VERSION_ID.test(versionId)) throw new Error("tagged candidate version has an invalid ID")
+  return versionId
 }
 
 export function recoverCandidateVersion(input: {
@@ -483,26 +840,53 @@ export function recoverCandidateVersion(input: {
   return version.id
 }
 
-async function run(args: string[], options: { capture?: boolean; env?: NodeJS.ProcessEnv } = {}) {
+export function workerVersionHasLiveSyncRoom(output: string) {
+  const version = JSON.parse(output) as { resources?: { bindings?: Array<Record<string, unknown>> } }
+  const bindings = version.resources?.bindings
+  if (!Array.isArray(bindings)) throw new Error("Worker version omitted resource bindings")
+  return bindings.some(
+    (binding) =>
+      binding.type === "durable_object_namespace" &&
+      binding.name === "LIVE_SYNC_ROOM" &&
+      binding.class_name === "LiveSyncRoom",
+  )
+}
+
+async function run(args: string[], options: { capture?: boolean; env?: NodeJS.ProcessEnv; cwd?: string } = {}) {
   const executable =
     args[0] === "bun"
       ? process.execPath
       : path.join(serverRoot, "node_modules", ".bin", process.platform === "win32" ? "wrangler.cmd" : "wrangler")
-  const child = spawn(executable, args.slice(1), {
-    cwd: serverRoot,
-    env: options.env ?? process.env,
-    stdio: options.capture ? ["ignore", "pipe", "inherit"] : "inherit",
-    shell: process.platform === "win32",
-  })
   let output = ""
-  if (options.capture && child.stdout) {
-    child.stdout.setEncoding("utf8")
-    child.stdout.on("data", (chunk: string) => {
-      output += chunk
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const child = spawn(executable, args.slice(1), {
+      cwd: options.cwd ?? serverRoot,
+      env: options.env ?? process.env,
+      stdio: ["ignore", options.capture ? "pipe" : "inherit", "pipe"],
+      shell: process.platform === "win32",
     })
+    output = ""
+    let stderr = ""
+    if (options.capture && child.stdout) {
+      child.stdout.setEncoding("utf8")
+      child.stdout.on("data", (chunk: string) => {
+        output += chunk
+      })
+    }
+    child.stderr?.setEncoding("utf8")
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk
+      process.stderr.write(chunk)
+    })
+    const code = await new Promise<number | null>((resolve) => child.on("exit", resolve))
+    if (code === 0) break
+    if (attempt === 5 || !isTransientWranglerFailure(stderr)) {
+      throw new Error(`${args.slice(0, 3).join(" ")} failed`)
+    }
+    const delayMs = attempt * 1_000
+    console.warn(`Wrangler connectivity failure; retrying idempotent release command in ${delayMs}ms`)
+    await new Promise((resolve) => setTimeout(resolve, delayMs))
   }
-  const code = await new Promise<number | null>((resolve) => child.on("exit", resolve))
-  if (code !== 0) throw new Error(`${args.slice(0, 3).join(" ")} failed`)
   return output
 }
 
@@ -533,6 +917,74 @@ async function probe(args: string[]) {
   return { code, stdout, stderr }
 }
 
+async function ensureCutoverLiveSyncLifecycle(input: {
+  release: ReturnType<typeof betterAuthD1ReleaseInputs>
+  staging: boolean
+  temporary: string
+  configArgs: string[]
+  workerName: string
+}) {
+  if (input.release.mode !== "cutover") return
+
+  const status = parseDeploymentStatus(
+    await run(["wrangler", "deployments", "status", ...input.configArgs, "--json"], { capture: true }),
+  )
+  if (status.versions.length !== 1) {
+    throw new Error("the LiveSyncRoom lifecycle bridge refuses an existing split deployment")
+  }
+  const incumbentVersionId = status.versions[0]!.version_id
+  requireDeploymentTraffic(status, [{ versionId: incumbentVersionId, percentage: 100 }])
+  const incumbent = await run(["wrangler", "versions", "view", incumbentVersionId, ...input.configArgs, "--json"], {
+    capture: true,
+  })
+  if (workerVersionHasLiveSyncRoom(incumbent)) return
+  if (required(process.env, "CLAXEDO_PREVIOUS_PHASE") !== "locked") {
+    throw new Error("the LiveSyncRoom lifecycle bridge is allowed only from a locked predecessor")
+  }
+
+  const bridgeConfig = path.join(input.temporary, "live-sync-migration-bridge.wrangler.toml")
+  await writeFile(
+    bridgeConfig,
+    renderBetterAuthD1LiveSyncMigrationBridgeWranglerConfig({
+      staging: input.staging,
+      ...input.release,
+    }),
+  )
+  const bridgeConfigArgs = ["--config", bridgeConfig]
+  await run([
+    "wrangler",
+    "deploy",
+    ...bridgeConfigArgs,
+    "--domain",
+    new URL(input.release.apiOrigin).hostname,
+    "--keep-vars=true",
+    "--strict",
+    "--tag",
+    "claxedo-live-sync-migration-v1",
+    "--message",
+    `Install LiveSyncRoom v1 fail-closed bridge before ${required(process.env, "CLAXEDO_RELEASE_ID")}`,
+    "--tsconfig",
+    path.join(serverRoot, "tsconfig.auth-d1.json"),
+  ])
+  await verifyBootstrapGate(input.release.apiOrigin)
+
+  const installedStatus = parseDeploymentStatus(
+    await run(["wrangler", "deployments", "status", ...bridgeConfigArgs, "--json"], { capture: true }),
+  )
+  if (installedStatus.versions.length !== 1) {
+    throw new Error("the LiveSyncRoom lifecycle bridge did not produce one atomic deployment")
+  }
+  const bridgeVersionId = installedStatus.versions[0]!.version_id
+  requireDeploymentTraffic(installedStatus, [{ versionId: bridgeVersionId, percentage: 100 }])
+  const bridgeVersion = await run(["wrangler", "versions", "view", bridgeVersionId, ...bridgeConfigArgs, "--json"], {
+    capture: true,
+  })
+  if (!workerVersionHasLiveSyncRoom(bridgeVersion)) {
+    throw new Error("the fail-closed bridge did not install the exact LiveSyncRoom namespace")
+  }
+  console.log(`LiveSyncRoom v1 lifecycle installed through fail-closed bridge ${bridgeVersionId}`)
+}
+
 async function verifyHealth(input: {
   apiOrigin: string
   path: "/health" | "/__release/candidate-health"
@@ -543,32 +995,56 @@ async function verifyHealth(input: {
   authConfigurationId: string
   override: boolean
 }) {
-  const response = await fetch(`${input.apiOrigin}${input.path}`, {
-    headers: input.override
-      ? { "Cloudflare-Workers-Version-Overrides": cloudflareVersionOverride(input.workerName, input.versionId) }
-      : undefined,
-    signal: AbortSignal.timeout(15_000),
-  })
-  const body = (await response.json()) as {
-    platformVersionId?: string
-    release?: { workerBuildId?: string; releaseId?: string; authConfigurationId?: string }
+  let failure: unknown
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    try {
+      const response = await fetchReleaseProbe(`${input.apiOrigin}${input.path}`, {
+        headers: input.override
+          ? { "Cloudflare-Workers-Version-Overrides": cloudflareVersionOverride(input.workerName, input.versionId) }
+          : undefined,
+        signal: AbortSignal.timeout(15_000),
+      })
+      const body = (await response.json()) as {
+        platformVersionId?: string
+        release?: { workerBuildId?: string; releaseId?: string; authConfigurationId?: string }
+      }
+      if (
+        response.ok &&
+        body.platformVersionId === input.versionId &&
+        body.release?.workerBuildId === input.buildId &&
+        body.release.releaseId === input.releaseId &&
+        body.release.authConfigurationId === input.authConfigurationId
+      ) {
+        return
+      }
+      failure = new Error("health response did not match the exact release identity")
+    } catch (error) {
+      failure = error
+    }
+    if (attempt < 6) {
+      const delayMs = attempt * 1_000
+      console.warn(`Worker health has not converged; retrying exact verification in ${delayMs}ms`)
+      await new Promise((resolve) => setTimeout(resolve, delayMs))
+    }
   }
-  if (
-    !response.ok ||
-    body.platformVersionId !== input.versionId ||
-    body.release?.workerBuildId !== input.buildId ||
-    body.release.releaseId !== input.releaseId ||
-    body.release.authConfigurationId !== input.authConfigurationId
-  ) {
-    throw new Error(`deployed locked Worker failed exact ${input.path} verification`)
-  }
+  throw new Error(`deployed locked Worker failed exact ${input.path} verification`, { cause: failure })
 }
 
 async function verifyRestoredIncumbent(apiOrigin: string, versionId: string) {
-  const response = await fetch(`${apiOrigin}/health`, { signal: AbortSignal.timeout(15_000) })
+  const response = await fetchReleaseProbe(`${apiOrigin}/health`, { signal: AbortSignal.timeout(15_000) })
   const body = (await response.json()) as { status?: string; platformVersionId?: string }
   if (!response.ok || body.status !== "locked" || body.platformVersionId !== versionId) {
     throw new Error("restored incumbent did not recover locked health")
+  }
+}
+
+async function verifyBrowserArtifact(appOrigin: string, browserBuildId: string) {
+  const response = await fetchReleaseProbe(`${appOrigin}/${BROWSER_BUILD_ATTESTATION}`, {
+    signal: AbortSignal.timeout(15_000),
+  })
+  const body = (await response.json()) as { browserBuildId?: string }
+  if (!response.ok || body.browserBuildId !== browserBuildId) {
+    throw new Error("deployed browser did not serve the exact release-bound build identity")
   }
 }
 
@@ -576,21 +1052,62 @@ async function main() {
   const staging = process.argv.includes("--staging")
   const deploy = process.argv.includes("--deploy")
   const bootstrap = process.argv.includes("--bootstrap")
+  const cutover = process.argv.includes("--cutover")
   const environment = staging ? "staging" : "production"
+  if (bootstrap && cutover) throw new Error("--bootstrap and --cutover are mutually exclusive")
   const workerName = betterAuthD1WorkerName(environment)
-  const input = betterAuthD1ReleaseInputs(process.env, environment)
+  const appRoot = path.resolve(serverRoot, "../claxedo-app")
+  const browserDirectory = path.join(appRoot, "dist-better-auth")
+  let browserBuildId: string | undefined
+  if (cutover) {
+    const apiOrigin = exactHttpsOrigin(process.env, `CLAXEDO_${environment.toUpperCase()}_API_ORIGIN`).origin
+    await run(["bun", "run", "build:better-auth"], {
+      cwd: appRoot,
+      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin },
+    })
+    await run(["bun", "scripts/browser-auth-bundle-identity.ts", "better-auth", browserDirectory], {
+      cwd: appRoot,
+    })
+    await prepareBrowserArtifactsForWorkers(browserDirectory)
+    browserBuildId = await browserArtifactBuildId(browserDirectory)
+    await writeFile(
+      path.join(browserDirectory, BROWSER_BUILD_ATTESTATION),
+      `${JSON.stringify({ schemaVersion: 1, browserBuildId }, null, 2)}\n`,
+    )
+  }
+  const input = betterAuthD1ReleaseInputs(process.env, environment, {
+    mode: cutover ? "cutover" : "locked",
+    ...(browserBuildId ? { browserBuildId } : {}),
+  })
   const authConfigurationId = await betterAuthDeploymentConfigurationId(input.authConfiguration)
-  const temporary = await mkdtemp(path.join(serverRoot, ".claxedo-locked-release-"))
+  const temporary = await mkdtemp(path.join(serverRoot, ".claxedo-better-auth-release-"))
   try {
     const config = path.join(temporary, "wrangler.toml")
     const bundleDirectory = path.join(temporary, "bundle")
-    const bundle = path.join(bundleDirectory, "better-auth-d1-locked-worker.cf.js")
+    const bundle = path.join(
+      bundleDirectory,
+      cutover ? "better-auth-d1-candidate-worker.cf.js" : "better-auth-d1-locked-worker.cf.js",
+    )
     await writeFile(config, renderBetterAuthD1WranglerConfig({ staging, ...input }))
     const configArgs = ["--config", config]
-    await run(["wrangler", "d1", "info", "AUTH_DB", ...configArgs, "--json"], { capture: true })
-    await run(["wrangler", "d1", "info", "CONTROL_PLANE_DB", ...configArgs, "--json"], { capture: true })
+    const publishBrowser = async () => {
+      if (!cutover) return
+      const browserConfig = path.join(temporary, "browser-wrangler.toml")
+      await writeFile(browserConfig, renderBetterAuthBrowserWranglerConfig({ environment, browserDirectory }))
+      await run([
+        "wrangler",
+        "deploy",
+        "--config",
+        browserConfig,
+        "--domain",
+        new URL(input.authConfiguration.appOrigin).hostname,
+      ])
+      await verifyBrowserArtifact(input.authConfiguration.appOrigin, input.browserBuildId)
+    }
     if (bootstrap) {
       if (!deploy) throw new Error("--bootstrap requires --deploy")
+      await run(["wrangler", "d1", "info", "AUTH_DB", ...configArgs, "--json"], { capture: true })
+      await run(["wrangler", "d1", "info", "CONTROL_PLANE_DB", ...configArgs, "--json"], { capture: true })
       if (required(process.env, "CLAXEDO_BOOTSTRAP_CONFIRM_WORKER_NAME") !== workerName) {
         throw new Error("CLAXEDO_BOOTSTRAP_CONFIRM_WORKER_NAME must exactly name the empty Worker")
       }
@@ -602,13 +1119,13 @@ async function main() {
       }
       const existing = await probe(["wrangler", "deployments", "status", ...configArgs, "--json"])
       if (existing.code === 0) throw new Error("bootstrap refuses to replace a Worker that already has a deployment")
-      if (!/has no deployments|not found/i.test(existing.stderr)) {
+      if (!isAbsentWorkerProbe(existing.stderr)) {
         throw new Error("bootstrap could not prove that the target Worker has no deployment")
       }
       await run([
         "wrangler",
         "deploy",
-        certifiedHostedWorkerArtifact(BETTER_AUTH_D1_RELEASE_ARTIFACT, environment).bootstrapEntrypointFromPackageRoot,
+        certifiedHostedWorkerArtifact(BETTER_AUTH_D1_LOCKED_ARTIFACT, environment).bootstrapEntrypointFromPackageRoot,
         ...configArgs,
         "--domain",
         new URL(input.apiOrigin).hostname,
@@ -616,18 +1133,12 @@ async function main() {
         "--tag",
         "claxedo-bootstrap-gate-v1",
       ])
-      const response = await fetch(input.apiOrigin, { signal: AbortSignal.timeout(15_000) })
-      const body = (await response.json()) as { error?: { code?: string } }
-      if (response.status !== 503 || body.error?.code !== "deployment_bootstrap") {
-        throw new Error("bootstrap gate did not become the exact fail-closed production deployment")
-      }
+      await verifyBootstrapGate(input.apiOrigin)
       console.log(
         "Fail-closed bootstrap gate deployed; install Worker secrets, then run the release without --bootstrap",
       )
       return
     }
-    const secrets = await run(["wrangler", "secret", "list", ...configArgs, "--format", "json"], { capture: true })
-    requireSecretInventory(secrets, input.requiredSecrets)
     const vars = [...input.runtimeVariables, ["CLAXEDO_AUTH_CONFIGURATION_ID", authConfigurationId] as const].flatMap(
       ([name, value]) => ["--var", `${name}:${value}`],
     )
@@ -650,22 +1161,47 @@ async function main() {
     const buildId = workerArtifactBuildId(await readFile(bundle))
     console.log(`certified Worker artifact: ${buildId}`)
     if (!deploy) return
+    await run(["wrangler", "d1", "info", "AUTH_DB", ...configArgs, "--json"], { capture: true })
+    await run(["wrangler", "d1", "info", "CONTROL_PLANE_DB", ...configArgs, "--json"], { capture: true })
+    const secrets = await run(["wrangler", "secret", "list", ...configArgs, "--format", "json"], { capture: true })
+    requireSecretInventory(secrets, input.requiredSecrets)
+    const releaseSecrets = await resolveReleaseSecretsFile(process.env, input.requiredSecrets)
+    await ensureCutoverLiveSyncLifecycle({
+      release: input,
+      staging,
+      temporary,
+      configArgs,
+      workerName,
+    })
     const candidateVars = [...vars, "--var", `CLAXEDO_WORKER_BUILD_ID:${buildId}`]
-    const tag = candidateVersionTag(required(process.env, "CLAXEDO_RELEASE_SEQUENCE"), buildId)
     const expectedVariables = new Map<string, string>([
       ...input.runtimeVariables,
       ["CLAXEDO_AUTH_CONFIGURATION_ID", authConfigurationId],
       ["CLAXEDO_WORKER_BUILD_ID", buildId],
     ])
+    const tag = candidateVersionTag(
+      required(process.env, "CLAXEDO_RELEASE_SEQUENCE"),
+      buildId,
+      releaseSecrets?.bundleId,
+      input.mode === "cutover" ? input.browserBuildId : undefined,
+      candidateConfigurationId(expectedVariables),
+    )
     const versions = await run(["wrangler", "versions", "list", ...configArgs, "--json"], { capture: true })
-    let platformVersionId = recoverCandidateVersion({
-      output: versions,
-      tag,
-      expectedVariables,
-      authDatabaseId: input.authDatabaseId,
-      controlPlaneDatabaseId: input.controlPlaneDatabaseId,
-      namespaceId: input.namespaceId,
-    })
+    const taggedVersionId = taggedCandidateVersionId(versions, tag)
+    let platformVersionId: string | undefined
+    if (taggedVersionId) {
+      const version = await run(["wrangler", "versions", "view", taggedVersionId, ...configArgs, "--json"], {
+        capture: true,
+      })
+      platformVersionId = recoverCandidateVersion({
+        output: JSON.stringify([JSON.parse(version)]),
+        tag,
+        expectedVariables,
+        authDatabaseId: input.authDatabaseId,
+        controlPlaneDatabaseId: input.controlPlaneDatabaseId,
+        namespaceId: input.namespaceId,
+      })
+    }
     if (!platformVersionId) {
       const uploadOutput = path.join(temporary, "version-upload.ndjson")
       await run(
@@ -679,15 +1215,34 @@ async function main() {
           "--keep-vars=false",
           "--strict",
           ...candidateVars,
+          ...(releaseSecrets ? ["--secrets-file", releaseSecrets.file] : []),
           "--tag",
           tag,
           "--message",
-          `Claxedo locked release ${required(process.env, "CLAXEDO_RELEASE_ID")} (${buildId})`,
+          `Claxedo ${input.mode} release ${required(process.env, "CLAXEDO_RELEASE_ID")} (${buildId})`,
         ],
         { env: { ...process.env, WRANGLER_OUTPUT_FILE_PATH: uploadOutput } },
       )
       platformVersionId = parseVersionUploadOutput(await readFile(uploadOutput, "utf8"), workerName)
     }
+    const releaseEnv = betterAuthD1ReleaseSubprocessEnvironment({
+      env: process.env,
+      release: input,
+      workerBuildId: buildId,
+      platformVersionId,
+      authConfigurationId,
+      wranglerConfig: config,
+    })
+    await run(
+      [
+        "bun",
+        "run",
+        "scripts/deploy/prepare-better-auth-d1.ts",
+        "--register-candidate",
+        ...(staging ? ["--staging"] : []),
+      ],
+      { env: releaseEnv },
+    )
     const deploymentManifestPath = betterAuthD1DeploymentManifestPath(process.env, environment)
     await mkdir(path.dirname(deploymentManifestPath), { recursive: true })
     await writeFile(
@@ -705,31 +1260,6 @@ async function main() {
       { mode: 0o600 },
     )
     console.log(`deployment manifest: ${deploymentManifestPath}`)
-    const releaseEnv = {
-      ...process.env,
-      CLAXEDO_DEPLOYMENT_ID: input.runtimeVariables.find(([name]) => name === "CLAXEDO_DEPLOYMENT_ID")?.[1],
-      CLAXEDO_AUTH_D1_DATABASE_ID: input.authDatabaseId,
-      CLAXEDO_AUTH_D1_DATABASE_NAME: input.authDatabaseName,
-      CLAXEDO_CONTROL_PLANE_D1_DATABASE_ID: input.controlPlaneDatabaseId,
-      CLAXEDO_CONTROL_PLANE_D1_DATABASE_NAME: input.controlPlaneDatabaseName,
-      CLAXEDO_REQUEST_LIMITER_NAMESPACE_ID: input.namespaceId,
-      BETTER_AUTH_URL: input.apiOrigin,
-      CLAXEDO_APP_ORIGIN: input.authConfiguration.appOrigin,
-      CLAXEDO_WORKER_BUILD_ID: buildId,
-      CLAXEDO_PLATFORM_VERSION_ID: platformVersionId,
-      CLAXEDO_AUTH_CONFIGURATION_ID: authConfigurationId,
-      CLAXEDO_WRANGLER_CONFIG: config,
-    }
-    await run(
-      [
-        "bun",
-        "run",
-        "scripts/deploy/prepare-better-auth-d1.ts",
-        "--register-candidate",
-        ...(staging ? ["--staging"] : []),
-      ],
-      { env: releaseEnv },
-    )
     let status = parseDeploymentStatus(
       await run(["wrangler", "deployments", "status", ...configArgs, "--json"], { capture: true }),
     )
@@ -790,7 +1320,8 @@ async function main() {
     await verifyHealth({ ...health, path: "/health", override: incumbentVersionId !== platformVersionId })
     if (incumbentVersionId === platformVersionId) {
       requireDeploymentTraffic(status, [{ versionId: platformVersionId, percentage: 100 }])
-      console.log("Better Auth D1 locked release recovered and verified")
+      await publishBrowser()
+      console.log(`Better Auth D1 ${input.mode} release recovered and verified`)
       return
     }
     try {
@@ -847,7 +1378,8 @@ async function main() {
     )
     requireDeploymentTraffic(status, [{ versionId: platformVersionId, percentage: 100 }])
     await verifyHealth({ ...health, path: "/health", override: false })
-    console.log("Better Auth D1 locked release deployed and verified")
+    await publishBrowser()
+    console.log(`Better Auth D1 ${input.mode} release deployed and verified`)
   } finally {
     await rm(temporary, { recursive: true, force: true })
   }

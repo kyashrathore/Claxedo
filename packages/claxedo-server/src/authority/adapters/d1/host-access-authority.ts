@@ -1,5 +1,6 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
   HostEnrollment,
   HostEnrollmentState,
@@ -30,6 +31,7 @@ export type D1HostAccessAuthorityOptions = {
   now?: () => number
   randomId?: (prefix: "challenge" | "request" | "enrollment" | "grant" | "assert") => string
   randomNonce?: () => string
+  registerLocalForSharing?: WorkspaceAuthority["registerLocalForSharing"]
 }
 
 type Principal = { userId: string; actorId: string; actorKind: "human" | "agent" }
@@ -56,8 +58,6 @@ type WorkspaceRow = {
 type HostChallengeRow = {
   challenge_id: string
   workspace_id: string
-  org_id: string
-  project_id: string
   owner_user_id: string
   owner_actor_id: string
   host_id: string
@@ -147,17 +147,20 @@ const CHALLENGE_TTL_MS = 60_000
 const CONSUMED_REQUEST_RETENTION_MS = 10 * 60_000
 const REQUEST_SWEEP_LIMIT = 500
 
-export class D1HostAccessAuthorityError extends Error {
+export class D1HostAccessAuthorityError extends ClaxedoError {
   constructor(
-    public readonly code:
+    code:
       | "invalid_input"
       | "resource_conflict"
       | "host_attestation_denied"
       | "signature_replayed",
     message: string,
   ) {
-    super(message)
-    this.name = "D1HostAccessAuthorityError"
+    super({
+      code,
+      message,
+      status: code === "invalid_input" ? 400 : code === "host_attestation_denied" ? 403 : 409,
+    })
   }
 }
 
@@ -188,8 +191,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
-    const workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-    requireLocalWorkspace(workspace)
+    const existing = await this.workspace(workspaceId)
+    if (existing) requireLocalWorkspace(await this.requireWorkspaceAccess(who, workspaceId, "admin"))
     const challengeId = this.randomId("challenge")
     const nonce = this.randomNonce()
     const now = this.now()
@@ -197,18 +200,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     await this.database.batch([
       this.expiredRowSweep("host_attestation_challenges", "challenge_id", now),
       this.database.prepare(`
-        ${workspaceAccessCte(3)}
         insert into host_attestation_challenges (
-          challenge_id, workspace_id, org_id, project_id, owner_user_id, owner_actor_id,
+          challenge_id, workspace_id, owner_user_id, owner_actor_id,
           host_id, nonce, expires_at, used_at, used_signature_hash, created_at
         )
-        select ?, workspace_id, org_id, project_id, ?, ?, ?, ?, ?, null, null, ?
-        from authorized_workspace
-        where backing = 'local-worktree' and access = 'user-hosted'
+        values (?, ?, ?, ?, ?, ?, ?, null, null, ?)
       `).bind(
-        who.actorId,
-        workspaceId,
         challengeId,
+        workspaceId,
         who.userId,
         who.actorId,
         hostId,
@@ -232,6 +231,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       signature: string
       displayName?: string
       ttlMs?: number
+      orgId?: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
     },
   ) {
     const who = await this.requirePrincipal(auth)
@@ -240,8 +246,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const challengeId = requireText(args.challengeId, "challengeId")
     const displayName = optionalText(args.displayName, "displayName", 200)
     const ttlMs = normalizedTtl(args.ttlMs)
-    const workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-    requireLocalWorkspace(workspace)
     const challenge = await this.challenge(challengeId)
     const now = this.now()
     if (
@@ -260,6 +264,26 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         nonce: challenge.nonce,
       }),
     })
+    let workspace = await this.workspace(workspaceId)
+    if (workspace) {
+      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
+      requireLocalWorkspace(workspace)
+    } else {
+      if (!this.options.registerLocalForSharing) throw denied("Cold local workspace registration is unavailable")
+      await this.options.registerLocalForSharing(auth, {
+        workspaceId,
+        displayName: displayName ?? workspaceId,
+        ...(args.orgId ? { orgId: args.orgId } : {}),
+        ...(args.projectId ? { projectId: args.projectId } : {}),
+        ...(args.repoUrl ? { repoUrl: args.repoUrl } : {}),
+        ...(args.repoName ? { repoName: args.repoName } : {}),
+        ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
+        ...(args.remoteDirectory ? { remoteDirectory: args.remoteDirectory } : {}),
+        ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
+      })
+      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
+      requireLocalWorkspace(workspace)
+    }
     const expiresAt = now + ttlMs
     const assertionId = this.randomId("assert")
     await this.guardedBatch([
@@ -276,12 +300,11 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
           public_key_json, display_name, last_seen_at, expires_at, paused_at, revoked_at,
           second_device_open_at, last_signature_hash, created_at, updated_at
         )
-        select challenge.workspace_id, challenge.org_id, challenge.project_id, challenge.host_id,
+        select challenge.workspace_id, workspace.org_id, workspace.project_id, challenge.host_id,
           challenge.owner_user_id, challenge.owner_actor_id, ?, ?, ?, ?, null, null, null, ?, ?, ?
         from host_attestation_challenges challenge
         join workspaces workspace
-          on workspace.workspace_id = challenge.workspace_id and workspace.org_id = challenge.org_id
-          and workspace.project_id = challenge.project_id and workspace.deleted_at is null
+          on workspace.workspace_id = challenge.workspace_id and workspace.deleted_at is null
         where challenge.challenge_id = ? and challenge.used_signature_hash = ?
           and workspace.backing = 'local-worktree' and workspace.access = 'user-hosted'
         on conflict (workspace_id, host_id) do update set
@@ -811,7 +834,12 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return await this.recordRuntimeTokenForActor(await this.requireRuntimeActor(args.actorId), args)
   }
 
-  async runtimeAccessTokenActive(args: { jti: string; workspaceId: string; hostId: string }) {
+  async runtimeAccessTokenActive(args: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    minimumRole?: "viewer" | "editor" | "admin" | "owner"
+  }) {
     const jti = requireText(args.jti, "jti")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     const hostId = requireText(args.hostId, "hostId")
@@ -824,7 +852,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     }
     if (row.expires_at <= this.now()) return inactiveToken("runtime_access_token_expired", "Runtime Access Token has expired")
     try {
-      await this.requireWorkspaceAccess(await this.requireRuntimeActor(row.minted_for_actor_id), workspaceId, "read")
+      const access = await this.requireWorkspaceAccess(await this.requireRuntimeActor(row.minted_for_actor_id), workspaceId, "read")
+      if (args.minimumRole && access.role_rank < hostRoleRank(args.minimumRole)) {
+        return inactiveToken("runtime_access_token_revoked", "Runtime Access Token no longer has the required workspace role")
+      }
     } catch (error) {
       if (isDenied(error)) {
         return inactiveToken("runtime_access_token_revoked", "Runtime Access Token authority has been revoked")
@@ -961,6 +992,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return row
   }
 
+  private async workspace(workspaceId: string) {
+    return await this.database.prepare(`
+      select workspace_id, org_id, project_id, backing, access, home_region, 0 as role_rank
+      from workspaces where workspace_id = ? and deleted_at is null
+    `).bind(workspaceId).first<WorkspaceRow>()
+  }
+
   private async shareTargetInOrganization(target: ReturnType<typeof normalizeShareTarget>, orgId: string) {
     if (target.kind === "org") return target.id === orgId
     if (target.kind === "user") {
@@ -1051,6 +1089,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       throw error
     }
   }
+}
+
+function hostRoleRank(role: "viewer" | "editor" | "admin" | "owner") {
+  return role === "viewer" ? 0 : role === "editor" ? 1 : role === "admin" ? 2 : 3
 }
 
 function workspaceAccessCte(rank: 1 | 3) {

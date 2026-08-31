@@ -112,9 +112,12 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
-  decideWorkspaceSessionAuthority,
   RuntimeSessionAuthorityRoutes,
+  type RuntimeSessionAuthorityOptions,
 } from "../../routes/runtime-session-authority"
+import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
@@ -221,16 +224,94 @@ function authRouteOptions(services: ControlPlaneServices) {
   }
 }
 
+function selfHostedRuntimeAuthority(authority: WorkspaceAuthority | undefined): RuntimeSessionAuthorityOptions["authority"] {
+  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
+  const methods = [
+    "registerRuntimeSession",
+    "markSessionRegistrationAmbiguous",
+    "beginSessionCompensation",
+    "completeSessionCompensation",
+    "authorizeRuntimeSession",
+    "runtimeAccessTokenActive",
+  ] as const
+  if (!candidate || methods.some((method) => typeof candidate[method] !== "function")) {
+    throw new ControlPlaneCompositionError(
+      "self_host_app_required",
+      "Self-hosted runtime session authority is incomplete",
+    )
+  }
+  return candidate as unknown as RuntimeSessionAuthorityOptions["authority"]
+}
+
+function selfHostedTurnAuthority(authority: WorkspaceAuthority | undefined): SessionTurnAuthority {
+  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
+  const methods = ["acquireSessionTurn", "renewSessionTurn", "releaseSessionTurn"] as const
+  if (!candidate || methods.some((method) => typeof candidate[method] !== "function")) {
+    throw new ControlPlaneCompositionError(
+      "self_host_app_required",
+      "Self-hosted session turn authority is incomplete",
+    )
+  }
+  return candidate as unknown as SessionTurnAuthority
+}
+
+function selfHostedPrivateSessionAuthority(
+  authority: WorkspaceAuthority | undefined,
+): Pick<PrivateSessionAuthority, "reserveSession"> {
+  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
+  if (!candidate || typeof candidate.reserveSession !== "function") {
+    throw new ControlPlaneCompositionError(
+      "self_host_app_required",
+      "Self-hosted private-session reservation authority is incomplete",
+    )
+  }
+  return candidate as unknown as Pick<PrivateSessionAuthority, "reserveSession">
+}
+
 export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
-  const decide = (input: SessionAuthorityInput, action: "read" | "write" | "register") =>
-    decideWorkspaceSessionAuthority(authority, {
-      actorId: input.actor.actorId,
-      actorKind: input.actor.actorKind,
-      workspaceId: input.authority.workspaceId,
-      sessionId: input.sessionId,
-      action,
-      ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
-    })
+  const runtimeAuthority = selfHostedRuntimeAuthority(authority)
+  const decide = async (input: SessionAuthorityInput, action: "read" | "write" | "register") => {
+    const principal = input.actor.actorKind === "human"
+      ? { principalKind: "user" as const, actorId: input.actor.actorId, actorKind: "human" as const }
+      : { principalKind: "service" as const, actorId: input.actor.actorId, actorKind: "agent" as const }
+    try {
+      if (action === "register") {
+        if (!input.registrationOperationId) {
+          return {
+            allowed: false as const,
+            status: 409 as const,
+            code: "session_registration_operation_required",
+            message: "Private session registration requires an immutable operation id",
+          }
+        }
+        await runtimeAuthority.registerRuntimeSession({
+          ...principal,
+          operationId: input.registrationOperationId,
+          workspaceId: input.authority.workspaceId,
+          sessionId: input.sessionId,
+          ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
+        })
+      } else {
+        await runtimeAuthority.authorizeRuntimeSession({
+          ...principal,
+          workspaceId: input.authority.workspaceId,
+          sessionId: input.sessionId,
+          action,
+        })
+      }
+      return { allowed: true as const }
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError && (error.status === 401 || error.status === 403 || error.status === 503)) {
+        return { allowed: false as const, status: error.status, code: error.code, message: error.message }
+      }
+      return {
+        allowed: false as const,
+        status: 503 as const,
+        code: "session_authority_unavailable",
+        message: error instanceof Error ? error.message : "Session authority is unavailable",
+      }
+    }
+  }
   return managedWorkspaceSessionAccessPolicy({
     authorizeSessionRead: (input) => decide(input, "read"),
     authorizeSessionWrite: (input) => decide(input, "write"),
@@ -598,7 +679,6 @@ export function createSelfHostedApp(
                 if (typeof orgId !== "string") throw new Error("Workspace organization is unavailable")
                 return {
                   ...actor,
-                  subject: auth.user.subject,
                   orgId,
                   role: relayRole(workspace.role),
                 }
@@ -630,7 +710,6 @@ export function createSelfHostedApp(
                     actorPublicId: claims.actor_public_id,
                     actorName: claims.actor_name,
                     ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-                    subject: claims.sub,
                     orgId: claims.org_id,
                     role: claims.role,
                   }
@@ -655,7 +734,6 @@ export function createSelfHostedApp(
                 actorPublicId: claims.actor_public_id,
                 actorName: claims.actor_name,
                 ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-                subject: claims.sub,
                 orgId: claims.org_id,
                 role: claims.role,
               }
@@ -951,9 +1029,17 @@ export function createSelfHostedApp(
     defaultHomeRegion: services.defaultHomeRegion,
     allowUnsignedLocal: true,
   }))
-  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services))
+  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
+    authority: selfHostedRuntimeAuthority(services.authority),
+    turnAuthority: selfHostedTurnAuthority(services.authority),
+  }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
+  app.route("/api/control/session-registrations", PrivateSessionRegistrationRoutes({
+    authority: selfHostedPrivateSessionAuthority(services.authority),
+    ...authRouteOptions(services),
+    services,
+  }))
   app.route("/", centralControl.app)
   app.route(
     "/api/claxedo/credentials",

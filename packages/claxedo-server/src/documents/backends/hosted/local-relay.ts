@@ -1,7 +1,6 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { mintDocumentRelayJobToken } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneServices } from "../../../authority/services"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { defaultHomeRegion } from "@claxedo/server-core/platform/runtime/region/index"
 import { DocumentVersionConflictError } from "../../errors"
 import type { DocumentVersion } from "../../port"
@@ -46,7 +45,6 @@ export function createHostedLocalDocumentRelay(
       const token = await provider.mintRuntimeAccessToken({
         workspaceId: input.localWorkspaceId,
         hostId: link.host_id,
-        subject: input.auth.user.subject,
         principalKind: "user",
         ...await resolveRuntimeActor(authority, input.auth),
         orgId: input.orgId,

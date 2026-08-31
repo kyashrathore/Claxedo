@@ -33,7 +33,7 @@ export type ServiceInstallationAuditEvent = Readonly<{
 }>
 
 export interface ServiceInstallationStore {
-  /** All installed rows. Absence, never a fabricated disabled row, means uninstalled. */
+  /** All durable installation revisions. Absence, never a fabricated disabled row, means uninstalled. */
   list(identity: Pick<DeploymentWorkflowIdentity, "environmentId" | "deploymentId">): Promise<readonly InstallationRevision[]>
   get(
     identity: Pick<DeploymentWorkflowIdentity, "environmentId" | "deploymentId">,

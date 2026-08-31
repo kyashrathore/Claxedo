@@ -35,11 +35,34 @@ import { isDemoMode } from "@/lib/runtime-mode"
  */
 export type BearerTokenSource = (options?: { skipCache?: boolean }) => Promise<string | null>
 
+export const releaseValidationOperations = [
+  "private_session",
+  "stream",
+  "revocation",
+  "wrong_org",
+  "replay",
+  "outage",
+] as const
+
+export type ReleaseValidationOperation = (typeof releaseValidationOperations)[number]
+
+export function releaseValidationOperation(value: unknown): ReleaseValidationOperation | undefined {
+  return typeof value === "string"
+    ? releaseValidationOperations.find((operation) => operation === value)
+    : undefined
+}
+
+type ReleaseValidationBinding = {
+  coreOrigin: string
+  operation: ReleaseValidationOperation
+}
+
 const cfg = {
   base: undefined as string | undefined,
   password: "",
   bearerToken: undefined as BearerTokenSource | undefined,
   browserCredentials: undefined as RequestCredentials | undefined,
+  releaseValidation: undefined as ReleaseValidationBinding | undefined,
 }
 
 function envString(input: unknown) {
@@ -53,6 +76,7 @@ export function configureApiRuntime(input: {
   password?: string | null
   bearerToken?: BearerTokenSource | null
   browserCredentials?: RequestCredentials | null
+  releaseValidation?: ReleaseValidationBinding | null
 }) {
   if ("baseUrl" in input) {
     cfg.base = normalized(input.baseUrl ?? undefined)
@@ -66,6 +90,16 @@ export function configureApiRuntime(input: {
   if ("browserCredentials" in input) {
     cfg.browserCredentials = input.browserCredentials ?? undefined
   }
+  if ("releaseValidation" in input) {
+    const binding = input.releaseValidation ?? undefined
+    if (binding) {
+      const origin = new URL(binding.coreOrigin)
+      if (origin.origin !== binding.coreOrigin || !/^https?:$/.test(origin.protocol)) {
+        throw new Error("release validation coreOrigin must be an exact HTTP(S) origin")
+      }
+    }
+    cfg.releaseValidation = binding
+  }
 }
 
 export function resetApiRuntime() {
@@ -73,6 +107,7 @@ export function resetApiRuntime() {
   cfg.password = ""
   cfg.bearerToken = undefined
   cfg.browserCredentials = undefined
+  cfg.releaseValidation = undefined
 }
 
 /**
@@ -404,16 +439,31 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
       headers.set("Authorization", `Basic ${btoa(`opencode:${cfg.password}`)}`)
     }
 
+    const setReleaseValidation = (headers: Headers) => {
+      const binding = cfg.releaseValidation
+      if (!binding || headers.has("x-claxedo-multiplayer-validation-operation")) return
+      let target: URL
+      try {
+        target = new URL(apiFetchUrl(input), cfg.base ?? (typeof window === "undefined" ? undefined : window.location.origin))
+      } catch {
+        return
+      }
+      if (target.origin !== binding.coreOrigin) return
+      headers.set("x-claxedo-multiplayer-validation-operation", binding.operation)
+    }
+
     if (input instanceof Request) {
       const existingHeaders = new Headers(input.headers)
       if (forceRefreshToken) existingHeaders.delete("Authorization")
       setAuth(existingHeaders)
+      setReleaseValidation(existingHeaders)
       return { request: new Request(input, { ...init, cache, credentials, headers: existingHeaders }), token }
     }
 
     const headers = new Headers(init?.headers)
     if (forceRefreshToken) headers.delete("Authorization")
     setAuth(headers)
+    setReleaseValidation(headers)
     if (init?.body && typeof init.body === "string" && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json")
     }

@@ -30,7 +30,6 @@ import {
   createAgentEventRuntime,
 } from "@claxedo/agent-event-runtime"
 import {
-  acpCodexCollaborationStates,
   createAcpEventTranslator,
   translateStopReason,
 } from "@claxedo/agent-event-runtime/harnesses/acp"
@@ -66,6 +65,7 @@ import type {
   AgentInteractionResult,
   AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
+  AgentTurnWriteContext,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { draftPermissionModes, extractAgents, rememberLiveModes } from "./session"
@@ -811,7 +811,12 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     this.store.deleteSession(id)
   }
 
-  async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
+  async *sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     const t0 = Date.now()
     log.info("sendMessage: start", { id, directory, partCount: input.parts.length })
 
@@ -824,14 +829,23 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const leaveActivePrompt = enterActivePrompt(this.harnessId())
 
     try {
-      yield* this._sendMessage(id, input, directory, t0)
+      yield* this._sendMessage(id, input, directory, t0, writeContext)
     } finally {
       leaveActivePrompt()
       leaveBusy()
     }
   }
 
-  async *_sendMessage(id: string, input: PromptInput, directory: string, t0: number): AsyncIterable<AgentRuntimeStreamEvent> {
+  async *_sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    t0: number,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
+    const fenced = writeContext?.fencingToken !== undefined
+      ? { fencingToken: writeContext.fencingToken }
+      : {}
     const current = this.store.getAgentSessionId(id)
     if (!current) {
       log.error("sendMessage: session not found in DB", { id })
@@ -906,6 +920,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       created,
     })))
     const committedStart = this.store.startTurn({
+      ...fenced,
       sessionId: id,
       agentSessionId,
       userMessageId: input.userMessageId,
@@ -966,6 +981,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       for (const r of resolvers.splice(0)) r()
     }
     const parentProjector = createTurnEventProjector({
+      ...fenced,
       store: this.store,
       owner: {
         sessionId: id,
@@ -981,6 +997,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
     const router = createChildEventRouter({
       parent: parentProjector,
       createChildProjector: (target) => createTurnEventProjector({
+        ...fenced,
         store: this.store,
         owner: {
           sessionId: target.sessionId,
@@ -1079,7 +1096,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           payload: update,
         })
         for (const runtimeEvent of result.events) {
-          project(runtimeEvent, {
+          router.project(runtimeEvent, {
             dir: "in",
             method: "sessionUpdate",
             frame: update,
@@ -1089,22 +1106,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
           created = router.created()
         }
       }
-      const forward = (update: SessionUpdate) => {
-        const subagent = scheduleSubagentUpdate(update)
-        projectUpdate(update, subagent, router.project)
-      }
-      const observeLateSubagentUpdate = (update: SessionUpdate) => {
-        const toolCallId = "toolCallId" in update ? update.toolCallId : undefined
-        if (!toolCallId || !subagentByToolCall.has(toolCallId)) return
-        const subagent = scheduleSubagentUpdate(update)
-        if (!subagent || subagent.kind === "child") return
-        // A canonical terminal tool frame may follow the ACP prompt response.
-        // Persist it through the still-authoritative parent projector so the
-        // host does not later terminalize the already-completed tool as an
-        // interruption. The child router is intentionally not used here: its
-        // correlation buffers are turn-scoped and may already be disposed.
-        projectUpdate(update, subagent, (runtimeEvent, source) => parentProjector.project(runtimeEvent, source))
-      }
       const install = () => {
         proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
           log.info("sendMessage: forwarding permission-request to stream", { permId, tool, kind })
@@ -1113,6 +1114,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
             acpPermissionRequest({ permId, sessionId: id, tool, kind, paths }),
           )
           this.store.appendEvent({
+            ...fenced,
             sessionId: id,
             agentSessionId,
             payload: event,
@@ -1138,7 +1140,6 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       let retried = false
       const run = async (): Promise<void> => {
         install()
-        if (observesLifecycle) proc.observeSession(agentSessionId, observeLateSubagentUpdate)
         try {
           // The PROMPT turn runs for as long as the model thinks/streams — it
           // must use the prompt timeout (5 min default), NOT the 10s
@@ -1196,6 +1197,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
               tokens: messageUsage(result.usage),
             })
             this.store.appendEvent({
+              ...fenced,
               sessionId: id,
               agentSessionId,
               payload: event,
@@ -1288,6 +1290,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
         variant: input.variant,
       }))
       this.store.appendEvent({
+        ...fenced,
         sessionId: id,
         agentSessionId,
         payload: updated,
@@ -1300,6 +1303,7 @@ export class AcpHarnessAdapter implements AgentHarnessAdapter {
       yield updated
       const event = sessionError(promptError, id)
       this.store.appendEvent({
+        ...fenced,
         sessionId: id,
         agentSessionId,
         payload: event,

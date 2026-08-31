@@ -44,6 +44,7 @@
       "@claxedo/workspace-runtime/routes": ["../workspace-runtime/src/routes.ts"],
       "@claxedo/workspace-runtime/config": ["../workspace-runtime/src/config.ts"],
       "@claxedo/workspace-runtime/host": ["../workspace-runtime/src/host.ts"],
+      "@claxedo/workspace-runtime/relay": ["../workspace-runtime/src/relay.ts"],
       "@claxedo/sandbox-contract": ["../sandbox-contract/src/index.ts"]
     }
   },

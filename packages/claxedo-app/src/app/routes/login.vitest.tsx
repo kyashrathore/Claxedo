@@ -26,7 +26,7 @@ vi.mock("@solidjs/router", () => ({
   useNavigate: () => state.navigate,
 }))
 
-import LoginPage from "./login"
+import LoginPage, { loginOAuthContinuation } from "./login"
 
 beforeEach(() => {
   state.status = "unsigned"
@@ -38,6 +38,20 @@ beforeEach(() => {
 afterEach(() => cleanup())
 
 describe("LoginPage account boundary", () => {
+  test("preserves a native OAuth request through provider sign-in and resumes it at the API issuer", () => {
+    const search = "?response_type=code&client_id=claxedo-desktop&redirect_uri=http%3A%2F%2F127.0.0.1%3A65000%2Fclaxedo%2Fauth%2Fcallback&state=state_1&code_challenge=challenge_1"
+
+    expect(loginOAuthContinuation({
+      appOrigin: "https://app.example.test",
+      apiOrigin: "https://api.example.test",
+      pathname: "/login",
+      search,
+    })).toEqual({
+      signInRedirect: `/login${search}`,
+      authorizationUrl: `https://api.example.test/api/auth/oauth2/authorize${search}`,
+    })
+  })
+
   test("starts sign-in through the tokenless account port", async () => {
     render(() => <LoginPage />)
 

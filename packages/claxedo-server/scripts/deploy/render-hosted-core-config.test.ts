@@ -74,29 +74,7 @@ describe("certified hosted Worker renderer", () => {
     expect(config).toContain('main = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"')
   })
 
-  test("renders the distinct open core with only its own LiveSyncRoom history", async () => {
-    const input = {
-      ...base,
-      artifactId: "user-deployed-better-auth-d1-open" as const,
-      userDeployedOrganization: { id: "org_deployment", name: "My deployment" },
-    }
-    const artifact = certifiedHostedWorkerArtifact(input.artifactId, "production")
-    const entrypoint = await readFile(path.join(packageRoot, artifact.entrypointFromPackageRoot), "utf8")
-    expect(entrypoint).toMatch(/export default handler/)
-    expect(entrypoint).toMatch(/export \{ LiveSyncRoom \}/)
-
-    const config = renderHostedCoreWranglerConfig(input)
-    expect(config).toContain('name = "claxedo-user-deployed-core"')
-    expect(config).toContain('main = "src/deployments/hosted-workerd/better-auth-d1-open-worker.cf.ts"')
-    expect(config).toContain('name = "LIVE_SYNC_ROOM"')
-    expect(config).toContain('class_name = "LiveSyncRoom"')
-    expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
-    expect(config).toContain('CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID = "org_deployment"')
-    expect(config).toContain('CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME = "My deployment"')
-    expect(config).not.toMatch(/WORKGRAPH|WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
-  })
-
-  test("renders the distinct phase-gated candidate with its own Worker name", async () => {
+  test("renders the phase-gated cutover bytes on the locked release-train Worker name", async () => {
     const input = {
       ...base,
       artifactId: "user-deployed-better-auth-d1-candidate" as const,
@@ -108,7 +86,7 @@ describe("certified hosted Worker renderer", () => {
     expect(entrypoint).toMatch(/export \{ LiveSyncRoom \}/)
 
     const config = renderHostedCoreWranglerConfig(input)
-    expect(config).toContain('name = "claxedo-user-deployed-candidate"')
+    expect(config).toContain('name = "claxedo-user-deployed-locked"')
     expect(config).toContain('main = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
@@ -144,8 +122,7 @@ describe("certified hosted Worker renderer", () => {
       /legacy Worker.*append-only Durable Object migration history/,
     )
     expect(requireNonLegacyWorkerName("claxedo-user-deployed-locked")).toBe("claxedo-user-deployed-locked")
-    expect(requireNonLegacyWorkerName("claxedo-user-deployed-core")).toBe("claxedo-user-deployed-core")
-    expect(requireNonLegacyWorkerName("claxedo-user-deployed-candidate")).toBe("claxedo-user-deployed-candidate")
+    expect(requireNonLegacyWorkerName("claxedo-user-deployed-locked")).toBe("claxedo-user-deployed-locked")
   })
 
   test("rejects namespace reuse across products and environments", () => {

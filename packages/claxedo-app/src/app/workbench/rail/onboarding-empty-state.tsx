@@ -4,6 +4,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useNavigate, useSearchParams } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
+import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useServer } from "@/app/connection/server"
 import {
@@ -53,6 +54,7 @@ export function OnboardingEmptyState(props: {
   const server = useServer()
   const globalSDK = useGlobalSDK()
   const config = useConfigOptional()
+  const productUi = createMemo(() => resolveProductUiFlags(config))
   const dialog = useDialog()
   const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
@@ -70,7 +72,11 @@ export function OnboardingEmptyState(props: {
     capture: (name, properties) =>
       captureTelemetry(name, { ...identityProps(), surface: "onboarding", ...properties }),
   }))
-  const remoteAccess = useRemoteAccessController({ serverUrl: server.url, emit: funnel().emit })
+  const remoteAccess = useRemoteAccessController({
+    serverUrl: server.url,
+    signInAvailable: () => productUi().accountSignIn,
+    emit: funnel().emit,
+  })
   const [aiView, setAIView] = createSignal<AIConnectView>({ kind: "chooser" })
   // Set only by the go-further card, which opens the AI step straight on its
   // harness check with no click to start the scan.

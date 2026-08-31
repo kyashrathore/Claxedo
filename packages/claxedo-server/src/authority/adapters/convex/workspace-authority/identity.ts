@@ -121,7 +121,7 @@ export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: Serv
       threadKey: string
       projectId: string
       action: ProjectAction
-    }): Promise<AuthorizeProjectResult> {
+    }) {
       const result = await requireExecutor(input, undefined, { allowUnsigned: true }).query(convexApi.channelIdentities.authorizeProject, {
         service_token: requireServiceToken(),
         channel: args.channel,
@@ -129,31 +129,11 @@ export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: Serv
         thread_key: args.threadKey,
         project_id: args.projectId,
         action: args.action,
-      }) as {
-        actor_id?: string
-        actor_kind?: "human" | "agent"
-        actor_public_id?: string
-        actor_name?: string
-        actor_avatar_url?: string
-      }
-      const project = projectResult(result)
-      if (!project.ok) return project
-      return {
-        ...project,
-        ...(result.actor_id && result.actor_kind
-          ? {
-              actorId: result.actor_id,
-              actorKind: result.actor_kind,
-              ...(result.actor_public_id && result.actor_name
-                ? {
-                    actorPublicId: result.actor_public_id,
-                    actorName: result.actor_name,
-                    ...(result.actor_avatar_url ? { actorAvatarUrl: result.actor_avatar_url } : {}),
-                  }
-                : {}),
-            }
-          : {}),
-      }
+      }) as { ok?: boolean; role?: string; org_id?: string; actor_id?: string; actor_kind?: "human" | "agent" }
+      const authorized = projectResult(result)
+      return authorized.ok && result.actor_id && result.actor_kind
+        ? { ...authorized, actorId: result.actor_id, actorKind: result.actor_kind }
+        : authorized
     },
     async authorizeChannelWorkspace(args: {
       channel: string
@@ -169,26 +149,35 @@ export function identityAuthority(input: ConvexAuthorityInput, serviceArgs: Serv
         thread_key: args.threadKey,
         workspace_id: args.workspaceId,
         action: args.action,
-      }) as {
-        allowed?: boolean
-        actor_id?: string
-        actor_kind?: "human" | "agent"
-        actor_public_id?: string
-        actor_name?: string
-        actor_avatar_url?: string
-      }
+      }) as { allowed?: boolean; actor_id?: string; actor_kind?: "human" | "agent" }
       await requireAllowed(result)
-      if (result.actor_id && result.actor_kind) return {
+      if (!result.actor_id || !result.actor_kind) throw new Error("Canonical channel actor is unavailable")
+      return { actorId: result.actor_id, actorKind: result.actor_kind }
+    },
+    async bindChannelIdentity(auth: SignedControlPlaneAuth, args: { channel: string; externalUserId: string }) {
+      const result = await requireExecutor(input, auth).mutation(convexApi.channelIdentities.bind, {
+        channel: args.channel,
+        external_user_id: args.externalUserId,
+      }) as {
+        binding_id: string
+        created: boolean
+        user_id: string
+        actor_id: string
+        actor_kind: "human" | "agent"
+      }
+      return {
+        bindingId: result.binding_id,
+        created: result.created,
+        userId: result.user_id,
         actorId: result.actor_id,
         actorKind: result.actor_kind,
-        ...(result.actor_public_id && result.actor_name
-          ? {
-              actorPublicId: result.actor_public_id,
-              actorName: result.actor_name,
-              ...(result.actor_avatar_url ? { actorAvatarUrl: result.actor_avatar_url } : {}),
-            }
-          : {}),
       }
+    },
+    async revokeChannelIdentity(auth: SignedControlPlaneAuth, args: { channel: string; externalUserId: string }) {
+      return requireExecutor(input, auth).mutation(convexApi.channelIdentities.revoke, {
+        channel: args.channel,
+        external_user_id: args.externalUserId,
+      }) as Promise<{ revoked: boolean }>
     },
   }
 }

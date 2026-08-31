@@ -54,6 +54,28 @@ type ConvexApi = {
     revoke: ConvexMutation
     list: ConvexQuery
   }
+  privateSessions: {
+    reserve: ConvexMutation
+    registerRuntime: ConvexMutation
+    markRegistrationAmbiguous: ConvexMutation
+    beginCompensation: ConvexMutation
+    completeCompensation: ConvexMutation
+    authorizeRead: ConvexQuery
+    authorizeWrite: ConvexQuery
+    authorizeRuntime: ConvexQuery
+    grantParticipant: ConvexMutation
+    revokeParticipant: ConvexMutation
+    list: ConvexQuery
+    resolve: ConvexQuery
+    readMessages: ConvexQuery
+    syncMessages: ConvexMutation
+    acquireTurn: ConvexMutation
+    renewTurn: ConvexMutation
+    releaseTurn: ConvexMutation
+    upsertVisibility: ConvexMutation
+    replaceVisibility: ConvexMutation
+    deleteVisibility: ConvexMutation
+  }
   workspaces: {
     authorizeCreate: ConvexQuery
     open: ConvexQuery

@@ -1,9 +1,24 @@
 export type AccountConfigEnv = {
   /** The only desktop auth trust anchor. Provider details come from its descriptor. */
   CLAXEDO_CORE_ORIGIN?: string
+  /** Present only in a release-validation build; never a credential. */
+  CLAXEDO_RELEASE_VALIDATION_OPERATION?: string
 }
 
-export type AccountConfig = { configured: true; coreOrigin: string } | { configured: false; missing: string[] }
+const releaseValidationOperations = [
+  "private_session",
+  "stream",
+  "revocation",
+  "wrong_org",
+  "replay",
+  "outage",
+] as const
+
+export type ReleaseValidationOperation = (typeof releaseValidationOperations)[number]
+
+export type AccountConfig =
+  | { configured: true; coreOrigin: string; releaseValidationOperation?: ReleaseValidationOperation }
+  | { configured: false; missing: string[] }
 
 function exactHttpsOrigin(value: string | undefined) {
   const raw = value?.trim()
@@ -29,7 +44,20 @@ function exactHttpsOrigin(value: string | undefined) {
 
 export function readAccountConfig(env: AccountConfigEnv): AccountConfig {
   const coreOrigin = exactHttpsOrigin(env.CLAXEDO_CORE_ORIGIN)
-  return coreOrigin
-    ? { configured: true, coreOrigin }
-    : { configured: false, missing: ["coreOrigin (CLAXEDO_CORE_ORIGIN must be an exact HTTPS origin)"] }
+  if (!coreOrigin) {
+    return { configured: false, missing: ["coreOrigin (CLAXEDO_CORE_ORIGIN must be an exact HTTPS origin)"] }
+  }
+  const rawOperation = env.CLAXEDO_RELEASE_VALIDATION_OPERATION?.trim()
+  const releaseValidationOperation = releaseValidationOperations.find((operation) => operation === rawOperation)
+  if (rawOperation && !releaseValidationOperation) {
+    return {
+      configured: false,
+      missing: ["releaseValidationOperation (CLAXEDO_RELEASE_VALIDATION_OPERATION is not recognized)"],
+    }
+  }
+  return {
+    configured: true,
+    coreOrigin,
+    ...(releaseValidationOperation ? { releaseValidationOperation } : {}),
+  }
 }

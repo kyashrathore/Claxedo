@@ -6,18 +6,20 @@
 
 This workflow targets the static user-deployed product: one organization, multiplayer, Better Auth + D1,
 billing absent, and an empty optional-service catalog. The Worker uses the control-plane-only posture; it does
-not deploy an execution sandbox, relay, browser application, or optional service.
+not deploy an execution sandbox or optional service. Multiplayer requires a separately deployed Workspace Relay;
+the cutover successor binds its exact origin and signing trust, then publishes the exact Better Auth browser build
+as a static-assets Worker on the configured app custom domain.
 
-**Current ceiling: `locked` — not open.** The repository can deploy and verify a fail-closed locked control-plane
-Worker. The persisted operator gates exist, but this artifact deliberately has no browser build or admitted product routes,
-so it cannot begin canary or admit users and ordinary application traffic.
+The first release is deliberately locked and browser-absent. A successor `--cutover` release uploads one immutable
+Worker version that owns `locked → canary → provider_sync → multiplayer_validation → open`; the same Cloudflare
+version ID and browser hash remain bound throughout every phase.
 
 ## 1. Prerequisites
 
 - A Cloudflare account authenticated for Workers, D1, custom domains, and rate-limit bindings.
 - Four unused D1 databases: separate auth and control-plane databases for production and staging.
 - Distinct exact HTTPS custom API and app origins for production and staging. Workers.dev and Pages.dev origins
-  are rejected by the release script. The app origins are trust inputs only in this locked slice; no browser app is published.
+  are rejected by the release script. The app custom domain is attached only by the cutover successor.
 - A bring-your-own GitHub OAuth app. Configure only the selected callback URIs:
   - `https://api.example.com/api/auth/callback/github`
   - `https://api-staging.example.com/api/auth/callback/github`
@@ -55,6 +57,8 @@ export CLAXEDO_PRODUCTION_API_ORIGIN='https://api.example.com'
 export CLAXEDO_STAGING_API_ORIGIN='https://api-staging.example.com'
 export CLAXEDO_PRODUCTION_APP_ORIGIN='https://app.example.com'
 export CLAXEDO_STAGING_APP_ORIGIN='https://app-staging.example.com'
+export CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL='https://relay.example.com'
+export CLAXEDO_STAGING_WORKSPACE_RELAY_URL='https://relay-staging.example.com'
 
 export CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME='claxedo-auth-production'
 export CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID='<UUID printed by d1 create>'
@@ -67,6 +71,10 @@ export CLAXEDO_STAGING_CONTROL_PLANE_D1_DATABASE_ID='<UUID printed by d1 create>
 export BETTER_AUTH_SECRET='<deployment-owned secret of at least 32 characters>'
 export CLAXEDO_AUTH_INTROSPECTION_SECRET='<different deployment-owned secret of at least 32 characters>'
 export CLAXEDO_RELEASE_OPERATOR_SECRET='<different deployment-owned operator secret of at least 32 characters>'
+export CLAXEDO_RELAY_RESOLVER_TOKEN='<different relay-to-control-plane resolver secret>'
+export CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM='<deployment Ed25519 private key PEM>'
+export CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM='<matching deployment Ed25519 public key PEM>'
+export CLAXEDO_RELAY_HOST_VERIFY_PEM='<Workspace Relay Ed25519 public key PEM>'
 export GITHUB_CLIENT_ID='<bring your own provider client ID>'
 ```
 
@@ -75,6 +83,10 @@ The selected Worker secret inventory is exactly:
 - `BETTER_AUTH_SECRET`
 - `CLAXEDO_AUTH_INTROSPECTION_SECRET`
 - `CLAXEDO_RELEASE_OPERATOR_SECRET`
+- `CLAXEDO_RELAY_RESOLVER_TOKEN`
+- `CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM`
+- `CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM`
+- `CLAXEDO_RELAY_HOST_VERIFY_PEM`
 - `GITHUB_CLIENT_SECRET`
 
 No email/password method is certified in this workflow because there is no installed email-sender service.
@@ -109,6 +121,10 @@ uses the client secret from your own GitHub OAuth app:
 ./node_modules/.bin/wrangler secret put BETTER_AUTH_SECRET --name 'claxedo-user-deployed-locked'
 ./node_modules/.bin/wrangler secret put CLAXEDO_AUTH_INTROSPECTION_SECRET --name 'claxedo-user-deployed-locked'
 ./node_modules/.bin/wrangler secret put CLAXEDO_RELEASE_OPERATOR_SECRET --name 'claxedo-user-deployed-locked'
+./node_modules/.bin/wrangler secret put CLAXEDO_RELAY_RESOLVER_TOKEN --name 'claxedo-user-deployed-locked'
+./node_modules/.bin/wrangler secret put CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM --name 'claxedo-user-deployed-locked'
+./node_modules/.bin/wrangler secret put CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM --name 'claxedo-user-deployed-locked'
+./node_modules/.bin/wrangler secret put CLAXEDO_RELAY_HOST_VERIFY_PEM --name 'claxedo-user-deployed-locked'
 ./node_modules/.bin/wrangler secret put GITHUB_CLIENT_SECRET --name 'claxedo-user-deployed-locked'
 ```
 
@@ -118,8 +134,8 @@ uses the client secret from your own GitHub OAuth app:
 bun run scripts/deploy/release-better-auth-d1.ts
 ```
 
-This is the remote preflight: it verifies both D1 resources and the exact remote secret inventory, renders the generated
-Wrangler config, bundles the one locked entrypoint, and prints its SHA-256 artifact identity. It does not upload or migrate.
+This local certification renders the generated Wrangler config, bundles the locked entrypoint, and prints its SHA-256
+artifact identity. It does not contact Cloudflare, upload, or migrate. Remote resource and secret checks run before upload.
 
 ## 7. Deploy and verify the locked release
 
@@ -134,6 +150,39 @@ restores the healthy incumbent and appends the release-state rollback record whe
 
 Stop here. A successful command means the locked control-plane artifact is deployed and verified; it does **not** mean
 the user-deployed product is open, the one-organization bootstrap owner has been admitted, or multiplayer is released.
+
+## 8. Upload the same-version cutover successor and browser
+
+Read the exact predecessor binding from `--status`, then configure a release sequence greater than the predecessor and
+the complete successor CAS tuple. The canary journey is an unguessable operator-held identifier; the canary identity is
+not guessed or configured yet because Better Auth creates its canonical user ID during OAuth.
+
+```bash
+export CLAXEDO_RELEASE_SEQUENCE='2'
+export CLAXEDO_RELEASE_ID='<unique cutover release ID>'
+export CLAXEDO_PREVIOUS_RELEASE_ID='<releaseId from status>'
+export CLAXEDO_PREVIOUS_STATE_REVISION='<stateRevision from status>'
+export CLAXEDO_PREVIOUS_PHASE='locked'
+export CLAXEDO_PREVIOUS_PHASE_REVISION='<phaseRevision from status>'
+export CLAXEDO_RELEASE_OPERATION_ID='<unique successor CAS operation ID>'
+export CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT='<future Unix timestamp in milliseconds>'
+export CLAXEDO_ENVIRONMENT_ID='<production or staging>'
+export CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID='<stable one-organization ID>'
+export CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME='<organization display name>'
+export CLAXEDO_CANARY_JOURNEY_ID='<unguessable release-bound journey ID>'
+
+bun run scripts/deploy/release-better-auth-d1.ts --cutover
+bun run scripts/deploy/release-better-auth-d1.ts --deploy --cutover
+```
+
+The first command builds the production Better Auth browser with the exact API origin, validates that Clerk and the test
+bypass are absent, derives a deterministic path-and-byte SHA-256 identity, and dry-runs the phase-gated Worker bundle.
+Cloudflare requires an initial Durable Object lifecycle migration to use a full deployment rather than a version upload.
+When the release train does not yet own `LiveSyncRoom`, the deploy command first atomically installs v1 through a
+separately certified bridge whose request handler is only the fail-closed bootstrap gate. It verifies that gate and the
+exact namespace, then registers the successor in locked state, smoke-tests its private 0% version, activates and promotes
+those same bytes, and publishes the hash-attested browser assets on the app custom domain. A retry detects the installed
+namespace and does not repeat the bridge. Ordinary auth and product traffic remain denied while locked.
 
 ## Persisted cutover operator
 
@@ -163,19 +212,83 @@ bun run scripts/deploy/cutover-better-auth-d1.ts --record-greenfield-source-abse
 Do not substitute hand-written hashes. The proof command derives both SHA-256 identities from the queried target and the
 manifest emitted by the exact release command.
 
-The client also implements `--begin-canary`, `--record-canary-complete`, `--advance-provider-sync`, typed
+The client implements `--begin-canary`, `--record-canary-complete`, `--advance-provider-sync`, typed
 provider-sync receipt commands, `--advance-multiplayer-validation`, two identity-registration commands, six typed
 multiplayer receipt commands, and `--open`. It has no raw phase or arbitrary evidence input. Every mutation is bound
 to the active release, Worker/browser/auth builds, certified profile, state revision, and phase revision; stale and
 replayed requests fail closed.
 
-**Apart from the producer-backed greenfield evidence receipt above, do not run phase-changing or later-phase evidence
-commands for this locked-only artifact.** Its persisted browser identity is
-`browser-absent-v1`, so both the client and Worker reject `--begin-canary`. A later cutover-capable artifact must
-bind the real browser build and route its one authorized canary mutation through the serialized first-write API.
-The remaining typed evidence commands record operator attestations after callback drain, authority reconciliation,
-paired backup, and the real two-identity multiplayer harness have run; they do not perform or claim those external
-rehearsals.
+For the cutover successor, open the app in an isolated browser context that adds
+`x-claxedo-canary-journey-id: $CLAXEDO_CANARY_JOURNEY_ID` to every API request. Complete the real provider OAuth
+redirect, then fetch `/__release/canary/identity` with that header and the authenticated cookie. Use only the returned
+`identity.subject` and `identityHash` as the authoritative owner/canary values:
+
+```bash
+export CLAXEDO_BOOTSTRAP_OWNER_ADAPTER='better-auth'
+export CLAXEDO_BOOTSTRAP_OWNER_SUBJECT='<identity.subject from the authenticated endpoint>'
+export CLAXEDO_BOOTSTRAP_OWNER_EXPIRES_AT='<future canonical UTC timestamp>'
+export CLAXEDO_BOOTSTRAP_OWNER_CLAIM_FILE='<mode-0600 path for the generated one-use claim>'
+bun run scripts/deploy/provision-user-deployed-owner-claim.ts --provision
+
+export CLAXEDO_CUTOVER_CANARY_IDENTITY_HASH='<identityHash from the authenticated endpoint>'
+export CLAXEDO_CUTOVER_CANARY_JOURNEY_ID="$CLAXEDO_CANARY_JOURNEY_ID"
+export CLAXEDO_CUTOVER_RECEIPT_ID='<unique immutable receipt ID>'
+export CLAXEDO_CUTOVER_OPERATION_ID='<unique idempotent operation ID>'
+bun run scripts/deploy/cutover-better-auth-d1.ts --begin-canary
+```
+
+The locked enrollment route admits only that release-bound journey and creates authentication rows only; product routes
+remain closed. The first bootstrap-owner mutation must carry the same journey ID, a unique canary mutation operation ID,
+and the generated one-use owner claim. The Worker serializes that irreversible first target write before dispatch.
+The remaining typed evidence commands record operator attestations only after callback drain, authority reconciliation,
+paired backup, and the real two-identity multiplayer harness have run; they do not perform or claim those rehearsals.
+
+During `multiplayer_validation`, each isolated browser context must add one of the six typed
+`x-claxedo-multiplayer-validation-operation` values to every auth and API request. After the second provider OAuth
+redirect, that still-unmapped browser reads `/__release/multiplayer/identity`; the endpoint verifies the selected
+provider session without inventing an application account and returns the provider identity plus its release-bound
+hash. The authenticated owner then admits only the returned subject through
+`POST /api/control/user-deployed/identity-admissions` with a `member` or `admin` role. The server fixes the adapter and
+issuer from the deployed auth descriptor, while the D1 authority atomically creates the canonical user, human actor,
+and single-organization membership. Only after that admission may the second browser use ordinary product routes.
+
+The private-session proof must use the public cold user-hosted path: request
+`POST /api/workspace/:id/user-hosted/challenge`, sign the returned canonical P-256 challenge with the host key, and
+submit `POST /api/workspace/:id/user-hosted/register`. Challenge issuance does not create a workspace; the valid signed
+registration is the first workspace write. Reserve and register the private session through the public control/runtime
+authority routes, add the admitted user to a team, grant and revoke the session share, and observe the second browser's
+inventory/stream before and after revocation. Direct D1 inserts are not acceptance evidence.
+
+The repository's headed acceptance runner performs that public-route sequence and keeps the two OAuth sessions in
+separate mode-0700 profiles under the ignored `.artifacts/deployed-cloudflare-acceptance/` directory. It never accepts
+provider credentials on the command line and never writes the owner claim, cookies, host-tunnel token, runtime token,
+or relay-generated host proof into its result. Run its four stages at the corresponding persisted phases:
+
+```bash
+export CLAXEDO_DEPLOYED_API_URL='https://api.example.com'
+export CLAXEDO_DEPLOYED_APP_URL='https://app.example.com'
+export CLAXEDO_DEPLOYED_ACCEPTANCE_ID="$CLAXEDO_RELEASE_ID"
+
+# locked: authenticate the future owner and capture the provider subject/hash
+bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --capture-canary-identity
+
+# canary: after provisioning the claim and running --begin-canary
+bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --bootstrap-canary
+
+# multiplayer_validation: capture both hashes before registering the two
+# multiplayer_identity receipts. Use a different GitHub account in each window.
+bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --capture-multiplayer-identities
+
+# After registering both identity receipts, execute the real two-user matrix.
+bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --run-multiplayer
+```
+
+`capture-canary-identity` writes `canary-identity.json`; use its `identity.subject` and `identityHash` for owner-claim
+provisioning and `--begin-canary`. `capture-multiplayer-identities` writes `multiplayer-identities.json`; register its
+two hashes with `--register-multiplayer-identity-1` and `--register-multiplayer-identity-2` before `--run-multiplayer`.
+The final `multiplayer-complete.json` records only non-secret IDs, identity hashes, timestamps, and pass/fail evidence.
+Record the six typed operator receipts only after that file shows the private-session, stream, revocation, wrong-org,
+replay, and real relay-outage recovery checks passed.
 
 The remaining phase order enforced by the persisted gate is:
 
@@ -186,7 +299,7 @@ The remaining phase order enforced by the persisted gate is:
 | `multiplayer_validation` | Exactly two release-bound identity hashes plus private-session, stream, revocation, wrong-org, replay, and outage receipts covering that pair. |
 | `open` | All prior receipts and an exact SHA-256 browser build (plus a relay build for the hosted product). |
 
-For a later cutover-capable artifact already in `provider_sync`, produce the paired-backup receipt from exported bytes,
+For the cutover successor in `provider_sync`, produce the paired-backup receipt from exported bytes,
 not hand-entered hashes. The command writes both credential-bearing exports into a mode-0700 directory with mode-0600
 files, restores them into fresh local SQLite databases, runs integrity/schema/count checks, and verifies the active
 provider-sync release plus the same recovery epoch in both halves:
@@ -206,6 +319,6 @@ Keep these exports under the migration custody/retention policy: they contain au
 production rehearsal must additionally restore them into fresh remote D1 databases, bind both to one dark candidate,
 and rerun the same epoch/identity probes before this local verifier is considered production recovery evidence.
 
-Do not deploy a browser app, route ordinary traffic, or describe this instance as usable until those persisted gates and
-their rollback/verification paths exist. Optional services are installed later as independent Workers through their own
-resource manifests and lifecycle workflows; this core workflow never provisions them.
+Do not describe the instance as usable until the authenticated canary, provider-sync closure, two-identity multiplayer
+matrix, and final `--open` transition all succeed. Optional services are installed later as independent Workers through
+their own resource manifests and lifecycle workflows; this core workflow never provisions them.

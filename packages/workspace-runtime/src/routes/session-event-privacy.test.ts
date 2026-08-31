@@ -3,7 +3,9 @@ import { Hono } from "hono"
 import type { SessionAccessPolicy, SessionAccessPolicyInput } from "../session-access-policy"
 import {
   authorizeSessionEventScope,
+  isSessionEventScopeResponse,
   type SessionEventScope,
+  waitForSessionEventStream,
   watchSessionEventLease,
 } from "./session-event-privacy"
 
@@ -36,7 +38,7 @@ function verifiedApp(accessPolicy: SessionAccessPolicy, capture?: (scope: Sessio
   })
   app.get("/event", async (c) => {
     const scope = await authorizeSessionEventScope(c, accessPolicy, "sessionID")
-    if (scope instanceof Response) return scope
+    if (isSessionEventScopeResponse(scope)) return scope
     capture?.(scope)
     return c.text("ok")
   })
@@ -235,5 +237,45 @@ describe("managed session event stream leases", () => {
     stop()
     await flushAsync()
     expect(renewalAborted).toBe(true)
+  })
+
+  test("revocation closes a route stream and runs subscription cleanup exactly once", async () => {
+    let authorizationCalls = 0
+    let cleanupCalls = 0
+    let closeCalls = 0
+    let abort: (() => void) | undefined
+    const accessPolicy = policy({
+      authorizeStream: () => {
+        authorizationCalls += 1
+        return authorizationCalls === 1
+          ? { allowed: true, lease: "lease_1", expiresAt: Date.now() + 30 }
+          : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+      },
+    })
+    const scope: SessionEventScope = {
+      managed: true,
+      sessionId: "ses_1",
+      lease: "lease_1",
+      expiresAt: Date.now() + 30,
+      renewalInput: { operation: "session_event_stream", sessionId: "ses_1" },
+    }
+    const stream = {
+      onAbort(callback: () => void) {
+        abort = callback
+      },
+      async close() {
+        closeCalls += 1
+        abort?.()
+      },
+    }
+
+    await waitForSessionEventStream(stream, scope, accessPolicy, () => {
+      cleanupCalls += 1
+    })
+    abort?.()
+
+    expect(authorizationCalls).toBeGreaterThanOrEqual(2)
+    expect(closeCalls).toBe(1)
+    expect(cleanupCalls).toBe(1)
   })
 })

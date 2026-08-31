@@ -153,6 +153,7 @@ describe("SessionAccessPolicy", () => {
       headers: {
         authorization: "Bearer verified-runtime-proof",
         [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({
+          principal_kind: "user",
           actor_id: "actor_alice",
           actor_kind: "human",
           actor_public_id: "usr_alice",

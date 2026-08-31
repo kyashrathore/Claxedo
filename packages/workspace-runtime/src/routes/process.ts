@@ -130,8 +130,6 @@ async function validateConfig(directory: string, config: Partial<Process.Process
   })
 }
 
-const defaultProcessRoutes = lazy(() => createFullProcessRoutes(managedWorkspaceSessionAccessPolicy()))
-
 function createFullProcessRoutes(policy: SessionAccessPolicy) {
   return (
   new Hono<{ Variables: RelayHostAuthContext }>()
@@ -256,7 +254,7 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
 }
 
 export function ProcessRoutes(policy?: SessionAccessPolicy) {
-  return policy ? createFullProcessRoutes(policy) : defaultProcessRoutes()
+  return createFullProcessRoutes(policy ?? managedWorkspaceSessionAccessPolicy())
 }
 
 /**

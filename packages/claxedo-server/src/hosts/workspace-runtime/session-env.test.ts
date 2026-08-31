@@ -501,10 +501,11 @@ describe("cloud session-env caching", () => {
       sandboxManager,
       relayProvider,
       defaultHomeRegion: "us-east",
-      subject: "control-plane",
-      principalKind: "service",
-      actorId: "control-plane",
-      actorKind: "agent",
+      runtimeActor: {
+        principalKind: "service",
+        actorId: "control-plane",
+        actorKind: "agent",
+      },
       role: "owner",
     } as unknown as SandboxFetchOptions
     return { sandboxManager, relayProvider, options }

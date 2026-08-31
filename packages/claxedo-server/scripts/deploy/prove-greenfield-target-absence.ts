@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url"
 import {
   betterAuthD1DeploymentManifestPath,
   betterAuthD1ReleaseInputs,
+  fetchReleaseProbe,
   renderBetterAuthD1WranglerConfig,
   type BetterAuthD1ReleaseEnvironment,
 } from "./release-better-auth-d1"
@@ -63,13 +64,26 @@ export const GREENFIELD_CONTROL_PLANE_TABLE_COUNTS = Object.freeze({
   session_messages: 0,
   session_participants: 0,
   session_registration_operations: 0,
+  session_share_grants: 0,
+  session_turn_leases: 0,
+  session_turn_producers: 0,
   sessions: 0,
+  team_memberships: 0,
+  team_project_grants: 0,
+  teams: 0,
   user_deployed_owner_bootstrap_claims: 0,
   users: 0,
   workspace_direct_memberships: 0,
   workspace_share_grants: 0,
   workspaces: 0,
 } as const)
+
+const GREENFIELD_AUTH_APPEND_ONLY_MINIMUM_COUNTS = new Set([
+  "deploymentRelease",
+  "deploymentReleaseStateHistory",
+  "deploymentRecoveryEpoch",
+])
+const GREENFIELD_CONTROL_PLANE_APPEND_ONLY_MINIMUM_COUNTS = new Set(["control_plane_recovery_epochs"])
 
 type GreenfieldBinding = "AUTH_DB" | "CONTROL_PLANE_DB"
 type ExpectedCounts = Readonly<Record<string, number>>
@@ -186,7 +200,12 @@ function canonicalSchema(output: string, expected: ExpectedCounts, binding: Gree
   return Object.freeze(names)
 }
 
-function canonicalCounts(output: string, expected: ExpectedCounts, binding: GreenfieldBinding) {
+function canonicalCounts(
+  output: string,
+  expected: ExpectedCounts,
+  binding: GreenfieldBinding,
+  appendOnlyMinimums: ReadonlySet<string>,
+) {
   const expectedNames = Object.keys(expected).sort()
   const resultRows = d1Rows(output, `${binding} counts`)
   if (resultRows.length !== 1) throw new Error(`${binding} counts must return exactly one row`)
@@ -202,7 +221,8 @@ function canonicalCounts(output: string, expected: ExpectedCounts, binding: Gree
     return Object.freeze({ table, count: count as number })
   })
   for (const row of rows) {
-    if (row.count !== expected[row.table]) {
+    const expectedCount = expected[row.table]
+    if (appendOnlyMinimums.has(row.table) ? row.count < expectedCount : row.count !== expectedCount) {
       throw new Error(`${binding}.${row.table} expected ${expected[row.table]} rows but observed ${row.count}`)
     }
   }
@@ -282,7 +302,12 @@ export function verifyGreenfieldTargetAbsence(input: {
       binding: "AUTH_DB" as const,
       databaseId: input.authDatabaseId,
       schemaTables: canonicalSchema(input.outputs["AUTH_DB:schema"], GREENFIELD_AUTH_TABLE_COUNTS, "AUTH_DB"),
-      rows: canonicalCounts(input.outputs["AUTH_DB:counts"], GREENFIELD_AUTH_TABLE_COUNTS, "AUTH_DB"),
+      rows: canonicalCounts(
+        input.outputs["AUTH_DB:counts"],
+        GREENFIELD_AUTH_TABLE_COUNTS,
+        "AUTH_DB",
+        GREENFIELD_AUTH_APPEND_ONLY_MINIMUM_COUNTS,
+      ),
     }),
     Object.freeze({
       binding: "CONTROL_PLANE_DB" as const,
@@ -296,6 +321,7 @@ export function verifyGreenfieldTargetAbsence(input: {
         input.outputs["CONTROL_PLANE_DB:counts"],
         GREENFIELD_CONTROL_PLANE_TABLE_COUNTS,
         "CONTROL_PLANE_DB",
+        GREENFIELD_CONTROL_PLANE_APPEND_ONLY_MINIMUM_COUNTS,
       ),
     }),
   ])
@@ -343,7 +369,7 @@ async function main() {
   } catch {
     throw new Error("deployment manifest is not valid JSON")
   }
-  const statusResponse = await fetch(`${release.apiOrigin}/__release/operator/status`, {
+  const statusResponse = await fetchReleaseProbe(`${release.apiOrigin}/__release/operator/status`, {
     headers: { authorization: `Bearer ${required(process.env, "CLAXEDO_RELEASE_OPERATOR_SECRET")}` },
     signal: AbortSignal.timeout(15_000),
   })

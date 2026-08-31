@@ -206,6 +206,18 @@ export type RequestAuthenticationAdapter = {
   authenticate(request: Request): Promise<ControlPlanePrincipal>
 }
 
+/**
+ * Provider verification without application-account mapping.
+ *
+ * This narrow boundary is reserved for explicit enrollment flows. Ordinary
+ * product requests must use `RequestAuthenticationAdapter.authenticate`, which
+ * also requires an active application principal.
+ */
+export type RequestIdentityVerificationAdapter = {
+  descriptor: AuthAdapterDescriptor
+  verifyIdentity(request: Request): Promise<AuthIdentity>
+}
+
 export type HostedAuthAdapter = RequestAuthenticationAdapter & {
   reauthentication(input: {
     principal: ControlPlanePrincipal
@@ -574,28 +586,37 @@ export function createControlPlaneAuthenticationAdapter(input: {
   resolveIdentity: ApplicationIdentityResolver
   now?: () => number
   maxFutureSkewMs?: number
-}): RequestAuthenticationAdapter {
+}): RequestAuthenticationAdapter & RequestIdentityVerificationAdapter {
   const now = input.now ?? Date.now
   const maxFutureSkewMs = input.maxFutureSkewMs ?? 60_000
   assertDescriptor(input.descriptor, now())
+
+  const verify = async (request: Request) => {
+    assertUnambiguousCredential(request, input.descriptor)
+
+    let verified: unknown
+    try {
+      verified = await input.verify(request)
+    } catch (error) {
+      if (error instanceof AuthenticationError) throw error
+      throw new AuthenticationError(503, "auth_unavailable", "Authentication verifier is unavailable")
+    }
+    const session = parseVerifiedSession(verified, input.descriptor, now(), maxFutureSkewMs)
+    const identity = {
+      adapter: session.adapter,
+      issuer: session.issuer,
+      subject: session.subject,
+    } satisfies AuthIdentity
+    return { identity, session }
+  }
+
   return {
     descriptor: input.descriptor,
+    async verifyIdentity(request) {
+      return (await verify(request)).identity
+    },
     async authenticate(request) {
-      assertUnambiguousCredential(request, input.descriptor)
-
-      let verified: unknown
-      try {
-        verified = await input.verify(request)
-      } catch (error) {
-        if (error instanceof AuthenticationError) throw error
-        throw new AuthenticationError(503, "auth_unavailable", "Authentication verifier is unavailable")
-      }
-      const session = parseVerifiedSession(verified, input.descriptor, now(), maxFutureSkewMs)
-      const identity = {
-        adapter: session.adapter,
-        issuer: session.issuer,
-        subject: session.subject,
-      } satisfies AuthIdentity
+      const { identity, session } = await verify(request)
 
       let resolution: ApplicationIdentityResolution
       try {

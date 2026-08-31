@@ -12,6 +12,7 @@ import { centralTransportForServer, createTransport } from "@/platform/runtime/t
 import { useServer } from "@/app/connection/server"
 import { authFetch } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { useAccountPort } from "@/platform/account/account-provider"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
@@ -291,6 +292,7 @@ const globalSDKContextInput = {
     const server = useServer()
     const platform = usePlatform()
     const principal = usePrincipal()
+    const account = useAccountPort()
     const abort = new AbortController()
 
     let liveSession: LiveSession | undefined
@@ -480,6 +482,7 @@ const globalSDKContextInput = {
                   lastEventId: lastRuntimeEventId,
                   init,
                   signal: runtimeAttempt.signal,
+                  accountState: account.state(),
                 })
               : await createTransport({
               placement: {

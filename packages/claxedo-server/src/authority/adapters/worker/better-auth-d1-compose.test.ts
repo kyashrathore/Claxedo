@@ -18,6 +18,8 @@ const CONTROL_MIGRATIONS = [
   "0006_channel_identity_and_canonical_runtime.sql",
   "0007_paired_recovery_epoch.sql",
   "0008_user_deployed_owner_bootstrap.sql",
+  "0012_cold_local_host_challenges.sql",
+  "0013_org_team_session_sharing.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const privateKey = [
@@ -143,6 +145,22 @@ describe("Better Auth + D1 user-deployed composition", () => {
       status: 403,
       body: { error: { code: "cloud_workspace_capability_unavailable" } },
     })
+    const authPreflight = await composed.authHandler(
+      new Request("https://api.example.test/api/auth/sign-in/social", {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://app.example.test",
+          "access-control-request-method": "POST",
+          "access-control-request-headers": "content-type",
+        },
+      }),
+    )
+    expect(authPreflight.status).toBe(204)
+    expect(authPreflight.headers.get("access-control-allow-origin")).toBe("https://app.example.test")
+    expect(authPreflight.headers.get("access-control-allow-credentials")).toBe("true")
+    expect(authPreflight.headers.get("access-control-allow-headers")).toContain(
+      "x-claxedo-multiplayer-validation-operation",
+    )
   })
 
   test("fails closed instead of inventing the missing D1 sandbox lease store", async () => {

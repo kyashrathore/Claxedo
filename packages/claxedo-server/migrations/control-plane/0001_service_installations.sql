@@ -56,12 +56,12 @@ create index service_installation_audit_order_idx
 
 create trigger service_installation_audit_no_update
 before update on service_installation_audit
-begin
+BEGIN
   select raise(abort, 'service installation audit is append-only');
 end;
 
 create trigger service_installation_audit_no_delete
 before delete on service_installation_audit
-begin
+BEGIN
   select raise(abort, 'service installation audit is append-only');
 end;

@@ -249,7 +249,15 @@ function setupApp() {
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
-    await account.ready
+    // Account restoration is an optional hosted capability. In particular, a
+    // persisted revocation intent may need a slow or unavailable network before
+    // it can settle. That work must never sit in front of the local daemon or
+    // the first desktop window: the renderer's AccountPort already starts in
+    // `pending` and adopts the authoritative pushed state when restoration
+    // finishes. Keep the rejection observed without making local startup wait.
+    void account.ready.catch((error) => {
+      logger.warn("account restore failed", { error: String(error) })
+    })
     await initialize()
   })
 }

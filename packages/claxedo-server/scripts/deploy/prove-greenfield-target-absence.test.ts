@@ -152,6 +152,10 @@ describe("greenfield target-absence proof", () => {
       "0007_paired_recovery_epoch.sql",
       "0008_user_deployed_owner_bootstrap.sql",
       "0009_optional_service_deployment.sql",
+      "0010_session_turn_leases.sql",
+      "0011_session_turn_producers.sql",
+      "0012_cold_local_host_challenges.sql",
+      "0013_org_team_session_sharing.sql",
     ]) {
       await applyMigration(control, new URL(`../../migrations/control-plane/${name}`, import.meta.url))
     }
@@ -252,6 +256,25 @@ describe("greenfield target-absence proof", () => {
         },
       }),
     ).toThrow(/CONTROL_PLANE_DB\.orgs expected 0 rows but observed 1/)
+  })
+
+  test("allows append-only release history while preserving exact greenfield product counts", () => {
+    const proof = verifyGreenfieldTargetAbsence({
+      ...valid,
+      outputs: {
+        ...valid.outputs,
+        "AUTH_DB:counts": counts(GREENFIELD_AUTH_TABLE_COUNTS, {
+          deploymentRelease: 6,
+          deploymentReleaseStateHistory: 10,
+          deploymentRecoveryEpoch: 6,
+        }),
+        "CONTROL_PLANE_DB:counts": counts(GREENFIELD_CONTROL_PLANE_TABLE_COUNTS, {
+          control_plane_recovery_epochs: 6,
+        }),
+      },
+    })
+    expect(proof.databases[0]?.rows.find((row) => row.table === "deploymentRelease")?.count).toBe(6)
+    expect(proof.databases[1]?.rows.find((row) => row.table === "control_plane_recovery_epochs")?.count).toBe(6)
   })
 
   test("rejects unknown, missing, duplicate, and malformed schema evidence", () => {

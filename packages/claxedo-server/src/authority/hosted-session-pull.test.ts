@@ -76,12 +76,7 @@ describe("hosted session pull", () => {
     svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
-      usersMe: vi.fn(async () => ({
-        actor_id: "actor_1",
-        actor_kind: "human" as const,
-        actor_public_id: "usr_public_1",
-        actor_name: "Test User",
-      })),
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "editor",
         workspace: {
@@ -100,7 +95,7 @@ describe("hosted session pull", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
+        return Response.json({ messages: [], maxEventOrdinal: 0, session: { id: "session-1", title: "Settled title" } })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
         return Response.json({ id: "session-1", title: "Settled title" })
@@ -160,12 +155,7 @@ describe("hosted session pull", () => {
     }))
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
-      usersMe: vi.fn(async () => ({
-        actor_id: "actor_1",
-        actor_kind: "human" as const,
-        actor_public_id: "usr_public_1",
-        actor_name: "Test User",
-      })),
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
@@ -186,7 +176,12 @@ describe("hosted session pull", () => {
         return Response.json({ workspaceId: "ws_1" })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1/message?snapshot=1") {
-        return Response.json({ messages: [], session: { id: "session-1", title: "Settled title" } })
+        return Response.json({
+          messages: [{ info: { id: "message-1", role: "user" }, parts: [] }],
+          maxEventOrdinal: 7,
+          fencingToken: 3,
+          session: { id: "session-1", title: "Settled title" },
+        })
       }
       if (url === "https://relay.eu.test/workspaces/ws_1/session/session-1") {
         return Response.json({ id: "session-1", title: "Settled title" })
@@ -203,7 +198,7 @@ describe("hosted session pull", () => {
         workspaceId: "ws_1",
         sessionId: "session-1",
       }),
-    ).resolves.toMatchObject({ ok: true, messages: 0 })
+    ).resolves.toMatchObject({ ok: true, messages: 1, maxEventOrdinal: 7 })
 
     expect(activeLocalHostLink).toHaveBeenCalledWith(signed, { workspaceId: "ws_1" })
     expect(svc.sandbox.sandboxManager).toBeUndefined()
@@ -215,6 +210,14 @@ describe("hosted session pull", () => {
     }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
     expect(fetch).toHaveBeenCalledTimes(3)
+    expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+      messages: [{ info: { id: "message-1", role: "user" }, parts: [] }],
+      maxEventOrdinal: 7,
+      fencingToken: 3,
+      intakeReady: true,
+    })
   })
 
   test("fails closed when a user-hosted workspace has no active host link", async () => {
@@ -254,14 +257,14 @@ describe("hosted session pull", () => {
     expect(fetch).not.toHaveBeenCalled()
   })
 
-  test("uses the projected transcript when an idle checkpoint returns an older snapshot", async () => {
+  test("does not resubmit an older runtime snapshot through the current projection", async () => {
     const svc = services()
     const messages = [
       { info: { id: "msg-1", role: "user" }, parts: [{ type: "text", text: "hello" }] },
       { info: { id: "msg-2", role: "assistant" }, parts: [{ type: "text", text: "summary" }] },
     ]
-    vi.mocked(svc.projectionStore.read_session_messages).mockReturnValue(messages)
-    vi.mocked(svc.projectionStore.read_session_max_event_ordinal).mockReturnValue(7)
+    ;(svc.projectionStore.read_session_messages as ReturnType<typeof vi.fn>).mockReturnValue(messages)
+    ;(svc.projectionStore.read_session_max_event_ordinal as ReturnType<typeof vi.fn>).mockReturnValue(7)
     svc.sandbox.sandboxManager = {
       target: vi.fn(async () => ({
         status: "ready",
@@ -279,12 +282,7 @@ describe("hosted session pull", () => {
     } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
-      usersMe: vi.fn(async () => ({
-        actor_id: "actor_1",
-        actor_kind: "human" as const,
-        actor_public_id: "usr_public_1",
-        actor_name: "Test User",
-      })),
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
@@ -317,13 +315,7 @@ describe("hosted session pull", () => {
       }),
     ).resolves.toMatchObject({ skipped: true, snapshotOrdinal: 7 })
 
-    expect(syncSessionMessages).toHaveBeenCalledWith(signed, {
-      workspaceId: "ws_1",
-      sessionId: "session-1",
-      messages,
-      maxEventOrdinal: 7,
-      intakeReady: true,
-    })
+    expect(syncSessionMessages).not.toHaveBeenCalled()
     expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
   })
 
@@ -346,12 +338,7 @@ describe("hosted session pull", () => {
     } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
-      usersMe: vi.fn(async () => ({
-        actor_id: "actor_1",
-        actor_kind: "human" as const,
-        actor_public_id: "usr_public_1",
-        actor_name: "Test User",
-      })),
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },

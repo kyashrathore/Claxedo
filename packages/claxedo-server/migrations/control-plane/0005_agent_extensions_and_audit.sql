@@ -48,14 +48,14 @@ when new.deployment_id != old.deployment_id
   or new.created_by_user_id != old.created_by_user_id
   or new.created_by_actor_id != old.created_by_actor_id
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'agent extension install scope is immutable');
 end;
 
 create trigger agent_extension_live_source_immutable
 before update of source_json on agent_extension_installs
 when old.deleted_at is null and new.source_json != old.source_json
-begin
+BEGIN
   select raise(abort, 'agent extension live source is immutable');
 end;
 
@@ -115,7 +115,7 @@ when new.deployment_id != old.deployment_id
   or new.created_by_user_id != old.created_by_user_id
   or new.created_by_actor_id != old.created_by_actor_id
   or new.created_at != old.created_at
-begin
+BEGIN
   select raise(abort, 'agent extension policy scope is immutable');
 end;
 
@@ -163,6 +163,6 @@ create index authority_audit_events_by_actor_created
 
 create trigger authority_audit_events_no_update
 before update on authority_audit_events
-begin
+BEGIN
   select raise(abort, 'authority audit is append-only');
 end;

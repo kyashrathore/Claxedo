@@ -38,7 +38,7 @@ import { securityHeaders } from "@claxedo/server-core/platform/http/security-hea
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
-import { convexActiveSandboxLeaseCounter, convexHostedSandboxUsage } from "../../routes/hosted/workspace-convex-usage"
+import { convexActiveSandboxLeaseCounter, convexHostedSandboxUsage } from "../../authority/adapters/convex/hosted-sandbox-usage"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
 import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
@@ -54,6 +54,7 @@ import { SessionPeopleControlRoutes } from "../../session/routes/session-people-
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
+import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import {
   createFixedWindowConnectionRateLimiter,
   createLayeredRateLimiter,
@@ -595,8 +596,15 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     defaultHomeRegion: services.defaultHomeRegion,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
   }))
-  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services, { env: plane.env }))
+  if (plane.runtimeSessionAuthority) {
+    app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
+      authority: plane.runtimeSessionAuthority,
+      ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
+      env: plane.env,
+    }))
+  }
 
   app.all("/api/workgraph", forwardWorkGraph)
   app.all("/api/workgraph/*", forwardWorkGraph)
@@ -775,6 +783,15 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       cliTokenEnv: plane.env,
+    }),
+  )
+  app.route(
+    "/api/control/session-registrations",
+    PrivateSessionRegistrationRoutes({
+      authority: plane.privateSessionAuthority!,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      services,
     }),
   )
   // Org→Team nesting and private-session people (D17–D19). Worker-safe routers

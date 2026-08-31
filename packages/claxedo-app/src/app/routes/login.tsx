@@ -3,6 +3,7 @@ import { useNavigate } from "@solidjs/router"
 import { useAccountPort } from "@/platform/account/account-provider"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import type { BrowserAuthMethod } from "@/platform/auth/browser-auth"
+import { getClaxedoServerUrl } from "@/platform/api/api"
 
 export interface LoginPageProps {
   /** App branding name (defaults to "Claxedo") */
@@ -15,6 +16,33 @@ export interface LoginPageProps {
   termsUrl?: string
   /** Custom privacy policy URL */
   privacyUrl?: string
+}
+
+export function loginOAuthContinuation(input: {
+  appOrigin: string
+  apiOrigin: string
+  pathname: string
+  search: string
+}) {
+  if (input.pathname !== "/login" || !input.search) return
+  const query = new URLSearchParams(input.search)
+  if (
+    query.get("response_type") !== "code" ||
+    !query.get("client_id") ||
+    !query.get("redirect_uri") ||
+    !query.get("state")
+  ) return
+
+  const login = new URL(input.pathname, input.appOrigin)
+  login.search = input.search
+  const authorize = new URL("/api/auth/oauth2/authorize", input.apiOrigin)
+  authorize.search = input.search
+  return {
+    // Better Auth accepts only an app-origin callback. Returning to the same
+    // signed login request lets the mounted page finish the external hop.
+    signInRedirect: `${login.pathname}${login.search}`,
+    authorizationUrl: authorize.toString(),
+  }
 }
 
 /**
@@ -34,17 +62,36 @@ export default function LoginPage(props: LoginPageProps = {}) {
 
   const appName = () => props.appName ?? "Claxedo"
   const tagline = () => props.tagline ?? "Cloud-first development environment"
-  const redirectUrl = () => props.redirectUrl ?? "/"
+  const continuation = () => {
+    if (props.redirectUrl || typeof window === "undefined") return
+    return loginOAuthContinuation({
+      appOrigin: window.location.origin,
+      apiOrigin: getClaxedoServerUrl(),
+      pathname: window.location.pathname,
+      search: window.location.search,
+    })
+  }
+  const redirectUrl = () => props.redirectUrl ?? continuation()?.signInRedirect ?? "/"
+  const signedRedirectUrl = () => props.redirectUrl ?? continuation()?.authorizationUrl ?? "/"
+
+  const finishSignedRedirect = () => {
+    const destination = new URL(signedRedirectUrl(), window.location.origin)
+    if (destination.origin !== window.location.origin) {
+      window.location.assign(destination.toString())
+      return
+    }
+    navigate(`${destination.pathname}${destination.search}${destination.hash}`, { replace: true })
+  }
 
   onMount(async () => {
     if (account.state().status === "signed") {
-      navigate(redirectUrl(), { replace: true })
+      finishSignedRedirect()
       return
     }
   })
 
   if (account.state().status === "signed") {
-    navigate(redirectUrl(), { replace: true })
+    finishSignedRedirect()
     return null
   }
 

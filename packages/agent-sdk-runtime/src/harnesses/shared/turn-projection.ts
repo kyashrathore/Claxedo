@@ -26,6 +26,7 @@ type RuntimeEventStore = {
     agentSessionId?: string
     payload: CompatEvent
     source?: RuntimeAppendSource
+    fencingToken?: number
   }): { payload: CompatEvent }
 }
 
@@ -41,6 +42,7 @@ export function createTurnEventProjector(options: {
   input: Pick<PromptInput, "userMessageId" | "agent" | "model" | "variant">
   assistantMessageId: string
   created: number
+  fencingToken?: number
   onEvent: (event: CompatEvent) => void
   onRuntimeEvent?: (event: RuntimeEventEnvelopeInput) => void
 }) {
@@ -67,6 +69,7 @@ export function createTurnEventProjector(options: {
       agentSessionId: options.owner.getAgentSessionId(),
       payload,
       source,
+      ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
     }))
     options.onEvent(output)
     return output
@@ -107,6 +110,7 @@ export function createTurnEventProjector(options: {
           agentSessionId: options.owner.getAgentSessionId(),
           payload,
           source,
+          ...(options.fencingToken !== undefined ? { fencingToken: options.fencingToken } : {}),
         }))
         const runtimeEvent = terminalizedToolRuntimeEvent(output, message)
         if (runtimeEvent) publishRuntime(runtimeEvent)

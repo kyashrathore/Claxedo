@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { createSelfHostedApp } from "./app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import {
   PRODUCT_ROUTE_FAMILIES,
   pathsByOwner,
@@ -50,7 +51,7 @@ function localApp() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   ).app
 }
@@ -146,6 +147,7 @@ describe("desktop-local product contract", () => {
       "/api/control/runtime/heartbeat",
       "/api/control/runtime/register",
       "/api/control/session-list",
+      "/api/control/session-registrations/reserve",
       "/api/control/session/:id/runtime-events",
       "/api/control/sessions",
       "/api/control/sessions/:sessionId/capabilities",
@@ -213,8 +215,10 @@ describe("desktop-local product contract", () => {
       "/api/channels/fake",
       "/api/channels/github",
       "/api/channels/github/*",
+      "/api/channels/identity",
       "/api/channels/pairing",
       "/api/channels/pairing/approve",
+      "/api/channels/pairing/claim",
       "/api/channels/slack",
       "/api/channels/slack/*",
       "/api/channels/telegram",

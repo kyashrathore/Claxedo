@@ -2,6 +2,14 @@ import type { Context } from "hono"
 import { streamSSE } from "hono/streaming"
 import { attachSseFanout } from "@claxedo/agent-sdk-runtime/sse"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  isSessionEventScopeResponse,
+  scopedReplay,
+  waitForSessionEventStream,
+  workspaceRuntimeEventSessionId,
+} from "./session-event-privacy"
 import {
   createIdentityAwareEventSource,
   defaultEventDeliveryPolicy,
@@ -105,7 +113,7 @@ type WorkspaceRuntimeBus = Pick<typeof workspaceRuntimeBus, "subscribe">
  */
 export function runtimeBusEventsHandler(
   bus: WorkspaceRuntimeBus = workspaceRuntimeBus,
-  options: EventDeliveryOptions<StreamFrame> = {},
+  options: EventDeliveryOptions<StreamFrame> & { sessionAccessPolicy?: SessionAccessPolicy } = {},
 ) {
   // Retention matches `./events.ts` (256 frames, plus a 64-frame terminal
   // ring). Sizing is deliberate rather than copied: this bus carries control
@@ -134,8 +142,14 @@ export function runtimeBusEventsHandler(
   })
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
   return async (c: Context) => {
+    const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy, "sessionID")
+    if (isSessionEventScopeResponse(scope)) return scope
+    const allows = scope.managed
+      ? (event: StreamFrame) => workspaceRuntimeEventSessionId(event as WorkspaceRuntimeEvent) === scope.sessionId
+      : (_event: StreamFrame) => true
     const opened = source.open(await (options.principal?.(c) ?? eventDeliveryPrincipal(c)))
     await opened.ready
+    const replayForScope = scope.managed ? scopedReplay(opened.replay, allows) : opened.replay
     return streamSSE(c, async (stream) => {
       const heartbeat = { type: "heartbeat" } as const
       const cursor = c.req.header("last-event-id") ?? opened.replay.lastId() ?? "0"
@@ -146,7 +160,9 @@ export function runtimeBusEventsHandler(
 
       let cleanup: () => void = () => {}
       cleanup = attachSseFanout<StreamFrame>({
-        subscribe: (listener) => opened.subscribe(listener, () => {
+        subscribe: (listener) => opened.subscribe((event) => {
+          if (allows(event)) listener(event)
+        }, () => {
           cleanup()
           stream.abort()
         }),
@@ -159,7 +175,7 @@ export function runtimeBusEventsHandler(
         heartbeat,
         heartbeatMs: 30_000,
         lastEventId: cursor,
-        replay: opened.replay,
+        replay: replayForScope,
         replayLive: false,
         replayGap: ({ lastEventId, throughId }) => ({
           type: "stream.replay-gap",
@@ -171,7 +187,7 @@ export function runtimeBusEventsHandler(
         }),
       })
 
-      await waitForSessionEventStream(stream, scope, sessionAccessPolicy, cleanup)
+      await waitForSessionEventStream(stream, scope, options.sessionAccessPolicy, cleanup)
     })
   }
 }

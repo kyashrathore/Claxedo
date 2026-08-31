@@ -79,6 +79,7 @@ describe("ProcessRoutes logs", () => {
     state.snapshots.set("pty_1", "private output")
     const calls: Array<{ sessionId?: string; operation: string }> = []
     const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
       authorize: async (input) => {
         calls.push({ sessionId: input.sessionId, operation: input.operation })
         return {
@@ -97,18 +98,19 @@ describe("ProcessRoutes logs", () => {
       c.set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
+        actor_id: "actor_1",
+        actor_kind: "human",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
         role: "editor",
         access: "cloud",
         backing: "cloud-vm",
-        actor_id: "actor_1",
-        actor_kind: "human",
         exp: now + 60,
         iat: now,
         jti: "jti_1",
+        parent_jti: "rat_jti_1",
       })
       return await next()
     })
@@ -258,7 +260,9 @@ describe("ProcessRoutes logs", () => {
       c.set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
+        actor_id: "user_1",
+        actor_kind: "human",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
@@ -268,6 +272,7 @@ describe("ProcessRoutes logs", () => {
         exp: now + 60,
         iat: now,
         jti: "jti_1",
+        parent_jti: "rat_jti_1",
       })
       return await next()
     })

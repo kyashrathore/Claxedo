@@ -3,6 +3,8 @@ import { bodyLimit } from "hono/body-limit"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
+  type ClerkVerifier,
+  type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
@@ -14,7 +16,9 @@ const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$/
 
 export type PrivateSessionRegistrationRouteOptions = {
   authority: Pick<PrivateSessionAuthority, "reserveSession">
-  authentication: RequestAuthenticationAdapter
+  authentication?: RequestAuthenticationAdapter
+  authConfig?: ControlPlaneAuthConfig
+  verifier?: ClerkVerifier
   services?: ControlPlaneServices
 }
 
@@ -37,7 +41,12 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
   return new Hono().post("/reserve", limitedBody, async (context) => {
     const authenticated = await signedOrError(
       context.req.raw,
-      { authentication: options.authentication, requireSigned: true },
+      {
+        authentication: options.authentication,
+        authConfig: options.authConfig,
+        verifier: options.verifier,
+        requireSigned: true,
+      },
       options.services,
     )
     if ("error" in authenticated) {

@@ -4,6 +4,7 @@ import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
+import type { AccountState } from "@/platform/account/account-port"
 
 const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 
@@ -29,8 +30,9 @@ export function openCentralRuntimeEventResponse(input: {
   lastEventId?: string
   init: RequestInit
   signal: AbortSignal
+  accountState: AccountState
 }) {
-  if (!accountStreamAvailable()) {
+  if (!accountStreamAvailable(input.accountState)) {
     return input.request(
       new URL(
         `/api/control/session/${encodeURIComponent(input.sessionId)}/runtime-events?parentSessionId=${encodeURIComponent(input.sessionId)}`,

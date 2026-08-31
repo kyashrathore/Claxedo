@@ -16,6 +16,7 @@ import {
   registerLockedDeploymentReleaseCandidate,
   requireDeploymentReleaseCandidate,
   requireDeploymentReleaseState,
+  rollbackDeploymentCanaryBeforeWrite,
   rollbackLockedDeploymentReleaseCandidate,
   type DeploymentReleaseIdentity,
   type DeploymentReleaseTransition,
@@ -202,6 +203,224 @@ describe("persisted deployment release history", () => {
       (await db.prepare(`select count(*) as "count" from "deploymentReleaseStateHistory"`).first<{ count: number }>())
         ?.count,
     ).toBe(3)
+  })
+
+  test("rolls an inert candidate back without deleting its failed private-health attempt", async () => {
+    const db = await database()
+    await provisionLockedDeploymentReleaseState(db, identity)
+    const successor = {
+      ...identity,
+      releaseSequence: 2,
+      releaseId: "release-test-0002",
+      workerBuildId: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      platformVersionId: "22222222-2222-2222-2222-222222222222",
+    }
+    const transition = {
+      operationId: "operation-release-0002",
+      previousReleaseId: identity.releaseId,
+      previousStateRevision: 0,
+      previousPhase: "locked",
+      previousPhaseRevision: 0,
+    } satisfies DeploymentReleaseTransition
+    await registerLockedDeploymentReleaseCandidate(db, successor, new Date("2026-08-28T01:00:00Z"), transition)
+    expect((await requireDeploymentReleaseState(db, identity)).stateRevision).toBe(0)
+
+    const rollback = await rollbackLockedDeploymentReleaseCandidate(
+      db,
+      {
+        deploymentId: identity.deploymentId,
+        operationId: "operation-rollback-0002",
+        expectedReleaseId: successor.releaseId,
+        expectedStateRevision: 1,
+      },
+      new Date("2026-08-28T01:01:00Z"),
+    )
+
+    expect(rollback).toMatchObject({
+      releaseId: identity.releaseId,
+      stateRevision: 2,
+      previousStateRevision: 1,
+      restoredStateRevision: 0,
+      transitionKind: "prewrite_rollback",
+    })
+    expect(
+      (await db.prepare(`select count(*) as "count" from "deploymentReleaseStateHistory"`).first<{ count: number }>())
+        ?.count,
+    ).toBe(3)
+  })
+
+  test("rolls a canary with no target write back to the pre-candidate predecessor", async () => {
+    const db = await database()
+    const predecessor = await provisionLockedDeploymentReleaseState(db, identity)
+    const successor = {
+      ...identity,
+      releaseSequence: 2,
+      releaseId: "release-test-0002",
+      workerBuildId: "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      platformVersionId: "22222222-2222-2222-2222-222222222222",
+    }
+    const locked = await provisionLockedDeploymentReleaseState(db, successor, new Date("2026-08-28T01:00:00Z"), {
+      operationId: "operation-release-0002",
+      previousReleaseId: identity.releaseId,
+      previousStateRevision: predecessor.stateRevision,
+      previousPhase: predecessor.phase,
+      previousPhaseRevision: predecessor.phaseRevision,
+    })
+    await attestStableMigration(db, successor)
+    const canary = await beginDeploymentCanary(db, successor, {
+      receiptId: "receipt-canary-0002",
+      operationId: "operation-canary-0002",
+      operatorSubjectHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      journeyId: "journey-canary-0002",
+      expectedStateRevision: locked.stateRevision,
+      expectedPhaseRevision: locked.phaseRevision,
+    })
+
+    const input = {
+      deploymentId: identity.deploymentId,
+      operationId: "operation-rollback-canary-0002",
+      expectedReleaseId: successor.releaseId,
+      expectedStateRevision: canary.stateRevision,
+    }
+    const first = await rollbackDeploymentCanaryBeforeWrite(db, input, new Date("2026-08-28T01:01:00Z"))
+    const retry = await rollbackDeploymentCanaryBeforeWrite(db, input, new Date("2026-08-28T01:02:00Z"))
+
+    expect(first).toMatchObject({
+      ...identity,
+      stateRevision: canary.stateRevision + 1,
+      previousStateRevision: canary.stateRevision,
+      restoredStateRevision: predecessor.stateRevision,
+      transitionKind: "prewrite_rollback",
+    })
+    expect(retry).toEqual(first)
+  })
+
+  test("re-locks a failed post-write canary and admits only an immutable roll-forward successor", async () => {
+    const db = await database()
+    const canaryIdentity = {
+      ...identity,
+      browserBuildId: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }
+    const locked = await provisionLockedDeploymentReleaseState(db, canaryIdentity)
+    await attestStableMigration(db, canaryIdentity)
+    const canary = await beginDeploymentCanary(db, canaryIdentity, {
+      receiptId: "receipt-canary-abort-0001",
+      operationId: "operation-canary-abort-admission-0001",
+      operatorSubjectHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      journeyId: "journey-canary-abort-0001",
+      expectedStateRevision: locked.stateRevision,
+      expectedPhaseRevision: locked.phaseRevision,
+    })
+    const firstWrite = await recordDeploymentCanaryFirstWrite(
+      db,
+      canaryIdentity,
+      {
+        binding: deploymentAdmissionBinding(canary),
+        operation: {
+          kind: "canary_journey",
+          canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          journeyId: "journey-canary-abort-0001",
+          access: "mutation",
+          mutationOperationId: "operation-canary-abort-write-0001",
+        },
+      },
+      new Date("2026-08-28T01:01:00Z"),
+    )
+    const successor = {
+      ...canaryIdentity,
+      releaseSequence: 2,
+      releaseId: "release-test-0002",
+      platformVersionId: "22222222-2222-2222-2222-222222222222",
+    }
+    const rolledForward = await provisionLockedDeploymentReleaseState(db, successor, new Date("2026-08-28T01:03:00Z"), {
+      operationId: "operation-release-after-canary-abort-0001",
+      previousReleaseId: canaryIdentity.releaseId,
+      previousStateRevision: firstWrite.stateRevision,
+      previousPhase: "canary",
+      previousPhaseRevision: firstWrite.phaseRevision,
+    })
+    expect(rolledForward).toMatchObject({
+      releaseId: successor.releaseId,
+      stateRevision: 3,
+      phase: "locked",
+      phaseRevision: 0,
+      firstTargetWriteAt: null,
+    })
+    await expect(
+      beginDeploymentCanary(db, successor, {
+        receiptId: "receipt-successor-canary-0001",
+        operationId: "operation-successor-canary-0001",
+        operatorSubjectHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        journeyId: "journey-successor-canary-0001",
+        expectedStateRevision: rolledForward.stateRevision,
+        expectedPhaseRevision: rolledForward.phaseRevision,
+      }),
+    ).resolves.toMatchObject({ phase: "canary", stateRevision: 4 })
+  })
+
+  test("admits an immutable locked successor while provider synchronization is in progress", async () => {
+    const db = await database()
+    const providerIdentity = {
+      ...identity,
+      browserBuildId: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    }
+    const locked = await provisionLockedDeploymentReleaseState(db, providerIdentity)
+    await attestStableMigration(db, providerIdentity)
+    const canary = await beginDeploymentCanary(db, providerIdentity, {
+      receiptId: "receipt-provider-rollforward-canary-0001",
+      operationId: "operation-provider-rollforward-canary-0001",
+      operatorSubjectHash: "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      journeyId: "journey-provider-rollforward-0001",
+      expectedStateRevision: locked.stateRevision,
+      expectedPhaseRevision: locked.phaseRevision,
+    })
+    const firstWrite = await recordDeploymentCanaryFirstWrite(db, providerIdentity, {
+      binding: deploymentAdmissionBinding(canary),
+      operation: {
+        kind: "canary_journey",
+        canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+        journeyId: "journey-provider-rollforward-0001",
+        access: "mutation",
+        mutationOperationId: "operation-provider-rollforward-write-0001",
+      },
+    })
+    await recordDeploymentCutoverEvidence(db, providerIdentity, deploymentAdmissionBinding(firstWrite), {
+      kind: "canary_journey_complete",
+      receiptId: "receipt-provider-rollforward-complete-0001",
+      operationId: "operation-provider-rollforward-complete-0001",
+      canaryIdentityHash: "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      journeyId: "journey-provider-rollforward-0001",
+    })
+    const providerSync = await advanceDeploymentCutover(db, providerIdentity, {
+      operationId: "operation-provider-rollforward-sync-0001",
+      binding: deploymentAdmissionBinding(firstWrite),
+      targetPhase: "provider_sync",
+    })
+    const successor = {
+      ...providerIdentity,
+      releaseSequence: 2,
+      releaseId: "release-provider-rollforward-0002",
+      platformVersionId: "22222222-2222-2222-2222-222222222222",
+    }
+
+    await expect(
+      provisionLockedDeploymentReleaseState(db, successor, new Date("2026-08-28T01:03:00Z"), {
+        operationId: "operation-provider-rollforward-release-0002",
+        previousReleaseId: providerIdentity.releaseId,
+        previousStateRevision: providerSync.stateRevision,
+        previousPhase: providerSync.phase,
+        previousPhaseRevision: providerSync.phaseRevision,
+      }),
+    ).resolves.toMatchObject({
+      releaseId: successor.releaseId,
+      phase: "locked",
+      phaseRevision: 0,
+      firstTargetWriteAt: null,
+    })
   })
 
   test("rejects stale concurrent transitions and a non-monotonic release sequence", async () => {
@@ -617,6 +836,14 @@ describe("persisted deployment release history", () => {
       rollbackLockedDeploymentReleaseCandidate(db, {
         deploymentId: identity.deploymentId,
         operationId: "operation-rollback-after-write-0001",
+        expectedReleaseId: identity.releaseId,
+        expectedStateRevision: firstWrite.stateRevision,
+      }),
+    ).rejects.toThrow(/did not restore/)
+    await expect(
+      rollbackDeploymentCanaryBeforeWrite(db, {
+        deploymentId: identity.deploymentId,
+        operationId: "operation-rollback-canary-after-write-0001",
         expectedReleaseId: identity.releaseId,
         expectedStateRevision: firstWrite.stateRevision,
       }),

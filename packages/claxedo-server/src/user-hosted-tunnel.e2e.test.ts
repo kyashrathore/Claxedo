@@ -20,6 +20,7 @@ import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } fro
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "./authority/services"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "./test-support/managed-session-authority"
 
 const execFileAsync = promisify(execFile)
 
@@ -259,7 +260,7 @@ describe("server-owned user-hosted Workspace Relay tunnel E2E", () => {
     const built = createSelfHostedApp(createControlPlaneServices({
       projectionStore: centralStore.projectionStore,
       durableSessionLog: centralStore.durableSessionLog,
-    }))
+    }, { authority: testManagedSessionAuthority() }))
     const controlPlane = serve({
       fetch: built.app.fetch,
       port: 0,

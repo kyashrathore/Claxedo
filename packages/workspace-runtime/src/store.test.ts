@@ -4,7 +4,7 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { createSubagentAdmissionBoundary } from "@claxedo/agent-sdk-runtime"
-import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/adapters"
+import { AgentMessagePageError, AgentRuntimeStaleTurnError } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   LATEST_SURFACE_MAX_OPTIONAL_INFO_VALUE_BYTES,
   LATEST_SURFACE_MAX_TEXT_BYTES,
@@ -1776,6 +1776,53 @@ describe("RuntimeStore", () => {
       (replayed.getMessages("s1")[1]?.info.time as { completed?: number } | undefined)?.completed !== undefined,
       true,
     )
+  })
+
+  it("persists the durable generation and rejects every stale producer write after takeover", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    first.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "a1", createdAt: 1 })
+    const start = (assistantMessageId: string, fencingToken: number) => first.startTurn({
+      sessionId: "s1",
+      agentSessionId: "a1",
+      userMessageId: `${assistantMessageId}_user`,
+      assistantMessageId,
+      agent: "general",
+      model: { providerID: "opencode", modelID: "test" },
+      parts: [{ type: "text", text: assistantMessageId }],
+      fencingToken,
+    })
+
+    start("m1", 4)
+    first.appendEvent({ sessionId: "s1", payload: sessionIdle("s1"), fencingToken: 4 })
+    start("m2", 5)
+    assert.throws(
+      () => first.appendEvent({ sessionId: "s1", payload: sessionIdle("s1"), fencingToken: 4 }),
+      AgentRuntimeStaleTurnError,
+    )
+    assert.throws(
+      () => first.finishTurn({
+        sessionId: "s1",
+        assistantMessageId: "m1",
+        outcome: { status: "completed", completedAt: 10 },
+        fencingToken: 4,
+      }),
+      AgentRuntimeStaleTurnError,
+    )
+    first.close()
+
+    const reconstructed = new RuntimeStore(root)
+    assert.throws(
+      () => reconstructed.appendEvent({ sessionId: "s1", payload: sessionIdle("s1"), fencingToken: 4 }),
+      AgentRuntimeStaleTurnError,
+    )
+    reconstructed.appendEvent({ sessionId: "s1", payload: sessionIdle("s1"), fencingToken: 5 })
+    reconstructed.finishTurn({
+      sessionId: "s1",
+      assistantMessageId: "m2",
+      outcome: { status: "completed", completedAt: 11 },
+      fencingToken: 5,
+    })
   })
 
   it("commits exact usage before terminal lifecycle records", () => {

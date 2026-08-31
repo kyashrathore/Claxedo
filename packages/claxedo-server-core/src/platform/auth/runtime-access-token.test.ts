@@ -26,7 +26,7 @@ const ENV_KEYS = [
 ] as const
 
 const previous: Partial<Record<typeof ENV_KEYS[number], string | undefined>> = {}
-const HUMAN_ACTOR = { actorId: "actor_1", actorKind: "human" as const }
+const HUMAN_ACTOR = { principalKind: "user" as const, actorId: "actor_1", actorKind: "human" as const }
 
 async function ed25519PrivateKeyPem() {
   const keyPair = await generateKeyPair("EdDSA", { extractable: true })
@@ -67,7 +67,7 @@ describe("runtimeAccessTokenSigner", () => {
 
     const sign = runtimeAccessTokenSigner()
     const result = await sign({
-      subject: "user_kid_test",
+      principalKind: "user",
       actorId: "actor_1",
       actorKind: "human",
       actorPublicId: "usr_public_1",
@@ -85,6 +85,7 @@ describe("runtimeAccessTokenSigner", () => {
     expect(header.alg).toBe("EdDSA")
     const claims = JSON.parse(Buffer.from(result.runtimeAccessToken.split(".")[1]!, "base64url").toString("utf8"))
     expect(claims).toMatchObject({
+      principal_kind: "user",
       actor_id: "actor_1",
       actor_kind: "human",
       actor_public_id: "usr_public_1",
@@ -102,11 +103,11 @@ describe("runtimeAccessTokenSigner", () => {
     const sign = runtimeAccessTokenSigner()
     const a = await sign({
       ...HUMAN_ACTOR,
-      subject: "u1", orgId: "o", workspaceId: "w", hostId: "h", role: "editor",
+      orgId: "o", workspaceId: "w", hostId: "h", role: "editor",
     })
     const b = await sign({
       ...HUMAN_ACTOR,
-      subject: "u2", orgId: "o", workspaceId: "w", hostId: "h", role: "viewer",
+      orgId: "o", workspaceId: "w", hostId: "h", role: "viewer",
     })
 
     const headerA = decodeProtectedHeader(a.runtimeAccessToken)
@@ -124,7 +125,6 @@ describe("runtimeAccessTokenSigner", () => {
     const sign = runtimeAccessTokenSigner()
     const result = await sign({
       ...HUMAN_ACTOR,
-      subject: "u",
       orgId: "o",
       workspaceId: "w",
       hostId: "h",
@@ -145,7 +145,6 @@ describe("runtimeAccessTokenSigner", () => {
     const before = Date.now()
     const result = await sign({
       ...HUMAN_ACTOR,
-      subject: "u",
       orgId: "o",
       workspaceId: "w",
       hostId: "h",
@@ -163,7 +162,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "EdDSA"
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ ...HUMAN_ACTOR, subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...HUMAN_ACTOR, orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toThrow(/signer/i)
   })
 
@@ -172,7 +171,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = privatePem
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ ...HUMAN_ACTOR, subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...HUMAN_ACTOR, orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toMatchObject({ code: "runtime_access_token_public_key_missing" })
   })
 
@@ -183,7 +182,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM = "ES256"
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ ...HUMAN_ACTOR, subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...HUMAN_ACTOR, orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toMatchObject({ code: "runtime_access_token_algorithm_unsupported" })
   })
 
@@ -194,7 +193,7 @@ describe("runtimeAccessTokenSigner", () => {
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = published.publicPem
     const sign = runtimeAccessTokenSigner()
     await expect(
-      sign({ ...HUMAN_ACTOR, subject: "u", orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
+      sign({ ...HUMAN_ACTOR, orgId: "o", workspaceId: "w", hostId: "h", role: "editor" }),
     ).rejects.toMatchObject({ code: "runtime_access_token_key_pair_mismatch" })
   })
 })
@@ -316,7 +315,6 @@ describe("supervisorBackplaneToken", () => {
     const ratSign = runtimeAccessTokenSigner()
     const rat = await ratSign({
       ...HUMAN_ACTOR,
-      subject: "u",
       orgId: "o",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -383,7 +381,6 @@ describe("supervisorBackplaneToken", () => {
     const ratSign = runtimeAccessTokenSigner()
     const rat = await ratSign({
       ...HUMAN_ACTOR,
-      subject: "u",
       orgId: "o",
       workspaceId: "ws_1",
       hostId: "host_1",

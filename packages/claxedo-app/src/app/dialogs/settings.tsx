@@ -25,9 +25,12 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const dialog = useDialog()
   const server = useServer()
   const navigate = useNavigate()
-  const remoteAccess = useRemoteAccessController({ serverUrl: server.url })
   const config = useConfigOptional()
   const productUi = createMemo(() => resolveProductUiFlags(config))
+  const remoteAccess = useRemoteAccessController({
+    serverUrl: server.url,
+    signInAvailable: () => productUi().accountSignIn,
+  })
   const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 

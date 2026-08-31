@@ -259,7 +259,7 @@ describe("hosted local document relay", () => {
       let role = "viewer"
       const services = {
         authority: {
-          usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
+          usersMe: vi.fn(async () => ({ actor_id: "user_1", actor_kind: "human" as const })),
           openWorkspace: vi.fn(async () => ({
             role,
             workspace: {
@@ -472,7 +472,7 @@ async function relayFixture() {
     },
     services: {
       authority: {
-        usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
+        usersMe: vi.fn(async () => ({ actor_id: "user_1", actor_kind: "human" as const })),
         openWorkspace: vi.fn(async () => ({
           role: "editor",
           workspace: {

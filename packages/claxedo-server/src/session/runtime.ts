@@ -591,9 +591,11 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     return true
   }
   const sessionAccessPolicy = {
+    sessionAuthority: "local" as const,
     authorize: () => ({ allowed: true as const }),
     authorizePrefix: () => ({ allowed: true as const }),
     filterSessions: (input: { sessionIds: readonly string[] }) => input.sessionIds,
+    registerSession: () => ({ allowed: true as const }),
   }
   const routes = createSessionRoutes({
     // Central requests are authorized by centralRuntimeAccess before they reach

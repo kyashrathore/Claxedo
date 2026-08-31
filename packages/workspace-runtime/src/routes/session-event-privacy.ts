@@ -20,6 +20,15 @@ export type SessionEventScope =
       renewalInput: SessionAccessPolicyInput & { sessionId: string }
     }
 
+export function isSessionEventScopeResponse(
+  value: SessionEventScope | Response,
+): value is Response {
+  // `instanceof Response` is not stable across fetch implementations/realms.
+  // The scope is our own discriminated value, so identify it by its canonical
+  // discriminator and treat every other return as the HTTP denial response.
+  return !("managed" in value)
+}
+
 type LeaseWatchOptions = {
   now?: () => number
   jitter?: () => number

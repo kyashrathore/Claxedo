@@ -14,12 +14,12 @@ create table control_plane_recovery_epochs (
 
 create trigger control_plane_recovery_epochs_no_update
 before update on control_plane_recovery_epochs
-begin
+BEGIN
   select raise(abort, 'control-plane recovery epochs are append-only');
 end;
 
 create trigger control_plane_recovery_epochs_no_delete
 before delete on control_plane_recovery_epochs
-begin
+BEGIN
   select raise(abort, 'control-plane recovery epochs are append-only');
 end;

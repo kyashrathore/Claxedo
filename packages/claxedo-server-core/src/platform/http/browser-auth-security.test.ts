@@ -77,7 +77,9 @@ describe("provider-neutral browser auth HTTP security", () => {
     expect(trusted.headers.get("access-control-allow-origin")).toBe("https://app.example.test")
     expect(trusted.headers.get("access-control-allow-credentials")).toBe("true")
     expect(trusted.headers.get("access-control-allow-methods")).toContain("POST")
-    expect(trusted.headers.get("access-control-allow-headers")).toBe("content-type, x-claxedo-bootstrap-owner-claim")
+    expect(trusted.headers.get("access-control-allow-headers")).toBe(
+      "content-type, x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
+    )
 
     for (const origin of [undefined, "null", "https://evil.example.test"]) {
       const rejected = await app(COOKIE_BROWSER).fetch(

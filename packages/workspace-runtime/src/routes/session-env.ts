@@ -399,7 +399,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         return err(c, cause)
       }
     })
-    .post("/file/write", async (c) => {
+    .post("/file/write", denyWorkspaceViewers("Workspace role does not allow file mutation"), async (c) => {
       try {
         const base = root(c)
         const body = await jsonBody(c)
@@ -451,7 +451,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         return err(c, cause)
       }
     })
-    .post("/file/mkdir", async (c) => {
+    .post("/file/mkdir", denyWorkspaceViewers("Workspace role does not allow file mutation"), async (c) => {
       try {
         const body = await jsonBody(c)
         await fs.promises.mkdir(await verifiedPath(root(c), stringValue(body.path), false), {
@@ -462,7 +462,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         return err(c, cause)
       }
     })
-    .post("/file/rm", async (c) => {
+    .post("/file/rm", denyWorkspaceViewers("Workspace role does not allow file mutation"), async (c) => {
       try {
         const body = await jsonBody(c)
         await fs.promises.rm(await verifiedPath(root(c), stringValue(body.path), true), {

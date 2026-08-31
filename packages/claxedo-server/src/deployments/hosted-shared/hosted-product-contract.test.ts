@@ -8,6 +8,7 @@ import {
 } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 
 /**
  * Hosted product contract.
@@ -31,6 +32,7 @@ import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-r
  */
 
 function hostedPlane(): HostedControlPlane {
+  const managedSessionAuthority = testManagedSessionAuthority()
   const services = {
     auth: {
       config: { enabled: true, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" },
@@ -65,6 +67,8 @@ function hostedPlane(): HostedControlPlane {
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
     cliSessionTokenRegistry: durableCliSessionTokenRegistry().registry,
+    privateSessionAuthority: managedSessionAuthority,
+    runtimeSessionAuthority: managedSessionAuthority,
     env: {
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -88,8 +92,10 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
   identity: [
     "/.well-known/jwks.json",
     "/api/auth/cli/exchange",
+    "/api/auth/cli/revoke",
     "/api/auth/device/code",
     "/api/auth/device/token",
+    "/api/claxedo/auth/descriptor",
     "/auth/:providerID",
   ],
   shell: [
@@ -118,6 +124,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
   sessions: [
     "/api/control/runtime/heartbeat",
     "/api/control/runtime/register",
+    "/api/control/session-registrations/reserve",
     "/api/control/sessions",
     "/api/control/sessions/:sessionId/gateway",
     "/api/control/sessions/:sessionId/messages",

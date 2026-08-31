@@ -45,6 +45,11 @@ export type AgentHarnessAdapterProcessOptions = {
   processObserver?: AgentProcessObserver
 }
 
+export type AgentTurnWriteContext = {
+  /** Durable authority generation required by every authoritative turn write. */
+  fencingToken?: number
+}
+
 /**
  * An injectable HTTP seam. Only the call signature is ever used, so this is
  * deliberately narrower than `typeof fetch` — the platform type also carries
@@ -81,7 +86,12 @@ export interface AgentHarnessAdapterCore {
 
   readHarnessCapabilities(directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> | HarnessCapabilities
 
-  sendMessage(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent>
+  sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: RuntimeDirectory,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent>
   getMessages(id: string, directory: RuntimeDirectory): Promise<AgentMessage[]>
 
   listCommands?(directory: RuntimeDirectory): Promise<AgentCommand[]>

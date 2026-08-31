@@ -11,8 +11,6 @@ import {
   type ProcessObserver,
   type ProcessObserverEvent,
 } from "../managed-processes/process-observer"
-import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import { managedWorkspaceSessionAccessPolicy } from "../session-access-policy"
 
 const prevDir = process.env.WORKSPACE_RUNTIME_DIRECTORY
 
@@ -30,7 +28,9 @@ function app(processObserver?: ProcessObserver, role?: "viewer" | "editor") {
       c.set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
+        actor_id: "user_1",
+        actor_kind: "human",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
@@ -40,6 +40,7 @@ function app(processObserver?: ProcessObserver, role?: "viewer" | "editor") {
         exp: now + 60,
         iat: now,
         jti: "jti_1",
+        parent_jti: "rat_jti_1",
       })
       return await next()
     })
@@ -134,7 +135,7 @@ describe("SessionEnvRoutes", () => {
       })
       return await next()
     })
-    routed.route("/api/wr/session-env", SessionEnvRoutes(undefined, managedWorkspaceSessionAccessPolicy({ requireActor: true })))
+    routed.route("/api/wr/session-env", SessionEnvRoutes())
 
     const write = await routed.request(url("/file/write", directory), {
       method: "POST",

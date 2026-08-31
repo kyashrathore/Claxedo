@@ -37,6 +37,8 @@ import {
 /** The shared authority surface already backed by D1. */
 export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
   D1SessionAuthorityPort &
+  PrivateSessionAuthority &
+  SessionTurnAuthority &
   D1HostAccessAuthorityPort &
   D1AgentExtensionAuthorityPort &
   D1AuditAuthorityPort &
@@ -63,7 +65,11 @@ export type D1CoreAuthorityBoundary = WorkspaceAuthority &
   SessionTurnAuthority &
   Pick<D1HostAccessAuthority, (typeof HOST_LIFECYCLE_METHODS)[number]>
 
-export type D1AuthorityMissingCapability = Exclude<keyof WorkspaceAuthority, keyof D1CoreAuthorityPort>
+type RequiredWorkspaceAuthorityCapability = {
+  [K in keyof WorkspaceAuthority]-?: object extends Pick<WorkspaceAuthority, K> ? never : K
+}[keyof WorkspaceAuthority]
+
+export type D1AuthorityMissingCapability = Exclude<RequiredWorkspaceAuthorityCapability, keyof D1CoreAuthorityPort>
 
 /**
  * Deliberately compile-time checked. The empty inventory is the proof that
@@ -98,7 +104,10 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
   const shared = { deploymentId: options.deploymentId, ...(options.now ? { now: options.now } : {}) }
   const workspace = new D1WorkspaceAuthority(database, { ...shared, product: options.product })
   const sessions = new D1SessionAuthority(database, shared)
-  const hosts = new D1HostAccessAuthority(database, shared)
+  const hosts = new D1HostAccessAuthority(database, {
+    ...shared,
+    registerLocalForSharing: (auth, input) => workspace.registerLocalForSharing(auth, input),
+  })
   const extensions = new D1AgentExtensionAuthority(database, shared)
   const audit = new D1AuditAuthority(database, shared)
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)

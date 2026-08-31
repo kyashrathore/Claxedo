@@ -137,6 +137,8 @@ export type AgentRuntimeTurnStartInput = {
   permissionMode?: string
   variant?: string
   author?: PromptInput["author"]
+  /** Host-owned durable admission fence checked before producer mutations. */
+  admission?: { valid(): boolean; fencingToken(): number }
 } & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {
@@ -238,7 +240,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     directory: RuntimeDirectory,
     payload: AgentRuntimeStreamEvent,
     source: { dir: "in" | "out"; method: string },
+    admission?: AgentRuntimeTurnStartInput["admission"],
   ) => {
+    if (admission && !admission.valid()) throw new Error("Durable session turn admission is no longer valid")
     const compat = toCompatEvent(payload)
     if (!compat) {
       publish({ sessionId, directory, payload })
@@ -250,6 +254,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       ...(agentSessionId ? { agentSessionId } : {}),
       payload: compat,
       source,
+      ...(admission ? { fencingToken: admission.fencingToken() } : {}),
     }).payload
     publish({ sessionId, directory, payload: committed })
     return committed
@@ -262,7 +267,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     adapter: AgentHarnessAdapter,
     openingUserAlreadyPublished = false,
     clearsHandoff = false,
+    admission?: AgentRuntimeTurnStartInput["admission"],
   ) => {
+    const admitted = () => admission?.valid() ?? true
+    if (!admitted()) return
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
@@ -349,12 +357,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       input: prompt,
       assistantMessageId: stableAssistantMessageId,
       created: Date.now(),
+      ...(admission ? { fencingToken: admission.fencingToken() } : {}),
       onEvent: () => {},
-      onRuntimeEvent: (event) => publish({
-        sessionId: event.sessionId,
-        directory: event.directory,
-        payload: event.payload,
-      }),
+      onRuntimeEvent: (event) => {
+        if (admitted()) publish({
+          sessionId: event.sessionId,
+          directory: event.directory,
+          payload: event.payload,
+        })
+      },
     })
     const router = createChildEventRouter({
       parent: parentProjector,
@@ -368,16 +379,22 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         input: target.input,
         assistantMessageId: target.assistantMessageId,
         created: target.created,
+        ...(admission ? { fencingToken: admission.fencingToken() } : {}),
         onEvent: () => {},
-        onRuntimeEvent: (event) => publish({
-          sessionId: event.sessionId,
-          directory: event.directory,
-          payload: event.payload,
-        }),
+        onRuntimeEvent: (event) => {
+          if (admitted()) publish({
+            sessionId: event.sessionId,
+            directory: event.directory,
+            payload: event.payload,
+          })
+        },
       }),
-      onDiagnostic: (payload) => publish({ sessionId, directory, payload }),
+      onDiagnostic: (payload) => {
+        if (admitted()) publish({ sessionId, directory, payload })
+      },
     })
     const maybeEmitTitle = async () => {
+      if (!admitted()) return
       if (titleEmitted) return
       titleEmitted = true
       const session = store.getSession(sessionId) as { title?: string | null; time?: { created?: number } } | null
@@ -392,11 +409,17 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         title,
         created: session?.time?.created,
         updated: Date.now(),
-      })), { dir: "in", method: "auto-title" })
+      })), { dir: "in", method: "auto-title" }, admission)
     }
     try {
       let terminal = false
-      for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
+      for await (const payload of adapter.sendMessage(
+        sessionId,
+        prompt,
+        directory,
+        admission ? { fencingToken: admission.fencingToken() } : undefined,
+      )) {
+        if (!admitted()) break
         terminal ||= isTerminalRuntimePayload(payload)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
         // A failed turn has one authoritative terminal publication path below.
@@ -418,7 +441,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           if (adapter.commitsStreamEvents) {
             publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
           } else {
-            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" })
+            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" }, admission)
           }
           continue
         }
@@ -428,11 +451,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         publish({ sessionId, directory, payload })
       }
+      if (!admitted()) return
       await maybeEmitTitle()
       if (!terminal) {
         const payload = sessionIdle(sessionId)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" })
+        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" }, admission)
       }
       // Terminal compat events and the durable turn outcome are separate
       // contracts. A committing adapter may already have journaled
@@ -443,26 +467,29 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: outcome ?? { status: "completed", completedAt: Date.now() },
+        ...(admission ? { fencingToken: admission.fencingToken() } : {}),
       })
       if (outcome?.status === "failed") {
         if (finished?.events.length) {
           for (const payload of finished.events) publish({ sessionId, directory, payload })
         } else {
-          commitAndPublish(sessionId, directory, sessionError(outcome.error, sessionId), { dir: "out", method: "runtime.error" })
+          commitAndPublish(sessionId, directory, sessionError(outcome.error, sessionId), { dir: "out", method: "runtime.error" }, admission)
         }
       }
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
+      if (!admitted()) return
       const message = err instanceof Error ? err.message : "turn failed"
       const finished = store.finishTurn?.({
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: { status: "failed", completedAt: Date.now(), error: message },
+        ...(admission ? { fencingToken: admission.fencingToken() } : {}),
       })
       if (finished?.events.length) {
         for (const payload of finished.events) publish({ sessionId, directory, payload })
       } else {
-        commitAndPublish(sessionId, directory, sessionError(message, sessionId), { dir: "out", method: "runtime.error" })
+        commitAndPublish(sessionId, directory, sessionError(message, sessionId), { dir: "out", method: "runtime.error" }, admission)
       }
     } finally {
       router.dispose()
@@ -623,6 +650,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
         const leaseId = acquireTurnLease(turn.sessionId)
         try {
+          if (turn.admission && !turn.admission.valid()) {
+            throw new Error("Durable session turn admission is no longer valid")
+          }
           turn.onAdmitted?.()
           const directory = session.directory ?? undefined
           const adapter = await adapterForSession(turn.sessionId, directory)
@@ -658,8 +688,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             ...(prompt.variant ? { variant: prompt.variant } : {}),
             ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
             ...(turn.author ? { author: turn.author } : {}),
+            ...(turn.admission ? { fencingToken: turn.admission.fencingToken() } : {}),
           })
           for (const payload of started?.events ?? []) {
+            if (turn.admission && !turn.admission.valid()) break
             publish({ sessionId: turn.sessionId, directory, payload })
           }
           const openingUserPublished = started?.events?.some((payload) =>
@@ -667,7 +699,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId
           ) ?? false
-          void runTurn(turn.sessionId, prompt, directory, adapter, openingUserPublished, !!handoff)
+          void runTurn(turn.sessionId, prompt, directory, adapter, openingUserPublished, !!handoff, turn.admission)
             .finally(() => releaseTurnLease(turn.sessionId, leaseId))
           return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
         } catch (error) {

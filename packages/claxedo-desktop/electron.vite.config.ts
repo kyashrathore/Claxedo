@@ -33,7 +33,7 @@ const telemetryDefines = Object.fromEntries(
 // anchor. Adapter endpoints/client/scopes come from that deployment's short-
 // lived descriptor; no provider credential is accepted or baked.
 const accountDefines = Object.fromEntries(
-  (["CLAXEDO_CORE_ORIGIN"] as const).map((name) => [
+  (["CLAXEDO_CORE_ORIGIN", "CLAXEDO_RELEASE_VALIDATION_OPERATION"] as const).map((name) => [
     `import.meta.env.${name}`,
     JSON.stringify(process.env[name]?.trim() || undefined),
   ]),

@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 
 import {
   betterAuthD1PreparationCommands,
+  isTransientWranglerFailure,
   verifyBetterAuthD1ControlPlaneRecoveryOutput,
   verifyBetterAuthD1PreparationPrecondition,
   verifyBetterAuthD1PreparationOutput,
@@ -17,6 +18,8 @@ const env = {
   CLAXEDO_RELEASE_SEQUENCE: "1",
   CLAXEDO_RELEASE_ID: "release-test-0001",
   CLAXEDO_WORKER_BUILD_ID: "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+  CLAXEDO_BROWSER_BUILD_ID: "browser-absent-v1",
+  CLAXEDO_RELAY_BUILD_ID: "relay-absent-v1",
   CLAXEDO_PLATFORM_VERSION_ID: "11111111-1111-1111-1111-111111111111",
   CLAXEDO_AUTH_CONFIGURATION_ID: "sha256:0649de3450af10bc2af0e7f753ac375beb9bb87b4fa1ee8f0f8248825eb521e3",
   CLAXEDO_RECOVERY_EPOCH: `paired-d1-v1:sha256:${"1".repeat(64)}`,
@@ -28,6 +31,13 @@ const env = {
 }
 
 describe("Better Auth D1 remote preparation", () => {
+  test("retries only Wrangler connectivity failures", () => {
+    expect(isTransientWranglerFailure("A fetch request failed, likely due to a connectivity issue")).toBe(true)
+    expect(isTransientWranglerFailure("read ECONNRESET")).toBe(true)
+    expect(isTransientWranglerFailure("Worker Version 123 could not be found [code: 100146]")).toBe(true)
+    expect(isTransientWranglerFailure("SQLITE_CONSTRAINT: conflicting release state")).toBe(false)
+  })
+
   test("orders migration, canonical provisioning, and exact verification", async () => {
     const commands = await betterAuthD1PreparationCommands({
       env,
@@ -69,6 +79,7 @@ describe("Better Auth D1 remote preparation", () => {
     expect(provisioning).toContain(`'https://api.claxedo.test/control-plane'`)
     expect(provisioning).toContain(`'claxedo-cli'`)
     expect(provisioning).toContain(`'claxedo-desktop'`)
+    expect(provisioning).toContain(`'["http://127.0.0.1/claxedo/auth/callback"]'`)
     expect(provisioning).toContain(`'claxedo-control-plane'`)
     expect(provisioning).toContain(`'deployment-test-01'`)
     expect(provisioning).toContain(`'browser-absent-v1'`)
@@ -216,6 +227,23 @@ describe("Better Auth D1 remote preparation", () => {
       mode: "register-candidate",
     })
     expect(commands.map((command) => command.args.join(" ")).join("\n")).toContain("locked_replacement")
+
+    await expect(
+      betterAuthD1PreparationCommands({
+        env: {
+          ...env,
+          CLAXEDO_RELEASE_SEQUENCE: "3",
+          CLAXEDO_RELEASE_ID: "release-test-0003",
+          CLAXEDO_PREVIOUS_RELEASE_ID: "release-test-0002",
+          CLAXEDO_PREVIOUS_STATE_REVISION: "5",
+          CLAXEDO_PREVIOUS_PHASE: "multiplayer_validation",
+          CLAXEDO_PREVIOUS_PHASE_REVISION: "4",
+          CLAXEDO_RELEASE_OPERATION_ID: "operation-release-0003",
+        },
+        staging: false,
+        mode: "register-candidate",
+      }),
+    ).resolves.toBeDefined()
   })
 
   test("keeps activation to one pointer mutation after rechecking the candidate", async () => {
@@ -269,4 +297,5 @@ describe("Better Auth D1 remote preparation", () => {
       ),
     ).toEqual({ rolledBack: 1 })
   })
+
 })

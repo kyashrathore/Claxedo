@@ -82,7 +82,10 @@ export function browserAuthHttpSecurity(browser: BrowserAuthDescriptor): Middlew
       if (!origin) return originForbidden(context)
       stampCredentialedCors(context, origin)
       context.header("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
-      context.header("access-control-allow-headers", "content-type, x-claxedo-bootstrap-owner-claim")
+      context.header(
+        "access-control-allow-headers",
+        "content-type, x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
+      )
       return context.body(null, 204)
     }
     const cookieAuthenticatedMutation =

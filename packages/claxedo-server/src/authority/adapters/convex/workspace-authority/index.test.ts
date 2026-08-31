@@ -586,19 +586,19 @@ describe("convex authority", () => {
       jti: "jti_1",
       workspaceId: "ws_1",
       hostId: "host_1",
-      actorId: "actor_1",
+      actorId: "user_1",
       actorKind: "human",
-      role: "editor",
+      role: "owner",
       expiresAt: 123,
     })
     await authority.recordRuntimeAccessTokenForService({
       jti: "jti_service",
       workspaceId: "wg_1",
       hostId: "host_2",
-      actorId: "actor_1",
-      actorKind: "human",
-      principalKind: "user",
-      role: "editor",
+      actorId: "control-plane",
+      actorKind: "agent",
+      principalKind: "service",
+      role: "owner",
       expiresAt: 456,
     })
     await expect(
@@ -627,9 +627,9 @@ describe("convex authority", () => {
       jti: "jti_1",
       workspace_id: "ws_1",
       host_id: "host_1",
-      actor_id: "actor_1",
+      actor_id: "user_1",
       actor_kind: "human",
-      role: "editor",
+      role: "owner",
       expires_at: 123,
     })
     expect(mutation).toHaveBeenNthCalledWith(2, expect.anything(), {
@@ -637,10 +637,10 @@ describe("convex authority", () => {
       jti: "jti_service",
       workspace_id: "wg_1",
       host_id: "host_2",
-      actor_id: "actor_1",
-      actor_kind: "human",
-      principal_kind: "user",
-      role: "editor",
+      actor_id: "control-plane",
+      actor_kind: "agent",
+      principal_kind: "service",
+      role: "owner",
       expires_at: 456,
     })
     expect(query).toHaveBeenCalledWith(expect.anything(), {

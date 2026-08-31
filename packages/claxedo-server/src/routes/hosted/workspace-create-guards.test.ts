@@ -8,6 +8,7 @@ import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "./workspace"
 import { countActiveForOrg } from "../../../../../convex/sandboxLeases"
 import { indexRangeBuilder } from "../../test-support/convex-index-harness"
+import { convexHostedSandboxUsage } from "../../authority/adapters/convex/hosted-sandbox-usage"
 
 /**
  * The create path stamps the lease's tenant through this, fire-and-forget,
@@ -125,6 +126,7 @@ function buildApp(opts: {
     // Never let a route test reach for a real Convex deployment: the default
     // counter resolves url/token from process.env at call time.
     countActiveOrgSandboxLeases: async () => 0,
+    sandboxUsage: convexHostedSandboxUsage,
     ...opts.options,
   })
   return { app, authority, ensure }

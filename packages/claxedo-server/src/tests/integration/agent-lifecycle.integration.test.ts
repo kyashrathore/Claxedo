@@ -1016,7 +1016,7 @@ describe("agent lifecycle integration", () => {
       expect(bad.workspaceId).toBe(ws.id)
       expect(bad.status).toBe("ready")
       expect(bad.ready).toBe(true)
-      expect(bad.activeType).toBe("claude-acp")
+      expect(bad.activeType).toBe("acp:claude")
       expect(bad.error).toBeUndefined()
 
       await setAcpRunner("claude-acp")
@@ -1034,7 +1034,7 @@ describe("agent lifecycle integration", () => {
       expect(ok.workspaceId).toBe(ws.id)
       expect(ok.status).toBe("ready")
       expect(ok.ready).toBe(true)
-      expect(ok.activeType).toBe("claude-acp")
+      expect(ok.activeType).toBe("acp:claude")
       expect(ok.activeBinary).toBe(fakeBinaryPath)
       expect(ok.error).toBeUndefined()
     })
@@ -1056,20 +1056,17 @@ describe("agent lifecycle integration", () => {
       )
       await stream.ready
 
-      const params = new URLSearchParams({
+      const payload = {
         tabId: "tab-1",
         terminalId: "term-1",
         workspaceId: ws.id,
         eventType: "Start",
-      })
+      }
 
-      // Lifecycle ingestion is POST-only: a GET carries its payload in the URL,
-      // where it lands in access logs and is reachable by cross-site navigation.
-      // The notify hook template posts form-encoded, so this does too.
-      const res = await fetch(`${base()}/api/wr/hook/agent-lifecycle?${q(ws)}`, {
+      const res = await fetch(`${base()}/api/wr/hook/agent-lifecycle?workspaceId=${encodeURIComponent(ws.id)}`, {
         method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: params,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
       })
       expect(res.status).toBe(200)
 

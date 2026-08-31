@@ -4,8 +4,8 @@ import { SERVICE_BINDINGS, SERVICE_PROTOCOL_VERSION } from "@claxedo/service-con
 
 import { renderHostedCoreOptionalServiceBindings } from "./render-optional-service-bindings"
 
-const core = `name = "claxedo-user-deployed-core"
-main = "src/deployments/hosted-workerd/better-auth-d1-open-worker.cf.ts"
+const core = `name = "claxedo-user-deployed-locked"
+main = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
 [[d1_databases]]
 binding = "AUTH_DB"
 database_id = "auth-id"

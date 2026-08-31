@@ -1,6 +1,7 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
+import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { cliServiceUser } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { agentExtensionAuthority } from "./agent-extensions"
 import { auditAuthority } from "./audit"
@@ -37,7 +38,7 @@ export function convexAuthorityUrlFromEnv(env: Record<string, string | undefined
   return url ? url : undefined
 }
 
-export function createConvexAuthority(input: ConvexAuthorityInput = {}): WorkspaceAuthority {
+export function createConvexAuthority(input: ConvexAuthorityInput = {}): WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority {
   const serviceArgs = (auth?: SignedControlPlaneAuth) => ({
     service_token: requireServiceToken(input),
     ...(auth ? { user: cliServiceUser(auth) } : {}),
@@ -53,4 +54,4 @@ export function createConvexAuthority(input: ConvexAuthorityInput = {}): Workspa
   }
 }
 
-export type ConvexAuthority = WorkspaceAuthority & PrivateSessionAuthority
+export type ConvexAuthority = WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority

@@ -7,6 +7,7 @@ import { createSelfHostedApp } from "./app"
 import { createHostedApp } from "../hosted-shared/hosted-app"
 import { createControlPlaneServices, type ControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
 import { mountedPaths } from "@claxedo/server-core/deployments/product-route-families"
@@ -64,12 +65,13 @@ function selfHostedApp() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   ).app
 }
 
 function hostedCorePaths() {
+  const managedSessionAuthority = testManagedSessionAuthority()
   const services = {
     auth: {
       config: { enabled: true, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" },
@@ -102,6 +104,8 @@ function hostedCorePaths() {
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
     cliSessionTokenRegistry: durableCliSessionTokenRegistry().registry,
+    privateSessionAuthority: managedSessionAuthority,
+    runtimeSessionAuthority: managedSessionAuthority,
     env: {
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -161,6 +165,7 @@ const SHARED_WITH_HOSTED_CORE = [
   "/api/control/orgs/:orgId/teams",
   "/api/control/runtime/heartbeat",
   "/api/control/runtime/register",
+  "/api/control/session-registrations/reserve",
   "/api/control/sessions",
   "/api/control/sessions/:sessionId/gateway",
   "/api/control/sessions/:sessionId/messages",
@@ -238,8 +243,10 @@ const SELF_HOSTED_NODE_ADAPTERS = [
   "/api/channels/fake",
   "/api/channels/github",
   "/api/channels/github/*",
+  "/api/channels/identity",
   "/api/channels/pairing",
   "/api/channels/pairing/approve",
+  "/api/channels/pairing/claim",
   "/api/channels/slack",
   "/api/channels/slack/*",
   "/api/channels/telegram",

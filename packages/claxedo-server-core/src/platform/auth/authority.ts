@@ -1,4 +1,8 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
+import type {
+  AuthorizeRuntimePrivateSessionInput,
+  RegisterRuntimePrivateSessionInput,
+} from "./private-session-authority"
 
 /**
  * Typed neutral authority port for the control plane.
@@ -141,6 +145,20 @@ export type WorkspaceAuthority = {
     workspaceId: string
     action: ProjectAction
   }) => Promise<RuntimeActorIdentity | void>
+  bindChannelIdentity: (
+    auth: SignedControlPlaneAuth,
+    args: { channel: string; externalUserId: string },
+  ) => Promise<{
+    bindingId: string
+    created: boolean
+    userId: string
+    actorId: string
+    actorKind: "human" | "agent"
+  }>
+  revokeChannelIdentity: (
+    auth: SignedControlPlaneAuth,
+    args: { channel: string; externalUserId: string },
+  ) => Promise<{ revoked: boolean }>
 
   // workspaces
   authorizeWorkspaceOpen: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
@@ -178,6 +196,13 @@ export type WorkspaceAuthority = {
       signature: string
       displayName?: string
       ttlMs?: number
+      orgId?: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
     },
   ) => Promise<unknown>
   heartbeatLocalHostLink: (
@@ -264,11 +289,7 @@ export type WorkspaceAuthority = {
     args: {
       workspaceId: string
       role: "viewer" | "editor" | "admin"
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
+      target: WorkspaceShareTarget
     },
   ) => Promise<unknown>
   revokeWorkspaceShare: (
@@ -276,11 +297,7 @@ export type WorkspaceAuthority = {
     args: {
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
+      target?: WorkspaceShareTarget
     },
   ) => Promise<unknown>
 
@@ -293,28 +310,16 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string },
   ) => Promise<void>
-  authorizeRuntimeSession?: (args: {
-    actorId: string
-    actorKind: "human" | "agent"
-    sessionId: string
-    workspaceId: string
-    action: "read" | "write"
-  }) => Promise<void>
-  registerRuntimeSession?: (args: {
-    actorId: string
-    actorKind: "human" | "agent"
-    sessionId: string
-    workspaceId: string
-    title?: string
-  }) => Promise<unknown>
-  addSessionParticipant: (
+  authorizeRuntimeSession?: (args: AuthorizeRuntimePrivateSessionInput) => Promise<void>
+  registerRuntimeSession?: (args: RegisterRuntimePrivateSessionInput) => Promise<unknown>
+  grantSessionParticipant: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
-  ) => Promise<unknown>
-  removeSessionParticipant: (
+    args: { sessionId: string; workspaceId: string; participantActorId: string },
+  ) => Promise<{ participant_id: string }>
+  revokeSessionParticipant: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
-  ) => Promise<unknown>
+    args: { sessionId: string; workspaceId: string; participantActorId: string },
+  ) => Promise<{ removed: boolean }>
   grantSessionShare?: (
     auth: SignedControlPlaneAuth,
     args: {
@@ -397,6 +402,7 @@ export type WorkspaceAuthority = {
       messages: unknown[]
       intakeReady?: boolean
       maxEventOrdinal?: number
+      fencingToken?: number
     },
   ) => Promise<unknown>
   upsertSessionVisibility: (
@@ -444,7 +450,12 @@ export type WorkspaceAuthority = {
     role: "viewer" | "editor" | "admin" | "owner"
     expiresAt: number
   }) => Promise<unknown>
-  runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
+  runtimeAccessTokenActive: (args: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    minimumRole?: "viewer" | "editor" | "admin" | "owner"
+  }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,
     args: { jti: string; workspaceId: string },

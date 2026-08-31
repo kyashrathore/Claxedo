@@ -209,7 +209,7 @@ export async function operatorResponse(
   identity: DeploymentReleaseIdentity,
   appOrigin: string,
   url: URL,
-  options: { canBeginCanary: boolean },
+  options: { canBeginCanary: boolean; expectedCanaryJourneyId?: string },
 ) {
   if (!url.pathname.startsWith("/__release/operator/")) return undefined
   if (!(await operatorAuthorized(request, env))) return json(request, { error: { code: "operator_unauthorized" } }, 401)
@@ -229,12 +229,16 @@ export async function operatorResponse(
   if (url.pathname === "/__release/operator/begin-canary") {
     if (!options.canBeginCanary)
       throw new Error("the locked-only Worker cannot admit a canary without a browser artifact")
+    const journeyId = stringField(body, "journeyId")
+    if (!options.expectedCanaryJourneyId || journeyId !== options.expectedCanaryJourneyId) {
+      throw new Error("canary admission does not match the release-bound enrollment journey")
+    }
     const state = await beginDeploymentCanary(env.AUTH_DB, identity, {
       receiptId: stringField(body, "receiptId"),
       operationId: stringField(body, "operationId"),
       operatorSubjectHash: await operatorSubjectHash(env),
       canaryIdentityHash: stringField(body, "canaryIdentityHash"),
-      journeyId: stringField(body, "journeyId"),
+      journeyId,
       expectedStateRevision: binding.stateRevision,
       expectedPhaseRevision: binding.phaseRevision,
     })

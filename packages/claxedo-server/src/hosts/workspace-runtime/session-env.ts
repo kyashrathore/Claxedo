@@ -14,7 +14,6 @@ import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/re
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { localWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
-import { CONTROL_PLANE_RUNTIME_ACTOR } from "@claxedo/server-core/platform/auth/runtime-actor"
 import { CONNECTION_TURN_HEADER, type ConnectionTurnCredentials } from "../../connections/turn-credentials"
 import { disposeHydratedSessionDocuments, syncHydratedSessionDocuments } from "../../documents/session-hydration"
 
@@ -87,14 +86,10 @@ function createCloudSandboxRequester(
   if (!relayProvider) throw new Error(`workspace relay provider unavailable: ${ws.id}`)
   const orgId = options.orgId ?? ws.org_id
   if (!orgId) throw new Error(`workspace org required for runtime token minting: ${ws.id}`)
-  if (!options.principalKind) throw new Error(`runtime principal kind required for runtime token minting: ${ws.id}`)
-  if (!options.subject || !options.actorId || !options.actorKind || !options.role) {
+  if (!options.runtimeActor || !options.role) {
     throw new Error(`complete runtime principal required for runtime token minting: ${ws.id}`)
   }
-  const principalKind = options.principalKind
-  const subject = options.subject
-  const actorId = options.actorId
-  const actorKind = options.actorKind
+  const runtimeActor = options.runtimeActor
   const role = options.role
   const defaultHomeRegion = options.defaultHomeRegion ?? "us-east"
 
@@ -140,10 +135,7 @@ function createCloudSandboxRequester(
     const minted = await relayProvider!.mintRuntimeAccessToken({
       workspaceId: ws.id,
       hostId: active.hostId,
-      subject,
-      principalKind,
-      actorId,
-      actorKind,
+      ...runtimeActor,
       orgId: orgId!,
       role,
       ttlMs: 10 * 60_000,

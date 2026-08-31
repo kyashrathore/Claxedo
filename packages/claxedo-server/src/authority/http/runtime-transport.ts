@@ -1,11 +1,10 @@
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
 import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
@@ -110,13 +109,11 @@ async function runtimeFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: target.hostId,
-    subject: input.auth?.mode === "signed" ? input.auth.user.subject : "control-plane",
-    principalKind: input.auth?.mode === "signed" ? "user" : "service",
     ...(input.auth?.mode === "signed"
-      ? await resolveRuntimeActor(requireAuthority(services), input.auth)
-      : { actorId: "control-plane", actorKind: "agent" as const }),
+      ? { principalKind: "user" as const, ...await resolveRuntimeActor(requireAuthority(services), input.auth) }
+      : CONTROL_PLANE_RUNTIME_ACTOR),
     orgId,
-    role: input.auth?.mode === "signed" ? input.authorityRole! : "owner",
+    role: input.auth?.mode === "signed" ? requiredRole(input.authorityRole) : "owner",
     ttlMs: 10 * 60_000,
   })
   const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)

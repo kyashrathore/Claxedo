@@ -8,6 +8,7 @@ export type {
   AgentMessagePage,
   AgentMessagePageInput,
   AgentHarnessAdapterProcessOptions,
+  AgentTurnWriteContext,
   PermissionDecision,
   SupportsAbort,
   SupportsAgents,
@@ -86,4 +87,5 @@ export { localPiCredentialProviders, localPiModelBackendResolver } from "./harne
 export type { LocalPiAuthOptions } from "./harnesses/pi/local-auth"
 export { codexBundlePiBackendResolver, codexBundleToOAuth, firstPiModelBackend } from "./harnesses/pi/bundle-auth"
 export type { CodexBundleBackendOptions } from "./harnesses/pi/bundle-auth"
+export { AgentRuntimeStaleTurnError } from "./harnesses/shared/runtime-store"
 export type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"

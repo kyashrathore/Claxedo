@@ -34,6 +34,7 @@ import {
   pathMatchesPrefix,
 } from "../auth/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION } from "../../billing/routes"
+import { DOCUMENTS_ROUTE_GUARD_EXEMPTION } from "../../documents/routes/index"
 
 /**
  * The exemption set the hosted app actually composes: the core list plus every
@@ -41,7 +42,10 @@ import { BILLING_WEBHOOK_GUARD_EXEMPTION } from "../../billing/routes"
  * the core constant — a feature exemption that hosted-app.ts forgot to merge
  * would otherwise look exempt here while the running app applied the default.
  */
-const EXEMPTIONS = hostedRouteGuardExemptions([BILLING_WEBHOOK_GUARD_EXEMPTION])
+const EXEMPTIONS = hostedRouteGuardExemptions([
+  BILLING_WEBHOOK_GUARD_EXEMPTION,
+  DOCUMENTS_ROUTE_GUARD_EXEMPTION,
+])
 
 /**
  * The smallest plane that composes a hosted app. This test only needs the ROUTE

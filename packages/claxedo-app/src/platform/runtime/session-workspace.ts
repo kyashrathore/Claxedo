@@ -1,7 +1,7 @@
 import { resolveWorkspaceRef } from "@/platform/identity/resolve-workspace-ref"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
+import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 
 // The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
 // every relay-backed workspace). Threaded in so the resolver can read the kind
@@ -21,6 +21,14 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   if (input.sessionRef) {
     const backing = resolveWorkspaceRef(input.sessionRef)
     if (backing.kind === "cloud" || backing.kind === "user-hosted") {
+      // Route activation can briefly carry a stale/legacy workspace-backed ref.
+      // A loaded project catalog that positively identifies either the backing
+      // id or its directory as local is the canonical owner and must win before
+      // any connection lease is acquired.
+      if (
+        localWorkspaceInProjects(input.projects ?? [], backing.workspaceId) ||
+        localWorkspaceInProjects(input.projects ?? [], input.directory)
+      ) return undefined
       return {
         workspaceId: backing.workspaceId,
         kind: backing.kind,
@@ -54,6 +62,14 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   const signedKind =
     signedWorkspaceFromProjects(input.projects ?? [], input.directory)?.kind ??
     signedWorkspaceFromProjects(input.projects ?? [], workspaceId)?.kind
+  // `workspace:<uuid>` is also the canonical shape emitted by the local
+  // sidecar. A prefix does not turn that local association id into a relay
+  // workspace. Only typed SessionRef backing (handled above) or the signed
+  // inventory may do that. Guessing user-hosted here created a connection mint
+  // for a local workspace on every session mount; the local control plane
+  // correctly answered 404 "Workspace not found", and the gate then flashed
+  // that false failure over an already-loaded local session.
+  if (!signedKind && localWorkspaceAssociationId(workspaceId)) return undefined
   // When the inventory can't resolve the kind, do NOT default to "cloud": the
   // cloud path runs `prepareWorkspaceRuntime` → `resolveWorkspaceRuntime` →
   // the workspace resolve endpoint, which returns null/HTML for a user-hosted

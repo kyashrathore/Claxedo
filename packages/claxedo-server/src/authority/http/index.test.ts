@@ -121,8 +121,9 @@ describe("control plane HTTP protocol", () => {
     const svc = services()
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
-      openWorkspace: vi.fn(async () => ({ role: "owner" })),
-      authorizeSessionWrite: vi.fn(async () => {}),
+      usersMe: canonicalUsersMe(),
+      openWorkspace: vi.fn(async () => ({})),
+      authorizeSessionWrite: vi.fn(async () => ({ allowed: true })),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
@@ -194,13 +195,7 @@ describe("control plane HTTP protocol", () => {
 
     await expect(pull()).resolves.toMatchObject({ skipped: true, snapshotOrdinal: 7 })
 
-    expect(syncSessionMessages).toHaveBeenNthCalledWith(2, expect.objectContaining({ mode: "signed" }), {
-      workspaceId: "ws_1",
-      sessionId: "session-1",
-      messages,
-      maxEventOrdinal: 7,
-      intakeReady: true,
-    })
+    expect(syncSessionMessages).toHaveBeenCalledTimes(1)
     expect(svc.projectionStore.sync_session_messages).toHaveBeenCalledTimes(1)
   })
 
@@ -410,9 +405,9 @@ describe("control plane HTTP protocol", () => {
     }))
     svc.sandbox.sandboxManager = { target } as never
     svc.authority = {
-      usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human", actor_public_id: "usr_1", actor_name: "User One" })),
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
-        role: "editor",
+        role: "owner",
         workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
       })),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -435,7 +430,7 @@ describe("control plane HTTP protocol", () => {
     expect(target).toHaveBeenCalledWith("ws_1")
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud" }))
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1" }))
-    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "editor", principalKind: "user" }))
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "owner", principalKind: "user" }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
   })
 
@@ -494,7 +489,7 @@ describe("control plane HTTP protocol", () => {
       last_seen_at: Date.now(),
     }))
     svc.authority = {
-      usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human", actor_public_id: "usr_1", actor_name: "User One" })),
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
@@ -553,6 +548,7 @@ describe("control plane HTTP protocol", () => {
       status: "ready",
     })
     svc.authority = {
+      usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({ role: "owner", workspace })),
       activeLocalHostLink,
     } as never

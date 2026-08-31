@@ -547,12 +547,9 @@ function relayHostTokenCacheKey(
 ) {
   return [
     claims.jti,
-    claims.sub,
-    claims.actor_id ?? "",
-    claims.actor_kind ?? "",
-    claims.actor_public_id ?? "",
-    claims.actor_name ?? "",
-    claims.actor_avatar_url ?? "",
+    claims.principal_kind,
+    claims.actor_id,
+    claims.actor_kind,
     claims.org_id,
     claims.role,
     claims.workspace_id,
@@ -682,11 +679,17 @@ async function relayHostTokenFor(
   try {
     const token = await trace.span("rht-mint", async () => {
       promise = mintRelayHostToken({
-        subject: claims.sub,
-        // Preserve the authoritative RAT identifier so downstream renewable
-        // stream leases can be checked against the same revocation record.
-        jti: claims.jti,
-        ...relayActorInput(claims),
+        principalKind: claims.principal_kind,
+        actorId: claims.actor_id,
+        actorKind: claims.actor_kind,
+        parentJti: claims.jti,
+        ...(claims.actor_public_id && claims.actor_name
+          ? {
+              actorPublicId: claims.actor_public_id,
+              actorName: claims.actor_name,
+              ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+            }
+          : {}),
         orgId: claims.org_id,
         role: claims.role,
         ...target,
@@ -715,30 +718,23 @@ async function uncachedRelayHostTokenFor(
 ) {
   return await trace.span("rht-mint", async () =>
     await mintRelayHostToken({
-      subject: claims.sub,
-      jti: claims.jti,
-      ...relayActorInput(claims),
+      principalKind: claims.principal_kind,
+      actorId: claims.actor_id,
+      actorKind: claims.actor_kind,
+      parentJti: claims.jti,
+      ...(claims.actor_public_id && claims.actor_name
+        ? {
+            actorPublicId: claims.actor_public_id,
+            actorName: claims.actor_name,
+            ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+          }
+        : {}),
       orgId: claims.org_id,
       role: claims.role,
       ...target,
       ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
     }, options.relayHostSigningKey, options.relayHostAlgorithm)
   )
-}
-
-function relayActorInput(claims: RuntimeAccessTokenClaims) {
-  if (!claims.actor_id || !claims.actor_kind) return { actorId: undefined, actorKind: undefined } as const
-  return {
-    actorId: claims.actor_id,
-    actorKind: claims.actor_kind,
-    ...(claims.actor_public_id && claims.actor_name
-      ? {
-          actorPublicId: claims.actor_public_id,
-          actorName: claims.actor_name,
-          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-        }
-      : {}),
-  } as const
 }
 
 export function workspaceRelayTargetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
