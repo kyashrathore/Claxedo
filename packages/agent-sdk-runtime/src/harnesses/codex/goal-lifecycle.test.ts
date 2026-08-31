@@ -91,12 +91,15 @@ function goalControllerHarness() {
     throw new Error("subagent observation is not exercised by this test")
   }
   const lifecycle = createSessionTurnLifecycle<ActiveTurn>()
+  /** Stands in for the adapter's provider-id reverse index. */
+  const sessionByThread = new Map<string, { sessionId: string; directory: string }>()
   const driverHost: SdkRuntimeDriverHost = {
     lifecycle: () => lifecycle,
     pendingPermissions: new Map(),
     pendingQuestions: new Map(),
     bindSession: () => {},
     getAgentSessionId: () => THREAD_ID,
+    getSessionForAgentSession: (agentSessionId) => sessionByThread.get(agentSessionId) ?? null,
     getSessionConfig: () => null,
     publishGoal: (input) => published.push(input),
     runProviderTurn: (binding, execute) => {
@@ -131,6 +134,7 @@ function goalControllerHarness() {
     published,
     projected,
     activeThreads,
+    sessionByThread,
     activeThread: (sessionId: string): CodexActiveThread => ({
       sessionId,
       agentSessionId: THREAD_ID,
@@ -415,6 +419,43 @@ describe("Codex Goal lifecycle", () => {
         status: "active",
       }),
     }])
+  })
+
+  test("reconciles Goal routing for a thread whose turn already ended", async () => {
+    const harness = goalControllerHarness()
+    const controller = new CodexGoalController(harness.host)
+    // An ACTIVE Goal outlives its turns: the turn that resumed the thread has
+    // ended, so only the runtime's session index still identifies the session.
+    harness.sessionByThread.set(THREAD_ID, { sessionId: "session-restarted", directory: harness.directory })
+
+    controller.handleProcessMessage({
+      method: "thread/goal/updated",
+      params: {
+        threadId: THREAD_ID,
+        goal: { threadId: THREAD_ID, objective: "Survive restart", status: "active", createdAt: 1, updatedAt: 2 },
+      },
+    })
+    // The Goal's next autonomous turn must project through the same binding.
+    controller.handleProcessMessage({
+      method: "turn/started",
+      params: { threadId: THREAD_ID, turn: { id: "goal-turn-1" } },
+    })
+    controller.handleProcessMessage({
+      method: "turn/completed",
+      params: { threadId: THREAD_ID, turn: { id: "goal-turn-1", status: "completed" } },
+    })
+    await harness.settle()
+
+    expect(harness.published).toEqual([{
+      sessionId: "session-restarted",
+      directory: harness.directory,
+      goal: expect.objectContaining({
+        sessionId: "session-restarted",
+        objective: "Survive restart",
+        status: "active",
+      }),
+    }])
+    expect(harness.projected.map((event) => event.method)).toEqual(["turn/started", "turn/completed"])
   })
 
   test("pause interrupts an in-flight Goal turn instead of stranding it busy", async () => {

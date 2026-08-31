@@ -112,6 +112,10 @@ mock.module("@solidjs/router", () => ({
     navigateCalls.push(path)
   },
   useParams: () => params,
+  // `mock.module` is process-wide: later test files evaluate modules (e.g.
+  // session-ui's message-part.tsx) that import `useLocation`, so the mock must
+  // cover every named export the session module graph touches.
+  useLocation: () => ({ pathname: "/", search: "", hash: "" }),
 }))
 
 mock.module("@/app/providers/command", () => ({

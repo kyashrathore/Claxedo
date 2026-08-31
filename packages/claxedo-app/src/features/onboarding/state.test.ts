@@ -156,7 +156,7 @@ describe("onboardingState", () => {
       ...base,
       credentials: [
         { id: "claude", providerId: "claude-sdk", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
-        { id: "codex", providerId: "codex-acp", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
+        { id: "codex", providerId: "codex-app-server", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
       ],
     })
 
@@ -180,7 +180,7 @@ describe("onboardingState", () => {
     const state = onboardingState({
       ...base,
       credentials: [
-        { id: "claude", providerId: "claude-acp", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
+        { id: "claude", providerId: "claude-sdk", kind: "oauth_token", scope: "local", machineId: base.machineId, verification: "ok" },
       ],
     })
 

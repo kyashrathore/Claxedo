@@ -17,7 +17,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     const cases = [
       { harness: "pi" as const, model: { providerID: "openai-codex", modelID: "gpt-5.5", variant: "high" } },
-      { harness: "codex-acp" as const, model: { providerID: "codex-acp", modelID: "gpt-5.5" } },
+      { harness: "acp:codex" as const, model: { providerID: "acp:codex", modelID: "gpt-5.5" } },
       { harness: "opencode" as const, model: { providerID: "anthropic", modelID: "claude-opus-4" } },
     ]
 
@@ -133,12 +133,12 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     const scope = { serverUrl: "http://localhost:4096", workspaceKey: "/repo" }
     preferences.save(scope, { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } })
-    preferences.save(scope, { harness: "claude-acp", model: { providerID: "claude-acp", modelID: "opus" } })
+    preferences.save(scope, { harness: "acp:claude", model: { providerID: "acp:claude", modelID: "opus" } })
 
     expect(preferences.read(scope)).toEqual({
       version: 1,
-      harness: "claude-acp",
-      model: { providerID: "claude-acp", modelID: "opus" },
+      harness: "acp:claude",
+      model: { providerID: "acp:claude", modelID: "opus" },
     })
   })
 

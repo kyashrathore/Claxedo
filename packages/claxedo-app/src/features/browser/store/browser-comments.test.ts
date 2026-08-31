@@ -11,6 +11,7 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import { createRoot } from "solid-js"
 import type { BrowserCommentsState } from "./browser-comments"
+import { PERSIST_KEY } from "./browser-comments"
 
 type TestStore = Record<string, unknown>
 type TestSetter = (...args: unknown[]) => unknown
@@ -18,13 +19,25 @@ type TestSetter = (...args: unknown[]) => unknown
 let capturedInit: (() => BrowserCommentsState) | undefined
 let storageKey: string | undefined
 
+// `mock.module` replaces this module PROCESS-WIDE for every later-loaded test
+// file too, so the stub is NAME-SCOPED: only the BrowserComments context is
+// intercepted; every other context keeps the real implementation.
+// Snapshot the real exports BEFORE mock.module: the imported namespace has
+// live bindings, so after mocking, `realContext.createSimpleContext` would be
+// the stub itself and delegation would recurse.
+const realContext = { ...(await import("@opencode-ai/ui/context")) }
+const realCreateSimpleContext = realContext.createSimpleContext
 mock.module("@opencode-ai/ui/context", () => ({
+  ...realContext,
   createSimpleContext: (config: {
     name: string
     init: () => BrowserCommentsState
     gate?: boolean
   }) => {
-    if (config.name === "BrowserComments") capturedInit = config.init
+    if (config.name !== "BrowserComments") {
+      return realCreateSimpleContext(config as Parameters<typeof realCreateSimpleContext>[0])
+    }
+    capturedInit = config.init
     return {
       ctx: undefined,
       use: () => {
@@ -35,20 +48,30 @@ mock.module("@opencode-ai/ui/context", () => ({
   },
 }))
 
-// Spread the real Persist: `mock.module` replaces the module PROCESS-WIDE, so
-// a partial Persist would break later files that call e.g. Persist.serverWorkspace.
-const realPersist = await import("@/platform/persistence/persist")
+// Spread the real Persist: `mock.module` replaces the module PROCESS-WIDE and
+// stays replaced for every later-loaded test file, so the stubs below are
+// KEY-SCOPED — they intercept only this store's own persist key and delegate
+// everything else to the real implementation. A blanket stub broke unrelated
+// later suites (e.g. session-environment-card-state) whose `persisted()` reads
+// went to the stub's bare-key localStorage while `setPersisted` wrote real
+// prefixed keys.
+const realPersist = { ...(await import("@/platform/persistence/persist")) }
+const realPersistGlobal = realPersist.Persist.global
+const realPersisted = realPersist.persisted
 mock.module("@/platform/persistence/persist", () => ({
   ...realPersist,
   Persist: {
     ...realPersist.Persist,
-    global: (key: string) => {
+    global: (key: string, legacy?: string[]) => {
+      if (key !== PERSIST_KEY) return realPersistGlobal(key, legacy)
       storageKey = key
       return { storage: "test", key }
     },
-    workspace: () => ({}),
   },
-  persisted: (target: { key: string }, storeResult: [TestStore, TestSetter]) => {
+  persisted: (target: { key: string; storage?: string }, storeResult: [TestStore, TestSetter]) => {
+    if (target.storage !== "test") {
+      return realPersisted(target as Parameters<typeof realPersisted>[0], storeResult as never)
+    }
     const [store, setStore] = storeResult
     // Rehydrate synchronously from localStorage if present.
     const raw = typeof localStorage !== "undefined" ? localStorage.getItem(target.key) : null

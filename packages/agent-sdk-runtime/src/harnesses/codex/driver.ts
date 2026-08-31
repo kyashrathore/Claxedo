@@ -106,6 +106,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly goals: AgentGoalResource
   private readonly codexHome: string
   private readonly modelSource = createLiveModelSource({
+    harness: "codex",
     fetchModels: (directory) => this.fetchModels(directory),
   })
 

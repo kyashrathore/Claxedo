@@ -168,7 +168,7 @@ describe("the connect dialog inherits the harness it was opened with", () => {
     const { container } = render(() => <DialogSelectProvider harness="claude-sdk" />)
     await renderedProviderIdsWhenSettled(container)
 
-    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="claude-acp"]')!.click()
+    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="claude-sdk"]')!.click()
 
     await waitFor(() => expect(dialogState.shown.length).toBe(1))
     // The rendered connect dialog re-queries the catalog; it must ask for the

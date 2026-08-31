@@ -91,12 +91,9 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-async function resolveGoalRead(goal = activeGoal) {
-  const capabilitiesRequest = harness.pending.find((item) => item.url.includes("/goal/capabilities"))
-  capabilitiesRequest?.resolve(Response.json(capabilities))
-  await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
-  const goalRequest = harness.pending.find((item) => item.url.includes("/goal?") && item.method === "GET")
-  goalRequest?.resolve(Response.json(goal))
+function resolveGoalRead(goal: typeof activeGoal | null = activeGoal) {
+  const state = harness.pending.find((item) => item.url.includes("/goal/state") && item.method === "GET")
+  state?.resolve(Response.json({ capabilities, goal }))
 }
 
 describe("session Goal authority", () => {
@@ -112,7 +109,7 @@ describe("session Goal authority", () => {
 
     currentSessionID = "ses_2"
     currentDirectory = "/repo/other"
-    await resolveGoalRead()
+    resolveGoalRead()
 
     await expect(read).resolves.toBe(false)
     expect(queryClient.getQueryData(sessionGoalKey(scope))).toBeUndefined()
@@ -162,7 +159,27 @@ describe("session Goal authority", () => {
     expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(otherScope))?.goal).toBeNull()
   })
 
-  test("unsupported ACP hydration caches capabilities without reading Goal state", async () => {
+  test("hydration costs exactly one combined read per activation", async () => {
+    const sync = syncSessionGoalData({
+      request,
+      currentSessionID: () => scope.sessionID,
+      currentDirectory: () => scope.directory,
+    })
+    await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
+    expect(harness.pending[0]!.url).toContain("/session/ses_1/goal/state")
+    expect(harness.pending[0]!.method).toBe("GET")
+    resolveGoalRead()
+
+    await expect(sync).resolves.toBe(true)
+    // No capabilities-then-goal chase: the runtime derived both server-side.
+    expect(harness.pending).toHaveLength(1)
+    expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))).toEqual({
+      capabilities,
+      goal: activeGoal,
+    })
+  })
+
+  test("unsupported ACP hydration caches the runtime's capabilities and its null Goal", async () => {
     const sync = syncSessionGoalData({
       request,
       currentSessionID: () => scope.sessionID,
@@ -170,12 +187,15 @@ describe("session Goal authority", () => {
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
     harness.pending[0]!.resolve(Response.json({
-      implemented: false,
-      available: false,
-      unavailableReason: "ACP Goal extension was not advertised",
-      actions: [],
-      recovery: "blocked",
-      optionalFields: [],
+      capabilities: {
+        implemented: false,
+        available: false,
+        unavailableReason: "ACP Goal extension was not advertised",
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      },
+      goal: null,
     }))
 
     await expect(sync).resolves.toBe(true)
@@ -194,8 +214,6 @@ describe("session Goal authority", () => {
       currentDirectory: () => scope.directory,
     })
     await vi.waitFor(() => expect(harness.pending).toHaveLength(1))
-    harness.pending[0]!.resolve(Response.json(capabilities))
-    await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
 
     const newer = { ...activeGoal, status: "paused" as const, updatedAt: 30 }
     expect(applySessionGoalRuntimeEvent({
@@ -203,7 +221,7 @@ describe("session Goal authority", () => {
       sessionId: scope.sessionID,
       payload: { type: "goal-updated", sessionId: scope.sessionID, goal: newer },
     })).toBe(true)
-    harness.pending[1]!.resolve(Response.json(activeGoal))
+    resolveGoalRead()
 
     await expect(sync).resolves.toBe(false)
     expect(queryClient.getQueryData<SessionGoalData>(sessionGoalKey(scope))?.goal).toEqual(newer)

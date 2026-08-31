@@ -154,9 +154,6 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   readonly type = "claude" as const
   private readonly goalStore = createNativeGoalStore()
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
-    // Delete is NOT advertised: the Goal lives in the Claude CLI session and no
-    // provider clear operation exists, so a resumed session would re-emit a
-    // Goal that Claxedo claimed was deleted.
     capabilities: () => goalCapabilities({
       implemented: true,
       available: true,
@@ -167,10 +164,19 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     read: (sessionId) => this.goalStore.read(sessionId),
     run: (input, objective, onGoal) => this.runQuery(input, nativeGoalCommand(objective), onGoal),
     stop: (sessionId) => this.goalStore.stop(sessionId),
+    // Deleting drops Claxedo's record of the Goal. The Claude CLI session keeps
+    // its transcript, but Goal state is only ever re-read during a Goal turn's
+    // own mirror, so nothing re-emits a forgotten Goal on interactive turns.
+    delete: async (sessionId) => {
+      const had = !!this.goalStore.peek(sessionId)
+      this.goalStore.forget(sessionId)
+      return had
+    },
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private readonly modelSource = createLiveModelSource({
+    harness: "claude",
     fetchModels: (directory) => this.fetchModels(directory),
   })
 

@@ -21,6 +21,7 @@ function goalDriver(
     pendingQuestions: new Map(),
     bindSession() {},
     getAgentSessionId: () => "claude-session",
+    getSessionForAgentSession: () => null,
     getSessionConfig: () => null,
     publishGoal(input) {
       onPublish(input.goal)
@@ -33,6 +34,7 @@ function goalTurnInput() {
   return {
     sessionId: "session-1",
     getAgentSessionId: () => "claude-session",
+    getSessionForAgentSession: () => null,
     input: {
       parts: [{ type: "text", text: "Ship when checks pass" }],
       userMessageId: "user-1",

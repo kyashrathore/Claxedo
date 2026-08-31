@@ -247,7 +247,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
         return {
           ok: false,
           status: "failed",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: errorMessage(cause),
         }
       }
     }
@@ -266,7 +266,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
           if (!target) return unavailable("The ACP agent for this session is not running")
           return goalCapabilities(target.proc.goalCapabilities())
         } catch (cause) {
-          return unavailable(cause instanceof Error ? cause.message : String(cause))
+          return unavailable(errorMessage(cause))
         }
       },
       read: async (sessionId, directory) => {

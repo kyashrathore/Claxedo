@@ -73,9 +73,6 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
     capabilities: () => {
       const available = !!this.auth.cursor
-      // Delete is NOT advertised: the Goal lives in the cursor-agent session
-      // and no provider clear operation exists, so a resumed session would
-      // re-emit a Goal that Claxedo claimed was deleted.
       return goalCapabilities({
         implemented: true,
         available,
@@ -88,12 +85,24 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     read: (sessionId) => this.goalStore.read(sessionId),
     run: (input, objective, onGoal) => this.runGoal(input, objective, onGoal),
     stop: (sessionId) => this.goalStore.stop(sessionId),
+    // Deleting drops Claxedo's record of the Goal. Cursor Goal snapshots are
+    // synthesized locally around the run, so no provider state re-emits a
+    // forgotten Goal.
+    delete: async (sessionId) => {
+      const had = !!this.goalStore.peek(sessionId)
+      this.goalStore.forget(sessionId)
+      return had
+    },
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private agents = new Map<string, CursorEntry>()
   private processError: string | null = null
   private readonly modelSource = createLiveModelSource({
+    harness: "cursor",
+    // Cursor's list is a cloud call behind an API key; a missing key must
+    // surface as a failure, not as a synthesized static catalog.
+    fallbackToCatalog: false,
     fetchModels: () => this.fetchModels(),
   })
 

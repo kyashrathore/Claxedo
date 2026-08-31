@@ -35,6 +35,7 @@ describe("Cursor native Goal lifecycle", () => {
       pendingQuestions: new Map(),
       bindSession() {},
       getAgentSessionId: () => "cursor-agent-1",
+      getSessionForAgentSession: () => null,
       getSessionConfig: () => null,
       publishGoal(input) {
         published.push(input.goal)
@@ -48,6 +49,7 @@ describe("Cursor native Goal lifecycle", () => {
     const input = {
       sessionId: "session-1",
       getAgentSessionId: () => "cursor-agent-1",
+      getSessionForAgentSession: () => null,
       input: {
         parts: [{ type: "text", text: "Ship when checks pass" }],
         userMessageId: "user-1",
@@ -112,6 +114,7 @@ describe("Cursor native Goal lifecycle", () => {
       pendingQuestions: new Map(),
       bindSession() {},
       getAgentSessionId: () => "cursor-agent-1",
+      getSessionForAgentSession: () => null,
       getSessionConfig: () => null,
       publishGoal(input) {
         published.push(input.goal)
@@ -125,6 +128,7 @@ describe("Cursor native Goal lifecycle", () => {
     const input = {
       sessionId: "session-1",
       getAgentSessionId: () => "cursor-agent-1",
+      getSessionForAgentSession: () => null,
       input: {
         parts: [{ type: "text", text: "Ship when checks pass" }],
         userMessageId: "user-1",
@@ -164,6 +168,7 @@ describe("Cursor native Goal lifecycle", () => {
       pendingQuestions: new Map(),
       bindSession() {},
       getAgentSessionId: () => "cursor-agent-1",
+      getSessionForAgentSession: () => null,
       getSessionConfig: () => null,
       publishGoal() {},
       async runProviderTurn() { return true },

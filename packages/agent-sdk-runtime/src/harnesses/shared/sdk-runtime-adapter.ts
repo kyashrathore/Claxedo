@@ -1,6 +1,8 @@
 import { randomUUID } from "crypto"
 import { type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { createAgentSessionIndex } from "./agent-session-index"
 import { createGoalPublisher, type GoalPublisher } from "./goal-publisher"
+import { createNativeGoalResource } from "./native-goal-resource"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -56,6 +58,7 @@ import {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
 } from "../../subagent-admission"
+import type { AgentRuntimeSessionBinding } from "./runtime-store"
 import type {
   ActiveTurn,
   JsonRecord,
@@ -123,11 +126,19 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }>()
   private hydratedFileTranscripts = new Set<string>()
   private subagentChildByCorrelation = new Map<string, string>()
-  private goalPublisher: GoalPublisher
+  private goalPublisher?: GoalPublisher
+
+  /**
+   * Lazy so instances built without the constructor (Object.create in tests)
+   * still publish and forget safely — same pattern as the ACP adapter.
+   */
+  private publisher(): GoalPublisher {
+    return (this.goalPublisher ??= createGoalPublisher(this.options.eventHub))
+  }
+  private agentSessionIndex = createAgentSessionIndex()
   readonly goals: AgentGoalResource | undefined
 
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
-    this.goalPublisher = createGoalPublisher(options.eventHub)
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
     this.driver = options.driver({
@@ -136,13 +147,20 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       pendingQuestions: this.pendingQuestions,
       processObserver: options.processObserver,
       transcriptRegistrar: options.transcriptRegistrar,
-      bindSession: (input) => this.store.bindSession(input),
+      bindSession: (input) => this.bindStoreSession(input),
       getAgentSessionId: (sessionId) => this.store.getAgentSessionId(sessionId),
+      getSessionForAgentSession: (agentSessionId) => this.agentSessionIndex.get(agentSessionId),
       getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
       publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
     })
     this.goals = this.createGoalResource()
+  }
+
+  /** Every session binding also feeds the provider-id reverse index. */
+  private bindStoreSession(input: AgentRuntimeSessionBinding) {
+    this.store.bindSession(input)
+    this.agentSessionIndex.remember(input)
   }
 
   private lifecycle(): SessionTurnLifecycle<ActiveTurn> {
@@ -219,129 +237,20 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   private nativeGoalResource(): AgentGoalResource | undefined {
     const native = this.driver.nativeGoal
     if (!native) return
-    const unsupported = (action: string) => Promise.resolve({
-      ok: false as const,
-      status: "unsupported" as const,
-      message: `${this.driver.type} does not advertise Goal ${action}`,
+    return createNativeGoalResource({
+      native,
+      driverType: this.driver.type,
+      lifecycle: () => this.lifecycle(),
+      projectedGoal: (sessionId) => this.store.getGoal?.(sessionId),
+      publishGoal: (sessionId, directory, goal) => this.publishGoal(sessionId, directory, goal),
+      sessionConfig: (sessionId, directory) => this.getSessionConfig(sessionId, directory),
+      defaultModelId: () => this.currentModel,
+      streamTurn: (sessionId, input, directory, execute) => this.streamMessage(sessionId, input, directory, execute),
     })
-    const notFound = { ok: false as const, status: "not_found" as const, message: "No Goal exists" }
-    /**
-     * Recovery outcome for a Goal the driver no longer holds.
-     *
-     * A native Goal lives in a provider process, so a restart leaves the driver
-     * with nothing to stop while the store still projects the Goal — which
-     * `read` surfaces as `blocked`. There is no live work to interrupt, so
-     * clearing the projection is both the honest result and the only way the
-     * Goal can ever leave the session: without it the projected Goal is
-     * permanently unstoppable and undeletable.
-     */
-    const clearProjectedGoal = (sessionId: string, directory: string) => {
-      if (!this.store.getGoal?.(sessionId)) return notFound
-      this.publishGoal(sessionId, directory, null)
-      return { ok: true as const, goal: null }
-    }
-    return {
-      // The resource can delete beyond what the driver advertises: a Goal the
-      // driver no longer holds is cleared from the projection, and a driver
-      // `delete` clears a live one. Only a live Goal on a driver without
-      // `delete` is truly undeletable, so advertise per-session honesty.
-      readCapabilities: async (sessionId, directory) => {
-        const required = requireWorkspaceDirectory(directory)
-        const capabilities = await native.capabilities(sessionId, required)
-        if (capabilities.actions.includes("delete")) return capabilities
-        const deletable = !!native.delete || !(await native.read(sessionId, required))
-        return deletable ? { ...capabilities, actions: [...capabilities.actions, "delete"] } : capabilities
-      },
-      read: async (sessionId, directory) => {
-        const required = requireWorkspaceDirectory(directory)
-        const live = await native.read(sessionId, required)
-        if (live) return live
-        const projected = this.store.getGoal?.(sessionId)
-        if (!projected) return null
-        const capabilities = await native.capabilities(sessionId, required)
-        return capabilities.recovery === "blocked"
-          ? { ...projected, status: "blocked", updatedAt: Date.now() }
-          : projected
-      },
-      start: (sessionId, input, directory) => this.startNativeGoal(sessionId, input.objective, requireWorkspaceDirectory(directory)),
-      pause: () => unsupported("Pause"),
-      resume: () => unsupported("Resume"),
-      delete: async (sessionId, directory) => {
-        const required = requireWorkspaceDirectory(directory)
-        // Only the leftover projection of a Goal the driver has lost can be
-        // cleared without the provider.
-        if (!await native.read(sessionId, required)) return clearProjectedGoal(sessionId, required)
-        // Deleting a LIVE Goal locally would lie: a resumed provider session
-        // re-emits it. Only a driver whose provider has a clear operation may
-        // do it, and then in the same order as `stop` — disable continuation,
-        // interrupt the turn, and clear only once nothing can re-report it.
-        if (!native.delete) return unsupported("Delete")
-        await native.stop(sessionId, required)
-        this.lifecycle().abort(sessionId)
-        await this.lifecycle().whenIdle(sessionId)
-        if (!await native.delete(sessionId, required)) return notFound
-        this.publishGoal(sessionId, required, null)
-        return { ok: true, goal: null }
-      },
-      stop: async (sessionId, directory) => {
-        const required = requireWorkspaceDirectory(directory)
-        const goal = await native.read(sessionId, required)
-        if (!goal) return clearProjectedGoal(sessionId, required)
-        const stopped = await native.stop(sessionId, required)
-        if (!stopped) return notFound
-        this.publishGoal(sessionId, required, stopped)
-        this.lifecycle().abort(sessionId)
-        await this.lifecycle().whenIdle(sessionId)
-        return { ok: true, goal: stopped }
-      },
-    }
-  }
-
-  private async startNativeGoal(sessionId: string, objective: string, directory: string): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
-    const native = this.driver.nativeGoal
-    if (!native) return { ok: false, status: "unsupported", message: `${this.driver.type} does not support Goal` }
-    const config = await this.getSessionConfig(sessionId, directory)
-    const input: PromptInput = {
-      parts: [{ type: "text", text: objective }],
-      userMessageId: randomUUID(),
-      assistantMessageId: randomUUID(),
-      agent: config.agent ?? "build",
-      model: config.model ?? { providerID: this.driver.type, modelID: this.currentModel || "default" },
-      ...(config.variant ? { variant: config.variant } : {}),
-    }
-    let settled = false
-    let accept: (result: AgentGoalMutationResult<RuntimeGoalSnapshot>) => void = () => {}
-    const accepted = new Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>((resolve) => {
-      accept = resolve
-    })
-    const consume = async () => {
-      for await (const _event of this.streamMessage(
-        sessionId,
-        input,
-        directory,
-        (turn) => native.run(turn, objective, (goal) => {
-          this.publishGoal(sessionId, directory, goal)
-          if (!settled && goal) {
-            settled = true
-            accept({ ok: true, goal })
-          }
-        }),
-      )) {}
-      if (!settled) {
-        settled = true
-        accept({ ok: false, status: "failed", message: `${this.driver.type} ended before accepting Goal` })
-      }
-    }
-    void consume().catch((error) => {
-      if (settled) return
-      settled = true
-      accept({ ok: false, status: "failed", message: errorMessage(error) })
-    })
-    return await accepted
   }
 
   private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
-    this.goalPublisher.publish({
+    this.publisher().publish({
       sessionId,
       directory,
       agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
@@ -393,7 +302,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       title,
       model: this.currentModel,
     })
-    this.store.bindSession({
+    this.bindStoreSession({
       sessionId,
       directory,
       title,
@@ -415,7 +324,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   async createHandoffSession(directory: string, title: string | undefined, sessionId: string, options: { system: string }) {
     directory = requireWorkspaceDirectory(directory)
     const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
-    this.store.bindSession({ sessionId, directory, title, agentSessionId })
+    this.bindStoreSession({ sessionId, directory, title, agentSessionId })
     return { id: sessionId, agentSessionId, ownerKey: null }
   }
 
@@ -450,11 +359,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       if (!childSessionId) continue
       const agentSessionId = this.store.getAgentSessionId(childSessionId)
       if (agentSessionId) await this.driver.deleteAgentSession?.(childSessionId, agentSessionId, directory)
+      this.agentSessionIndex.forget(childSessionId)
     }
     const agentSessionId = this.store.getAgentSessionId(id)
     if (agentSessionId) await this.driver.deleteAgentSession?.(id, agentSessionId, directory)
     this.store.deleteSession(id)
-    this.goalPublisher.forget(id)
+    this.agentSessionIndex.forget(id)
+    this.publisher().forget(id)
   }
 
   /** Holds the busy lock until terminal emission and releases it on every exit path. */
@@ -498,6 +409,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       yield sessionError(`Session ${id} not found`, id)
       return
     }
+    // A session hydrated from a durable store was never bound in this process;
+    // prompting it is where the reverse index learns its provider id.
+    this.agentSessionIndex.remember({ sessionId: id, directory, agentSessionId: current })
     let agentSessionId = current
     const created = Date.now()
     if (input.permissionMode) {
@@ -639,7 +553,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
             ...(input.variant ? { variant: input.variant } : {}),
           },
         } satisfies ChildProjectionTarget
-        this.store.bindSession({
+        this.bindStoreSession({
           sessionId: childSessionId,
           parentSessionId: id,
           directory,
@@ -662,7 +576,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       })()
       if (observation.providerId && child.agentSessionId.startsWith("unbound:")) {
         child.agentSessionId = observation.providerId
-        this.store.bindSession({
+        this.bindStoreSession({
           sessionId: child.sessionId,
           parentSessionId: id,
           directory,
@@ -695,7 +609,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const rebindAgentSession = (sdkSessionId: string) => {
       if (!sdkSessionId || sdkSessionId === agentSessionId) return
       agentSessionId = sdkSessionId
-      this.store.bindSession({
+      this.bindStoreSession({
         sessionId: id,
         directory,
         agentSessionId,

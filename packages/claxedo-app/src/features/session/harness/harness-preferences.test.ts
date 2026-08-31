@@ -10,15 +10,15 @@ beforeEach(() => {
 
 describe("harness preferences", () => {
   test("builds draft state from scoped preferences and ignores legacy fallbacks", () => {
-    storage.setItem("claxedo:runner", "claude-acp")
+    storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:agent-mode", "legacy-agent")
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "codex-acp" }))
+    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "acp:codex" }))
     storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:/repo:route": "opus" }))
     storage.setItem("claxedo:agent-mode-map", JSON.stringify({ "draft:/repo:route": "build" }))
 
     expect(createHarnessPreferences(storage).initialState("draft:/repo:route")).toMatchObject({
-      harness: "codex-acp",
+      harness: "acp:codex",
       selectedModel: "opus",
       selectedAgent: "build",
     })
@@ -30,12 +30,12 @@ describe("harness preferences", () => {
   })
 
   test("builds session state from legacy fallbacks when no scoped preferences exist", () => {
-    storage.setItem("claxedo:runner", "claude-acp")
+    storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:agent-mode", "legacy-agent")
 
     expect(createHarnessPreferences(storage).initialState("session:ses_1")).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "legacy-model",
       selectedAgent: "legacy-agent",
     })

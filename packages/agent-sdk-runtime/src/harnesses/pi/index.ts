@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
+import { goalContinuationPrompt, goalEvaluationProgress, goalInitialPrompt } from "../shared/goal-protocol"
+import { errorMessage } from "../shared/sdk-runtime-values"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -246,7 +248,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         try {
           backend = await this.resolveModelBackend(session)
         } catch (cause) {
-          return unavailable(cause instanceof Error ? cause.message : String(cause))
+          return unavailable(errorMessage(cause))
         }
         if (!backend) return unavailable("Pi Goal requires a selected model and available credentials")
         const now = Date.now()
@@ -275,7 +277,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         try {
           backend = await this.resolveModelBackend(session)
         } catch (cause) {
-          return unavailable(cause instanceof Error ? cause.message : String(cause))
+          return unavailable(errorMessage(cause))
         }
         if (!backend) return unavailable("Pi Goal requires a selected model and available credentials")
         const goal = { ...current, status: "active" as const, updatedAt: Date.now(), lastReason: "Resumed" }
@@ -378,13 +380,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     session.goalRun = goalRun
     const config = session.config
     const input: PromptInput = {
-      parts: [{
-        type: "text",
-        text: [
-          `Work autonomously toward this Goal: ${session.goal?.objective ?? ""}`,
-          "Use tools as needed. Report concrete progress and evidence; an independent evaluator decides completion.",
-        ].join("\n\n"),
-      }],
+      parts: [{ type: "text", text: goalInitialPrompt(session.goal?.objective ?? "") }],
       userMessageId: randomUUID(),
       assistantMessageId: randomUUID(),
       agent: config.agent ?? "pi",
@@ -412,7 +408,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         ...current,
         status: "blocked",
         updatedAt: Date.now(),
-        lastReason: cause instanceof Error ? cause.message : String(cause),
+        lastReason: errorMessage(cause),
       })
     }).finally(() => {
       if (session.goalRun === goalRun) session.goalRun = undefined
@@ -767,7 +763,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
                     ...latest,
                     status: "blocked",
                     updatedAt: Date.now(),
-                    lastReason: cause instanceof Error ? cause.message : String(cause),
+                    lastReason: errorMessage(cause),
                   })
                   return
                 }
@@ -775,20 +771,13 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
                 if (latest?.status !== "active" || session.goalRun?.generation !== goalRun.generation) return
                 const next: RuntimeGoalSnapshot = {
                   ...latest,
-                  status: evaluation.met ? "complete" : "active",
-                  updatedAt: Date.now(),
-                  iteration: (latest.iteration ?? 0) + 1,
-                  lastReason: evaluation.reason,
+                  ...goalEvaluationProgress({ evaluation, iteration: (latest.iteration ?? 0) + 1 }),
                 }
                 this.publishGoal(session, next)
                 if (evaluation.met) return
                 agent.followUp({
                   role: "user",
-                  content: [
-                    `Continue working toward the Goal: ${latest.objective}`,
-                    `Independent evaluator: ${evaluation.reason}`,
-                    "Address the missing evidence and continue autonomously.",
-                  ].join("\n\n"),
+                  content: goalContinuationPrompt({ objective: latest.objective, reason: evaluation.reason }),
                   timestamp: Date.now(),
                 })
               },
@@ -809,7 +798,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         }
       }
     } catch (cause) {
-      assistantError = cause instanceof Error ? cause.message : String(cause)
+      assistantError = errorMessage(cause)
     } finally {
       session.active = undefined
       session.updated = Date.now()

@@ -59,6 +59,7 @@ function testHarness(options: {
   onPermissionResponse?: () => void
   onQuestionAnswer?: () => void
   onQuestionReject?: () => void
+  sessionConfigReads?: string[]
   onCreate?: (context: { eventHub: RuntimeEventHub }) => void
 } = {}): AgentHarnessFactory {
   const adapter: AgentHarnessAdapter = {
@@ -86,8 +87,9 @@ function testHarness(options: {
     async updateSession() {
       return null
     },
-    async getSessionConfig() {
-      return { harness: { id: "pi", access: "native" } }
+    async getSessionConfig(id) {
+      options.sessionConfigReads?.push(id)
+      return { harness: { id: "pi", access: "native" }, variant: null, agent: "build" }
     },
     async updateSessionConfig(_id, update) {
       return {
@@ -666,7 +668,7 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
-  test("rejects unknown interactions without choosing a harness", async () => {
+  test("routes an interaction the aggregated listing missed to a harness that can answer it", async () => {
     let permissionResponses = 0
     let questionAnswers = 0
     let questionRejects = 0
@@ -679,25 +681,127 @@ describe("createAgentRuntime", () => {
       })],
     })
 
-    await expect(runtime.permissions.respond("perm_missing", "deny", "/repo")).rejects.toThrow("Permission perm_missing not found")
-    await expect(runtime.questions.answer("question_missing", "answer", "/repo")).rejects.toThrow("Question question_missing not found")
-    await expect(runtime.questions.reject("question_missing", "/repo")).rejects.toThrow("Question question_missing not found")
+    // listPermissions/listQuestions answer empty: the listing is a snapshot and
+    // the adapter, not the listing, decides whether the id is still pending.
+    await runtime.permissions.respond("perm_unlisted", "deny", "/repo")
+    await runtime.questions.answer("question_unlisted", "answer", "/repo")
+    await runtime.questions.reject("question_unlisted", "/repo")
     expect({ permissionResponses, questionAnswers, questionRejects }).toEqual({
-      permissionResponses: 0,
-      questionAnswers: 0,
-      questionRejects: 0,
+      permissionResponses: 1,
+      questionAnswers: 1,
+      questionRejects: 1,
     })
     runtime.dispose()
   })
 
-  test("rejects session operations when the runtime config is missing", async () => {
+  test("rejects interactions when no registered harness implements the reply", async () => {
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness()],
+    })
+
+    await expect(runtime.permissions.respond("perm_unlisted", "deny", "/repo"))
+      .rejects.toThrow("No registered harness supports permissions")
+    await expect(runtime.questions.answer("question_unlisted", "answer", "/repo"))
+      .rejects.toThrow("No registered harness supports questions")
+    await expect(runtime.questions.reject("question_unlisted", "/repo"))
+      .rejects.toThrow("No registered harness supports questions")
+    runtime.dispose()
+  })
+
+  test("routes a listed interaction to the adapter that owns its session", async () => {
+    const responders: string[] = []
+    const interactionHarness = (id: "pi" | "claude", permission?: { id: string; sessionID: string }) => ({
+      id,
+      access: "native",
+      create: () => ({
+        async listSessions() { return [] },
+        async getSession(sessionId: string) { return { id: sessionId } },
+        async createSession(_directory: string, _title: string, sessionId = `ses_${id}`) { return { id: sessionId } },
+        async updateSession() { return null },
+        async getSessionConfig() { return { harness: { id, access: "native" }, variant: null, agent: null } },
+        async updateSessionConfig() { return { harness: { id, access: "native" }, variant: null, agent: null } },
+        async deleteSession() {},
+        readHarnessCapabilities() { return {} as never },
+        async *sendMessage() {},
+        async getMessages() { return [] },
+        async listPermissions() { return permission ? [permission] : [] },
+        async respondPermission() { responders.push(id) },
+        dispose() {},
+      }),
+    } as unknown as AgentHarnessFactory)
+
+    const store = createMemoryRuntimeStore()
+    const runtime = createAgentRuntime({
+      store,
+      // "pi" is registered first, so a listing-blind fallback would pick it.
+      harnesses: [interactionHarness("pi"), interactionHarness("claude", { id: "perm_1", sessionID: "ses_claude" })],
+    })
+    await runtime.sessions.create({
+      id: "ses_claude",
+      directory: "/repo",
+      harness: { id: "claude", access: "native" },
+    })
+
+    await runtime.permissions.respond("perm_1", "deny", "/repo")
+    expect(responders).toEqual(["claude"])
+    runtime.dispose()
+  })
+
+  test("derives a missing runtime config from the owning adapter and persists it once", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const sessionConfigReads: string[] = []
+    rows.bindSession({
+      sessionId: "ses_missing_config",
+      directory: "/repo",
+      agentSessionId: "native_missing_config",
+    })
+    const runtime = createAgentRuntime({ store, harnesses: [testHarness({ sessionConfigReads })] })
+    expect(rows.getSessionConfig("ses_missing_config")).toBeFalsy()
+
+    await expect(runtime.config.read("ses_missing_config", "/repo"))
+      .resolves.toMatchObject({ harness: { id: "pi", access: "native" }, agent: "build" })
+    // Persisted, so the derivation is a one-time repair rather than a per-call fallback.
+    expect(rows.getSessionConfig("ses_missing_config")).toMatchObject({ harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.events.list("ses_missing_config", "/repo")).resolves.toEqual([])
+    await expect(runtime.turns.start({ sessionId: "ses_missing_config", text: "hello" }))
+      .resolves.toMatchObject({ sessionId: "ses_missing_config" })
+    expect(sessionConfigReads).toEqual(["ses_missing_config"])
+    runtime.dispose()
+  })
+
+  test("never derives a runtime config for a session the store has not bound", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const sessionConfigReads: string[] = []
+    const runtime = createAgentRuntime({ store, harnesses: [testHarness({ sessionConfigReads })] })
+
+    // A config gap belongs to a session that exists. Deriving for an unknown id
+    // would ask the harness about a session nobody bound and write a config row
+    // behind it, so the lone-adapter repair must not reach it.
+    await expect(runtime.events.list("ses_never_bound", "/repo"))
+      .rejects.toThrow("Session ses_never_bound has no runtime config")
+    await expect(runtime.config.read("ses_never_bound", "/repo"))
+      .rejects.toThrow("Session ses_never_bound has no runtime config")
+    expect(sessionConfigReads).toEqual([])
+    expect(rows.getSessionConfig("ses_never_bound")).toBeFalsy()
+    runtime.dispose()
+  })
+
+  test("rejects session operations when no adapter can be named for the session", async () => {
     const store = createMemoryRuntimeStore()
     storeRows(store).bindSession({
       sessionId: "ses_missing_config",
       directory: "/repo",
       agentSessionId: "native_missing_config",
     })
-    const runtime = createAgentRuntime({ store, harnesses: [testHarness()] })
+    // Two registered harnesses and no persisted config: naming an owner would be a guess.
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [handoffHarness({ id: "pi" }), handoffHarness({ id: "claude" })],
+    })
 
     await expect(runtime.config.read("ses_missing_config", "/repo"))
       .rejects.toThrow("Session ses_missing_config has no runtime config")

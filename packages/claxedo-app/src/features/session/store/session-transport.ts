@@ -5,11 +5,8 @@ import { usesScopedSessionTransport } from "@/platform/identity/legacy-resolver"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
-import type {
-  AgentRuntimeGoalCapabilities,
-  AgentRuntimeGoalMutationResult,
-} from "@/platform/runtime/agent/agent-runtime-client"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"
+import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runtime-goal-client"
 
 export type SessionClient = Parameters<typeof createHttpSessionBackend>[0]["client"]
 
@@ -236,16 +233,10 @@ function sessionGoalBackend(input: SessionGoalTransportScope) {
   })
 }
 
-export async function fetchSessionGoalCapabilitiesByTransport(
+export async function fetchSessionGoalStateByTransport(
   input: SessionGoalTransportScope,
-): Promise<AgentRuntimeGoalCapabilities> {
-  return await sessionGoalBackend(input).getGoalCapabilities(input)
-}
-
-export async function fetchSessionGoalByTransport(
-  input: SessionGoalTransportScope,
-): Promise<RuntimeGoalSnapshot | null> {
-  return await sessionGoalBackend(input).getGoal(input)
+): Promise<AgentRuntimeGoalState> {
+  return await sessionGoalBackend(input).getGoalState(input)
 }
 
 export async function pauseSessionGoalByTransport(

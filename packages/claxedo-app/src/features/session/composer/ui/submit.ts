@@ -29,7 +29,7 @@ import {
   removeRegisteredConversationMessage,
 } from "../../conversation/conversation-registry"
 import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
-import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
+import { cloudSubmitMissingModel, explicitSelectedModel } from "./submit-model-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { useConfigOptional } from "@/features/session/app-ports"
 import { workspaceCreateUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -273,6 +273,29 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const publishCloudHandoff = cloudStartup.publish
     const clearCloudStartup = cloudStartup.clear
     const reportCloudStartupError = cloudStartup.reportError
+    const rejectModelRequired = () => {
+      const description = language.t("prompt.toast.modelAgentRequired.description")
+      reportCloudStartupError(description)
+      showToast({ title: language.t("prompt.toast.modelAgentRequired.title"), description })
+    }
+
+    const scopeIdentity = { sessionId: explicitSessionID, surfaceId: surfaceId(), draftId }
+    // Consume the exact picker scope. Reconstructing it after directory
+    // preparation can observe a newer SDK directory than the mounted picker
+    // did and silently fall back to OpenCode. The reconstruction remains for
+    // non-composer callers that do not own a visible picker.
+    const sourceScope = input.harnessScope?.() ?? panePreferenceScope({
+      directory: promptHarnessDirectory({
+        sdkDirectory: sdk.directory,
+        sessionDirectory: projectDirectory ?? fallbackDirectory,
+        sessionId: explicitSessionID,
+      }),
+      ...scopeIdentity,
+    })
+    const submitSelectedModel = explicitSelectedModel(input.selectedModelForSubmit?.())
+    // A model-less cloud submit must reject BEFORE directory resolution, which provisions a real workspace — see cloudSubmitMissingModel's contract.
+    const missingCloudModel = cloudSubmitMissingModel({ isNewSession, workspaceKind, harnessMode: selectedHarnessMode(sourceScope), hasHarnessModelKey: !!harnessController.modelKeyForSubmit(sourceScope), hasSelectedModel: !!submitSelectedModel })
+    if (missingCloudModel) return rejectModelRequired()
 
     const resolvedDirectory = await resolvePreparedSubmitDirectory({
       isNewSession,
@@ -330,19 +353,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
     }
 
-    const scopeIdentity = { sessionId: explicitSessionID, surfaceId: surfaceId(), draftId }
-    // Consume the exact picker scope. Reconstructing it after directory
-    // preparation can observe a newer SDK directory than the mounted picker
-    // did and silently fall back to OpenCode. The reconstruction remains for
-    // non-composer callers that do not own a visible picker.
-    const sourceScope = input.harnessScope?.() ?? panePreferenceScope({
-      directory: promptHarnessDirectory({
-        sdkDirectory: sdk.directory,
-        sessionDirectory: projectDirectory ?? fallbackDirectory,
-        sessionId: explicitSessionID,
-      }),
-      ...scopeIdentity,
-    })
     const scope = panePreferenceScope({ directory: sessionDirectory, ...scopeIdentity })
     if (isNewSession && sourceScope !== scope && selectedHarnessMode(sourceScope) && !selectedHarnessMode(scope)) {
       // Cloud workspace creation changes submit directory; carry draft harness ownership.
@@ -422,11 +432,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const freshSelectedModel = harnessMode ? undefined : local.model.current()
     const selectionOverridesExisting = !!freshSelectedModel && !infoSessionConfig && !!existingSessionConfig?.model &&
       (freshSelectedModel.provider.id !== existingSessionConfig.model.providerID || freshSelectedModel.id !== existingSessionConfig.model.modelID)
-    const submitSelectedModel = (() => {
-      const model = input.selectedModelForSubmit?.()
-      if (!model || isSignedWorkspaceDefaultModel(model)) return undefined
-      return model
-    })()
     const submittedConfig = existingSessionConfig?.model && !selectionOverridesExisting
       ? {
           model: existingSessionConfig.model,
@@ -445,12 +450,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         })
     if (!submittedConfig) {
       clearBoot()
-      reportCloudStartupError(language.t("prompt.toast.modelAgentRequired.description"))
-      showToast({
-        title: language.t("prompt.toast.modelAgentRequired.title"),
-        description: language.t("prompt.toast.modelAgentRequired.description"),
-      })
-      return
+      return rejectModelRequired()
     }
     const model = submittedConfig.model
     const agent = submittedConfig.agent

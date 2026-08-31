@@ -16,6 +16,7 @@ import { getModel, type Api, type Model, type Usage } from "@mariozechner/pi-ai"
 import { Type } from "@sinclair/typebox"
 import type { SessionEnv } from "../../session-env"
 import type { AgentRuntimeStreamEvent, PromptModel } from "../../index"
+import { GOAL_PROMPT_TEXT, goalEvaluatorRequest, parseGoalEvaluation } from "../shared/goal-protocol"
 
 export type PiModelBackend = {
   /** Resolved pi-ai model, e.g. `getModel("openai-codex", "gpt-5.1-codex-mini")`. */
@@ -254,12 +255,7 @@ function agentMessageText(message: AgentMessage): string {
 export async function evaluatePiGoal(input: PiGoalEvaluatorInput): Promise<PiGoalEvaluation> {
   const evaluator = new Agent({
     initialState: {
-      systemPrompt: [
-        "You are an independent completion evaluator.",
-        "Judge whether the supplied work result satisfies the objective.",
-        'Reply with exactly one JSON object: {"met":boolean,"reason":string}.',
-        "Do not perform work and do not assume missing evidence.",
-      ].join(" "),
+      systemPrompt: GOAL_PROMPT_TEXT.evaluatorSystem.join(" "),
       model: input.backend.model,
       tools: [],
     },
@@ -275,24 +271,12 @@ export async function evaluatePiGoal(input: PiGoalEvaluatorInput): Promise<PiGoa
   const onAbort = () => evaluator.abort()
   input.signal.addEventListener("abort", onAbort, { once: true })
   try {
-    await evaluator.prompt([
-      "OBJECTIVE:",
-      input.objective,
-      "",
-      "LATEST WORK RESULT:",
-      input.work || "(no visible result)",
-    ].join("\n"))
+    await evaluator.prompt(goalEvaluatorRequest({ objective: input.objective, work: input.work }))
   } finally {
     unsubscribe()
     input.signal.removeEventListener("abort", onAbort)
   }
-  const object = response.match(/\{[\s\S]*\}/)?.[0]
-  if (!object) throw new Error("Pi Goal evaluator returned no JSON result")
-  const parsed = JSON.parse(object) as { met?: unknown; reason?: unknown }
-  if (typeof parsed.met !== "boolean" || typeof parsed.reason !== "string") {
-    throw new Error("Pi Goal evaluator returned an invalid result")
-  }
-  return { met: parsed.met, reason: parsed.reason }
+  return parseGoalEvaluation(response, "Pi")
 }
 
 /**

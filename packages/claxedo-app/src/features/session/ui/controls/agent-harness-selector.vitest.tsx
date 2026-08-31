@@ -31,7 +31,7 @@ vi.mock("@/platform/telemetry/analytics", () => ({
   identityProps: () => ({ org_id: "org_1", user_id: "user_1", deployment_mode: "self-host" }),
 }))
 let readiness = "ready"
-let harnessType = "claude-acp"
+let harnessType = "acp:claude"
 let models: Array<{ id: string; name: string }> = []
 let selectedModel = ""
 let selectedModelProvider: string | undefined
@@ -235,7 +235,7 @@ afterEach(() => {
 beforeEach(() => {
   harnessMode = true
   readiness = "ready"
-  harnessType = "claude-acp"
+  harnessType = "acp:claude"
   models = []
   selectedModel = ""
   selectedModelProvider = undefined
@@ -463,7 +463,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-opus-4-6']") as HTMLButtonElement)
 
-    expect(setModelCalls).toEqual([{ scope: "test-scope", model: { providerID: "claude-acp", modelID: "claude-opus-4-6" } }])
+    expect(setModelCalls).toEqual([{ scope: "test-scope", model: { providerID: "acp:claude", modelID: "claude-opus-4-6" } }])
     expect(container.textContent).toContain("Opus 4.6")
   })
 
@@ -581,7 +581,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("never shows the client default placeholder for Cursor while options are unresolved", () => {
-    harnessType = "cursor-acp"
+    harnessType = "acp:cursor"
     optionsLoading = true
     selectedModel = ""
     models = []
@@ -964,7 +964,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("an existing non-Pi session keeps its model picker enabled", () => {
-    harnessType = "claude-acp"
+    harnessType = "acp:claude"
     models = [{ id: "sonnet", name: "Sonnet" }]
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked modelLocked />)
@@ -991,8 +991,8 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
     expect(piRefreshCalls).toBe(1)
   })
 
-  test("claude-acp with no models still shows the Select model placeholder (unchanged)", () => {
-    harnessType = "claude-acp"
+  test("an ACP Claude connection with no models still shows the Select model placeholder (unchanged)", () => {
+    harnessType = "acp:claude"
     models = []
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)

@@ -119,7 +119,11 @@ export const appLocal: Policy = {
   // the shared runtime JSON response reader (agent-runtime-json.ts) and the
   // Stop fallback (submit-abort.ts): 912 + 2 = 914 modules, no new package
   // edge.
-  ceilings: { modules: 914, packages: 41 },
+  // The composer cloud-submit model gate carved out of submit.ts (the size
+  // ratchet caps submit.ts at 800 lines) adds one focused owner,
+  // composer/ui/submit-model-gate.ts: 914 + 1 = 915 modules, no new package
+  // edge.
+  ceilings: { modules: 915, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

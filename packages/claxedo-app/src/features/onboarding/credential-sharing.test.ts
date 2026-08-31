@@ -14,11 +14,11 @@ function credential(overrides: Partial<OnboardingCredential> = {}): OnboardingCr
 }
 
 describe("cloud shareability", () => {
-  test("a discovered Claude Code login is never shareable, under either harness binding", () => {
+  test("a discovered Claude Code login is never shareable, under either provider binding", () => {
     // `claudeOAuthItem` is the only producer of these rows and always writes
     // `kind: "oauth_token"` — this is the machine's Keychain login.
-    for (const providerId of ["claude-acp", "claude-sdk"]) {
-      const login = credential({ providerId, kind: "oauth_token", label: "Claude Code login · ACP adapter" })
+    for (const providerId of ["claude-sdk", "anthropic"]) {
+      const login = credential({ providerId, kind: "oauth_token", label: "Claude Code login · agent SDK" })
       expect(isCloudShareable(login)).toBe(false)
       expect(cloudShareBlock(login)?.repair).toContain("claude setup-token")
     }
@@ -36,7 +36,7 @@ describe("cloud shareability", () => {
     // as api_key because kind records how the secret was ENTERED, not what it
     // is. Reclassifying it to oauth_token server-side would silently block the
     // only cloud path Claude has — this test is what fails loudly instead.
-    for (const providerId of ["claude-acp", "claude-sdk"]) {
+    for (const providerId of ["claude-sdk", "anthropic"]) {
       const token = credential({ providerId, kind: "api_key", label: "Claude setup token" })
       expect(isCloudShareable(token)).toBe(true)
       expect(cloudShareBlock(token)).toBeUndefined()
@@ -44,13 +44,13 @@ describe("cloud shareability", () => {
   })
 
   test("Codex OAuth shares — the server rewrites ~/.codex after every refresh", () => {
-    for (const providerId of ["codex-acp", "codex-app-server", "openai"]) {
+    for (const providerId of ["codex-app-server", "openai"]) {
       expect(isCloudShareable(credential({ providerId, kind: "oauth_token" }))).toBe(true)
     }
   })
 
   test("a Cursor dashboard key shares — no rotation and no other owner", () => {
-    expect(isCloudShareable(credential({ providerId: "cursor-acp", kind: "api_key" }))).toBe(true)
+    expect(isCloudShareable(credential({ providerId: "cursor-sdk", kind: "api_key" }))).toBe(true)
   })
 
   test("plain API keys share, whatever the provider", () => {
@@ -76,10 +76,9 @@ describe("cloud shareability", () => {
   })
 
   test("a kindless Claude harness row from an older server is treated as the login", () => {
-    // Discovery is the only writer of `claude-acp`/`claude-sdk` rows, so the
+    // Discovery is the only writer of `claude-sdk` rows, so the
     // ambiguity resolves closed: guessing wrong here costs the user their own
     // Claude Code session.
-    expect(isCloudShareable(credential({ providerId: "claude-acp" }))).toBe(false)
     expect(isCloudShareable(credential({ providerId: "claude-sdk" }))).toBe(false)
   })
 
@@ -92,8 +91,8 @@ describe("cloud shareability", () => {
     // discovery.ts writes source from the CHOSEN SCOPE, so the same discovered
     // login reports "managed" or "local_only" depending on nothing meaningful.
     for (const source of ["managed", "local_only", "env", "upstream_sync"] as const) {
-      expect(isCloudShareable(credential({ providerId: "claude-acp", kind: "oauth_token", source }))).toBe(false)
-      expect(isCloudShareable(credential({ providerId: "codex-acp", kind: "oauth_token", source }))).toBe(true)
+      expect(isCloudShareable(credential({ providerId: "claude-sdk", kind: "oauth_token", source }))).toBe(false)
+      expect(isCloudShareable(credential({ providerId: "codex-app-server", kind: "oauth_token", source }))).toBe(true)
     }
   })
 })

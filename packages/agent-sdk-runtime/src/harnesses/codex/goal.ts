@@ -4,6 +4,7 @@ import type { AgentGoalMutationResult, AgentGoalResource } from "../../adapter-c
 import { GOAL_ACTIONS, goalCapabilities } from "../../capabilities"
 import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"
+import { settleGoalStop } from "../shared/goal-stop-order"
 import {
   errorMessage,
   record,
@@ -148,38 +149,44 @@ export class CodexGoalController {
   }
 
   /** Disable continuation first, then interrupt in-flight work (R:pause-order). */
-  private async pause(
+  private pause(
     sessionId: string,
     directory: string,
   ): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
-    const result = await this.set(sessionId, directory, { status: "paused" })
-    if (!result.ok) return result
-    await this.interruptTurn(sessionId)
-    return result
+    return settleGoalStop({
+      sessionId,
+      lifecycle: this.host.driverHost.lifecycle(),
+      disableContinuation: () => this.set(sessionId, directory, { status: "paused" }),
+    })
   }
 
-  private async clear(
+  private clear(
     sessionId: string,
     directory: string,
   ): Promise<AgentGoalMutationResult<null>> {
-    try {
-      const threadId = this.threadId(sessionId, directory)
-      const proc = await this.host.ensureProcess(directory)
-      const result = await this.requestWithThreadRecovery(
-        proc,
-        threadId,
-        directory,
-        "thread/goal/clear",
-        { threadId },
-      )
-      if (result?.cleared !== true) return { ok: false, status: "not_found", message: "No Codex Goal exists" }
-      this.statusByThread.delete(threadId)
-      this.reconcileLease(sessionId, null)
-      await this.interruptTurn(sessionId)
-      return { ok: true, goal: null }
-    } catch (error) {
-      return { ok: false, status: "failed", message: errorMessage(error) }
-    }
+    return settleGoalStop<null>({
+      sessionId,
+      lifecycle: this.host.driverHost.lifecycle(),
+      disableContinuation: async () => {
+        try {
+          const threadId = this.threadId(sessionId, directory)
+          const proc = await this.host.ensureProcess(directory)
+          const result = await this.requestWithThreadRecovery(
+            proc,
+            threadId,
+            directory,
+            "thread/goal/clear",
+            { threadId },
+          )
+          if (result?.cleared !== true) return { ok: false, status: "not_found", message: "No Codex Goal exists" }
+          this.statusByThread.delete(threadId)
+          this.reconcileLease(sessionId, null)
+          return { ok: true, goal: null }
+        } catch (error) {
+          return { ok: false, status: "failed", message: errorMessage(error) }
+        }
+      },
+    })
   }
 
   /**
@@ -208,11 +215,6 @@ export class CodexGoalController {
     this.releaseSession(sessionId, agentSessionId)
   }
 
-  private async interruptTurn(sessionId: string) {
-    const interrupted = this.host.driverHost.lifecycle().abort(sessionId)
-    if (interrupted) await this.host.driverHost.lifecycle().whenIdle(sessionId)
-  }
-
   /** Session-scoped cleanup when the driver deletes an agent session. */
   private releaseSession(sessionId: string, agentSessionId: string) {
     this.bindings.delete(agentSessionId)
@@ -234,17 +236,23 @@ export class CodexGoalController {
   /**
    * Goal routing must survive a driver restart. `bindings` is armed by
    * `goals.*` calls only, so a provider notification for a thread this driver
-   * is already running (an interactive turn resumed it after restart) would
-   * otherwise be dropped even though the capability advertises
-   * recovery: "reconcile". Recover the session from the live thread and re-arm
-   * the binding so every later frame routes without the lookup.
+   * is already running would otherwise be dropped even though the capability
+   * advertises recovery: "reconcile".
+   *
+   * A live thread names its own session. An ACTIVE Goal outlives its turns
+   * though — the autonomous `turn/started` that opens the next iteration
+   * arrives with no turn at all — so the runtime's own session index answers
+   * for every session it has bound or prompted. Either way the binding is
+   * re-armed, so later frames route without the lookup.
    */
   private resolveBinding(threadId: string) {
     const known = this.bindings.get(threadId)
     if (known) return known
     const active = this.host.activeThreads.get(threadId)
-    if (!active) return
-    const binding = { sessionId: active.sessionId, directory: active.directory }
+    const binding = active
+      ? { sessionId: active.sessionId, directory: active.directory }
+      : this.host.driverHost.getSessionForAgentSession(threadId)
+    if (!binding) return
     this.bindings.set(threadId, binding)
     return binding
   }

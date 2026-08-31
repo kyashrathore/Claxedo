@@ -6,17 +6,17 @@ describe("route session harness", () => {
     expect(routeSessionHarness({
       config: {
         harness: {
-          type: "claude-acp",
+          type: "acp:claude",
         },
       },
-    })).toEqual({ id: "claude-acp" })
+    })).toEqual({ id: "acp:claude" })
 
     expect(routeSessionHarness({
       runner: {
-        type: "codex-acp",
+        type: "acp:codex",
         binary: "/opt/bin/codex",
       },
-    })).toEqual({ id: "codex-acp", binary: "/opt/bin/codex" })
+    })).toEqual({ id: "acp:codex", binary: "/opt/bin/codex" })
 
     expect(routeSessionHarness({
       harness: {
@@ -27,7 +27,14 @@ describe("route session harness", () => {
           binary: "/opt/bin/claude",
         },
       },
-    })).toEqual({ id: "claude-acp", binary: "/opt/bin/claude" })
+    })).toEqual({ id: "acp:claude", binary: "/opt/bin/claude" })
+
+    expect(routeSessionHarness({
+      harness: {
+        id: "claude",
+        access: "native",
+      },
+    })).toEqual({ id: "claude-sdk" })
   })
 
   test("does not force an explicit harness ref for OpenCode sessions", () => {

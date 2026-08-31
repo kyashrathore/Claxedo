@@ -320,6 +320,40 @@ async function resolveGoalRuntime(
   return noStoreJson(c, errorBody("goal_runtime_unavailable", "Goal runtime is unavailable"), 503)
 }
 
+/**
+ * The scaffold every `/session/:id/goal*` route shares: admit the operation,
+ * resolve the session's directory, resolve its Goal runtime, and translate a
+ * thrown `AgentRuntimeGoalError` into its typed HTTP response.
+ *
+ * Each endpoint supplies only the runtime call that makes it different, so a
+ * new admission or error rule lands on every Goal endpoint at once instead of
+ * being copied into each handler.
+ */
+function goalRoute(
+  opts: Opts,
+  operation: string,
+  invoke: (input: {
+    c: Ctx
+    sessionId: string
+    directory: RuntimeDirectory
+    runtime: AgentRuntime
+  }) => Promise<Response> | Response,
+) {
+  return async (c: Ctx): Promise<Response> => {
+    const sessionId = c.req.param("id")
+    const guarded = await sessionOperationGuard(opts, c, sessionId, operation)
+    if (guarded) return guarded
+    const directory = await opts.resolveDirectory(c, { sessionId })
+    const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+    if (runtime instanceof Response) return runtime
+    try {
+      return await invoke({ c, sessionId, directory, runtime })
+    } catch (error) {
+      return goalRuntimeErrorResponse(c, error)
+    }
+  }
+}
+
 function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unknown {
   if (!s || typeof s !== "object") return s
   const r = s as Record<string, unknown>
@@ -699,102 +733,38 @@ export function createSessionRoutes(opts: Opts) {
       const caps = await adapter.readHarnessCapabilities(directory, { sessionId })
       return noStoreJson(c, caps)
     })
-    .get("/session/:id/goal/capabilities", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_capabilities")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
-      try {
-        return noStoreJson(c, await runtime.goals.capabilities(sessionId, directory))
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
-    .get("/session/:id/goal", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_read")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
-      try {
-        return noStoreJson(c, await runtime.goals.read(sessionId, directory))
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
-    .post("/session/:id/goal", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_start")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
+    // The combined Goal read. Session activation needs BOTH the adapter's Goal
+    // capabilities and the session's current Goal; asking for them separately
+    // costs two sequential round-trips and makes the runtime derive
+    // capabilities twice. This composes the same two resource calls server-side
+    // and skips the Goal read entirely when the harness has no Goal support.
+    .get("/session/:id/goal/state", goalRoute(opts, "goal_state", async ({ c, sessionId, directory, runtime }) => {
+      const capabilities = await runtime.goals.capabilities(sessionId, directory)
+      return noStoreJson(c, {
+        capabilities,
+        goal: capabilities.implemented ? await runtime.goals.read(sessionId, directory) : null,
+      })
+    }))
+    .get("/session/:id/goal/capabilities", goalRoute(opts, "goal_capabilities", async ({ c, sessionId, directory, runtime }) =>
+      noStoreJson(c, await runtime.goals.capabilities(sessionId, directory))))
+    .get("/session/:id/goal", goalRoute(opts, "goal_read", async ({ c, sessionId, directory, runtime }) =>
+      noStoreJson(c, await runtime.goals.read(sessionId, directory))))
+    .post("/session/:id/goal", goalRoute(opts, "goal_start", async ({ c, sessionId, directory, runtime }) => {
       const body = (await c.req.json().catch(() => ({}))) as { objective?: unknown }
-      try {
-        return goalMutationResponse(
-          c,
-          await runtime.goals.start({ sessionId, objective: body.objective as string }, directory),
-          201,
-        )
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
-    .post("/session/:id/goal/pause", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_pause")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
-      try {
-        return goalMutationResponse(c, await runtime.goals.pause(sessionId, directory))
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
-    .post("/session/:id/goal/resume", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_resume")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
-      try {
-        return goalMutationResponse(c, await runtime.goals.resume(sessionId, directory))
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
-    .post("/session/:id/goal/stop", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_stop")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
-      try {
-        return goalMutationResponse(c, await runtime.goals.stop(sessionId, directory))
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
-    .delete("/session/:id/goal", async (c) => {
-      const sessionId = c.req.param("id")
-      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_delete")
-      if (guarded) return guarded
-      const directory = await opts.resolveDirectory(c, { sessionId })
-      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
-      if (runtime instanceof Response) return runtime
-      try {
-        return goalMutationResponse(c, await runtime.goals.delete(sessionId, directory))
-      } catch (error) {
-        return goalRuntimeErrorResponse(c, error)
-      }
-    })
+      return goalMutationResponse(
+        c,
+        await runtime.goals.start({ sessionId, objective: body.objective as string }, directory),
+        201,
+      )
+    }))
+    .post("/session/:id/goal/pause", goalRoute(opts, "goal_pause", async ({ c, sessionId, directory, runtime }) =>
+      goalMutationResponse(c, await runtime.goals.pause(sessionId, directory))))
+    .post("/session/:id/goal/resume", goalRoute(opts, "goal_resume", async ({ c, sessionId, directory, runtime }) =>
+      goalMutationResponse(c, await runtime.goals.resume(sessionId, directory))))
+    .post("/session/:id/goal/stop", goalRoute(opts, "goal_stop", async ({ c, sessionId, directory, runtime }) =>
+      goalMutationResponse(c, await runtime.goals.stop(sessionId, directory))))
+    .delete("/session/:id/goal", goalRoute(opts, "goal_delete", async ({ c, sessionId, directory, runtime }) =>
+      goalMutationResponse(c, await runtime.goals.delete(sessionId, directory))))
     .get("/session/:id/subagents", async (c) => {
       const sessionId = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, sessionId, "list_subagents")

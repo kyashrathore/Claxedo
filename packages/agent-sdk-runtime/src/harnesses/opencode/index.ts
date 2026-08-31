@@ -59,7 +59,9 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
-import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
+import { errorMessage } from "../shared/sdk-runtime-values"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 export { opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./env"
 
 const log = Log.create({ service: "opencode-adapter" })
@@ -111,7 +113,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   // interleave. One chain per adapter keeps them ordered without blocking the
   // event stream the turn is draining.
   private subagentAdmissions = Promise.resolve()
-  private publishedGoals = new Map<string, string>()
+  private goalPublisher: GoalPublisher
   // One watcher for the whole server; every Goal session shares its event stream.
   private goalMonitors = new OpenCodeGoalMonitors({
     request: () => this.requestFn(),
@@ -140,6 +142,10 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     this.compat = input?.compat ?? true
     this.base = new Headers(input?.headers)
     this.eventHub = input?.eventHub
+    // Built here rather than in a field initializer: initializers run before the
+    // constructor body, so one would capture `this.eventHub` while it is still
+    // undefined and silently publish nothing.
+    this.goalPublisher = createGoalPublisher(this.eventHub)
     this.injectedRequest = input?.request
     this.processObserver = input?.processObserver
     this.subagents = input?.subagents
@@ -195,7 +201,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
         return {
           ok: false,
           status: "failed",
-          message: cause instanceof Error ? cause.message : String(cause),
+          message: errorMessage(cause),
         }
       }
     }
@@ -215,7 +221,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
           return goalCapabilities({
             implemented: true,
             available: false,
-            unavailableReason: cause instanceof Error ? cause.message : String(cause),
+            unavailableReason: errorMessage(cause),
             actions: [],
             recovery: "reconcile",
             optionalFields: [],
@@ -248,22 +254,19 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     }
   }
 
+  /**
+   * No `applyState`, unlike every other adapter: this adapter keeps no session
+   * store. The opencode server owns Goal state, `goals.read` fetches it over
+   * HTTP on every read, and the advertised recovery is "reconcile" — so there is
+   * no local projection here to mirror the snapshot into.
+   */
   private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
-    const signature = JSON.stringify(goal)
-    if (this.publishedGoals.get(sessionId) === signature) return
-    this.publishedGoals.set(sessionId, signature)
-    this.eventHub?.publishRuntime({
-      directory,
-      sessionId,
-      payload: goal
-        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
-        : agentRuntimeEvent.goalCleared({ sessionId }),
-    })
+    this.goalPublisher.publish({ sessionId, directory, goal })
   }
 
   private cleanupGoalSession(sessionId: string) {
     this.goalMonitors.stop(sessionId)
-    this.publishedGoals.delete(sessionId)
+    this.goalPublisher.forget(sessionId)
   }
 
   // ── Server lifecycle ─────────────────────────────────────────────────────────
@@ -421,7 +424,9 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async listSessions(directory: string): Promise<AgentSession[]> {
-    if (!this.compat) throw new Error("OpenCode compatibility reads are disabled")
+    // compat === false is the kill switch: empty/local results, never the
+    // upstream. Hosts route non-compat status snapshots through this read.
+    if (!this.compat) return []
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session`, {
       headers: this.headers(directory),
@@ -815,7 +820,6 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   dispose(): void {
     this.goalMonitors.dispose()
-    this.publishedGoals.clear()
     this.transportObservation?.exit({ reason: "disposed" })
     this.mcpObservations.forEach((handle) => handle.exit({ reason: "disposed" }))
     this.mcpObservations = []

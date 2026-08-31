@@ -13,28 +13,28 @@ describe("verified credential resolution", () => {
     {
       name: "anthropic-only",
       credentials: [{ providerId: "anthropic", verification: "ok" }],
-      runnableHarnesses: ["claude-acp", "claude-sdk", "pi"],
+      runnableHarnesses: ["claude-sdk", "pi"],
       defaultHarness: "claude-sdk",
       defaultModel: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
     },
     {
       name: "openai-only",
       credentials: [{ providerId: "openai", verification: "ok" }],
-      runnableHarnesses: ["codex-acp", "codex-app-server", "opencode", "pi"],
+      runnableHarnesses: ["codex-app-server", "opencode", "pi"],
       defaultHarness: "opencode",
       defaultModel: { providerID: "openai", modelID: "gpt-5.3-codex" },
     },
     {
       name: "codex subscription",
       credentials: [{ providerId: "codex-app-server", verification: "ok" }],
-      runnableHarnesses: ["codex-acp", "codex-app-server", "opencode", "pi"],
+      runnableHarnesses: ["codex-app-server", "opencode", "pi"],
       defaultHarness: "codex-app-server",
       defaultModel: { providerID: "openai-codex", modelID: "gpt-5.3-codex" },
     },
     {
       name: "cursor",
       credentials: [{ providerId: "cursor", verification: "ok" }],
-      runnableHarnesses: ["cursor-acp", "cursor-sdk"],
+      runnableHarnesses: ["cursor-sdk"],
       defaultHarness: "cursor-sdk",
       defaultModel: { providerID: "cursor", modelID: "cursor-default" },
     },
@@ -46,9 +46,6 @@ describe("verified credential resolution", () => {
         { providerId: "openai", verification: "ok" },
       ],
       runnableHarnesses: [
-        "claude-acp",
-        "codex-acp",
-        "cursor-acp",
         "claude-sdk",
         "codex-app-server",
         "cursor-sdk",
@@ -84,7 +81,7 @@ describe("verified credential resolution", () => {
       credentials: [{ providerId: "anthropic", verification: "ok" }],
       providerDefaults: {},
     })).toEqual({
-      runnableHarnesses: ["claude-acp", "claude-sdk", "pi"],
+      runnableHarnesses: ["claude-sdk", "pi"],
       defaultHarness: "claude-sdk",
       defaultModel: undefined,
     })

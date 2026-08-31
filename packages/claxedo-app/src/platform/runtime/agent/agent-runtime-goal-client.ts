@@ -16,6 +16,18 @@ export type AgentRuntimeGoalMutationResult =
   | { ok: true; goal: RuntimeGoalSnapshot | null }
   | { ok: false; status: "unsupported" | "unavailable" | "not_found" | "conflict" | "failed"; message: string }
 
+/**
+ * Everything a reader needs to know about a session's Goal, in one answer.
+ *
+ * `workspace-runtime`'s `/session/:id/goal/state` derives the capabilities once
+ * and only reads the Goal when the harness implements Goals, so `goal` is
+ * `null` whenever `capabilities.implemented` is false.
+ */
+export type AgentRuntimeGoalState = {
+  capabilities: AgentRuntimeGoalCapabilities
+  goal: RuntimeGoalSnapshot | null
+}
+
 export function supportsAgentRuntimeGoalAction(
   capabilities: Pick<AgentRuntimeGoalCapabilities, "implemented" | "available" | "actions">,
   action: AgentRuntimeGoalAction,
@@ -114,20 +126,26 @@ export function createAgentRuntimeGoalClient(fetchSession: FetchRuntimeSession) 
     init: mutation(input.method, input.signal, input.body),
   }))
 
+  const read = <T>(input: {
+    directory: AgentRuntimeDirectory
+    sessionID: string
+    suffix: string
+    signal?: AbortSignal
+  }) => fetchSession({
+    ...input,
+    init: { cache: "no-store", headers: { Accept: "application/json" }, signal: input.signal },
+  }).then(readRuntimeJson<T>)
+
   return {
-    async getGoalCapabilities(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
-      return readRuntimeJson<AgentRuntimeGoalCapabilities>(await fetchSession({
-        ...input,
-        suffix: "/goal/capabilities",
-        init: { cache: "no-store", headers: { Accept: "application/json" }, signal: input.signal },
-      }))
+    /**
+     * The combined Goal read every session activation uses: one round-trip for
+     * both the capabilities and the current Goal.
+     */
+    getGoalState(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
+      return read<AgentRuntimeGoalState>({ ...input, suffix: "/goal/state" })
     },
-    async getGoal(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
-      return readRuntimeJson<RuntimeGoalSnapshot | null>(await fetchSession({
-        ...input,
-        suffix: "/goal",
-        init: { cache: "no-store", headers: { Accept: "application/json" }, signal: input.signal },
-      }))
+    getGoalCapabilities(input: { directory: AgentRuntimeDirectory; sessionID: string; signal?: AbortSignal }) {
+      return read<AgentRuntimeGoalCapabilities>({ ...input, suffix: "/goal/capabilities" })
     },
     startGoal: (input: { directory: AgentRuntimeDirectory; sessionID: string; objective: string; signal?: AbortSignal }) =>
       mutate({ ...input, suffix: "/goal", method: "POST", body: { objective: input.objective } }),

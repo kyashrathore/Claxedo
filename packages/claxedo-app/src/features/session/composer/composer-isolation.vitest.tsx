@@ -12,15 +12,23 @@ const frameSnapshots = vi.hoisted(() => [] as Array<{
 }>)
 const dialogShow = vi.hoisted(() => vi.fn())
 const openSettingsProviders = vi.hoisted(() => vi.fn())
+// `prompt.goal` is per-draft state the real provider owns; the composer's Goal
+// controller reads it during render, so the stub has to carry it too.
+const goalArmed = vi.hoisted(() => ({ value: false }))
 
+// Answer each query by its OWN key, never by call order: an order-parity stub
+// silently hands the next query the previous one's payload the moment the
+// component adds a `useQuery` (the Goal draft-capabilities query did exactly
+// that, feeding `{ session: [] }` to the project catalog).
 vi.mock("@tanstack/solid-query", () => ({
-  useQuery: (() => {
-    let count = 0
-    return () => {
-      count += 1
-      return count % 2 === 1 ? { data: { session: [] } } : { data: [] }
-    }
-  })(),
+  queryOptions: <T,>(options: T) => options,
+  skipToken: Symbol.for("skipToken"),
+  useQuery: (options: () => { queryKey: readonly unknown[] }) => {
+    const key = options().queryKey
+    if (key[0] === "directory" && key[2] === "sessionCache") return { data: { session: [] } }
+    if (key[0] === "projects") return { data: [] }
+    return { data: undefined }
+  },
 }))
 
 vi.mock("@/features/session/composer/ui/frame", () => ({
@@ -144,6 +152,7 @@ vi.mock("@/features/session/providers/session-selection", () => ({
       ready: () => true,
       set: vi.fn(),
       restorePending: () => false,
+      selectionCatalogPending: () => false,
       variant: {
         current: () => undefined,
         selected: () => undefined,
@@ -164,6 +173,12 @@ vi.mock("@/features/session/providers/prompt", () => ({
     dirty: () => false,
     set: vi.fn(),
     reset: vi.fn(),
+    goal: {
+      armed: () => goalArmed.value,
+      setArmed: (value: boolean) => {
+        goalArmed.value = value
+      },
+    },
     context: {
       items: () => [],
       add: vi.fn(),

@@ -1404,7 +1404,7 @@ async function runCursorGoalUnavailableJourney(page: Page, entry: GoalEntry) {
   page.on("request", (request) => {
     const pathname = new URL(request.url()).pathname
     if (request.method() === "POST" && pathname === "/session") browserSessionCreates.push(pathname)
-    if (/\/session\/[^/]+\/goal(?:\/capabilities)?$/.test(pathname)) {
+    if (/\/session\/[^/]+\/goal(?:\/capabilities|\/state)?$/.test(pathname)) {
       browserGoalRequests.push({ method: request.method(), pathname })
     }
   })

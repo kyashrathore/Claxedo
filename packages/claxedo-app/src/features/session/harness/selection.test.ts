@@ -19,21 +19,22 @@ const base = {
 
 describe("harness selection", () => {
   test("resolves display names from harness ids and binaries", () => {
-    expect(harnessDisplayName({ harness: "codex-acp", harnessBinary: "" })).toBe("Codex")
-    expect(harnessDisplayName({ harness: "claude-acp", harnessBinary: "/tmp/claude-agent-acp" })).toBe("Claude")
+    expect(harnessDisplayName({ harness: "acp:codex", harnessBinary: "" })).toBe("Codex")
+    expect(harnessDisplayName({ harness: "acp:claude", harnessBinary: "/tmp/claude-agent-acp" })).toBe("Claude")
+    expect(harnessDisplayName({ harness: "claude-sdk", harnessBinary: "" })).toBe("Claude SDK")
     expect(harnessDisplayName({ harness: "opencode", harnessBinary: "custom-binary" })).toBe("custom-binary")
   })
 
   test("classifies harness mode from harness type", () => {
     expect(harnessMode("opencode")).toBe("opencode")
-    expect(harnessMode("codex-acp")).toBe("harness")
+    expect(harnessMode("acp:codex")).toBe("harness")
     expect(harnessMode()).toBe("unknown")
   })
 
   test("keeps selected model visible when options refresh without that row", () => {
     expect(harnessModels({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "opus",
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
     })).toEqual([
@@ -76,7 +77,7 @@ describe("harness selection", () => {
   test("blocks submit until live model options arrive", () => {
     expect(harnessModelKeyForSubmit({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "",
       dynamicModels: [],
     })).toBeUndefined()
@@ -103,7 +104,7 @@ describe("harness selection", () => {
   test("does not fabricate a default row after option discovery fails", () => {
     expect(harnessModels({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "",
       dynamicModels: [],
       configError: "Authentication required. Please run 'agent login' first.",
@@ -117,7 +118,7 @@ describe("harness selection", () => {
     })).toEqual([])
     expect(harnessModelKeyForSubmit({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "",
       dynamicModels: [],
       configError: "Authentication required. Please run 'agent login' first.",
@@ -133,21 +134,21 @@ describe("harness selection", () => {
   test("blocks submit while model options are loading or errored", () => {
     expect(harnessReadyForSubmit({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "sonnet",
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
       optionsLoading: true,
     })).toBe(false)
     expect(harnessReadyForSubmit({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "sonnet",
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
       readiness: "error",
     })).toBe(false)
     expect(harnessReadyForSubmit({
       ...base,
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "sonnet",
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
       configError: "Authentication required. Please run 'agent login' first.",
@@ -179,12 +180,12 @@ describe("harness selection", () => {
   test("returns canonical ModelKey for selectable harness models", () => {
     const state = {
       ...base,
-      harness: "codex-acp",
+      harness: "acp:codex",
       selectedModel: "gpt-5.5",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
     } satisfies HarnessSelectionState
 
-    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "codex-acp", modelID: "gpt-5.5" })
+    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "acp:codex", modelID: "gpt-5.5" })
     expect(harnessModelNameForSubmit(state)).toBe("GPT-5.5")
     expect(harnessReadyForSubmit(state)).toBe(true)
   })
@@ -198,7 +199,7 @@ describe("harness selection", () => {
  */
 describe("harnessModelKeyForSubmit — thought level", () => {
   const base = {
-    harness: "claude-acp" as const,
+    harness: "acp:claude" as const,
     selectedModel: "opus",
     readiness: "ready" as const,
     optionsLoading: false,
@@ -207,7 +208,7 @@ describe("harnessModelKeyForSubmit — thought level", () => {
 
   test("carries the selected level as the model key's variant", () => {
     expect(harnessModelKeyForSubmit({ ...base, selectedThoughtLevel: "high" })).toEqual({
-      providerID: "claude-acp",
+      providerID: "acp:claude",
       modelID: "opus",
       variant: "high",
     })
@@ -215,7 +216,7 @@ describe("harnessModelKeyForSubmit — thought level", () => {
 
   test("omits variant entirely when no level is selected", () => {
     expect(harnessModelKeyForSubmit(base)).toEqual({
-      providerID: "claude-acp",
+      providerID: "acp:claude",
       modelID: "opus",
     })
   })

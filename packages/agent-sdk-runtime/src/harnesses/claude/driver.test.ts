@@ -6,6 +6,7 @@ import {
   createClaudeSdkDriver,
   ingestClaudeSdkMessage,
 } from "./driver"
+import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 
 function driver() {
   return createClaudeSdkDriver({
@@ -200,7 +201,16 @@ describe("Claude SDK driver", () => {
     })).toEqual({ PATH: "/bin" })
   })
 
-  test("does not invent model options before a live probe", () => {
-    expect(driver().peekConfigOptions("claude-from-a-future-release")).toEqual([])
+  test("serves the static catalog until a live probe answers", () => {
+    // `peek` never spawns the probe query, so the picker would otherwise render
+    // empty on every cold read. The static catalog is the backstop; the live
+    // list replaces it as soon as `configOptions` gets an answer.
+    const [model, ...rest] = driver().peekConfigOptions("claude-from-a-future-release")
+    expect(rest).toEqual([])
+    expect(model).toMatchObject({
+      id: "model",
+      type: "select",
+      selectOptions: SDK_MODEL_CATALOG.claude.map(({ id, name }) => ({ id, name })),
+    })
   })
 })

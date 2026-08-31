@@ -271,7 +271,12 @@ export function localSessionRef(sessionID: string) {
 
 export function testHarnessController(): HarnessSubmitController {
   return {
-    harness: () => (state.harnessMode ? "claude-acp" : "opencode"),
+    // `claude-acp` was a bundled vendor ACP identity; `refactor(acp): make
+    // operator connections fully generic` deleted that whole class. The only
+    // ACP harness identity the app still has is an operator connection key,
+    // `acp:<slug>` (`isAcpConnectionHarnessId`), which is what a real picker
+    // hands submit — and the only form `normalizeHarnessIdentity` accepts.
+    harness: () => (state.harnessMode ? "acp:claude" : "opencode"),
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
     readyForSubmit: () => !state.harnessMode || !!state.harnessSubmitModel,
@@ -309,13 +314,28 @@ let rawCreatePromptSubmit: typeof import("./submit").createPromptSubmit
 let clearRuntimeQueries: (() => void) | undefined
 let resetRuntimeEnsureCache: (() => void) | undefined
 
-/** Wrapped `createPromptSubmit` that injects the composerMode + harnessController defaults. */
+/**
+ * Wrapped `createPromptSubmit` that injects the composerMode + harnessController
+ * + model-selection defaults.
+ *
+ * `selectedModelForSubmit` is the composer's authoritative model choice
+ * (`composer.tsx` passes `toolbarState.currentModel`, which is
+ * `local.model.current()` minus the "fallback" source). Submit reads ONLY that
+ * accessor — there is no `?? local.model.current()` fallback, and
+ * `workspace-runtime-route-audit.test.ts` pins that. So the harness has to feed
+ * the same `state.localCurrentModel` it already feeds `useLocal().model.current`,
+ * and it has to do it here rather than in `createSubmit`: the carved suites call
+ * this wrapper directly too, and a default that lived only in `createSubmit`
+ * would silently turn every one of those submits into a
+ * `modelAgentRequired` no-op.
+ */
 export function createPromptSubmit(
   input: Parameters<typeof import("./submit").createPromptSubmit>[0],
 ): ReturnType<typeof import("./submit").createPromptSubmit> {
   return rawCreatePromptSubmit({
     composerMode: defaultComposerMode,
     harnessController: testHarnessController(),
+    selectedModelForSubmit: () => state.localCurrentModel,
     ...input,
   })
 }

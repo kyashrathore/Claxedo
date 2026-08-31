@@ -15,6 +15,7 @@ import type { RuntimeEventHub } from "../../runtime-event-hub"
 import type { NativeSdkHarnessId } from "../../sdk-model-catalog"
 import type { AgentProcessObserver } from "../../process-observer"
 import type { SubagentObservation } from "../../subagent-admission"
+import type { AgentSessionBinding } from "./agent-session-index"
 import type { RuntimeEventRoute, ChildProjectionTarget } from "./child-event-routing"
 import type { AgentRuntimeStore } from "./runtime-store"
 import type { RuntimeAppendSource } from "./turn-projection"
@@ -78,6 +79,16 @@ export type SdkRuntimeDriverHost = {
   transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
   bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
   getAgentSessionId(sessionId: string): string | null | undefined
+  /**
+   * Reverse of `getAgentSessionId`, for a provider notification that arrives
+   * with no turn to read its owner off — an autonomous Goal turn, say. Returns
+   * the event scope with the session because publishing anything about a
+   * session needs both.
+   *
+   * Answers `null` when the store never bound the provider id; a driver that
+   * finds no binding routes exactly as it did before asking.
+   */
+  getSessionForAgentSession(agentSessionId: string): AgentSessionBinding | null
   getSessionConfig(sessionId: string): SessionConfig | null | undefined
   publishGoal(input: {
     sessionId: string
@@ -120,13 +131,11 @@ export type SdkRuntimeDriver = {
     ): Promise<void>
     stop(sessionId: string, directory: string): Promise<RuntimeGoalSnapshot | null>
     /**
-     * Clear the Goal at the provider, for the drivers whose provider has such
-     * an operation — only they may advertise the `delete` action.
-     *
-     * Optional because most native harnesses keep the Goal inside a provider
-     * session with no clear operation at all: deleting locally would lie,
-     * because resuming that session re-emits the Goal. `false` means the
-     * provider had nothing to clear.
+     * Drop the driver's record of the Goal — at the provider when it has a
+     * clear operation, otherwise by forgetting the driver-local state (safe
+     * once nothing on the provider side re-emits a Goal outside a Goal turn).
+     * The adapter orders it after stop/abort/idle. `false` means there was
+     * nothing to clear.
      */
     delete?(sessionId: string, directory: string): Promise<boolean>
   }

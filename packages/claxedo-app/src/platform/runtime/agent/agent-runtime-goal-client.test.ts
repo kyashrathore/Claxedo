@@ -74,7 +74,24 @@ describe("agent runtime goal client", () => {
   test("reads keep throwing on any non-2xx", async () => {
     const { client } = clientReturning(() => new Response("nope", { status: 409 }))
 
-    await expect(client.getGoal(request)).rejects.toThrow("nope")
     await expect(client.getGoalCapabilities(request)).rejects.toThrow("nope")
+    await expect(client.getGoalState(request)).rejects.toThrow("nope")
+  })
+
+  test("reads capabilities and Goal from the combined route in one request", async () => {
+    const state = {
+      capabilities: {
+        implemented: true,
+        available: true,
+        actions: ["pause", "resume", "delete"],
+        recovery: "reconcile",
+        optionalFields: [],
+      },
+      goal: { sessionId: "ses_1", objective: "Ship it", status: "active", createdAt: 1, updatedAt: 2 },
+    }
+    const { client, calls } = clientReturning(() => Response.json(state))
+
+    await expect(client.getGoalState(request)).resolves.toEqual(state)
+    expect(calls).toEqual([{ suffix: "/goal/state", method: undefined }])
   })
 })

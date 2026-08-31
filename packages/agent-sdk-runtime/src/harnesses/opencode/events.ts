@@ -10,6 +10,7 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
+import { errorMessage } from "../shared/sdk-runtime-values"
 import type { OpenCodeRequestFn } from "./index"
 
 export const INCOMPLETE_EVENT_STREAM_MESSAGE = "OpenCode event stream ended before the session completed"
@@ -80,7 +81,7 @@ export function openEventStream(request: OpenCodeRequestFn, baseHeaders: Headers
       done()
     })
     .catch((err) => {
-      handle.err = err instanceof Error ? err.message : String(err)
+      handle.err = errorMessage(err)
       done()
     })
 

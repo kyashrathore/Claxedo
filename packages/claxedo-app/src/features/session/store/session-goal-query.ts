@@ -20,8 +20,7 @@ import {
 } from "./session-goal-cache"
 import {
   deleteSessionGoalByTransport,
-  fetchSessionGoalByTransport,
-  fetchSessionGoalCapabilitiesByTransport,
+  fetchSessionGoalStateByTransport,
   pauseSessionGoalByTransport,
   resumeSessionGoalByTransport,
   stopSessionGoalByTransport,
@@ -55,11 +54,15 @@ function requestScope(input: SessionGoalTransportScope) {
   return ["runtime", "session-goal-request", transportAuthority(input)] as const
 }
 
-async function readSessionGoal(input: SessionGoalTransportScope, signal?: AbortSignal): Promise<SessionGoalData> {
-  const request = { ...input, signal }
-  const capabilities = await fetchSessionGoalCapabilitiesByTransport(request)
-  const goal = capabilities.implemented ? await fetchSessionGoalByTransport(request) : null
-  return { capabilities, goal }
+/**
+ * ONE round-trip per activation.
+ *
+ * The runtime has to derive the Goal capabilities to answer either read, so
+ * `/session/:id/goal/state` composes both server-side — including the "no Goal
+ * when the harness doesn't implement Goals" rule this used to apply here.
+ */
+function readSessionGoal(input: SessionGoalTransportScope, signal?: AbortSignal): Promise<SessionGoalData> {
+  return fetchSessionGoalStateByTransport({ ...input, signal })
 }
 
 export async function syncSessionGoalData(input: {

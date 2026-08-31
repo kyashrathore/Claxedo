@@ -3,11 +3,10 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import type {
   AgentRuntimeDirectory,
-  AgentRuntimeGoalCapabilities,
   AgentRuntimeGoalMutationResult,
   AgentRuntimePermissionModeState,
 } from "@/platform/runtime/agent/agent-runtime-client"
-import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runtime-goal-client"
 
 export type SessionTurnOutcome = (
   | { status: "completed"; completedAt: number; reason?: string }
@@ -56,18 +55,19 @@ export type SessionBackend = {
     sessionRef?: SessionRef
     signal?: AbortSignal
   }) => Promise<SessionTransportCapabilities>
-  getGoalCapabilities: (input: {
+  /**
+   * The session's Goal capabilities AND its current Goal, in ONE round-trip.
+   *
+   * Every activation needs both, and the runtime has to derive the capabilities
+   * to answer either, so the backend exposes only the combined read rather than
+   * two endpoints a caller would always have to chain.
+   */
+  getGoalState: (input: {
     directory: AgentRuntimeDirectory
     sessionID: string
     sessionRef?: SessionRef
     signal?: AbortSignal
-  }) => Promise<AgentRuntimeGoalCapabilities>
-  getGoal: (input: {
-    directory: AgentRuntimeDirectory
-    sessionID: string
-    sessionRef?: SessionRef
-    signal?: AbortSignal
-  }) => Promise<RuntimeGoalSnapshot | null>
+  }) => Promise<AgentRuntimeGoalState>
   startGoal: (input: {
     directory: AgentRuntimeDirectory
     sessionID: string

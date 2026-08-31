@@ -213,7 +213,11 @@ export const desktopRendererUnsigned: Policy = {
   // The review-fix pass adds the same two focused owners as app-local (shared
   // runtime JSON reader agent-runtime-json.ts, Stop fallback submit-abort.ts):
   // 996 + 2 = 998 modules, no new package edge.
-  ceilings: { modules: 998, packages: 62 },
+  // The composer cloud-submit model gate carved out of submit.ts (the size
+  // ratchet caps submit.ts at 800 lines) adds one focused owner,
+  // composer/ui/submit-model-gate.ts: 998 + 1 = 999 modules, no new package
+  // edge.
+  ceilings: { modules: 999, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -57,6 +57,14 @@ import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
 import { SessionGoal } from "./goal"
+import {
+  GOAL_PROMPT_TEXT,
+  goalContinuationPrompt,
+  goalEvaluationProgress,
+  goalEvaluatorRequest,
+  goalInitialPrompt,
+  parseGoalEvaluation,
+} from "./goal-protocol"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -1386,11 +1394,7 @@ const layer = Layer.effect(
         .stream({
           agent: worker,
           user,
-          system: [
-            "You are an independent completion evaluator.",
-            'Return exactly one JSON object: {"met":boolean,"reason":string}.',
-            "Do not use tools, perform work, or assume missing evidence.",
-          ],
+          system: [...GOAL_PROMPT_TEXT.evaluatorSystem],
           tools: {},
           toolChoice: "none",
           retries: 0,
@@ -1398,13 +1402,7 @@ const layer = Layer.effect(
           sessionID: input.sessionID,
           messages: [{
             role: "user",
-            content: [
-              "OBJECTIVE:",
-              input.objective,
-              "",
-              "LATEST WORK RESULT:",
-              goalWorkText(input.work) || "(no visible result)",
-            ].join("\n"),
+            content: goalEvaluatorRequest({ objective: input.objective, work: goalWorkText(input.work) }),
           }],
         })
         .pipe(
@@ -1412,13 +1410,7 @@ const layer = Layer.effect(
           Stream.map((event) => event.text),
           Stream.mkString,
         )
-      const object = response.match(/\{[\s\S]*\}/)?.[0]
-      if (!object) throw new Error("OpenCode Goal evaluator returned no JSON result")
-      const result = JSON.parse(object) as { met?: unknown; reason?: unknown }
-      if (typeof result.met !== "boolean" || typeof result.reason !== "string") {
-        throw new Error("OpenCode Goal evaluator returned an invalid result")
-      }
-      return { met: result.met, reason: result.reason }
+      return parseGoalEvaluation(response, "OpenCode")
     })
 
     const runGoal = Effect.fn("SessionPrompt.runGoal")(function* (run: SessionGoal.Run) {
@@ -1431,15 +1423,8 @@ const layer = Layer.effect(
           parts: [{
             type: "text",
             text: iteration === 1
-              ? [
-                  `Work autonomously toward this Goal: ${current.objective}`,
-                  "Use tools as needed and report concrete evidence. An independent evaluator decides completion.",
-                ].join("\n\n")
-              : [
-                  `Continue working toward the Goal: ${current.objective}`,
-                  `Independent evaluator: ${current.lastReason ?? "More evidence is required"}`,
-                  "Address the missing evidence and continue autonomously.",
-                ].join("\n\n"),
+              ? goalInitialPrompt(current.objective)
+              : goalContinuationPrompt({ objective: current.objective, reason: current.lastReason }),
           }],
         })
         if (!(yield* goals.canContinue(SessionID.make(current.sessionId), run.generation))) return
@@ -1451,13 +1436,7 @@ const layer = Layer.effect(
         const next = yield* goals.update({
           sessionID: SessionID.make(current.sessionId),
           generation: run.generation,
-          update: (goal) => ({
-            ...goal,
-            status: evaluation.met ? "complete" : "active",
-            updatedAt: Date.now(),
-            iteration,
-            lastReason: evaluation.reason,
-          }),
+          update: (goal) => ({ ...goal, ...goalEvaluationProgress({ evaluation, iteration }) }),
         })
         if (!next || next.status !== "active") return
       }

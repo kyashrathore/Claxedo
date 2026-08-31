@@ -89,7 +89,7 @@ export {
   sdkModelConfigOption,
   sdkModelOptions,
 } from "./sdk-model-catalog"
-export type { SdkModelCatalog, SdkModelEntry, SdkModelId } from "./sdk-model-catalog"
+export type { NativeSdkHarnessId, SdkModelCatalog, SdkModelEntry, SdkModelId } from "./sdk-model-catalog"
 export { createLiveModelSource } from "./live-model-source"
 export type { LiveModelSource } from "./live-model-source"
 export type {

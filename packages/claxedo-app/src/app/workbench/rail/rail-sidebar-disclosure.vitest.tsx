@@ -435,7 +435,11 @@ describe("RailSidebar disclosure controls", () => {
     expect(railRuntimeMocks.createClient).toHaveBeenCalledTimes(callsAfterCollapse)
   })
 
-  test("polls a local workspace row through its directory authority, not its inventory association", async () => {
+  test("an explicit workspace association keeps the poll on the workspace authority even under a local environment label", async () => {
+    // `railWorkspaceSessionBacking`: environment labels can still say `local`
+    // for a user-hosted workspace (its owner executes it locally, browsers
+    // reach it through the relay), so an explicit workspace row stays
+    // relay-backed until signed inventory hydrates.
     sessionListMocks.items = [{
       type: "session",
       sessionRef: "workspace:local-association:session:local-session",
@@ -461,7 +465,10 @@ describe("RailSidebar disclosure controls", () => {
       "data-session-statuses",
       "local-session:working",
     ))
-    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({ directory: "/repo/main" })
+    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({
+      directory: "/repo/main",
+      workspaceId: "local-association",
+    })
   })
 
   test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {

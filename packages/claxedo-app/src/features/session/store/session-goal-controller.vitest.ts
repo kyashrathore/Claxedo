@@ -76,9 +76,9 @@ function mountController() {
 
 async function answerGoalRead(goal: typeof activeGoal | null) {
   await vi.waitFor(() => expect(harness.pending.length).toBeGreaterThan(0))
-  harness.pending.find((item) => item.url.includes("/goal/capabilities"))?.resolve(Response.json(capabilities))
-  await vi.waitFor(() => expect(harness.pending).toHaveLength(2))
-  harness.pending.find((item) => item.url.includes("/goal?") && item.method === "GET")?.resolve(Response.json(goal))
+  harness.pending
+    .find((item) => item.url.includes("/goal/state") && item.method === "GET")
+    ?.resolve(Response.json({ capabilities, goal }))
 }
 
 afterEach(() => {

@@ -29,149 +29,51 @@ import { resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 
-declare const agentRuntimeStore: unique symbol
-declare const agentHarnessFactory: unique symbol
+export {
+  AgentRuntimeGoalError,
+  AgentRuntimeTurnAdmissionError,
+  isAgentRuntimeGoalError,
+  isAgentRuntimeTurnAdmissionError,
+} from "./runtime/contracts"
+export type {
+  AgentHarnessFactory,
+  AgentRuntimeAbortResult,
+  AgentRuntimeEventEnvelope,
+  AgentRuntimeGoalErrorCode,
+  AgentRuntimeGoalStartInput,
+  AgentRuntimeHealth,
+  AgentRuntimeInteractionResult,
+  AgentRuntimePermissionDecision,
+  AgentRuntimeSessionCreateInput,
+  AgentRuntimeStore,
+  AgentRuntimeSubscribeInput,
+  AgentRuntimeTurnStartInput,
+  AgentRuntimeTurnStartResult,
+  CreateAgentRuntimeInput,
+} from "./runtime/contracts"
+import {
+  AgentRuntimeGoalError,
+  AgentRuntimeTurnAdmissionError,
+} from "./runtime/contracts"
+import type {
+  AgentHarnessFactory,
+  AgentRuntimeAbortResult,
+  AgentRuntimeEventEnvelope,
+  AgentRuntimeGoalStartInput,
+  AgentRuntimeHealth,
+  AgentRuntimeInteractionResult,
+  AgentRuntimePermissionDecision,
+  AgentRuntimeSessionCreateInput,
+  AgentRuntimeStore,
+  AgentRuntimeSubscribeInput,
+  AgentRuntimeTurnStartInput,
+  AgentRuntimeTurnStartResult,
+  CreateAgentRuntimeInput,
+  AgentHarnessFactoryContext,
+  InternalAgentHarnessFactory,
+  RuntimeStoreInternal,
+} from "./runtime/contracts"
 
-export type AgentRuntimeStore = {
-  readonly [agentRuntimeStore]: true
-}
-
-type RuntimeStoreInternal = AgentRuntimeStoreWithRecovery
-type InternalAgentHarnessFactory = {
-  id: SessionHarness["id"]
-  access: SessionHarness["access"]
-  create(context: AgentHarnessFactoryContext): AgentHarnessAdapter
-}
-
-export type AgentRuntimeAbortResult =
-  | { ok: true; status: "cancelled" | "already_idle" }
-  | { ok: false; status: "not_found" | "recovering" | "failed"; message: string }
-
-export type AgentRuntimePermissionDecision = "allow_once" | "allow_always" | "deny" | "reject_always"
-
-export type AgentRuntimeInteractionResult = {
-  events: CompatEvent[]
-}
-
-export type AgentRuntimeHealth = {
-  status: "ok" | "degraded" | "unavailable"
-  reason?: string
-  message?: string
-  sessions?: Array<{
-    id: string
-    status?: string | null
-    message?: string | null
-  }>
-}
-
-type AgentHarnessFactoryContext = {
-  store: RuntimeStoreInternal
-  eventHub: RuntimeEventHub
-}
-
-export type AgentHarnessFactory = {
-  id: SessionHarness["id"]
-  access: SessionHarness["access"]
-  readonly [agentHarnessFactory]: true
-}
-
-export type CreateAgentRuntimeInput = {
-  store: AgentRuntimeStore
-  harnesses: AgentHarnessFactory[]
-  resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
-  subscriberBufferSize?: number
-}
-
-export type AgentRuntimeEventEnvelope = {
-  sessionId: string
-  directory: RuntimeDirectory
-  payload: AgentRuntimeStreamEvent
-}
-
-export type AgentRuntimeSubscribeInput = {
-  sessionId?: string
-  directory?: RuntimeDirectory
-}
-
-export type AgentRuntimeSessionCreateInput = {
-  id?: string
-  directory: RuntimeDirectory
-  harness: SessionHarness
-  model?: PromptModel
-  variant?: string | null
-  agent?: string | null
-  title?: string
-}
-
-export type AgentRuntimeTurnStartInput = {
-  sessionId: string
-  text?: string
-  parts?: unknown[]
-  messageId?: string
-  assistantMessageId?: string
-  agent?: string
-  model?: PromptModel
-  tools?: Record<string, boolean>
-  format?: PromptInput["format"]
-  system?: string
-  permissionMode?: string
-  variant?: string
-}
-
-export type AgentRuntimeTurnStartResult = {
-  sessionId: string
-  userMessageId: string
-  assistantMessageId: string
-  directory: RuntimeDirectory
-  prompt: PromptInput
-}
-
-export type AgentRuntimeGoalStartInput = {
-  sessionId: string
-  objective: string
-}
-
-export type AgentRuntimeGoalErrorCode =
-  | "goal_invalid_objective"
-  | "goal_session_not_found"
-  | "goal_scope_mismatch"
-  | "goal_unavailable"
-  | "goal_already_exists"
-  | "goal_action_unavailable"
-
-export class AgentRuntimeGoalError extends Error {
-  constructor(
-    readonly code: AgentRuntimeGoalErrorCode,
-    message: string,
-  ) {
-    super(message)
-    this.name = "AgentRuntimeGoalError"
-  }
-}
-
-export function isAgentRuntimeGoalError(error: unknown): error is AgentRuntimeGoalError {
-  return error instanceof AgentRuntimeGoalError || (
-    !!error && typeof error === "object" &&
-    typeof (error as { code?: unknown }).code === "string" &&
-    (error as { code: string }).code.startsWith("goal_")
-  )
-}
-
-export class AgentRuntimeTurnAdmissionError extends Error {
-  readonly code = "turn_already_active"
-
-  constructor(readonly sessionId: string) {
-    super("Session is already processing a message")
-    this.name = "AgentRuntimeTurnAdmissionError"
-  }
-}
-
-export function isAgentRuntimeTurnAdmissionError(error: unknown): error is AgentRuntimeTurnAdmissionError {
-  return error instanceof AgentRuntimeTurnAdmissionError || (
-    !!error && typeof error === "object" &&
-    (error as { code?: unknown }).code === "turn_already_active"
-  )
-}
 
 export type AgentRuntime = ReturnType<typeof createAgentRuntime>
 
@@ -232,14 +134,58 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return await resolution
   }
 
-  const configForSession = (sessionId: string) => {
-    const config = store.getSessionConfig(sessionId)
-    if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
-    return config
+  const sessionDirectory = (sessionId: string): RuntimeDirectory => {
+    const session = store.getSession(sessionId) as { directory?: string } | null
+    return session?.directory ?? undefined
   }
 
-  const adapterForSession = async (sessionId: string) => {
-    return await adapterFor(configForSession(sessionId).harness)
+  /**
+   * The store is authoritative for session config, but a session row can exist
+   * without one — an adapter bound the session before its config write landed,
+   * or the store was hydrated from an older shape. Ask the adapter that owns the
+   * session to describe it and write that answer back, so the store stays the
+   * authority: the derivation runs once per session and every later read is a
+   * plain store hit. A session no adapter can be named for stays a hard error.
+   */
+  const runtimeForSession = async (
+    sessionId: string,
+  ): Promise<{ adapter: AgentHarnessAdapter; config: SessionConfig }> => {
+    const stored = store.getSessionConfig(sessionId)
+    if (stored) return { adapter: await adapterFor(stored.harness), config: stored }
+    // Without a persisted harness only a lone registered adapter can be named
+    // the owner; picking one of several would be a guess. An id the store never
+    // bound is not a config gap — deriving one would write a config row for a
+    // session that does not exist, so it stays an unknown session.
+    const adapter = store.getSession(sessionId) && adapters.size === 1
+      ? adapters.values().next().value
+      : undefined
+    if (!adapter) throw new Error(`Session ${sessionId} has no runtime config`)
+    const derived = await adapter.getSessionConfig(sessionId, sessionDirectory(sessionId))
+    return { adapter, config: store.updateSessionConfig(sessionId, derived) ?? derived }
+  }
+
+  const configForSession = async (sessionId: string) => (await runtimeForSession(sessionId)).config
+
+  const adapterForSession = async (sessionId: string) => (await runtimeForSession(sessionId)).adapter
+
+  /**
+   * An interaction id outlives the listing it came from: the aggregated list is
+   * a snapshot, and a session whose stored directory differs in shape from the
+   * request's never appears in it at all. Route on the session's own adapter
+   * whenever one can be resolved, and otherwise on whichever registered adapter
+   * implements the reply — the adapter is the authority on whether the id is
+   * still pending, so a listing miss must not make a live interaction
+   * unanswerable.
+   */
+  const interactionAdapter = async (
+    method: "respondPermission" | "replyQuestion" | "rejectQuestion",
+    sessionId?: string,
+  ) => {
+    if (sessionId) {
+      const scoped = await adapterForSession(sessionId).catch(() => null)
+      if (scoped?.[method]) return scoped
+    }
+    return [...adapters.values()].find((adapter) => adapter[method])
   }
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
@@ -757,9 +703,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
-        const config = configForSession(turn.sessionId)
+        const { adapter, config } = await runtimeForSession(turn.sessionId)
         const directory = session.directory ?? undefined
-        const adapter = await adapterFor(config.harness)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
@@ -890,8 +835,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as AgentPermission[])
           .find((item) => item.id === permissionId)
-        if (!permission) throw new Error(`Permission ${permissionId} not found`)
-        const adapter = await adapterForSession(permission.sessionID)
+        const adapter = await interactionAdapter("respondPermission", permission?.sessionID)
         if (!adapter?.respondPermission) throw new Error("No registered harness supports permissions")
         const result = await adapter.respondPermission(permissionId, decision, directory)
         publishInteractionEvents(result?.events, directory)
@@ -905,8 +849,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async answer(questionId: string, answer: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
-        if (!question) throw new Error(`Question ${questionId} not found`)
-        const adapter = await adapterForSession(question.sessionID)
+        const adapter = await interactionAdapter("replyQuestion", question?.sessionID)
         if (!adapter?.replyQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.replyQuestion(questionId, answer, directory)
         publishInteractionEvents(result?.events, directory)
@@ -915,8 +858,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async reject(questionId: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
-        if (!question) throw new Error(`Question ${questionId} not found`)
-        const adapter = await adapterForSession(question.sessionID)
+        const adapter = await interactionAdapter("rejectQuestion", question?.sessionID)
         if (!adapter?.rejectQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.rejectQuestion(questionId, directory)
         publishInteractionEvents(result?.events, directory)
@@ -942,7 +884,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     config: {
       async read(sessionId: string, _directory?: RuntimeDirectory) {
-        return configForSession(sessionId)
+        return await configForSession(sessionId)
       },
       async update(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
         return await updateSessionConfig(sessionId, update, directory)

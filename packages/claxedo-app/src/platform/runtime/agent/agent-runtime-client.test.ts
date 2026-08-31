@@ -145,7 +145,6 @@ describe("AgentRuntimeClient", () => {
     const scope = { directory: "/repo/main", sessionID: "runtime-session-1" }
 
     await client.getGoalCapabilities(scope)
-    await client.getGoal(scope)
     await client.startGoal({ ...scope, objective: goal.objective })
     await client.pauseGoal(scope)
     await client.resumeGoal(scope)
@@ -154,7 +153,6 @@ describe("AgentRuntimeClient", () => {
 
     expect(seen).toEqual([
       { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/capabilities?directory=%2Frepo%2Fmain", method: "GET" },
-      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal?directory=%2Frepo%2Fmain", method: "GET" },
       { url: "http://127.0.0.1:3001/session/runtime-session-1/goal?directory=%2Frepo%2Fmain", method: "POST", body: JSON.stringify({ objective: goal.objective }) },
       { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/pause?directory=%2Frepo%2Fmain", method: "POST", body: "{}" },
       { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/resume?directory=%2Frepo%2Fmain", method: "POST", body: "{}" },

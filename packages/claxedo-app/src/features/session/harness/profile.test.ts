@@ -8,6 +8,7 @@ import {
   extractThoughtLevelFromConfigOptions,
   failedHarness,
   hardFailedHarness,
+  harnessDisplayLabel,
   harnessProfile,
   optionsResponse,
   pickHarness,
@@ -15,26 +16,29 @@ import {
 } from "./profile"
 
 describe("harness profile", () => {
-  test("infers harness from binary names", () => {
-    expect(pickHarness(undefined, "/tmp/codex-acp")).toBe("codex-acp")
-    expect(pickHarness(undefined, "/tmp/claude-agent-acp")).toBe("claude-acp")
-    expect(pickHarness(undefined, "/tmp/agent")).toBe("cursor-acp")
-    expect(pickHarness(undefined, "/tmp/cursor-agent")).toBe("cursor-acp")
-    expect(pickHarness(undefined, "C:/agents/codex-acp.exe")).toBe("codex-acp")
-    expect(pickHarness(undefined, "C:/agents/agent.exe")).toBe("cursor-acp")
+  // ACP operator connections are fully generic: a binary name never selects a
+  // harness identity — only the explicit type/access pair does.
+  test("never infers a harness from binary names", () => {
+    expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
+    expect(pickHarness(undefined, "/tmp/claude-agent-acp")).toBeUndefined()
+    expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
+    // The binary does not override an explicit identity either.
+    expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
+    expect(pickHarness("acp:codex", "/tmp/claude-agent-acp")).toBe("acp:codex")
   })
 
-  test("keeps existing backslash binary matching behavior", () => {
-    expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBe("codex-acp")
-    expect(pickHarness(undefined, "C:\\agents\\claude-agent-acp")).toBe("claude-acp")
-    expect(pickHarness(undefined, "C:\\agents\\agent.exe")).toBeUndefined()
+  test("resolves structured identities from type and access", () => {
+    expect(pickHarness("claude", null, "native")).toBe("claude-sdk")
+    expect(pickHarness("codex", null, "native")).toBe("codex-app-server")
+    expect(pickHarness("cursor", null, "native")).toBe("cursor-sdk")
+    expect(pickHarness("opencode", null, "native")).toBe("opencode")
+    expect(pickHarness("pi", null, "native")).toBe("pi")
+    expect(pickHarness("claude", null, "acp")).toBe("acp:claude")
+    expect(pickHarness("my-agent", null, "acp")).toBe("acp:my-agent")
   })
 
   test("covers display names for every harness id", () => {
     const types: HarnessType[] = [
-      "claude-acp",
-      "codex-acp",
-      "cursor-acp",
       "claude-sdk",
       "codex-app-server",
       "cursor-sdk",
@@ -47,12 +51,15 @@ describe("harness profile", () => {
     }
     expect(HARNESS_DISPLAY_NAMES["agent"]).toBe("Cursor")
     expect(HARNESS_DISPLAY_NAMES["cursor-agent"]).toBe("Cursor")
+    // Operator ACP connections have no table row; their label is derived.
+    expect(harnessDisplayLabel("acp:claude")).toBe("Claude")
+    expect(harnessDisplayLabel("acp:my-agent")).toBe("My Agent")
   })
 
   test("resolves effective harness model", () => {
-    expect(effectiveHarnessModel("codex-acp", "")).toBe("default")
-    expect(effectiveHarnessModel("claude-acp", undefined)).toBe("default")
-    expect(effectiveHarnessModel("codex-acp", "gpt-5.5")).toBe("gpt-5.5")
+    expect(effectiveHarnessModel("acp:codex", "")).toBe("default")
+    expect(effectiveHarnessModel("acp:claude", undefined)).toBe("default")
+    expect(effectiveHarnessModel("acp:codex", "gpt-5.5")).toBe("gpt-5.5")
     expect(effectiveHarnessModel("opencode", "gpt-5.5")).toBe("")
     expect(effectiveHarnessModel("pi", undefined)).toBe("")
   })
@@ -99,16 +106,16 @@ describe("harness profile", () => {
   test("decodes legacy runner session config", () => {
     expect(decodeSessionConfig({
       runner: {
-        type: "codex-acp",
-        binary: "/tmp/codex-acp",
+        type: "codex-app-server",
+        binary: "/tmp/codex",
       },
       model: {
         modelID: "gpt-5.5",
       },
     })).toEqual({
       harness: {
-        type: "codex-acp",
-        binary: "/tmp/codex-acp",
+        type: "codex-app-server",
+        binary: "/tmp/codex",
       },
       model: {
         modelID: "gpt-5.5",
@@ -119,9 +126,9 @@ describe("harness profile", () => {
   test("decodes harness id session config", () => {
     expect(decodeSessionConfig({
       harness: {
-        id: "claude-acp",
+        id: "acp:claude",
       },
-    }).harness?.type).toBe("claude-acp")
+    }).harness?.type).toBe("acp:claude")
 
     expect(decodeSessionConfig({
       harness: {
@@ -147,7 +154,7 @@ describe("harness profile", () => {
         id: "cursor",
         access: "acp",
       },
-    }).harness?.type).toBe("cursor-acp")
+    }).harness?.type).toBe("acp:cursor")
   })
 
   test("decodes harness health forwarded from the health route (T4)", () => {

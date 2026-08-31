@@ -13,12 +13,12 @@ describe("harness store state projectors", () => {
   test("builds initial state from scoped preferences and legacy fallbacks", () => {
     expect(initialHarnessStoreState({
       scope: "session:ses_1",
-      legacyHarness: "claude-acp",
+      legacyHarness: "claude-sdk",
       legacyModel: "sonnet",
       legacyAgent: "build",
     })).toMatchObject({
       harnessMode: "harness",
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "sonnet",
       selectedAgent: "build",
       readiness: "ready",
@@ -27,7 +27,7 @@ describe("harness store state projectors", () => {
 
     expect(initialHarnessStoreState({
       scope: "draft:/repo:route",
-      legacyHarness: "claude-acp",
+      legacyHarness: "claude-sdk",
       legacyModel: "sonnet",
     })).toMatchObject({
       harnessMode: "opencode",
@@ -82,12 +82,12 @@ describe("harness store state projectors", () => {
     expect(harnessStatusPatch({
       current: initialHarnessStoreState({
         scope: "draft:/repo:route",
-        savedHarness: "codex-acp",
+        savedHarness: "acp:codex",
         savedModel: "gpt-5.5",
       }),
       data: {
-        type: "claude-acp",
-        activeType: "claude-acp",
+        type: "acp:claude",
+        activeType: "acp:claude",
         activeBinary: "/bin/claude",
         model: "sonnet",
         workspaceId: "ws_1",
@@ -95,7 +95,7 @@ describe("harness store state projectors", () => {
     })).toMatchObject({
       harnessMode: "harness",
       harnessBinary: "/bin/claude",
-      harness: "claude-acp",
+      harness: "acp:claude",
       selectedModel: "sonnet",
       readiness: "ready",
       configError: undefined,
@@ -226,7 +226,7 @@ describe("harness store state projectors", () => {
   })
 
   test("keeps hydration and switch patches aligned with options policy", () => {
-    expect(readyHarnessHydrationPatch("claude-acp")).toEqual({
+    expect(readyHarnessHydrationPatch("acp:claude")).toEqual({
       harnessMode: "harness",
       readiness: "ready",
     })
@@ -240,8 +240,8 @@ describe("harness store state projectors", () => {
       optionsStale: false,
       optionsLoading: false,
     })
-    expect(pollingHarnessHydrationPatch("claude-acp")).toEqual({
-      harness: "claude-acp",
+    expect(pollingHarnessHydrationPatch("acp:claude")).toEqual({
+      harness: "acp:claude",
       harnessMode: "harness",
       selectedModel: "",
       selectedModelProvider: undefined,
@@ -255,9 +255,9 @@ describe("harness store state projectors", () => {
       configError: undefined,
     })
     expect(harnessSwitchStartPatch({
-      type: "claude-acp",
+      type: "acp:claude",
     })).toMatchObject({
-      harness: "claude-acp",
+      harness: "acp:claude",
       harnessMode: "harness",
       selectedModel: "",
       optionsLoading: true,
