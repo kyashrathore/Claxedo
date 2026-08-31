@@ -474,7 +474,7 @@ describe("Better Auth + D1 inside Workerd", () => {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         client_id: "claxedo-cli",
-        scope: "offline_access workspace:read",
+        scope: "openid profile email offline_access workspace:read",
         resource: NATIVE_RESOURCE,
       }),
     })
@@ -561,7 +561,7 @@ describe("Better Auth + D1 inside Workerd", () => {
       resources: JSON.stringify([NATIVE_RESOURCE]),
     })
     expect(storedAccess?.token).not.toContain(rawAccessToken)
-    expect(JSON.parse(storedAccess?.scopes ?? "[]")).toEqual(["offline_access", "workspace:read"])
+    expect(JSON.parse(storedAccess?.scopes ?? "[]")).toEqual(["openid", "profile", "email", "offline_access", "workspace:read"])
     const issuedRefresh = await evidenceDatabase.prepare(`select "sessionId", "authTime"
       from "oauthRefreshToken" where "generation" = 0`).first<{ sessionId: string; authTime: string | number }>()
     expect(issuedRefresh?.sessionId).toBe(browserSession.session.id)
@@ -829,7 +829,7 @@ describe("Better Auth + D1 inside Workerd", () => {
         client_id: "claxedo-desktop",
         response_type: "code",
         redirect_uri: desktopRedirectUri,
-        scope: "offline_access workspace:read workspace:write",
+        scope: "openid profile email offline_access workspace:read workspace:write",
         resource: NATIVE_RESOURCE,
         state: "desktop-state",
         code_challenge: await pkceChallenge(desktopCodeVerifier),

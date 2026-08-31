@@ -404,10 +404,20 @@ export const HOSTED_OPERATIONS = {
   },
   "billing.checkout": { method: "POST", path: "/api/billing/checkout", body: ["plan"] },
   "billing.portal": { method: "POST", path: "/api/billing/portal" },
+  "hostLink.challenge": {
+    method: "POST",
+    path: "/api/workspace/:id/user-hosted/challenge",
+    body: ["hostId"],
+  },
   "hostLink.register": {
     method: "POST",
     path: "/api/workspace/:id/user-hosted/register",
     body: ["hostId", "publicKey", "challengeId", "signature", "displayName", "ttlMs"],
+  },
+  "hostLink.heartbeat": {
+    method: "POST",
+    path: "/api/workspace/:id/user-hosted/heartbeat",
+    body: ["hostId", "signature", "ttlMs"],
   },
   "usage.get": {
     method: "GET",

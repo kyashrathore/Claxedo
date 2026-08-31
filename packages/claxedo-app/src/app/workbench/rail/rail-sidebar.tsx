@@ -40,7 +40,7 @@ let groupsMarked = false
  * - Can be pinned open via toggle button
  */
 
-import { For, Show, Switch, Match, createMemo, createSelector, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
+import { For, Show, Switch, Match, Suspense, createMemo, createSelector, createSignal, onCleanup, onMount, createEffect, on, type JSX } from "solid-js"
 import { GlobalNavigation } from "./global-navigation"
 import { useQuery } from "@tanstack/solid-query"
 import { useClaxedoState, type ContentMeta } from "../state/index"
@@ -2625,7 +2625,13 @@ export function RailSidebar(props: RailSidebarProps) {
             onHelp={props.onHelp}
             utilities={() => (
               <>
-                <RailOrgTeamSwitcher />
+                {/* The switcher's org/team resources read under the shell-wide
+                    Suspense boundary; without a local boundary, OPENING the
+                    account menu suspended the entire shell. Loading here means
+                    the submenu rows simply pop in. */}
+                <Suspense fallback={null}>
+                  <RailOrgTeamSwitcher />
+                </Suspense>
                 <FilterMenu />
               </>
             )}

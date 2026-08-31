@@ -20,7 +20,7 @@ import {
 function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnectorSnapshot>> = {}) {
   const calls: string[] = []
   const listeners: Array<(snapshot: HostConnectorSnapshot) => void> = []
-  const answer = (name: "status" | "start" | "pause" | "revoke") => async () => {
+  const answer = (name: "status" | "start" | "pause" | "revoke" | "share") => async () => {
     calls.push(name)
     return snapshots[name] ?? { status: "not-started", available: true, signedIn: true }
   }
@@ -32,6 +32,7 @@ function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnect
       start: answer("start"),
       pause: answer("pause"),
       revoke: answer("revoke"),
+      share: answer("share"),
       onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => {
         listeners.push(listener)
         return () => listeners.splice(listeners.indexOf(listener), 1)
@@ -109,13 +110,21 @@ describe("enabling remote access on the desktop", () => {
 })
 
 describe("the closed operation set", () => {
-  test("the bridge names exactly the four operations and a subscription", () => {
-    // A fifth member shaped `run(url, method, body)` is the confused deputy
-    // this whole arrangement exists to prevent: main holds the account bearer
-    // and a machine key that never expires.
+  test("the bridge names exactly the five operations and a subscription", () => {
+    // A member shaped `run(url, method, body)` is the confused deputy this
+    // whole arrangement exists to prevent: main holds the account bearer and
+    // a machine key that never expires. `share` is a named operation carrying
+    // data only — a workspace id and a label — never a request description.
     const connector = bridge()
 
-    expect(Object.keys(connector.handle).toSorted()).toEqual(["onStatus", "pause", "revoke", "start", "status"])
+    expect(Object.keys(connector.handle).toSorted()).toEqual([
+      "onStatus",
+      "pause",
+      "revoke",
+      "share",
+      "start",
+      "status",
+    ])
   })
 
   test("refuses a bridge carrying a generic passthrough member", () => {
@@ -208,15 +217,30 @@ describe("status projection", () => {
 })
 
 describe("capabilities this product does not have", () => {
-  test("offers no device list and no second-device marker", async () => {
-    // Absent, not stubbed. An empty list would read as "no machines on this
-    // account", which is a different and wrong statement.
-    const port = electronMachineRemoteAccess(bridge().handle)
+  test("offers no second-device marker, and a device list of exactly this machine", async () => {
+    // `markSecondDeviceOpen` stays absent — the machine that published itself
+    // is never the second device. `devices` IS offered now, but it enumerates
+    // only this machine from the connector's own snapshot: not enrolled means
+    // an empty list, and an enrolled snapshot yields one synthetic row whose
+    // workspace ids are the connector's live shares. The account-wide device
+    // list remains unfetchable from this product.
+    const idle = electronMachineRemoteAccess(bridge().handle)
+    expect(idle.markSecondDeviceOpen).toBeUndefined()
+    expect(typeof idle.pause).toBe("function")
+    expect(typeof idle.subscribe).toBe("function")
+    expect(await idle.devices?.()).toEqual([])
 
-    expect(port.devices).toBeUndefined()
-    expect(port.markSecondDeviceOpen).toBeUndefined()
-    expect(typeof port.pause).toBe("function")
-    expect(typeof port.subscribe).toBe("function")
+    const enrolled = electronMachineRemoteAccess(bridge({
+      status: {
+        status: "enrolled",
+        available: true,
+        signedIn: true,
+        sharedWorkspaceIds: ["ws_local_1"],
+      },
+    }).handle)
+    const rows = await enrolled.devices?.()
+    expect(rows).toHaveLength(1)
+    expect(rows?.[0]).toMatchObject({ hostId: "this-machine", workspaceIds: ["ws_local_1"] })
   })
 
   test("revoking touches this machine, whatever id the caller names", async () => {

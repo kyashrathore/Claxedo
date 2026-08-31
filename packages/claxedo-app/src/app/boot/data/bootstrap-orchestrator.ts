@@ -56,6 +56,22 @@ type WorkspaceInfo = SignedWorkspaceInfo
 type RuntimeRef = { workspaceId: string }
 type Translate = (key: string, vars?: Record<string, string | number>) => string
 
+/**
+ * Remove a request-tracking query without leaking a CancelledError.
+ *
+ * `removeQueries` destroys the query outright; when a CONCURRENT bootstrap is
+ * mid-fetch on the same key (sign-in remounts overlap these), destruction
+ * rejects that fetch with a CancelledError nothing awaits — an
+ * unhandledrejection overlay in dev. `cancelQueries` settles the in-flight
+ * fetch first and swallows the cancellation, making the removal inert.
+ */
+function dropRequestQuery(filter: { queryKey: readonly unknown[]; exact?: boolean }) {
+  void queryClient
+    .cancelQueries(filter)
+    .catch(() => undefined)
+    .then(() => queryClient.removeQueries(filter))
+}
+
 export function bootstrapSessionRuntimeTarget(input: {
   workspace?: WorkspaceSessionBacking
   runtimeRef?: RuntimeRef
@@ -429,7 +445,7 @@ export function createBootstrapOrchestrator(input: {
         return null
       },
     }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
+      dropRequestQuery({ queryKey: requestKey })
       input.children.unpin(directory)
     })
   }
@@ -461,7 +477,7 @@ export function createBootstrapOrchestrator(input: {
         return null
       },
     }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
+      dropRequestQuery({ queryKey: requestKey })
       input.children.unpin(directory)
     })
   }
@@ -506,7 +522,7 @@ export function createBootstrapOrchestrator(input: {
         return null
       },
     }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey, exact: true })
+      dropRequestQuery({ queryKey: requestKey, exact: true })
       input.markGlobalBootstrapFresh(input.baseUrl(), harnessType)
     })
   }

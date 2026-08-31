@@ -49,7 +49,7 @@ import { toStatusEvent, type HostConnectorStatusEvent } from "./status-channel"
  * The closed set. Declared as data so the registration is generated from it and
  * a test can assert the whole surface without re-listing it by hand.
  */
-export const HOST_CONNECTOR_OPERATIONS = ["status", "start", "pause", "revoke"] as const
+export const HOST_CONNECTOR_OPERATIONS = ["status", "start", "pause", "revoke", "share"] as const
 
 export type HostConnectorOperation = (typeof HOST_CONNECTOR_OPERATIONS)[number]
 
@@ -77,6 +77,8 @@ export type HostConnectorIpcTarget = {
 export type MachinePublication = {
   status: () => HostConnectorStatus
   start: () => Promise<HostConnectorStatus>
+  /** Publish one workspace from this machine (a signed local-host link). */
+  shareWorkspace: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorStatus>
   /** Stop beating, keep the identity. */
   stop: () => void
   /** Stop beating, destroy the identity. */
@@ -108,7 +110,23 @@ export function registerHostConnectorIpc(input: {
       signedIn: signedIn(),
     })
 
-  const handlers: Record<HostConnectorOperation, () => Promise<HostConnectorStatusEvent>> = {
+  // `share` is the one operation that carries data, and deliberately only
+  // data: a workspace id and a label. It still cannot DESCRIBE a request —
+  // the route, the challenge flow, and the signature all live in main and the
+  // child, so the confused-deputy rule above holds: a renderer picks which
+  // fixed operation happens and, here, which workspace it happens to.
+  const shareInput = (value: unknown): { workspaceId: string; displayName?: string } | undefined => {
+    if (typeof value !== "object" || value === null) return
+    const input = value as { workspaceId?: unknown; displayName?: unknown }
+    if (typeof input.workspaceId !== "string" || !input.workspaceId) return
+    if (input.displayName !== undefined && typeof input.displayName !== "string") return
+    return {
+      workspaceId: input.workspaceId,
+      ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
+    }
+  }
+
+  const handlers: Record<HostConnectorOperation, (payload?: unknown) => Promise<HostConnectorStatusEvent>> = {
     status: async () => snapshot(),
 
     start: async () => {
@@ -142,16 +160,34 @@ export function registerHostConnectorIpc(input: {
       connector?.revoke()
       return snapshot()
     },
+
+    share: async (payload) => {
+      if (!connector) {
+        throw new Error("This build cannot publish a machine")
+      }
+      if (!signedIn()) {
+        throw new Error("Sign in to share a workspace")
+      }
+      const share = shareInput(payload)
+      if (!share) throw new Error("share requires a workspaceId")
+      await connector.shareWorkspace(share)
+      return snapshot()
+    },
   }
 
   for (const operation of HOST_CONNECTOR_OPERATIONS) {
     const channel = hostConnectorChannel(operation)
     channels.push(channel)
-    // The operation is bound HERE, at registration, and the listener takes no
-    // arguments. A renderer chooses which channel to call; it cannot choose
-    // what that channel does, and it cannot hand the channel anything to act
-    // on.
-    ipcMain.handle(channel, (() => handlers[operation]()) as never)
+    // The operation is bound HERE, at registration, and — except for `share`,
+    // which alone declares a place to receive its data-only payload — the
+    // listener takes no arguments: a renderer chooses which channel to call,
+    // not what that channel does.
+    ipcMain.handle(
+      channel,
+      (operation === "share"
+        ? (_event: unknown, payload: unknown) => handlers.share(payload)
+        : () => handlers[operation]()) as never,
+    )
   }
 
   return { channels }

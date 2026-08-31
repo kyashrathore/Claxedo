@@ -1,6 +1,13 @@
 import { describe, expect, test, vi } from "vitest"
 import { createHostConnector, type ConnectorTransport } from "./connector"
-import { createHostKeyPair, enrollmentPayload, heartbeatPayload, hostKeyPairFromJwk } from "./host-identity"
+import {
+  createHostKeyPair,
+  enrollmentPayload,
+  heartbeatPayload,
+  hostKeyPairFromJwk,
+  linkHeartbeatPayload,
+  linkRegistrationPayload,
+} from "./host-identity"
 
 /**
  * The connector's protocol, and the contract it shares with the authority.
@@ -14,7 +21,14 @@ import { createHostKeyPair, enrollmentPayload, heartbeatPayload, hostKeyPairFrom
 const HOST_ID = "host_laptop"
 
 function transport(overrides: Partial<ConnectorTransport> = {}) {
-  const calls = { requests: 0, enrolls: [] as unknown[], beats: [] as unknown[] }
+  const calls = {
+    requests: 0,
+    enrolls: [] as unknown[],
+    beats: [] as unknown[],
+    linkChallenges: [] as unknown[],
+    linkRegisters: [] as unknown[],
+    linkBeats: [] as unknown[],
+  }
   const base: ConnectorTransport = {
     createRequest: async () => {
       calls.requests++
@@ -28,6 +42,16 @@ function transport(overrides: Partial<ConnectorTransport> = {}) {
       calls.beats.push(input)
       return { expires_at: 2_000 }
     },
+    linkChallenge: async (input) => {
+      calls.linkChallenges.push(input)
+      return { challenge_id: "chal_1", nonce: "link_nonce_1", expires_at: 9_999 }
+    },
+    linkRegister: async (input) => {
+      calls.linkRegisters.push(input)
+    },
+    linkHeartbeat: async (input) => {
+      calls.linkBeats.push(input)
+    },
     ...overrides,
   }
   return { transport: base, calls }
@@ -35,7 +59,7 @@ function transport(overrides: Partial<ConnectorTransport> = {}) {
 
 async function connector(
   overrides: Partial<ConnectorTransport> = {},
-  onError?: (stage: "enroll" | "heartbeat", error: unknown) => void,
+  onError?: (stage: "enroll" | "heartbeat" | "share" | "link-heartbeat", error: unknown) => void,
 ) {
   const t = transport(overrides)
   let tick: (() => void) | undefined
@@ -449,5 +473,60 @@ describe("a control-plane failure before enrollment", () => {
     tick()
 
     expect(calls.beats).toEqual([])
+  })
+})
+
+describe("workspace shares", () => {
+  test("registers a link with the signed challenge and renews it on each beat", async () => {
+    const { instance, calls } = await connector()
+    await instance.start()
+
+    await instance.shareWorkspace({ workspaceId: "ws_local_1", displayName: "opencode" })
+    expect(calls.linkChallenges).toEqual([{ workspaceId: "ws_local_1", hostId: HOST_ID }])
+    const registered = calls.linkRegisters[0] as { challengeId: string; signature: string; displayName?: string }
+    expect(registered.challengeId).toBe("chal_1")
+    expect(registered.displayName).toBe("opencode")
+    expect(typeof registered.signature).toBe("string")
+    expect(instance.sharedWorkspaceIds()).toEqual(["ws_local_1"])
+
+    await instance.beat()
+    expect(calls.linkBeats).toHaveLength(1)
+    expect(calls.linkBeats[0]).toMatchObject({ workspaceId: "ws_local_1", hostId: HOST_ID })
+  })
+
+  test("refuses to share while not enrolled, and clears shares when the connector stops", async () => {
+    const { instance } = await connector()
+    await expect(instance.shareWorkspace({ workspaceId: "ws_local_1" })).rejects.toThrow(/not active/)
+
+    await instance.start()
+    await instance.shareWorkspace({ workspaceId: "ws_local_1" })
+    instance.close()
+    expect(instance.sharedWorkspaceIds()).toEqual([])
+  })
+
+  test("drops a link whose renewal is rejected without taking the machine offline", async () => {
+    const failures: string[] = []
+    const { instance } = await connector(
+      { linkHeartbeat: async () => { throw new Error("link revoked") } },
+      (stage) => failures.push(stage),
+    )
+    await instance.start()
+    await instance.shareWorkspace({ workspaceId: "ws_local_1" })
+
+    await instance.beat()
+    expect(failures).toContain("link-heartbeat")
+    expect(instance.sharedWorkspaceIds()).toEqual([])
+    expect(instance.state().status).toBe("enrolled")
+  })
+
+  test("share payload literals match the authority's verifiers", async () => {
+    // Same duplication contract as enrollment: the authority asserts these
+    // exact strings on its side (localHostRegistrationPayload /
+    // localHostHeartbeatPayload in host-access-authority.ts).
+    expect(
+      linkRegistrationPayload({ workspaceId: "ws_1", hostId: "host_1", challengeId: "chal_1", nonce: "n_1" }),
+    ).toBe("claxedo.local-host-link.register.v1\nworkspace_id=ws_1\nhost_id=host_1\nchallenge_id=chal_1\nnonce=n_1")
+    expect(linkHeartbeatPayload({ workspaceId: "ws_1", hostId: "host_1", ttlMs: 300000 }))
+      .toBe("claxedo.local-host-link.heartbeat.v1\nworkspace_id=ws_1\nhost_id=host_1\nttl_ms=300000")
   })
 })

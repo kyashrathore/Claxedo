@@ -45,6 +45,7 @@ import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@/platform
 import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
+import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
 import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
@@ -134,23 +135,6 @@ function BootSplash() {
       <ClaxedoSplash class="w-16 h-20 opacity-50 animate-pulse" />
     </div>
   )
-}
-
-/**
- * Whether this WINDOW has shown the shell at least once.
- *
- * Signing in deliberately remounts the provider subtree (data isolation
- * between accounts) and switches the active server, so both boot boundaries
- * would replay their full-page splash as a flash on every account transition.
- * The window carries the fact across those remounts; per-window, never
- * persisted.
- */
-function shellRevealedOnce() {
-  return (window as { __claxedoShellRevealed?: boolean }).__claxedoShellRevealed === true
-}
-
-function markShellRevealed() {
-  ;(window as { __claxedoShellRevealed?: boolean }).__claxedoShellRevealed = true
 }
 
 function UiI18nBridge(props: ParentProps) {

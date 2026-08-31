@@ -45,6 +45,8 @@ export type HostConnectorSnapshot = {
   expiresAt?: number
   reason?: string
   detail?: string
+  /** Workspaces this machine currently publishes. */
+  sharedWorkspaceIds?: readonly string[]
 }
 
 /** The bridge the preload exposes. Absent in every non-Electron build. */
@@ -53,10 +55,12 @@ export type HostConnectorBridge = {
   start: () => Promise<HostConnectorSnapshot>
   pause: () => Promise<HostConnectorSnapshot>
   revoke: () => Promise<HostConnectorSnapshot>
+  /** Publish one workspace: data-only input, the proof is main's and the child's. */
+  share: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorSnapshot>
   onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => () => void
 }
 
-const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "onStatus"] as const
+const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "onStatus"] as const
 
 /**
  * The bridge, if this build has one.
@@ -149,6 +153,34 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
     async revoke(_hostId: string) {
       const snapshot = await bridge.revoke()
       return { revoked: snapshot.status !== "enrolled" }
+    },
+
+    async shareWorkspace(input) {
+      const snapshot = await bridge.share(input)
+      if (snapshot.status !== "enrolled") {
+        throw new Error(snapshot.detail ?? `Remote access is not active (${snapshot.status})`)
+      }
+    },
+
+    /**
+     * The one machine this product can enumerate: itself.
+     *
+     * The account-wide device list stays absent on the desktop (fetching it is
+     * not one of the closed operations), but the connector DOES know which
+     * workspaces it is currently publishing, and the share surface needs that
+     * to show live shared state. One synthetic row; the host id stays behind
+     * the boundary, so the row carries a fixed marker the desktop's revoke —
+     * which can only ever mean "this machine" — does not read anyway.
+     */
+    async devices() {
+      const snapshot = await bridge.status()
+      if (snapshot.status !== "enrolled") return []
+      return [{
+        hostId: "this-machine",
+        displayName: "This machine",
+        lastSeenAt: Date.now(),
+        workspaceIds: snapshot.sharedWorkspaceIds ?? [],
+      }]
     },
 
     subscribe(listener) {

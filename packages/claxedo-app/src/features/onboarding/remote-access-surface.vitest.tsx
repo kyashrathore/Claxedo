@@ -50,7 +50,9 @@ describe("RemoteAccessSurface", () => {
     render(() => (
       <RemoteAccessSurface
         availability={{ state: "enabled", proven: true }}
-        workspaceLink="https://app.claxedo.test/w/ws_1?claxedo_second_device=1"
+        shareableWorkspaces={[{ workspaceId: "ws_1", path: "/tmp/one", label: "one", shared: true }]}
+        onShare={vi.fn(async () => undefined)}
+        shareLinkFor={() => "https://app.claxedo.test/w/ws_1?claxedo_second_device=1"}
         devices={[{ hostId: "host_1", displayName: "Yash's Mac", lastSeenAt: 10, workspaceIds: ["ws_1", "ws_2"] }]}
         startAtLogin={true}
         onStartAtLoginChange={() => undefined}
@@ -67,5 +69,80 @@ describe("RemoteAccessSurface", () => {
     expect(writeText).toHaveBeenCalledWith("https://app.claxedo.test/w/ws_1?claxedo_second_device=1")
     fireEvent.click(screen.getByRole("button", { name: /revoke yash's mac/i }))
     expect(onRevoke).toHaveBeenCalledWith("host_1")
+  })
+
+  test("shows skeleton rows while the workspace list is loading", () => {
+    render(() => (
+      <RemoteAccessSurface
+        availability={{ state: "enabled", proven: false }}
+        onShare={vi.fn(async () => undefined)}
+        shareLinkFor={() => "https://app.claxedo.test/w/x"}
+        devices={[]}
+        startAtLogin={false}
+        onStartAtLoginChange={() => undefined}
+        onEnable={() => undefined}
+        onSignIn={() => undefined}
+        onRevoke={() => undefined}
+      />
+    ))
+
+    expect(screen.getByLabelText("Loading workspaces")).toBeInTheDocument()
+    expect(screen.queryByRole("checkbox", { name: /share/i })).not.toBeInTheDocument()
+  })
+
+  test("ticking a workspace shares it immediately and shows the QR without waiting for a refetch", async () => {
+    let resolveShare: () => void = () => undefined
+    const onShare = vi.fn(() => new Promise<void>((resolve) => { resolveShare = resolve }))
+    render(() => (
+      <RemoteAccessSurface
+        availability={{ state: "enabled", proven: false }}
+        shareableWorkspaces={[{ workspaceId: "ws_1", path: "/tmp/one", label: "one", shared: false }]}
+        onShare={onShare}
+        shareLinkFor={(id) => `https://app.claxedo.test/w/${id}`}
+        devices={[]}
+        startAtLogin={false}
+        onStartAtLoginChange={() => undefined}
+        onEnable={() => undefined}
+        onSignIn={() => undefined}
+        onRevoke={() => undefined}
+      />
+    ))
+
+    // No separate Share button — the tick is the share.
+    expect(screen.queryByRole("button", { name: /^share/i })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole("checkbox", { name: "Share one" }))
+    expect(onShare).toHaveBeenCalledWith(["ws_1"])
+    expect(await screen.findByLabelText("Sharing one")).toBeInTheDocument()
+
+    resolveShare()
+    // The share counts the moment its request succeeds: Shared tag + QR
+    // appear even though the server-derived `shared` flag is still false.
+    expect(await screen.findByText("Shared")).toBeInTheDocument()
+    expect(await screen.findByAltText("Remote workspace QR code")).toBeInTheDocument()
+  })
+
+  test("a failed share surfaces its error on the row and leaves the workspace tickable", async () => {
+    const onShare = vi.fn(async () => { throw new Error("relay rejected the workspace") })
+    render(() => (
+      <RemoteAccessSurface
+        availability={{ state: "enabled", proven: false }}
+        shareableWorkspaces={[{ workspaceId: "ws_1", path: "/tmp/one", label: "one", shared: false }]}
+        onShare={onShare}
+        shareLinkFor={(id) => `https://app.claxedo.test/w/${id}`}
+        devices={[]}
+        startAtLogin={false}
+        onStartAtLoginChange={() => undefined}
+        onEnable={() => undefined}
+        onSignIn={() => undefined}
+        onRevoke={() => undefined}
+      />
+    ))
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Share one" }))
+    expect(await screen.findByText("relay rejected the workspace")).toBeInTheDocument()
+    const checkbox = screen.getByRole("checkbox", { name: "Share one" }) as HTMLInputElement
+    expect(checkbox.disabled).toBe(false)
+    expect(checkbox.checked).toBe(false)
+    expect(screen.queryByAltText("Remote workspace QR code")).not.toBeInTheDocument()
   })
 })

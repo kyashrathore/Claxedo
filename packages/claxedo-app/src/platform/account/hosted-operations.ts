@@ -287,7 +287,6 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "session.gateway": { safe: true, decode: object },
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },
-  "hostLink.register": { safe: false, decode: object },
   "usage.get": { safe: true, decode: object },
   "usage.sync": { safe: true, decode: object },
 }

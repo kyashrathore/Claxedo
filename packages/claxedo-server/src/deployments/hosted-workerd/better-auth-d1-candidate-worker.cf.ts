@@ -65,6 +65,16 @@ export type BetterAuthD1CandidateWorkerEnv = HostedCoreWorkerEnv &
     CLAXEDO_CANDIDATE_OPERATION_ID?: string
     BETTER_AUTH_SECRET?: string
     CLAXEDO_AUTH_INTROSPECTION_SECRET?: string
+    /**
+     * Dev-deployment escape hatch ("1"/"true"): serve every request as an
+     * "open" release, bypassing the locked / provider-sync / multiplayer-
+     * validation phase gates. A deployment an engineer runs for their own dev
+     * builds has no canary or validation journey to walk, and a candidate
+     * parked mid-release otherwise refuses every product request with
+     * `deployment_candidate_unavailable`. Never set it on a shared or
+     * production deployment — it disables release gating entirely.
+     */
+    CLAXEDO_DEV_DISABLE_RELEASE_GATES?: string
   }
 
 function stringEnvironment(env: BetterAuthD1CandidateWorkerEnv): HostedWorkerEnv {
@@ -259,7 +269,11 @@ const handler = {
         })
       }
       const selected = composition(env)
-      if (release.phase === "open") {
+      // Dev deployments opt out of release-phase gating entirely (see the
+      // env field's doc): they serve exactly like an "open" release.
+      const releaseGatesDisabled =
+        env.CLAXEDO_DEV_DISABLE_RELEASE_GATES === "1" || env.CLAXEDO_DEV_DISABLE_RELEASE_GATES === "true"
+      if (releaseGatesDisabled || release.phase === "open") {
         if (authRoute(url.pathname)) return await selected.authHandler(request)
         return await core.fetch(request, env, context)
       }

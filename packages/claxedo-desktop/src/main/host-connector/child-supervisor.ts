@@ -4,6 +4,7 @@ import {
   type HostConnectorChildMessage,
   type HostConnectorChildState,
   type HostConnectorParentMessage,
+  type HostConnectorSharedWorkspace,
 } from "./child-protocol"
 
 export type AccountOperationRunner = (name: string, input?: Record<string, unknown>) => Promise<unknown>
@@ -23,6 +24,12 @@ export type HostConnectorStatus =
 export type HostConnectorSetup = {
   status(): HostConnectorStatus
   start(): Promise<HostConnectorStatus>
+  /**
+   * Publish one workspace from this machine. The child signs the control
+   * plane's challenge with the machine key; success is remembered so the
+   * share is re-established after a restart.
+   */
+  shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<HostConnectorStatus>
   stop(): void
   revoke(): void
   dispose(): void
@@ -69,6 +76,12 @@ export function setupHostConnectorChild(input: {
   >
   storeIdentity: (identity: HostConnectorBootstrapIdentity) => Promise<{ ok: true } | { ok: false; detail: string }>
   clearIdentity: () => void
+  /**
+   * Shares to survive a restart. Not secrets — workspace ids and labels; the
+   * proof is re-signed by the child at every registration and heartbeat.
+   */
+  loadSharedWorkspaces?: () => readonly HostConnectorSharedWorkspace[]
+  storeSharedWorkspaces?: (shares: readonly HostConnectorSharedWorkspace[]) => void
   displayName?: string
   heartbeatIntervalMs?: number
   startupTimeoutMs?: number
@@ -76,6 +89,7 @@ export function setupHostConnectorChild(input: {
   onStatusChange?: (status: HostConnectorStatus) => void
 }): HostConnectorSetup {
   let status: HostConnectorStatus = { status: "not-started" }
+  let sharedWorkspaces: HostConnectorSharedWorkspace[] = [...(input.loadSharedWorkspaces?.() ?? [])]
   let child: HostConnectorChildProcess | undefined
   let starting: Promise<HostConnectorStatus> | undefined
   let cancelStarting: ((error: Error) => void) | undefined
@@ -190,6 +204,7 @@ export function setupHostConnectorChild(input: {
           heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
           ...(restored.identity ? { identity: restored.identity } : {}),
           ...(input.displayName ? { displayName: input.displayName } : {}),
+          ...(sharedWorkspaces.length ? { sharedWorkspaces } : {}),
         }),
         cancelled,
       ]),
@@ -252,10 +267,46 @@ export function setupHostConnectorChild(input: {
         })
       return starting
     },
+    async shareWorkspace(share: { workspaceId: string; displayName?: string }) {
+      const target = child
+      if (!target || status.status !== "enrolled") {
+        throw new Error("Remote access is not running on this machine — enable it in Settings first")
+      }
+      const settled = await bounded(
+        request(target, {
+          type: "share-workspace",
+          requestId: crypto.randomUUID(),
+          workspaceId: share.workspaceId,
+          ...(share.displayName ? { displayName: share.displayName } : {}),
+        }),
+        input.startupTimeoutMs ?? 10_000,
+        "Host Connector workspace share",
+      )
+      sharedWorkspaces = [
+        ...sharedWorkspaces.filter((existing) => existing.workspaceId !== share.workspaceId),
+        { workspaceId: share.workspaceId, ...(share.displayName ? { displayName: share.displayName } : {}) },
+      ]
+      try {
+        input.storeSharedWorkspaces?.(sharedWorkspaces)
+      } catch (error) {
+        input.onError?.("share-store", error)
+      }
+      return settle(settled)
+    },
+
     stop() {
       terminate("closed", "connector closed")
     },
     revoke() {
+      // A destroyed identity can never heartbeat these links again; keeping
+      // them stored would only re-register them under a DIFFERENT machine on
+      // the next enable, which is not what "revoke" promised.
+      sharedWorkspaces = []
+      try {
+        input.storeSharedWorkspaces?.(sharedWorkspaces)
+      } catch (error) {
+        input.onError?.("share-store", error)
+      }
       try {
         input.clearIdentity()
         terminate("revoked", "remote access revoked on this machine")

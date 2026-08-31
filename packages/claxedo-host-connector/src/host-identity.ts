@@ -87,3 +87,27 @@ export function enrollmentPayload(input: { hostId: string; requestId: string; no
 export function heartbeatPayload(input: { hostId: string; ttlMs?: number }) {
   return ["claxedo.host-enrollment.heartbeat.v1", `host_id=${input.hostId}`, `ttl_ms=${input.ttlMs ?? ""}`].join("\n")
 }
+
+export function linkRegistrationPayload(input: {
+  workspaceId: string
+  hostId: string
+  challengeId: string
+  nonce: string
+}) {
+  return [
+    "claxedo.local-host-link.register.v1",
+    `workspace_id=${input.workspaceId}`,
+    `host_id=${input.hostId}`,
+    `challenge_id=${input.challengeId}`,
+    `nonce=${input.nonce}`,
+  ].join("\n")
+}
+
+export function linkHeartbeatPayload(input: { workspaceId: string; hostId: string; ttlMs?: number }) {
+  return [
+    "claxedo.local-host-link.heartbeat.v1",
+    `workspace_id=${input.workspaceId}`,
+    `host_id=${input.hostId}`,
+    `ttl_ms=${input.ttlMs ?? ""}`,
+  ].join("\n")
+}

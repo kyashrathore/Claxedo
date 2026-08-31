@@ -279,16 +279,21 @@ export function createAccountService(options: AccountServiceOptions) {
     // /userinfo endpoint into a sign-in that never completes.
     setState({ status: "signed", identity: { userId: "" } })
     if (!options.resolveIdentity) return
-    void options.resolveIdentity(accessToken)
-      .then((identity) => {
-        // Sign-out (or a superseding sign-in) may have happened while the
-        // optional lookup was in flight. Never republish stale identity.
-        if (startedIn !== era) return
-        setState({ status: "signed", identity })
-      })
-      .catch((error) => {
-        options.onError?.("identity", error)
-      })
+    void (async () => {
+      // On restore the persisted access token is usually already expired
+      // (5-minute TTL), so resolving identity with it answered 401 and every
+      // relaunch showed a nameless account. Identity follows the same token
+      // freshness rule as every hosted operation; the passed token is only
+      // the fallback when renewal is unavailable (e.g. mid-adopt).
+      const fresh = await currentAccessToken()
+      const identity = await options.resolveIdentity!(fresh.ok ? fresh.token : accessToken)
+      // Sign-out (or a superseding sign-in) may have happened while the
+      // optional lookup was in flight. Never republish stale identity.
+      if (startedIn !== era) return
+      setState({ status: "signed", identity })
+    })().catch((error) => {
+      options.onError?.("identity", error)
+    })
   }
 
   return {
@@ -582,6 +587,17 @@ export function createAccountService(options: AccountServiceOptions) {
         )
         if (startedIn !== era) throw new Error("not signed in")
         if (response.status === 401) {
+          // Same code split as `run()`: a bearer-shaped rejection is not a
+          // revoked session, and a stream that invalidated on it signed the
+          // user out for a transport-level token problem `run()` deliberately
+          // survives. Only the remaining 401s mean revocation.
+          const body = await response.json().catch(() => undefined) as {
+            error?: { code?: string; message?: string }
+          } | undefined
+          const code = body?.error?.code
+          if (code === "invalid_bearer_token" || code === "missing_bearer_token") {
+            throw new Error(body?.error?.message ?? "Control plane rejected the account token")
+          }
           invalidate("the server rejected this session")
           throw new Error("session rejected")
         }

@@ -11,6 +11,8 @@ export type HostConnectorChildState =
   | {
       status: "enrolled"
       enrollment: { enrollment_id: string; host_id: string; expires_at: number }
+      /** Workspaces this machine currently publishes (live local-host links). */
+      sharedWorkspaceIds?: readonly string[]
     }
   | { status: "stopped"; reason: "revoked" | "error" | "closed"; detail: string }
 
@@ -18,6 +20,12 @@ export const HOST_ENROLLMENT_OPERATIONS = {
   createRequest: "host.enrollmentNonce",
   enroll: "host.enrollCurrentMachine",
   heartbeat: "host.enrollmentHeartbeat",
+  // Workspace shares are local-host links, signed with the SAME machine key
+  // as enrollment. The child owns them because it is the only process that
+  // can produce the challenge signature the control plane demands.
+  linkChallenge: "hostLink.challenge",
+  linkRegister: "hostLink.register",
+  linkHeartbeat: "hostLink.heartbeat",
 } as const
 
 export type HostEnrollmentOperation = (typeof HOST_ENROLLMENT_OPERATIONS)[keyof typeof HOST_ENROLLMENT_OPERATIONS]
@@ -27,6 +35,8 @@ export type HostConnectorBootstrapIdentity = {
   privateKeyJwk: JsonWebKey
 }
 
+export type HostConnectorSharedWorkspace = { workspaceId: string; displayName?: string }
+
 export type HostConnectorParentMessage =
   | {
       type: "bootstrap"
@@ -34,7 +44,10 @@ export type HostConnectorParentMessage =
       identity?: HostConnectorBootstrapIdentity
       displayName?: string
       heartbeatIntervalMs: number
+      /** Shares to re-establish after enrollment (registration is an upsert). */
+      sharedWorkspaces?: readonly HostConnectorSharedWorkspace[]
     }
+  | { type: "share-workspace"; requestId: string; workspaceId: string; displayName?: string }
   | { type: "identity-stored"; requestId: string }
   | { type: "account-result"; requestId: string; ok: true; value: unknown }
   | { type: "account-result"; requestId: string; ok: false; error: string }
@@ -93,6 +106,11 @@ function connectorState(value: unknown): HostConnectorChildState | undefined {
     ) {
       return
     }
+    const shared = Array.isArray(input.sharedWorkspaceIds)
+      && input.sharedWorkspaceIds.every((entry) => nonemptyString(entry))
+      ? (input.sharedWorkspaceIds as string[])
+      : undefined
+    if (input.sharedWorkspaceIds !== undefined && !shared) return
     return {
       status: "enrolled",
       enrollment: {
@@ -100,6 +118,7 @@ function connectorState(value: unknown): HostConnectorChildState | undefined {
         host_id: enrollment.host_id,
         expires_at: enrollment.expires_at,
       },
+      ...(shared ? { sharedWorkspaceIds: shared } : {}),
     }
   }
   if (input.status === "stopped") {
@@ -123,11 +142,38 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
     const restored = input.identity === undefined ? undefined : identity(input.identity)
     if (input.identity !== undefined && !restored) return
     if (input.displayName !== undefined && typeof input.displayName !== "string") return
+    const shares = input.sharedWorkspaces === undefined
+      ? undefined
+      : Array.isArray(input.sharedWorkspaces)
+        ? input.sharedWorkspaces.flatMap((entry) => {
+            const share = record(entry)
+            if (!share || !nonemptyString(share.workspaceId)) return []
+            if (share.displayName !== undefined && typeof share.displayName !== "string") return []
+            return [{
+              workspaceId: share.workspaceId,
+              ...(typeof share.displayName === "string" ? { displayName: share.displayName } : {}),
+            }]
+          })
+        : undefined
+    if (input.sharedWorkspaces !== undefined && shares === undefined) return
     return {
       type: "bootstrap",
       requestId: id,
       heartbeatIntervalMs: input.heartbeatIntervalMs,
       ...(restored ? { identity: restored } : {}),
+      ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
+      ...(shares ? { sharedWorkspaces: shares } : {}),
+    }
+  }
+
+  if (input.type === "share-workspace") {
+    const id = requestId(input)
+    if (!id || !nonemptyString(input.workspaceId)) return
+    if (input.displayName !== undefined && typeof input.displayName !== "string") return
+    return {
+      type: "share-workspace",
+      requestId: id,
+      workspaceId: input.workspaceId,
       ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
     }
   }

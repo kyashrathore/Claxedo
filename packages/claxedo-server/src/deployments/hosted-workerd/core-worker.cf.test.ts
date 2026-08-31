@@ -42,7 +42,9 @@ describe("hosted core Worker root", () => {
 
     expect(first.status).toBe(200)
     expect(second.status).toBe(200)
-    expect(compose).toHaveBeenCalledTimes(1)
+    // compose runs per request (it owns the settled-composition rule and may
+    // replace a wedged instance); the app is built once per composed plane.
+    expect(compose).toHaveBeenCalledTimes(2)
     expect(mocks.createHostedCoreApp).toHaveBeenCalledTimes(1)
     expect(mocks.createHostedCoreApp).toHaveBeenCalledWith(selected.plane, expect.objectContaining({
       product,
@@ -50,6 +52,30 @@ describe("hosted core Worker root", () => {
       sharedRateLimitStore: expect.objectContaining({ periodSeconds: 60 }),
     }))
     expect("scheduled" in worker).toBe(false)
+  })
+
+  test("follows the composition cache: a replaced plane gets a fresh app instead of the pinned first one", async () => {
+    // The settled-composition rule hands out a NEW composition while a prior
+    // one's lazy auth init has not settled (its constructor request was
+    // canceled). Caching the app per env pinned the wedged first composition
+    // for the isolate's lifetime — every authenticated core route hung at ~2ms
+    // CPU forever (observed live 2026-09-01 on staging: bootstrap/orgs/
+    // workspace/hostLink all canceled after 8-150s while auth routes worked).
+    const firstApp = app()
+    const secondApp = app()
+    mocks.createHostedCoreApp.mockReset()
+    mocks.createHostedCoreApp.mockReturnValueOnce(firstApp).mockReturnValueOnce(secondApp)
+    const planes = [{ wedged: true }, { settled: true }]
+    const compose = vi.fn(() => ({ plane: (planes.shift() ?? { settled: true }) as never, options: {} as never }))
+    const worker = createHostedCoreWorker(compose)
+    const bindings = env()
+
+    await worker.fetch(new Request("https://core.example.test/api/claxedo/health"), bindings)
+    await worker.fetch(new Request("https://core.example.test/api/claxedo/health"), bindings)
+
+    expect(mocks.createHostedCoreApp).toHaveBeenCalledTimes(2)
+    expect(firstApp.fetch).toHaveBeenCalledTimes(1)
+    expect(secondApp.fetch).toHaveBeenCalledTimes(1)
   })
 
   test.each(["CLAXEDO_REQUEST_LIMITER", "LIVE_SYNC_ROOM"] as const)(

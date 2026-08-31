@@ -127,13 +127,21 @@ function scopeList(value: unknown): string[] {
   return scopes
 }
 
-function audienceIncludesOnly(value: unknown, expected: string): boolean {
+/**
+ * The token must be addressed to this control plane, and to nothing outside
+ * the issuer's own OIDC surface. With the `openid` scope Better Auth adds the
+ * issuer's userinfo endpoint to `aud`; that audience is inherent to OIDC (the
+ * same access token is presented to userinfo) and never widens where the
+ * token can be replayed, so it is the only extra audience accepted here.
+ */
+function audienceConfinedTo(value: unknown, required: string, alsoAllowed: readonly string[]): boolean {
   const values = typeof value === "string"
     ? [value]
     : Array.isArray(value) && value.every(present)
       ? value
       : []
-  return values.length > 0 && values.every((entry) => entry === expected)
+  return values.includes(required)
+    && values.every((entry) => entry === required || alsoAllowed.includes(entry))
 }
 
 function requestOrigin(request: Request): string {
@@ -225,7 +233,8 @@ async function verifyNative(
   }
   if (!present(result.sub)) throw invalidCredentials()
   const selected = nativeClient(input.descriptor, result.client_id)
-  if (!audienceIncludesOnly(result.aud, selected.descriptor.resource)) throw invalidCredentials()
+  const userinfoAudience = `${input.descriptor.issuer}/oauth2/userinfo`
+  if (!audienceConfinedTo(result.aud, selected.descriptor.resource, [userinfoAudience])) throw invalidCredentials()
   const scopes = scopeList(result.scope)
   const issuedAt = secondsTimestamp(result.iat)
   const providerSessionId = result.sid === undefined

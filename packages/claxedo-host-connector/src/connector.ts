@@ -20,10 +20,18 @@
  * Transport is injected, so the protocol is testable without a control plane.
  */
 
-import { enrollmentPayload, heartbeatPayload, type HostKeyPair } from "./host-identity"
+import {
+  enrollmentPayload,
+  heartbeatPayload,
+  linkHeartbeatPayload,
+  linkRegistrationPayload,
+  type HostKeyPair,
+} from "./host-identity"
 
 export type EnrollmentRequest = { request_id: string; nonce: string; expires_at: number }
 export type Enrollment = { enrollment_id: string; host_id: string; expires_at: number }
+
+export type LinkChallenge = { challenge_id: string; nonce: string; expires_at: number }
 
 export type ConnectorTransport = {
   createRequest: (input: { hostId: string }) => Promise<EnrollmentRequest>
@@ -35,6 +43,29 @@ export type ConnectorTransport = {
     displayName?: string
   }) => Promise<Enrollment>
   heartbeat: (input: { hostId: string; signature: string; ttlMs?: number }) => Promise<{ expires_at: number }>
+  /**
+   * Workspace shares. A share is a local-host link: the control plane issues
+   * a challenge bound to (workspace, host), the machine key signs it, and the
+   * registered link then lives only as long as it is heartbeat-maintained
+   * (the authority caps the TTL at five minutes), so `beat()` renews every
+   * link alongside the enrollment.
+   */
+  linkChallenge: (input: { workspaceId: string; hostId: string }) => Promise<LinkChallenge>
+  linkRegister: (input: {
+    workspaceId: string
+    hostId: string
+    publicKey: string
+    challengeId: string
+    signature: string
+    displayName?: string
+    ttlMs?: number
+  }) => Promise<void>
+  linkHeartbeat: (input: {
+    workspaceId: string
+    hostId: string
+    signature: string
+    ttlMs?: number
+  }) => Promise<void>
 }
 
 export type ConnectorOptions = {
@@ -46,7 +77,7 @@ export type ConnectorOptions = {
   heartbeatIntervalMs: number
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
-  onError?: (stage: "enroll" | "heartbeat", error: unknown) => void
+  onError?: (stage: "enroll" | "heartbeat" | "share" | "link-heartbeat", error: unknown) => void
 }
 
 export type ConnectorState =
@@ -61,9 +92,21 @@ export type ConnectorState =
    */
   | { status: "stopped"; reason: "revoked" | "error" | "closed"; detail: string }
 
+/** The authority clamps link TTLs to five minutes; ask for all of it. */
+const LINK_TTL_MS = 5 * 60_000
+
 export function createHostConnector(options: ConnectorOptions) {
   let state: ConnectorState = { status: "idle" }
   let timer: { cancel: () => void } | undefined
+  /**
+   * Workspaces this machine currently publishes, by id.
+   *
+   * Links are heartbeat-scoped: they exist only while `beat()` keeps renewing
+   * them, so this map IS the share state — losing the enrollment (stop,
+   * revoke, rejected beat) implicitly lets every link lapse at the control
+   * plane, and the map is cleared with it.
+   */
+  const links = new Map<string, { displayName?: string }>()
   /**
    * Which enrollment the connector is living in, counted.
    *
@@ -86,11 +129,63 @@ export function createHostConnector(options: ConnectorOptions) {
     era++
     timer?.cancel()
     timer = undefined
+    links.clear()
     state = { status: "stopped", reason, detail }
+  }
+
+  const registerLink = async (input: { workspaceId: string; displayName?: string }) => {
+    const challenge = await options.transport.linkChallenge({
+      workspaceId: input.workspaceId,
+      hostId: options.hostId,
+    })
+    await options.transport.linkRegister({
+      workspaceId: input.workspaceId,
+      hostId: options.hostId,
+      publicKey: options.keys.publicKey,
+      challengeId: challenge.challenge_id,
+      signature: await options.keys.sign(
+        linkRegistrationPayload({
+          workspaceId: input.workspaceId,
+          hostId: options.hostId,
+          challengeId: challenge.challenge_id,
+          nonce: challenge.nonce,
+        }),
+      ),
+      ttlMs: LINK_TTL_MS,
+      ...(input.displayName ? { displayName: input.displayName } : {}),
+    })
   }
 
   return {
     state: () => state,
+
+    /** Workspaces this machine currently publishes, sorted for stable display. */
+    sharedWorkspaceIds: () => [...links.keys()].sort(),
+
+    /**
+     * Publish one workspace from this machine.
+     *
+     * Requires an enrolled connector: a link is proof "this enrolled machine
+     * serves this workspace", and without the enrollment the control plane
+     * has nothing to route to. Registration is an upsert at the authority, so
+     * re-sharing an already-shared workspace refreshes it harmlessly.
+     */
+    async shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<void> {
+      if (state.status !== "enrolled") {
+        throw new Error("remote access is not active on this machine — enable it first")
+      }
+      const startedIn = era
+      try {
+        await registerLink(input)
+      } catch (error) {
+        options.onError?.("share", error)
+        throw error
+      }
+      // The enrollment this share belonged to ended while the registration
+      // was in flight; its link is lapsing at the control plane already.
+      if (startedIn !== era) throw new Error("remote access stopped while the share was registering")
+      links.set(input.workspaceId, input.displayName ? { displayName: input.displayName } : {})
+    },
 
     async start(): Promise<ConnectorState> {
       try {
@@ -157,6 +252,28 @@ export function createHostConnector(options: ConnectorOptions) {
         // recognising, so it is dropped rather than adopted.
         if (startedIn !== era) return state
         state = { status: "enrolled", enrollment: { ...enrollment, expires_at: result.expires_at } }
+        // Renew every link on the same cadence. A link that fails to renew is
+        // dropped — the control plane has either revoked it or let it lapse,
+        // and silently keeping it in the map would show a share that no
+        // longer routes. The enrollment itself stays up: one broken link is
+        // not a reason to take the whole machine offline.
+        for (const [workspaceId] of [...links]) {
+          try {
+            await options.transport.linkHeartbeat({
+              workspaceId,
+              hostId: options.hostId,
+              signature: await options.keys.sign(
+                linkHeartbeatPayload({ workspaceId, hostId: options.hostId, ttlMs: LINK_TTL_MS }),
+              ),
+              ttlMs: LINK_TTL_MS,
+            })
+          } catch (error) {
+            if (startedIn !== era) return state
+            options.onError?.("link-heartbeat", error)
+            links.delete(workspaceId)
+          }
+          if (startedIn !== era) return state
+        }
       } catch (error) {
         // Same test on the failing path, for the opposite mistake. A beat that
         // was already open when the user paused comes back rejected — the

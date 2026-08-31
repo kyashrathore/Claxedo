@@ -1,7 +1,7 @@
 import { workspaceRoute } from "@/platform/identity/route"
-import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
+import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
+import { isFilesystemDirectory, isWorkspaceIdRef } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { hostedControlCall } from "@/platform/account/hosted-control-call"
 
 type ProjectWorkspace = {
   id?: string
@@ -34,6 +34,12 @@ export function localWorkspaceShareTarget(input: {
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
   if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return
   if (row?.kind === "cloud") return
+  // A signed `ws_*` id is already a hosted workspace — a project row left
+  // behind by opening a web workspace (worktree `/workspace`, the container
+  // path). It has no local directory on this machine to publish, and ticking
+  // it can only fail; the local register route rejects it for the same
+  // reason (`local_host_link_local_workspace_required`).
+  if (isWorkspaceIdRef(workspaceId)) return
   return { workspaceId, directory }
 }
 
@@ -62,36 +68,45 @@ function workspaceUserHostedRegisterUrl(input: { serverUrl?: string; workspaceId
   )
 }
 
+/**
+ * Registration is CLIENT-SIGNED: the control plane demands a challenge signed
+ * with this machine's host key, and only the local daemon holds that key
+ * (`registerLocalHostLink` resolves the workspace, signs the challenge, and
+ * registers with the control plane). Calling the control plane directly from
+ * here can never work — the renderer has nothing to sign with, and the server
+ * answered every such attempt with `invalid_request_body`.
+ */
 export async function registerUserHostedWorkspace(input: {
   workspaceId: string
   displayName?: string
   serverUrl?: string
   request?: typeof fetch
 }) {
-  const fallback = async () => {
-    const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
-      serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+  // The desktop: the Host Connector owns the machine key, so the port is the
+  // only path that can produce the signed challenge. The self-hosted server:
+  // no port is bound, and its own local route below performs the same flow
+  // server-side.
+  const port = input.request ? undefined : machineRemoteAccess()
+  if (port?.shareWorkspace) {
+    await port.shareWorkspace({
       workspaceId: input.workspaceId,
-    }), {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        ...(input.displayName ? { displayName: input.displayName } : {}),
-      }),
-    })
-    if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
-    return await responseJson(response)
-  }
-  if (input.request) return fallback()
-  return hostedControlCall(
-    "hostLink.register",
-    {
-      id: input.workspaceId,
       ...(input.displayName ? { displayName: input.displayName } : {}),
+    })
+    return
+  }
+  const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
+    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+    workspaceId: input.workspaceId,
+  }), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
-    fallback,
-  )
+    body: JSON.stringify({
+      ...(input.displayName ? { displayName: input.displayName } : {}),
+    }),
+  })
+  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
+  return await responseJson(response)
 }

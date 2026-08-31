@@ -142,7 +142,6 @@ export type HostedOperationName =
   | "session.gateway"
   | "billing.checkout"
   | "billing.portal"
-  | "hostLink.register"
   | "usage.get"
   | "usage.sync"
 

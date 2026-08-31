@@ -37,7 +37,7 @@ const descriptor = {
       flow: "device-authorization",
       clientId: "claxedo-cli",
       resource: "https://api.example.test/control-plane",
-      scopes: ["offline_access", "workspace:read", "workspace:write"],
+      scopes: ["openid", "profile", "email", "offline_access", "workspace:read", "workspace:write"],
       tokenEndpointOrigin: "https://api.example.test",
       controlPlaneOrigin: "https://api.example.test",
       revocation: {
@@ -50,7 +50,7 @@ const descriptor = {
       flow: "authorization-code-pkce",
       clientId: "claxedo-desktop",
       resource: "https://api.example.test/control-plane",
-      scopes: ["offline_access", "workspace:read", "workspace:write"],
+      scopes: ["openid", "profile", "email", "offline_access", "workspace:read", "workspace:write"],
       tokenEndpointOrigin: "https://api.example.test",
       controlPlaneOrigin: "https://api.example.test",
       revocation: {
@@ -200,6 +200,29 @@ describe("Better Auth D1 request authentication", () => {
     })
   })
 
+  test("accepts the issuer's own userinfo endpoint as an extra audience on openid tokens", async () => {
+    // With the `openid` scope Better Auth adds `${issuer}/oauth2/userinfo` to
+    // `aud`. Rejecting it signed the desktop out on its first product request.
+    const configured = setup({
+      oauth2Introspect: async () => nativeIntrospection({
+        aud: [descriptor.native.cli.resource, `${descriptor.issuer}/oauth2/userinfo`],
+        scope: "openid profile email offline_access workspace:read",
+      }),
+    })
+
+    await expect(configured.adapter.authenticate(new Request("https://api.example.test/bootstrap", {
+      headers: { authorization: "Bearer clx_at_native-secret" },
+    }))).resolves.toMatchObject({
+      identity: { subject: "better_auth_user_1" },
+      client: {
+        kind: "cli",
+        tokenKind: "access-token",
+        resource: descriptor.native.cli.resource,
+        scopes: ["openid", "profile", "email", "offline_access", "workspace:read"],
+      },
+    })
+  })
+
   test("rejects cookie plus Authorization before either Better Auth API is called", async () => {
     const configured = setup()
 
@@ -242,6 +265,10 @@ describe("Better Auth D1 request authentication", () => {
     ["inactive token", nativeIntrospection({ active: false })],
     ["wrong issuer", nativeIntrospection({ iss: "https://other.example.test/api/auth" })],
     ["wrong audience", nativeIntrospection({ aud: "https://other.example.test/control-plane" })],
+    ["a foreign audience alongside the control plane", nativeIntrospection({
+      aud: [descriptor.native.cli.resource, "https://other.example.test/control-plane"],
+    })],
+    ["only the userinfo audience", nativeIntrospection({ aud: `${descriptor.issuer}/oauth2/userinfo` })],
     ["unknown client", nativeIntrospection({ client_id: "other-client" })],
     ["missing subject", nativeIntrospection({ sub: undefined })],
   ])("rejects an introspection result with %s", async (_name, result) => {

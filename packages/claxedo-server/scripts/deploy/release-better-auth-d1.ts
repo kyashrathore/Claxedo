@@ -262,7 +262,17 @@ export function betterAuthD1ReleaseInputs(
     betterAuthD1WorkerName(environment),
   )
   if (env.CLAXEDO_PREVIOUS_PHASE?.trim() === "open") {
-    throw new Error("open roll-forward requires the versioned candidate traffic-switch deployer")
+    // The ledger records this succession as `open_rollforward`, but the
+    // certified pipeline has no zero-downtime traffic switch yet: the new
+    // version takes 100% while the ledger still names the open predecessor,
+    // so every request identity-fails until the candidate is activated. A
+    // development staging accepts those seconds of unavailability the same
+    // way it accepts `--dev-open`; production must wait for the versioned
+    // candidate traffic-switch deployer.
+    const devRollForward = env.CLAXEDO_DEV_OPEN_ROLL_FORWARD?.trim() === "1"
+    if (environment !== "staging" || !devRollForward) {
+      throw new Error("open roll-forward requires the versioned candidate traffic-switch deployer")
+    }
   }
   const transitionNames = [
     "CLAXEDO_PREVIOUS_RELEASE_ID",

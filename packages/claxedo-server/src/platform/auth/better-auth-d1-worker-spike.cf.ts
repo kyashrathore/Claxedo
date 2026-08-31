@@ -5,7 +5,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { AuthenticationError, type AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
 
 import { createBetterAuthD1AuthenticationEvidenceResolver } from "./better-auth-d1-authentication-evidence"
-import { betterAuthNativeRevocation, createBetterAuthD1Foundation } from "./better-auth-d1-foundation"
+import { BETTER_AUTH_NATIVE_SCOPES, betterAuthNativeRevocation, createBetterAuthD1Foundation } from "./better-auth-d1-foundation"
 import { createBetterAuthD1RequestAuthenticationAdapter } from "./better-auth-d1-request-authentication"
 import {
   resolveBetterAuthConfiguration,
@@ -87,7 +87,7 @@ function controlPlaneAuthentication(env: Env) {
         flow: "device-authorization",
         clientId: "claxedo-cli",
         resource: `${API_ORIGIN}/control-plane`,
-        scopes: ["offline_access", "workspace:read", "workspace:write"],
+        scopes: BETTER_AUTH_NATIVE_SCOPES,
         tokenEndpointOrigin: API_ORIGIN,
         controlPlaneOrigin: API_ORIGIN,
         revocation: betterAuthNativeRevocation(API_ORIGIN),
@@ -96,7 +96,7 @@ function controlPlaneAuthentication(env: Env) {
         flow: "authorization-code-pkce",
         clientId: "claxedo-desktop",
         resource: `${API_ORIGIN}/control-plane`,
-        scopes: ["offline_access", "workspace:read", "workspace:write"],
+        scopes: BETTER_AUTH_NATIVE_SCOPES,
         tokenEndpointOrigin: API_ORIGIN,
         controlPlaneOrigin: API_ORIGIN,
         revocation: betterAuthNativeRevocation(API_ORIGIN),

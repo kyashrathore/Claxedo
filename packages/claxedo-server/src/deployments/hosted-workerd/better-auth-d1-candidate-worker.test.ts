@@ -159,6 +159,25 @@ describe("Better Auth D1 candidate Worker", () => {
     expect(mocks.coreFetch).not.toHaveBeenCalled()
   })
 
+  test("a dev deployment with release gates disabled serves auth and product routes through any phase", async () => {
+    for (const phase of ["locked", "provider_sync", "multiplayer_validation"] as const) {
+      mocks.releaseState.mockResolvedValue(release(phase))
+      const devEnv = { ...env(), CLAXEDO_DEV_DISABLE_RELEASE_GATES: "1" }
+      const auth = await worker.fetch(new Request("https://api.example.test/api/auth/sign-in/social"), devEnv)
+      expect(await auth.json()).toEqual({ auth: true })
+      const ordinary = await worker.fetch(new Request("https://api.example.test/api/claxedo/health"), devEnv)
+      expect(await ordinary.json()).toEqual({ core: true })
+    }
+    // The flag must be explicit: any other value keeps the phase gates.
+    mocks.releaseState.mockResolvedValue(release("locked"))
+    const gated = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/health"),
+      { ...env(), CLAXEDO_DEV_DISABLE_RELEASE_GATES: "0" },
+    )
+    expect(gated.status).toBe(503)
+    expect(await gated.json()).toEqual({ error: { code: "deployment_phase_denied" } })
+  })
+
   test("discovers the canonical canary identity only through the release-bound locked enrollment journey", async () => {
     const headers = { "x-claxedo-canary-journey-id": env().CLAXEDO_CANARY_JOURNEY_ID }
     const auth = await worker.fetch(

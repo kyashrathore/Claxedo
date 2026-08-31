@@ -86,16 +86,27 @@ function compositionErrorResponse(error: HostedWorkerCompositionError, request: 
 export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
   compose: HostedCoreWorkerComposition<Env>,
 ) {
-  const appByEnvironment = new WeakMap<object, Hono>()
+  // Keyed by the composed control plane, NOT by `env`. `compose` is expected
+  // to memoize with the settled-composition rule: a composition whose lazy
+  // auth init never settled (its constructor request was canceled) is
+  // replaced on the next call. Caching the app per `env` pinned the FIRST
+  // composition for the isolate's lifetime, so a wedged foundation kept
+  // serving every authenticated core route as an endless hang (2ms CPU, no
+  // response) even while the auth routes — which re-ask `compose` per
+  // request — had already recovered. Keying on the plane makes the app cache
+  // follow the composition cache: same settled composition, same app; a
+  // replaced composition gets a fresh app.
+  const appByPlane = new WeakMap<object, Hono>()
 
   function appFor(env: Env) {
-    const key = env as object
-    const existing = appByEnvironment.get(key)
-    if (existing) return existing
-
+    // Mandatory bindings fail closed BEFORE any composition runs.
     const limiter = requiredRateLimiter(env.CLAXEDO_REQUEST_LIMITER)
     const liveSyncRoom = requiredLiveSyncRoom(env.LIVE_SYNC_ROOM)
     const selected = compose(env)
+    const key = selected.plane as object
+    const existing = appByPlane.get(key)
+    if (existing) return existing
+
     const app = createHostedCoreApp(selected.plane, {
       ...selected.options,
       liveSyncRoom,
@@ -106,7 +117,7 @@ export function createHostedCoreWorker<Env extends HostedCoreWorkerEnv>(
       console.error(error)
       return context.text("Internal Server Error", 500)
     })
-    appByEnvironment.set(key, app)
+    appByPlane.set(key, app)
     return app
   }
 

@@ -136,7 +136,11 @@ async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, 
     }
     const res = await fetchFn(claxedoBootstrapUrl({ serverUrl: baseUrl, harnessType }), {
       headers: { Accept: "application/json" },
-      credentials: "include",
+      // Cookies exist only on the hosted cookie product. The loopback daemon
+      // authenticates locally, and its CORS deliberately never grants
+      // credentialed cross-origin access — an `include` fetch from the dev
+      // renderer origin (http://localhost:517x) is rejected outright there.
+      credentials: isLoopbackServer(baseUrl) ? "omit" : "include",
     })
     if (!res.ok) return undefined
     const data: unknown = await res.json().catch(() => undefined)

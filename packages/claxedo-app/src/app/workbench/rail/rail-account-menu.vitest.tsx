@@ -122,7 +122,9 @@ describe("RailAccountMenu", () => {
     [{ username: "yash" }, "yash"],
     [{ primaryEmailAddress: { emailAddress: "yash@example.com" } }, "yash@example.com"],
     [{ emailAddresses: [{ emailAddress: "fallback@example.com" }] }, "fallback@example.com"],
-    [{}, "Account"],
+    // No name and no email means enrichment hasn't landed: say the true
+    // state, never present the generic word "Account" as if it were a name.
+    [{}, "Signed in"],
   ])("uses the signed identity fallback order", (user, label) => {
     state.user = user
     state.accountIdentity = {

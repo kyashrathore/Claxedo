@@ -19,6 +19,7 @@ describe("desktop machine remote-access binding", () => {
       },
       pause: async () => snapshot,
       revoke: async () => snapshot,
+      share: async () => snapshot,
       onStatus: () => () => {},
     }
 
@@ -26,7 +27,9 @@ describe("desktop machine remote-access binding", () => {
     await machineRemoteAccess()?.enable({ displayName: "Mac", startAtLogin: false })
 
     expect(calls).toEqual(["start"])
-    expect(machineRemoteAccess()?.devices).toBeUndefined()
+    // `devices` is the connector's own snapshot projected as one machine —
+    // present, and never a request beyond the bridge's status read.
+    expect(machineRemoteAccess()?.devices).toBeDefined()
   })
 
   test("binds nothing when preload exposes no bridge", () => {

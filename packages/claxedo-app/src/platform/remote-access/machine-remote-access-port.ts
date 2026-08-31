@@ -84,6 +84,15 @@ export type MachineRemoteAccessPort = {
   /** Stop publishing a machine for good. */
   revoke: (hostId: string) => Promise<{ revoked: boolean }>
   /**
+   * Publish one workspace from this machine.
+   *
+   * Absent on the HTTP product, where sharing goes through the self-hosted
+   * server's own `/api/workspace/:id/user-hosted/register` route. Present on
+   * the desktop, where the Host Connector holds the machine key and the
+   * account credential and no such local route exists.
+   */
+  shareWorkspace?: (input: { workspaceId: string; displayName?: string }) => Promise<void>
+  /**
    * Every machine on the account.
    *
    * Absent on the desktop: enumerating the account's machines is an

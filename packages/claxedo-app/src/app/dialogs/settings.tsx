@@ -42,8 +42,11 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const sharedWorkspaces = useSharedWorkspaceIds()
   // Every local workspace across every open project, with its live shared
   // state. The share ACTION lives here now — the rail rows only display state.
+  // Undefined while the project list is still loading, so the surface can
+  // show skeleton rows instead of an empty section.
   const shareableWorkspaces = createMemo(() => {
-    const projects = projectsQuery.data ?? []
+    const projects = projectsQuery.data
+    if (!projects) return undefined
     return projects.flatMap((project: { worktree: string; workspaces?: Record<string, { directory?: string }> }) => {
       const directories = new Set<string>([
         project.worktree,
@@ -63,7 +66,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   })
   const shareWorkspaces = async (workspaceIds: readonly string[]) => {
     for (const workspaceId of workspaceIds) {
-      const workspace = shareableWorkspaces().find((entry) => entry.workspaceId === workspaceId)
+      const workspace = shareableWorkspaces()?.find((entry) => entry.workspaceId === workspaceId)
       await registerUserHostedWorkspace({ workspaceId, ...(workspace ? { displayName: workspace.label } : {}) })
     }
     await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })

@@ -73,6 +73,12 @@ function connectorHarness(input: { bearer?: string } = {}) {
       }
       return state
     },
+    shareWorkspace: async (share: { workspaceId: string; displayName?: string }) => {
+      if (state.status !== "enrolled") throw new Error("Remote access is not running on this machine")
+      operations.push({ name: "hostLink.register", params: { ...share } })
+      state = { ...state, sharedWorkspaceIds: [...(state.sharedWorkspaceIds ?? []), share.workspaceId].sort() }
+      return state
+    },
     stop: () => {
       state = { status: "stopped", reason: "closed", detail: "connector closed" }
     },
@@ -189,13 +195,14 @@ describe("the lifecycle behind the user's hand", () => {
 })
 
 describe("the closed operation set", () => {
-  test("registers exactly four channels, all under one prefix", () => {
+  test("registers exactly five channels, all under one prefix", () => {
     const ipc = ipcMain()
     registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
 
     expect(ipc.channels().toSorted()).toEqual([
       "claxedo.hostConnector.pause",
       "claxedo.hostConnector.revoke",
+      "claxedo.hostConnector.share",
       "claxedo.hostConnector.start",
       "claxedo.hostConnector.status",
     ])
@@ -213,15 +220,18 @@ describe("the closed operation set", () => {
     }
   })
 
-  test("every handler declares no parameter to receive a message into", () => {
+  test("only share declares a parameter to receive a message into", () => {
     // The account's rule is that a renderer may supply reviewed PARAMETERS and
-    // not a request. This surface is stricter and this is where that is
-    // enforceable: a handler that read the message would have to declare
-    // somewhere to put it. Non-zero here is the passthrough shape arriving.
+    // not a request. Four of five operations are stricter still — a handler
+    // that read the message would have to declare somewhere to put it, and
+    // they declare nothing. `share` alone receives data (a workspace id and a
+    // label), and its two-parameter listener is the ONE place a message can
+    // land; the validator inside it is what keeps that data from becoming a
+    // request description.
     const ipc = ipcMain()
     registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
 
-    expect(ipc.arities()).toEqual([0, 0, 0, 0])
+    expect(ipc.arities().toSorted()).toEqual([0, 0, 0, 0, 2])
   })
 
   test("no operation acts on anything the message carries", async () => {
@@ -253,6 +263,29 @@ describe("the closed operation set", () => {
     expect(enroll?.params?.hostId).not.toBe("someone-else")
   })
 
+  test("share reads exactly a workspace id and a label, nothing else", async () => {
+    const ipc = ipcMain()
+    const harness = connectorHarness()
+    registerHostConnectorIpc({ ipcMain: ipc.target, connector: harness.connector, signedIn: () => true })
+    await ipc.invoke(hostConnectorChannel("start"))
+
+    // Malformed payloads never reach the connector.
+    await expect(ipc.invoke(hostConnectorChannel("share"))).rejects.toThrow("workspaceId")
+    await expect(ipc.invoke(hostConnectorChannel("share"), { workspaceId: 42 })).rejects.toThrow("workspaceId")
+    expect(harness.operations.some((operation) => operation.name === "hostLink.register")).toBe(false)
+
+    // A hostile payload is reduced to the two reviewed fields.
+    const result = await ipc.invoke(hostConnectorChannel("share"), {
+      workspaceId: "ws_local_1",
+      displayName: "opencode",
+      url: "https://evil.example/api/admin",
+      body: { hostId: "someone-else" },
+    })
+    const registered = harness.operations.find((operation) => operation.name === "hostLink.register")
+    expect(registered?.params).toEqual({ workspaceId: "ws_local_1", displayName: "opencode" })
+    expect(result).toMatchObject({ status: "enrolled", sharedWorkspaceIds: ["ws_local_1"] })
+  })
+
   test("the preload bridge names exactly these operations", () => {
     // The renderer's half of the closed set. A preload that grew a fifth member
     // would widen the surface without touching this directory, which is
@@ -279,10 +312,13 @@ describe("no credential crosses IPC", () => {
 
     const results = []
     for (const operation of HOST_CONNECTOR_OPERATIONS) {
+      if (operation === "share") continue
       results.push(await ipc.invoke(hostConnectorChannel(operation)))
     }
-    // Started, so a result exists that COULD carry an enrollment.
+    // Started, so a result exists that COULD carry an enrollment — and a
+    // share on top of it, so a result exists that COULD carry link material.
     results.push(await ipc.invoke(hostConnectorChannel("start")))
+    results.push(await ipc.invoke(hostConnectorChannel("share"), { workspaceId: "ws-leak-probe" }))
 
     const payload = JSON.stringify(results)
     for (const secret of [bearer, "enr_1", "host_1", "privateKey", "publicKey", "signature", "jwk"]) {

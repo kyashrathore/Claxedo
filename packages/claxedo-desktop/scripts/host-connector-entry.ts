@@ -6,6 +6,7 @@ import {
   parseHostConnectorParentMessage,
   type HostConnectorBootstrapIdentity,
   type HostConnectorChildMessage,
+  type HostConnectorChildState,
   type HostConnectorParentMessage,
   type HostEnrollmentOperation,
 } from "../src/main/host-connector/child-protocol"
@@ -60,6 +61,13 @@ export function runHostConnectorChild(port: ChildPort) {
   let bootstrapped = false
 
   const send = (message: HostConnectorChildMessage) => port.postMessage(message)
+  // The connector's state, with the live share list stapled on when
+  // enrolled — the parent's status projection is the only reader.
+  const snapshot = (): HostConnectorChildState => {
+    const state = connector?.state() ?? { status: "idle" as const }
+    if (state.status !== "enrolled" || !connector) return state
+    return { ...state, sharedWorkspaceIds: connector.sharedWorkspaceIds() }
+  }
   const requestAccountOperation = (
     name: HostEnrollmentOperation,
     input?: Record<string, unknown>,
@@ -97,6 +105,25 @@ export function runHostConnectorChild(port: ChildPort) {
       const name = HOST_ENROLLMENT_OPERATIONS.heartbeat
       const value = (await requestAccountOperation(name, { ...input })) as Record<string, unknown> | undefined
       return { expires_at: requireNumber(value?.expires_at, "expires_at", name) }
+    },
+    linkChallenge: async ({ workspaceId, hostId }) => {
+      const name = HOST_ENROLLMENT_OPERATIONS.linkChallenge
+      // `id` is the path parameter the operation map substitutes.
+      const value = (await requestAccountOperation(name, { id: workspaceId, hostId })) as
+        | { challenge?: Record<string, unknown> }
+        | undefined
+      const challenge = value?.challenge
+      return {
+        challenge_id: requireString(challenge?.challengeId, "challengeId", name),
+        nonce: requireString(challenge?.nonce, "nonce", name),
+        expires_at: requireNumber(challenge?.expiresAt, "expiresAt", name),
+      }
+    },
+    linkRegister: async ({ workspaceId, ...rest }) => {
+      await requestAccountOperation(HOST_ENROLLMENT_OPERATIONS.linkRegister, { id: workspaceId, ...rest })
+    },
+    linkHeartbeat: async ({ workspaceId, ...rest }) => {
+      await requestAccountOperation(HOST_ENROLLMENT_OPERATIONS.linkHeartbeat, { id: workspaceId, ...rest })
     },
   }
 
@@ -137,13 +164,25 @@ export function runHostConnectorChild(port: ChildPort) {
         // `createHostConnector` settles its stopped state immediately after
         // invoking this callback. Announce after that synchronous transition.
         queueMicrotask(() => {
-          if (connector) send({ type: "status", status: connector.state() })
+          if (connector) send({ type: "status", status: snapshot() })
         })
       },
     })
-    const status = await connector.start()
-    send({ type: "status", status })
-    return status
+    const started = await connector.start()
+    // Re-establish the shares this machine held before the restart:
+    // registration is an upsert, and a link the control plane no longer
+    // accepts simply fails and is reported without blocking the others.
+    if (started.status === "enrolled") {
+      for (const share of message.sharedWorkspaces ?? []) {
+        try {
+          await connector.shareWorkspace(share)
+        } catch {
+          // `shareWorkspace` already routed the failure through onError.
+        }
+      }
+    }
+    send({ type: "status", status: snapshot() })
+    return snapshot()
   }
 
   const onMessage = async (value: unknown) => {
@@ -165,9 +204,27 @@ export function runHostConnectorChild(port: ChildPort) {
 
     if (message.type === "stop") {
       connector?.close()
-      const status = connector?.state() ?? { status: "stopped" as const, reason: "closed" as const, detail: "connector closed" }
+      const status = connector
+        ? snapshot()
+        : { status: "stopped" as const, reason: "closed" as const, detail: "connector closed" }
       send({ type: "status", status })
       send({ type: "response", requestId: message.requestId, ok: true, status })
+      return
+    }
+
+    if (message.type === "share-workspace") {
+      try {
+        if (!connector) throw new Error("Host Connector has not been bootstrapped")
+        await connector.shareWorkspace({
+          workspaceId: message.workspaceId,
+          ...(message.displayName ? { displayName: message.displayName } : {}),
+        })
+        const status = snapshot()
+        send({ type: "status", status })
+        send({ type: "response", requestId: message.requestId, ok: true, status })
+      } catch (error) {
+        send({ type: "response", requestId: message.requestId, ok: false, error: String(error) })
+      }
       return
     }
 
