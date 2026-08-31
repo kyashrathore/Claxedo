@@ -15,6 +15,68 @@ worktree_path: "/private/tmp/claxedo-boundary-base/.worktrees/codex/cloudflare-m
 
 # Cloudflare multiplayer migration checkpoint
 
+## Continuation 2026-08-31: desktop sign-in unblocked on live staging
+
+A takeover session resolved the blocker the previous session died on: the
+desktop PKCE token exchange "hang" against the live staging Worker.
+
+### Root cause (evidence-grounded, not a code bug in the auth stack)
+
+- Workers observability showed every "hung" `POST /api/auth/oauth2/token` and
+  `POST /api/auth/oauth2/revoke` invocation as `outcome: canceled`, ~3 ms CPU,
+  30–301 s wall, no response, and the authorization codes never consumed in
+  D1 — the Worker received request HEADERS but the BODY never arrived.
+- The stall reproduces from Electron/undici (HTTP/1.1) and curl (HTTP/2)
+  alike, and only for a POST reusing a keep-alive connection that previously
+  served a GET on this origin; the identical POST on a fresh connection
+  completes in under a second. It is intermittent (poisoned windows of
+  minutes), edge-side, and client-stack independent.
+- The desktop always fetches `/api/claxedo/auth/descriptor` moments before the
+  exchange, so sign-in rode exactly that warm connection and died at the 30 s
+  transport timeout every time.
+
+### Fix (committed on this branch)
+
+- `packages/claxedo-desktop/src/main/account/electron-seams.ts`:
+  `postToTokenEndpoint` now gives the first attempt a bounded stall budget,
+  aborts it (destroying the poisoned socket), and retries once on a fresh
+  connection inside the original overall budget. Safe against code/refresh
+  replay because the aborted attempt's body never reached the authorization
+  server. Regression tests in `electron-seams.test.ts`.
+- Proven live at 15:06Z on a reload: one token POST `canceled` at the stall
+  budget, its fresh-connection retry `200` eight seconds later, app stayed
+  `signed`.
+
+### Live state after this continuation
+
+- Desktop OAuth sign-in completes end to end against
+  `release-acc-oauthconsent-260831-182225-3851` (authorize 302 → loopback →
+  exchange 200 → `signed` in 16 s), using the already-granted consent and the
+  existing browser session.
+- Both multiplayer-validation identities are registered for the CURRENT
+  release via the operator API (`--register-multiplayer-identity-1/2`):
+  owner `sha256:d8efc051…` and personal `sha256:3ff15431…`. Signed product
+  reads (`/api/claxedo/bootstrap`, `/api/workspace?access=cloud`) are admitted;
+  the signed UI renders workspaces with no error surface.
+- Note: identity receipts are per-release. Every immutable successor needs
+  both registrations replayed before signed desktop/web traffic passes the
+  multiplayer gate — the earlier "stream 503 after sign-in" was exactly a
+  missing receipt on a fresh release, not a stream defect.
+- Revocation POSTs can still hit the edge stall (30 s, degrades to
+  `uncertain`); acceptable for logout, not yet retried.
+- The edge stall itself deserves an infra follow-up: consider bumping
+  `compatibility_date` (currently 2025-05-01) on a future certified release
+  and re-observing, and filing with Cloudflare with the request IDs recorded
+  in this session (e.g. `f4dd34de1a523c74c7d380d2775dc57e`).
+
+### Still open for "all happy flows on real Cloudflare"
+
+- Two-user sharing through the real UI (second GitHub identity on web/mobile
+  opening a shared workspace, revocation check) — needs the user.
+- Multiplayer-validation evidence kinds and the `open` transition afterwards.
+- Retained Convex turn adapter, producer provenance, and the other checkpoint
+  P1s below remain as before.
+
 ## Why this checkpoint exists
 
 The user asked to pause implementation, publish an honest done/pending report, and push the branch so another agent can review and continue. This document records the current code state and the adversarial review findings. It is not a release declaration.
