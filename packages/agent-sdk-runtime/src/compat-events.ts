@@ -105,10 +105,8 @@ export function toCompatEvent(input: unknown): CompatEvent | null {
 }
 
 export function eventSessionId(event: CompatEvent): string | undefined {
-  // Frames on the global event stream originate from untrusted upstreams and
-  // may be partial. This runs inside a stream transform where a throw tears
-  // down the SSE connection for every subscriber, so read the nested shapes
-  // defensively and fall back to "no session id" rather than crashing.
+  // Global stream frames may be partial. A frame without a valid session
+  // identity is ignored without terminating the shared stream.
   const properties = (event.properties ?? {}) as {
     info?: { id?: string; sessionID?: string }
     part?: { sessionID?: string }

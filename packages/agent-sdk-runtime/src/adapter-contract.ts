@@ -84,9 +84,12 @@ export interface AgentHarnessAdapterCore {
   createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
   /** Release the no-longer-authoritative source resources after a handoff commits. */
   releaseHandoffSource?(id: string, agentSessionId: string, ownerKey: string | null, directory: RuntimeDirectory): Promise<void>
+  /** Apply provider/process effects and return the accepted session without writing the RuntimeStore. */
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
   getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
+  /** Apply the runtime-supplied complete config and return the accepted config without writing the RuntimeStore. */
   updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>
+  /** Release provider/process resources without deleting the RuntimeStore session. */
   deleteSession(id: string, directory: RuntimeDirectory): Promise<void>
 
   readHarnessCapabilities(directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> | HarnessCapabilities

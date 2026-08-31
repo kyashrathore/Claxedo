@@ -387,10 +387,11 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   async deleteSession(id: string, directory: string): Promise<void> {
     const request = await this.requestFn()
-    await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
+    const response = await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
       method: "DELETE",
       headers: this.headers(directory),
     }))
+    if (!response.ok) throw new Error(`OpenCode session delete failed (${response.status})`)
   }
 
   // ── Messaging ────────────────────────────────────────────────────────────────

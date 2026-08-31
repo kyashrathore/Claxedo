@@ -158,7 +158,7 @@ const withLevel = (mode: { id: string; name: string; description?: string }): Ag
 const liveModesSeen = new Map<string, readonly AgentPermissionMode[]>()
 
 /**
- * Record what a live session reported, so later drafts stop guessing.
+ * Record live session modes for later session drafts.
  *
  * Empty lists are ignored: an agent that has a mode channel but has not
  * populated it yet reports `[]`, and treating that as "this agent has no modes"
@@ -267,7 +267,7 @@ export async function setPermissionMode(
 
 /** Derive available agents from ACP session state (config options or legacy modeIds). */
 export function extractAgents(state: ACPState): Array<{ name: string; description?: string; mode: string }> {
-  // Prefer config-based mode options (newer protocol path)
+  // Config-option modes take precedence over mode ids.
   const modeCfg = pick(state.cfg, "mode")
   if (modeCfg && modeCfg.type === "select") {
     const options = flat(modeCfg.options ?? [])

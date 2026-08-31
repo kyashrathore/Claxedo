@@ -1,4 +1,8 @@
-import type { AgentRuntimeEventEnvelope, AgentRuntimeSubscribeInput } from "../runtime"
+import type {
+  AgentRuntimeEventDeliveryPolicy,
+  AgentRuntimeEventEnvelope,
+  AgentRuntimeSubscribeInput,
+} from "../runtime"
 
 export type RuntimeSubscriber = {
   input: AgentRuntimeSubscribeInput
@@ -10,8 +14,11 @@ export function createRuntimeSubscription(
   subscribers: Set<RuntimeSubscriber>,
   input: AgentRuntimeSubscribeInput,
   bufferSize: number,
+  eventDelivery?: AgentRuntimeEventDeliveryPolicy,
 ): AsyncIterable<AgentRuntimeEventEnvelope> {
   if (!Number.isInteger(bufferSize) || bufferSize < 1) throw new Error("subscriberBufferSize must be a positive integer")
+  const identity = input.identity
+  if (eventDelivery && !identity) throw new Error("Subscription identity is required when eventDelivery is configured")
   const queue: AgentRuntimeEventEnvelope[] = []
   const resolvers: Array<(result: IteratorResult<AgentRuntimeEventEnvelope>) => void> = []
   let closed = false
@@ -20,6 +27,7 @@ export function createRuntimeSubscription(
   const finish = () => {
     closed = true
     subscribers.delete(subscriber)
+    queue.splice(0)
     for (const resolve of resolvers.splice(0)) resolve({ done: true, value: undefined })
   }
   const subscriber: RuntimeSubscriber = {
@@ -35,6 +43,7 @@ export function createRuntimeSubscription(
         queue.splice(0)
         queue.push(overflowNotice(event, bufferSize))
         overflowed = true
+        subscribers.delete(subscriber)
         return
       }
       queue.push(event)
@@ -43,17 +52,36 @@ export function createRuntimeSubscription(
   }
   subscribers.add(subscriber)
 
+  const nextEvent = (): Promise<IteratorResult<AgentRuntimeEventEnvelope>> => {
+    const value = queue.shift()
+    if (value) {
+      if (overflowed && queue.length === 0) finish()
+      return Promise.resolve({ done: false, value })
+    }
+    if (closed) return Promise.resolve({ done: true, value: undefined })
+    return new Promise((resolve) => resolvers.push(resolve))
+  }
+
   return {
     [Symbol.asyncIterator]() {
       return {
-        next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
-          const value = queue.shift()
-          if (value) {
-            if (overflowed && queue.length === 0) finish()
-            return Promise.resolve({ done: false, value })
+        async next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
+          while (true) {
+            const next = await nextEvent()
+            if (next.done || !eventDelivery || !identity) return next
+            let decision: Awaited<ReturnType<AgentRuntimeEventDeliveryPolicy>>
+            try {
+              decision = await eventDelivery({ identity, event: next.value })
+            } catch (error) {
+              finish()
+              throw error
+            }
+            if (decision === "deliver") return next
+            if (decision === "terminate") {
+              finish()
+              return { done: true, value: undefined }
+            }
           }
-          if (closed) return Promise.resolve({ done: true, value: undefined })
-          return new Promise((resolve) => resolvers.push(resolve))
         },
         return(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
           finish()
@@ -71,7 +99,7 @@ function overflowNotice(event: AgentRuntimeEventEnvelope, bufferSize: number): A
     payload: {
       type: "harness-notice",
       code: "runtime.subscription_overflow",
-      message: "Runtime event subscriber exceeded its buffer; reopen the stream and replay from the durable store",
+      message: "Runtime event subscriber exceeded its buffer; reconnect and reload authoritative runtime projections",
       severity: "warn",
       details: { bufferSize },
     },

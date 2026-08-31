@@ -1,26 +1,7 @@
 /**
- * The lifecycle semantics every harness adapter shares.
- *
- * Five adapters — OpenCode, Codex, Claude, ACP, Pi — each grew their own answer
- * to "when does the child start, and when may it die". The answers diverged in
- * ways that are invisible until they bite:
- *
- *   - OpenCode caches its startup promise and never clears it on failure, so one
- *     timed-out spawn permanently bricks the adapter for the life of the
- *     process. Every later request re-awaits the same rejected promise.
- *   - Idle teardown is driven by "time since the last request STARTED", so a
- *     response stream or an event subscription that outlives the request can be
- *     killed mid-flight.
- *   - A child that exits late can clear state belonging to the child that
- *     replaced it.
- *
- * This module owns those three answers once. What it deliberately does NOT own
- * is protocol behaviour: retry classification, replay safety, and transport
- * shape stay in each adapter, because those genuinely differ.
- *
- * The model is: one ACTIVE GENERATION at a time, started single-flight, kept
- * alive by LEASES, and torn down after an idle grace once the last lease is
- * released.
+ * Shared child-process lifecycle: one active generation, single-flight startup,
+ * lease-based liveness, generation-scoped teardown, and retryable startup.
+ * Protocol retry, replay, and transport policy remain adapter responsibilities.
  */
 
 export type ProcessLifecycleState = "absent" | "starting" | "ready" | "stopping"
@@ -334,9 +315,8 @@ export function createProcessLifecycle<THandle>(
         armIdleTimer()
         return handle
       } catch (error) {
-        // THE defect this primitive exists to prevent: leaving the rejected
-        // promise cached means every later call re-awaits the same failure and
-        // the adapter can never recover without a process restart.
+        // A failed generation returns to absent so a later ensure can start a
+        // fresh generation.
         clearStartingIfMine()
         if (state === "starting") state = "absent"
         emit({ type: "start-failed", generation: started, error })

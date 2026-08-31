@@ -18,9 +18,11 @@ import { hasAdapterCapability } from "./capabilities"
 import { eventSessionId, type CompatEvent } from "./compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
+import { completeSessionConfigUpdate } from "./harnesses/shared/accepted-session-mutation"
 import { resolveSessionModel } from "./session-model"
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
-import { createTitleMutationCoordinator } from "./runtime/title-mutations"
+import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
+import { createSessionMutationCoordinator } from "./runtime/title-mutations"
 import { runRuntimeTurn } from "./runtime/turn-runner"
 
 declare const agentRuntimeStore: unique symbol
@@ -73,6 +75,7 @@ export type CreateAgentRuntimeInput = {
   store: AgentRuntimeStore
   harnesses: AgentHarnessFactory[]
   resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
+  subscriberBufferSize?: number
   eventDelivery?: AgentRuntimeEventDeliveryPolicy
 }
 
@@ -162,12 +165,6 @@ export function isAgentRuntimeTurnConflictError(error: unknown): error is AgentR
       && (error as { code?: unknown }).code === AGENT_RUNTIME_TURN_CONFLICT_CODE
 }
 
-type Subscriber = {
-  input: AgentRuntimeSubscribeInput
-  push(event: AgentRuntimeEventEnvelope): void
-  close(): void
-}
-
 export type AgentRuntime = ReturnType<typeof createAgentRuntime>
 
 const CENTRAL_DIRECTORY = ""
@@ -239,8 +236,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     factory.create({ store, eventHub }),
   ]))
   const resolvingAdapters = new Map<string, Promise<AgentHarnessAdapter>>()
-  const subscribers = new Set<Subscriber>()
-  const withTitleMutation = createTitleMutationCoordinator()
+  const subscribers = new Set<RuntimeSubscriber>()
+  const withSessionMutation = createSessionMutationCoordinator()
   const acquireTurnLease = (sessionId: string) => {
     const leaseId = store.acquireTurnLease(sessionId)
     if (!leaseId) throw new AgentRuntimeTurnConflictError(sessionId)
@@ -323,8 +320,55 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     clearsHandoff,
     publish,
     commit: (payload, source) => commitAndPublish(sessionId, directory, payload, source),
-    withTitleMutation,
+    withSessionMutation,
   })
+
+  const updateSessionConfig = async (
+    sessionId: string,
+    update: SessionConfigUpdate,
+    directory?: RuntimeDirectory,
+  ) => {
+    return await withSessionMutation(sessionId, async () => {
+      const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
+      if (!session) throw new Error(`Session ${sessionId} not found`)
+      const current = store.getSessionConfig(sessionId)
+      if (!current) throw new Error(`Session ${sessionId} has no runtime config`)
+      const targetDirectory = directory ?? session.directory
+      const changingHarness = !!update.harness && key(current.harness) !== key(update.harness)
+      if (!changingHarness) {
+        const adapter = await adapterFor(current.harness)
+        const configured = await adapter.updateSessionConfig(
+          sessionId,
+          completeSessionConfigUpdate(current, update),
+          targetDirectory,
+        )
+        const persisted = store.updateSessionConfig(sessionId, {
+          harness: configured.harness,
+          model: configured.model ?? null,
+          variant: configured.variant ?? null,
+          agent: configured.agent ?? null,
+          handoff: configured.handoff ?? null,
+        })
+        if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
+        return persisted
+      }
+      if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
+      const source = await adapterFor(current.harness)
+      const target = await adapterFor(update.harness!)
+      return await executeHandoffTransaction({
+        sessionId,
+        directory: targetDirectory,
+        session,
+        current,
+        update: { ...update, harness: update.harness! },
+        store,
+        source,
+        target,
+        commit: (payload) => commitAndPublish(sessionId, targetDirectory, payload, { dir: "out", method: "session/handoff" }),
+        diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
+      })
+    })
+  }
 
   return {
     sessions: {
@@ -370,42 +414,31 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return store.listSessions(runtimeDirectory(inputDirectory)) as AgentSession[]
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        if (updates.title === undefined) return await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
-        return await withTitleMutation(
-          sessionId,
-          async () => await adapter.updateSession(sessionId, updates, directory) as AgentSession | null,
-        )
-      },
-      async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
-        const current = store.getSessionConfig(sessionId)
-        const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
-        if (!changingHarness) {
+        return await withSessionMutation(sessionId, async () => {
+          const session = store.getSession(sessionId) as { directory?: string } | null
+          if (!session) throw new Error(`Session ${sessionId} not found`)
           const adapter = await adapterForSession(sessionId, directory)
-          return await adapter.updateSessionConfig(sessionId, update, directory)
-        }
-        const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
-        if (!session) throw new Error(`Session ${sessionId} not found`)
-        if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
-        const targetDirectory = directory ?? session.directory
-        const source = await adapterFor(current!.harness)
-        const target = await adapterFor(update.harness!)
-        return await executeHandoffTransaction({
-          sessionId,
-          directory: targetDirectory,
-          session,
-          current: current!,
-          update: { ...update, harness: update.harness! },
-          store,
-          source,
-          target,
-          commit: (payload) => commitAndPublish(sessionId, targetDirectory, payload, { dir: "out", method: "session/handoff" }),
-          diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
+          const accepted = await adapter.updateSession(sessionId, updates, directory ?? session.directory)
+          if (!accepted) throw new Error(`Session ${sessionId} not found`)
+          const persisted = store.updateSession(sessionId, {
+            ...(accepted.title !== undefined ? { title: accepted.title ?? undefined } : {}),
+            ...(accepted.time?.archived !== undefined ? { time: { archived: accepted.time.archived } } : {}),
+          })
+          if (!persisted) throw new Error(`Session ${sessionId} not found`)
+          return persisted
         })
       },
+      async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
+        return await updateSessionConfig(sessionId, update, directory)
+      },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        await adapter.deleteSession(sessionId, directory)
+        await withSessionMutation(sessionId, async () => {
+          const session = store.getSession(sessionId) as { directory?: string } | null
+          if (!session) throw new Error(`Session ${sessionId} not found`)
+          const adapter = await adapterForSession(sessionId, directory)
+          await adapter.deleteSession(sessionId, directory ?? session.directory)
+          store.deleteSession(sessionId)
+        })
       },
     },
     turns: {
@@ -420,7 +453,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           turn.onAdmitted?.()
           const directory = session.directory ?? undefined
           const adapter = await adapterForSession(turn.sessionId, directory)
-          const config = store.getSessionConfig(turn.sessionId) ?? await adapter.getSessionConfig(turn.sessionId, directory)
+          const config = store.getSessionConfig(turn.sessionId)
+          if (!config) throw new Error(`Session ${turn.sessionId} has no runtime config`)
           const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
           const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
           const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
@@ -432,6 +466,16 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           }
           const openingUserPublished = includesOpeningUserMessage(started.events, userMessageId)
           void runTurn(turn.sessionId, prompt, directory, adapter, openingUserPublished, !!handoff)
+            .catch((error: unknown) => publish({
+              sessionId: turn.sessionId,
+              directory,
+              payload: {
+                type: "harness-notice",
+                code: "runtime.turn_persistence_failed",
+                message: error instanceof Error ? error.message : "Runtime turn persistence failed",
+                severity: "error",
+              },
+            }))
             .finally(() => releaseTurnLease(turn.sessionId, leaseId))
           return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
         } catch (error) {
@@ -454,7 +498,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
-        return subscription(subscribers, subscribe, input.eventDelivery)
+        return createRuntimeSubscription(
+          subscribers,
+          subscribe,
+          input.subscriberBufferSize ?? 256,
+          input.eventDelivery,
+        )
       },
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
         const adapter = await adapterForSession(sessionId, directory)
@@ -468,9 +517,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as AgentPermission[])
           .find((item) => item.id === permissionId)
-        const adapter = permission
-          ? await adapterForSession(permission.sessionID, directory)
-          : [...adapters.values()].find((item) => item.respondPermission)
+        if (!permission) throw new Error(`Permission ${permissionId} not found`)
+        const adapter = await adapterForSession(permission.sessionID, directory)
         if (!adapter?.respondPermission) throw new Error("No registered harness supports permissions")
         const result = await adapter.respondPermission(permissionId, decision, directory)
         publishInteractionEvents(result?.events, directory)
@@ -484,9 +532,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async answer(questionId: string, answer: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
-        const adapter = question
-          ? await adapterForSession(question.sessionID, directory)
-          : [...adapters.values()].find((item) => item.replyQuestion)
+        if (!question) throw new Error(`Question ${questionId} not found`)
+        const adapter = await adapterForSession(question.sessionID, directory)
         if (!adapter?.replyQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.replyQuestion(questionId, answer, directory)
         publishInteractionEvents(result?.events, directory)
@@ -495,9 +542,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async reject(questionId: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
-        const adapter = question
-          ? await adapterForSession(question.sessionID, directory)
-          : [...adapters.values()].find((item) => item.rejectQuestion)
+        if (!question) throw new Error(`Question ${questionId} not found`)
+        const adapter = await adapterForSession(question.sessionID, directory)
         if (!adapter?.rejectQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.rejectQuestion(questionId, directory)
         publishInteractionEvents(result?.events, directory)
@@ -507,7 +553,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     todos: {
       async list(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId, directory)
-        if (!adapter.getTodos) return []
+        if (!adapter.getTodos) throw new Error("This harness does not support todos")
         return await adapter.getTodos(sessionId, directory)
       },
     },
@@ -522,13 +568,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
     },
     config: {
-      async read(sessionId: string, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        return await adapter.getSessionConfig(sessionId, directory)
+      async read(sessionId: string, _directory?: RuntimeDirectory) {
+        const config = store.getSessionConfig(sessionId)
+        if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
+        return config
       },
       async update(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        return await adapter.updateSessionConfig(sessionId, update, directory)
+        return await updateSessionConfig(sessionId, update, directory)
       },
       async options(directory: RuntimeDirectory) {
         return merge(adapters, (adapter) => adapter.probeConfigOptions?.(directory))
@@ -566,62 +612,4 @@ async function merge<T>(adapters: Map<string, AgentHarnessAdapter>, read: (adapt
     if (rows) out.push(...rows)
   }
   return out
-}
-
-function subscription(
-  subscribers: Set<Subscriber>,
-  input: AgentRuntimeSubscribeInput,
-  eventDelivery?: AgentRuntimeEventDeliveryPolicy,
-): AsyncIterable<AgentRuntimeEventEnvelope> {
-  const queue: AgentRuntimeEventEnvelope[] = []
-  const resolvers: Array<(result: IteratorResult<AgentRuntimeEventEnvelope>) => void> = []
-  let closed = false
-  const finish = () => {
-    closed = true
-    subscribers.delete(subscriber)
-    for (const resolve of resolvers.splice(0)) resolve({ done: true, value: undefined })
-  }
-  const subscriber: Subscriber = {
-    input,
-    push(event) {
-      if (closed) return
-      const resolve = resolvers.shift()
-      if (resolve) {
-        resolve({ done: false, value: event })
-        return
-      }
-      queue.push(event)
-    },
-    close() {
-      finish()
-    },
-  }
-  subscribers.add(subscriber)
-  const nextEvent = (): Promise<IteratorResult<AgentRuntimeEventEnvelope>> => {
-    if (queue.length > 0) return Promise.resolve({ done: false, value: queue.shift()! })
-    if (closed) return Promise.resolve({ done: true, value: undefined })
-    return new Promise((resolve) => resolvers.push(resolve))
-  }
-  return {
-    [Symbol.asyncIterator]() {
-      return {
-        async next(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
-          while (true) {
-            const next = await nextEvent()
-            if (next.done || !eventDelivery || !input.identity) return next
-            const decision = await eventDelivery({ identity: input.identity, event: next.value })
-            if (decision === "deliver") return next
-            if (decision === "terminate") {
-              finish()
-              return { done: true, value: undefined }
-            }
-          }
-        },
-        return(): Promise<IteratorResult<AgentRuntimeEventEnvelope>> {
-          finish()
-          return Promise.resolve({ done: true, value: undefined })
-        },
-      }
-    },
-  }
 }

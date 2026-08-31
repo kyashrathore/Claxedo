@@ -1,8 +1,8 @@
-/** Serializes automatic and explicit title writes so an explicit rename wins. */
-export function createTitleMutationCoordinator() {
+/** Serializes every metadata mutation for one session. */
+export function createSessionMutationCoordinator() {
   const tails = new Map<string, Promise<void>>()
 
-  return async function withTitleMutation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
+  return async function withSessionMutation<T>(sessionId: string, operation: () => Promise<T>): Promise<T> {
     const previous = tails.get(sessionId) ?? Promise.resolve()
     let release!: () => void
     const current = new Promise<void>((resolve) => { release = resolve })

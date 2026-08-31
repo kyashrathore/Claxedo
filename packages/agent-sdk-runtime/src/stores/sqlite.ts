@@ -30,13 +30,6 @@ export type SqliteRuntimeStoreOptions = { root: string }
 const SCHEMA_VERSION = 2
 const requireDatabase = createRequire(import.meta.url)
 
-function isMessageProjectionEvent(event: CompatEvent) {
-  return event.type === "message.updated"
-    || event.type === "message.part.updated"
-    || event.type === "message.part.delta"
-    || event.type === "message.completed"
-}
-
 export class UnsupportedRuntimeStoreSchemaError extends Error {
   readonly code = "unsupported_runtime_store_schema"
 
@@ -80,14 +73,12 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   private memory = new MemoryRuntimeStore()
   private readonly turnLeases = new Map<string, string>()
   private nextTurnLease = 0
-  private readonly pendingMessageSessions = new Set<string>()
-  private flushTimer: ReturnType<typeof setTimeout> | undefined
 
   constructor(options: SqliteRuntimeStoreOptions) {
     fs.mkdirSync(options.root, { recursive: true, mode: 0o755 })
     this.db = openDatabase(path.join(options.root, "agent-runtime.db"))
     this.db.exec("PRAGMA journal_mode = WAL")
-    this.db.exec("PRAGMA synchronous = NORMAL")
+    this.db.exec("PRAGMA synchronous = FULL")
     this.db.exec("PRAGMA busy_timeout = 5000")
     try {
       this.initializeSchema()
@@ -135,7 +126,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
       this.memory.deleteSession(id)
       for (const sessionId of ids) {
         this.turnLeases.delete(sessionId)
-        this.pendingMessageSessions.delete(sessionId)
         this.deletePersistedSession(sessionId)
       }
     })
@@ -186,12 +176,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   appendEvent(input: { sessionId: string; agentSessionId?: string; payload: CompatEvent; source?: unknown }) {
-    if (isMessageProjectionEvent(input.payload)) {
-      const result = this.memory.appendEvent(input)
-      this.pendingMessageSessions.add(input.sessionId)
-      this.scheduleFlush()
-      return result
-    }
     return this.write(() => {
       const result = this.memory.appendEvent(input)
       this.persistSession(input.sessionId)
@@ -262,11 +246,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getSessionOwnerKey(id: string) { return this.memory.getSessionOwnerKey(id) }
   listSessionsByOwnerKey(ownerKey: string) { return this.memory.listSessionsByOwnerKey(ownerKey) }
-  close() {
-    if (this.flushTimer) clearTimeout(this.flushTimer)
-    this.flushTimer = undefined
-    try { this.flushPendingMessages() } finally { this.db.close?.() }
-  }
+  close() { this.db.close?.() }
 
   private initializeSchema() {
     const legacy = this.get<{ name: string }>(
@@ -333,7 +313,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   private write<T>(operation: () => T): T {
-    this.flushPendingMessages()
     this.db.exec("BEGIN IMMEDIATE")
     try {
       const result = operation()
@@ -342,38 +321,6 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
     } catch (error) {
       this.db.exec("ROLLBACK")
       this.hydrateMemory()
-      throw error
-    }
-  }
-
-  private scheduleFlush() {
-    if (this.flushTimer) return
-    this.flushTimer = setTimeout(() => {
-      this.flushTimer = undefined
-      try {
-        this.flushPendingMessages()
-      } catch {
-        // A synchronous durability boundary (the next write or close) retries
-        // and reports the failure to its caller. The in-memory projection stays
-        // intact until then, so an unrelated active turn is never discarded.
-      }
-    }, 50)
-    this.flushTimer.unref?.()
-  }
-
-  private flushPendingMessages() {
-    if (this.pendingMessageSessions.size === 0) return
-    const sessionIds = [...this.pendingMessageSessions]
-    this.db.exec("BEGIN IMMEDIATE")
-    try {
-      for (const sessionId of sessionIds) {
-        this.persistSession(sessionId)
-        this.replaceMessages(sessionId)
-      }
-      this.db.exec("COMMIT")
-      for (const sessionId of sessionIds) this.pendingMessageSessions.delete(sessionId)
-    } catch (error) {
-      this.db.exec("ROLLBACK")
       throw error
     }
   }

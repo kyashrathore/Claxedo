@@ -1,17 +1,10 @@
 import { randomUUID } from "crypto"
-import type {
-  AgentEventRuntime,
-  RawHarnessEvent,
-  SubagentUpdatedEvent,
-} from "@claxedo/agent-event-runtime"
+import type { RawHarnessEvent } from "@claxedo/agent-event-runtime"
 import {
   buildAssistantMessage,
   buildUserMessage,
   isTerminalCompatEvent,
   messageUpdated,
-  permissionReplied,
-  questionRejected,
-  questionReplied,
   sessionError,
   sessionStatus,
   sessionUpdated,
@@ -19,14 +12,10 @@ import {
 } from "../../compat-events"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
-import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { NativeSdkHarnessId } from "../../sdk-model-catalog"
 import type {
   AgentCommandRow,
   AgentConfigOptionRow,
   AgentMessageRow,
-  AgentPermissionRow,
-  AgentQuestionRow,
   AgentRuntimeStreamEvent,
   AgentSessionRow,
   PromptInput,
@@ -37,8 +26,6 @@ import type {
   AbortResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
-  AgentInteractionResult,
-  AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
@@ -53,11 +40,9 @@ import {
   EXPLICIT_TURN_ABORT_REASON,
   type SessionTurnLifecycle,
 } from "../shared/turn-lifecycle"
-import type { AgentRuntimeStore } from "../shared/runtime-store"
 import { deriveSessionTitle, hasConcreteSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
-import type { AgentProcessObserver } from "../../process-observer"
 import {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
@@ -72,155 +57,43 @@ import {
   subagentOutcome,
   transcriptText,
 } from "./subagent-transcript"
+import type {
+  ActiveTurn,
+  JsonRecord,
+  SdkRuntimeAdapterOptions,
+  SdkRuntimeAuth,
+  SdkRuntimeDriver,
+  SdkRuntimeDriverFactory,
+  SdkRuntimeDriverHost,
+  SdkRuntimeRunnerType,
+  SdkRuntimeStore,
+  SdkRuntimeTranscriptRegistrar,
+  SdkRuntimeTurnInput,
+} from "./sdk-runtime-driver"
+import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
+import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
+import { acceptedSessionConfig, acceptedSessionUpdate } from "./accepted-session-mutation"
+import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
 
-export type SdkRuntimeRunnerType = NativeSdkHarnessId
-export type SdkRuntimeStore = AgentRuntimeStore
-export type SdkRuntimeTranscriptRegistrar = {
-  register(input: {
-    parentSessionId: string
-    providerKind: string
-    filePath: string
-  }): Promise<
-    | { state: "ready"; handle: string }
-    | { state: "unavailable"; reason: string }
-  >
-  open?(input: {
-    parentSessionId: string
-    handle: string
-  }): Promise<
-    | { state: "ready"; messages: unknown[] }
-    | { state: "empty"; messages: [] }
-    | { state: "unavailable"; reason: string }
-  >
-}
-
-export type SdkRuntimeAdapterOptions = AgentHarnessAdapterProcessOptions & {
-  driver: SdkRuntimeDriverFactory
-  binary?: string
-  storeRoot?: string
-  store?: SdkRuntimeStore
-  createStore?: (storeRoot?: string) => SdkRuntimeStore
-  eventHub?: RuntimeEventHub
-  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
-}
-
-export type JsonRecord = Record<string, unknown>
-export type PendingPermission = {
-  sessionId: string
-  agentSessionId: string
-  method: string
-  params: JsonRecord
-  resolve: (decision: "allow_once" | "allow_always" | "deny" | "reject_always") => void
-}
-export type PendingQuestion = {
-  sessionId: string
-  agentSessionId: string
-  questions: unknown[]
-  resolve: (answer: string) => void
-  reject: () => void
-}
-export type ActiveTurn = {
-  abort: AbortController
-  close?: () => void
-  turnId?: string
-}
-
-export type SdkRuntimeAuth = { anthropic?: string; openai?: string; cursor?: string }
-export type SdkRuntimeDriverHost = {
-  lifecycle: () => SessionTurnLifecycle<ActiveTurn>
-  pendingPermissions: Map<string, PendingPermission>
-  pendingQuestions: Map<string, PendingQuestion>
-  processObserver?: AgentProcessObserver
-  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
-  bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
-}
-export type SdkRuntimeTurnInput = {
-  sessionId: string
-  getAgentSessionId: () => string
-  input: PromptInput
-  directory: string
-  abort: AbortController
-  ingest: (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => void
-  associateChild: (correlationKey: string, target: ChildProjectionTarget) => void
-  observeSubagent: (input: {
-    observation: SubagentObservation
-    correlationKeys?: string[]
-    source?: RuntimeAppendSource
-  }) => Promise<{
-    event: SubagentUpdatedEvent
-    childSessionId?: string
-  }>
-  rebindAgentSession: (agentSessionId: string) => void
-  model: string
-}
-export type SdkRuntimeDriver = {
-  readonly type: SdkRuntimeRunnerType
-  setAuth(keys: SdkRuntimeAuth): void
-  applyConfig(config: Record<string, unknown>): void | Promise<void>
-  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
-  createRuntime(threadId: string): AgentEventRuntime
-  runTurn(input: SdkRuntimeTurnInput): Promise<void>
-  deleteAgentSession(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
-  dispose?(): void
-  readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
-  configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]>
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[]
-  /**
-   * Optional because a driver without them is a driver whose harness has no
-   * permission surface — the adapter then omits the methods entirely, so the
-   * route answers "unsupported" instead of an empty list that reads like the
-   * harness merely had nothing to say.
-   */
-  permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
-  setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
-}
-export type SdkRuntimeDriverFactory = (host: SdkRuntimeDriverHost) => SdkRuntimeDriver
+export type {
+  ActiveTurn,
+  JsonRecord,
+  SdkRuntimeAdapterOptions,
+  SdkRuntimeAuth,
+  SdkRuntimeDriver,
+  SdkRuntimeDriverFactory,
+  SdkRuntimeDriverHost,
+  SdkRuntimeRunnerType,
+  SdkRuntimeStore,
+  SdkRuntimeTranscriptRegistrar,
+  SdkRuntimeTurnInput,
+} from "./sdk-runtime-driver"
+export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
 const log = Log.create({ service: "sdk-runtime-adapter" })
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
-}
-
-export function record(input: unknown): JsonRecord | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as JsonRecord
-}
-
-export function text(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
-}
-
-/**
- * Does this event mean the turn is over?
- *
- * Deliberately the same rule `runtime.ts`'s drain loop uses to decide a turn
- * reached a terminal state — compat events settle on `session.idle` /
- * `session.error`, native runtime events on `finish` / `error` / a
- * `session-status` of `error`. Duplicated rather than shared because the two
- * live on opposite sides of the adapter boundary and importing across it to
- * save four lines would be a worse trade than the drift risk; if a third caller
- * appears, promote it.
- */
-function isTurnTerminalEvent(event: AgentRuntimeStreamEvent) {
-  if ("properties" in event) return event.type === "session.idle" || event.type === "session.error"
-  return event.type === "finish" || event.type === "error" || (event.type === "session-status" && event.status === "error")
-}
-
-export function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  const row = record(err)
-  const data = record(row?.data)
-  return text(data?.message) ?? text(row?.message) ?? String(err)
-}
-
-export function extractTextFromParts(parts: unknown[]) {
-  return parts.flatMap((part) => {
-    if (typeof part === "string") return [part]
-    const row = record(part)
-    if (!row) return []
-    return text(row.text) ?? text(row.content) ?? []
-  }).join("\n").trim()
 }
 
 export class SdkRuntimeAdapter implements AgentHarnessAdapter {
@@ -232,8 +105,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   private currentModel = ""
   private driver: SdkRuntimeDriver
   private turnLifecycle = createSessionTurnLifecycle<ActiveTurn>()
-  private pendingPermissions = new Map<string, PendingPermission>()
-  private pendingQuestions = new Map<string, PendingQuestion>()
+  private interactions: SdkRuntimeInteractions
   private subagentAdmissionStore = createMemorySubagentAdmissionStore()
   private subagentChildren = new Map<string, {
     sessionId: string
@@ -246,10 +118,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
+    this.interactions = new SdkRuntimeInteractions(this.store)
     this.driver = options.driver({
       lifecycle: () => this.lifecycle(),
-      pendingPermissions: this.pendingPermissions,
-      pendingQuestions: this.pendingQuestions,
+      pendingPermissions: this.interactions.permissions,
+      pendingQuestions: this.interactions.questions,
       processObserver: options.processObserver,
       transcriptRegistrar: options.transcriptRegistrar,
       bindSession: (input) => this.store.bindSession(input),
@@ -347,7 +220,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
-    return this.store.updateSession(id, updates) as AgentSessionRow | null
+    return acceptedSessionUpdate(this.store, id, updates)
   }
 
   async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
@@ -365,7 +238,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
-    return this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
+    const current = this.store.getSessionConfig(id)
+    if (!current) throw new Error(`Session ${id} has no runtime config`)
+    return acceptedSessionConfig(current, update)
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {
@@ -378,37 +253,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     const agentSessionId = this.store.getAgentSessionId(id)
     if (agentSessionId) await this.driver.deleteAgentSession(id, agentSessionId, _directory)
-    this.store.deleteSession(id)
   }
 
-  /**
-   * Runs one turn, holding the session's busy lock for the turn's LIFETIME —
-   * which ends when the turn settles, not when this generator finishes.
-   *
-   * The lock exists to answer "is a turn in flight on this session"; a second
-   * prompt arriving while one is has nowhere to go, so it is refused. But the
-   * generator does more than the turn: after the terminal event the consumer
-   * (`runtime.ts`'s drain loop) still commits events, fans out to subscribers,
-   * and awaits an auto-title round-trip before this `finally` runs. Measured on
-   * a failing Tier R run, that tail is ~515ms:
-   *
-   *   747ms  T1 terminal (session.idle)      2168ms  T2 terminal
-   *  1261ms  T1 lock released (+514ms)       2683ms  T3 REFUSED
-   *                                          2684ms  T2 lock released (+516ms)
-   *
-   * T3 missed the release by ONE millisecond and was told "Session is already
-   * processing a message" — for a turn that had been over for half a second.
-   * That is the bug: a user who sends a second message promptly after a reply
-   * lands gets it silently swallowed, with the composer showing ready
-   * throughout. It reproduced on every Tier R claude-sdk run and vanished if
-   * the next send was delayed ~2.5s, which is what made it look like five
-   * different bugs across the layers it was chased through.
-   *
-   * So the lock is released at TERMINAL EMISSION, the moment the turn is
-   * semantically over. The `finally` still releases — `enter`'s closure deletes
-   * from a Set, so a second call is a no-op — because a turn that throws or is
-   * abandoned before emitting a terminal event must not strand the session.
-   */
+  /** Holds the busy lock through protocol execution and releases it at terminal emission. */
   async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
     directory = requireWorkspaceDirectory(directory)
     const leaveBusy = this.lifecycle().enter(id)
@@ -418,10 +265,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     try {
       for await (const event of this._sendMessage(id, input, directory)) {
-        // Release BEFORE yielding: the consumer may take arbitrarily long to
-        // process this event (the auto-title round-trip is downstream of it),
-        // and every millisecond of that is a window a next prompt can lose in.
-        if (isTurnTerminalEvent(event)) leaveBusy()
+        if (isTerminalRuntimePayload(event)) leaveBusy()
         yield event
       }
     } finally {
@@ -744,7 +588,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   async abort(id: string, _directory: string): Promise<AbortResult> {
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
-    this.resolvePendingPermissions(id, "deny")
+    this.interactions.resolvePermissions(id, "deny")
     // `cancelled` is an admission acknowledgement: callers may start the next
     // turn as soon as it resolves. Wait until this adapter's own generation has
     // left its busy section so the replacement cannot be rejected by a stale
@@ -772,75 +616,28 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return this.driver.setPermissionMode(sessionId, modeId, directory)
   }
 
-  async listPermissions(directory: string): Promise<AgentPermissionRow[]> {
-    directory = requireWorkspaceDirectory(directory)
-    const live = new Set(this.pendingPermissions.keys())
-    return this.store.listPermissions(directory).filter((row) => {
-      if (live.has(row.id)) return true
-      return false
-    }) as AgentPermissionRow[]
+  async listPermissions(directory: string) {
+    return this.interactions.listPermissions(directory)
   }
 
   async respondPermission(
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
     directory: string,
-  ): Promise<AgentInteractionResult | void> {
-    directory = requireWorkspaceDirectory(directory)
-    const row = (this.store.listPermissions(directory) as Array<{ id: string; sessionID: string }>).find((item) => item.id === permId)
-    const pending = this.pendingPermissions.get(permId)
-    const events: CompatEvent[] = []
-    if (row) {
-      const committed = this.store.appendEvent({
-        sessionId: row.sessionID,
-        agentSessionId: pending?.agentSessionId,
-        payload: permissionReplied(
-          row.sessionID,
-          permId,
-          decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
-        ),
-        source: { dir: "out", method: "permission.reply", frame: { decision } },
-      })
-      if (committed?.payload) events.push(committed.payload)
-    }
-    if (!pending) return
-    this.pendingPermissions.delete(permId)
-    pending.resolve(decision)
-    return events.length > 0 ? { events } : undefined
+  ) {
+    return this.interactions.respondPermission(permId, decision, directory)
   }
 
-  async listQuestions(directory: string): Promise<AgentQuestionRow[]> {
-    directory = requireWorkspaceDirectory(directory)
-    const live = new Set(this.pendingQuestions.keys())
-    return this.store.listQuestions(directory).filter((row) => live.has(row.id)) as AgentQuestionRow[]
+  async listQuestions(directory: string) {
+    return this.interactions.listQuestions(directory)
   }
 
-  async replyQuestion(qId: string, answer: string, _directory: string): Promise<AgentInteractionResult | void> {
-    const pending = this.pendingQuestions.get(qId)
-    if (!pending) return
-    this.pendingQuestions.delete(qId)
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionReplied(pending.sessionId, qId, [[answer]]),
-      source: { dir: "out", method: "question.reply", frame: { answer } },
-    })
-    pending.resolve(answer)
-    return committed?.payload ? { events: [committed.payload] } : undefined
+  async replyQuestion(qId: string, answer: string, _directory: string) {
+    return this.interactions.replyQuestion(qId, answer)
   }
 
-  async rejectQuestion(qId: string, _directory: string): Promise<AgentInteractionResult | void> {
-    const pending = this.pendingQuestions.get(qId)
-    if (!pending) return
-    this.pendingQuestions.delete(qId)
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionRejected(pending.sessionId, qId),
-      source: { dir: "out", method: "question.reject", frame: {} },
-    })
-    pending.reject()
-    return committed?.payload ? { events: [committed.payload] } : undefined
+  async rejectQuestion(qId: string, _directory: string) {
+    return this.interactions.rejectQuestion(qId)
   }
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
@@ -867,27 +664,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   dispose(): void {
     this.lifecycle().abortAll()
-    this.resolvePendingPermissions()
-    for (const item of this.pendingQuestions.values()) item.reject()
-    this.pendingQuestions.clear()
+    this.interactions.resolvePermissions()
+    this.interactions.rejectAllQuestions()
     this.driver?.dispose?.()
     this.closeStore()
-  }
-
-  private resolvePendingPermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
-    for (const [id, item] of [...this.pendingPermissions.entries()]) {
-      if (sessionId && item.sessionId !== sessionId) continue
-      this.pendingPermissions.delete(id)
-      if (item.sessionId && this.store?.appendEvent) {
-        this.store.appendEvent({
-          sessionId: item.sessionId,
-          agentSessionId: item.agentSessionId,
-          payload: permissionReplied(item.sessionId, id, "reject"),
-          source: { dir: "out", method: "permission.abort", frame: { decision } },
-        })
-      }
-      item.resolve?.(decision)
-    }
   }
 
   private maybeAutoTitle(id: string, agentSessionId: string, directory: string, parts: unknown[]) {

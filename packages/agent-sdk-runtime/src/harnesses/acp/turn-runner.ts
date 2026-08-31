@@ -331,10 +331,8 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       const run = async (): Promise<void> => {
         install()
         try {
-          // The PROMPT turn runs for as long as the model thinks/streams — it
-          // must use the prompt timeout (5 min default), NOT the 10s
-          // new-session handshake timeout, which cancelled every turn slower
-          // than 10s.
+          // Prompt execution uses the turn timeout; session creation has a
+          // separate handshake timeout.
           const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
           // Prompt-result usage is the ONLY meterable usage on this rail:
           // mid-turn `usage_update` notifications carry a context meter, not

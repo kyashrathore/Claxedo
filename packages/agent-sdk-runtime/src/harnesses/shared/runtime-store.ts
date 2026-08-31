@@ -1,5 +1,5 @@
 import type { CompatEvent } from "../../compat-events"
-import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
+import type { AgentSession, AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { AdmittedSubagentObservation, SubagentObservation } from "../../subagent-admission"
 
@@ -45,7 +45,7 @@ export type AgentRuntimeStoreCore = {
   getSession(id: string): unknown | null
   bindSession(input: AgentRuntimeSessionBinding): void
   updateSessionConfig(id: string, update: SessionConfigUpdate): SessionConfig | null | undefined
-  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }): unknown | null
+  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }): AgentSession | null
   getSessionConfig(id: string): SessionConfig | null | undefined
   deleteSession(id: string): void
   getAgentSessionId(id: string): string | null | undefined

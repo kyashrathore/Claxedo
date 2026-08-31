@@ -213,6 +213,8 @@ harness supports a feature it cannot actually perform.
 helpers.
 
 - `RuntimeEventHub` is a lightweight pub/sub boundary for runtime events.
+- `createAgentRuntime({ subscriberBufferSize, eventDelivery })` bounds each
+  subscriber while allowing the host to authorize every delivered event.
 - `createSseReplayBuffer()` keeps bounded replay for reconnecting clients.
 - `attachSseFanout()` bridges a subscribe function into a streaming response
   with lifecycle cleanup.

@@ -57,106 +57,25 @@ import {
   sourceCodexAuthValue,
   writeCodexAuthFile,
 } from "./auth-file"
+import {
+  CODEX_DYNAMIC_TOOLS,
+} from "./dynamic-agent"
+import type { CodexActiveThread } from "./active-thread"
+import { handleCodexServerRequest } from "./server-request"
+import { startTurnWithThreadRecovery } from "./thread-recovery"
+
+export { isThreadNotFound, sessionLostMessage, startTurnWithThreadRecovery } from "./thread-recovery"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
 const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 const OPENAI_ISSUER = "https://auth.openai.com"
 
-type CodexActiveThread = {
-  sessionId: string
-  agentSessionId: string
-  directory: string
-  model?: string
-  effort?: string
-  process: CodexAppServerProcess
-  project: (method: string, payload: JsonRecord, frame: unknown) => void
-  observeSubagent: SdkRuntimeTurnInput["observeSubagent"]
-}
-
-/**
- * The app-server reports an unknown thread as `thread not found: <uuid>`. Matched on the
- * message because the JSON-RPC error carries no dedicated code for it.
- */
-export function isThreadNotFound(err: unknown): boolean {
-  return /thread not found/i.test(errorMessage(err))
-}
-
-/** Two resume cycles bound recovery for a thread that is no longer available. */
-const MAX_THREAD_RESUME_ATTEMPTS = 2
-
-/**
- * Human copy for a permanently-lost Codex thread. Phrased so `classifyFirstTurnError`
- * routes it to the `session` recovery class (the `session not found` phrasing matches its
- * regex) — the app-server's own `thread not found: <uuid>` string never becomes the
- * headline. The original protocol string (including the uuid) is appended so it survives
- * into the client's raw-detail disclosure, which reads `error.data.message`.
- */
-export function sessionLostMessage(cause: unknown): string {
-  return `The agent process no longer has this conversation (session not found). ${errorMessage(cause)}`
-}
-
-/**
- * A Codex thread lives in the memory of the app-server process that started it, but is
- * persisted to disk. `ensureProcess` transparently respawns a dead subprocess (crash,
- * idle kill, host sleep), so a session that worked earlier can hand its threadId to a
- * process that has never heard of it — the app-server answers `thread not found: <uuid>`
- * and, without recovery, EVERY later turn in that session fails permanently.
- *
- * On that specific error, resume the thread by id into the current process and retry the
- * turn. Recovery is bounded to {@link MAX_THREAD_RESUME_ATTEMPTS} resume+retry cycles: if
- * the thread is still missing after them, the state is treated as terminal and a
- * classified, human error is thrown (see {@link sessionLostMessage}) rather than
- * propagating the raw `thread not found: <uuid>` protocol string to the transcript.
- *
- * Any non-`thread not found` error propagates untouched (never mask a real failure), and
- * the bound guarantees this cannot loop. We deliberately do NOT re-create the thread and
- * replay the prompt: a fresh thread has none of the conversation history the UI still
- * shows, so a silently context-free answer under a full transcript would be a lie.
- */
-export async function startTurnWithThreadRecovery(input: {
-  startTurn: () => Promise<JsonRecord>
-  resumeThread: () => Promise<unknown>
-}): Promise<JsonRecord> {
-  try {
-    return await input.startTurn()
-  } catch (err) {
-    if (!isThreadNotFound(err)) throw err
-    let lastError = err
-    for (let attempt = 0; attempt < MAX_THREAD_RESUME_ATTEMPTS; attempt++) {
-      await input.resumeThread()
-      try {
-        return await input.startTurn()
-      } catch (retryErr) {
-        if (!isThreadNotFound(retryErr)) throw retryErr
-        lastError = retryErr
-      }
-    }
-    // Bounded recovery exhausted: the thread is genuinely gone. Surface a classified,
-    // human terminal error — never the raw protocol string as the headline.
-    throw new Error(sessionLostMessage(lastError))
-  }
-}
-
 export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: CodexDriverOptions = {}): SdkRuntimeDriver {
   return new CodexAppServerDriver(host, options)
 }
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
-
-const CODEX_DYNAMIC_TOOLS = [{
-  name: "spawn_agent",
-  description: "Spawn a child Codex agent to execute one bounded task.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      task_name: { type: "string", description: "Short stable name for the child task." },
-      message: { type: "string", description: "Task instructions for the child agent." },
-    },
-    required: ["task_name", "message"],
-    additionalProperties: false,
-  },
-}]
 
 /**
  * How long an idle codex app-server survives.
@@ -690,199 +609,13 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   private async handleServerRequest(message: JsonRecord) {
-    const method = text(message.method) ?? "request"
-    const params = record(message.params) ?? {}
-    const requestId = String(message.id ?? randomUUID())
-    const threadId = text(params.threadId) ?? text(params.conversationId)
-    const active = threadId ? this.activeThreads.get(threadId) : undefined
-    const payload = { ...params, requestId }
-    if (method === "item/tool/requestUserInput") {
-      active?.project(method, payload, message)
-      const questions = Array.isArray(params.questions) ? params.questions : []
-      const answer = await new Promise<string>((resolve, reject) => {
-        if (!active) {
-          reject(new Error("No active session for Codex question"))
-          return
-        }
-        this.host.pendingQuestions.set(requestId, {
-          sessionId: active.sessionId,
-          agentSessionId: active.agentSessionId,
-          questions,
-          resolve,
-          reject,
-        })
-      })
-      return {
-        answers: Object.fromEntries((questionIds(params)[0] ? questionIds(params) : ["answer"]).map((id) => [id, { answers: [answer] }])),
-      }
-    }
-    if (method === "item/tool/call") {
-      if (!active || text(params.tool) !== "spawn_agent") {
-        return {
-          contentItems: [{ type: "inputText", text: `Dynamic tool ${text(params.tool) ?? "call"} is not implemented by Claxedo.` }],
-          success: false,
-        }
-      }
-      return this.spawnDynamicCodexAgent(active, params, message)
-    }
-    if (
-      method === "item/commandExecution/requestApproval" ||
-      method === "item/fileChange/requestApproval" ||
-      method === "item/permissions/requestApproval" ||
-      method === "applyPatchApproval" ||
-      method === "execCommandApproval"
-    ) {
-      active?.project(method, payload, message)
-      const decision = await new Promise<"allow_once" | "allow_always" | "deny" | "reject_always">((resolve) => {
-        if (!active) {
-          resolve("deny")
-          return
-        }
-        this.host.pendingPermissions.set(requestId, {
-          sessionId: active.sessionId,
-          agentSessionId: active.agentSessionId,
-          method,
-          params,
-          resolve,
-        })
-      })
-      return permissionResponse(method, decision, params)
-    }
-    if (method === "account/chatgptAuthTokens/refresh") {
-      const tokens = await this.refreshChatgptAuthTokens()
-      return {
-        accessToken: tokens.access,
-        chatgptAccountId: tokens.accountId,
-        chatgptPlanType: tokens.planType ?? null,
-      }
-    }
-    throw new Error(`Unsupported Codex app-server request: ${method}`)
-  }
-
-  private async spawnDynamicCodexAgent(active: CodexActiveThread, params: JsonRecord, frame: JsonRecord) {
-    const callId = text(params.callId) ?? randomUUID()
-    const args = record(params.arguments) ?? {}
-    const prompt = text(args.message) ?? text(args.prompt) ?? text(args.description)
-    if (!prompt) {
-      return {
-        contentItems: [{ type: "inputText", text: "spawn_agent requires a message." }],
-        success: false,
-      }
-    }
-    const label = text(args.task_name) ?? "Codex subagent"
-    const settings = codexSettingsFor(this.permissionSelection.currentId(active.sessionId))
-    let childThreadId = ""
-    try {
-      const result = record(await active.process.request("thread/start", {
-        cwd: active.directory,
-        approvalPolicy: settings.approvalPolicy,
-        approvalsReviewer: "user",
-        sandbox: settings.sandbox,
-        threadSource: "subagent",
-        ...(active.model ? { model: active.model } : {}),
-      }))
-      childThreadId = text(record(result?.thread)?.id) ?? ""
-      if (!childThreadId) throw new Error("Codex app-server did not return a child thread id")
-      await active.observeSubagent({
-        observation: {
-          observationId: `codex:dynamic:${callId}:${childThreadId}:running`,
-          harnessExecutionId: active.agentSessionId,
-          stableCorrelationId: childThreadId,
-          toolCallId: callId,
-          toolCallRole: "spawn",
-          providerId: childThreadId,
-          providerKind: "codex",
-          status: "running",
-          transcript: { kind: "live" },
-          label,
-          description: prompt,
-          subagentType: active.model ?? "codex",
-        },
-        correlationKeys: [childThreadId],
-        source: { dir: "in", method: "item/tool/call", frame },
-      })
-      await this.runDynamicCodexChild(active, childThreadId, prompt)
-      await active.observeSubagent({
-        observation: {
-          observationId: `codex:dynamic:${callId}:${childThreadId}:completed`,
-          harnessExecutionId: active.agentSessionId,
-          stableCorrelationId: childThreadId,
-          toolCallId: callId,
-          toolCallRole: "spawn",
-          providerId: childThreadId,
-          providerKind: "codex",
-          status: "completed",
-          transcript: { kind: "live" },
-          label,
-          description: prompt,
-          subagentType: active.model ?? "codex",
-        },
-        correlationKeys: [childThreadId],
-        source: { dir: "in", method: "item/tool/call", frame },
-      })
-      return {
-        contentItems: [{ type: "inputText", text: `Subagent ${childThreadId} completed successfully.` }],
-        success: true,
-      }
-    } catch (cause) {
-      if (childThreadId) {
-        await active.observeSubagent({
-          observation: {
-            observationId: `codex:dynamic:${callId}:${childThreadId}:failed`,
-            harnessExecutionId: active.agentSessionId,
-            stableCorrelationId: childThreadId,
-            toolCallId: callId,
-            toolCallRole: "spawn",
-            providerId: childThreadId,
-            providerKind: "codex",
-            status: "failed",
-            transcript: { kind: "live" },
-            label: errorMessage(cause),
-            description: prompt,
-            subagentType: active.model ?? "codex",
-          },
-          correlationKeys: [childThreadId],
-          source: { dir: "in", method: "item/tool/call", frame },
-        })
-      }
-      return {
-        contentItems: [{ type: "inputText", text: `Subagent failed: ${errorMessage(cause)}` }],
-        success: false,
-      }
-    }
-  }
-
-  private async runDynamicCodexChild(active: CodexActiveThread, threadId: string, prompt: string) {
-    let resolveCompleted: (() => void) | undefined
-    let rejectCompleted: ((err: Error) => void) | undefined
-    const completed = new Promise<void>((resolve, reject) => {
-      resolveCompleted = resolve
-      rejectCompleted = reject
+    return handleCodexServerRequest({
+      message,
+      activeThreads: this.activeThreads,
+      host: this.host,
+      permissionModeId: (sessionId) => this.permissionSelection.currentId(sessionId),
+      refreshTokens: () => this.refreshChatgptAuthTokens(),
     })
-    const unsubscribe = active.process.onMessage((message) => {
-      const params = record(message.params) ?? {}
-      if (text(params.threadId) !== threadId) return
-      if (text(message.method) === "turn/completed") resolveCompleted?.()
-      if (text(message.method) === "error") rejectCompleted?.(new Error(text(params.message) ?? "Codex child turn failed"))
-    })
-    try {
-      await active.process.request("turn/start", {
-        threadId,
-        input: [{ type: "text", text: prompt }],
-        cwd: active.directory,
-        approvalPolicy: codexSettingsFor(this.permissionSelection.currentId(active.sessionId)).approvalPolicy,
-        approvalsReviewer: "user",
-        sandboxPolicy: codexSandboxPolicy(
-          codexSettingsFor(this.permissionSelection.currentId(active.sessionId)).sandbox,
-          active.directory,
-        ),
-        ...(active.model ? { model: active.model } : {}),
-        ...(active.effort ? { effort: active.effort } : {}),
-      })
-      await completed
-    } finally {
-      unsubscribe()
-    }
   }
 
   private async refreshChatgptAuthTokens() {
@@ -938,24 +671,4 @@ function codexAppServerModel(model: string | undefined) {
 
 function codexTurnModel(input: PromptInput, configuredModel: string) {
   return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
-}
-
-function questionIds(params: JsonRecord) {
-  const list = Array.isArray(params.questions) ? params.questions : []
-  return list.flatMap((question) => text(record(question)?.id) ?? [])
-}
-
-function permissionResponse(method: string, decision: "allow_once" | "allow_always" | "deny" | "reject_always", params: JsonRecord) {
-  const allow = decision === "allow_once" || decision === "allow_always"
-  const session = decision === "allow_always"
-  if (method === "execCommandApproval" || method === "applyPatchApproval") {
-    return { decision: allow ? session ? "approved_for_session" : "approved" : decision === "deny" ? "denied" : "abort" }
-  }
-  if (method === "item/permissions/requestApproval") {
-    return {
-      permissions: allow ? (record(params.permissions) ?? {}) : {},
-      scope: session ? "session" : "turn",
-    }
-  }
-  return { decision: allow ? session ? "acceptForSession" : "accept" : decision === "deny" ? "decline" : "cancel" }
 }

@@ -170,18 +170,9 @@ export class ACPProcess {
           log.info("ACP sessionUpdate: cached config options", { count: opts.length })
         }
         /*
-         * The legacy channel's counterpart, and the correction `setPermissionMode`
-         * depends on.
-         *
-         * `session/set_mode` returns nothing, so that write records the requested
-         * id optimistically and relies on the agent's own notification to correct
-         * it when the agent kept something else — a plan-mode exit, or a mode
-         * clamped because a model change shrank `availableModes`. Without this the
-         * optimistic value is never revisited and the picker reports a mode the
-         * agent is not in.
-         *
-         * Agents on the config channel are already covered by the branch above;
-         * this is what an agent advertising only `availableModes` sends.
+         * `session/set_mode` has no response payload. The subsequent mode update
+         * is authoritative when the agent clamps or changes the requested mode.
+         * Agents using config options are handled by the branch above.
          */
         if (params.update?.sessionUpdate === "current_mode_update") {
           const currentModeId = (params.update as { currentModeId?: string }).currentModeId
@@ -366,7 +357,7 @@ export class ACPProcess {
       const agents = extractAgents(state)
       if (agents.length > 0) return agents
     }
-    // Fall back to cached config options (available even before a session prompt)
+    // Process-level config options are available before a session prompt.
     if (this.cachedConfigOptions) {
       const agents = extractAgents({
         caps: this.caps,

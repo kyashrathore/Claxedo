@@ -305,9 +305,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         id: model.value,
         name: model.displayName,
         ...(model.description ? { description: model.description } : {}),
-        // Effort capability is per model and already on the wire here — it was
-        // being dropped one line after being fetched, which is why the composer
-        // could never offer a thinking level for this harness.
+        // Effort capability is model-specific and comes from the live query.
         ...(model.supportsEffort ? { supportsEffort: true } : {}),
         ...(model.supportedEffortLevels?.length
           ? { supportedEffortLevels: [...model.supportedEffortLevels] }

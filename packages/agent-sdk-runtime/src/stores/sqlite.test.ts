@@ -161,32 +161,56 @@ describe("SqliteRuntimeStore", () => {
     reopened.close()
   })
 
-  test("coalesces a burst of message deltas into one normalized flush", () => {
+  test("commits every acknowledged message mutation before returning", () => {
     const root = tempRoot()
     const store = new SqliteRuntimeStore({ root })
     store.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "native_1" })
     const db = new Database(path.join(root, "agent-runtime.db"))
-    db.exec(`
-      CREATE TABLE message_write_audit (writes INTEGER NOT NULL);
-      INSERT INTO message_write_audit(writes) VALUES (0);
-      CREATE TRIGGER count_message_insert AFTER INSERT ON runtime_messages
-      BEGIN UPDATE message_write_audit SET writes = writes + 1; END;
-      CREATE TRIGGER count_message_update AFTER UPDATE ON runtime_messages
-      BEGIN UPDATE message_write_audit SET writes = writes + 1; END;
-    `)
     store.appendEvent({ sessionId: "ses_1", payload: messageUpdated(buildAssistantMessage({
       id: "m1", sessionID: "ses_1", parentID: "u1", agent: "build",
       model: { providerID: "pi", modelID: "default" }, directory: "/repo",
     })) })
-    for (let i = 0; i < 100; i++) {
-      store.appendEvent({ sessionId: "ses_1", payload: messagePartDelta({
-        sessionID: "ses_1", messageID: "m1", partID: "p1", field: "text", delta: String(i % 10),
-      }) })
-    }
-    store.close()
+    expect(db.query("SELECT COUNT(*) AS count FROM runtime_messages").get()).toEqual({ count: 1 })
 
-    expect(db.query("SELECT writes FROM message_write_audit").get()).toEqual({ writes: 1 })
+    store.appendEvent({ sessionId: "ses_1", payload: messagePartDelta({
+      sessionID: "ses_1", messageID: "m1", partID: "p1", field: "text", delta: "hello",
+    }) })
+    const persisted = db.query("SELECT data_json FROM runtime_messages WHERE message_id = ?").get("m1") as { data_json: string }
+    expect(JSON.parse(persisted.data_json)).toMatchObject({ parts: [{ text: "hello" }] })
+
     db.close()
+    store.close()
+  })
+
+  test("rolls back memory and SQLite when a message projection write fails", () => {
+    const root = tempRoot()
+    const store = new SqliteRuntimeStore({ root })
+    store.bindSession({ sessionId: "ses_1", directory: "/repo", agentSessionId: "native_1" })
+    store.appendEvent({ sessionId: "ses_1", payload: messageUpdated(buildAssistantMessage({
+      id: "m1", sessionID: "ses_1", parentID: "u1", agent: "build",
+      model: { providerID: "pi", modelID: "default" }, directory: "/repo",
+    })) })
+    store.appendEvent({ sessionId: "ses_1", payload: messagePartDelta({
+      sessionID: "ses_1", messageID: "m1", partID: "p1", field: "text", delta: "before",
+    }) })
+    const db = new Database(path.join(root, "agent-runtime.db"))
+    db.exec(`
+      CREATE TRIGGER reject_message_update
+      BEFORE UPDATE ON runtime_messages
+      WHEN OLD.message_id = 'm1'
+      BEGIN SELECT RAISE(ABORT, 'message write rejected'); END;
+    `)
+
+    expect(() => store.appendEvent({ sessionId: "ses_1", payload: messagePartDelta({
+      sessionID: "ses_1", messageID: "m1", partID: "p1", field: "text", delta: "-after",
+    }) })).toThrow("message write rejected")
+    expect(store.getMessages("ses_1")).toMatchObject([{ parts: [{ text: "before" }] }])
+
+    db.close()
+    store.close()
+    const reopened = new SqliteRuntimeStore({ root })
+    expect(reopened.getMessages("ses_1")).toMatchObject([{ parts: [{ text: "before" }] }])
+    reopened.close()
   })
 
   test("rejects the removed whole-snapshot schema", () => {

@@ -100,11 +100,12 @@ export type SdkRuntimeDriver = {
   createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
-  deleteAgentSession?(sessionId: string, agentSessionId: string): void
+  deleteAgentSession(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
   dispose?(): void
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]>
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[]
+  /** Omit these methods when the harness has no permission-mode surface. */
   permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
   setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
 }

@@ -437,6 +437,15 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     expect(received).toBe(JSON.stringify({ id: "ses_wgrun_run_1", title: "Stable" }))
   })
 
+  test("rejects a failed upstream session deletion", async () => {
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => new Response("conflict", { status: 409 }),
+    })
+
+    await expect(adapter.deleteSession("ses_busy", path.resolve("/work")))
+      .rejects.toThrow("OpenCode session delete failed (409)")
+  })
+
   test("does not delete an existing target session while preparing a handoff", async () => {
     const methods: string[] = []
     const adapter = new OpenCodeHarnessAdapter(undefined, {

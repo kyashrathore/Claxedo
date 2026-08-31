@@ -23,7 +23,7 @@ export type RunRuntimeTurnInput = {
   clearsHandoff?: boolean
   publish(event: TurnPublication): void
   commit(payload: CompatEvent, source: RuntimeAppendSource): CompatEvent
-  withTitleMutation<T>(sessionId: string, operation: () => Promise<T>): Promise<T>
+  withSessionMutation<T>(sessionId: string, operation: () => Promise<T>): Promise<T>
 }
 
 /** Owns stream normalization, projection, and the one authoritative turn outcome. */
@@ -134,7 +134,7 @@ export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> 
       }
     }
     if (input.clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
-    await input.withTitleMutation(sessionId, async () => {
+    await input.withSessionMutation(sessionId, async () => {
       await tryUpdateAutomaticTitle({
         sessionId,
         directory,

@@ -27,6 +27,25 @@ Creates the public resource-namespace runtime:
 - `runtime.config`
 - `runtime.health`
 
+Session-scoped mutations are serialized per session. `sessions.update`, both
+config update namespaces, harness handoff, and `sessions.delete` revalidate the
+session inside that boundary. Missing sessions and configs reject explicitly;
+the runtime does not recreate them. Optional surfaces such as todos, commands,
+permissions, and questions reject with a not-found or unsupported error instead
+of returning a fabricated empty result.
+
+The runtime store is authoritative for session inventory and `SessionConfig`.
+Adapters apply provider or process effects and return the accepted value; the
+runtime persists it once. `runtime.sessions.updateConfig()` and
+`runtime.config.update()` share the same implementation. Changing `harness`
+uses the conversation-handoff transaction rather than an ordinary config write.
+
+Each event subscription has a fixed buffer. Overflow yields one
+`runtime.subscription_overflow` notice and closes the subscription. Reconnect
+and reload the authoritative session/message/config projections. When
+`eventDelivery` is configured, every subscription must provide `identity`; the
+runtime fails closed when identity is absent or the policy terminates or rejects.
+
 ### Store Subpaths
 
 Status: Stable / Integration

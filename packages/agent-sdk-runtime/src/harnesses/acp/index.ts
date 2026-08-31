@@ -66,6 +66,7 @@ import {
   sameAcpMcp,
 } from "./helpers"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
+import { acceptedSessionConfig, acceptedSessionUpdate } from "../shared/accepted-session-mutation"
 import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
 
 const log = Log.create({ service: "acp-adapter" })
@@ -215,7 +216,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
-    return this.store.updateSession(id, updates) as AgentSession | null
+    return acceptedSessionUpdate(this.store, id, updates)
   }
 
   async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
@@ -232,41 +233,28 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
-    const previous = this.store.getSessionConfig(id)
-    const next = this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
-    try {
-      if (next.model?.modelID) {
-        this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
-      }
-      const proc = this.entryForSession(id)?.proc
-      const agentSessionId = this.store.getAgentSessionId(id)
-      if (!proc?.alive || !agentSessionId) return next
-      await proc.syncSession(agentSessionId, {
-        parts: [],
-        assistantMessageId: "cfg",
-        agent: next.agent ?? "build",
-        model: this.cfg(next.model),
-        ...(next.variant ? { variant: next.variant } : {}),
-      })
-      return next
-    } catch (error) {
-      if (previous) {
-        this.store.updateSessionConfig(id, {
-          harness: previous.harness,
-          model: previous.model ?? null,
-          variant: previous.variant ?? null,
-          agent: previous.agent ?? null,
-          handoff: previous.handoff ?? null,
-        })
-      }
-      throw error
+    const current = this.store.getSessionConfig(id)
+    if (!current) throw new Error(`Session ${id} has no runtime config`)
+    const next = acceptedSessionConfig(current, update)
+    if (update.model !== undefined) {
+      this.setModel(next.model?.modelID === "default" ? "" : next.model?.modelID ?? "")
     }
+    const proc = this.entryForSession(id)?.proc
+    const agentSessionId = this.store.getAgentSessionId(id)
+    if (!proc?.alive || !agentSessionId) return next
+    await proc.syncSession(agentSessionId, {
+      parts: [],
+      assistantMessageId: "cfg",
+      agent: next.agent ?? "build",
+      model: this.cfg(next.model),
+      ...(next.variant ? { variant: next.variant } : {}),
+    })
+    return next
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
     this.releaseSessionProcess(id, key)
-    this.store.deleteSession(id)
   }
 
   private releaseSessionProcess(id: string, key: string | null | undefined): void {
@@ -656,8 +644,8 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       if (context?.sessionId && session.id !== context.sessionId) return false
       if (session.status !== "recovering") return false
       // RuntimeStore is shared by every harness in a workspace. Health belongs
-      // to this adapter only: an old native recovery (or another ACP
-      // connection) must not degrade the active operator ACP. Persistent
+      // to this adapter only: a native-harness recovery or another ACP
+      // connection must not degrade the active operator ACP. Persistent
       // stores project config on the list row; the config lookup keeps the same
       // contract for in-memory/custom stores without inventing ownership.
       const harness = session.config?.harness ?? this.store.getSessionConfig(session.id)?.harness

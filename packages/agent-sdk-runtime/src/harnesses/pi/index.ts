@@ -20,7 +20,6 @@ import {
   type AgentPermission,
   type AgentQuestion,
   type AgentRuntimeStreamEvent,
-  type AgentSession,
   type PromptInput,
   type RuntimeDirectory,
   type SessionConfig,
@@ -37,7 +36,7 @@ import { createMemoryRunStore } from "../../session-env"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { firstTurnErrorData } from "../../first-turn-error"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
-import type { Agent, AgentTool } from "@mariozechner/pi-agent-core"
+import type { Agent } from "@mariozechner/pi-agent-core"
 import type { Usage as PiUsage } from "@mariozechner/pi-ai"
 import {
   createPiAgent,
@@ -50,27 +49,8 @@ import {
 import {
   observeAgentProcess,
   type AgentProcessObserver,
-  type AgentProcessObserverHandle,
 } from "../../process-observer"
-
-type PiSession = {
-  id: string
-  directory?: RuntimeDirectory
-  parentID?: string
-  title: string | null
-  created: number
-  updated: number
-  env: SessionEnv
-  config: SessionConfig
-  messages: AgentMessage[]
-  active?: AbortController
-  /** Live pi Agent for model-backed turns; lazily created at first model turn. */
-  agent?: Agent
-  /** Backend extra tools captured at Agent creation; preserved across placement swaps. */
-  agentExtraTools?: AgentTool[]
-  processOwnerId: string
-  processObservation: AgentProcessObserverHandle
-}
+import { defaultPiSessionConfig, piSessionRow as row, type PiSession } from "./session-state"
 
 export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createEnv?: SessionEnvFactory
@@ -116,26 +96,6 @@ function promptText(parts: unknown[]) {
 
 function notImplemented(feature: string) {
   return new Error(`${feature} is not implemented for Pi central sessions yet`)
-}
-
-function row(session: PiSession): AgentSession {
-  return {
-    id: session.id,
-    ...(session.parentID ? { parentID: session.parentID } : {}),
-    title: session.title,
-    slug: session.id,
-    version: "central",
-    time: { created: session.created, updated: session.updated },
-  }
-}
-
-function defaultConfig(): SessionConfig {
-  return {
-    harness: { id: "pi", access: "native" },
-    model: { providerID: "pi", modelID: "virtual" },
-    variant: null,
-    agent: null,
-  }
 }
 
 function textPart(input: { sessionId: string; messageId: string; text: string; suffix: string }): CompatPart {
@@ -364,7 +324,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         },
         this.processObserver,
       ),
-      config: defaultConfig(),
+      config: defaultPiSessionConfig(),
       messages: [],
       processOwnerId,
       processObservation,
@@ -396,17 +356,21 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     const session = this.sessions.get(id)
     if (!session) return null
     session.title = updates.title ?? session.title
+    if (updates.time?.archived !== undefined) {
+      session.archived = updates.time.archived
+      session.active?.abort()
+    }
     session.updated = Date.now()
     return row(session)
   }
 
   async getSessionConfig(id: string, _directory: RuntimeDirectory) {
-    return this.sessions.get(id)?.config ?? defaultConfig()
+    return this.sessions.get(id)?.config ?? defaultPiSessionConfig()
   }
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, _directory: RuntimeDirectory) {
     const session = this.sessions.get(id)
-    if (!session) return defaultConfig()
+    if (!session) return defaultPiSessionConfig()
     if (update.model !== undefined && session.active) {
       throw new Error("Start a new Pi session to use another model")
     }
@@ -429,10 +393,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   /**
-   * Swap the session's tool placement MID-CONVERSATION (Demo B): dispose the
-   * old SessionEnv, create one for the new placement, and re-point the live
-   * Agent's tools at it. Conversation history is untouched. Refused while a
-   * turn is active — a running tool call must never have its env ripped out.
+   * Replace a session's tool environment and point the live agent at the new
+   * placement without changing conversation history. Active turns prevent the
+   * replacement so running tools retain their environment.
    */
   async updateSessionPlacement(id: string, placement: PiSessionPlacement): Promise<{ ok: true }> {
     const session = this.sessions.get(id)

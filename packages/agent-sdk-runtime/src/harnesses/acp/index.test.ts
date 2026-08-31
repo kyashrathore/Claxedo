@@ -427,7 +427,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     await item.deleteSession("s1", path.resolve("/work"))
 
-    expect(calls).toEqual(["delete:s1"])
+    expect(calls).toEqual([])
     expect(item.processes.has("process-key")).toBe(true)
   })
 
@@ -467,7 +467,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     await item.deleteSession("s1", path.resolve("/work"))
 
-    expect(calls).toEqual(["dispose", "delete:s1"])
+    expect(calls).toEqual(["dispose"])
     expect(item.processes.has("process-key")).toBe(false)
   })
 

@@ -2,8 +2,8 @@ import fs from "fs/promises"
 import path from "path"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
-const MAX_PRODUCTION_LINES = 1_000
-const correctiveTone = /\b(?:regression|previously|used to|old version|bug this|what noticed|clobbered|drifted)\b|\bU\d+(?:-F\d+)?\b/i
+const MAX_PRODUCTION_LINES = 790
+const correctiveTone = /\b(?:regression|previously|used to|old version|previous implementation|until now|the correction|the defect|that is the bug|what noticed|clobbered|drifted|reproduced|vanished|chased)\b|\bU\d+(?:-F\d+)?\b/i
 const failures: string[] = []
 
 for await (const relative of new Bun.Glob("{src,docs}/**/*.{ts,md}").scan({ cwd: ROOT })) {
