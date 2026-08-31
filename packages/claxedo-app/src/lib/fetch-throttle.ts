@@ -21,7 +21,31 @@ const DEFAULT_CAP = 4
 const FETCH_BYPASS = Symbol("fetch-bypass-throttle")
 type FetchThrottleInit = RequestInit & { [FETCH_BYPASS]?: true }
 
+function requestPathname(input?: string | URL | Request): string | undefined {
+  if (!input) return
+  const raw = input instanceof Request ? input.url : String(input)
+  try {
+    return new URL(raw, "http://local.invalid").pathname
+  } catch {
+    return raw.split("?")[0]
+  }
+}
+
+/**
+ * Long-lived event streams identified by path, even when Accept was dropped
+ * (e.g. `new Request(nextUrl, previousRequest)` does not copy headers in
+ * every runtime). These must never occupy a throttle slot.
+ */
+export function isEventStreamPath(input?: string | URL | Request): boolean {
+  const pathname = requestPathname(input)
+  if (!pathname) return false
+  if (pathname === "/event" || pathname === "/global/event") return true
+  if (pathname.endsWith("/api/wr/events") || pathname.endsWith("/api/wr/runtime-events")) return true
+  return /^\/workspaces\/[^/]+\/(global\/)?event$/.test(pathname)
+}
+
 function isEventStreamRequest(init?: RequestInit | undefined, input?: string | URL | Request): boolean {
+  if (isEventStreamPath(input)) return true
   const accept = (() => {
     const h = init?.headers
     if (!h) return undefined

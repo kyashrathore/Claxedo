@@ -76,6 +76,14 @@ type Turn = {
   format?: UserMessage["format"]
   system?: string
   variant?: string
+  actorId?: string
+  actorKind?: "human" | "agent"
+  author?: {
+    id: string
+    name: string
+    avatarUrl?: string
+    kind: "human" | "agent"
+  }
 }
 
 type TurnFinish = {
@@ -362,6 +370,29 @@ function rec(input: unknown): Record<string, unknown> | null {
 
 function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
+}
+
+/** Keep host-stamped `claxedo.author` when an engine envelope omits it. */
+function preserveClaxedoAuthor(
+  previous: Record<string, unknown> | undefined,
+  next: Record<string, unknown>,
+): Record<string, unknown> {
+  if (str(next.role) !== "user") return next
+  const nextClaxedo = next.claxedo && typeof next.claxedo === "object" && !Array.isArray(next.claxedo)
+    ? next.claxedo as Record<string, unknown>
+    : undefined
+  if (nextClaxedo?.author && typeof nextClaxedo.author === "object") return next
+  const prevClaxedo = previous?.claxedo && typeof previous.claxedo === "object" && !Array.isArray(previous.claxedo)
+    ? previous.claxedo as Record<string, unknown>
+    : undefined
+  if (!prevClaxedo?.author || typeof prevClaxedo.author !== "object") return next
+  return {
+    ...next,
+    claxedo: {
+      ...(nextClaxedo ?? {}),
+      author: prevClaxedo.author,
+    },
+  }
 }
 
 function subagentCorrelationKeys(observation: SubagentObservation) {
@@ -664,6 +695,13 @@ export class RuntimeStore {
         status TEXT,
         recovery_error TEXT,
         archived_at INTEGER
+      )
+    `)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS session_turn_lease (
+        session_id TEXT PRIMARY KEY,
+        lease_id TEXT NOT NULL,
+        acquired_at INTEGER NOT NULL
       )
     `)
     if (!hasColumn(this.db, "session", "parent_id")) {
@@ -1399,6 +1437,11 @@ export class RuntimeStore {
   }
 
   recoverBusySessions() {
+    // Adapter-store recovery runs only when no turn from the previous runtime
+    // can still be active. A crash cannot release its durable lease, so clear
+    // those stale ownership rows at the same boundary that interrupts busy
+    // sessions and their pending tools.
+    this.db.exec("DELETE FROM session_turn_lease")
     this.normalizeRecoveringTools()
   }
 
@@ -1432,10 +1475,8 @@ export class RuntimeStore {
       )
   }
 
-  getWorktree(sessionId: string): WorkspaceWorktreeRecord | undefined {
-    const row = this.db
-      .prepare(
-        `
+  getWorktree(workspaceId: string, sessionId: string): WorkspaceWorktreeRecord | undefined {
+    const row = this.db.prepare(`
       SELECT
         workspace_id,
         session_id,
@@ -1447,22 +1488,18 @@ export class RuntimeStore {
         updated_at,
         last_activity_at
       FROM workspace_worktree
-      WHERE session_id = ?
-    `,
-      )
-      .get(sessionId) as
-      | {
-          workspace_id: string
-          session_id: string
-          branch: string
-          base_commit: string
-          path: string
-          state: WorkspaceWorktreeRecord["state"]
-          created_at: number
-          updated_at: number
-          last_activity_at: number
-        }
-      | undefined
+      WHERE workspace_id = ? AND session_id = ?
+    `).get(workspaceId, sessionId) as {
+      workspace_id: string
+      session_id: string
+      branch: string
+      base_commit: string
+      path: string
+      state: WorkspaceWorktreeRecord["state"]
+      created_at: number
+      updated_at: number
+      last_activity_at: number
+    } | undefined
     if (!row) return
     return {
       workspaceId: row.workspace_id,
@@ -1486,10 +1523,8 @@ export class RuntimeStore {
       FROM workspace_worktree
       WHERE workspace_id = ?
       ORDER BY last_activity_at DESC, session_id ASC
-    `,
-        )
-        .all(workspaceId) as Array<{ session_id: string }>
-    ).map((row) => this.getWorktree(row.session_id)!)
+    `).all(workspaceId) as Array<{ session_id: string }>)
+      .map((row) => this.getWorktree(workspaceId, row.session_id)!)
   }
 
   private importJsonlJournals() {
@@ -1721,12 +1756,15 @@ export class RuntimeStore {
     const id = str(info.id)
     const role = str(info.role)
     if (!sessionId || !id || !role) return
-    const prev = this.db.prepare("SELECT created_at FROM message WHERE id = ?").get(id) as { created_at: number } | null
+    const prev = this.db.prepare("SELECT created_at, info_json FROM message WHERE id = ?").get(id) as
+      | { created_at: number; info_json: string }
+      | null
+    const merged = preserveClaxedoAuthor(prev ? JSON.parse(prev.info_json) as Record<string, unknown> : undefined, info)
     this.db
       .prepare(
         "INSERT OR REPLACE INTO message (id, session_id, role, ord, info_json, created_at) VALUES (?, ?, ?, ?, ?, ?)",
       )
-      .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(info), prev?.created_at ?? ts)
+      .run(id, sessionId, role, this.messageOrd(sessionId, id), JSON.stringify(merged), prev?.created_at ?? ts)
   }
 
   private upsertPart(part: Record<string, unknown>, ts: number) {
@@ -2010,6 +2048,7 @@ export class RuntimeStore {
             ...(control.format ? { format: control.format } : {}),
             ...(control.system ? { system: control.system } : {}),
             ...(control.variant ? { variant: control.variant } : {}),
+            ...(control.author ? { author: control.author } : {}),
           }) as unknown as Record<string, unknown>,
           row.ts,
         )
@@ -2341,6 +2380,7 @@ export class RuntimeStore {
                 ...(control.format ? { format: control.format } : {}),
                 ...(control.system ? { system: control.system } : {}),
                 ...(control.variant ? { variant: control.variant } : {}),
+                ...(control.author ? { author: control.author } : {}),
               }),
             ),
             ...buildUserPromptParts(row.sessionId, control.userMessageId, control.parts).map(messagePartUpdated),
@@ -2372,6 +2412,9 @@ export class RuntimeStore {
     format?: UserMessage["format"]
     system?: string
     variant?: string
+    actorId?: string
+    actorKind?: "human" | "agent"
+    author?: Turn["author"]
   }) {
     const active = this.db
       .prepare(
@@ -2425,6 +2468,8 @@ export class RuntimeStore {
         ...(input.format ? { format: input.format } : {}),
         ...(input.system ? { system: input.system } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
+        ...(input.actorId && input.actorKind ? { actorId: input.actorId, actorKind: input.actorKind } : {}),
+        ...(input.author ? { author: input.author } : {}),
       },
     }
     const committed = this.commit(row)
@@ -3366,6 +3411,19 @@ export class RuntimeStore {
       .prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM runtime_journal WHERE session_id = ?")
       .get(sessionId) as { seq: number }
     return row.seq
+  }
+
+  acquireTurnLease(sessionId: string) {
+    const leaseId = `${sessionId}:${crypto.randomUUID()}`
+    const result = this.db.prepare(`
+      INSERT OR IGNORE INTO session_turn_lease (session_id, lease_id, acquired_at)
+      VALUES (?, ?, ?)
+    `).run(sessionId, leaseId, Date.now()) as { changes: number }
+    return result.changes === 1 ? leaseId : undefined
+  }
+
+  releaseTurnLease(sessionId: string, leaseId: string) {
+    this.db.prepare(`DELETE FROM session_turn_lease WHERE session_id = ? AND lease_id = ?`).run(sessionId, leaseId)
   }
 
   deleteSession(id: string) {

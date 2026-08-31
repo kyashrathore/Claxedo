@@ -101,20 +101,27 @@ export abstract class AcpProcessManager {
     return this.sessionProcesses
   }
 
+  protected legacySessions() {
+    return (this as unknown as { sessions?: Map<string, { proc?: ACPProcess | null; directory?: string; init?: unknown }> }).sessions
+  }
+
   protected processEntries(): Iterable<{ proc?: ACPProcess | null }> {
-    return this.processMap().values()
+    const processes = this.processMap()
+    if (processes.size > 0) return processes.values()
+    return this.legacySessions()?.values() ?? []
   }
 
   protected processKey(directory: string): ACPProcessKey {
+    const options = this.options ?? { binary: "" }
     return processFingerprint({
       harness: this.harnessId(),
       access: "acp",
       directory,
-      binary: this.options.binary,
-      args: this.options.args ?? [],
-      transport: this.options.createTransport ? "custom" : "stdio",
-      env: this.currentEnv,
-      mcp: this.currentMcp,
+      binary: options.binary,
+      args: options.args ?? [],
+      transport: options.createTransport ? "custom" : "stdio",
+      env: this.currentEnv ?? {},
+      mcp: this.currentMcp ?? [],
       model: this.currentModel || null,
     })
   }
@@ -373,7 +380,7 @@ export abstract class AcpProcessManager {
 
   protected entryForSession(id: string) {
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
-    return key ? this.processMap().get(key) : undefined
+    return key ? this.processMap().get(key) : this.legacySessions()?.get(id)
   }
 
   protected async getOrSpawnProbe(directory: string): Promise<ACPProcess> {

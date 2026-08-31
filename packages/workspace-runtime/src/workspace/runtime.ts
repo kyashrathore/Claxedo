@@ -41,9 +41,10 @@ import {
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { attachSseFanout, createSseReplayBuffer, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
+import { eventSessionId, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { Context, Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
@@ -66,6 +67,20 @@ import {
 import type { RuntimeConfigApplyStatus, WorkspaceHost, WorkspaceHostMountOptions } from "./host"
 import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
+import {
+  agentRuntimeEventDeliveryPolicy,
+  createIdentityAwareEventSource,
+  eventDeliveryPrincipal,
+  sessionEventDeliveryPolicy,
+  type EventDeliveryPolicy,
+  type EventDeliveryPrincipal,
+} from "../event-delivery"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -132,6 +147,8 @@ export type WorkspaceRuntimeStore =
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
 export type WorkspaceHostOptions = {
+  /** Required when mounting a non-loopback managed session surface. */
+  sessionAccessPolicy?: SessionAccessPolicy
   /** Optional, local-only lifecycle observer supplied by an embedding host. */
   processObserver?: ProcessObserver
   /** Host observer for the durable turn.finish outcome after store commit. */
@@ -853,6 +870,108 @@ function closedSse() {
   })
 }
 
+export function filterCompatEventStream(
+  response: Response,
+  principal: EventDeliveryPrincipal,
+  policy: EventDeliveryPolicy<CompatEnvelope>,
+  directory: string,
+) {
+  const decoder = new TextDecoder()
+  const encoder = new TextEncoder()
+  let buffered = ""
+  let renewalTimer: ReturnType<typeof setInterval> | undefined
+  let cleaned = false
+  const cleanup = () => {
+    if (cleaned) return
+    cleaned = true
+    if (renewalTimer) clearInterval(renewalTimer)
+    policy.release?.(principal)
+  }
+  const filtered = response.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
+    start(controller) {
+      if (!policy.renew) return
+      renewalTimer = setInterval(() => {
+        void Promise.resolve(policy.renew!(principal)).then((decision) => {
+          if (decision !== "deliver") {
+            cleanup()
+            controller.terminate()
+          }
+        }).catch(() => {
+          cleanup()
+          controller.terminate()
+        })
+      }, 5_000)
+      ;(renewalTimer as { unref?: () => void }).unref?.()
+    },
+    async transform(chunk, controller) {
+      buffered += decoder.decode(chunk, { stream: true })
+      const blocks = buffered.split(/\r?\n\r?\n/)
+      buffered = blocks.pop() ?? ""
+      for (const block of blocks) {
+        const data = block.split(/\r?\n/).find((line) => line.startsWith("data:"))
+        if (!data) {
+          controller.enqueue(encoder.encode(`${block}\n\n`))
+          continue
+        }
+        const raw = data.slice("data:".length).trim()
+        if (!raw) {
+          if (principal.mode === "unmanaged-local") controller.enqueue(encoder.encode(`${block}\n\n`))
+          continue
+        }
+        const parsed = (() => {
+          try {
+            return JSON.parse(raw) as { payload?: unknown }
+          } catch {
+            return undefined
+          }
+        })()
+        const event = toCompatEvent(parsed?.payload ?? parsed)
+        if (!event) {
+          if (principal.mode === "unmanaged-local") controller.enqueue(encoder.encode(`${block}\n\n`))
+          continue
+        }
+        const decision = await policy({
+          principal,
+          event: { directory, payload: event },
+          sessionId: eventSessionId(event),
+          sensitive: eventSessionId(event) !== undefined,
+        })
+        if (decision === "terminate") {
+          cleanup()
+          controller.terminate()
+          return
+        }
+        if (decision === "deliver") controller.enqueue(encoder.encode(`${block}\n\n`))
+      }
+    },
+    flush() {
+      cleanup()
+    },
+  }))
+  const reader = filtered.getReader()
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const next = await reader.read()
+        if (next.done) {
+          cleanup()
+          controller.close()
+          return
+        }
+        controller.enqueue(next.value)
+      } catch (error) {
+        cleanup()
+        controller.error(error)
+      }
+    },
+    async cancel(reason) {
+      cleanup()
+      await reader.cancel(reason)
+    },
+  })
+  return new Response(body, { status: response.status, headers: response.headers })
+}
+
 function opencodeProxyHeaders(headers: HeadersInit, base?: HeadersInit) {
   const next = new Headers(headers)
   next.delete("host")
@@ -952,6 +1071,43 @@ async function emptyListIsAnAnswer(
   } catch {
     return false
   }
+}
+
+function sessionV2CreatedId(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return
+  if (typeof (input as { id?: unknown }).id === "string") return (input as { id: string }).id
+  const data = (input as { data?: unknown }).data
+  if (!data || typeof data !== "object" || Array.isArray(data)) return
+  return typeof (data as { id?: unknown }).id === "string" ? (data as { id: string }).id : undefined
+}
+
+function sessionV2Collection(input: unknown) {
+  if (Array.isArray(input)) return { rows: input, rebuild: (rows: unknown[]) => rows }
+  if (!input || typeof input !== "object") return
+  const data = (input as { data?: unknown }).data
+  if (!Array.isArray(data)) return
+  return {
+    rows: data,
+    rebuild: (rows: unknown[]) => ({ ...input, data: rows }),
+  }
+}
+
+function sessionV2RowId(input: unknown) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return ""
+  const row = input as { id?: unknown; sessionId?: unknown; sessionID?: unknown }
+  if (typeof row.id === "string") return row.id
+  if (typeof row.sessionId === "string") return row.sessionId
+  return typeof row.sessionID === "string" ? row.sessionID : ""
+}
+
+function sessionV2JsonResponse(response: Response, body: unknown) {
+  const headers = new Headers(response.headers)
+  headers.delete("content-length")
+  return new Response(JSON.stringify(body), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  })
 }
 
 async function proxyOpenCodeOrJson(c: any, adapter: AgentHarnessAdapter, fallback: () => Promise<unknown> | unknown, baseHeaders?: HeadersInit) {
@@ -1114,12 +1270,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const cleanupCompatObserver = options.onCompatEvent
     ? eventHub.subscribeGlobal(options.onCompatEvent)
     : () => undefined
-  const globalEventReplay = createSseReplayBuffer<CompatEnvelope>({
+  const globalEventPolicy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
+  const globalEvents = createIdentityAwareEventSource<CompatEnvelope>({
+    subscribe: eventHub.subscribeGlobal,
+    policy: globalEventPolicy,
+    sessionId: (event) => eventSessionId(event.payload),
     isTerminal: (event) => isTerminalCompatEvent(event.payload),
   })
-  const cleanupGlobalEventReplay = eventHub.subscribeGlobal((event) => {
-    globalEventReplay.push(event)
-  })
+  globalEvents.open({ mode: "unmanaged-local", connectionId: "local-global-replay" })
   // `store()` is the host's own session-config store — the same instance
   // `/session/:id/subagents` lists from — so an OpenCode delegation admitted
   // through this port is immediately readable on the host read path and
@@ -1355,6 +1513,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         create: () => nextAdapter,
       } as unknown as AgentHarnessFactory],
       resolveHarness: (target) => ensureSessionAdapter(target),
+      ...(hostOptions.sessionAccessPolicy
+        ? { eventDelivery: agentRuntimeEventDeliveryPolicy(hostOptions.sessionAccessPolicy) }
+        : {}),
     })
     sessionRuntimes.set(key, runtime)
     return runtime
@@ -1864,18 +2025,33 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   return {
     mount(app: Hono, options: WorkspaceHostMountOptions) {
       assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
+      const sessionAccessPolicy = hostOptions.sessionAccessPolicy
+        ?? (options.exposure.kind === "loopback" ? managedWorkspaceSessionAccessPolicy() : undefined)
+      if (!sessionAccessPolicy) {
+        throw new Error("Managed workspace session routes require SessionAccessPolicy")
+      }
+      if (
+        options.exposure.kind !== "loopback"
+        && options.exposure.kind !== "embedded"
+        && sessionAccessPolicy.sessionAuthority !== "managed-private"
+      ) {
+        throw new Error("Managed workspace session routes require authority-backed SessionAccessPolicy")
+      }
       if (options.core) {
         mountWorkspaceCore(app, options.core.upgradeWebSocket, {
           eventHub,
           exposure: options.exposure,
+          sessionAccessPolicy,
           processObserver: hostOptions.processObserver,
           runtimeEventAuthorization: hostOptions.runtimeEventAuthorization,
           transcripts: hostOptions.transcripts,
         })
       } else {
-        if (options.pty) mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver)
-        if (options.process) mountWorkspaceProcess(app)
-        if (options.agentHooks) mountWorkspaceAgentHooks(app)
+        if (options.pty) {
+          mountWorkspacePty(app, options.pty.upgradeWebSocket, hostOptions.processObserver, sessionAccessPolicy)
+        }
+        if (options.process) mountWorkspaceProcess(app, sessionAccessPolicy)
+        if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
       }
       app.get("/api/wr/harness-config-options", async (c) => {
         const requestedHarness = normalizeHarnessIdentity(c.req.query("harness") || c.req.query("runner") || c.req.query("type"))
@@ -2032,6 +2208,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/global/event", async (c) => {
+        const principal = eventDeliveryPrincipal(c)
         // Two changes meet here and BOTH are load-bearing.
         //
         // The shell opens this stream on every launch. Proxying it to OpenCode
@@ -2079,9 +2256,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             // as an abort on the request signal, which the listener catches.
             const release = () => lease?.release()
             c.req.raw.signal.addEventListener("abort", release, { once: true })
+            const filtered = filterCompatEventStream(
+              res,
+              principal,
+              globalEventPolicy,
+              c.req.query("directory") ?? "global",
+            )
             return new Response(
-              res.body.pipeThrough(new TransformStream({ flush: release })),
-              { status: res.status, headers: res.headers },
+              filtered.body?.pipeThrough(new TransformStream({ flush: release })),
+              { status: filtered.status, headers: filtered.headers },
             )
           } catch {
             lease?.release()
@@ -2097,13 +2280,23 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           },
         })
 
-        const cleanup = attachSseFanout({
-          subscribe: eventHub.subscribeGlobal,
-          write: (event, meta) => ctrl?.enqueue(encodeSseData(event, meta?.id)),
+        const opened = globalEvents.open(principal)
+        await opened.ready
+        let cleanup: () => void = () => {}
+        cleanup = attachSseFanout({
+          subscribe: (listener) => opened.subscribe(listener, () => {
+            cleanup()
+            try {
+              ctrl?.close()
+            } catch {}
+          }),
+          write: async (event, meta) => {
+            ctrl?.enqueue(encodeSseData(event, meta?.id))
+          },
           heartbeat: { payload: { type: "server.heartbeat", properties: {} } },
           heartbeatMs: 10_000,
           lastEventId: c.req.header("last-event-id"),
-          replay: globalEventReplay,
+          replay: opened.replay,
           replayLive: false,
         })
 
@@ -2121,11 +2314,63 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // contracts used by hosted WorkGraph. Keep them on the authenticated
       // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
       const proxySessionV2 = async (c: Context) => {
+        const decision = await sessionAccessPolicy.authorizePrefix({
+          ...sessionAccessContext(c as never),
+          operation: "session_v2_proxy",
+          method: c.req.method,
+          path: c.req.path,
+          ...(c.req.path.startsWith("/api/session/")
+            ? { sessionId: decodeURIComponent(c.req.path.slice("/api/session/".length).split("/")[0] ?? "") }
+            : {}),
+        })
+        if (!decision.allowed) return sessionAccessDenied(decision)
         const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
           return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
         }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        const response = (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        if (!response.ok || c.req.path !== "/api/session") return response
+        if (c.req.method === "POST") {
+          const payload = await response.clone().json().catch(() => undefined)
+          const sessionId = sessionV2CreatedId(payload)
+          if (!sessionId) {
+            return c.json({ error: { code: "session_create_response_invalid", message: "Session V2 create response is missing an id" } }, 502)
+          }
+          if (!sessionAccessPolicy.registerSession) {
+            return sessionAccessDenied({
+              allowed: false,
+              status: 403,
+              code: "session_authority_required",
+              message: "Managed session creation requires creator registration authority",
+            })
+          }
+          const registration = await sessionAccessPolicy.registerSession({
+            ...sessionAccessContext(c as never),
+            operation: "session_create",
+            sessionId,
+            method: c.req.method,
+            path: c.req.path,
+          })
+          if (!registration.allowed) return sessionAccessDenied(registration)
+          return response
+        }
+        if (c.req.method !== "GET") return response
+        const payload = await response.clone().json().catch(() => undefined)
+        const collection = sessionV2Collection(payload)
+        if (!collection) {
+          return c.json({ error: { code: "session_list_response_invalid", message: "Session V2 list response is invalid" } }, 502)
+        }
+        const allowed = new Set(await sessionAccessPolicy.filterSessions({
+          ...sessionAccessContext(c as never),
+          operation: "session_list",
+          method: c.req.method,
+          path: c.req.path,
+          sessionIds: collection.rows.map(sessionV2RowId).filter(Boolean),
+        }))
+        return sessionV2JsonResponse(
+          response,
+          collection.rebuild(collection.rows.filter((row) => allowed.has(sessionV2RowId(row)))),
+        )
       }
       app.all("/api/model", proxySessionV2)
       app.all("/api/session", proxySessionV2)
@@ -2133,6 +2378,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
+        sessionAccessPolicy,
         resolveRuntime: (input) => runtimeForSession(input),
         createSession: async (c, directory, title, id) => {
           // Write through to the durable store on CREATE.
@@ -2455,7 +2701,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     dispose() {
       cleanupCompatObserver()
-      cleanupGlobalEventReplay()
+      globalEvents.close()
       clear()
       for (const next of sessionAdapters.values()) {
         next.dispose()

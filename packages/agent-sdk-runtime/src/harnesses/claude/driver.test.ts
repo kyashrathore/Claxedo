@@ -1,3 +1,4 @@
+import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 import { describe, expect, test } from "bun:test"
 import {
   CLAUDE_FORWARD_SUBAGENT_TEXT,
@@ -6,7 +7,6 @@ import {
   createClaudeSdkDriver,
   ingestClaudeSdkMessage,
 } from "./driver"
-import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 
 function driver() {
   return createClaudeSdkDriver({

@@ -187,7 +187,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-docks"
 const SESSION_ID = "ses_core_docks"
@@ -233,6 +233,7 @@ function sessionUrlPattern(sessionId: string) {
 async function sendMessage(page: Page, text: string) {
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill(text)
   await expect(input).toContainText(text, { timeout: 10_000 })

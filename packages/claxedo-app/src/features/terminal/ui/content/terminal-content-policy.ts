@@ -1,3 +1,70 @@
 export function shouldMountTerminalPane(input: { visible: boolean; ptyReady: boolean; activated: boolean }) {
-  return input.ptyReady && (input.visible || input.activated)
+  // Require `activated` before the first WebSocket attach. Pending→real route
+  // adoption (meta + URL) settles during the activation delay; mounting earlier
+  // opens a socket that route/intent churn then tears down (cloud D blank xterm,
+  // double `client disconnected` before pty.firstByte).
+  // Once activated, keep the pane mounted while hidden so tab switches stay warm.
+  return input.ptyReady && input.activated
+}
+
+/** Bind a pending creator only to the PTY carrying its opaque request id. */
+export function pickAdoptedPty<T extends { id: string; createRequestId?: string }>(
+  rows: readonly T[],
+  createRequestId: string | undefined,
+) {
+  if (!createRequestId) return undefined
+  const matched = rows.filter((row) => row.createRequestId === createRequestId)
+  return matched.length === 1 ? matched[0] : undefined
+}
+
+/**
+ * A completed client-error response is authoritative: the runtime declined the
+ * create, so continuing to look for its request id can only leave a spinner
+ * running forever. Transport errors and retryable responses remain ambiguous.
+ */
+export function isDefinitiveTerminalCreateFailure(error: unknown) {
+  if (!error || typeof error !== "object") return false
+  const status = (error as { status?: unknown }).status
+  return typeof status === "number" && status >= 400 && status < 500 && status !== 408 && status !== 429
+}
+
+/**
+ * Run one poll at a time. The next timeout is armed only after the current
+ * async read settles, and stop() prevents both future runs and re-arming.
+ */
+export function startSingleFlightPoll(
+  run: () => Promise<void>,
+  intervalMs: number,
+  options?: { timeoutMs?: number; onTimeout?: () => void },
+) {
+  let stopped = false
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = options?.timeoutMs === undefined
+    ? undefined
+    : setTimeout(() => {
+      if (stopped) return
+      stopped = true
+      if (timer) clearTimeout(timer)
+      timer = undefined
+      options.onTimeout?.()
+    }, options.timeoutMs)
+
+  const cycle = async () => {
+    if (stopped) return
+    try {
+      await run()
+    } catch {}
+    if (stopped) return
+    timer = setTimeout(() => void cycle(), intervalMs)
+  }
+
+  void cycle()
+  return {
+    stop() {
+      stopped = true
+      if (timer) clearTimeout(timer)
+      timer = undefined
+      if (timeout) clearTimeout(timeout)
+    },
+  }
 }

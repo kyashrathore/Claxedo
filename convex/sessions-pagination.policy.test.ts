@@ -20,8 +20,23 @@ async function seedWorkspaceTranscripts(t: ReturnType<typeof convexTest>) {
       created_at: 1,
       updated_at: 1,
     })
+    const orgId = await ctx.db.insert("orgs", {
+      name: "Personal",
+      kind: "personal",
+      owner_user_id: userId,
+      created_at: 1,
+      updated_at: 1,
+    })
+    await ctx.db.insert("org_memberships", {
+      org_id: orgId,
+      user_id: userId,
+      role: "owner",
+      created_at: 1,
+      updated_at: 1,
+    })
     const workspaceId = await ctx.db.insert("workspaces", {
       workspace_id: "ws_page",
+      org_id: orgId,
       owner_user_id: userId,
       backing: "cloud-vm",
       access: "cloud",

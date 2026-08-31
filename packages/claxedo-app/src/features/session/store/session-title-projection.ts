@@ -40,6 +40,7 @@ export type SessionTitleProjectionApi = {
   publishProvisional(target: SessionTitleTarget & { title: string }): void
   publishCanonical(target: SessionTitleTarget & { title: string; updatedAt?: number }): void
   remove(target: SessionTitleTarget): void
+  clear(): void
 }
 
 type ProjectionState = {
@@ -290,6 +291,12 @@ export function createSessionTitleProjection(): SessionTitleProjectionApi {
         inventoryKeys.delete(key)
         setEntry(key, undefined)
       }
+    },
+    clear() {
+      inventoryKeys.clear()
+      setState("byKey", produce((entries) => {
+        for (const key of Object.keys(entries)) delete entries[key]
+      }))
     },
   }
 }

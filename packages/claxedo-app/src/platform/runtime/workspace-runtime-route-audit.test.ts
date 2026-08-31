@@ -58,6 +58,10 @@ const runtimeGatewayBoundary = new Set([
   // Cross-feature provider query adapter owns the explicit harness-scoped
   // provider route used by settings and session model selectors.
   "platform/query/control-plane.ts",
+  // AccountPort fetch adapters are transport boundaries: they parse legacy
+  // browser URLs and translate them into named desktop operations.
+  "platform/account/control-plane-account-fetch.ts",
+  "platform/account/documents-account-fetch.ts",
 ])
 
 const workspaceRuntimeIdentityBoundary = new Set([
@@ -69,6 +73,7 @@ const workspaceRuntimeIdentityBoundary = new Set([
   // unit-testable — re-exports the canonical workspaceIdFromRef selector.
   "platform/runtime/agent/placement-table.ts",
   "platform/runtime/session-workspace.ts",
+  "platform/runtime/workspace-runtime-record.ts",
 ])
 
 const workspaceSelectorSyntaxBoundary = new Set([
@@ -712,12 +717,8 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
-      const productionLines = text
-        .split("\n")
-        .filter((line) => !line.trimStart().startsWith("//"))
-        .join("\n")
-      if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(productionLines)) {
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
+      if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(text)) {
         offenders.push(file)
       }
     }
@@ -1155,7 +1156,10 @@ describe("workspace runtime route audit", () => {
       globalSyncContext,
       "features/session/data/sync/directory-session-cache.ts",
       "app/integrations/sync/global-bootstrap.ts",
-      "app/integrations/sync/global-readiness.ts",
+      "app/integrations/sync/global-sync-boundary.ts",
+      // Reviewed shell adapter: binds GlobalSync's channel to the dedicated
+      // session-access revocation contract without exposing GlobalSync to UI.
+      "app/integrations/sync/session-access-revocations.ts",
       "features/session/data/sync/session-inventory.ts",
     ])
     const offenders: string[] = []
@@ -2033,14 +2037,17 @@ describe("workspace runtime route audit", () => {
     // gained an authority discriminator suffix, but the ROOT session id is
     // still the primary shellDataKeys.sessionId segment; the controller
     // imports the shared key instead of re-declaring it.
-    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey \} from "\.\/session-pane-queries"/)
+    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey, sessionTodoTransportRequestKey, sessionTransportRequestKey \} from "\.\/session-pane-queries"/)
     expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
     expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
     expect(paneQueries).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    expect(text).toMatch(/function sessionTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
-    expect(text).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"transport-session-request"/)
-    expect(text).toMatch(/function sessionTodoTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
-    expect(text).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"todo-request"/)
+    // The request-key builders live with the other query keys in
+    // session-pane-queries (same move sessionCapabilitiesKey made); the
+    // controller imports them rather than re-declaring.
+    expect(paneQueries).toMatch(/export function sessionTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
+    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"transport-session-request"/)
+    expect(paneQueries).toMatch(/export function sessionTodoTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
+    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"todo-request"/)
     expect(text).not.toMatch(/function keyFor\(directory: string, sessionID: string\)/)
     expect(text).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
     expect(text).not.toMatch(/keyFor\(input\.directory\(\), sessionID\)/)
@@ -2955,13 +2962,12 @@ describe("workspace runtime route audit", () => {
   test("upstream MCP status surfaces read MCP, LSP, and plugin state from query caches", async () => {
     const claxedoDialog = await Bun.file(path.join(root, "features/session/ui/dialogs/select-mcp.tsx")).text()
     const claxedoLogic = await Bun.file(path.join(root, "features/extensions/marketplace/api.ts")).text()
-    const claxedoStatus = await Bun.file(path.join(root, "app/connection/status-popover.tsx")).text()
-    const claxedoSessionHeader = await Bun.file(path.join(root, sessionHeader)).text()
     const backend = await Bun.file(path.join(root, "platform/runtime/http-backend.ts")).text()
 
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp-logic.ts")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-mcp.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/app/connection/status-popover.tsx")).exists()).toBe(false)
+    expect(await Bun.file(path.join(root, "app/connection/status-popover.tsx")).exists()).toBe(false)
     // The select-mcp dialog (session feature) reaches the marketplace API
     // through session app-ports, whose types are pinned to the canonical
     // @/features/extensions/marketplace/api owner — same-owner invariant.
@@ -2969,19 +2975,12 @@ describe("workspace runtime route audit", () => {
     expect(claxedoDialog).toMatch(/loadMcpDialogData/)
     expect(claxedoDialog).toMatch(/@\/features\/session\/app-ports/)
     expect(sessionPortsText).toMatch(/import type \* as Marketplace from "@\/features\/extensions\/marketplace\/api"/)
+    expect(sessionPortsText).not.toMatch(/StatusPopover/)
     expect(claxedoLogic).toMatch(/function mcpExtensionUrl/)
     expect(claxedoLogic).not.toMatch(/RuntimeGateway\./)
-    expect(claxedoStatus).toMatch(/return null/)
-    // SessionHeader mounts StatusPopover through session app-ports, pinned to
-    // the app-owned @/app/connection/status-popover — never a relative copy.
-    expect(claxedoSessionHeader).toMatch(/StatusPopover/)
-    expect(claxedoSessionHeader).toMatch(/@\/features\/session\/app-ports/)
-    expect(sessionPortsText).toMatch(/import type \* as StatusPopoverModule from "@\/app\/connection\/status-popover"/)
-    expect(claxedoSessionHeader).not.toMatch(/\.\.\/status-popover/)
     expect(backend).toMatch(/getMcpStatus: async/)
     expect(backend).toMatch(/getLspStatus: async/)
     expect(claxedoDialog).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
-    expect(claxedoStatus).not.toMatch(/directoryMcpQuery|directoryLspQuery/)
   })
 
   test("legacy SyncProvider bridge is deleted after DataProvider cutover", async () => {
@@ -3031,6 +3030,9 @@ describe("workspace runtime route audit", () => {
   test("PromptInput resolves session identity without router params", async () => {
     const text = await Bun.file(path.join(root, promptInput)).text()
     const submit = await Bun.file(path.join(root, promptSubmit)).text()
+    const submitUiState = await Bun.file(
+      path.join(root, "features/session/composer/ui/submit-ui-state.ts"),
+    ).text()
     const submitInput = await Bun.file(path.join(root, promptSubmitInput)).text()
     const props = await Bun.file(path.join(root, "features/session/composer/prompt-input-props.ts")).text()
     const toolbar = await Bun.file(path.join(root, promptToolbarState)).text()
@@ -3083,8 +3085,8 @@ describe("workspace runtime route audit", () => {
     expect(workspaceResolver).toMatch(/sessionRefForWorkspaceSession/)
     expect(submitCreate).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(submitCreate).toMatch(/content\?\.sessionRef/)
-    expect(submit).toMatch(/addRegisteredConversationMessage/)
-    expect(submit).toMatch(/removeRegisteredConversationMessage/)
+    expect(submitUiState).toMatch(/addRegisteredConversationMessage\(item\)/)
+    expect(submitUiState).toMatch(/removeRegisteredConversationMessage\(item\)/)
     expect(submit).not.toMatch(/setQueryData\(shellDataKeys\.sessionId\(sessionID, "requests"\)/)
     expect(submitInput).toMatch(/surfaceId\?:\s*Accessor<string \| undefined>/)
   })
@@ -3278,59 +3280,41 @@ describe("workspace runtime route audit", () => {
     }
   })
 
-  test("SessionHeader reads tint inputs without the global-sync message mirror", async () => {
+  test("SessionHeader portals Share for signed authority-backed workspace sessions", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
     expect(
       await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
     ).toBe(false)
-    // The tint's conversation read moved to the pane-scoped registry wrapper
-    // (createActiveConversationSnapshot wraps registeredConversationSnapshot).
-    expect(text).toMatch(/createActiveConversationSnapshot/)
-    expect(text).toMatch(/useData/)
-    expect(text).toMatch(/data\.store\.agent/)
-    expect(text).not.toMatch(/queryOptions\.agents/)
+    expect(text).toMatch(/SessionPeopleControl/)
+    expect(text).toMatch(/shareTarget/)
+    expect(text).not.toMatch(/host !== "central"/)
+    expect(text).toMatch(/workspaceKey\(sessionRef\)/)
+    expect(text).toMatch(/status !== "signed"/)
+    expect(text).not.toMatch(/StatusPopover/)
+    expect(text).not.toMatch(/terminal\.toggle/)
+    expect(text).not.toMatch(/review\.toggle/)
+    expect(text).not.toMatch(/fileTree\.toggle/)
+    expect(text).not.toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS/)
+    expect(text).not.toMatch(/openDir/)
+    expect(text).not.toMatch(/OPEN_APPS/)
+    expect(text).not.toMatch(/createActiveConversationSnapshot/)
+    expect(text).not.toMatch(/messageAgentColor/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
-    expect(text).not.toMatch(/sync\.data\.part/)
-    expect(text).not.toMatch(/sync\.data\.agent/)
   })
 
-  test("SessionHeader bounds titlebar open-path loading state", async () => {
+  test("upstream SessionHeader portals Share for signed authority-backed workspace sessions", async () => {
     const text = await Bun.file(path.join(root, sessionHeader)).text()
 
-    expect(
-      await Bun.file(path.join(root, "overrides/features/session/ui/components/session-header.tsx")).exists(),
-    ).toBe(false)
-    expect(text).toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS = 10_000/)
-    expect(text).toMatch(/let openRequestID = 0/)
-    expect(text).toMatch(/armOpenRequestTimeout\(requestID\)/)
-    expect(text).toMatch(/clearOpenRequest\(requestID\)/)
-    expect(text).toMatch(/onCleanup\(\(\) => \{[\s\S]*clearTimeout\(openRequestTimeout\)/)
-    expect(text).not.toMatch(/\.finally\(\(\) => \{[\s\S]{0,120}setOpenRequest\("app", undefined\)[\s\S]{0,40}\}\)/)
-  })
-
-  test("upstream SessionHeader reads tint inputs without the global-sync message mirror", async () => {
-    const text = await Bun.file(path.join(root, sessionHeader)).text()
-
-    expect(text).toMatch(/createActiveConversationSnapshot/)
-    expect(text).toMatch(/data\.store\.agent/)
-    expect(text).not.toMatch(/queryOptions\.agents/)
-    expect(text).toMatch(/messageAgentColor/)
+    expect(text).toMatch(/SessionPeopleControl/)
+    expect(text).toMatch(/shareTarget/)
+    expect(text).not.toMatch(/host !== "central"/)
+    expect(text).toMatch(/workspaceKey\(sessionRef\)/)
+    expect(text).not.toMatch(/StatusPopover/)
+    expect(text).not.toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS/)
+    expect(text).not.toMatch(/createActiveConversationSnapshot/)
     expect(text).not.toMatch(/\buseSync\b/)
-    expect(text).not.toMatch(/sync\.data\.message/)
-    expect(text).not.toMatch(/sync\.data\.part/)
-    expect(text).not.toMatch(/sync\.data\.agent/)
-  })
-
-  test("upstream SessionHeader bounds titlebar open-path loading state", async () => {
-    const text = await Bun.file(path.join(root, sessionHeader)).text()
-
-    expect(text).toMatch(/OPEN_PATH_REQUEST_TIMEOUT_MS = 10_000/)
-    expect(text).toMatch(/let openRequestID = 0/)
-    expect(text).toMatch(/armOpenRequestTimeout\(requestID\)/)
-    expect(text).toMatch(/clearOpenRequest\(requestID\)/)
-    expect(text).not.toMatch(/\.finally\(\(\) => \{[\s\S]{0,120}setOpenRequest\("app", undefined\)[\s\S]{0,40}\}\)/)
   })
 
   test("ReviewTab keeps VCS payloads query-owned without mount-time status fetches", async () => {
@@ -3775,6 +3759,9 @@ describe("workspace runtime route audit", () => {
   test("upstream PromptInput checks review membership from shell diff queries", async () => {
     const text = await Bun.file(path.join(root, "features/session/composer/composer.tsx")).text()
     const submit = await Bun.file(path.join(root, "features/session/composer/ui/submit.ts")).text()
+    const submitUiState = await Bun.file(
+      path.join(root, "features/session/composer/ui/submit-ui-state.ts"),
+    ).text()
     const globalSync = await Bun.file(path.join(root, globalSyncContext)).text()
     const shellQuery = await Bun.file(path.join(root, "features/session/data/query/shell.ts")).text()
     const workspaceResolver = await Bun.file(path.join(root, "features/session/composer/workspace-resolver.ts")).text()
@@ -3804,10 +3791,8 @@ describe("workspace runtime route audit", () => {
     expect(submit).toMatch(/commandListQuery\(/)
     expect(submit).toMatch(/queryClient\s*\.\s*fetchQuery\(/)
     expect(shellQuery).toMatch(/export function commandListQuery/)
-    expect(submit).toMatch(
-      /addRegisteredConversationMessage\(\{[\s\S]*message: item\.message,[\s\S]*parts: item\.parts/,
-    )
-    expect(submit).toMatch(/removeRegisteredConversationMessage\(\{[\s\S]*messageID/)
+    expect(submitUiState).toMatch(/addRegisteredConversationMessage\(item\)/)
+    expect(submitUiState).toMatch(/removeRegisteredConversationMessage\(item\)/)
     expect(submit).toMatch(/setPromptSessionStatus/)
     expect(submit).not.toMatch(/sessionStatusKey/)
     expect(submit).not.toMatch(/setQueryData\(sessionStatusKey/)

@@ -1,0 +1,23 @@
+{
+  "id": "account-port-v1",
+  "description": "AccountPort IPC tax: unary + control-plane SSE load ladders. Primary comparison is packaged signed desktop (AccountPort) vs web-signed authFetch; local inject bench isolates Arm C noise floor.",
+  "scenarios": [
+    {
+      "id": "S3-flow-20x100x2k",
+      "kind": "sse-flow",
+      "sessions": 20,
+      "messages": 100,
+      "bytes": 2048,
+      "explain": "20 sessions streaming continuously, 100 messages of ~2KiB each"
+    },
+    {
+      "id": "U2-unary-50",
+      "kind": "unary-burst",
+      "ops": 50,
+      "operation": "account.mode"
+    }
+  ],
+  "arms": ["A-packaged-signed-desktop", "B-web-signed-authFetch", "C-local-inject-main"],
+  "validity": ["chunk-count", "first-byte-after-http-ok", "no-sse-401-signout-flap"],
+  "localBench": "packages/claxedo-desktop/scripts/account-port-perf-bench.ts"
+}

@@ -26,4 +26,4 @@ export type ConvexAuthorityInput = {
   serviceToken?: string
 }
 
-export type ServiceArgs = (auth: SignedControlPlaneAuth) => Record<string, unknown>
+export type ServiceArgs = (auth?: SignedControlPlaneAuth) => Record<string, unknown>

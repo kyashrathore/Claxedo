@@ -4,6 +4,7 @@ import {
   isLocalSessionDirectory,
   isUserHostedWorkspaceDirectory,
   isWorkspaceIdRef,
+  localWorkspaceAssociationId,
   workspaceIdFromRef,
 } from "./legacy-resolver"
 
@@ -25,6 +26,8 @@ describe("legacy directory resolver", () => {
     expect(workspaceIdFromRef("workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBe("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")
     expect(workspaceIdFromRef("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBeUndefined()
     expect(workspaceIdFromRef("/repo/main")).toBeUndefined()
+    expect(localWorkspaceAssociationId("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")).toBe("608c72e3-405a-4d2a-bf7f-883b8c76ea8e")
+    expect(localWorkspaceAssociationId("ws_abc123")).toBeUndefined()
   })
 
   test("recognizes user-hosted workspace directories", () => {

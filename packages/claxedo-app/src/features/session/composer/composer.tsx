@@ -58,9 +58,7 @@ import { createModelSelectionPicker } from "@/features/session/commands/model-se
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
-import { createComposerAutoAccept } from "./auto-accept"
-import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
-import { createComposerPermissionMode } from "./permission-mode"
+import { createComposerPermissionSurface } from "./permission-mode-wiring"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
 import { createComposerGoalController } from "./goal-controller"
 const idleSessionStatus = { type: "idle" as const }
@@ -505,25 +503,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
    * answering locally — the safe direction.
    */
   const permissionHarness = () => {
-    // The selection controller is the only source that knows a LOCAL harness
-    // session's real id, so it wins when it has an answer.
-    const selected = harnessSelectionController?.read(scope()).harness
-    if (selected) return selected
+    const snapshot = harnessSelectionController?.read(scope())
+    // Withhold until the selection controller has a real answer. The bare
+    // opencode default otherwise flashes Claxedo permission rows on Codex
+    // drafts during hydration (tier-real behavior 13 records every visible
+    // `[data-action="prompt-permission-mode"]` from first navigation).
+    if (toolbarHarnessMode(scope())) {
+      const selected = snapshot?.harness
+      if (selected && selected !== "opencode") return selected
+      return undefined
+    }
+    if (!snapshot || snapshot.readiness !== "ready") return undefined
+    if (snapshot.harness) return snapshot.harness
     const id = currentHarnessType(scope())
-    // Without that, an "opencode" answer is only believable when no other source
-    // claims a harness session — it is otherwise just the default.
-    if (id === "opencode" && toolbarHarnessMode(scope())) return undefined
-    return id
+    return id === "opencode" ? "opencode" : id
   }
 
-  const permissionModeWiring = createComposerPermissionModeWiring({
+  const { autoAccept, permissionMode } = createComposerPermissionSurface({
     sessionId: permissionSessionId,
+    resolvedSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
     harnessUnavailable: () =>
       harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
         configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
-    client: sdk.client.session,
+    client: sdk.client,
     claxedoServerUrl: getClaxedoServerUrl,
     signedControlPlane,
     workspace: () => {
@@ -533,69 +537,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     sessionRef: () => props.sessionRef?.(),
     requestFailedTitle: () => language.t("common.requestFailed"),
-  })
-
-  const autoAccept = createComposerAutoAccept({
     permission,
-    sessionId: permissionSessionId,
-    directory: () => resolvedSessionDirectory() ?? sdk.directory,
-    harness: permissionHarness,
-    // Turning the switch on writes the grants into opencode's OWN persisted
-    // ruleset, so the engine stops asking rather than Claxedo answering the same
-    // prompts forever — and the grant survives Claxedo being closed. Turning it off
-    // withdraws them. Deliberately NOT `config.update`: that handler disposes the
-    // engine instance on every call, which would abort the running turn.
-    deliver: ({ delivery, sessionID }) => applyPermissionMode({ delivery, sessionID, client: sdk.client }),
-    // The local switch has already flipped, so a failed write must be visible.
-    // Silence here would mean the user believes the engine was told something it
-    // never received — and on the disabling side, that grants are withdrawn when
-    // they are still live.
-    onDeliveryError: ({ error, enabling }) => {
-      const detail = error instanceof Error ? error.message : String(error)
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: enabling
-          ? `Claxedo will answer these prompts, but opencode was not told to allow them: ${detail}`
-          : `opencode may still allow these until the next successful change: ${detail}`,
-      })
-    },
-  })
-  // The permission-mode picker. Replaces the binary "Approve for me" switch: it is a
-  // superset, because Claxedo's Manual mode IS the switch's off state, expressed as a
-  // mode. Selection lives in the same per-scope store the switch used, so a session's
-  // existing preference carries over rather than resetting.
-  const permissionMode = createComposerPermissionMode({
-    harness: permissionHarness,
-    // The selection IS the auto-accept boolean, not a parallel store. Claxedo offers
-    // exactly two selectable modes today — Auto and Manual — and they are precisely
-    // this switch's on and off, so deriving avoids a second source of truth that
-    // could disagree with the one the permission provider already persists per scope.
-    // A session's existing preference therefore carries straight over.
-    //
-    // WHEN HARNESS MODES BECOME DELIVERABLE this stops being sufficient: a boolean
-    // cannot hold "Claude: plan". At that point the selection needs real per-scope
-    // storage, and `permissionModeDeliverable` returning true for a harness delivery
-    // is the signal that the day has come.
-    report: permissionModeWiring.report,
-    unavailable: permissionModeWiring.harnessUnavailable,
-    // Selection routing lives in the wiring: which store owns a choice depends on
-    // whether the harness has modes of its own.
-    selection: () => permissionModeWiring.selection(autoAccept.active()),
-    onSelectionChange: (next) => permissionModeWiring.onSelectionChange(next, autoAccept),
-    // HARNESS deliveries only: `autoAccept.toggle` below already writes Claxedo's
-    // own options, so delivering them here too issues two PATCHes per selection.
-    deliver: async ({ option, sessionID }) =>
-      option.origin === "harness"
-        ? applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() })
-        : { kind: "answered-locally" },
-    // Drops the optimistic value as well as toasting — see `reportError`.
-    onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
-    sessionId: resolvedSessionId,
-    // No `deliver` here ON PURPOSE. `autoAccept.toggle` already performs exactly the
-    // right write for both modes — the Auto ruleset when enabling, the withdrawal
-    // ruleset when disabling — and routing the picker through it keeps ONE writer.
-    // Passing a deliverer here as well would issue two PATCHes per selection.
   })
 
   // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"

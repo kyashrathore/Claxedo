@@ -16,13 +16,16 @@ import {
 } from "./model"
 import { isLiveLease } from "./sandboxLeases"
 import { WORKGRAPH_OWNER_TABLES, ownerDeletionIndex } from "./workgraphOwnerDeletion"
+import { revokeWorkspaceUserTokens } from "./runtimeAccessTokens"
+import { ensureDefaultTeamMembership, removeDefaultTeamMembership } from "./teams"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
-  const existing = (await ctx.db
-    .query("orgs")
-    .withIndex("by_owner", (q: any) => q.eq("owner_user_id", user._id))
-    .collect())
-    .find((org: any) => org.kind === "personal" && !org.clerk_org_id && !org.deleted_at)
+  const existing = (
+    await ctx.db
+      .query("orgs")
+      .withIndex("by_owner", (q: any) => q.eq("owner_user_id", user._id))
+      .collect()
+  ).find((org: any) => org.kind === "personal" && !org.clerk_org_id && !org.deleted_at)
   if (existing) return existing
   const now = Date.now()
   const orgId = await ctx.db.insert("orgs", {
@@ -51,16 +54,20 @@ export const listForMe = authedQuery({
       .withIndex("by_user", (q) => q.eq("user_id", user._id))
       .collect()
 
-    return await Promise.all(memberships.map(async (membership) => {
-      const org = await ctx.db.get(membership.org_id)
-      return org ? {
-        org_id: org._id,
-        clerk_org_id: org.clerk_org_id,
-        slug: org.slug,
-        name: org.name,
-        role: membership.role,
-      } : undefined
-    })).then((items) => items.filter((item) => item !== undefined))
+    return await Promise.all(
+      memberships.map(async (membership) => {
+        const org = await ctx.db.get(membership.org_id)
+        return org
+          ? {
+              org_id: org._id,
+              clerk_org_id: org.clerk_org_id,
+              slug: org.slug,
+              name: org.name,
+              role: membership.role,
+            }
+          : undefined
+      }),
+    ).then((items) => items.filter((item) => item !== undefined))
   },
 })
 
@@ -73,6 +80,57 @@ export const ensurePersonalOrg = authedMutation({
       org_id: org._id,
       clerk_org_id: org.clerk_org_id,
       role: "owner",
+    }
+  },
+})
+
+export const createTeam = authedMutation({
+  args: {
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const name = args.name.trim()
+    if (!name) throw new Error("team_name_required")
+    const user = await upsertUser(ctx)
+    const now = Date.now()
+    // Creates an Org (collaborative tenant). Nested default Team is seeded so
+    // Org→Team nesting is available immediately (D17).
+    const orgId = await ctx.db.insert("orgs", {
+      name,
+      kind: "team",
+      owner_user_id: user._id,
+      created_at: now,
+      updated_at: now,
+    })
+    await ctx.db.insert("org_memberships", {
+      org_id: orgId,
+      user_id: user._id,
+      role: "owner",
+      created_at: now,
+      updated_at: now,
+    })
+    const defaultTeamPublicId = `team_${crypto.randomUUID().replace(/-/g, "").slice(0, 24)}`
+    const defaultTeamId = await ctx.db.insert("teams", {
+      public_id: defaultTeamPublicId,
+      org_id: orgId,
+      name: "Everyone",
+      is_default: true,
+      created_by_user_id: user._id,
+      created_at: now,
+      updated_at: now,
+    })
+    await ctx.db.insert("team_memberships", {
+      team_id: defaultTeamId,
+      user_id: user._id,
+      role: "owner",
+      created_at: now,
+      updated_at: now,
+    })
+    return {
+      org_id: orgId,
+      name,
+      role: "owner" as const,
+      default_team_id: defaultTeamPublicId,
     }
   },
 })
@@ -113,7 +171,7 @@ export const setActive = authedQuery({
   },
 })
 
-function clerkRole(input: unknown) {
+function clerkRole(input: unknown): "admin" | "member" {
   const value = typeof input === "string" ? input : ""
   if (value.includes("admin")) return "admin"
   return "member"
@@ -133,6 +191,7 @@ async function upsertClerkUser(ctx: any, data: Record<string, any>) {
     .unique()
   const now = Date.now()
   const patch = {
+    public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
     clerk_subject: subject,
     email: data.email_addresses?.[0]?.email_address,
     name: [data.first_name, data.last_name].filter(Boolean).join(" ") || undefined,
@@ -208,9 +267,8 @@ async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
   // permanent block — a genuine later re-join carries a NEWER timestamp, wins,
   // and clears the tombstone on the way through (below).
   const clerkOrgId = data.organization?.id
-  const tombstone = typeof clerkOrgId === "string"
-    ? await orgMembershipTombstone(ctx.db, clerkOrgId, clerkSubject)
-    : undefined
+  const tombstone =
+    typeof clerkOrgId === "string" ? await orgMembershipTombstone(ctx.db, clerkOrgId, clerkSubject) : undefined
   if (tombstone && tombstone.clerk_updated_at >= updatedAt) return
   // A create that BEAT the tombstone is a genuine re-join, so the tombstone has
   // done its job and is retired here rather than left to expire. Leaving it
@@ -224,7 +282,17 @@ async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
     updated_at: Date.now(),
   }
   if (existing) {
+    if ((existing.role === "owner" || existing.role === "admin") && patch.role === "member") {
+      await revokeOrgWorkspaceTokens(ctx, orgId, user._id, Date.now())
+    }
     await ctx.db.patch(existing._id, patch)
+    await ensureDefaultTeamMembership(ctx, {
+      orgId,
+      userId: user._id,
+      role: patch.role,
+      creatorUserId: user._id,
+      now: patch.updated_at,
+    })
     return
   }
   // F1 (adversarial review): the seat hard-block used to throw here, inside the
@@ -241,6 +309,13 @@ async function upsertClerkMembership(ctx: any, data: Record<string, any>) {
     user_id: user._id,
     ...patch,
     created_at: Date.now(),
+  })
+  await ensureDefaultTeamMembership(ctx, {
+    orgId,
+    userId: user._id,
+    role: patch.role,
+    creatorUserId: user._id,
+    now: patch.updated_at,
   })
 }
 
@@ -273,7 +348,9 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
   const membership = await orgMembership(ctx.db, org._id, user._id)
   if (!membership) return
   const revokedRole = membership.role
+  await revokeOrgWorkspaceTokens(ctx, org._id, user._id, Date.now())
   await ctx.db.delete(membership._id)
+  await removeDefaultTeamMembership(ctx, { orgId: org._id, userId: user._id })
   // W6.3: the delete path previously wrote NO audit record at all, which made
   // the single most security-relevant event in the mirror — access being taken
   // away, or failing to be — completely invisible after the fact. `audit_events`
@@ -292,6 +369,16 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
       clerk_updated_at: updatedAt,
     },
   })
+}
+
+export async function revokeOrgWorkspaceTokens(ctx: any, orgId: unknown, userId: unknown, now: number) {
+  const workspaces = await ctx.db
+    .query("workspaces")
+    .withIndex("by_org", (q: any) => q.eq("org_id", orgId))
+    .collect()
+  for (const workspace of workspaces.filter((workspace: any) => !workspace.deleted_at)) {
+    await revokeWorkspaceUserTokens(ctx, workspace._id, userId, now)
+  }
 }
 
 /**
@@ -328,12 +415,7 @@ async function stampClerkWebhookSeen(ctx: any, type: string) {
  * arriving late must not lower the bar that a subsequent late `.created` has to
  * clear.
  */
-async function writeMembershipTombstone(
-  ctx: any,
-  clerkOrgId: string,
-  clerkSubject: string,
-  clerkUpdatedAt: number,
-) {
+async function writeMembershipTombstone(ctx: any, clerkOrgId: string, clerkSubject: string, clerkUpdatedAt: number) {
   const existing = await orgMembershipTombstone(ctx.db, clerkOrgId, clerkSubject)
   if (existing) {
     if (existing.clerk_updated_at >= clerkUpdatedAt) return
@@ -355,13 +437,16 @@ async function writeMembershipTombstone(
  * action rather than a refused one; the action name carries what happened and
  * `metadata.source` distinguishes webhook from sweep.
  */
-async function recordMembershipAudit(ctx: any, input: {
-  orgId: unknown
-  userId: unknown
-  action: string
-  source: "webhook" | "sweep"
-  metadata: Record<string, unknown>
-}) {
+async function recordMembershipAudit(
+  ctx: any,
+  input: {
+    orgId: unknown
+    userId: unknown
+    action: string
+    source: "webhook" | "sweep"
+    metadata: Record<string, unknown>
+  },
+) {
   await ctx.db.insert("audit_events", {
     user_id: input.userId,
     org_id: input.orgId,
@@ -402,7 +487,8 @@ export const applyClerkWebhook = webhookMutation({
     await stampClerkWebhookSeen(ctx, args.type)
     if (args.type === "user.created") await upsertClerkUser(ctx, data)
     if (args.type === "organization.created" || args.type === "organization.updated") await upsertClerkOrg(ctx, data)
-    if (args.type === "organizationMembership.created" || args.type === "organizationMembership.updated") await upsertClerkMembership(ctx, data)
+    if (args.type === "organizationMembership.created" || args.type === "organizationMembership.updated")
+      await upsertClerkMembership(ctx, data)
     if (args.type === "organizationMembership.deleted") await deleteClerkMembership(ctx, data)
     if (args.type === "organization.deleted") {
       const org = typeof data.id === "string" ? await orgByClerkOrgId(ctx.db, data.id) : undefined
@@ -576,8 +662,11 @@ export const ORG_DIRECT_TABLES: readonly ScopedRows[] = [
   // ORG_RETAINED_TABLES below), so the org cascade retains it. The per-OWNER
   // WorkGraph purge still deletes it through its `by_owner` index, which is
   // exact.
-  ...WORKGRAPH_OWNER_TABLES.filter((table) => table !== "workgraph_tenancy_migration_quarantine")
-    .map((table) => ({ table, index: ownerDeletionIndex(table), field: "organization_id" })),
+  ...WORKGRAPH_OWNER_TABLES.filter((table) => table !== "workgraph_tenancy_migration_quarantine").map((table) => ({
+    table,
+    index: ownerDeletionIndex(table),
+    field: "organization_id",
+  })),
   // A leftover fence from an interrupted per-owner deletion. Quiescence refuses
   // while one is LIVE; this clears any that outlived their operation.
   { table: "workgraph_owner_deletion_barriers", index: "by_tenant", field: "organization_id" },
@@ -586,6 +675,8 @@ export const ORG_DIRECT_TABLES: readonly ScopedRows[] = [
   // Grants handed TO this org over OTHER orgs' workspaces. The reverse
   // direction (grants over this org's workspaces) is a workspace child below.
   { table: "workspace_share_grants", index: "by_org", field: "granted_to_org_id" },
+  // Session grants targeted at this org (interim Phase-1 shape; D18).
+  { table: "session_share_grants", index: "by_org", field: "granted_to_org_id" },
 ]
 
 /**
@@ -617,6 +708,7 @@ export const ORG_CLERK_TABLES: readonly ScopedRows[] = [
 export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
   { table: "workspace_memberships", index: "by_workspace_user", field: "workspace_id" },
   { table: "workspace_share_grants", index: "by_workspace", field: "workspace_id" },
+  { table: "session_share_grants", index: "by_workspace", field: "workspace_id" },
   { table: "local_host_links", index: "by_workspace", field: "workspace_id" },
   { table: "runtime_access_tokens", index: "by_workspace_user", field: "workspace_id" },
   { table: "agent_extension_installs", index: "by_workspace", field: "workspace_id" },
@@ -641,6 +733,12 @@ const ORG_SESSION_CASCADE: ParentCascade = {
     // `by_session_ordinal` — so transcripts are only reachable through their
     // session row. Deleting sessions first would strand every message.
     { table: "session_messages", index: "by_session_ordinal", field: "session_id", parentKey: "session_id" },
+    // Same reachability, same reason to purge: a participant row names a
+    // specific PERSON who could read a specific session's transcript, which is
+    // personal data under any retention policy. Its only scoping indexes are
+    // `by_session_user` and `by_user` — neither names a workspace or an org —
+    // so like the transcript it is only reachable through its session.
+    { table: "session_participants", index: "by_session_user", field: "session_id", parentKey: "session_id" },
   ],
 }
 
@@ -649,7 +747,32 @@ const ORG_PROJECT_CASCADE: ParentCascade = {
   index: "by_org",
   field: "org_id",
   children: [
+    { table: "project_memberships", index: "by_project_user", field: "project_id", parentKey: "project_id" },
+    // Legacy rows written before reconcileProjectMembershipProjectIds keyed
+    // `project_id` on the project's Convex doc _id rather than its public id.
+    // Drain those too so an org purge cannot orphan personal membership rows if
+    // it runs before that migration. Disjoint from the pass above (a row holds
+    // one keying or the other), so no double-delete.
     { table: "project_memberships", index: "by_project_user", field: "project_id", parentKey: "_id" },
+    // Team project grants keyed by project public id (or legacy doc id).
+    { table: "team_project_grants", index: "by_project", field: "project_id", parentKey: "project_id" },
+    { table: "team_project_grants", index: "by_project", field: "project_id", parentKey: "_id" },
+  ],
+}
+
+/**
+ * Nested teams (D17). Memberships and remaining team-targeted grants must
+ * drain before the team row; teams themselves drain before org membership.
+ */
+const ORG_TEAM_CASCADE: ParentCascade = {
+  table: "teams",
+  index: "by_org",
+  field: "org_id",
+  children: [
+    { table: "team_memberships", index: "by_team", field: "team_id", parentKey: "_id" },
+    { table: "team_project_grants", index: "by_team", field: "team_id", parentKey: "_id" },
+    { table: "workspace_share_grants", index: "by_team", field: "granted_to_team_id", parentKey: "_id" },
+    { table: "session_share_grants", index: "by_team", field: "granted_to_team_id", parentKey: "_id" },
   ],
 }
 
@@ -669,8 +792,10 @@ export const ORG_PURGED_TABLES: readonly string[] = [
   ...ORG_CLERK_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_DOC_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_PUBLIC_TABLES.map((plan) => plan.table),
-  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_CONNECTION_CASCADE]
-    .flatMap((cascade) => [cascade.table, ...cascade.children.map((child) => child.table)]),
+  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_TEAM_CASCADE, ORG_CONNECTION_CASCADE].flatMap((cascade) => [
+    cascade.table,
+    ...cascade.children.map((child) => child.table),
+  ]),
   "workspaces",
 ]
 
@@ -772,15 +897,18 @@ export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
 }
 
 function orgDeletionBarrier(ctx: any, orgId: unknown) {
-  return ctx.db.query("org_deletion_barriers")
+  return ctx.db
+    .query("org_deletion_barriers")
     .withIndex("by_org", (query: any) => query.eq("org_id", orgId))
     .unique()
 }
 
 function orgDeletionReceipt(ctx: any, orgKeyHash: string, operationHash: string) {
-  return ctx.db.query("org_deletion_receipts")
+  return ctx.db
+    .query("org_deletion_receipts")
     .withIndex("by_org_operation", (query: any) =>
-      query.eq("org_key_hash", orgKeyHash).eq("operation_hash", operationHash))
+      query.eq("org_key_hash", orgKeyHash).eq("operation_hash", operationHash),
+    )
     .unique()
 }
 
@@ -822,16 +950,19 @@ function orgPurgeRefusal(org: any, confirmClerkOrgId: string) {
  *   prevent.
  */
 async function isOrgQuiescent(ctx: any, org: any, now: number) {
-  const barriers = await ctx.db.query("workgraph_owner_deletion_barriers")
+  const barriers = await ctx.db
+    .query("workgraph_owner_deletion_barriers")
     .withIndex("by_tenant", (query: any) => query.eq("organization_id", org._id))
     .collect()
   if (barriers.some((barrier: any) => barrier.lease_expires_at > now)) return false
-  const workspaces = await ctx.db.query("workspaces")
+  const workspaces = await ctx.db
+    .query("workspaces")
     .withIndex("by_org", (query: any) => query.eq("org_id", org._id))
     .collect()
   for (const workspace of workspaces) {
     if (typeof workspace.workspace_id !== "string") continue
-    const leases = await ctx.db.query("runtime_leases")
+    const leases = await ctx.db
+      .query("runtime_leases")
       .withIndex("by_workspace_id", (query: any) => query.eq("workspace_id", workspace.workspace_id))
       .collect()
     if (leases.some(isLiveLease)) return false
@@ -844,7 +975,8 @@ type BatchState = { remaining: number; deleted: number }
 async function drainScoped(ctx: any, plan: ScopedRows, value: unknown, state: BatchState) {
   if (value === undefined || value === null) return true
   if (state.remaining === 0) return false
-  const candidates = await ctx.db.query(plan.table)
+  const candidates = await ctx.db
+    .query(plan.table)
     .withIndex(plan.index, (query: any) => query.eq(plan.field, value))
     .take(state.remaining + 1)
   const rows = candidates.slice(0, state.remaining)
@@ -856,7 +988,7 @@ async function drainScoped(ctx: any, plan: ScopedRows, value: unknown, state: Ba
 
 async function drainAll(ctx: any, plans: readonly ScopedRows[], value: unknown, state: BatchState) {
   for (const plan of plans) {
-    if (!await drainScoped(ctx, plan, value, state)) return false
+    if (!(await drainScoped(ctx, plan, value, state))) return false
   }
   return true
 }
@@ -872,12 +1004,13 @@ async function drainAll(ctx: any, plans: readonly ScopedRows[], value: unknown, 
 async function drainCascade(ctx: any, plan: ParentCascade, value: unknown, state: BatchState) {
   for (;;) {
     if (state.remaining === 0) return false
-    const [parent] = await ctx.db.query(plan.table)
+    const [parent] = await ctx.db
+      .query(plan.table)
       .withIndex(plan.index, (query: any) => query.eq(plan.field, value))
       .take(1)
     if (!parent) return true
     for (const child of plan.children) {
-      if (!await drainScoped(ctx, child, parent[child.parentKey], state)) return false
+      if (!(await drainScoped(ctx, child, parent[child.parentKey], state))) return false
     }
     if (state.remaining === 0) return false
     await ctx.db.delete(parent._id)
@@ -889,14 +1022,15 @@ async function drainCascade(ctx: any, plan: ParentCascade, value: unknown, state
 async function drainWorkspaces(ctx: any, orgId: unknown, state: BatchState) {
   for (;;) {
     if (state.remaining === 0) return false
-    const [workspace] = await ctx.db.query("workspaces")
+    const [workspace] = await ctx.db
+      .query("workspaces")
       .withIndex("by_org", (query: any) => query.eq("org_id", orgId))
       .take(1)
     if (!workspace) return true
     // Sessions carry their own children, so they cascade before the flat lists.
-    if (!await drainCascade(ctx, ORG_SESSION_CASCADE, workspace._id, state)) return false
-    if (!await drainAll(ctx, ORG_WORKSPACE_DOC_TABLES, workspace._id, state)) return false
-    if (!await drainAll(ctx, ORG_WORKSPACE_PUBLIC_TABLES, workspace.workspace_id, state)) return false
+    if (!(await drainCascade(ctx, ORG_SESSION_CASCADE, workspace._id, state))) return false
+    if (!(await drainAll(ctx, ORG_WORKSPACE_DOC_TABLES, workspace._id, state))) return false
+    if (!(await drainAll(ctx, ORG_WORKSPACE_PUBLIC_TABLES, workspace.workspace_id, state))) return false
     if (state.remaining === 0) return false
     await ctx.db.delete(workspace._id)
     state.deleted += 1
@@ -913,10 +1047,11 @@ async function drainWorkspaces(ctx: any, orgId: unknown, state: BatchState) {
 export async function deleteOrgRecordBatch(ctx: any, org: any, budget: number) {
   const state: BatchState = { remaining: Math.max(1, Math.floor(budget)), deleted: 0 }
   const drain = async () => {
-    if (!await drainWorkspaces(ctx, org._id, state)) return false
-    if (!await drainCascade(ctx, ORG_PROJECT_CASCADE, org._id, state)) return false
-    if (!await drainCascade(ctx, ORG_CONNECTION_CASCADE, org._id, state)) return false
-    if (!await drainAll(ctx, ORG_CLERK_TABLES, org.clerk_org_id, state)) return false
+    if (!(await drainWorkspaces(ctx, org._id, state))) return false
+    if (!(await drainCascade(ctx, ORG_PROJECT_CASCADE, org._id, state))) return false
+    if (!(await drainCascade(ctx, ORG_TEAM_CASCADE, org._id, state))) return false
+    if (!(await drainCascade(ctx, ORG_CONNECTION_CASCADE, org._id, state))) return false
+    if (!(await drainAll(ctx, ORG_CLERK_TABLES, org.clerk_org_id, state))) return false
     return await drainAll(ctx, ORG_DIRECT_TABLES, org._id, state)
   }
   // `complete` is resolved BEFORE the object is built: an object literal
@@ -956,7 +1091,7 @@ export async function prepareOrgDeletion(
     if (barrier.lease_expires_at > now) return { ok: true as const, state: "in_progress" as const, scopeHash }
     await ctx.db.delete(barrier._id)
   }
-  if (!await isOrgQuiescent(ctx, org, now)) return { ok: false as const, reason: "not_quiescent" as const }
+  if (!(await isOrgQuiescent(ctx, org, now))) return { ok: false as const, reason: "not_quiescent" as const }
   await ctx.db.insert("org_deletion_barriers", {
     org_id: orgId,
     operation_hash: operationHash,
@@ -995,15 +1130,18 @@ export async function finalizeOrgDeletion(
   if (refusal) return { ok: false as const, reason: refusal }
   const barrier = await orgDeletionBarrier(ctx, orgId)
   if (
-    !receipt || receipt.state !== "deleting" || receipt.scope_hash !== scopeHash ||
+    !receipt ||
+    receipt.state !== "deleting" ||
+    receipt.scope_hash !== scopeHash ||
     barrier?.operation_hash !== operationHash ||
-    receipt.lease_expires_at <= now || barrier.lease_expires_at <= now
+    receipt.lease_expires_at <= now ||
+    barrier.lease_expires_at <= now
   ) {
     return { ok: false as const, reason: "in_progress" as const }
   }
   // Re-checked every batch, not just at prepare: a sandbox that comes back up
   // mid-purge must halt it.
-  if (!await isOrgQuiescent(ctx, org, now)) return { ok: false as const, reason: "not_quiescent" as const }
+  if (!(await isOrgQuiescent(ctx, org, now))) return { ok: false as const, reason: "not_quiescent" as const }
 
   const batch = await deleteOrgRecordBatch(ctx, org, ORG_DELETION_BATCH_SIZE)
   const recordCount = (receipt.deleted_record_count ?? 0) + batch.deleted
@@ -1031,22 +1169,18 @@ export async function finalizeOrgDeletion(
   return { ok: true as const, result }
 }
 
-export async function renewOrgDeletion(
-  ctx: any,
-  orgId: unknown,
-  operationId: string,
-  scopeHash: string,
-  now: number,
-) {
+export async function renewOrgDeletion(ctx: any, orgId: unknown, operationId: string, scopeHash: string, now: number) {
   const org = await ctx.db.get(orgId)
   if (!org) return { ok: false as const, reason: "org_not_found" as const }
   const operationHash = await sha256Hex(operationId)
   const receipt = await orgDeletionReceipt(ctx, await orgKey(org), operationHash)
   const barrier = await orgDeletionBarrier(ctx, orgId)
   if (
-    receipt?.state !== "deleting" || receipt.scope_hash !== scopeHash ||
+    receipt?.state !== "deleting" ||
+    receipt.scope_hash !== scopeHash ||
     barrier?.operation_hash !== operationHash ||
-    receipt.lease_expires_at <= now || barrier.lease_expires_at <= now
+    receipt.lease_expires_at <= now ||
+    barrier.lease_expires_at <= now
   ) {
     return { ok: false as const, reason: "in_progress" as const }
   }
@@ -1161,13 +1295,17 @@ export const purgeDeletedOrgs = cronMutation({
     // constant, not by however deep the purge queue happens to be. It only
     // caps the REPORTED `due` count — the handler purges one org per tick
     // regardless, and the oldest is always inside the window.
-    const due = (await ctx.db.query("orgs")
-      .withIndex("by_purge_requested_at", (q: any) => q.gt("purge_requested_at", undefined).lte("purge_requested_at", cutoff))
-      .take(ORG_PURGE_QUEUE_SCAN_LIMIT))
-      .filter((org: any) =>
-        typeof org.deleted_at === "number" &&
-        typeof org.clerk_org_id === "string" &&
-        org.clerk_org_id.length > 0)
+    const due = (
+      await ctx.db
+        .query("orgs")
+        .withIndex("by_purge_requested_at", (q: any) =>
+          q.gt("purge_requested_at", undefined).lte("purge_requested_at", cutoff),
+        )
+        .take(ORG_PURGE_QUEUE_SCAN_LIMIT)
+    ).filter(
+      (org: any) =>
+        typeof org.deleted_at === "number" && typeof org.clerk_org_id === "string" && org.clerk_org_id.length > 0,
+    )
     const org = due[0]
     if (!org) return { due: 0, state: "idle" as string, deleted: 0 }
 

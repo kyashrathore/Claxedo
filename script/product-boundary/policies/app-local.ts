@@ -108,22 +108,27 @@ export const appLocal: Policy = {
   // Session markdown first-fold preload, environment-card persistence, Thinking
   // visibility hold, provider-settings detect/disconnect logic, models-settings
   // logic, provider setup row, and the settings-providers dialog opener add
-  // eight named owners on the already-reachable session/settings path:
-  // 897 + 8 - 3 = 902 modules, still no package edge.
-  // Universal Goal adds ten focused owners on the already-reachable session
-  // path: composer intent/controller, Goal submission/draft lifecycle,
-  // authority cache/query/controller, runtime client/event ingress, and the
-  // active-Goal dock. The reviewed closure is 902 + 10 = 912 modules with no
-  // new package edge.
-  // The review-fix pass adds two focused owners on the same session path:
-  // the shared runtime JSON response reader (agent-runtime-json.ts) and the
-  // Stop fallback (submit-abort.ts): 912 + 2 = 914 modules, no new package
-  // edge.
-  // The composer cloud-submit model gate carved out of submit.ts (the size
-  // ratchet caps submit.ts at 800 lines) adds one focused owner,
-  // composer/ui/submit-model-gate.ts: 914 + 1 = 915 modules, no new package
-  // edge.
-  ceilings: { modules: 915, packages: 41 },
+  // eight named owners (897 + 8 = 905). Tenant-aware multiplayer adds four
+  // already-reachable local owners: 905 + 4 = 909. Org→Team product UI adds six
+  // local owners (settings org-team section + API, session share API + Share
+  // control, rail org/team switcher): 909 + 6 = 915 modules.
+  // Cloud workspace create routes through AccountPort via workspace-create-api:
+  // 915 + 1 = 916. Shared AccountPort bridge (`hosted-control-call`) plus
+  // connection mint/refresh and workspace.resolve: 916 + 1 = 917.
+  // Integrations, documents, and WorkGraph AccountPort adapters: 917 + 3 = 920.
+  // Control-plane AccountPort fetch adapter: 920 + 1 = 921.
+  // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
+  // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
+  // modules. Provider-settings translations are split into one lazy feature
+  // dictionary per non-English locale: 923 + 16 = 939. Removing the retired
+  // local UI extension view, registry, and loader subtracts three modules:
+  // 939 - 3 = 936, still no package edge.
+  // The Goal-mode merge re-lands the universal-Goal session owners on top of
+  // the local/cloud split: composer Goal intent/submission/draft lifecycle,
+  // Goal authority cache/query/controller, runtime Goal client/event ingress,
+  // the active-Goal dock, and the review-pass Stop fallback + shared JSON
+  // reader: 936 + 13 = 949 modules, no new package edge.
+  ceilings: { modules: 949, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

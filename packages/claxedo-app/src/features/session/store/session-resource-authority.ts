@@ -42,6 +42,11 @@ export function sessionResourceAuthorityScope(input: {
   }
 }
 
+export function sessionHydrationAuthorityKey(ref: SessionRef | undefined) {
+  if (!ref) return "unresolved"
+  return JSON.stringify(sessionRefAuthority(ref))
+}
+
 function sandboxAuthority(ref: SessionRef) {
   const sandbox = ref.toolSandbox
   if (!sandbox) return null

@@ -933,6 +933,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   let sessionDirectory = DIR
   let harnessPollCount = 0
   let harnessGetPollCount = 0
+  // Pending permission/question requests — what a real engine returns from
+  // GET /permission and GET /question. Specs drive these via `emit({type:
+  // "permission.asked"|"question.asked", ...})` and settle them via
+  // `permission.replied` / `question.replied` / `question.rejected`. Without
+  // this, every session-meta hydrate (GET /permission → []) overwrites the
+  // SSE-upserted dock cache and the permission/question docks never stick.
+  let pendingPermissions: Array<Record<string, unknown>> = []
+  let pendingQuestions: Array<Record<string, unknown>> = []
+  // Same contract as permissions: GET /session/:id/todo must reflect the
+  // latest `todo.updated` SSE payload, or a later todo hydrate overwrites the
+  // dock with [].
+  let sessionTodos: Array<Record<string, unknown>> = []
 
   page.on("console", (message) => {
     if (message.type() === "error" || message.type() === "warning") {
@@ -1022,6 +1034,47 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
   const emit = (payload: MockEvent, directory: string = sessionDirectory) => {
     persistEmittedPart(payload)
+    const type = (payload as { type?: string }).type
+    const properties = (payload as { properties?: Record<string, unknown> }).properties ?? {}
+    if (type === "permission.asked") {
+      const id = typeof properties.id === "string" ? properties.id : undefined
+      if (id) {
+        pendingPermissions = [
+          ...pendingPermissions.filter((item) => item.id !== id),
+          properties,
+        ]
+      }
+    } else if (type === "permission.replied") {
+      const requestID = typeof properties.requestID === "string" ? properties.requestID : undefined
+      if (requestID) pendingPermissions = pendingPermissions.filter((item) => item.id !== requestID)
+    } else if (type === "question.asked") {
+      const id = typeof properties.id === "string" ? properties.id : undefined
+      if (id) {
+        pendingQuestions = [
+          ...pendingQuestions.filter((item) => item.id !== id),
+          properties,
+        ]
+      }
+    } else if (type === "question.replied" || type === "question.rejected") {
+      const requestID = typeof properties.requestID === "string" ? properties.requestID : undefined
+      if (requestID) pendingQuestions = pendingQuestions.filter((item) => item.id !== requestID)
+    } else if (type === "todo.updated") {
+      const todos = properties.todos
+      sessionTodos = Array.isArray(todos) ? (todos as Array<Record<string, unknown>>) : []
+    } else if (type === "session.status") {
+      // Keep GET /session/status in lockstep with the SSE frame (same contract as
+      // driveTurn). Specs that emit busy then todo.updated otherwise lose the
+      // busy bit on the next status poll, todoState returns "clear", and the
+      // dock wipes itself to [].
+      const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
+      const status = properties.status as LiveSessionStatus | undefined
+      if (sessionID && status && typeof status === "object" && typeof (status as { type?: unknown }).type === "string") {
+        setSessionStatus(sessionID, status)
+      }
+    } else if (type === "session.idle") {
+      const sessionID = typeof properties.sessionID === "string" ? properties.sessionID : undefined
+      if (sessionID) setSessionStatus(sessionID)
+    }
     compatFanout.emit(directory, payload)
   }
   // See `wrEventsHandler` below for why flat frames additionally enter a
@@ -1931,12 +1984,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/permission**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/permission") return r.fallback()
-    return json(r, [])
+    return json(r, pendingPermissions)
   })
   await page.route("**/question**", (r) => {
     if (!api(r)) return r.continue()
     if (new URL(r.request().url()).pathname !== "/question") return r.fallback()
-    return json(r, [])
+    return json(r, pendingQuestions)
   })
 
   // Permission / question MUTATION routes. These had no shared handler at all — only
@@ -2521,7 +2574,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(route, sessionConfig())
   })
 
-  await page.route("**/session/*/todo**", (r) => (api(r) ? json(r, []) : r.continue()))
+  await page.route("**/session/*/todo**", (r) => (api(r) ? json(r, sessionTodos) : r.continue()))
 
   await page.route("**/session/*/capabilities**", (r) =>
     api(r)
@@ -2845,9 +2898,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       // app expects a `HarnessModeReport` object. The composer then reads `modes`
       // off an array and the whole cloud lane renders its error boundary.
       if (!new URL(r.request().url()).pathname.endsWith("/permission")) return r.fallback()
-      return json(r, [])
+      return json(r, pendingPermissions)
     })
-    await page.route(`${base}/question**`, (r) => json(r, []))
+    await page.route(`${base}/question**`, (r) => json(r, pendingQuestions))
     await page.route(`${base}/provider`, (r) => json(r, cloudProviderResponse()))
     await page.route(`${base}/provider?**`, (r) => json(r, cloudProviderResponse()))
     await page.route(`${base}/provider/auth`, (r) => json(r, {}))
@@ -2986,7 +3039,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         configOptions: cloudHarness !== "opencode" && cloudHarness !== "pi",
       }),
     )
-    await page.route(`${base}/session/*/todo**`, (r) => json(r, []))
+    await page.route(`${base}/session/*/todo**`, (r) => json(r, sessionTodos))
     await page.route(`${base}/session/*/message**`, (r) => json(r, cloudMessages))
     await contractRoute(page, `${base}/session/*/prompt_async**`, async (route) => {
       if (!api(route)) return route.continue()

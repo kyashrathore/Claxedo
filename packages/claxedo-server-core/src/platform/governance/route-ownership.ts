@@ -116,6 +116,11 @@ const ROUTE_RULES = [
       "/api/claxedo/session",
       "/api/control",
       "/api/workspace",
+      // Authority oracle the isolated runtime CALLS; it is served by the
+      // central server / Worker, never proxied to a runtime. Classifying it
+      // central keeps proxy.ts from forwarding an authority question to the
+      // very runtime whose access it is meant to adjudicate.
+      "/api/runtime-authority",
       "/api/claxedo/network-policy",
       "/documents",
       "/api/workgraph",

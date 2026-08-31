@@ -257,6 +257,7 @@ describe("query persister", () => {
     target.setItem(queryPersisterKey, JSON.stringify({
       buster: "build-a",
       timestamp: Date.now(),
+      scope: "anonymous",
       clientState: {
         mutations: [],
         queries: [
@@ -311,6 +312,7 @@ describe("query persister", () => {
     target.setItem(queryPersisterKey, JSON.stringify({
       buster: "build-a",
       timestamp: Date.now(),
+      scope: "anonymous",
       clientState: {
         mutations: [],
         queries: [
@@ -354,6 +356,70 @@ describe("query persister", () => {
 
     expect(queryClient.getQueryData(["controlPlane", "base", "projects"])).toBeUndefined()
     expect(target.getItem(queryPersisterKey)).toBeNull()
+  })
+
+  test("never restores a durable snapshot from another principal", async () => {
+    const target = storage()
+    await installQueryPersister({
+      storage: target,
+      buster: "build-a",
+      throttleTime: 0,
+      scope: () => "signed:user_a",
+    })?.restore
+    queryClient.setQueryData(["session", "default", "row", "/private", "ses_private"], {
+      id: "ses_private",
+    })
+    await tick()
+    expect(target.getItem(queryPersisterKey)).toContain('"scope":"signed:user_a"')
+
+    resetQueryPersisterForTest()
+    queryClient.clear()
+    await installQueryPersister({
+      storage: target,
+      buster: "build-a",
+      throttleTime: 0,
+      scope: () => "signed:user_b",
+    })?.restore
+
+    expect(queryClient.getQueryData(["session", "default", "row", "/private", "ses_private"])).toBeUndefined()
+    expect(target.getItem(queryPersisterKey)).toBeNull()
+  })
+
+  test("a principal change while IndexedDB restore is pending cannot hydrate the old snapshot", async () => {
+    const target = storage()
+    await installQueryPersister({
+      storage: target,
+      buster: "build-a",
+      throttleTime: 0,
+      scope: () => "signed:user_a",
+    })?.restore
+    const privateKey = ["session", "default", "row", "/private", "ses_private"] as const
+    queryClient.setQueryData(privateKey, { id: "ses_private", owner: "user_a" })
+    await tick()
+    resetQueryPersisterForTest()
+    queryClient.clear()
+
+    let releaseRead: (() => void) | undefined
+    const readReleased = new Promise<void>((resolve) => { releaseRead = resolve })
+    let scope = "signed:user_a"
+    const restore = installQueryPersister({
+      storage: {
+        ...target,
+        async getItem(key: string) {
+          const value = target.getItem(key)
+          await readReleased
+          return value
+        },
+      },
+      buster: "build-a",
+      throttleTime: 0,
+      scope: () => scope,
+    })!.restore
+    scope = "signed:user_b"
+    releaseRead?.()
+    await restore
+
+    expect(queryClient.getQueryData(privateKey)).toBeUndefined()
   })
 
   test("missing localStorage does not throw", () => {

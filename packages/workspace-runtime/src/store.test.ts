@@ -107,6 +107,26 @@ afterEach(() => {
 })
 
 describe("RuntimeStore", () => {
+  it("turn leases survive runtime-store reconstruction", () => {
+    const root = tmp()
+    const first = new RuntimeStore(root)
+    const reconstructed = new RuntimeStore(root)
+    const lease = first.acquireTurnLease("ses_durable_turn")
+    assert.equal(typeof lease, "string")
+    assert.equal(reconstructed.acquireTurnLease("ses_durable_turn"), undefined)
+
+    reconstructed.recoverBusySessions()
+    const recoveredLease = reconstructed.acquireTurnLease("ses_durable_turn")
+    assert.equal(typeof recoveredLease, "string")
+
+    // A delayed release from the pre-recovery owner must not delete the new
+    // runtime's lease.
+    first.releaseTurnLease("ses_durable_turn", lease!)
+    assert.equal(reconstructed.acquireTurnLease("ses_durable_turn"), undefined)
+    reconstructed.releaseTurnLease("ses_durable_turn", recoveredLease!)
+    assert.equal(typeof reconstructed.acquireTurnLease("ses_durable_turn"), "string")
+  })
+
   it("creates new session storage with harness columns instead of runner columns", () => {
     const store = new RuntimeStore(tmp())
     const columns = sessionColumns(store)

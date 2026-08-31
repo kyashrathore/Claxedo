@@ -1,6 +1,12 @@
 import { For, Show, createMemo, createSignal } from "solid-js"
 import { ClaxedoIcon as Icon, type ClaxedoIconProps } from "@/ui/controls/claxedo-icon"
-import { NavigationRow, NavigationRowStatusGutter, NavigationStatusDot, type SwitcherStatus } from "@/features/session/app-ports"
+import {
+  NavigationRow,
+  NavigationRowGlyph,
+  NavigationRowStatusGutter,
+  NavigationStatusDot,
+  type SwitcherStatus,
+} from "@/features/session/app-ports"
 import {
   type NavigationDragStart,
   type SessionNavigationRow,
@@ -19,6 +25,7 @@ export type SessionNavigationDisplayRow = {
     icon: ClaxedoIconProps["name"]
     label: string
   }
+  owner?: SessionNavigationRow["owner"]
 }
 
 export type SessionNavigationProps = {
@@ -61,6 +68,11 @@ function SessionNavigationItem(props: {
   const [archiving, setArchiving] = createSignal(false)
   const [engaged, setEngaged] = createSignal(false)
   const activate = () => props.onActivate(props.row)
+  const owner = createMemo(() => props.row.owner)
+  // Nested shared rows: owner mark lives in the absolute glyph column (left-4),
+  // same slot as the status dot — not inside the overflow-hidden title flex.
+  const ownerInGlyph = createMemo(() => !!props.row.nested && !!owner() && status() === "idle")
+  const ownerInline = createMemo(() => !props.row.nested && !!owner())
 
   return (
     <NavigationRow
@@ -85,9 +97,20 @@ function SessionNavigationItem(props: {
       onDragStart={props.onDragStart}
     >
       <Show when={props.row.nested}>
-        <NavigationRowStatusGutter status={status()} />
+        <Show when={status() !== "idle"} fallback={
+          <Show when={ownerInGlyph()}>
+            <NavigationRowGlyph>
+              <SessionOwnerMark owner={owner()!} />
+            </NavigationRowGlyph>
+          </Show>
+        }>
+          <NavigationRowStatusGutter status={status()} />
+        </Show>
       </Show>
-      <div class="relative z-[1] pointer-events-none flex items-baseline gap-1.5 flex-1 min-w-0 overflow-hidden">
+      <div class="relative z-[1] pointer-events-none flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+        <Show when={ownerInline()}>
+          <SessionOwnerMark owner={owner()!} />
+        </Show>
         <span
           data-slot="session-navigation-title"
           class="ui-session-navigation-title text-compact leading-tight truncate flex-1 min-w-0"
@@ -156,4 +179,42 @@ function SessionNavigationItem(props: {
       </div>
     </NavigationRow>
   )
+}
+
+function SessionOwnerMark(props: { owner: NonNullable<SessionNavigationDisplayRow["owner"]> }) {
+  const letter = ownerInitials(props.owner.name)
+  return (
+    <span
+      data-testid="rail-sidebar-session-owner-avatar"
+      data-slot="session-navigation-owner-avatar"
+      class="ui-session-navigation-owner-avatar"
+      aria-label={props.owner.name ?? "Session owner"}
+      title={props.owner.name ?? "Session owner"}
+    >
+      {/* SVG text + central baseline: CSS flex still leaves Latin caps optically low. */}
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+        <circle cx="8" cy="8" r="8" fill="var(--surface-info-base)" />
+        <text
+          x="8"
+          y="7.6"
+          text-anchor="middle"
+          dominant-baseline="central"
+          fill="#fff"
+          font-size="9"
+          font-weight="700"
+          font-family="ui-sans-serif, system-ui, sans-serif"
+        >
+          {letter}
+        </text>
+      </svg>
+    </span>
+  )
+}
+
+function ownerInitials(name: string | undefined) {
+  const trimmed = name?.trim()
+  if (!trimmed) return "?"
+  const parts = trimmed.split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0]![0] ?? ""}${parts[1]![0] ?? ""}`.toUpperCase()
+  return trimmed.slice(0, 1).toUpperCase()
 }

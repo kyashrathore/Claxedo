@@ -2,6 +2,7 @@ import { describe, expect, test, vi } from "vitest"
 import { createControlPlaneRelayProvider } from "."
 
 describe("control-plane relay provider", () => {
+  const actor = { actorId: "actor_1", actorKind: "human" as const }
   test("resolves the configured relay endpoint for a workspace home region", () => {
     const provider = createControlPlaneRelayProvider({
       relay: {
@@ -70,6 +71,8 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintRuntimeAccessToken({
+      ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -82,6 +85,7 @@ describe("control-plane relay provider", () => {
       jti: "rat_jti",
     })
     expect(runtimeAccessTokenSigner).toHaveBeenCalledWith({
+      ...actor,
       subject: "user_1",
       orgId: "org_1",
       workspaceId: "ws_1",
@@ -90,6 +94,8 @@ describe("control-plane relay provider", () => {
       ttlSeconds: 15 * 60, // 60s requested, below RAT minimum → clamped up
     })
     expect(recordRuntimeAccessToken).toHaveBeenCalledWith({
+      ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
@@ -120,7 +126,15 @@ describe("control-plane relay provider", () => {
       targetLookup: vi.fn(),
       recordRuntimeAccessToken: vi.fn(),
     })
-    const base = { workspaceId: "ws_1", hostId: "host_1", subject: "user_1", orgId: "org_1" }
+    const base = {
+      ...actor,
+      principalKind: "user" as const,
+      workspaceId: "ws_1",
+      hostId: "host_1",
+      subject: "user_1",
+      orgId: "org_1",
+      role: "viewer" as const,
+    }
 
     // In-bounds requests are honored exactly.
     await provider.mintRuntimeAccessToken({ ...base, ttlMs: 20 * 60_000 })
@@ -139,7 +153,7 @@ describe("control-plane relay provider", () => {
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith(expect.not.objectContaining({ ttlSeconds: expect.anything() }))
   })
 
-  test("fails closed without org and defaults runtime token role to viewer", async () => {
+  test("fails closed without org and preserves the explicit runtime role", async () => {
     const runtimeAccessTokenSigner = vi.fn(async () => ({
       runtimeAccessToken: "rat_1",
       tokenExpiresAt: 2_000,
@@ -154,22 +168,29 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintRuntimeAccessToken({
+      ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
+      role: "viewer",
       ttlMs: 60_000,
     })).rejects.toThrow("org id required")
 
     await provider.mintRuntimeAccessToken({
+      ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
       orgId: "org_1",
+      role: "viewer",
       ttlMs: 60_000,
     })
 
     expect(runtimeAccessTokenSigner).toHaveBeenCalledTimes(1)
     expect(runtimeAccessTokenSigner).toHaveBeenLastCalledWith({
+      ...actor,
       subject: "user_1",
       orgId: "org_1",
       workspaceId: "ws_1",
@@ -195,10 +216,13 @@ describe("control-plane relay provider", () => {
     })
 
     await expect(provider.mintRuntimeAccessToken({
+      ...actor,
+      principalKind: "user",
       workspaceId: "ws_1",
       hostId: "host_1",
       subject: "user_1",
       orgId: "org_1",
+      role: "viewer",
       ttlMs: 60_000,
     })).rejects.toThrow("authority unavailable")
   })

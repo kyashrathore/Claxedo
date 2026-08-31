@@ -224,4 +224,17 @@ describe("session title projection", () => {
       dispose()
     })
   })
+
+  test("clear removes inventory, provisional, and canonical titles for a principal transition", () => {
+    const projection = createSessionTitleProjection()
+    projection.replaceInventory([row({ id: "ses_private", title: "Inventory", directory: "/private" })])
+    projection.publishProvisional({ sessionId: "ses_draft", directory: "/private", title: "Draft" })
+    projection.publishCanonical({ sessionId: "ses_canonical", directory: "/private", title: "Canonical" })
+
+    projection.clear()
+
+    expect(projection.title({ sessionId: "ses_private", directory: "/private" })).toBeUndefined()
+    expect(projection.title({ sessionId: "ses_draft", directory: "/private" })).toBeUndefined()
+    expect(projection.title({ sessionId: "ses_canonical", directory: "/private" })).toBeUndefined()
+  })
 })

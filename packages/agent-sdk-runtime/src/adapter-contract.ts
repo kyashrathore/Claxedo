@@ -64,6 +64,14 @@ export type AgentHandoffSessionOptions = {
   system: string
 }
 
+export type AgentPreparedHandoffSession = {
+  id: string
+  agentSessionId?: string
+  ownerKey?: string | null
+  /** Idempotently release only the newly-created target-native resources. */
+  rollback(): Promise<void>
+}
+
 export { AgentMessagePageError } from "./message-page"
 export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 
@@ -75,10 +83,15 @@ export interface AgentHarnessAdapterCore {
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
-  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<{ id: string; agentSessionId?: string; ownerKey?: string | null }>
+  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
+  /** Release the no-longer-authoritative source resources after a handoff commits. */
+  releaseHandoffSource?(id: string, agentSessionId: string, ownerKey: string | null, directory: RuntimeDirectory): Promise<void>
+  /** Apply provider/process effects and return the accepted session without writing the RuntimeStore. */
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
   getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
+  /** Apply the runtime-supplied complete config and return the accepted config without writing the RuntimeStore. */
   updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>
+  /** Release provider/process resources without deleting the RuntimeStore session. */
   deleteSession(id: string, directory: RuntimeDirectory): Promise<void>
 
   readHarnessCapabilities(directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> | HarnessCapabilities

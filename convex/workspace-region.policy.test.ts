@@ -29,11 +29,20 @@ async function seedWorkspace(
   userId: string,
   overrides: Record<string, unknown>,
 ) {
-  return await t.run(async (ctx) =>
-    ctx.db.insert(
+  return await t.run(async (ctx) => {
+    const orgId = await ctx.db.insert(
+      "orgs",
+      stamped({ name: "Personal", kind: "personal", owner_user_id: userId }) as never,
+    )
+    await ctx.db.insert(
+      "org_memberships",
+      stamped({ org_id: orgId, user_id: userId, role: "owner" }) as never,
+    )
+    return await ctx.db.insert(
       "workspaces",
       stamped({
         workspace_id: "ws_1",
+        org_id: orgId,
         owner_user_id: userId,
         backing: "local-worktree",
         access: "user-hosted",
@@ -42,14 +51,58 @@ async function seedWorkspace(
         ...overrides,
       }) as never,
     )
-  )
+  })
+}
+
+async function seedCanonicalWorkspace(
+  t: ReturnType<typeof convexTest>,
+  userId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const workspaceId = typeof overrides.workspace_id === "string" ? overrides.workspace_id : "ws_1"
+  const projectId = typeof overrides.project_id === "string" ? overrides.project_id : `prj_${workspaceId}`
+  const repoUrl = typeof overrides.repo_url === "string" ? overrides.repo_url : undefined
+  const repoKey = repoUrl ? "github.com/acme/demo" : `workspace:${workspaceId}`
+
+  return await t.run(async (ctx) => {
+    const orgId = await ctx.db.insert(
+      "orgs",
+      stamped({ name: "Personal", kind: "personal", owner_user_id: userId }) as never,
+    )
+    await ctx.db.insert(
+      "org_memberships",
+      stamped({ org_id: orgId, user_id: userId, role: "owner" }) as never,
+    )
+    await ctx.db.insert(
+      "projects",
+      stamped({ project_id: projectId, org_id: orgId, repo_key: repoKey, owner_user_id: userId }) as never,
+    )
+    await ctx.db.insert(
+      "project_memberships",
+      stamped({ project_id: projectId, user_id: userId, role: "owner" }) as never,
+    )
+    return await ctx.db.insert(
+      "workspaces",
+      stamped({
+        workspace_id: workspaceId,
+        org_id: orgId,
+        owner_user_id: userId,
+        project_id: projectId,
+        backing: "local-worktree",
+        access: "user-hosted",
+        display_name: "old",
+        home_region: "eu-west",
+        ...overrides,
+      }) as never,
+    )
+  })
 }
 
 describe("Convex workspace region policy", () => {
   test("re-registering a shared workspace preserves its existing home_region", async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t)
-    await seedWorkspace(t, userId, {})
+    await seedCanonicalWorkspace(t, userId)
     const asUser = t.withIdentity({ tokenIdentifier: "token_1" })
 
     await expect(
@@ -111,11 +164,15 @@ describe("Convex workspace region policy", () => {
       ctx.db.query("workspaces").withIndex("by_workspace_id", (q) => q.eq("workspace_id", "ws_new")).unique()
     )
     expect(inserted).not.toHaveProperty("home_region")
-    expect(inserted).toMatchObject({ project_id: "prj_ws_new" })
+    expect(inserted?.project_id).toMatch(/^prj_/)
     const org = await t.run(async (ctx) =>
       ctx.db.query("orgs").withIndex("by_owner", (q) => q.eq("owner_user_id", userId)).unique()
     )
     expect(inserted!.org_id).toBe(org!._id)
+    const localProject = await t.run(async (ctx) =>
+      ctx.db.query("projects").withIndex("by_project_id", (q) => q.eq("project_id", inserted!.project_id)).unique()
+    )
+    expect(localProject).toMatchObject({ org_id: org!._id, repo_key: "workspace:ws_new" })
 
     const cloudUserId = await seedUser(t, "token_cloud")
     const asCloudUser = t.withIdentity({ tokenIdentifier: "token_cloud" })
@@ -127,42 +184,62 @@ describe("Convex workspace region policy", () => {
       ctx.db.query("workspaces").withIndex("by_workspace_id", (q) => q.eq("workspace_id", "ws_cloud_new")).unique()
     )
     expect(cloudWorkspace).not.toHaveProperty("home_region")
-    expect(cloudWorkspace).toMatchObject({ project_id: "prj_ws_cloud_new" })
+    expect(cloudWorkspace?.project_id).toMatch(/^prj_/)
     const cloudOrg = await t.run(async (ctx) =>
       ctx.db.query("orgs").withIndex("by_owner", (q) => q.eq("owner_user_id", cloudUserId)).unique()
     )
     expect(cloudWorkspace!.org_id).toBe(cloudOrg!._id)
+    const cloudProject = await t.run(async (ctx) =>
+      ctx.db.query("projects").withIndex("by_project_id", (q) => q.eq("project_id", cloudWorkspace!.project_id)).unique()
+    )
+    expect(cloudProject).toMatchObject({ org_id: cloudOrg!._id, repo_key: "workspace:ws_cloud_new" })
   })
 
-  test("re-registering an existing local workspace backfills org owner and project identity", async () => {
+  test("fails closed for a legacy workspace missing tenant identity", async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t)
-    await seedWorkspace(t, userId, { workspace_id: "ws_legacy", home_region: undefined })
+    await t.run(async (ctx) =>
+      ctx.db.insert(
+        "workspaces",
+        stamped({
+          workspace_id: "ws_legacy",
+          owner_user_id: userId,
+          backing: "local-worktree",
+          access: "user-hosted",
+          display_name: "old",
+        }) as never,
+      )
+    )
     const asUser = t.withIdentity({ tokenIdentifier: "token_1" })
 
-    await asUser.mutation(api.workspaces.registerLocalForSharing, {
-      workspace_id: "ws_legacy",
-      display_name: "new",
-    } as never)
+    await expect(
+      asUser.mutation(api.workspaces.registerLocalForSharing, {
+        workspace_id: "ws_legacy",
+        display_name: "new",
+      } as never),
+    ).rejects.toThrow("Workspace not found")
 
     const workspace = await t.run(async (ctx) =>
       ctx.db.query("workspaces").withIndex("by_workspace_id", (q) => q.eq("workspace_id", "ws_legacy")).unique()
     )
-    const org = await t.run(async (ctx) =>
-      ctx.db.query("orgs").withIndex("by_owner", (q) => q.eq("owner_user_id", userId)).unique()
-    )
     expect(workspace).toMatchObject({
-      org_id: org!._id,
       owner_user_id: userId,
-      project_id: "prj_ws_legacy",
-      display_name: "new",
+      display_name: "old",
+      updated_at: 1,
     })
+    expect(workspace).not.toHaveProperty("org_id")
+    expect(workspace).not.toHaveProperty("project_id")
+    const [orgs, projects] = await t.run(async (ctx) =>
+      Promise.all([ctx.db.query("orgs").collect(), ctx.db.query("projects").collect()])
+    )
+    expect(orgs).toEqual([])
+    expect(projects).toEqual([])
   })
 
   test("refuses to flip the backing of an existing cloud workspace (typed conflict)", async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t)
-    await seedWorkspace(t, userId, {
+    await seedCanonicalWorkspace(t, userId, {
       backing: "cloud-vm",
       access: "cloud",
       display_name: "cloud workspace",
@@ -194,7 +271,7 @@ describe("Convex workspace region policy", () => {
   test("re-registration patches only supplied fields — never erases metadata with undefined", async () => {
     const t = convexTest(schema, modules)
     const userId = await seedUser(t)
-    await seedWorkspace(t, userId, {
+    await seedCanonicalWorkspace(t, userId, {
       project_id: "prj_ws_1",
       repo_url: "https://github.com/acme/demo.git",
       repo_name: "demo",

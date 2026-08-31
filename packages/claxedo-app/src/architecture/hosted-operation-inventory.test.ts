@@ -50,8 +50,16 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Local route shell. Unit 9 replaces its authFetch use with the injected local transport; it never calls Hosted Server.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
     "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
+  "features/workspaces/ui/dialogs/create-cloud-project.tsx":
+    "Cloud create goes through workspace-create-api (AccountPort). Remaining api use is local driver listing on the sidecar.",
   "features/settings/ui/providers.tsx":
     "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest; hosted account identity stays on account-section.",
+  "features/settings/ui/sandbox-section.tsx":
+    "Sandbox driver settings talk only to the local sidecar `/api/workspace/drivers*`; not a Hosted Server AccountPort surface.",
+  "features/onboarding/sandbox-provider-query.ts":
+    "Onboarding sandbox read path is local-sidecar drivers; credentials never leave the laptop via AccountPort.",
+  "features/onboarding/sandbox-provider-api.ts":
+    "Onboarding sandbox write path is local-sidecar drivers; Hosted Server does not own these credentials.",
 }
 
 function sourceFiles(root: string) {

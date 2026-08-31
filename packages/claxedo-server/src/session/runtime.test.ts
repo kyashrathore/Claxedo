@@ -159,6 +159,22 @@ async function eventually(fn: () => void) {
 }
 
 describe("createCentralSessionRuntime", () => {
+  test("uses the injected model backend as the credential authority for explicit session models", async () => {
+    const modelBackend = vi.fn(successfulModelBackend())
+    const runtime = createCentralSessionRuntime(services(), { modelBackend })
+
+    await expect(runtime.createHybridSession({
+      sessionId: "session-injected-model",
+      title: "Injected model",
+      model: { providerID: "openai", modelID: "gpt-5" },
+      requireModel: true,
+    })).resolves.toEqual({ id: "session-injected-model" })
+    expect(modelBackend).toHaveBeenCalledWith({
+      sessionId: "session-injected-model",
+      model: { providerID: "openai", modelID: "gpt-5" },
+    })
+  })
+
   test("admits a cloud worktree before binding and reuses exact retry identity", async () => {
     const svc = services()
     let meta: Awaited<ReturnType<typeof svc.projectionStore.session_meta>>
@@ -659,7 +675,7 @@ describe("createCentralSessionRuntime", () => {
     turns.dispose()
   })
 
-  test("mints the signed subject at the central message entry point", async () => {
+  test("authorizes signed central reads and writes before minting the turn subject", async () => {
     const svc = services()
     const sessionId = "signed-session"
     svc.projectionStore.session_meta = vi.fn(async () => ({
@@ -672,7 +688,10 @@ describe("createCentralSessionRuntime", () => {
       tags: [],
       attachments: [],
     }))
-    const authority = { authorizeSessionRead: vi.fn(async () => {}) }
+    const authority = {
+      authorizeSessionRead: vi.fn(async () => {}),
+      authorizeSessionWrite: vi.fn(async () => {}),
+    }
     svc.authority = authority as never
     const turns = createConnectionTurnCredentials({ random: () => "signed-turn" })
     const control = createCentralControlApp(svc, {
@@ -684,6 +703,11 @@ describe("createCentralSessionRuntime", () => {
       turnCredentials: turns,
     })
     await control.runtime.createHybridSession({ title: "Signed" })
+
+    const read = await control.app.request(`http://relay.example/api/control/session/${sessionId}`, {
+      headers: { authorization: "Bearer signed-token" },
+    })
+    expect(read.status).toBe(200)
 
     const res = await control.app.request(`http://relay.example/api/control/session/${sessionId}/message`, {
       method: "POST",
@@ -699,6 +723,12 @@ describe("createCentralSessionRuntime", () => {
     expect(res.status).toBe(200)
     expect(turns.resolve("signed-turn")).toEqual({ sessionId, subject: "user-a" })
     expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({
+      user: expect.objectContaining({ subject: "user-a" }),
+    }), {
+      sessionId,
+      workspaceId: "workspace-1",
+    })
+    expect(authority.authorizeSessionWrite).toHaveBeenCalledWith(expect.objectContaining({
       user: expect.objectContaining({ subject: "user-a" }),
     }), {
       sessionId,
@@ -733,6 +763,49 @@ describe("createCentralSessionRuntime", () => {
         title: "exec: printf titled",
       })
     })
+  })
+
+  test("stamps authoritative central identity on compat session updates", async () => {
+    const runtime = createCentralSessionRuntime(services())
+    const session = await runtime.createHybridSession({ title: "Central", workspaceId: "ws_1" })
+    const events: Array<{ payload: { type: string; properties?: unknown } }> = []
+    runtime.eventHub.subscribeGlobal((event) => events.push(event))
+
+    runtime.publishGlobal({
+      directory: session.id,
+      payload: {
+        id: `session.updated:${session.id}`,
+        type: "session.updated",
+        properties: {
+          sessionID: session.id,
+          info: {
+            id: session.id,
+            slug: session.id,
+            projectID: session.id,
+            directory: session.id,
+            title: "Central title",
+            version: "local",
+            time: { created: 1, updated: 2 },
+          },
+        },
+      },
+    })
+
+    expect(events).toContainEqual(expect.objectContaining({
+      payload: expect.objectContaining({
+        properties: expect.objectContaining({
+          info: expect.objectContaining({
+            id: session.id,
+            projectID: "ws_1",
+            workspaceID: "ws_1",
+            metadata: {
+              host: "central",
+              sessionRef: `central:${session.id}`,
+            },
+          }),
+        }),
+      }),
+    }))
   })
 
   test("late-binds central hybrid envs with explicit placement", async () => {
@@ -1108,6 +1181,8 @@ describe("createCentralSessionRuntime", () => {
     expect(events.map((event) => event.payload.type)).toEqual([
       "session-info",
       "session-status",
+      "session-status",
+      "error",
     ])
     await runtime.flushUsage()
     expect(usage.at(-1)).toMatchObject({

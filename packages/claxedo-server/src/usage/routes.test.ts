@@ -11,6 +11,22 @@ const verifier: ClerkVerifier = async (token) => ({
 })
 
 describe("usage routes", () => {
+  test("acknowledges hosted sync wakeups from a signed org with the central empty-outbox state", async () => {
+    const app = UsageRoutes({
+      authConfig,
+      verifier,
+      ledger: { recordLlmTurn: async () => ({ activated: false }) },
+    })
+
+    expect((await app.request("/sync", { method: "POST" })).status).toBe(401)
+    const response = await app.request("/sync", {
+      method: "POST",
+      headers: { authorization: "Bearer valid" },
+    })
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+  })
+
   test("derives tenant from verified auth and never trusts query identity", async () => {
     const usageDashboard = vi.fn(async () => ({ totals: { turn_count: 1 }, daily: [], breakdown: [] }))
     const usageBreakdown = vi.fn(async () => ({ rows: [], next: undefined }))

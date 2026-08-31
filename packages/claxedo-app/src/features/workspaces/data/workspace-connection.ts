@@ -355,9 +355,20 @@ function driveConnection(workspaceId: string, runtime: ConnectionRuntime, option
         setOffline(workspaceId, "no-host", next.message)
       },
     })
-      .then((result) => {
+      .then(async (result) => {
         if (cancelled()) return
         if (result.ok) {
+          // The health transport mints through `openWorkspaceConnection`. If a
+          // runtime consumer populated that shared cache before this authority
+          // entry existed, its observer event had nowhere to apply the role.
+          // Read the canonical cached/minted connection now, just as the cloud
+          // path below does, so `ready` is never paired with `role-pending`.
+          const connection = await openWorkspaceConnection(workspaceId, {
+            ...(input.baseUrl ? { serverUrl: input.baseUrl } : {}),
+            ...(input.request ? { request: input.request } : {}),
+          })
+          if (cancelled()) return
+          applyWorkspaceConnectionInfo(connection)
           setReady(workspaceId)
           return
         }

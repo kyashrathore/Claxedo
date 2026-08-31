@@ -1,4 +1,6 @@
 import { apiBearerToken, getClaxedoServerUrl, authFetch, normalizeUrl } from "@/platform/api/api"
+import { accountRun } from "@/platform/account/hosted-control-call"
+import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { queryClient } from "@/platform/query/query-client"
 
 export type WorkspaceConnectionObserver = {
@@ -253,12 +255,66 @@ async function connectionOptions(options: Options) {
 const TERMINAL_FAILURE_COOLDOWN_MS = 60_000
 const TRANSIENT_FAILURE_COOLDOWN_MS = 5_000
 
-function connectionFailureCooldownMs(err: unknown, options: Options) {
+function connectionFailureStatus(err: unknown) {
   const message = err instanceof Error ? err.message : String(err)
-  const status = Number(/Workspace connection failed: (\d+)/.exec(message)?.[1])
+  return Number(
+    /Workspace connection failed: (\d+)/.exec(message)?.[1]
+      ?? /operation "workspace\.connection\.(?:mint|refresh)" failed: (\d+)/.exec(message)?.[1],
+  )
+}
+
+function connectionFailureCooldownMs(err: unknown, options: Options) {
+  const status = connectionFailureStatus(err)
   if (status === 401 && !new Headers(options.headers).has("authorization")) return 0
   if (status === 401 || status === 403 || status === 404 || status === 409) return TERMINAL_FAILURE_COOLDOWN_MS
   return TRANSIENT_FAILURE_COOLDOWN_MS
+}
+
+function normalizeConnectionFailure(err: unknown): never {
+  const status = connectionFailureStatus(err)
+  if (Number.isFinite(status) && status > 0) throw new Error(`Workspace connection failed: ${status}`)
+  throw err
+}
+
+/**
+ * Mint or refresh a workspace connection body.
+ *
+ * Desktop signed mode: renderer has no bearer — named AccountPort ops reach the
+ * hosted control plane through Electron main. `options.request` always wins so
+ * tests (and any explicit override) keep the authFetch-shaped path.
+ */
+async function fetchConnectionBody(
+  operation: "workspace.connection.mint" | "workspace.connection.refresh",
+  params: { id: string; previousJti?: string },
+  options: Options,
+): Promise<unknown> {
+  const url = operation === "workspace.connection.mint"
+    ? workspaceConnectionUrl({ serverUrl: options.serverUrl, workspaceId: params.id })
+    : workspaceConnectionRefreshUrl({ serverUrl: options.serverUrl, workspaceId: params.id })
+  const init: RequestInit | undefined = operation === "workspace.connection.refresh"
+    ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ...(params.previousJti ? { previousJti: params.previousJti } : {}),
+        }),
+      }
+    : undefined
+
+  if (!options.request) {
+    const run = accountRun()
+    if (run) {
+      try {
+        const hostedParams: Record<string, unknown> = { id: params.id }
+        if (params.previousJti) hostedParams.previousJti = params.previousJti
+        return decodeHostedResult(operation, await run(operation, hostedParams))
+      } catch (err) {
+        normalizeConnectionFailure(err)
+      }
+    }
+  }
+
+  return (options.request ?? authFetch)(url, controlPlaneInit(options, init)).then(responseJson)
 }
 
 export async function openWorkspaceConnection(workspaceId: string, options: Options = {}) {
@@ -281,8 +337,11 @@ export async function openWorkspaceConnection(workspaceId: string, options: Opti
     }, Math.max(0, delayMs))
   }
 
-  const url = workspaceConnectionUrl({ serverUrl: options.serverUrl, workspaceId })
-  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(url, resolvedOptions, undefined, workspaceId)
+  const pending: Promise<WorkspaceConnectionInfo> = workspaceConnectionWithRetry(
+    { operation: "workspace.connection.mint", id: workspaceId },
+    resolvedOptions,
+    workspaceId,
+  )
     .then((connection) => {
       observer?.onConnected(connection)
       const ttl = connection.tokenExpiresAt - (resolvedOptions.now ?? Date.now)()
@@ -316,10 +375,18 @@ export function forgetWorkspaceConnection(workspaceId: string, options: Options 
   })
 }
 
-async function workspaceConnectionWithRetry(url: URL, options: Options, init?: RequestInit, workspaceId?: string) {
+async function workspaceConnectionWithRetry(
+  input: {
+    operation: "workspace.connection.mint" | "workspace.connection.refresh"
+    id: string
+    previousJti?: string
+  },
+  options: Options,
+  workspaceId?: string,
+) {
   const attempts = options.provisioningMaxAttempts ?? DEFAULT_PROVISIONING_MAX_ATTEMPTS
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    const body = await (options.request ?? authFetch)(url, controlPlaneInit(options, init)).then(responseJson)
+    const body = await fetchConnectionBody(input.operation, input, options)
     if (isRateLimited(body)) {
       await sleep(options, provisioningRetryDelay(body.retryAfterMs))
       continue
@@ -332,16 +399,15 @@ async function workspaceConnectionWithRetry(url: URL, options: Options, init?: R
 }
 
 export async function refreshWorkspaceConnection(connection: WorkspaceConnectionInfo, options: Options = {}) {
+  const previousJti = runtimeAccessTokenJti(connection.runtimeAccessToken)
   return workspaceConnectionWithRetry(
-    workspaceConnectionRefreshUrl({ serverUrl: options.serverUrl, workspaceId: connection.workspaceId }),
-    options,
     {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        previousJti: runtimeAccessTokenJti(connection.runtimeAccessToken),
-      }),
+      operation: "workspace.connection.refresh",
+      id: connection.workspaceId,
+      ...(previousJti ? { previousJti } : {}),
     },
+    options,
+    connection.workspaceId,
   )
 }
 

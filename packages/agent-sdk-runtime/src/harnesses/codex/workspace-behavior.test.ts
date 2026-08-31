@@ -143,6 +143,12 @@ process.stdin.on("data", (chunk) => {
       write({ id: message.id, result: { thread: { id: "thread-1" } } })
       write({ method: "thread/started", params: { thread: { id: "thread-1" } } })
     }
+    if (message.method === "thread/archive") {
+      write({ id: message.id, result: {} })
+    }
+    if (message.method === "thread/goal/clear") {
+      write({ id: message.id, result: { cleared: false } })
+    }
     if (message.method === "turn/start") {
       if (auth401) {
         process.stderr.write("failed to connect to websocket: HTTP error: 401 Unauthorized, url: wss://api.openai.com/v1/responses\\n")
@@ -283,6 +289,7 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      id?: number
       method?: string
       params?: Record<string, unknown>
     })
@@ -383,6 +390,31 @@ describe("CodexHarnessAdapter", () => {
       params?: Record<string, unknown>
     })
     expect(requests.find((request) => request.method === "thread/start")?.params?.developerInstructions).toBe(transcript)
+  })
+
+  test("archives a prepared Codex thread when handoff rollback runs", async () => {
+    const fake = await makeFakeCodex()
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+
+    const prepared = await adapter.createHandoffSession(fake.dir, undefined, "ses_handoff", { system: "handoff" })
+    await prepared.rollback()
+    await prepared.rollback()
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      id?: number
+      method?: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.filter((request) => request.method === "thread/archive")).toEqual([{
+      id: expect.any(Number),
+      method: "thread/archive",
+      params: { threadId: "thread-1" },
+    }])
   })
 
   test("uses prompt session model before workspace-global model for Codex app-server turns", async () => {

@@ -57,6 +57,8 @@ export function modelOptionsUnavailableMessage(input: {
 }
 
 export function shouldFetchConfigOptionsForScope(type: HarnessType, failed: boolean, _input?: HarnessScopeInput) {
+  // Existing sessions load selectable models too: an active session's picker
+  // must not render empty just because the scope has already hydrated.
   return harnessHasConfigOptions(type) && !failed
 }
 

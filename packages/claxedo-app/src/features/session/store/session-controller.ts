@@ -41,7 +41,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { settledQueryData as settledData } from "@/platform/query/settled-query-data"
 import { isWorkspaceReady } from "@/features/session/app-ports"
 import { scheduleSessionProjectionPull, sessionProjectionWorkspaceBacking } from "@/platform/runtime/agent/session-projection"
-import { removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
+import { directorySessionCacheOwnsSession, removeDirectorySession, upsertDirectorySession } from "../data/sync/directory-session-cache"
 import { FAST_SESSION_SWITCH_NETWORK_QUIET_MS, FIRST_FOLD_SESSION_BACKGROUND_HYDRATE_DELAY_MS, FIRST_FOLD_SESSION_META_HYDRATE_DELAY_MS, fastSessionSwitchQuietDelay, fastSessionSwitchNetworkQuiet, suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import { assistantMessageIdForUserMessage } from "../data/session-types"
 import { backfillFailedCursor, createHistoryMetaState, historyHasMore, historyIsLoading } from "./history-pagination"
@@ -50,7 +50,8 @@ import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSess
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { createActivePaneProjection } from "./active-pane-projection"
-import { createSessionPaneQueries, sessionCapabilitiesKey } from "./session-pane-queries"
+import { createSessionPaneQueries, sessionCapabilitiesKey, sessionTodoTransportRequestKey, sessionTransportRequestKey } from "./session-pane-queries"
+import { sessionHydrationAuthorityKey } from "./session-resource-authority"
 import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
   ACTIVE_SESSION_STATUS_POLL_INTERVAL_MS,
@@ -130,47 +131,6 @@ export function isSessionNotFoundError(error: unknown) {
   return value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
 }
 
-function sessionTodoTransportRequestKey(input: {
-  sessionID: string
-  directory: string
-  signedControlPlane?: boolean
-  workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
-}) {
-  return shellDataKeys.sessionId(
-    input.sessionID,
-    "todo-request",
-    input.directory,
-    input.signedControlPlane === true ? "signed" : "local",
-    input.workspaceId ?? "",
-    input.workspaceKind ?? "",
-  )
-}
-
-function sessionTransportRequestKey(input: {
-  sessionID: string
-  directory: string
-  before?: string
-  view?: "latest-turn" | "latest-surface"
-  limit?: number
-  shouldFetchSession: boolean
-  signedControlPlane?: boolean
-  workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
-}) {
-  return shellDataKeys.sessionId(
-    input.sessionID,
-    "transport-session-request",
-    input.directory,
-    input.before ?? "latest",
-    input.view ?? "default",
-    input.limit ?? "semantic",
-    input.shouldFetchSession ? "with-session" : "messages-only",
-    input.signedControlPlane === true ? "signed" : "local",
-    input.workspaceId ?? "",
-    input.workspaceKind ?? "",
-  )
-}
 
 export function shouldHydrateSession(input: {
   sessionID?: string
@@ -361,7 +321,7 @@ export function createSessionController(input: {
   const { meta: historyMeta, setValue: setHistoryMetaValue } = createHistoryMetaState()
   const [missingSessions, setMissingSessions] = createSignal<Record<string, boolean | undefined>>({})
   let sessionActivationEpoch = 0
-  const { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, goalQuery, directorySessionCacheQuery } =
+  const { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, goalQuery, directorySessionCacheQuery, sessionRowQuery } =
     createSessionPaneQueries({
       active: paneActive,
       sessionID: input.sessionID,
@@ -371,11 +331,24 @@ export function createSessionController(input: {
       workspaceId: input.workspaceId,
       workspaceKind: input.workspaceKind,
       sessionRef: input.sessionRef,
+      fetchSessionRow: async (sessionID) => (await fetchSessionByTransport({
+        client: sdk.client.session,
+        directory: input.directory(),
+        sessionID,
+        claxedoServerUrl: globalSDK.url,
+        signedControlPlane: input.signedControlPlane?.() ?? false,
+        workspaceId: input.signedControlPlane?.() ? input.workspaceId?.() : undefined,
+        workspaceKind: input.signedControlPlane?.() ? input.workspaceKind?.() : undefined,
+        sessionRef: input.sessionRef?.(),
+      })).data,
     })
 
   const sourceInfo = createMemo(() => {
     const sessionID = input.sessionID()
     if (!sessionID || sessionID === "new") return undefined
+    if (!directorySessionCacheOwnsSession(input.sessionRef?.())) {
+      return sessionRowQuery.data?.id === sessionID ? sessionRowQuery.data : undefined
+    }
     return directorySessionCacheQuery.data?.session.find((session) => session.id === sessionID)
   })
   const info = createActivePaneProjection({
@@ -633,7 +606,9 @@ export function createSessionController(input: {
           return false
         }
         if (!opts?.silent) setMissingSession(directory, sessionID, false)
-        if (!opts?.silent && result.session?.data) upsertDirectorySession(directory, result.session.data)
+        if (!opts?.silent && result.session?.data) {
+          if (directorySessionCacheOwnsSession(input.sessionRef?.())) upsertDirectorySession(directory, result.session.data)
+        }
         const messageCount = hydrateConversationPage({
           directory,
           sessionID,
@@ -888,6 +863,7 @@ export function createSessionController(input: {
           input.serverHealthy(),
           true,
           input.signedControlPlane?.() ?? false,
+          sessionHydrationAuthorityKey(input.sessionRef?.()),
         ] as const
       },
       (state) => {

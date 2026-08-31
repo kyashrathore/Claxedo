@@ -1,4 +1,6 @@
-import { selectRuntimeModel } from "@/features/session/composer/model-strategy"
+import { queryKeys } from "@/platform/query/keys"
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import type { ProjectCatalogItem } from "../workspace-resolver"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
 import { parseExistingSessionConfig } from "./submit-session-config"
@@ -19,6 +21,7 @@ import {
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
+import { selectRuntimeModel } from "../model-strategy"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -58,7 +61,11 @@ type SessionConfigPayload = {
 }
 
 export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
-  return directory ? sessionWorkspaceRuntimeRef({ directory }) : undefined
+  if (!directory) return undefined
+  const projects = queryClient.getQueryData<ProjectCatalogItem[]>(
+    queryKeys.controlPlane.projects(getClaxedoServerUrl()),
+  ) ?? []
+  return sessionWorkspaceRuntimeRef({ directory, projects })
 }
 
 export function submitWorkspaceBacking(input: {
@@ -258,15 +265,17 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 
   const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
+    const queryKey = sessionConfigRawQueryKey({
+      sessionID: configInput.sessionID,
+      directory: configInput.directory,
+      workspaceId: input.workspaceId(),
+      sessionRef: input.sessionRef?.(),
+      serverUrl: input.serverUrl(),
+    })
+    const cached = queryClient.getQueryData(queryKey)
+    if (cached !== undefined) return cached
     return await queryClient.fetchQuery({
-      queryKey: sessionConfigRawQueryKey({
-        sessionID: configInput.sessionID,
-        directory: configInput.directory,
-        workspaceId: input.workspaceId(),
-        sessionRef: input.sessionRef?.(),
-        serverUrl: input.serverUrl(),
-      }),
-      staleTime: 0,
+      queryKey,
       queryFn: async () => {
         const res = await sessionRequest(configInput.directory, sessionConfigPath(configInput), {
           headers: { Accept: "application/json" },

@@ -1,5 +1,7 @@
 import type { Event, Message, Part, ToolState } from "@opencode-ai/sdk/v2/client"
+export type { Message } from "@opencode-ai/sdk/v2/client"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
+import { preserveMessageFields, withPreservedAuthor } from "./conversation-snapshot"
 
 export type ConversationChatHandle = {
   messages: () => UIMessage[]
@@ -79,6 +81,7 @@ export type ConversationSnapshotMergeOptions = {
 
 export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMessage[], options?: ConversationSnapshotMergeOptions) {
   const merged = [...current]
+  const distinctSnapshotReplies = distinctAssistantSnapshotReplies(snapshot)
   // Index once: the per-message `assistantTurnIndex` linear scan made a full
   // hydrate O(n²) over the conversation (a 400-turn session pays ~640k
   // comparisons per refetch). The map serves the same two id lookups; the
@@ -95,6 +98,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
       merged,
       storedMessage(message) ?? ({ id: message.id, role: message.role } as Message),
       indexById,
+      distinctSnapshotReplies,
     )
     if (index === -1) {
       indexById.set(message.id, merged.length)
@@ -136,6 +140,30 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
     (options?.membership !== "resolved" || retainOutsideCanonicalSnapshot(message)))
   const result = [...ordered, ...omitted]
   return result.length === current.length && result.every((message, index) => current[index] === message) ? current : result
+}
+
+/**
+ * The runtime can use the announced `${parentID}_r` envelope for an
+ * intermediate tool step and then persist a separate final assistant message.
+ * When one producer snapshot explicitly contains both, their membership is
+ * authoritative: they are two messages, not the live/canonical aliases that
+ * `assistantTurnIndex` normally reconciles across separate observations.
+ */
+function distinctAssistantSnapshotReplies(snapshot: UIMessage[]) {
+  const byParent = new Map<string, string[]>()
+  for (const item of snapshot) {
+    const message = storedMessage(item)
+    if (message?.role !== "assistant" || typeof message.parentID !== "string") continue
+    const ids = byParent.get(message.parentID)
+    if (ids) ids.push(message.id)
+    else byParent.set(message.parentID, [message.id])
+  }
+  const distinct = new Set<string>()
+  for (const [parentID, ids] of byParent) {
+    if (ids.length < 2 || !ids.includes(`${parentID}_r`)) continue
+    ids.forEach((id) => distinct.add(id))
+  }
+  return distinct
 }
 
 /**
@@ -208,54 +236,6 @@ export function applyOpencodeConversationEvent(chat: ConversationChatHandle, eve
   return false
 }
 
-/**
- * How much a failed turn's error tells the user. A later view of the same turn
- * often carries less: a relay-summarized `UnknownError` can follow the engine's
- * `APIError` that had the provider's status and body. Last-write-wins made the
- * rich error flash and then revert to a generic card, so the richer error wins
- * regardless of arrival order.
- */
-function errorDetailRank(error: unknown) {
-  if (!error || typeof error !== "object") return 0
-  const data = (error as { data?: unknown }).data
-  if (!data || typeof data !== "object") return 1
-  const fields = data as { statusCode?: unknown; responseBody?: unknown; message?: unknown }
-  let rank = 1
-  if (typeof fields.message === "string" && fields.message.trim()) rank += 1
-  if (typeof fields.statusCode === "number") rank += 2
-  if (typeof fields.responseBody === "string" && fields.responseBody.trim()) rank += 2
-  return rank
-}
-
-/**
- * The error to keep for a turn. A turn that recovered (the incoming view has no
- * error at all) clears it — only a competing *error* is ranked, so a stale
- * failure can never pin itself to a since-succeeded turn.
- */
-function richestError(current: Message | undefined, next: Message | undefined) {
-  const incoming = next?.role === "assistant" ? next.error : undefined
-  if (!incoming) return undefined
-  const existing = current?.role === "assistant" ? current.error : undefined
-  if (!existing) return incoming
-  return errorDetailRank(existing) > errorDetailRank(incoming) ? existing : incoming
-}
-
-/**
- * Replaces a stored message, preserving the richest error seen for the turn.
- * Both write paths (`message.updated` events and snapshot merges) funnel
- * through here so neither can silently downgrade a rendered error.
- */
-function withPreservedError(current: Message | undefined, next: Message): Message {
-  if (next.role !== "assistant") return next
-  const error = richestError(current, next)
-  if (error === next.error) return next
-  if (!error) {
-    const { error: _dropped, ...rest } = next as Message & { error?: unknown }
-    return rest as Message
-  }
-  return { ...next, error } as Message
-}
-
 function storedMessage(message: UIMessage | undefined) {
   return (message as ConversationUIMessage | undefined)?.metadata?.opencodeMessage
 }
@@ -266,30 +246,25 @@ function mergeChatMessage(
   authority?: { canonicalMessage?: boolean; canonicalParts?: boolean },
 ): UIMessage {
   const preserved = storedMessage(snapshot)
-  if (preserved && !authority?.canonicalMessage) {
-    const merged = withPreservedError(storedMessage(current), preserved)
+  if (preserved) {
+    // Always keep signed author chips across engine envelopes (including
+    // canonical REST rows that omit `claxedo.author`). Error preservation is
+    // skipped for canonical assistant rows so a settled transcript can clear
+    // a transient failure — preserveMessageFields still ranks errors when
+    // both sides are non-canonical.
+    const merged = authority?.canonicalMessage && preserved.role === "assistant"
+      ? withPreservedAuthor(storedMessage(current), preserved)
+      : preserveMessageFields(storedMessage(current), preserved)
     if (merged !== preserved) {
       const meta = (snapshot as ConversationUIMessage).metadata
       snapshot = { ...snapshot, metadata: { ...meta, opencodeMessage: merged } } as UIMessage
     }
   }
-  // For a settled (completed) assistant message the fetched snapshot's part
-  // list is authoritative: matching parts still merge (preserving longer live
-  // text), but chat-only parts are dropped rather than re-appended. Streamed
-  // parts carry projection-synthesized ids that can differ from the persisted
-  // ids for the same content (e.g. `000000_<msgId>-text` vs `<msgId>_text`),
-  // so appending them alongside the persisted part renders the reply twice.
+  // Only a producer-marked canonical part list can remove omitted parts.
+  // A latest-surface response can contain a settled message while still being
+  // a fragment of the turn; treating settlement alone as completeness briefly
+  // deletes intermediate task/tool parts before latest-turn hydration lands.
   if (authority?.canonicalParts) return snapshot
-  if (settledAssistantMessage(snapshot) && snapshot.parts.length > 0) {
-    return {
-      ...snapshot,
-      parts: snapshot.parts.map((part) => {
-        const id = opencodePartId(part)
-        const existing = id ? current.parts.find((item) => opencodePartId(item) === id) : undefined
-        return existing ? mergeChatPart(existing, part) : part
-      }),
-    }
-  }
   return {
     ...snapshot,
     parts: mergeChatParts(current.parts, snapshot.parts),
@@ -359,8 +334,9 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
   const existing = index === -1 ? undefined : current[index]
   const next = markUnpersistedLive(opencodeMessageToChatMessage({
     // A later event carrying a thinner error must not downgrade what the card
-    // already rendered for this turn.
-    message: withPreservedError(storedMessage(existing), message),
+    // already rendered for this turn. Same for signed author chips: engine
+    // envelopes omit `claxedo.author` and must not erase the host stamp.
+    message: preserveMessageFields(storedMessage(existing), message),
     parts: existing?.parts ?? [],
   }))
   chat.setMessages(index === -1 ? [...current, next] : replaceAt(current, index, next))
@@ -392,13 +368,21 @@ function upsertMessage(chat: ConversationChatHandle, message: Message | undefine
  * would silently lose a real message. The `_r` convention is what makes "these
  * two are the same reply" a fact rather than a guess.
  */
-function assistantTurnIndex(current: UIMessage[], message: Message, indexById?: Map<string, number>) {
+function assistantTurnIndex(
+  current: UIMessage[],
+  message: Message,
+  indexById?: Map<string, number>,
+  distinctSnapshotReplies?: ReadonlySet<string>,
+) {
   const byId = indexById ? (indexById.get(message.id) ?? -1) : current.findIndex((item) => item.id === message.id)
   if (byId !== -1) return byId
+  if (distinctSnapshotReplies?.has(message.id)) return -1
   if (message.role !== "assistant") return -1
   const parentID = (message as { parentID?: unknown }).parentID
   if (typeof parentID !== "string" || !parentID) return -1
   const announced = `${parentID}_r`
+  const aliasIndex = (index: number) =>
+    index !== -1 && assistantTaskStep(current[index]) ? -1 : index
   // Either the incoming message IS the announced envelope and the engine's
   // arrived first, or vice versa. Anything else is a genuinely separate message.
   if (message.id === announced) {
@@ -408,9 +392,13 @@ function assistantTurnIndex(current: UIMessage[], message: Message, indexById?: 
         ? [index]
         : []
     })
-    return candidates.length === 1 ? candidates[0]! : -1
+    return candidates.length === 1 ? aliasIndex(candidates[0]!) : -1
   }
-  return indexById ? (indexById.get(announced) ?? -1) : current.findIndex((item) => item.id === announced)
+  return aliasIndex(indexById ? (indexById.get(announced) ?? -1) : current.findIndex((item) => item.id === announced))
+}
+
+function assistantTaskStep(message: UIMessage | undefined) {
+  return message?.parts.some((part) => part.type === "tool-call" && part.name === "task") === true
 }
 
 function removeMessage(chat: ConversationChatHandle, messageID: string | undefined) {

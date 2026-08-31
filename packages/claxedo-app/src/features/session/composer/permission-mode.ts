@@ -1,12 +1,12 @@
 import { createMemo, type Accessor } from "solid-js"
 import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-ref"
 import { harnessDisplayLabel } from "@/ui/harness-display"
+import { harnessUsesClaxedoPermissionPicker } from "@/features/session/permission/mechanisms"
 import {
   CLAXEDO_ALLOW_SAFE_ID,
   defaultPermissionSelection,
   findPermissionModeOption,
   permissionModeOptions,
-  unidentifiedHarnessModes,
   type HarnessModeReport,
   type PermissionModeOption,
   type PermissionSelection,
@@ -88,12 +88,16 @@ export function createComposerPermissionMode(input: {
    * could only ever name a Claxedo mode, which is how the picker previously showed
    * a label with no relationship to what the harness was doing.
    */
-  const selection = createMemo<PermissionSelection>(() => {
+  const selection = createMemo<PermissionSelection | undefined>(() => {
     const stored = input.selection()
-    if (stored) return stored
+    if (stored !== undefined) return stored
     const harness = input.harness()
-    if (!harness) return { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID }
-    return defaultPermissionSelection({ harness, report: input.report?.() })
+    if (!harness) return undefined
+    const report = input.report?.()
+    if (!harnessUsesClaxedoPermissionPicker(harness)) {
+      if (!report || !Array.isArray(report.modes) || report.modes.length === 0) return undefined
+    }
+    return defaultPermissionSelection({ harness, report })
   })
 
   const groups = createMemo<PermissionModeGroups | undefined>(() => {
@@ -126,10 +130,7 @@ export function createComposerPermissionMode(input: {
     // pi stopped offering options at all — and it was always indirect: the case
     // wants the rung that assumes nothing about the harness, not whatever pi does.
     if (!harness) {
-      return {
-        claxedo: unidentifiedHarnessModes().map(row),
-        harness: { label: "Harness", rows: [], unavailable: "Still identifying this session's harness" },
-      }
+      return undefined
     }
     // A DRAFT has no session id yet. That matters for `next-session` harnesses
     // (cursor): "applies to the next agent, not this session" is meaningless
@@ -161,8 +162,10 @@ export function createComposerPermissionMode(input: {
   const current = createMemo<PermissionModeOption | undefined>(() => {
     const harness = input.harness()
     if (!harness) return undefined
+    const chosen = selection()
+    if (!chosen) return undefined
     return findPermissionModeOption({
-      selection: selection(),
+      selection: chosen,
       harness,
       report: input.report?.(),
     })

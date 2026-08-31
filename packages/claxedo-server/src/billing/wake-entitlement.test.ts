@@ -21,7 +21,7 @@ const auth = {
 function services(ensure: ReturnType<typeof vi.fn>) {
   return {
     authority: {
-      usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",

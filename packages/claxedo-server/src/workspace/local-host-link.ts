@@ -12,6 +12,7 @@ import { heartbeatPayload, localHostIdentity, registrationPayload, signHostPaylo
 import { syncWorkspaceAgentExtensionsForSignedUser } from "./signed-access"
 
 const localHostLinkBody = z.object({
+  orgId: z.string().optional(),
   displayName: z.string().optional(),
   ttlMs: z.number().optional(),
 }).strict()
@@ -79,6 +80,7 @@ export async function registerLocalHostLink(
     })
     const workspace = await authority.registerLocalForSharing(auth, {
       workspaceId: ws.id,
+      ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
       displayName: ws.workspace_name ?? ws.project_name ?? ws.repo_name ?? ws.id,
       ...(options.defaultHomeRegion ? { homeRegion: options.defaultHomeRegion } : {}),
       projectId: ws.project_id,

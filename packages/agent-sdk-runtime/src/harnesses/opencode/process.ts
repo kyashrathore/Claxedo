@@ -63,11 +63,8 @@ export type OpenCodeServerConnection = {
 /**
  * A fresh per-launch server credential.
  *
- * A spawned `opencode serve` binds loopback, and until now carried no
- * credential at all — the engine itself prints "server is unsecured" when
- * `OPENCODE_SERVER_PASSWORD` is unset. Loopback is not a boundary on a
- * multi-user machine or against any local process, and this server can read
- * files, run commands, and spend provider credentials.
+ * A spawned `opencode serve` binds loopback and requires a credential because
+ * loopback does not isolate local users or processes.
  *
  * Passed through the environment, never argv: process arguments are readable
  * by any local user through `ps`, which would put the credential on the very
@@ -186,12 +183,8 @@ export class OpenCodeServerProcess {
       ...(auth ? { OPENCODE_AUTH_CONTENT: auth } : {}),
     })
     await prepareSpawnEnv(env)
-    // Named rather than called inline as `(this.input.spawn ?? spawn)(...)`.
-    // The desktop's spawn inventory counts `\bspawn\s*\(` per declared source
-    // file to prove every child process this app can start is enumerated, and
-    // the inline form hides the call from it — the injectable seam landed and
-    // silently took the OpenCode CLI's row to zero. A local keeps the seam and
-    // keeps the process countable.
+    // The named call preserves dependency injection and remains visible to the
+    // desktop process inventory scanner.
     const spawnChild = this.input.spawn ?? spawn
     const proc = spawnChild("opencode", ["serve", `--hostname=127.0.0.1`, `--port=${port}`], {
       cwd: directory,
@@ -264,10 +257,7 @@ export class OpenCodeServerProcess {
     proc.on("exit", (code, signal_) => {
       observation.exit({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
       log.info("opencode process exited", { code, signal: signal_ })
-      // A child that dies on its own must not leave the lifecycle believing it
-      // is ready. Scoped to THIS generation: a restart replaces the child
-      // before the old one has finished exiting, and an unscoped stop here
-      // would reap the replacement.
+      // Scope the exit to its generation so it cannot stop a replacement.
       void this.lifecycle.stop("explicit", { generation })
     })
     return server

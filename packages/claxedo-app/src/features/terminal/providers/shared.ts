@@ -1,5 +1,8 @@
 export type LocalPTY = {
   id: string
+  sessionId?: string
+  /** Opaque create correlation only; never an authorization credential. */
+  createRequestId?: string
   title: string
   titleNumber: number
   cwd?: string
@@ -27,6 +30,14 @@ export type LocalPTY = {
   recreated?: boolean
 }
 
+export type NewTerminalInput = {
+  initialCommand?: string
+  title?: string
+  previousPtyId?: string
+  sessionId?: string
+  createRequestId?: string
+}
+
 function titleNum(title: string) {
   const m = title.match(/^Terminal (\d+)$/)
   if (!m) return undefined
@@ -50,12 +61,19 @@ function nextNum(all: LocalPTY[]) {
 
 export function mergeCreatedTerminal(
   all: LocalPTY[],
-  info: { id: string; title?: string; cwd?: string },
+  info: { id: string; sessionId?: string; createRequestId?: string; title?: string; cwd?: string },
 ) {
   const existing = all.find((pty) => pty.id === info.id)
   if (existing) return all
   const parsed = info.title ? titleNum(info.title) : undefined
   const titleNumber = parsed ?? nextNum(all)
   const title = info.title ?? `Terminal ${titleNumber}`
-  return [...all, { id: info.id, title, titleNumber, cwd: info.cwd }]
+  return [...all, {
+    id: info.id,
+    ...(info.sessionId ? { sessionId: info.sessionId } : {}),
+    ...(info.createRequestId ? { createRequestId: info.createRequestId } : {}),
+    title,
+    titleNumber,
+    cwd: info.cwd,
+  }]
 }

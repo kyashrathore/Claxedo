@@ -1,154 +1,34 @@
-// Claxedo keeps the upstream session header UI while reading global path inventory through shell queries instead of the global-sync store.
-import { AppIcon } from "@opencode-ai/ui/app-icon"
+// Session titlebar: project search + Share (central/Convex sessions only when signed in).
 import { Button } from "@opencode-ai/ui/button"
-import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { titlebarCenterSlot, titlebarRightSlot } from "@/ui/controls/portal-slot"
-import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Keybind } from "@opencode-ai/ui/keybind"
-import { Spinner } from "@opencode-ai/ui/spinner"
-import { showToast } from "@opencode-ai/ui/toast"
-import { Tooltip, TooltipKeybind } from "@opencode-ai/ui/tooltip"
 import { getFilename } from "@opencode-ai/core/util/path"
-import { createEffect, createMemo, For, onCleanup, Show } from "solid-js"
-import { createStore } from "solid-js/store"
+import { createMemo, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
-import { useCommand } from "@/features/session/app-ports"
+import { useClaxedoState, useCommand, useLayout, useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
-import { useLayout } from "@/features/session/app-ports"
 import { usePlatform } from "@/platform/runtime/platform-provider"
-import { useServer } from "@/features/session/app-ports"
 import { useSettings } from "@/platform/settings/provider"
-import { useTerminal } from "@/features/session/app-ports"
-import { focusTerminalById } from "@/features/session/helpers"
+import { useAccountPort } from "@/platform/account/account-provider"
+import { workspaceKey } from "@/platform/identity/session-ref"
 import { useSessionLayout } from "@/features/session/session-layout"
-import { messageAgentColor } from "@/features/session/ui/agent-color"
-import { Persist, persisted } from "@/platform/persistence/persist"
-import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-ports"
-import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
-import { StatusPopover } from "@/features/session/app-ports"
-import { useData } from "@/ui/session-kit-context"
+import { SessionPeopleControl } from "@/features/session/ui/components/session-people-control"
 import { useSessionParams } from "@/features/session/providers/session-params"
 import { createActivePaneProjection } from "@/features/session/store/active-pane-projection"
-
-const OPEN_APPS = [
-  "vscode",
-  "cursor",
-  "zed",
-  "textmate",
-  "antigravity",
-  "finder",
-  "terminal",
-  "iterm2",
-  "ghostty",
-  "warp",
-  "xcode",
-  "android-studio",
-  "powershell",
-  "sublime-text",
-] as const
-const OPEN_PATH_REQUEST_TIMEOUT_MS = 10_000
-
-type OpenApp = (typeof OPEN_APPS)[number]
-type OS = "macos" | "windows" | "linux" | "unknown"
-
-const MAC_APPS = [
-  {
-    id: "vscode",
-    label: "session.header.open.app.vscode",
-    icon: "vscode",
-    openWith: "Visual Studio Code",
-  },
-  { id: "cursor", label: "session.header.open.app.cursor", icon: "cursor", openWith: "Cursor" },
-  { id: "zed", label: "session.header.open.app.zed", icon: "zed", openWith: "Zed" },
-  { id: "textmate", label: "session.header.open.app.textmate", icon: "textmate", openWith: "TextMate" },
-  {
-    id: "antigravity",
-    label: "session.header.open.app.antigravity",
-    icon: "antigravity",
-    openWith: "Antigravity",
-  },
-  { id: "terminal", label: "session.header.open.app.terminal", icon: "terminal", openWith: "Terminal" },
-  { id: "iterm2", label: "session.header.open.app.iterm2", icon: "iterm2", openWith: "iTerm" },
-  { id: "ghostty", label: "session.header.open.app.ghostty", icon: "ghostty", openWith: "Ghostty" },
-  { id: "warp", label: "session.header.open.app.warp", icon: "warp", openWith: "Warp" },
-  { id: "xcode", label: "session.header.open.app.xcode", icon: "xcode", openWith: "Xcode" },
-  {
-    id: "android-studio",
-    label: "session.header.open.app.androidStudio",
-    icon: "android-studio",
-    openWith: "Android Studio",
-  },
-  {
-    id: "sublime-text",
-    label: "session.header.open.app.sublimeText",
-    icon: "sublime-text",
-    openWith: "Sublime Text",
-  },
-] as const
-
-const WINDOWS_APPS = [
-  { id: "vscode", label: "session.header.open.app.vscode", icon: "vscode", openWith: "code" },
-  { id: "cursor", label: "session.header.open.app.cursor", icon: "cursor", openWith: "cursor" },
-  { id: "zed", label: "session.header.open.app.zed", icon: "zed", openWith: "zed" },
-  {
-    id: "powershell",
-    label: "session.header.open.app.powershell",
-    icon: "powershell",
-    openWith: "powershell",
-  },
-  {
-    id: "sublime-text",
-    label: "session.header.open.app.sublimeText",
-    icon: "sublime-text",
-    openWith: "Sublime Text",
-  },
-] as const
-
-const LINUX_APPS = [
-  { id: "vscode", label: "session.header.open.app.vscode", icon: "vscode", openWith: "code" },
-  { id: "cursor", label: "session.header.open.app.cursor", icon: "cursor", openWith: "cursor" },
-  { id: "zed", label: "session.header.open.app.zed", icon: "zed", openWith: "zed" },
-  {
-    id: "sublime-text",
-    label: "session.header.open.app.sublimeText",
-    icon: "sublime-text",
-    openWith: "Sublime Text",
-  },
-] as const
-
-const detectOS = (platform: ReturnType<typeof usePlatform>): OS => {
-  if (platform.platform === "desktop" && platform.os) return platform.os
-  if (typeof navigator !== "object") return "unknown"
-  const value = navigator.platform || navigator.userAgent
-  if (/Mac/i.test(value)) return "macos"
-  if (/Win/i.test(value)) return "windows"
-  if (/Linux/i.test(value)) return "linux"
-  return "unknown"
-}
-
-const showRequestError = (language: ReturnType<typeof useLanguage>, err: unknown) => {
-  showToast({
-    variant: "error",
-    title: language.t("common.requestFailed"),
-    description: err instanceof Error ? err.message : String(err),
-  })
-}
+import { titlebarCenterSlot, titlebarRightSlot } from "@/ui/controls/portal-slot"
 
 export function SessionHeader() {
   const layout = useLayout()
   const command = useCommand()
-  const server = useServer()
   const platform = usePlatform()
   const language = useLanguage()
   const settings = useSettings()
-  const terminal = useTerminal()
-  const data = useData()
+  const account = useAccountPort()
+  const claxedoState = useClaxedoState()
   const sessionParams = useSessionParams()
   const queryOptions = useQueryOptions()
   const pathQuery = useQuery(() => queryOptions.path(null))
-  const { params, directory, view } = useSessionLayout()
+  const { params, directory } = useSessionLayout()
   const paneActive = () => sessionParams.active?.() ?? true
 
   const projectDirectory = createMemo(() => directory())
@@ -184,165 +64,37 @@ export function SessionHeader() {
     if (current) return current.name || getFilename(current.worktree)
     return getFilename(projectDirectory())
   })
+
+  /**
+   * Session sharing is authority-owned for every signed workspace, regardless
+   * of whether transcript traffic is hosted centrally or by the workspace.
+   * Unsigned/local-only sessions remain unshareable, and the workspace id must
+   * come from the canonical SessionRef rather than being inferred from a path.
+   */
+  const shareTarget = createMemo(() => {
+    if (account.state().status !== "signed") return undefined
+    const sessionId = params.id
+    if (!sessionId || sessionId === "new") return undefined
+    const surfaceId = sessionParams.surfaceId?.()
+    if (!surfaceId) return undefined
+    const content = claxedoState.meta.get(surfaceId)?.content
+    const sessionRef = content?.type === "session" ? content.sessionRef : undefined
+    if (!sessionRef) return undefined
+    const workspaceId = workspaceKey(sessionRef) ?? sessionRef.workspaceId
+    if (!workspaceId) return undefined
+    return { sessionId, workspaceId }
+  })
+
   const hotkey = createMemo(() => command.keybind("file.open"))
-  const os = createMemo(() => detectOS(platform))
   const isDesktopBeta = platform.platform === "desktop" && import.meta.env.VITE_OPENCODE_CHANNEL === "beta"
   const search = createMemo(() => !isDesktopBeta || settings.general.showSearch())
-  const tree = createMemo(() => !isDesktopBeta || settings.general.showFileTree())
-  const term = createMemo(() => !isDesktopBeta || settings.general.showTerminal())
-  const status = createMemo(() => !isDesktopBeta || settings.general.showStatus())
-
-  const [exists, setExists] = createStore<Partial<Record<OpenApp, boolean>>>({
-    finder: true,
-  })
-
-  const apps = createMemo(() => {
-    if (os() === "macos") return MAC_APPS
-    if (os() === "windows") return WINDOWS_APPS
-    return LINUX_APPS
-  })
-
-  const fileManager = createMemo(() => {
-    if (os() === "macos") return { label: "session.header.open.finder", icon: "finder" as const }
-    if (os() === "windows") return { label: "session.header.open.fileExplorer", icon: "file-explorer" as const }
-    return { label: "session.header.open.fileManager", icon: "finder" as const }
-  })
-
-  createEffect(() => {
-    if (platform.platform !== "desktop") return
-    if (!platform.checkAppExists) return
-
-    const list = apps()
-
-    setExists(Object.fromEntries(list.map((app) => [app.id, undefined])) as Partial<Record<OpenApp, boolean>>)
-
-    void Promise.all(
-      list.map((app) =>
-        Promise.resolve(platform.checkAppExists?.(app.openWith))
-          .then((value) => Boolean(value))
-          .catch(() => false)
-          .then((ok) => [app.id, ok] as const),
-      ),
-    ).then((entries) => {
-      setExists(Object.fromEntries(entries) as Partial<Record<OpenApp, boolean>>)
-    })
-  })
-
-  const options = createMemo(() => {
-    return [
-      { id: "finder", label: language.t(fileManager().label), icon: fileManager().icon },
-      ...apps()
-        .filter((app) => exists[app.id])
-        .map((app) => ({ ...app, label: language.t(app.label) })),
-    ] as const
-  })
-
-  // Route through the terminal.toggle command: the old view().terminal.toggle()
-  // only flipped a vestigial upstream drawer flag no Claxedo surface renders,
-  // leaving this button inert (same dead path the palette command had).
-  const toggleTerminal = () => {
-    command.trigger("terminal.toggle")
-    const id = terminal.active()
-    if (!id) return
-    focusTerminalById(id)
-  }
-
-  const [prefs, setPrefs] = persisted(Persist.global("open.app"), createStore({ app: "finder" as OpenApp }))
-  const [menu, setMenu] = createStore({ open: false })
-  const [openRequest, setOpenRequest] = createStore({
-    app: undefined as OpenApp | undefined,
-  })
-  let openRequestID = 0
-  let openRequestTimeout: ReturnType<typeof setTimeout> | undefined
-
-  const canOpen = createMemo(() => platform.platform === "desktop" && !!platform.openPath && server.isLocal())
-  const current = createMemo(
-    () =>
-      options().find((o) => o.id === prefs.app) ??
-      options()[0] ??
-      ({ id: "finder", label: fileManager().label, icon: fileManager().icon } as const),
-  )
-  const opening = createMemo(() => openRequest.app !== undefined)
-  const conversation = createActiveConversationSnapshot({
-    directory,
-    sessionID: () => params.id,
-    active: sessionParams.active,
-  })
-  const agents = createActivePaneProjection({
-    active: paneActive,
-    read: () => data.store.agent ?? [],
-    initial: [] as NonNullable<typeof data.store.agent>,
-  })
-  const tint = createMemo(() => messageAgentColor(conversation()?.messages, agents()))
-
-  const selectApp = (app: OpenApp) => {
-    if (!options().some((item) => item.id === app)) return
-    setPrefs("app", app)
-  }
-
-  const clearOpenRequest = (requestID: number) => {
-    if (requestID !== openRequestID) return
-    if (openRequestTimeout) {
-      clearTimeout(openRequestTimeout)
-      openRequestTimeout = undefined
-    }
-    setOpenRequest("app", undefined)
-  }
-
-  const armOpenRequestTimeout = (requestID: number) => {
-    if (openRequestTimeout) clearTimeout(openRequestTimeout)
-    openRequestTimeout = setTimeout(() => {
-      if (requestID !== openRequestID) return
-      openRequestTimeout = undefined
-      setOpenRequest("app", undefined)
-    }, OPEN_PATH_REQUEST_TIMEOUT_MS)
-  }
-
-  onCleanup(() => {
-    if (openRequestTimeout) clearTimeout(openRequestTimeout)
-  })
-
-  const openDir = (app: OpenApp) => {
-    if (opening() || !canOpen() || !platform.openPath) return
-    const directory = projectDirectory()
-    if (!directory) return
-
-    const item = options().find((o) => o.id === app)
-    const openWith = item && "openWith" in item ? item.openWith : undefined
-    const requestID = openRequestID + 1
-    openRequestID = requestID
-    setOpenRequest("app", app)
-    armOpenRequestTimeout(requestID)
-    platform
-      .openPath(directory, openWith)
-      .catch((err: unknown) => showRequestError(language, err))
-      .finally(() => {
-        clearOpenRequest(requestID)
-      })
-  }
-
-  const copyPath = () => {
-    const directory = projectDirectory()
-    if (!directory) return
-    navigator.clipboard
-      .writeText(directory)
-      .then(() => {
-        showToast({
-          variant: "success",
-          icon: "circle-check",
-          title: language.t("session.share.copy.copied"),
-          description: directory,
-        })
-      })
-      .catch((err: unknown) => showRequestError(language, err))
-  }
 
   const centerMount = titlebarCenterSlot
   const rightMount = titlebarRightSlot
 
   return (
     <>
-      <Show when={search() && centerMount()}>
+      <Show when={paneActive() ? search() && centerMount() : false}>
         {(mount) => (
           <Portal mount={mount()}>
             <Button
@@ -372,192 +124,18 @@ export function SessionHeader() {
           </Portal>
         )}
       </Show>
-      <Show when={rightMount()}>
+      <Show when={paneActive() ? rightMount() : false}>
         {(mount) => (
           <Portal mount={mount()}>
-            <div class="flex items-center gap-2">
-              <Show when={projectDirectory() && !globalSession()}>
-                <div class="hidden xl:flex items-center">
-                  <Show
-                    when={canOpen()}
-                    fallback={
-                      <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-base overflow-hidden">
-                        <Button
-                          variant="ghost"
-                          class="rounded-none h-full py-0 pr-3 pl-0.5 gap-1.5 border-none shadow-none"
-                          onClick={copyPath}
-                          aria-label={language.t("session.header.open.copyPath")}
-                        >
-                          <Icon name="copy" size="small" class="text-icon-base" />
-                          <span class="text-12-regular text-text-strong">
-                            {language.t("session.header.open.copyPath")}
-                          </span>
-                        </Button>
-                      </div>
-                    }
-                  >
-                    <div class="flex items-center">
-                      <div class="flex h-[24px] box-border items-center rounded-md border border-border-weak-base bg-surface-base overflow-hidden">
-                        <Button
-                          variant="ghost"
-                          class="rounded-none h-full px-0.5 border-none shadow-none disabled:!cursor-default"
-                          classList={{
-                            "bg-surface-raised-base-active": opening(),
-                          }}
-                          onClick={() => openDir(current().id)}
-                          disabled={opening()}
-                          aria-label={language.t("session.header.open.ariaLabel", { app: current().label })}
-                        >
-                          <div class="flex size-5 shrink-0 items-center justify-center [&_[data-component=app-icon]]:size-5">
-                            <Show when={opening()} fallback={<AppIcon id={current().icon} />}>
-                              <Spinner class="size-3.5" style={{ color: tint() ?? "var(--icon-base)" }} />
-                            </Show>
-                          </div>
-                        </Button>
-                        <DropdownMenu
-                          gutter={4}
-                          placement="bottom-end"
-                          open={menu.open}
-                          onOpenChange={(open) => setMenu("open", open)}
-                        >
-                          <DropdownMenu.Trigger
-                            as={IconButton}
-                            icon="chevron-down"
-                            variant="ghost"
-                            disabled={opening()}
-                            class="rounded-none h-full w-[20px] p-0 border-none shadow-none data-[expanded]:bg-surface-raised-base-active disabled:!cursor-default"
-                            classList={{
-                              "bg-surface-raised-base-active": opening(),
-                            }}
-                            aria-label={language.t("session.header.open.menu")}
-                          />
-                          <DropdownMenu.Portal>
-                            <DropdownMenu.Content class="[&_[data-slot=dropdown-menu-item]]:pl-1 [&_[data-slot=dropdown-menu-radio-item]]:pl-1 [&_[data-slot=dropdown-menu-radio-item]+[data-slot=dropdown-menu-radio-item]]:mt-1">
-                              <DropdownMenu.Group>
-                                <DropdownMenu.GroupLabel class="!px-1 !py-1">
-                                  {language.t("session.header.openIn")}
-                                </DropdownMenu.GroupLabel>
-                                <DropdownMenu.RadioGroup
-                                  class="mt-1"
-                                  value={current().id}
-                                  onChange={(value) => {
-                                    if (!OPEN_APPS.includes(value as OpenApp)) return
-                                    selectApp(value as OpenApp)
-                                  }}
-                                >
-                                  <For each={options()}>
-                                    {(o) => (
-                                      <DropdownMenu.RadioItem
-                                        value={o.id}
-                                        disabled={opening()}
-                                        onSelect={() => {
-                                          setMenu("open", false)
-                                          openDir(o.id)
-                                        }}
-                                      >
-                                        <div class="flex size-5 shrink-0 items-center justify-center [&_[data-component=app-icon]]:size-5">
-                                          <AppIcon id={o.icon} />
-                                        </div>
-                                        <DropdownMenu.ItemLabel>{o.label}</DropdownMenu.ItemLabel>
-                                        <DropdownMenu.ItemIndicator>
-                                          <Icon name="check-small" size="small" class="text-icon-weak-base" />
-                                        </DropdownMenu.ItemIndicator>
-                                      </DropdownMenu.RadioItem>
-                                    )}
-                                  </For>
-                                </DropdownMenu.RadioGroup>
-                              </DropdownMenu.Group>
-                              <DropdownMenu.Separator />
-                              <DropdownMenu.Item
-                                onSelect={() => {
-                                  setMenu("open", false)
-                                  copyPath()
-                                }}
-                              >
-                                <div class="flex size-5 shrink-0 items-center justify-center">
-                                  <Icon name="copy" size="small" class="text-icon-weak-base" />
-                                </div>
-                                <DropdownMenu.ItemLabel>
-                                  {language.t("session.header.open.copyPath")}
-                                </DropdownMenu.ItemLabel>
-                              </DropdownMenu.Item>
-                            </DropdownMenu.Content>
-                          </DropdownMenu.Portal>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                  </Show>
-                </div>
+            <div class="flex items-center gap-1">
+              <Show when={shareTarget()} keyed>
+                {(target) => (
+                  <SessionPeopleControl
+                    sessionId={target.sessionId}
+                    workspaceId={target.workspaceId}
+                  />
+                )}
               </Show>
-              <div class="flex items-center gap-1">
-                <Show when={status()}>
-                  <Tooltip placement="bottom" value={language.t("status.popover.trigger")}>
-                    <StatusPopover />
-                  </Tooltip>
-                </Show>
-                <Show when={term()}>
-                  <TooltipKeybind
-                    title={language.t("command.terminal.toggle")}
-                    keybind={command.keybind("terminal.toggle")}
-                  >
-                    <Button
-                      variant="ghost"
-                      class="group/terminal-toggle titlebar-icon w-8 h-6 p-0 box-border shrink-0"
-                      onClick={toggleTerminal}
-                      aria-label={language.t("command.terminal.toggle")}
-                      aria-expanded={view().terminal.opened()}
-                      aria-controls="terminal-panel"
-                    >
-                      <Icon size="small" name={view().terminal.opened() ? "terminal-active" : "terminal"} />
-                    </Button>
-                  </TooltipKeybind>
-                </Show>
-
-                <div class="hidden md:flex items-center gap-1 shrink-0">
-                  <TooltipKeybind
-                    title={language.t("command.review.toggle")}
-                    keybind={command.keybind("review.toggle")}
-                  >
-                    <Button
-                      variant="ghost"
-                      class="group/review-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                      onClick={() => view().reviewPanel.toggle()}
-                      aria-label={language.t("command.review.toggle")}
-                      aria-expanded={view().reviewPanel.opened()}
-                      aria-controls="review-panel"
-                    >
-                      <Icon size="small" name={view().reviewPanel.opened() ? "review-active" : "review"} />
-                    </Button>
-                  </TooltipKeybind>
-
-                  <Show when={tree()}>
-                    <TooltipKeybind
-                      title={language.t("command.fileTree.toggle")}
-                      keybind={command.keybind("fileTree.toggle")}
-                    >
-                      <Button
-                        variant="ghost"
-                        class="titlebar-icon w-8 h-6 p-0 box-border"
-                        onClick={() => layout.fileTree.toggle()}
-                        aria-label={language.t("command.fileTree.toggle")}
-                        aria-expanded={layout.fileTree.opened()}
-                        aria-controls="file-tree-panel"
-                      >
-                        <div class="relative flex items-center justify-center size-4">
-                          <Icon
-                            size="small"
-                            name={layout.fileTree.opened() ? "file-tree-active" : "file-tree"}
-                            classList={{
-                              "text-icon-base": layout.fileTree.opened(),
-                              "text-icon-weak-base": !layout.fileTree.opened(),
-                            }}
-                          />
-                        </div>
-                      </Button>
-                    </TooltipKeybind>
-                  </Show>
-                </div>
-              </div>
             </div>
           </Portal>
         )}

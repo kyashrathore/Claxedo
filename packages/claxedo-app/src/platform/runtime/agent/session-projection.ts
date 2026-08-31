@@ -1,4 +1,5 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 
 export function sessionProjectionWorkspaceBacking(input: {
@@ -94,7 +95,7 @@ const RETRY_DELAYS_MS = [0, 1_000, 3_000, 8_000, 20_000]
 
 async function post(input: ProjectionInput) {
   if (!input.workspaceId || !input.sessionId) return false
-  const run = input.request ?? authFetch
+  const run = input.request ?? createControlPlaneAccountFetch(authFetch)
   const body = {
     idempotencyKey: input.idempotencyKey ?? key(input),
     reason: input.reason,

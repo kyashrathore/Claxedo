@@ -4,6 +4,8 @@ import {
   commitGitSource,
   gitSourceSnapshot,
 } from "../workspace-files/git-source"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { denyWorkspaceViewers } from "./workspace-role"
 
 function error(code: string, message: string, extra?: Record<string, unknown>) {
   return Response.json({ error: { code, message, ...(extra ?? {}) } }, { status: code === "git_source_conflict" ? 409 : 400 })
@@ -15,7 +17,7 @@ function clean(input?: string | null) {
 }
 
 export function GitSourceRoutes() {
-  return new Hono()
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .get("/snapshot", async (c) => {
       const sourcePath = clean(c.req.query("path"))
       if (!sourcePath) return error("git_source_path_required", "path is required")
@@ -37,7 +39,7 @@ export function GitSourceRoutes() {
         return error("git_source_invalid_path", err instanceof Error ? err.message : "invalid path")
       }
     })
-    .post("/commit", async (c) => {
+    .post("/commit", denyWorkspaceViewers("Workspace role does not allow Git writes"), async (c) => {
       const body = await c.req.json<{
         path?: string
         content?: string

@@ -2,7 +2,7 @@ import { describe, expect, it } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { assertTarget, resolveWorkspacePath, workspaceDir, workspaceId } from "./target"
+import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, workspaceDir, workspaceId } from "./target"
 
 describe("workspaceDir", () => {
   it("rejects multi-directory configuration", () => {
@@ -68,6 +68,61 @@ describe("resolveWorkspacePath", () => {
     } finally {
       await fs.rm(tmp, { recursive: true, force: true })
       await fs.rm(outside, { recursive: true, force: true })
+    }
+  })
+})
+
+describe("resolveWorkspaceCommandPaths", () => {
+  it("allows workspace-relative paths and an absolute executable only", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-"))
+    try {
+      await fs.writeFile(path.join(tmp, "input.txt"), "input")
+      await resolveWorkspaceCommandPaths(tmp, { command: "/bin/cat input.txt", allowAbsoluteExecutable: true })
+      await expect(resolveWorkspaceCommandPaths(tmp, {
+        command: "cat ~/.local/share/opencode/opencode.db",
+        allowAbsoluteExecutable: true,
+      })).rejects.toThrow("workspace command path must be relative")
+      // An absolute path OUTSIDE the workspace is still rejected — the M0 RCE
+      // (reading the global opencode DB) stays blocked by containment.
+      await expect(resolveWorkspaceCommandPaths(tmp, {
+        command: "cat",
+        args: ["/tmp/outside"],
+        allowAbsoluteExecutable: true,
+      })).rejects.toThrow("workspace path escapes configured directory")
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it("permits an absolute path that resolves inside the workspace (hydrated docs)", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-abs-"))
+    try {
+      const inside = path.join(tmp, "docs", "note.md")
+      await fs.mkdir(path.dirname(inside), { recursive: true })
+      await fs.writeFile(inside, "x")
+      // The document-hydration bash form: `printf %b "..." > /abs/in/workspace`.
+      await resolveWorkspaceCommandPaths(tmp, { command: `printf %b "hi" > ${JSON.stringify(inside)}` })
+      // An arg that is an in-workspace absolute path is allowed too.
+      await resolveWorkspaceCommandPaths(tmp, { command: "cat", args: [inside] })
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true })
+    }
+  })
+
+  it("still blocks a symlinked absolute path that escapes the workspace", async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-command-esc-"))
+    const secret = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-runtime-secret-"))
+    try {
+      await fs.writeFile(path.join(secret, "creds"), "x")
+      const link = path.join(tmp, "escape")
+      await fs.symlink(secret, link)
+      await expect(resolveWorkspaceCommandPaths(tmp, {
+        command: "cat",
+        args: [path.join(link, "creds")],
+      })).rejects.toThrow("workspace path escapes configured directory")
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true })
+      await fs.rm(secret, { recursive: true, force: true })
     }
   })
 })

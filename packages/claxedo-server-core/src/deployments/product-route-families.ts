@@ -163,8 +163,8 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
   {
     id: "relay-authority",
     owner: "server",
-    serves: "The authenticated Relay target and revocation resolver channel.",
-    paths: ["/internal/relay/"],
+    serves: "The authenticated Relay target, revocation resolver, and runtime session authority channels.",
+    paths: ["/api/runtime-authority/", "/internal/relay/"],
   },
   {
     id: "documents",

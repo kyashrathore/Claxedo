@@ -8,9 +8,6 @@ import {
   buildUserMessage,
   isTerminalCompatEvent,
   messageUpdated,
-  permissionReplied,
-  questionRejected,
-  questionReplied,
   sessionError,
   sessionStatus,
   sessionUpdated,
@@ -75,6 +72,7 @@ import type {
   SdkRuntimeTurnInput,
 } from "./sdk-runtime-driver"
 import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
+import { Log } from "../../log"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 import {
   admissibleSubagentObservation,
@@ -85,6 +83,8 @@ import {
   subagentOutcome,
   transcriptText,
 } from "./subagent-transcript"
+import { acceptedSessionConfig, acceptedSessionUpdate } from "./accepted-session-mutation"
+import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
 
 export type {
   ActiveTurn,
@@ -103,6 +103,8 @@ export type {
 } from "./sdk-runtime-driver"
 export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
+const log = Log.create({ service: "sdk-runtime-adapter" })
+
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
 }
@@ -116,8 +118,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   private currentModel = ""
   private driver: SdkRuntimeDriver
   private turnLifecycle = createSessionTurnLifecycle<ActiveTurn>()
-  private pendingPermissions = new Map<string, PendingPermission>()
-  private pendingQuestions = new Map<string, PendingQuestion>()
+  private interactions: SdkRuntimeInteractions
   private subagentAdmissionStore = createMemorySubagentAdmissionStore()
   private subagentChildren = new Map<string, {
     sessionId: string
@@ -141,10 +142,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
+    this.interactions = new SdkRuntimeInteractions(this.store)
     this.driver = options.driver({
       lifecycle: () => this.lifecycle(),
-      pendingPermissions: this.pendingPermissions,
-      pendingQuestions: this.pendingQuestions,
+      pendingPermissions: this.interactions.permissions,
+      pendingQuestions: this.interactions.questions,
       processObserver: options.processObserver,
       transcriptRegistrar: options.transcriptRegistrar,
       bindSession: (input) => this.bindStoreSession(input),
@@ -325,12 +327,27 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     directory = requireWorkspaceDirectory(directory)
     const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
     this.bindStoreSession({ sessionId, directory, title, agentSessionId })
-    return { id: sessionId, agentSessionId, ownerKey: null }
+    let rolledBack = false
+    return {
+      id: sessionId,
+      agentSessionId,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(sessionId: string, agentSessionId: string, _ownerKey: string | null, directory: string) {
+    this.lifecycle().abort(sessionId)
+    await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
-    return this.store.updateSession(id, updates) as AgentSession | null
+    return acceptedSessionUpdate(this.store, id, updates)
   }
 
   async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
@@ -348,7 +365,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
-    return this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
+    const current = this.store.getSessionConfig(id)
+    if (!current) throw new Error(`Session ${id} has no runtime config`)
+    return acceptedSessionConfig(current, update)
   }
 
   async deleteSession(id: string, directory: string): Promise<void> {
@@ -426,6 +445,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
             sessionID: id,
             agent: input.agent,
             model: input.model,
+            ...(input.author ? { author: input.author } : {}),
             ...(input.tools ? { tools: input.tools } : {}),
             ...(input.format ? { format: input.format } : {}),
             ...(input.system ? { system: input.system } : {}),
@@ -720,7 +740,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   async abort(id: string, _directory: string): Promise<AbortResult> {
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
-    this.resolvePendingPermissions(id, "deny")
+    this.interactions.resolvePermissions(id, "deny")
     // `cancelled` is an admission acknowledgement: callers may start the next
     // turn as soon as it resolves. Wait until this adapter's own generation has
     // left its busy section so the replacement cannot be rejected by a stale
@@ -749,74 +769,27 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async listPermissions(directory: string): Promise<AgentPermission[]> {
-    directory = requireWorkspaceDirectory(directory)
-    const live = new Set(this.pendingPermissions.keys())
-    return this.store.listPermissions(directory).filter((row) => {
-      if (live.has(row.id)) return true
-      return false
-    }) as AgentPermission[]
+    return this.interactions.listPermissions(directory)
   }
 
   async respondPermission(
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
     directory: string,
-  ): Promise<AgentInteractionResult | void> {
-    directory = requireWorkspaceDirectory(directory)
-    const row = (this.store.listPermissions(directory) as Array<{ id: string; sessionID: string }>).find((item) => item.id === permId)
-    const pending = this.pendingPermissions.get(permId)
-    const events: CompatEvent[] = []
-    if (row) {
-      const committed = this.store.appendEvent({
-        sessionId: row.sessionID,
-        agentSessionId: pending?.agentSessionId,
-        payload: permissionReplied(
-          row.sessionID,
-          permId,
-          decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
-        ),
-        source: { dir: "out", method: "permission.reply", frame: { decision } },
-      })
-      if (committed?.payload) events.push(committed.payload)
-    }
-    if (!pending) return
-    this.pendingPermissions.delete(permId)
-    pending.resolve(decision)
-    return events.length > 0 ? { events } : undefined
+  ) {
+    return this.interactions.respondPermission(permId, decision, directory)
   }
 
   async listQuestions(directory: string): Promise<AgentQuestion[]> {
-    directory = requireWorkspaceDirectory(directory)
-    const live = new Set(this.pendingQuestions.keys())
-    return this.store.listQuestions(directory).filter((row) => live.has(row.id)) as AgentQuestion[]
+    return this.interactions.listQuestions(directory)
   }
 
-  async replyQuestion(qId: string, answer: string, _directory: string): Promise<AgentInteractionResult | void> {
-    const pending = this.pendingQuestions.get(qId)
-    if (!pending) return
-    this.pendingQuestions.delete(qId)
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionReplied(pending.sessionId, qId, [[answer]]),
-      source: { dir: "out", method: "question.reply", frame: { answer } },
-    })
-    pending.resolve(answer)
-    return committed?.payload ? { events: [committed.payload] } : undefined
+  async replyQuestion(qId: string, answer: string, _directory: string) {
+    return this.interactions.replyQuestion(qId, answer)
   }
 
-  async rejectQuestion(qId: string, _directory: string): Promise<AgentInteractionResult | void> {
-    const pending = this.pendingQuestions.get(qId)
-    if (!pending) return
-    this.pendingQuestions.delete(qId)
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionRejected(pending.sessionId, qId),
-      source: { dir: "out", method: "question.reject", frame: {} },
-    })
-    pending.reject()
-    return committed?.payload ? { events: [committed.payload] } : undefined
+  async rejectQuestion(qId: string, _directory: string) {
+    return this.interactions.rejectQuestion(qId)
   }
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
@@ -843,27 +816,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   dispose(): void {
     this.lifecycle().abortAll()
-    this.resolvePendingPermissions()
-    for (const item of this.pendingQuestions.values()) item.reject()
-    this.pendingQuestions.clear()
+    this.interactions.resolvePermissions()
+    this.interactions.rejectAllQuestions()
     this.driver?.dispose?.()
     this.closeStore()
   }
 
   private resolvePendingPermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
-    for (const [id, item] of this.pendingPermissions.entries()) {
-      if (sessionId && item.sessionId !== sessionId) continue
-      this.pendingPermissions.delete(id)
-      if (item.sessionId && this.store?.appendEvent) {
-        this.store.appendEvent({
-          sessionId: item.sessionId,
-          agentSessionId: item.agentSessionId,
-          payload: permissionReplied(item.sessionId, id, "reject"),
-          source: { dir: "out", method: "permission.abort", frame: { decision } },
-        })
-      }
-      item.resolve?.(decision)
-    }
+    this.interactions.resolvePermissions(sessionId, decision)
   }
 
   private maybeAutoTitle(id: string, agentSessionId: string, directory: string, parts: unknown[]) {

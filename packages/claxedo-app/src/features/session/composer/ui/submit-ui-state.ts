@@ -3,6 +3,15 @@ import type { Prompt } from "@/features/session/providers/prompt"
 import type { PromptRetryAction } from "../prompt-input-props"
 import type { SubmitMode } from "../../submit/index"
 import type { SubmitBlock } from "@/features/session/composer/submit-block-reason"
+import { addRegisteredConversationMessage, removeRegisteredConversationMessage } from "../../conversation/conversation-registry"
+import type { PromptTimelineOptimisticStore } from "../../submit/index"
+
+export function createSubmitOptimisticTimeline(): PromptTimelineOptimisticStore {
+  return {
+    add: (item) => addRegisteredConversationMessage(item),
+    remove: (item) => removeRegisteredConversationMessage(item),
+  }
+}
 
 export type PromptBootState = {
   harness: string

@@ -36,6 +36,7 @@ type OpenCodeProjectionBaseSdkEvent = Extract<OpenCodeSdkEvent, {
 
 type EventSessionStatusBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "session.status" }>
 type EventMessagePartUpdatedBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "message.part.updated" }>
+type EventMessageUpdatedBase = Extract<OpenCodeProjectionBaseSdkEvent, { type: "message.updated" }>
 
 export type OpenCodeCompatHandoffPart = {
   id: string
@@ -54,6 +55,25 @@ export type EventMessagePartUpdated = Omit<EventMessagePartUpdatedBase, "propert
   }
 }
 
+export type ClaxedoMessageAuthor = {
+  id: string
+  name: string
+  avatarUrl?: string
+  kind: "human" | "agent"
+}
+
+export type ClaxedoMessageInfoExtension = {
+  claxedo?: {
+    author: ClaxedoMessageAuthor
+  }
+}
+
+export type EventMessageUpdated = Omit<EventMessageUpdatedBase, "properties"> & {
+  properties: Omit<EventMessageUpdatedBase["properties"], "info"> & {
+    info: EventMessageUpdatedBase["properties"]["info"] & ClaxedoMessageInfoExtension
+  }
+}
+
 export type EventSessionStatus = Omit<EventSessionStatusBase, "properties"> & {
   properties: Omit<EventSessionStatusBase["properties"], "status"> & {
     status: OpenCodeCompatStatus
@@ -61,7 +81,8 @@ export type EventSessionStatus = Omit<EventSessionStatusBase, "properties"> & {
 }
 
 export type OpenCodeProjectionBaseEvent =
-  | Exclude<OpenCodeProjectionBaseSdkEvent, { type: "session.status" | "message.part.updated" }>
+  | Exclude<OpenCodeProjectionBaseSdkEvent, { type: "message.updated" | "message.part.updated" | "session.status" }>
+  | EventMessageUpdated
   | EventSessionStatus
   | EventMessagePartUpdated
 
@@ -74,7 +95,6 @@ export type ClaxedoProjectionExtensionEvent =
 
 export type OpenCodeCompatEvent = OpenCodeProjectionBaseEvent | ClaxedoProjectionExtensionEvent
 
-export type EventMessageUpdated = Extract<OpenCodeProjectionBaseEvent, { type: "message.updated" }>
 export type EventMessagePartDelta = Extract<OpenCodeProjectionBaseEvent, { type: "message.part.delta" }>
 export type EventPermissionAsked = Extract<OpenCodeProjectionBaseEvent, { type: "permission.asked" }>
 export type EventPermissionReplied = Extract<OpenCodeProjectionBaseEvent, { type: "permission.replied" }>

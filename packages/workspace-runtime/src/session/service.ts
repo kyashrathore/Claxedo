@@ -1,10 +1,11 @@
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
-import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
+import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
 import type {
   AgentMessage,
   AgentRuntime,
   AgentRuntimeStreamEvent,
+  AgentRuntimeTurnStartInput,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -12,7 +13,6 @@ import type {
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   buildAssistantMessage,
-  messageUpdated,
   sessionError,
   withDir,
   type CompatEnvelope,
@@ -92,9 +92,16 @@ export type RuntimePromptTurnInput = {
   publishGlobal: (event: CompatEnvelope) => void
   publishStatus: (event: RuntimeSessionBusEvent) => void
   activeTurn?: ActiveTurnScope
+  createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
-  /** Called after the runtime has accepted and durably started this turn. */
-  onAdmitted?: () => void
+  onAdmissionSettled?: (error?: unknown) => void
+  actor?: { actorId: string; actorKind: "human" | "agent" }
+  author?: {
+    id: string
+    name: string
+    avatarUrl?: string
+    kind: "human" | "agent"
+  }
 }
 
 function mkAssistantId(userMessageId?: string) {
@@ -144,10 +151,6 @@ async function* sendMessageWithAbort(
     const returned = iterator.return?.()
     if (returned) await Promise.resolve(returned).catch(() => {})
   }
-}
-
-function rec(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" ? input as Record<string, unknown> : undefined
 }
 
 export function compatScope(directory: RuntimeDirectory, sessionId: string) {
@@ -254,10 +257,23 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
   let assistantId = ""
   let assistantMessagePublished = false
   let error: string | undefined
-  let admissionError: unknown
+  let activeTurn = input.activeTurn
+  let admissionSettled = false
+  const settleAdmission = (admissionError?: unknown) => {
+    if (admissionSettled) return
+    admissionSettled = true
+    input.onAdmissionSettled?.(admissionError)
+  }
   try {
-    turn = await input.runtime.turns.start({
+    const turnInput = {
       sessionId: input.sessionId,
+      // The runtime invokes this only after winning its per-session admission
+      // lease and before it enters the harness. That keeps rejected concurrent
+      // turns out of the host activity count without leaving a window where a
+      // real turn is running but runner replacement cannot see it.
+      onAdmitted: () => {
+        activeTurn ??= input.createActiveTurnScope?.()
+      },
       parts: input.body.parts ?? [],
       ...(input.body.messageID ? { messageId: input.body.messageID } : {}),
       ...(input.body.agent ? { agent: input.body.agent } : {}),
@@ -269,8 +285,16 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.system ? { system: input.body.system } : {}),
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
-    })
-    input.onAdmitted?.()
+      ...(input.author ? { author: input.author } : {}),
+    } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
+    turn = await (input.actor
+      ? input.runtime.turns.start({
+          ...turnInput,
+          actorId: input.actor.actorId,
+          actorKind: input.actor.actorKind,
+        })
+      : input.runtime.turns.start(turnInput))
+    settleAdmission()
     assistantId = turn.assistantMessageId
     const projection = createPromptEventProjection({
       sessionId: input.sessionId,
@@ -278,7 +302,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       prompt: turn.prompt,
     })
     while (true) {
-      const result = await nextWithAbort(iterator, input.activeTurn?.signal)
+      const result = await nextWithAbort(iterator, activeTurn?.signal)
       if (result.done) break
       const item = result.value
       for (const event of projection.events(item.payload)) {
@@ -294,19 +318,16 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       if (isTerminalEvent(item.payload)) break
     }
   } catch (err) {
-    if (isAgentRuntimeTurnAdmissionError(err)) {
-      admissionError = err
-    } else {
-      error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
-      input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
-    }
+    settleAdmission(err)
+    if (isAgentRuntimeTurnConflictError(err)) throw err
+    error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
+    input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
   } finally {
-    input.activeTurn?.dispose?.()
+    activeTurn?.dispose?.()
     const returned = iterator.return?.()
     if (returned) await Promise.resolve(returned).catch(() => {})
   }
 
-  if (admissionError) throw admissionError
   if (!turn) throw new Error(error ?? "Failed to start runtime turn")
 
   return {

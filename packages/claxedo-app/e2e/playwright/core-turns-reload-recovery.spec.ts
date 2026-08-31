@@ -151,7 +151,7 @@
  */
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-turns-reload-recovery"
 const SESSION_ID = "ses_core_turns_reload_recovery"
@@ -214,6 +214,9 @@ async function openDraftPrompt(page: Page, dir: string) {
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
   await expect(input).toHaveAttribute("contenteditable", "true")
+  // Drafts do not invent a catalog default — pick once here so later
+  // sendAndProve / ArrowUp / Enter paths never re-enter the picker.
+  await ensureComposerModelSelected(page)
   return input
 }
 
@@ -371,8 +374,11 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     // Behavior 5: recall once more and prove the recalled text is editable+resendable.
     await input.press("ArrowUp")
     await expect(input).toContainText("core turns history beta")
-    await input.press("End")
-    await input.type(" edited")
+    // Prefer a full replace over End+type: under suite load, End does not reliably
+    // place the caret at the end of this contenteditable, and Playwright's `type`
+    // then inserts mid-string (observed: "itedcore turns history beta ed").
+    await input.fill("core turns history beta edited")
+    await expect(input).toContainText("core turns history beta edited")
     await input.press("Enter")
 
     await expectAssistantReplyVisible(page, "ack 3: core turns history beta edited")
@@ -760,23 +766,44 @@ test.describe("core turns, reload recovery, history & send-failure recovery (loc
     // nothing to do with `preserveScroll`'s compensation.
     await scroller.hover()
     for (let attempt = 0; attempt < 30; attempt++) {
-      await page.mouse.wheel(0, -400)
+      // Check BEFORE dispatching another wheel. Under load the attribute flip can
+      // already be visible from the previous wheel's processing; queueing one more
+      // delta after that is the trailing-gesture failure mode this loop exists to
+      // avoid (see d3edd35049 — compensation wins, then an in-flight wheel undoes it).
+      if ((await root.getAttribute("data-session-rendered-user-count")) === String(turnCount)) break
+      const topBefore = await scroller.evaluate((el) => (el as HTMLElement).scrollTop)
+      // Smaller delta than -400: the wheel that crosses `turnScrollThreshold` still
+      // applies its full delta in the same gesture, and -400 after compensation was
+      // enough to drag the mid-list witness fully off-screen (viewport ratio 0)
+      // while leaving settled.top just above the >100 lower bound.
+      await page.mouse.wheel(0, -160)
       // `mouse.wheel` resolves when the input is DISPATCHED, not once the page
-      // has actually scrolled (Playwright's documented wheel caveat). Without
-      // an in-page settle the rendered-count read below races the scroll event:
-      // the loop sees a stale count and fires 1-2 EXTRA wheels after the reveal
-      // already happened. Those extra wheels are real user gestures, and the
-      // app deliberately yields the prepend anchor to a user gesture
-      // (timelineInteractionPlan's clearPrependAnchor, view-state.ts) — so they
-      // legitimately drag the viewport up off the compensated position, and the
-      // anchor assertions below end up measuring user overscroll instead of
-      // preserveScroll (observed: settled.top=0 under dev serving; a one-wheel
-      // overshoot leaving the witness just below the fold under prebuilt). A
-      // double rAF spans the browser's scroll processing plus the same-task
-      // reveal + attribute flush, so the count read is never stale.
+      // has actually scrolled (Playwright's documented wheel caveat). Wait until
+      // either scrollTop moved or the reveal attribute flipped, then a double rAF
+      // so the same-task reveal flush is visible before the next iteration.
+      await page
+        .waitForFunction(
+          ({ scrollSel, top, count }) => {
+            const roots = Array.from(document.querySelectorAll('[data-testid="session-page-root"]'))
+            const live =
+              roots.find((node) => {
+                const style = window.getComputedStyle(node)
+                return style.display !== "none" && style.visibility !== "hidden"
+              }) ?? roots[roots.length - 1]
+            if (live?.getAttribute("data-session-rendered-user-count") === count) return true
+            const el = document.querySelector(scrollSel) as HTMLElement | null
+            return !!el && el.scrollTop !== top
+          },
+          {
+            scrollSel: '[data-scrollable]:has([data-slot="session-turn-message-content"])',
+            top: topBefore,
+            count: String(turnCount),
+          },
+          { timeout: 2_000, polling: "raf" },
+        )
+        .catch(() => undefined)
       await page.evaluate(() => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))))
-      const revealed = await root.getAttribute("data-session-rendered-user-count")
-      if (revealed === String(turnCount)) break
+      if ((await root.getAttribute("data-session-rendered-user-count")) === String(turnCount)) break
     }
 
     // Behavior 9: the older, previously-windowed-out turns get revealed — a real,

@@ -5,6 +5,7 @@ import { defaultHomeRegion, normalizeClaxedoRegion } from "@claxedo/server-core/
 import type { DocumentIndexEntry } from "../../index-store"
 import type { DocumentRead } from "../../port"
 import { fetchRelayResponse, parseRelayJson, type RelayHttpOptions } from "../../relay-http"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 export function createHostedDocumentRuntimeBroker(
   services: ControlPlaneServices,
@@ -48,6 +49,8 @@ export function createHostedDocumentRuntimeBroker(
         workspaceId,
         hostId: target.hostId,
         subject: input.auth.user.subject,
+        principalKind: "user",
+        ...await resolveRuntimeActor(authority, input.auth),
         orgId,
         role: "editor",
         ttlMs: 5 * 60_000,
@@ -190,6 +193,8 @@ export function createHostedDocumentRuntimeBroker(
         workspaceId,
         hostId: target.hostId,
         subject: input.auth.user.subject,
+        principalKind: "user",
+        ...await resolveRuntimeActor(authority, input.auth),
         orgId: input.entry.org_id,
         role: "editor",
         ttlMs: 5 * 60_000,

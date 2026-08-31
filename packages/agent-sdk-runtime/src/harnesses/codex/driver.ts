@@ -205,6 +205,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
    */
   async deleteAgentSession(sessionId: string, agentSessionId: string, directory: string) {
     await this.goalController.clearOnSessionDelete(sessionId, agentSessionId, directory)
+    // Archive the provider thread so a deleted session cannot be resumed — but
+    // only through an already-running app-server: local deletion must neither
+    // spawn a process nor fail because the provider cleanup did.
+    const proc = this.process
+    if (proc?.alive) await proc.request("thread/archive", { threadId: agentSessionId }).catch(() => {})
   }
 
   /**
@@ -743,30 +748,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       resolveCompleted = resolve
       rejectCompleted = reject
     })
-    const unsubscribe = active.process.onMessage((message) => {
-      const params = record(message.params) ?? {}
-      if (text(params.threadId) !== threadId) return
-      if (text(message.method) === "turn/completed") resolveCompleted?.()
-      if (text(message.method) === "error") rejectCompleted?.(new Error(text(params.message) ?? "Codex child turn failed"))
-    })
-    try {
-      await active.process.request("turn/start", {
-        threadId,
-        input: [{ type: "text", text: prompt }],
-        cwd: active.directory,
-        approvalPolicy: codexSettingsFor(this.permissionSelection.currentId(active.sessionId)).approvalPolicy,
-        approvalsReviewer: "user",
-        sandboxPolicy: codexSandboxPolicy(
-          codexSettingsFor(this.permissionSelection.currentId(active.sessionId)).sandbox,
-          active.directory,
-        ),
-        ...(active.model ? { model: active.model } : {}),
-        ...(active.effort ? { effort: active.effort } : {}),
-      })
-      await completed
-    } finally {
-      unsubscribe()
-    }
   }
 
 }

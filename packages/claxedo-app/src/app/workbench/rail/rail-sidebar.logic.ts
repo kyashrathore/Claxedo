@@ -94,6 +94,10 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
     )
   const kind = input.environmentKind ?? workspace?.kind
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
+  // Current project inventory is authoritative for placement. In particular,
+  // a retained workspace-shaped ref must not override an explicit local kind
+  // and send the local project UUID to the relay connection endpoint.
+  if (kind === "local") return
   if (kind === "cloud" || kind === "user-hosted") {
     return workspaceId ? { workspaceId, kind } : undefined
   }
@@ -212,4 +216,14 @@ export function indexUnambiguousSessionStatusTargets<T extends { sessionID: stri
 
 export function primedSessionStatusType(status?: { type: string }) {
   return status?.type ?? "idle"
+}
+
+/** Prefer live busy/retry from the session cache over a stale rail batch read. */
+export function mergedSessionStatusType(
+  batchType: string | undefined,
+  liveType: string | undefined,
+): string | undefined {
+  if (liveType === "busy" || liveType === "retry") return liveType
+  if (batchType === "busy" || batchType === "retry") return batchType
+  return liveType ?? batchType
 }

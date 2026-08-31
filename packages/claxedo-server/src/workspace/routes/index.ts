@@ -41,6 +41,7 @@ import { workspaceResponse } from "../workspace-response"
 
 const createBody = z
   .object({
+    orgId: z.string().optional(),
     projectId: z.string().optional(),
     projectName: z.string().optional(),
     workspaceName: z.string().optional(),
@@ -332,6 +333,24 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         const parsed = parsedBody(createBody, await c.req.json().catch(() => ({})))
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
+        if (body.orgId && !authResult.auth) {
+          const err = new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+          return c.json(controlPlaneAuthErrorBody(err), err.status)
+        }
+        if (authResult.auth) {
+          try {
+            const authority = requireAuthority(services)
+            if (body.orgId && !authority.authorizeWorkspaceCreate) {
+              throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
+            }
+            await authority.authorizeWorkspaceCreate?.(authResult.auth, {
+              ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
+            })
+          } catch (err) {
+            if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+            throw err
+          }
+        }
         const cfg = await loadUserConfig()
         const driverConfig = sandboxDriverConfig(cfg)
         const requestedDriver = body.driver?.trim()
@@ -482,6 +501,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           try {
             await requireAuthority(services).createCloudWorkspace(authResult.auth, {
               workspaceId: ws.id,
+              ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
               projectId,
               displayName: ws.workspace_name ?? ws.project_name ?? repoName ?? ws.id,
               repoUrl,

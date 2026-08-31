@@ -22,6 +22,9 @@ import { settlementTenantKey, type SettlementTenant } from "../settlement-dispat
 type Mutation = FunctionReference<"mutation">
 type Query = FunctionReference<"query">
 const api = anyApi as unknown as {
+  users: {
+    resolveSubjectForService: Query
+  }
   sessions: {
     syncWorkGraphSession: Mutation
     retainWorkGraphSessionTranscript: Mutation
@@ -387,6 +390,9 @@ export function createHostedWorkGraphRuntime(
                 workspaceId,
                 hostId: placement.hostId,
                 subject: claim.ownerSubject,
+                principalKind: "user",
+                actorId: claim.ownerUserId,
+                actorKind: "human",
                 orgId: claim.orgId,
                 role: "owner",
                 ttlMs: 10 * 60_000,
@@ -545,6 +551,9 @@ export function createHostedWorkGraphRuntime(
                 workspaceId: run.workspaceId,
                 hostId: placement.hostId,
                 subject: run.ownerUserId,
+                principalKind: "user",
+                actorId: run.ownerUserId,
+                actorKind: "human",
                 orgId: run.orgId,
                 role: "owner",
                 ttlMs: 10 * 60_000,
@@ -856,6 +865,9 @@ async function reconcileHostedMaster(
       workspaceId,
       hostId: placement.hostId,
       subject: claim.ownerSubject,
+      principalKind: "user",
+      actorId: input.intent.ownerUserId,
+      actorKind: "human",
       orgId: input.intent.organizationId,
       role: "owner",
       ttlMs: 10 * 60_000,
@@ -1118,6 +1130,9 @@ async function drainControlEffects(
             workspaceId,
             hostId: placement.hostId,
             subject: control.ownerUserId,
+            principalKind: "user",
+            actorId: control.ownerUserId,
+            actorKind: "human",
             orgId: control.orgId,
             role: "owner",
             ttlMs: 10 * 60_000,
@@ -1247,6 +1262,9 @@ async function reconcileSourcePlanning(
           workspaceId,
           hostId: placement.hostId,
           subject: claim.ownerUserId,
+          principalKind: "user",
+          actorId: claim.ownerUserId,
+          actorKind: "human",
           orgId: claim.orgId,
           role: "owner",
           ttlMs: 10 * 60_000,
@@ -1353,6 +1371,9 @@ async function reconcileSourcePlanning(
           workspaceId: plan.workspaceId,
           hostId: placement.hostId,
           subject: plan.ownerUserId,
+          principalKind: "user",
+          actorId: plan.ownerUserId,
+          actorKind: "human",
           orgId: plan.orgId,
           role: "owner",
           ttlMs: 10 * 60_000,
@@ -1738,9 +1759,9 @@ export class HostedTranscriptRetentionError extends Error {
  * retryable HostedTranscriptRetentionError, so the Run stays incomplete
  * instead of settling without a durable transcript.
  *
- * The caller (the run-operation broker) only holds the runtime token's
- * Clerk subject, so the sync goes through the subject-resolving retention
- * mutation rather than the internal-id session publisher.
+ * The caller (the run-operation broker) holds the owner's Clerk subject. The
+ * users registry resolves that external identity to the internal actor used
+ * by runtime session authority before any RHT is minted.
  */
 export function createHostedSessionTranscriptRetention(
   env: HostedWorkerEnv,
@@ -1762,12 +1783,24 @@ export function createHostedSessionTranscriptRetention(
   const now = options.now ?? Date.now
   return async (input: { organizationId: string; ownerSubject: string; workspaceId: string; sessionId: string }) => {
     try {
+      if (!client.query) throw new Error("Hosted transcript retention requires users-registry lookup")
+      const actor = await client.query(api.users.resolveSubjectForService, {
+        service_token: serviceToken,
+        subject: input.ownerSubject,
+      }) as { actor_id?: unknown; actor_kind?: unknown } | null
+      if (
+        typeof actor?.actor_id !== "string"
+        || (actor.actor_kind !== "human" && actor.actor_kind !== "agent")
+      ) throw new Error("Hosted transcript retention owner is not registered")
       const placement = await manager.target(input.workspaceId)
       if (placement.status !== "ready") throw new Error("Hosted workspace is unavailable for transcript retention")
       const token = await provider.mintRuntimeAccessToken({
         workspaceId: input.workspaceId,
         hostId: placement.hostId,
         subject: input.ownerSubject,
+        principalKind: "user",
+        actorId: actor.actor_id,
+        actorKind: actor.actor_kind,
         orgId: input.organizationId,
         role: "owner",
         ttlMs: 10 * 60_000,

@@ -13,11 +13,12 @@
 // so we skip hidden/aria-hidden nodes and only focus a live, editable one.
 
 /** Focus the first visible, editable composer editor. Returns whether one was focused. */
-export function focusComposerSurface(doc: Document = document): boolean {
+export function focusComposerSurface(doc: Document = document, options?: { sessionId?: string }): boolean {
   const nodes = Array.from(doc.querySelectorAll<HTMLElement>('[data-component="prompt-input"]'))
   for (const node of nodes) {
     if (node.getAttribute("contenteditable") !== "true") continue
     if (node.getAttribute("aria-hidden") === "true") continue
+    if (options?.sessionId && node.closest<HTMLElement>("[data-session-id]")?.dataset.sessionId !== options.sessionId) continue
     const style = doc.defaultView?.getComputedStyle(node)
     if (style && style.visibility === "hidden") continue
     node.focus()
@@ -49,15 +50,20 @@ export function focusComposerWhenReady(options?: {
   attempts?: number
   fallback?: () => void
   doc?: Document
+  origin?: Element | null
+  sessionId?: string
 }): void {
   const doc = options?.doc ?? document
   const maxAttempts = options?.attempts ?? 150 // ~2.5s at 60fps — draft mount can be slow
   let tries = 0
   const tick = () => {
     const active = doc.activeElement
-    const userMovedFocus = !!active && active !== doc.body && active.getAttribute("data-component") !== "prompt-input"
+    const userMovedFocus = !!active &&
+      active !== doc.body &&
+      active !== options?.origin &&
+      active.getAttribute("data-component") !== "prompt-input"
     if (userMovedFocus) return
-    if (focusComposerSurface(doc)) return
+    if (focusComposerSurface(doc, { sessionId: options?.sessionId })) return
     tries += 1
     if (tries >= maxAttempts) {
       options?.fallback?.()

@@ -28,7 +28,7 @@ import {
   workspaceRoute,
 } from "@/platform/identity/route"
 import { opaqueWorkspaceRouteId, workspaceRouteId } from "@/platform/identity/workspace-route"
-import { centralSessionRef, hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { hasBacking, sameSessionRef, sessionRefForWorkspaceSession, type HarnessRef, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { usePrincipal } from "@/platform/auth/identity-provider"
 import { documentsAccess } from "@/features/documents/access"
 import { queryClient } from "@/platform/query/query-client"
@@ -38,8 +38,15 @@ import { useAgentHooks } from "./agent-status-listener"
 import { createBatchAutoTabListener } from "./batch-autotab"
 import { useClaxedoState } from "./"
 import { projectWorkspaceDirectories, workspaceRouteIdentity } from "../../../features/workspaces/lib/workspace-display"
+import { resolveWorkspaceRouteDirectory } from "./route-workspace-directory"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
-import { createRouteIntentAdapter, isRouteIntentClosed, markRouteIntentClosed, sessionInventoryTarget } from "./route-intent"
+import {
+  createRouteIntentAdapter,
+  isRouteIntentClosed,
+  markRouteIntentClosed,
+  sessionInventoryCentralSession,
+  sessionInventoryTarget,
+} from "./route-intent"
 import {
   collectRouteResolutionDirectories,
   directSessionResolutionDependencies,
@@ -54,6 +61,7 @@ import {
   routeSessionMetaIsCentral,
   routeSessionDirectory,
   routeLifecycleSessionRef,
+  routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
 } from "./route-bridge-resolution"
@@ -236,8 +244,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
     workspaceRouteIdentity(projectsQuery.data ?? [], routeWorkspaceKey())
   )
   const routeId = createMemo(() => routeIdentity()?.routeId ?? opaqueWorkspaceRouteId(routeWorkspaceKey()))
-  const routeDirectory = createMemo(
-    () => routeIdentity()?.directory ?? routeWorkspaceKey(),
+  const routeDirectory = createMemo(() =>
+    resolveWorkspaceRouteDirectory({
+      routeKey: routeWorkspaceKey(),
+      projects: projectsQuery.data ?? [],
+    }),
   )
   createEffect(() => {
     const target = settledWorkspaceSessionRedirect({
@@ -403,6 +414,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           }),
         }
       }
+      if (sessionInventoryCentralSession(id, sessionInventory())) return
       const cached = cachedRouteSessionTarget(id)
       if (cached) return cached
       const session = await fetchRouteSessionMeta({
@@ -533,15 +545,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           return
         }
         if (routeSessionMetaIsCentral(session)) {
-          const workspaceId = typeof session?.workspaceID === "string"
-            ? session.workspaceID
-            : typeof session?.workspaceId === "string" ? session.workspaceId : undefined
-          const harness = routeSessionHarness(session)
-          const sessionRef = centralSessionRef({
-            sessionId,
-            ...(workspaceId ? { workspaceId } : {}),
-            ...(harness ? { harness } : {}),
-          })!
+          const sessionRef = routeCentralSessionRef(sessionId, session)!
           routeCentralSessionMeta.set(sessionId, sessionRef)
           if (isRouteIntentClosed({ sessionId })) return
           state.layout.openCentralSession(
@@ -718,13 +722,18 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           })
           return
         }
-        const target = sessionInventoryTarget(sessionId, {
-          global: sessionInventory().global,
-          byWorkspace: sessionInventory().byWorkspace,
-          byProject: sessionInventory().byProject,
-          loaded: sessionInventory().loaded,
-        })
+        const inventory = sessionInventory()
+        const target = sessionInventoryTarget(sessionId, inventory)
+        const centralInventorySession = sessionInventoryCentralSession(sessionId, inventory)
         const directories = routeResolutionDirectories()
+        if (centralInventorySession) {
+          resolveRouteSessionFromMeta(sessionId, directories)
+          state.layout.openCentralSession(sessionId, centralInventorySession.title || "Session", {
+            authoritative: true,
+            sessionRef: routeCentralSessionRef(sessionId, centralInventorySession),
+          })
+          return
+        }
         const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
         const matchesActiveWorkspaceSurface =
           !!routeDirectory() &&

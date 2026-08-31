@@ -1,9 +1,12 @@
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
 import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import type { RelayRole } from "@claxedo/workspace-relay"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
   const url = new URL(path, "http://workspace-runtime.local")
@@ -20,6 +23,7 @@ export async function verifiedRuntimeJson<T>(
     workspaceId: string
     ws: Workspace
     authorityWorkspace?: WorkspaceRecord
+    authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
     path: string
   },
@@ -45,6 +49,7 @@ export async function runtimeJson<T>(
     workspaceId: string
     ws: Workspace
     authorityWorkspace?: WorkspaceRecord
+    authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
     path: string
   },
@@ -68,6 +73,7 @@ async function runtimeFetch(
     workspaceId: string
     ws: Workspace
     authorityWorkspace?: WorkspaceRecord
+    authorityRole?: RelayRole
     auth?: ControlPlaneAuthContext
     path: string
     init?: RequestInit
@@ -94,12 +100,23 @@ async function runtimeFetch(
       "Workspace is missing org identity for runtime token minting",
     )
   }
+  if (input.auth?.mode === "signed" && !input.authorityRole) {
+    throw new ControlPlaneProtocolError(
+      403,
+      "workspace_authorization_denied",
+      "Workspace role is required for runtime token minting",
+    )
+  }
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: target.hostId,
     subject: input.auth?.mode === "signed" ? input.auth.user.subject : "control-plane",
+    principalKind: input.auth?.mode === "signed" ? "user" : "service",
+    ...(input.auth?.mode === "signed"
+      ? await resolveRuntimeActor(requireAuthority(services), input.auth)
+      : { actorId: "control-plane", actorKind: "agent" as const }),
     orgId,
-    role: "owner",
+    role: input.auth?.mode === "signed" ? input.authorityRole! : "owner",
     ttlMs: 10 * 60_000,
   })
   const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)

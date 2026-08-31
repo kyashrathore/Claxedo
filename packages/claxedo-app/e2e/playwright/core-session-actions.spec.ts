@@ -228,7 +228,7 @@
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { sessionInventoryRoute } from "../helpers/contracts/session-list"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-session-actions"
 const PROJECT_ID = "proj_core_session_actions"
@@ -398,6 +398,7 @@ async function sendFirstPrompt(page: Page, mock: MockRuntimeHandles, text: strin
   await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   await expect(input).toBeVisible({ timeout: 20_000 })
+  await ensureComposerModelSelected(page)
   await input.click()
   await input.fill(text)
   await expect(input).toContainText(text, { timeout: 10_000 })

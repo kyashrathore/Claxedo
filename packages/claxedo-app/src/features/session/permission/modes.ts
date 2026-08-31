@@ -1,5 +1,9 @@
 import type { HarnessId } from "@/platform/identity/session-ref"
-import { harnessPermissionLabel, permissionMechanism } from "@/features/session/permission/mechanisms"
+import {
+  harnessPermissionLabel,
+  harnessUsesClaxedoPermissionPicker,
+  permissionMechanism,
+} from "@/features/session/permission/mechanisms"
 
 /**
  * Permission modes, named by whoever enforces them.
@@ -564,7 +568,12 @@ export function permissionModeOptions(input: {
   // native OpenCode policy delivery also calls `claxedoPermissionModes` before
   // a report exists. Suppress fallback rows only at this picker boundary so the
   // delivery path keeps its canonical ruleset.
-  return { claxedo: reportReady ? claxedoPermissionModes(input) : [], harness }
+  // Non-opencode harnesses must never flash Claxedo rows while their own list
+  // is still loading or empty — an empty `modes: []` report is not permission
+  // to paraphrase Codex/Claude modes as Claxedo "Ask for everything".
+  const claxedo =
+    reportReady && harnessUsesClaxedoPermissionPicker(input.harness) ? claxedoPermissionModes(input) : []
+  return { claxedo, harness }
 }
 
 /**

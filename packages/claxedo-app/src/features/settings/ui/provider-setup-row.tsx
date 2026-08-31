@@ -30,16 +30,17 @@ export const ProviderSetupRow: Component<{
   const showStatus = () => props.status !== "missing"
 
   return (
-    <div class="border-b border-border-weak-base last:border-none">
-      <button
-        type="button"
-        class="flex w-full flex-wrap items-center justify-between gap-4 py-3 text-left"
-        onClick={() => {
-          if (connected()) return
-          setExpanded((value) => !value)
-        }}
-      >
-        <div class="flex min-w-0 items-center gap-3">
+    <div class="border-b border-border-weak-base last:border-none" data-provider={props.id}>
+      <div class="flex w-full flex-wrap items-center justify-between gap-4 py-3">
+        <button
+          type="button"
+          class="flex min-w-0 flex-1 items-center gap-3 border-none bg-transparent p-0 text-left"
+          disabled={connected()}
+          onClick={() => {
+            if (connected()) return
+            setExpanded((value) => !value)
+          }}
+        >
           <ProviderIcon id={props.id} class="size-5 shrink-0 icon-strong-base" />
           <div class="flex min-w-0 flex-col gap-0.5">
             <span class="text-14-medium text-text-strong">{props.name}</span>
@@ -50,7 +51,7 @@ export const ProviderSetupRow: Component<{
               {(detail) => <span class="text-12-regular text-text-weak">{detail()}</span>}
             </Show>
           </div>
-        </div>
+        </button>
         <div class="flex shrink-0 items-center gap-2">
           <Show when={showStatus()}>
             <Tag>{providerSetupStatusLabel(props.status, language)}</Tag>
@@ -59,16 +60,13 @@ export const ProviderSetupRow: Component<{
             <Button
               size="large"
               variant="ghost"
-              onClick={(event: MouseEvent) => {
-                event.stopPropagation()
-                setExpanded((value) => !value)
-              }}
+              onClick={() => setExpanded((value) => !value)}
             >
               {expanded() ? language.t("common.cancel") : language.t("common.connect")}
             </Button>
           </Show>
         </div>
-      </button>
+      </div>
       <Show when={expanded() && !connected()}>
         <div class="border-t border-border-weak-base pb-4 pt-4">
           <ProviderConnectForm

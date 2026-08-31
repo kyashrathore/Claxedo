@@ -61,7 +61,25 @@ export type CreateAgentRuntimeInput = {
   harnesses: AgentHarnessFactory[]
   resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
   subscriberBufferSize?: number
+  /** Per-subscriber authorization gate; requires each subscriber to carry an identity. */
+  eventDelivery?: AgentRuntimeEventDeliveryPolicy
 }
+
+export type AgentRuntimeSubscriptionIdentity = {
+  connectionId: string
+  actorId: string
+  actorKind: "human" | "agent"
+  orgId: string
+  workspaceId: string
+  role: "viewer" | "editor" | "admin" | "owner"
+  /** Opaque signed proof forwarded only to the host's authorization policy. */
+  credential?: string
+}
+
+export type AgentRuntimeEventDeliveryPolicy = (input: {
+  identity: AgentRuntimeSubscriptionIdentity
+  event: AgentRuntimeEventEnvelope
+}) => "deliver" | "omit" | "terminate" | Promise<"deliver" | "omit" | "terminate">
 
 export type AgentRuntimeEventEnvelope = {
   sessionId: string
@@ -72,6 +90,7 @@ export type AgentRuntimeEventEnvelope = {
 export type AgentRuntimeSubscribeInput = {
   sessionId?: string
   directory?: RuntimeDirectory
+  identity?: AgentRuntimeSubscriptionIdentity
 }
 
 export type AgentRuntimeSessionCreateInput = {
@@ -84,8 +103,14 @@ export type AgentRuntimeSessionCreateInput = {
   title?: string
 }
 
+type AgentRuntimeTurnActor =
+  | { actorId: string; actorKind: "human" | "agent" }
+  | { actorId?: never; actorKind?: never }
+
 export type AgentRuntimeTurnStartInput = {
   sessionId: string
+  /** Runs after this turn wins the per-session admission and before harness work starts. */
+  onAdmitted?: () => void
   text?: string
   parts?: unknown[]
   messageId?: string
@@ -97,7 +122,8 @@ export type AgentRuntimeTurnStartInput = {
   system?: string
   permissionMode?: string
   variant?: string
-}
+  author?: PromptInput["author"]
+} & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {
   sessionId: string
@@ -138,8 +164,11 @@ export function isAgentRuntimeGoalError(error: unknown): error is AgentRuntimeGo
   )
 }
 
+export const AGENT_RUNTIME_TURN_CONFLICT_CODE = "session_turn_in_progress"
+
 export class AgentRuntimeTurnAdmissionError extends Error {
-  readonly code = "turn_already_active"
+  readonly code = AGENT_RUNTIME_TURN_CONFLICT_CODE
+  readonly status = 409
 
   constructor(readonly sessionId: string) {
     super("Session is already processing a message")
@@ -150,6 +179,6 @@ export class AgentRuntimeTurnAdmissionError extends Error {
 export function isAgentRuntimeTurnAdmissionError(error: unknown): error is AgentRuntimeTurnAdmissionError {
   return error instanceof AgentRuntimeTurnAdmissionError || (
     !!error && typeof error === "object" &&
-    (error as { code?: unknown }).code === "turn_already_active"
+    (error as { code?: unknown }).code === AGENT_RUNTIME_TURN_CONFLICT_CODE
   )
 }

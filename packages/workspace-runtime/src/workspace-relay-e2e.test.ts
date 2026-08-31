@@ -3,15 +3,17 @@ import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
 import { spawn, type ChildProcess } from "node:child_process"
-import { exportJWK, exportSPKI, generateKeyPair } from "jose"
+import { exportSPKI, generateKeyPair } from "jose"
 import {
   createWorkspaceRelayBun,
   mintRuntimeAccessToken,
+  verifyRelayHostToken,
   type WorkspaceRelayAuditEvent,
 } from "@claxedo/workspace-relay"
 import type { RelayHostAuthAuditEvent } from "./workspace-host-service-auth"
 import { startServer, waitForWorkspaceRuntimeServerPort } from "./server"
 import { relayWorkspaceRuntimeExposure } from "./exposure"
+import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "./remote-session-authority"
 
 const NativeResponse = globalThis.Response
 
@@ -102,6 +104,61 @@ async function readAll(reader: ReadableStreamDefaultReader<Uint8Array>, first?: 
   return out
 }
 
+/**
+ * The relay-exposed runtime composes `remoteWorkspaceSessionAccessPolicy`, so
+ * every session-scoped operation (PTY create included) is decided by a control
+ * plane over HTTP. These e2e tests own no control plane, so they stand up the
+ * narrowest possible one: it authorizes exactly the session the test creates a
+ * PTY for, for exactly the actor the Runtime Access Token carries, and denies
+ * everything else. Anything looser would stop proving that the runtime actually
+ * consults the authority — the whole point of the M2c seam.
+ */
+function sessionAuthorityStub(input: {
+  sessionId: string
+  actorId: string
+  relayHostKey: CryptoKey
+  workspaceId: string
+  hostId: string
+}) {
+  const requests: Array<{ sessionId?: string; action?: string; actorId?: string }> = []
+  const server = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      const body = await request.json().catch(() => ({})) as {
+        sessionId?: string
+        action?: string
+        stream?: boolean
+        lease?: string
+      }
+      // The proof is the Relay Host Token the runtime forwarded verbatim. A real
+      // control plane verifies it to learn *who* is asking; so does this stub,
+      // because a stub that trusted the body would let an unsigned request pass.
+      const token = request.headers.get("authorization")?.replace(/^Bearer\s+/i, "")
+      const claims = token
+        ? await verifyRelayHostToken(token, input.relayHostKey, {
+            workspaceId: input.workspaceId,
+            hostId: input.hostId,
+          }).catch(() => undefined)
+        : undefined
+      requests.push({ sessionId: body.sessionId, action: body.action, actorId: claims?.actor_id })
+      if (!claims || claims.actor_id !== input.actorId) return new Response(null, { status: 401 })
+      if (body.sessionId !== input.sessionId) return new Response(null, { status: 403 })
+      return Response.json(body.stream
+        ? {
+            allowed: true,
+            lease: body.lease ?? `stream_${body.action ?? "read"}`,
+            expiresAt: Date.now() + 30_000,
+          }
+        : { allowed: true })
+    },
+  })
+  return {
+    requests,
+    url: `${String(server.url).replace(/\/$/, "")}/session-authorize`,
+    stop: () => server.stop(true),
+  }
+}
+
 async function stopChild(child: ChildProcess) {
   if (child.exitCode !== null || child.signalCode) return
   await new Promise<void>((resolve) => {
@@ -117,6 +174,9 @@ async function stopChild(child: ChildProcess) {
   })
 }
 
+/** The one session these harnesses authorize a PTY for. */
+const PTY_SESSION_ID = "ses_relay_e2e"
+
 async function relayHarness() {
   const runtime = await generateKeyPair("EdDSA", { extractable: true })
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -124,8 +184,17 @@ async function relayHarness() {
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-relay-e2e-"))
   const previousDirectory = process.env.WORKSPACE_RUNTIME_DIRECTORY
   const previousWorkspaceId = process.env.WORKSPACE_RUNTIME_WORKSPACE_ID
+  const previousAuthorityUrl = process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]
+  const authority = sessionAuthorityStub({
+    sessionId: PTY_SESSION_ID,
+    actorId: "actor_1",
+    relayHostKey: relayHost.publicKey,
+    workspaceId: "ws_1",
+    hostId: "host_1",
+  })
   process.env.WORKSPACE_RUNTIME_DIRECTORY = workspaceDir
   process.env.WORKSPACE_RUNTIME_WORKSPACE_ID = "ws_1"
+  process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] = authority.url
   const relayHostAudits: RelayHostAuthAuditEvent[] = []
   const relayAudits: WorkspaceRelayAuditEvent[] = []
   const relayHostAuth = {
@@ -178,8 +247,12 @@ async function relayHarness() {
     relayUrl: String(relayServer.url).replace(/\/$/, ""),
     relayHostAudits,
     relayAudits,
+    sessionId: PTY_SESSION_ID,
+    authorityRequests: authority.requests,
     runtimeAccessToken: await mintRuntimeAccessToken({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -187,6 +260,8 @@ async function relayHarness() {
     }, runtime.privateKey, "EdDSA"),
     viewerRuntimeAccessToken: await mintRuntimeAccessToken({
       subject: "viewer_1",
+      actorId: "actor_viewer",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -194,6 +269,8 @@ async function relayHarness() {
     }, runtime.privateKey, "EdDSA"),
     revokedRuntimeAccessToken: await mintRuntimeAccessToken({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -202,6 +279,8 @@ async function relayHarness() {
     }, runtime.privateKey, "EdDSA"),
     expiredRuntimeAccessToken: await mintRuntimeAccessToken({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -212,6 +291,12 @@ async function relayHarness() {
     async close() {
       relayServer.stop(true)
       runtimeServer.close()
+      authority.stop()
+      if (previousAuthorityUrl === undefined) {
+        delete process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]
+      } else {
+        process.env[WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL] = previousAuthorityUrl
+      }
       if (previousDirectory === undefined) {
         delete process.env.WORKSPACE_RUNTIME_DIRECTORY
       } else {
@@ -231,6 +316,13 @@ async function processSeparatedRelayHarness() {
   const runtime = await generateKeyPair("EdDSA", { extractable: true })
   const relayHost = await generateKeyPair("EdDSA", { extractable: true })
   const workspaceDir = await fs.mkdtemp(path.join(os.tmpdir(), "workspace-relay-process-e2e-"))
+  const authority = sessionAuthorityStub({
+    sessionId: PTY_SESSION_ID,
+    actorId: "actor_1",
+    relayHostKey: relayHost.publicKey,
+    workspaceId: "ws_1",
+    hostId: "host_1",
+  })
   const logs: string[] = []
   let resolveRuntimeUrl!: (url: string) => void
   let rejectRuntimeUrl!: (error: Error) => void
@@ -259,6 +351,7 @@ async function processSeparatedRelayHarness() {
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_1",
       WORKSPACE_RUNTIME_HOST_ID: "host_1",
       WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM: await exportSPKI(relayHost.publicKey),
+      [WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL]: authority.url,
       OPENCODE_URL: "http://127.0.0.1:4096",
       OPENCODE_PTY_ORPHAN_TIMEOUT_MS: "1000",
     },
@@ -283,6 +376,7 @@ async function processSeparatedRelayHarness() {
     await waitForRuntime(runtimeUrl)
   } catch (err) {
     await stopChild(child)
+    authority.stop()
     await fs.rm(workspaceDir, { recursive: true, force: true })
     throw new Error(`${err instanceof Error ? err.message : String(err)}\n${logs.join("")}`)
   }
@@ -314,8 +408,12 @@ async function processSeparatedRelayHarness() {
     runtimeUrl,
     relayUrl: String(relayServer.url).replace(/\/$/, ""),
     relayAudits,
+    sessionId: PTY_SESSION_ID,
+    authorityRequests: authority.requests,
     runtimeAccessToken: await mintRuntimeAccessToken({
       subject: "user_1",
+      actorId: "actor_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -324,6 +422,7 @@ async function processSeparatedRelayHarness() {
     async close() {
       relayServer.stop(true)
       await stopChild(child)
+      authority.stop()
       await fs.rm(workspaceDir, { recursive: true, force: true })
     },
   }
@@ -417,6 +516,9 @@ describe("workspace relay composed runtime path", () => {
             "content-type": "application/json",
           },
           body: JSON.stringify({
+            // A relay-exposed PTY is bound to its creating session; the runtime
+            // rejects a session-less create so the authority has something to gate.
+            sessionId: relay.sessionId,
             command: "/bin/sh",
             cwd: ".",
           }),
@@ -428,6 +530,11 @@ describe("workspace relay composed runtime path", () => {
       }
       expect(pty.status).toBe(200)
       const info = await pty.json() as { id: string }
+      expect(relay.authorityRequests).toContainEqual({
+        sessionId: relay.sessionId,
+        action: "write",
+        actorId: "actor_1",
+      })
       // Bun WS clients send no Origin header by default, but
       // the relay's `requireAllowedOrigin` enforces one on WS upgrades.
       // Pass an explicit allowed origin via bun's extended constructor.
@@ -547,6 +654,7 @@ describe("workspace relay composed runtime path", () => {
             "content-type": "application/json",
           },
           body: JSON.stringify({
+            sessionId: relay.sessionId,
             command: "/bin/sh",
             cwd: ".",
           }),
@@ -558,6 +666,11 @@ describe("workspace relay composed runtime path", () => {
       }
       expect(pty.status).toBe(200)
       const info = await pty.json() as { id: string }
+      expect(relay.authorityRequests).toContainEqual({
+        sessionId: relay.sessionId,
+        action: "write",
+        actorId: "actor_1",
+      })
 
       ws = new (WebSocket as unknown as {
         new(url: string, options: { headers?: Record<string, string>; protocols?: string[] }): WebSocket

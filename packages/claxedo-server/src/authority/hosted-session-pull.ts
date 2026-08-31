@@ -2,8 +2,10 @@ import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
+import type { RelayRole } from "@claxedo/workspace-relay"
 
 class HostedSessionPullError extends Error {
   constructor(
@@ -30,6 +32,14 @@ function num(input: unknown) {
 function requireSignedAuth(auth: ControlPlaneAuthContext | undefined) {
   if (auth?.mode === "signed") return auth
   throw new HostedSessionPullError(401, "signed_auth_required", "Signed auth is required")
+}
+
+function workspaceRole(input: unknown): RelayRole | undefined {
+  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
+}
+
+function workspaceRoleAllowsWrite(input: unknown) {
+  return input === "editor" || input === "admin" || input === "owner"
 }
 
 function sessionStamp(input: Record<string, unknown>) {
@@ -119,6 +129,8 @@ async function hostedWorkspaceForPull(
   const signed = requireSignedAuth(auth)
   const authority = requireAuthority(services)
   const opened = await authority.openWorkspace(signed, { workspaceId })
+  const role = workspaceRole(rec(opened)?.role)
+  if (!role) throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace access is denied")
   const workspace = rec(rec(opened)?.workspace)
   const orgId =
     txt(workspace?.org_id) ??
@@ -134,7 +146,7 @@ async function hostedWorkspaceForPull(
     created_at: num(workspace?.created_at) ?? num(workspace?.createdAt) ?? stamp,
     updated_at: num(workspace?.updated_at) ?? num(workspace?.updatedAt) ?? stamp,
   } satisfies Workspace
-  return { workspaceId, ws, workspace }
+  return { workspaceId, ws, workspace, role }
 }
 
 async function runtimeFetch(
@@ -145,6 +157,7 @@ async function runtimeFetch(
     ws: Workspace
     hostId: string
     homeRegion: ClaxedoRegion
+    role: RelayRole
     path: string
   },
 ) {
@@ -168,8 +181,12 @@ async function runtimeFetch(
     workspaceId: input.workspaceId,
     hostId: input.hostId,
     subject: auth?.mode === "signed" ? auth.user.subject : "control-plane",
+    principalKind: auth?.mode === "signed" ? "user" : "service",
+    ...(auth?.mode === "signed"
+      ? await resolveRuntimeActor(requireAuthority(services), auth)
+      : { actorId: "control-plane", actorKind: "agent" as const }),
     orgId,
-    role: "owner",
+    role: input.role,
     ttlMs: 10 * 60_000,
   })
   const relayUrl = await provider.getRelayEndpoint(input.workspaceId, input.homeRegion)
@@ -193,6 +210,7 @@ async function runtimeJson<T>(
     ws: Workspace
     hostId: string
     homeRegion: ClaxedoRegion
+    role: RelayRole
     path: string
   },
 ) {
@@ -213,6 +231,7 @@ async function verifiedRuntimeJson<T>(
     ws: Workspace
     hostId: string
     homeRegion: ClaxedoRegion
+    role: RelayRole
     path: string
   },
 ) {
@@ -238,6 +257,9 @@ export async function pullHostedControlSession(
 ) {
   const signed = requireSignedAuth(auth)
   const workspace = await hostedWorkspaceForPull(services, signed, input.workspaceId)
+  if (!workspaceRoleAllowsWrite(workspace.role)) {
+    throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace write authority is required")
+  }
   const target = {
     ...workspace,
     ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
@@ -261,6 +283,10 @@ export async function pullHostedControlSessionMessages(
 ) {
   const signed = requireSignedAuth(auth)
   const workspace = await hostedWorkspaceForPull(services, signed, input.workspaceId)
+  await requireAuthority(services).authorizeSessionWrite(signed, {
+    sessionId: input.sessionId,
+    workspaceId: input.workspaceId,
+  })
   const currentOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
   if (input.expectedEventOrdinal !== undefined && input.expectedEventOrdinal < currentOrdinal) {
     return { ok: true, skipped: true, reason: "older_expected_ordinal", currentOrdinal }

@@ -77,6 +77,7 @@ export type VercelSandboxDriverOptions = {
     relayJwksUrl?: string
     relayVerifyPem?: string
     managementJwksUrl?: string
+    sessionAuthorityUrl?: string
   }
   env?: (input: SandboxDriverEnsureInput, host: { id: string }) => Record<string, string> | Promise<Record<string, string>>
   timeoutMs?: number
@@ -253,6 +254,7 @@ export function createVercelSandboxDriver(options: VercelSandboxDriverOptions): 
     if (options.controlEnv?.relayJwksUrl) env.WORKSPACE_RUNTIME_RELAY_JWKS_URL = options.controlEnv.relayJwksUrl
     if (options.controlEnv?.relayVerifyPem) env.WORKSPACE_RUNTIME_RELAY_HOST_VERIFY_PEM = options.controlEnv.relayVerifyPem
     if (options.controlEnv?.managementJwksUrl) env.WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL = options.controlEnv.managementJwksUrl
+    if (options.controlEnv?.sessionAuthorityUrl) env.WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL = options.controlEnv.sessionAuthorityUrl
     return env
   }
 

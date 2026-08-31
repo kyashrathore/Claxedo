@@ -50,7 +50,7 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
     .all()
     .map((item) => item.session_ref)
     .filter((session_ref) => !incoming.includes(session_ref)))
-  for (const sessionRef of stale) await deleteSessionMetaRef(sessionRef)
+  deleteSessionMetaRefs(stale)
 }
 
 export async function syncSessionMeta(ws: Workspace | undefined, input: unknown) {
@@ -113,9 +113,11 @@ export async function putSessionMeta(
       : input.workspaceID
     const hostValue = input.host ?? host(prevByID?.host) ?? "workspace"
     const directory = input.directory ?? input.ws?.directory ?? prevByID?.directory ?? null
+    const workspaceKind = input.ws?.kind ?? (prevByID?.session_ref.startsWith("local:") ? "local" : undefined)
     const sessionRef = storedSessionRef({
       session_id: sessionID,
       workspace_id: workspaceID,
+      workspace_kind: workspaceKind,
       directory,
       host: hostValue,
     })
@@ -438,11 +440,12 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
   })
 }
 
-async function deleteSessionMetaRef(sessionRef: string) {
+function deleteSessionMetaRefs(sessionRefs: string[]) {
+  if (sessionRefs.length === 0) return
   ClaxedoDB.transaction((db) => {
-    db.delete(ClaxedoSessionAttachmentTable).where(eq(ClaxedoSessionAttachmentTable.session_ref, sessionRef)).run()
-    db.delete(ClaxedoSessionTagTable).where(eq(ClaxedoSessionTagTable.session_ref, sessionRef)).run()
-    db.delete(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_ref, sessionRef)).run()
+    db.delete(ClaxedoSessionAttachmentTable).where(inArray(ClaxedoSessionAttachmentTable.session_ref, sessionRefs)).run()
+    db.delete(ClaxedoSessionTagTable).where(inArray(ClaxedoSessionTagTable.session_ref, sessionRefs)).run()
+    db.delete(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, sessionRefs)).run()
   })
 }
 

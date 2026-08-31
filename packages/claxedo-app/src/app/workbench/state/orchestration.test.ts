@@ -495,13 +495,29 @@ describe("state/orchestration", () => {
     expect(meta.get(id)?.content?.title).toBe("Claude: Fix typecheck errors")
   })
 
-  test("openTerminal persists pending create command for reload recovery", () => {
+  test("openTerminal persists pending create command and current session for reload recovery", () => {
     const { layout, meta } = makeFixture()
-    const id = layout.openTerminal("/work/foo", "pending-1", "Claude", { command: "claude" })
+    const id = layout.openTerminal("/work/foo", "pending-1", "Claude", {
+      command: "claude",
+      sessionId: "session_private",
+    })
     expect(meta.get(id)?.terminalId).toBe("pending-1")
     expect(meta.get(id)?.content?.terminalId).toBe("pending-1")
     expect(meta.get(id)?.content?.title).toBe("Claude")
     expect(meta.get(id)?.content?.command).toBe("claude")
+    expect(meta.get(id)?.sessionId).toBe("session_private")
+  })
+
+  test("openTerminal isolates pending creators that share a provider directory", () => {
+    const { layout, meta } = makeFixture()
+    const a = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_a" })
+    const again = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_a" })
+    const b = layout.openTerminal("/workspace", "new", "Terminal", { workspaceRouteId: "ws_b" })
+
+    expect(again).toBe(a)
+    expect(b).not.toBe(a)
+    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
+    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
   test("openTerminal isolates pending creators that share a provider directory", () => {

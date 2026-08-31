@@ -12,6 +12,8 @@ export type {
   AgentMessagePage,
   AgentMessagePageInput,
   AgentHarnessAdapterProcessOptions,
+  AgentHandoffSessionOptions,
+  AgentPreparedHandoffSession,
   PermissionDecision,
   SupportsAbort,
   SupportsAgents,

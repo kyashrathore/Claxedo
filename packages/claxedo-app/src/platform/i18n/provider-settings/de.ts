@@ -1,0 +1,26 @@
+export const dict = {
+  "command.openProviders": "Anbieter öffnen",
+  "settings.models.previewCount": "{{count}} weitere anzeigen",
+  "settings.models.providerSearch.empty": "Keine Modelle entsprechen „{{query}}“.",
+  "settings.models.providerSearch.hint":
+    "Es werden die ersten {{shown}} von {{total}} angezeigt. Suche nach weiteren Modellen.",
+  "settings.models.providerSearch.placeholder": "{{provider}}-Modelle suchen…",
+  "settings.models.showLess": "Weniger anzeigen",
+  "settings.models.showMore": "Mehr anzeigen",
+  "settings.providers.agents.sharedCredential": "Eine Einrichtung gilt für ACP und das native SDK.",
+  "settings.providers.detect.action": "Anmeldedaten erkennen",
+  "settings.providers.detect.description":
+    "Durchsucht diesen Computer nach Claude-, Codex- und Cursor-Anmeldungen und aktualisiert dann den Status unten.",
+  "settings.providers.detect.running": "Wird erkannt…",
+  "settings.providers.pi.description": "Pi unterstützt Anthropic, OpenAI und OpenAI Codex.",
+  "settings.providers.search.label": "Anbieter suchen",
+  "settings.providers.search.placeholder": "OpenCode-Anbieter suchen…",
+  "settings.providers.section.agents": "Agenten auf diesem Computer",
+  "settings.providers.section.opencode": "OpenCode-Anbieter",
+  "settings.providers.section.pi": "Pi-Anbieter",
+  "settings.providers.status.broken": "Erfordert Aufmerksamkeit",
+  "settings.providers.status.connected": "Verbunden",
+  "settings.providers.status.detected": "Erkannt",
+  "settings.providers.status.notConnected": "Nicht verbunden",
+  "settings.providers.tag.apiKey": "API-Schlüssel",
+}

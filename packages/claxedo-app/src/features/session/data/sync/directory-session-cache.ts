@@ -2,7 +2,7 @@ import type { Session } from "@opencode-ai/sdk/v2/client"
 import { useGlobalSync } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
 import { directorySessionCacheQueryOptions, type DirectorySessionCacheValue } from "./queries"
-import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 
 type DirectorySessionCacheDirectory = Parameters<typeof directorySessionCacheQueryOptions>[0]["directory"]
@@ -97,6 +97,23 @@ export function directorySessions(directory: string, fallback?: Session) {
   const sessions = directorySessionCache(directory)?.session ?? []
   if (!fallback || sessions.some((session) => session.id === fallback.id)) return sessions
   return [fallback, ...sessions]
+}
+
+export function directorySessionCacheOwnsSession(sessionRef: SessionRef | undefined) {
+  return sessionRef?.host !== "central"
+}
+
+export function shouldScheduleDirectorySessionHydration(input: {
+  directory: DirectorySessionCacheDirectory
+  sessionID: Session["id"] | undefined
+  hasSessionInfo: boolean
+  sessionRef: SessionRef | undefined
+}) {
+  return !!input.directory &&
+    !!input.sessionID &&
+    input.sessionID !== "new" &&
+    !input.hasSessionInfo &&
+    directorySessionCacheOwnsSession(input.sessionRef)
 }
 
 export async function hydrateDirectorySession(input: {

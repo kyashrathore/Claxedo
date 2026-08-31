@@ -36,6 +36,10 @@ const roleRank: Record<WorkspaceRole, number> = {
   owner: 4,
 }
 
+export function roleAtLeast(actual: WorkspaceRole, required: WorkspaceRole) {
+  return roleRank[actual] >= roleRank[required]
+}
+
 function clerkIssuer() {
   return process.env.CLERK_JWT_ISSUER_DOMAIN ?? process.env.CLERK_JWT_ISSUER
 }
@@ -57,16 +61,20 @@ export function combineRolePrecedence(input: {
   directWorkspace?: WorkspaceRole
   directProject?: WorkspaceRole
   directOrg?: WorkspaceRole
+  teamProject?: WorkspaceRole
   share?: WorkspaceRole
   orgShare?: WorkspaceRole
+  teamShare?: WorkspaceRole
 }) {
   if (input.owner) return "owner"
   return maxRole([
     input.directWorkspace,
     input.directProject,
     input.directOrg,
+    input.teamProject,
     input.share,
     input.orgShare,
+    input.teamShare,
   ])
 }
 
@@ -103,16 +111,17 @@ export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & Ident
       ? await ctx.db
           .query("users")
           .withIndex("by_clerk_subject", (q) => q.eq("clerk_subject", identity.subject))
-          .first()
+          .unique()
       : null)
   const patch = {
+    public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
     token_identifier: identity.tokenIdentifier,
     clerk_subject: identity.subject,
     issuer: identity.issuer,
     email: identity.email,
     name: identity.name,
     image_url: identity.pictureUrl,
-    kind: "human" as const,
+    kind: existing?.kind ?? "human" as const,
     updated_at: now,
   }
   if (existing) {
@@ -129,6 +138,20 @@ export async function upsertUser(ctx: { db: GenericDatabaseWriter<any> } & Ident
   }
 }
 
+export async function serviceUserByIdentity(db: Db, input: {
+  token_identifier: string
+  subject?: string
+}) {
+  const [byToken, bySubject] = await Promise.all([
+    userByTokenIdentifier(db, input.token_identifier),
+    input.subject ? userByClerkSubject(db, input.subject) : null,
+  ])
+  if (byToken && bySubject && byToken._id !== bySubject._id) {
+    throw new Error("service_user_identity_conflict")
+  }
+  return byToken ?? bySubject
+}
+
 export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> }, input: {
   token_identifier: string
   subject?: string
@@ -138,17 +161,18 @@ export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> },
   image_url?: string
 }) {
   const now = Date.now()
-  const existing = await ctx.db
-    .query("users")
-    .withIndex("by_token_identifier", (q) => q.eq("token_identifier", input.token_identifier))
-    .unique()
+  const existing = await serviceUserByIdentity(ctx.db, input)
   const patch = {
+    public_id: existing?.public_id ?? `usr_${crypto.randomUUID()}`,
+    token_identifier: input.token_identifier,
     clerk_subject: input.subject,
     issuer: input.issuer,
     email: input.email,
     name: input.name,
     image_url: input.image_url,
-    kind: "agent" as const,
+    // Service calls proxy the same stable end-user identity used by browser
+    // auth. Do not flip that durable actor between human and agent by client.
+    kind: existing?.kind ?? "human" as const,
     updated_at: now,
   }
   if (existing) {
@@ -156,7 +180,6 @@ export async function upsertServiceUser(ctx: { db: GenericDatabaseWriter<any> },
     return { ...existing, ...patch }
   }
   const user = {
-    token_identifier: input.token_identifier,
     ...patch,
     created_at: now,
   }
@@ -196,13 +219,28 @@ async function directProjectRole(db: Db, userId: unknown, projectId: unknown) {
   return typeof membership?.role === "string" ? membership.role as WorkspaceRole : undefined
 }
 
-async function shareRole(db: Db, userId: unknown, workspaceId: unknown) {
-  const grants = await db
+type WorkspaceShareGrant = {
+  revoked_at?: unknown
+  granted_to_user_id?: unknown
+  granted_to_org_id?: unknown
+  granted_to_team_id?: unknown
+  role?: unknown
+}
+
+type OrgMembership = { org_id: unknown }
+type TeamMembership = { team_id: unknown }
+
+async function workspaceShareGrants(db: Db, workspaceId: unknown): Promise<WorkspaceShareGrant[]> {
+  return await db
     .query("workspace_share_grants")
-    .withIndex("by_user", (q) => q.eq("granted_to_user_id", userId))
-    .collect()
-  const grant = grants.find((item) => item.workspace_id === workspaceId && !item.revoked_at)
-  return typeof grant?.role === "string" ? grant.role as WorkspaceRole : undefined
+    .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceId))
+    .collect() as WorkspaceShareGrant[]
+}
+
+function shareRole(grants: readonly WorkspaceShareGrant[], userId: unknown) {
+  return maxRole(grants
+    .filter((grant) => !grant.revoked_at && grant.granted_to_user_id === userId)
+    .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
 function orgWorkspaceRole(role: OrgRole) {
@@ -249,6 +287,11 @@ export async function orgMembershipRole(db: Db, userId: unknown, orgId: unknown)
 // in convex/workspaces.ts already treats the two as equivalent, and orgs
 // created before the membership row existed would otherwise have no admin.
 export async function orgAdminForUser(db: Db, userId: unknown, orgId: unknown) {
+  // Expand-safety: a workspace/session row still awaiting the tenancy migration
+  // carries org_id: undefined. Degrade to "no org authority" rather than
+  // crashing on db.get(undefined), so code deployed during the migration window
+  // can still read legacy rows (matches the guarded pattern at sessions.ts:320).
+  if (!orgId) return false
   const org = await db.get(orgId as never)
   if (!org || org.deleted_at) return false
   const role = await orgMembershipRole(db, userId, orgId)
@@ -257,39 +300,103 @@ export async function orgAdminForUser(db: Db, userId: unknown, orgId: unknown) {
 }
 
 async function directOrgRole(db: Db, userId: unknown, orgId: unknown) {
+  if (!orgId) return
   const org = await db.get(orgId as never)
   if (org?.deleted_at) return
   const role = await orgMembershipRole(db, userId, orgId)
-  return role ? orgWorkspaceRole(role) : undefined
+  if (role) return orgWorkspaceRole(role)
+  return org?.owner_user_id === userId ? "admin" : undefined
 }
 
-async function orgShareRole(db: Db, userId: unknown, workspaceId: unknown) {
-  const memberships = await db
-    .query("org_memberships")
-    .withIndex("by_user", (q) => q.eq("user_id", userId))
-    .collect()
-  const grants = (await Promise.all(memberships.map(async (membership) => {
-    return await db
-      .query("workspace_share_grants")
-      .withIndex("by_org", (q) => q.eq("granted_to_org_id", membership.org_id))
-      .collect()
-  }))).flat()
-  const grant = grants.find((item) => item.workspace_id === workspaceId && !item.revoked_at)
-  return typeof grant?.role === "string" ? grant.role as WorkspaceRole : undefined
+function orgShareRole(memberships: readonly OrgMembership[], grants: readonly WorkspaceShareGrant[]) {
+  const memberOrgIds = new Set(memberships.map((membership) => membership.org_id))
+  return maxRole(grants
+    .filter((grant) => !grant.revoked_at && grant.granted_to_org_id && memberOrgIds.has(grant.granted_to_org_id))
+    .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
+}
+
+function teamShareRole(memberships: readonly TeamMembership[], grants: readonly WorkspaceShareGrant[]) {
+  const memberTeamIds = new Set(memberships.map((membership: any) => membership.team_id))
+  return maxRole(grants
+    .filter((grant: any) => !grant.revoked_at && grant.granted_to_team_id && memberTeamIds.has(grant.granted_to_team_id))
+    .map((grant: any) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
+}
+
+async function teamProjectRole(
+  db: Db,
+  userId: unknown,
+  projectId: unknown,
+  orgId: unknown,
+  existingMemberships?: readonly TeamMembership[],
+) {
+  if (!projectId || !orgId) return
+  const memberships = existingMemberships ?? await db
+    .query("team_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", userId))
+    .collect() as TeamMembership[]
+  const teams = await Promise.all(memberships.map(async (membership) => ({
+    membership,
+    team: await db.get(membership.team_id as never),
+  })))
+  const grants = (await Promise.all(teams
+    .filter(({ team }) => team && !(team as any).deleted_at && (team as any).org_id === orgId)
+    .map(async ({ membership }) => await db
+      .query("team_project_grants")
+      .withIndex("by_team_project", (q: any) =>
+        q.eq("team_id", membership.team_id).eq("project_id", projectId))
+      .collect()))).flat()
+  return maxRole(grants.map((grant) =>
+    grant && !(grant as any).revoked_at && typeof (grant as any).role === "string"
+      ? (grant as any).role as WorkspaceRole
+      : undefined))
 }
 
 export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<string, unknown>, user: { _id: unknown }) {
   if (workspace.deleted_at) return
+  if (!workspace.org_id) return
+  const org = await ctx.db.get(workspace.org_id as never)
+  if (!org || org.deleted_at) return
   const project = typeof workspace.project_id === "string"
-    ? await projectByPublicId(ctx.db, workspace.project_id)
+    ? await projectByPublicId(ctx.db, workspace.project_id, workspace.org_id)
     : undefined
+  const projectKey = project?.project_id ?? (typeof workspace.project_id === "string" ? workspace.project_id : undefined)
+  const workspaceShares = workspaceShareGrants(ctx.db, workspace._id)
+  const orgMemberships = ctx.db
+    .query("org_memberships")
+    .withIndex("by_user", (q) => q.eq("user_id", user._id))
+    .collect() as Promise<OrgMembership[]>
+  const teamMemberships = ctx.db
+    .query("team_memberships")
+    .withIndex("by_user", (q: any) => q.eq("user_id", user._id))
+    .collect() as Promise<TeamMembership[]>
+  const teamProject = teamMemberships.then((teams) =>
+    teamProjectRole(ctx.db, user._id, projectKey, workspace.org_id, teams))
+  const [
+    directWorkspace,
+    directProject,
+    directOrg,
+    shares,
+    orgs,
+    teams,
+    teamProjectResult,
+  ] = await Promise.all([
+    directWorkspaceRole(ctx.db, user._id, workspace._id),
+    project ? directProjectRole(ctx.db, user._id, project.project_id) : undefined,
+    workspace.org_id ? directOrgRole(ctx.db, user._id, workspace.org_id) : undefined,
+    workspaceShares,
+    orgMemberships,
+    teamMemberships,
+    teamProject,
+  ])
   return combineRolePrecedence({
     owner: workspace.owner_user_id === user._id,
-    directWorkspace: await directWorkspaceRole(ctx.db, user._id, workspace._id),
-    directProject: project ? await directProjectRole(ctx.db, user._id, project._id) : undefined,
-    directOrg: workspace.org_id ? await directOrgRole(ctx.db, user._id, workspace.org_id) : undefined,
-    share: await shareRole(ctx.db, user._id, workspace._id),
-    orgShare: await orgShareRole(ctx.db, user._id, workspace._id),
+    directWorkspace,
+    directProject,
+    directOrg,
+    teamProject: teamProjectResult,
+    share: shareRole(shares, user._id),
+    orgShare: orgShareRole(orgs, shares),
+    teamShare: teamShareRole(teams, shares),
   })
 }
 
@@ -301,8 +408,9 @@ export async function projectRoleForUser(ctx: { db: Db }, project: Record<string
   if (project.deleted_at) return
   return combineRolePrecedence({
     owner: project.owner_user_id === user._id,
-    directProject: await directProjectRole(ctx.db, user._id, project._id),
+    directProject: await directProjectRole(ctx.db, user._id, project.project_id),
     directOrg: await directOrgRole(ctx.db, user._id, project.org_id),
+    teamProject: await teamProjectRole(ctx.db, user._id, project.project_id, project.org_id),
   })
 }
 
@@ -337,11 +445,13 @@ export async function workspaceByPublicId(db: Db, workspaceId: string) {
     .unique()
 }
 
-export async function projectByPublicId(db: Db, projectId: string) {
-  return await db
+export async function projectByPublicId(db: Db, projectId: string, orgId?: unknown) {
+  const project = await db
     .query("projects")
     .withIndex("by_project_id", (q) => q.eq("project_id", projectId))
     .unique()
+  if (project && orgId !== undefined && project.org_id !== orgId) return undefined
+  return project
 }
 
 export async function orgByClerkOrgId(db: Db, clerkOrgId: string) {

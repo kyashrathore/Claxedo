@@ -259,6 +259,63 @@ describe("session inventory writers", () => {
     expect(inventory.byProject.project_a.map((item) => item.id)).toEqual(["ses_harness"])
   })
 
+  test("lifecycle update cannot invent a row before its canonical create or snapshot", () => {
+    updateSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test",
+      mutate: (draft) => {
+        applySessionInventoryLifecycle(
+          draft,
+          session("ses_unknown", 3, {
+            directory: "ses_unknown",
+            projectID: "ses_unknown",
+            title: "Partial update",
+          }),
+          "updated",
+        )
+      },
+    })
+
+    expect(readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" }).sessions).toEqual([])
+  })
+
+  test("lifecycle update projects canonical central identity and preserves unchanged row fields", () => {
+    updateSessionInventoryQueryData<SessionInventoryRow>({
+      baseUrl: "http://test",
+      mutate: (draft) => {
+        upsertSessionInventoryRow(draft, session("ses_central", 2, {
+          sessionRef: "central:ses_central",
+          workspaceId: "ws_1",
+          tags: ["harness:pi"],
+        }))
+        applySessionInventoryLifecycle(
+          draft,
+          {
+            ...session("ses_central", 3, {
+              directory: "ses_central",
+              projectID: "ws_1",
+              title: "Canonical title",
+            }),
+            workspaceID: "ws_1",
+            metadata: { host: "central", sessionRef: "central:ses_central" },
+          },
+          "updated",
+        )
+      },
+    })
+
+    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    expect(inventory.sessions).toHaveLength(1)
+    expect(inventory.sessions[0]).toMatchObject({
+      id: "ses_central",
+      sessionRef: "central:ses_central",
+      workspaceId: "ws_1",
+      projectID: "ws_1",
+      title: "Canonical title",
+      tags: ["harness:pi"],
+    })
+    expect(inventory.byWorkspace.ws_1.sessions).toHaveLength(1)
+  })
+
   test("lifecycle drops a created event with no resolvable projectID (nowhere to place a brand-new row)", () => {
     updateSessionInventoryQueryData<SessionInventoryRow>({
       baseUrl: "http://test",

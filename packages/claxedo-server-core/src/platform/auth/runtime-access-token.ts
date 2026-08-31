@@ -62,7 +62,7 @@ export const RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS = { min: 15 * 60, max: 60 *
 /** Signer-enforced Host Tunnel Token TTL bounds (seconds). */
 export const HOST_TUNNEL_TOKEN_TTL_BOUNDS_SECONDS = { min: 60, max: 30 * 60 } as const
 
-export type RuntimeAccessTokenSignerInput = {
+type RuntimeAccessTokenSignerBaseInput = {
   subject: string
   orgId: string
   workspaceId: string
@@ -70,6 +70,14 @@ export type RuntimeAccessTokenSignerInput = {
   role: RelayRole
   /** Requested TTL; always clamped to `RUNTIME_ACCESS_TOKEN_TTL_BOUNDS_SECONDS`. */
   ttlSeconds?: number
+  actorPublicId?: string
+  actorName?: string
+  actorAvatarUrl?: string
+}
+
+export type RuntimeAccessTokenSignerInput = RuntimeAccessTokenSignerBaseInput & {
+  actorId: string
+  actorKind: "human" | "agent"
 }
 
 export type RuntimeAccessTokenSignerResult = {
@@ -214,6 +222,15 @@ export function runtimeAccessTokenSigner(env: NodeJS.ProcessEnv = process.env): 
     const kid = await resolveMintKid(env, privateKey)
     const issuedAt = Math.floor(now / 1000)
     const token = await new SignJWT({
+      actor_id: input.actorId,
+      actor_kind: input.actorKind,
+      ...(input.actorPublicId && input.actorName
+        ? {
+            actor_public_id: input.actorPublicId,
+            actor_name: input.actorName,
+            ...(input.actorAvatarUrl ? { actor_avatar_url: input.actorAvatarUrl } : {}),
+          }
+        : {}),
       org_id: input.orgId,
       workspace_id: input.workspaceId,
       host_id: input.hostId,

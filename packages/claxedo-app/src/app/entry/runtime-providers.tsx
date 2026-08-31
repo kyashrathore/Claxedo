@@ -10,6 +10,10 @@ import { ModelsProvider } from "@/features/session/providers/models"
 import { CommandProvider } from "@/app/providers/command"
 import { HighlightsProvider } from "@/features/review/providers/highlights"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
+import { installPrincipalDataIsolation } from "@/app/integrations/sync/global-sync-boundary"
+import { principalDataScope, usePrincipal } from "@/platform/auth/identity-provider"
+import { flushQueryPersistence, installQueryPersister } from "@/platform/query/persister"
+import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 
 trace("runtime.providersModuleEvaluated", 0)
 
@@ -50,6 +54,12 @@ export function preloadRuntimeProviders() {
 export function RuntimeProviders(props: ParentProps) {
   const started = performance.now()
   const AppShell = claxedoAppShell()
+  const principal = usePrincipal()
+  installQueryPersister({
+    quietDelay: fastSessionSwitchAnyQuietDelay,
+    scope: () => principalDataScope(principal()),
+  })
+  installPrincipalDataIsolation({ principal })
   let didSignalPaint = false
 
   createEffect(() => {
@@ -62,8 +72,8 @@ export function RuntimeProviders(props: ParentProps) {
 
   const providers = (
     <GlobalSDKProvider>
-      <SessionTitleProjectionProvider>
-        <GlobalSyncProvider>
+      <SessionTitleProjectionProvider scope={() => principalDataScope(principal())}>
+        <GlobalSyncProvider flushNavigationPersistence={flushQueryPersistence}>
           <SettingsProvider>
             <PermissionProvider>
               <LayoutProvider>

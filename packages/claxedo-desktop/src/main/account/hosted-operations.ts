@@ -25,15 +25,36 @@
  */
 
 export type HostedOperation = {
-  method: "GET" | "POST"
+  method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
   /** Path template; `:name` segments are filled from the caller's parameters. */
   path: string
   /** Parameter names that go in the body rather than the path. */
   body?: string[]
+  /**
+   * Declared query keys filled from the caller's parameters.
+   *
+   * Distinct from putting `:name` in the path's query string: those keys are
+   * fixed here, so the set of requests stays enumerable. A free-form
+   * `?access=:access` is still forbidden.
+   *
+   * Keys in `query` are required. Keys in `optionalQuery` are omitted when
+   * absent (e.g. resolve-by-id OR resolve-by-directory).
+   */
+  query?: string[]
+  optionalQuery?: string[]
+  /**
+   * Declared request headers filled from caller parameters.
+   * Map of parameter name → HTTP header name (e.g. `{ ifMatch: "If-Match" }`).
+   */
+  headers?: Record<string, string>
 }
 
 export const HOSTED_OPERATIONS = {
-  "account.get": { method: "GET", path: "/api/claxedo/bootstrap" },
+  "account.get": {
+    method: "GET",
+    path: "/api/claxedo/bootstrap",
+    optionalQuery: ["harness", "scope"],
+  },
   "account.mode": { method: "GET", path: "/api/claxedo/mode" },
   "account.compatibility": { method: "GET", path: "/api/claxedo/compatibility" },
   // No idempotency key. The app registry says "the idempotency key for that
@@ -69,14 +90,20 @@ export const HOSTED_OPERATIONS = {
   //     for the other; two rows can.
   "workspace.list.cloud": { method: "GET", path: "/api/workspace?access=cloud" },
   "workspace.list.userHosted": { method: "GET", path: "/api/workspace?access=user-hosted" },
-  "workspace.resolve": { method: "GET", path: "/api/workspace/resolve" },
+  // Optional query: callers pass workspaceId and/or directory and/or create.
+  "workspace.resolve": {
+    method: "GET",
+    path: "/api/workspace/resolve",
+    optionalQuery: ["workspaceId", "directory", "create"],
+  },
   // `projectName`/`workspaceName`, not `displayName`. The create body is a
   // strict schema, so an undeclared field is a 400 for the whole request rather
   // than a field the server ignores — `displayName` made this operation
-  // unusable from the day it was written. The connected-repository form
-  // (`connectionId` + a `repo` object, both or neither) is deliberately absent:
-  // parameters here are scalars, so that create shape is not expressible as a
-  // named operation and must not be half-declared.
+  // unusable from the day it was written.
+  //
+  // Connected-repository create needs `connectionId` + `repo: { fullName }`.
+  // Parameters here stay scalars (`repoFullName`); `resolveHostedOperation`
+  // nests that into the `repo` object the hosted schema requires.
   //
   // NO IDEMPOTENCY KEY, and one cannot be added from this side. The matrix once
   // classified this row `idempotency-key`; there is no key anywhere. This table
@@ -86,15 +113,13 @@ export const HOSTED_OPERATIONS = {
   // would 400 every create rather than dedupe a retry. That is the same failure
   // `displayName` caused above. Until the route accepts one, this operation is
   // genuinely `unsafe`: an uncertain response must be surfaced, never retried,
-  // because a retry provisions a second billable sandbox. Nothing retries it
-  // today — `account-service.run` performs exactly one fetch and no renderer
-  // surface names this operation yet — which is what keeps the gap latent
-  // rather than live. `isSafeOperation` in the app registry already answers
-  // false for it, and that is the property a retry loop must consult.
+  // because a retry provisions a second billable sandbox. `account-service.run`
+  // performs exactly one fetch. `isSafeOperation` in the app registry already
+  // answers false for it, and that is the property a retry loop must consult.
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
-    body: ["projectId", "projectName", "workspaceName", "repoUrl"],
+    body: ["projectId", "projectName", "workspaceName", "repoUrl", "connectionId", "repoFullName"],
   },
   // `approved` is not decoration. Every lifecycle operation except `stop`
   // refuses with 409 unless the caller states the approval explicitly, and an
@@ -105,13 +130,75 @@ export const HOSTED_OPERATIONS = {
     body: ["approved", "checkpointId"],
   },
   "workspace.checkpoints.list": { method: "GET", path: "/api/workspace/:id/checkpoints" },
+  "workspace.checkpoints.create": {
+    method: "POST",
+    path: "/api/workspace/:id/checkpoints",
+    body: ["policy"],
+  },
   "workspace.checkpoints.restore": {
     method: "POST",
     path: "/api/workspace/:id/checkpoints/:checkpointId/restore",
     body: ["approved"],
   },
   "workspace.connection.mint": { method: "GET", path: "/api/workspace/:id/connection" },
-  "workspace.connection.refresh": { method: "POST", path: "/api/workspace/:id/connection/refresh" },
+  "workspace.connection.refresh": {
+    method: "POST",
+    path: "/api/workspace/:id/connection/refresh",
+    body: ["previousJti"],
+  },
+  // Control-plane session inventory for a workspace (signed rail).
+  "session.list": {
+    method: "GET",
+    path: "/api/control/sessions",
+    query: ["workspaceId"],
+  },
+  // Paginated rail rows (`session-list`), distinct from flat `session.list`.
+  "session.navigationList": {
+    method: "GET",
+    path: "/api/control/session-list",
+    query: ["scope", "limit"],
+    optionalQuery: [
+      "projectId",
+      "workspaceId",
+      "directory",
+      "groupBy",
+      "archived",
+      "status",
+      "environment",
+      "git",
+      "search",
+      "sort",
+      "cursor",
+    ],
+  },
+  "session.projection.register": {
+    method: "POST",
+    path: "/api/control/workspaces/:workspaceId/sessions/:sessionId/register",
+    body: ["idempotencyKey", "reason", "expectedEventOrdinal"],
+  },
+  "session.projection.checkpoint": {
+    method: "POST",
+    path: "/api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint",
+    body: ["idempotencyKey", "reason", "expectedEventOrdinal"],
+  },
+  "session.projection.repair": {
+    method: "POST",
+    path: "/api/control/workspaces/:workspaceId/sessions/:sessionId/repair",
+    body: ["idempotencyKey", "reason", "expectedEventOrdinal"],
+  },
+  // Central control-plane event bus. Consumed via stream IPC (`openStream`), not unary `run`.
+  "session.events": {
+    method: "GET",
+    path: "/api/wr/events",
+    headers: { lastEventId: "Last-Event-ID" },
+  },
+  // Per-session central runtime event bus (control plane, not post-mint RAT).
+  "session.runtimeEvents": {
+    method: "GET",
+    path: "/api/control/session/:sessionId/runtime-events",
+    query: ["parentSessionId"],
+    headers: { lastEventId: "Last-Event-ID" },
+  },
   // MAIN-ONLY. `publicKey` and `signature` are the machine identity, and the
   // route stores whatever public key it is handed — so a caller that supplies
   // them enrolls a machine whose private half nobody else holds. The only
@@ -145,11 +232,264 @@ export const HOSTED_OPERATIONS = {
     path: "/api/claxedo/host/enrollments/heartbeat",
     body: ["hostId", "signature", "ttlMs"],
   },
+  // Session people (private share grants + participants). Hosted control plane
+  // only — the desktop local sidecar deliberately does not mount these routes.
+  "session.shares.list": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/shares",
+    query: ["workspaceId"],
+  },
+  "session.shares.grant": {
+    method: "POST",
+    path: "/api/control/sessions/:sessionId/shares",
+    body: [
+      "workspaceId",
+      "grantedToTokenIdentifier",
+      "grantedToTeamPublicId",
+      "grantedToOrgId",
+    ],
+  },
+  "session.shares.revoke": {
+    method: "DELETE",
+    path: "/api/control/sessions/:sessionId/shares",
+    body: [
+      "workspaceId",
+      "grantId",
+      "grantedToTokenIdentifier",
+      "grantedToTeamPublicId",
+    ],
+  },
+  "session.participants.add": {
+    method: "POST",
+    path: "/api/control/sessions/:sessionId/participants",
+    body: ["workspaceId", "participantTokenIdentifier"],
+  },
+  "org.list": { method: "GET", path: "/api/control/orgs" },
+  "org.create": {
+    method: "POST",
+    path: "/api/control/orgs",
+    body: ["name"],
+  },
+  "org.teams.list": {
+    method: "GET",
+    path: "/api/control/orgs/:orgId/teams",
+  },
+  "org.teams.create": {
+    method: "POST",
+    path: "/api/control/orgs/:orgId/teams",
+    body: ["name"],
+  },
+  "org.ensureDefaultTeam": {
+    method: "POST",
+    path: "/api/control/orgs/:orgId/ensure-default-team",
+  },
+  "team.members.list": {
+    method: "GET",
+    path: "/api/control/teams/:teamId/members",
+  },
+  "team.members.add": {
+    method: "POST",
+    path: "/api/control/teams/:teamId/members",
+    body: ["tokenIdentifier", "clerkSubject", "userPublicId", "role"],
+  },
+  "team.members.remove": {
+    method: "DELETE",
+    path: "/api/control/teams/:teamId/members",
+    body: ["tokenIdentifier", "userPublicId"],
+  },
+  "team.projects.grant": {
+    method: "POST",
+    path: "/api/control/teams/:teamId/projects",
+    body: ["projectId", "role"],
+  },
+  "connections.list": { method: "GET", path: "/api/claxedo/integrations" },
+  "connections.connect": {
+    method: "POST",
+    path: "/api/claxedo/integrations/:id/connect",
+    body: ["method", "fields", "secret", "confirmReplace", "scope"],
+  },
+  "connections.attempt": {
+    method: "GET",
+    path: "/api/claxedo/integrations/attempts/:state",
+  },
+  "connections.repositories": {
+    method: "GET",
+    path: "/api/claxedo/integrations/connections/:id/repositories",
+  },
+  "connections.disconnect": {
+    method: "DELETE",
+    path: "/api/claxedo/integrations/connections/:id",
+  },
+  "connections.reverify": {
+    method: "POST",
+    path: "/api/claxedo/integrations/connections/:id/reverify",
+  },
+  "documents.list": {
+    method: "GET",
+    path: "/documents",
+    optionalQuery: ["project_id", "document_id", "directory", "archived"],
+  },
+  "documents.get": { method: "GET", path: "/documents/:id" },
+  "documents.create": {
+    method: "POST",
+    path: "/documents",
+    body: ["project_id", "directory", "display_name", "markdown"],
+  },
+  "documents.update": {
+    method: "PATCH",
+    path: "/documents/:id",
+    body: ["display_name", "session_id"],
+    headers: { ifMatch: "If-Match" },
+  },
+  "documents.content.get": { method: "GET", path: "/documents/:id/content" },
+  "documents.content.put": {
+    method: "PUT",
+    path: "/documents/:id/content",
+    body: ["display_name", "markdown"],
+    headers: { ifMatch: "If-Match" },
+  },
+  "documents.snapshots": { method: "GET", path: "/documents/:id/snapshots" },
+  "documents.snapshots.restore": {
+    method: "POST",
+    path: "/documents/:id/snapshots/:snapshotId/restore",
+    headers: { ifMatch: "If-Match" },
+  },
+  "documents.workSource": {
+    method: "POST",
+    path: "/documents/:id/work-source",
+    body: ["target_stream_id", "directory", "repository_url"],
+  },
+  "documents.workSourcePin": {
+    method: "POST",
+    path: "/documents/:id/snapshots/:snapshotId/work-source-pin",
+    body: ["work_source_id", "revision_id"],
+  },
+  "documents.statuses": {
+    method: "GET",
+    path: "/documents/statuses",
+    optionalQuery: ["project_id", "document_id", "directory", "archived"],
+  },
+  "workgraph.snapshot": {
+    method: "GET",
+    path: "/api/workgraph/snapshot",
+    optionalQuery: ["limit", "after"],
+  },
+  "workgraph.command": {
+    method: "POST",
+    path: "/api/workgraph/commands",
+    body: ["operationId", "command"],
+  },
+  // Wildcard suffix: caller passes `subpath` (no scheme, no `..`); see resolveHostedOperation.
+  "workgraph.read": { method: "GET", path: "/api/workgraph/*" },
+  // `httpMethod` selects POST|PUT|DELETE; `payload` is the JSON body object.
+  "workgraph.write": {
+    method: "POST",
+    path: "/api/workgraph/*",
+    body: ["payload"],
+  },
+  "session.create": {
+    method: "POST",
+    path: "/api/control/sessions",
+    body: ["mode", "workspaceId", "title", "directory", "harness", "model", "toolSandbox"],
+  },
+  "session.messages": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/messages",
+    optionalQuery: ["workspaceId", "view", "limit", "before", "after"],
+  },
+  "session.gateway": {
+    method: "GET",
+    path: "/api/control/sessions/:sessionId/gateway",
+    optionalQuery: ["workspaceId"],
+  },
+  "billing.checkout": { method: "POST", path: "/api/billing/checkout", body: ["plan"] },
+  "billing.portal": { method: "POST", path: "/api/billing/portal" },
+  "hostLink.register": {
+    method: "POST",
+    path: "/api/workspace/:id/user-hosted/register",
+    body: ["hostId", "publicKey", "challengeId", "signature", "displayName", "ttlMs"],
+  },
+  "usage.get": {
+    method: "GET",
+    path: "/api/claxedo/usage",
+    optionalQuery: [
+      "since",
+      "until",
+      "timezone",
+      "view",
+      "group",
+      "after",
+      "model_after",
+      "limit",
+      "refresh_nonce",
+      "filter_provider",
+      "filter_harness",
+      "filter_model",
+      "filter_location",
+      "filter_session",
+      "filter_workspace",
+      "filter_app",
+    ],
+  },
+  "usage.sync": { method: "POST", path: "/api/claxedo/usage/sync" },
+  "documents.export": { method: "GET", path: "/documents/:id/export" },
+  "documents.agentOpen": {
+    method: "POST",
+    path: "/documents/:id/agent-open",
+    body: ["session_id"],
+  },
+  "documents.runtimeConflictResolve": {
+    method: "POST",
+    path: "/documents/:id/runtime-conflict/resolve",
+    body: ["session_id", "choice"],
+  },
+  "documents.moveToRepository": {
+    method: "POST",
+    path: "/documents/:id/move-to-repository",
+    body: ["workspace_id", "path"],
+  },
+  "documents.fromRepo": {
+    method: "POST",
+    path: "/documents/from-repo",
+    body: ["project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"],
+  },
+  // Marketplace / agent-config extensions. `subpath` may be empty (list at
+  // `/extensions`) or a relative suffix (`catalog`, `:id`, `:id/enable`, …).
+  "agentConfig.extensions.read": {
+    method: "GET",
+    path: "/api/claxedo/agent-config/extensions/*",
+    optionalQuery: ["scope", "directory", "workspaceId"],
+  },
+  "agentConfig.extensions.write": {
+    method: "POST",
+    path: "/api/claxedo/agent-config/extensions/*",
+    body: ["payload"],
+    optionalQuery: ["scope", "directory", "workspaceId"],
+  },
 } as const satisfies Record<string, HostedOperation>
 
 export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
 
-export type ResolvedRequest = { method: string; path: string; body?: Record<string, unknown> }
+/**
+ * Operations that must not go through unary `run()` (SSE / binary stream).
+ * Path resolution still uses `HOSTED_OPERATIONS`; the IPC open/close stream
+ * channels own the Response lifetime.
+ */
+export const STREAM_HOSTED_OPERATIONS = [
+  "session.events",
+  "session.runtimeEvents",
+] as const satisfies readonly HostedOperationName[]
+
+export function isStreamHostedOperation(name: string): name is (typeof STREAM_HOSTED_OPERATIONS)[number] {
+  return (STREAM_HOSTED_OPERATIONS as readonly string[]).includes(name)
+}
+
+export type ResolvedRequest = {
+  method: string
+  path: string
+  body?: Record<string, unknown>
+  headers?: Record<string, string>
+}
 
 export class UnknownHostedOperation extends Error {}
 export class MissingOperationParameter extends Error {}
@@ -168,16 +508,67 @@ export function resolveHostedOperation(
   const operation = (HOSTED_OPERATIONS as Record<string, HostedOperation | undefined>)[name]
   if (!operation) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
 
-  const path = operation.path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_match, key: string) => {
-    const value = input[key]
-    if (value === undefined || value === null || value === "") {
-      throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
+  let method = operation.method
+  if (name === "workgraph.write" || name === "agentConfig.extensions.write") {
+    const requested = String(input.httpMethod ?? "POST").toUpperCase()
+    if (requested !== "POST" && requested !== "PUT" && requested !== "DELETE") {
+      throw new MissingOperationParameter(`operation "${name}" requires httpMethod POST|PUT|DELETE`)
     }
-    // Encoded, so a parameter cannot add a path segment or a query string.
-    return encodeURIComponent(String(value))
-  })
+    method = requested
+  }
 
-  if (!operation.body) return { method: operation.method, path }
+  let path = operation.path
+  if (path.endsWith("/*")) {
+    const subpath = String(input.subpath ?? "")
+    if (subpath.includes("..") || subpath.includes("://") || subpath.startsWith("//")) {
+      throw new MissingOperationParameter(`operation "${name}" requires a safe subpath`)
+    }
+    const suffix = subpath.replace(/^\//, "")
+    // Empty subpath means the collection root (no trailing slash), used by
+    // agent-config extensions list/install. WorkGraph callers always pass a
+    // non-empty relative path.
+    path = suffix ? `${path.slice(0, -1)}${suffix}` : path.slice(0, -2)
+  } else {
+    path = path.replace(/:([A-Za-z][A-Za-z0-9]*)/g, (_match, key: string) => {
+      const value = input[key]
+      if (value === undefined || value === null || value === "") {
+        throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
+      }
+      // Encoded, so a parameter cannot add a path segment or a query string.
+      return encodeURIComponent(String(value))
+    })
+  }
+
+  if (operation.query?.length || operation.optionalQuery?.length) {
+    const params = new URLSearchParams()
+    for (const key of operation.query ?? []) {
+      const value = input[key]
+      if (value === undefined || value === null || value === "") {
+        throw new MissingOperationParameter(`operation "${name}" requires ${key}`)
+      }
+      params.set(key, String(value))
+    }
+    for (const key of operation.optionalQuery ?? []) {
+      const value = input[key]
+      if (value === undefined || value === null || value === "") continue
+      params.set(key, String(value))
+    }
+    const qs = params.toString()
+    if (qs) path = `${path}?${qs}`
+  }
+
+  const headers: Record<string, string> = {}
+  for (const [param, headerName] of Object.entries(operation.headers ?? {})) {
+    const value = input[param]
+    if (value === undefined || value === null || value === "") continue
+    headers[headerName] = String(value)
+  }
+
+  if (!operation.body) {
+    return Object.keys(headers).length > 0
+      ? { method, path, headers }
+      : { method, path }
+  }
 
   // Only the declared fields. A caller passing extra keys is not an error worth
   // failing on, but those keys must not reach the server — an undeclared field
@@ -186,7 +577,27 @@ export function resolveHostedOperation(
   for (const key of operation.body) {
     if (input[key] !== undefined) body[key] = input[key]
   }
-  return { method: operation.method, path, body }
+  // Hosted createCloudBody wants `repo: { fullName }`. Keep the IPC parameter
+  // a scalar (`repoFullName`) and nest only here so the closed set stays flat.
+  if (name === "workspace.create" && typeof body.repoFullName === "string" && body.repoFullName) {
+    body.repo = { fullName: body.repoFullName }
+    delete body.repoFullName
+  }
+  // WorkGraph / agent-config writes pass an opaque JSON object as `payload`.
+  if (name === "workgraph.write" || name === "agentConfig.extensions.write") {
+    const payload = body.payload
+    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+      return Object.keys(headers).length > 0
+        ? { method, path, body: {}, headers }
+        : { method, path, body: {} }
+    }
+    return Object.keys(headers).length > 0
+      ? { method, path, body: payload as Record<string, unknown>, headers }
+      : { method, path, body: payload as Record<string, unknown> }
+  }
+  return Object.keys(headers).length > 0
+    ? { method, path, body, headers }
+    : { method, path, body }
 }
 
 /** The IPC channel a named operation travels on. One per operation, by name. */

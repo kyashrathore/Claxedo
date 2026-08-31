@@ -1,18 +1,15 @@
 import { Hono } from "hono"
-import {
-  defaultHarness,
-  getEffectiveConfig,
-  loadUserConfig,
-} from "@claxedo/server-core/agent-config/index"
+import { getEffectiveConfig } from "@claxedo/server-core/agent-config/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { agentConfigAcpConnectionRoutes } from "./acp-connection-routes"
 import { agentConfigCommandRoutes } from "./command-routes"
 import { agentConfigExtensionRoutes } from "./extension-routes"
 import { agentConfigHarnessRoutes } from "./harness-routes"
-import { requestedHarness, sandboxJson } from "../harness"
+import { sandboxJson } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
 import { agentConfigMcpRoutes } from "./mcp-routes"
 import type { AgentConfigRouteOptions } from "../extension-support"
+import { sandboxFetchOptions } from "./harness-routes"
 
 export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -49,20 +46,13 @@ export function createAgentConfigRoutes(options: AgentConfigRouteOptions = {}) {
         create: !!directory,
       }).catch(() => undefined)
       if (!ws) return c.json([])
-      const harness = requestedHarness(c.req.query("type") || c.req.query("harness") || c.req.query("runner"))
-        ?? defaultHarness(await loadUserConfig())
       const url = new URL("/agent", "http://sandbox-manager.local")
       url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
       const agents = await sandboxJson<unknown[]>(
         ws,
         `${url.pathname}${url.search}`,
         undefined,
-        {
-          ...(options.services?.sandbox.sandboxManager
-            ? { sandboxManager: options.services.sandbox.sandboxManager }
-            : {}),
-          ...(options.services?.defaultHomeRegion ? { defaultHomeRegion: options.services.defaultHomeRegion } : {}),
-        },
+        await sandboxFetchOptions(c, options, ws.id),
       ).catch(() => [])
       return c.json(Array.isArray(agents) ? agents : [])
     })

@@ -116,7 +116,8 @@ describe("control plane HTTP protocol", () => {
     const svc = services()
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
-      openWorkspace: vi.fn(async () => ({})),
+      openWorkspace: vi.fn(async () => ({ role: "owner" })),
+      authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
@@ -404,7 +405,9 @@ describe("control plane HTTP protocol", () => {
     }))
     svc.sandbox.sandboxManager = { target } as never
     svc.authority = {
+      usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human", actor_public_id: "usr_1", actor_name: "User One" })),
       openWorkspace: vi.fn(async () => ({
+        role: "editor",
         workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
       })),
       upsertSessionVisibility: vi.fn(async () => ({})),
@@ -427,7 +430,47 @@ describe("control plane HTTP protocol", () => {
     expect(target).toHaveBeenCalledWith("ws_1")
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_cloud" }))
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1" }))
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ role: "editor", principalKind: "user" }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
+  })
+
+  test.each([
+    {
+      name: "organization",
+      local: { org_id: "org_stale", project_id: "prj_1" },
+      authority: { org_id: "org_team", project_id: "prj_1" },
+      code: "workspace_tenant_conflict",
+    },
+    {
+      name: "project",
+      local: { org_id: "org_team", project_id: "prj_stale" },
+      authority: { org_id: "org_team", project_id: "prj_1" },
+      code: "workspace_project_conflict",
+    },
+  ])("rejects a stale local workspace $name before runtime access", async ({ local, authority, code }) => {
+    const svc = services()
+    mocks.resolveWorkspace.mockResolvedValue({
+      id: "ws_1",
+      ...local,
+      kind: "cloud",
+      directory: "/tmp/demo",
+      status: "ready",
+    })
+    svc.authority = {
+      openWorkspace: vi.fn(async () => ({
+        allowed: true,
+        role: "editor",
+        workspace: { workspace_id: "ws_1", ...authority, backing: "cloud-vm", access: "cloud" },
+      })),
+    } as never
+    const runtimeFetch = vi.fn()
+
+    await expect(pullControlSession(svc, { runtimeFetch }, signedAuth, {
+      workspaceId: "ws_1",
+      sessionId: "session-1",
+    })).rejects.toMatchObject({ status: 409, code })
+    expect(runtimeFetch).not.toHaveBeenCalled()
+    expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
   })
 
   test("pulls a user-hosted runtime through its active authority host link", async () => {
@@ -446,7 +489,9 @@ describe("control plane HTTP protocol", () => {
       last_seen_at: Date.now(),
     }))
     svc.authority = {
+      usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human", actor_public_id: "usr_1", actor_name: "User One" })),
       openWorkspace: vi.fn(async () => ({
+        role: "owner",
         workspace: {
           workspace_id: "ws_1",
           org_id: "org_1",
@@ -503,7 +548,7 @@ describe("control plane HTTP protocol", () => {
       status: "ready",
     })
     svc.authority = {
-      openWorkspace: vi.fn(async () => ({ workspace })),
+      openWorkspace: vi.fn(async () => ({ role: "owner", workspace })),
       activeLocalHostLink,
     } as never
     const mintRuntimeAccessToken = vi.fn()
@@ -521,6 +566,46 @@ describe("control plane HTTP protocol", () => {
 
     expect(mintRuntimeAccessToken).not.toHaveBeenCalled()
     expect(fetch).not.toHaveBeenCalled()
+  })
+
+  test("rejects a viewer register before contacting the workspace runtime", async () => {
+    const svc = services()
+    svc.authority = {
+      openWorkspace: vi.fn(async () => ({
+        role: "viewer",
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
+      })),
+    } as never
+    const runtimeFetch = vi.fn()
+
+    await expect(pullControlSession(svc, { runtimeFetch }, signedAuth, {
+      workspaceId: "ws_1",
+      sessionId: "session-private",
+    })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+    expect(runtimeFetch).not.toHaveBeenCalled()
+    expect(svc.projectionStore.sync_session_meta).not.toHaveBeenCalled()
+  })
+
+  test("rejects a checkpoint without session write authority before reading or projecting runtime state", async () => {
+    const svc = services()
+    svc.authority = {
+      openWorkspace: vi.fn(async () => ({
+        role: "editor",
+        workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "cloud-vm", access: "cloud" },
+      })),
+      authorizeSessionWrite: vi.fn(async () => {
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Session write access denied")
+      }),
+    } as never
+    const runtimeFetch = vi.fn()
+
+    await expect(pullControlSessionMessages(svc, { runtimeFetch }, signedAuth, {
+      workspaceId: "ws_1",
+      sessionId: "session-private",
+    })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
+    expect(runtimeFetch).not.toHaveBeenCalled()
+    expect(svc.projectionStore.read_session_max_event_ordinal).not.toHaveBeenCalled()
+    expect(svc.projectionStore.sync_session_messages).not.toHaveBeenCalled()
   })
 
   test("idempotency results are isolated by authenticated principal", async () => {

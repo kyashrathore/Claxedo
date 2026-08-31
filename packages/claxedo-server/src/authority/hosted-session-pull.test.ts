@@ -71,14 +71,21 @@ describe("hosted session pull", () => {
     svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: vi.fn(async () => ({
+        actor_id: "actor_1",
+        actor_kind: "human" as const,
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       openWorkspace: vi.fn(async () => ({
-        role: "owner",
+        role: "editor",
         workspace: {
           access: "cloud",
           backing: "cloud-vm",
           org_id: "org_1",
         },
       })),
+      authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
@@ -114,7 +121,8 @@ describe("hosted session pull", () => {
         workspaceId: "ws_1",
         hostId: "host_manager",
         orgId: "org_1",
-        role: "owner",
+        role: "editor",
+        principalKind: "user",
       }),
     )
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
@@ -147,6 +155,12 @@ describe("hosted session pull", () => {
     }))
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: vi.fn(async () => ({
+        actor_id: "actor_1",
+        actor_kind: "human" as const,
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: {
@@ -156,6 +170,7 @@ describe("hosted session pull", () => {
           home_region: "eu-west",
         },
       })),
+      authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
       activeLocalHostLink,
       syncSessionMessages,
@@ -213,6 +228,7 @@ describe("hosted session pull", () => {
           org_id: "org_1",
         },
       })),
+      authorizeSessionWrite: vi.fn(async () => {}),
       activeLocalHostLink: vi.fn(async () => ({ active: false as const })),
     } as never
     const fetch = vi.fn()
@@ -257,10 +273,17 @@ describe("hosted session pull", () => {
     } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: vi.fn(async () => ({
+        actor_id: "actor_1",
+        actor_kind: "human" as const,
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
       })),
+      authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
       syncSessionMessages,
     } as never
@@ -317,10 +340,17 @@ describe("hosted session pull", () => {
     } as never
     const syncSessionMessages = vi.fn(async () => ({}))
     svc.authority = {
+      usersMe: vi.fn(async () => ({
+        actor_id: "actor_1",
+        actor_kind: "human" as const,
+        actor_public_id: "usr_public_1",
+        actor_name: "Test User",
+      })),
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" },
       })),
+      authorizeSessionWrite: vi.fn(async () => {}),
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {

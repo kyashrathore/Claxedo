@@ -162,7 +162,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-composer-modes"
 const SESSION_ID = "ses_core_composer_modes"
@@ -449,6 +449,7 @@ test.describe("core composer modes @core", () => {
       // and hand-rolling it violated e2e/INVARIANTS.md authoring rule 1.
       await editor.click()
       await page.keyboard.type("this will stay busy forever")
+      await ensureComposerModelSelected(page)
       await submit.click()
       await expect.poll(() => mock.requests.promptCount, { timeout: 20_000 }).toBe(1)
       await expect(submit).toHaveAttribute("data-icon", "stop", { timeout: 20_000 })
@@ -503,6 +504,7 @@ test.describe("core composer modes @core", () => {
     // leading space here would send "@reviewer  please" (double space) and never
     // match the mock's `ack 1: ...` echo.
     await page.keyboard.type("please take a look")
+    await ensureComposerModelSelected(page)
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
@@ -543,6 +545,7 @@ test.describe("core composer modes @core", () => {
       await expect(pill).toBeVisible({ timeout: 10_000 })
 
       await page.keyboard.type("please take a look")
+      await ensureComposerModelSelected(page)
       await page.locator(SELECTORS.submitControl).last().click()
 
       await expect(page.locator(SELECTORS.userMessageContent)).toHaveCount(1, { timeout: 15_000 })
@@ -654,6 +657,7 @@ test.describe("core composer modes @core", () => {
     await expect(page.locator('img[alt="only-image.png"]')).toBeVisible({ timeout: 10_000 })
 
     await expect(submit).not.toBeDisabled()
+    await ensureComposerModelSelected(page)
     await submit.click()
 
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)

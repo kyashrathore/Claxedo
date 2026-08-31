@@ -1111,12 +1111,17 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await formatting.getByRole("button", { name: "Bold" }).click()
 
     await rich.evaluate((element) => {
+      // Focus first: contenteditable editors are allowed to restore their own
+      // logical selection on focus. Focusing after installing this DOM range
+      // intermittently restored the prior first-paragraph selection, so Enter
+      // replaced the paragraph that the test had just made bold.
+      ;(element as HTMLElement).focus()
       const range = document.createRange()
       range.selectNodeContents(element)
       range.collapse(false)
       getSelection()?.removeAllRanges()
       getSelection()?.addRange(range)
-      ;(element as HTMLElement).focus()
+      document.dispatchEvent(new Event("selectionchange"))
     })
     await page.keyboard.press("Enter")
     await page.keyboard.type("/h2")

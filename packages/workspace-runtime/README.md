@@ -95,6 +95,7 @@ lower-level helpers:
 | --- | --- |
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
+| `@claxedo/workspace-runtime/session-env-contract` | Schemas, types, limits, errors, and frame decoding for the session-env wire protocol. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
@@ -105,18 +106,23 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/testing` | Small test management-auth helpers. |
 
 Root runtime value exports:
-`Pty`, `WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
-`WorkspaceRuntimeRouteManifest`, `WorkspaceRuntimeRoutes`,
-`WorkspaceWorktreeManager`, `createMemoryTranscriptHandleStore`,
+`Pty`, `SESSION_CORE_ROUTE_ACCESS`, `SESSION_V2_PROXY_ROUTE_ACCESS`,
+`WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER`,
+`WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL`,
+`WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
+`WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
 `createPersistentTranscriptHandleStore`, `createProcessObserver`,
-`createTranscriptResolver`, `createWorkspaceHost`, `createWorkspaceRuntimeApp`,
-`createWorkspaceRuntimeJwtManagementAuth`, `defaultWorkspaceHarnessRegistry`,
-`embeddedWorkspaceRuntimeExposure`, `flushRuntimeDocument`,
-`forgetRuntimeDocuments`, `isLoopbackHostname`,
-`loadWorkspaceRuntimeManagementVerificationKey`,
-`loopbackWorkspaceRuntimeExposure`, `normalizeRuntimeSnapshot`,
+`createTranscriptResolver`, `createWorkspaceHost`,
+`createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
+`defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
+`isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
+`loopbackWorkspaceRuntimeExposure`, `managedWorkspaceSessionAccessPolicy`,
+`normalizeRuntimeSnapshot`,
 `privateNetworkDevUnsafeWorkspaceRuntimeExposure`,
 `privateNetworkWorkspaceRuntimeExposure`, `relayWorkspaceRuntimeExposure`,
+`remoteWorkspaceSessionAccessPolicy`,
+`remoteWorkspaceSessionAccessPolicyFromEnv`, `sessionAccessRequiresWrite`,
+`flushRuntimeDocument`, `forgetRuntimeDocuments`,
 `runtimeEnvText`, `startServer`, `startWorkspaceRuntime`,
 `waitForWorkspaceRuntimeServerPort`, `workspaceRuntimeListenHostname`,
 `workspaceRuntimeRoute`, and `workspaceStorageRoot`.
@@ -147,7 +153,7 @@ boundary.
 | `*    /api/wr/pty/*` | [`routes/pty.ts`](src/routes/pty.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
-| `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts) | exposure-dependent runtime auth |
+| `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts) | exposure-dependent runtime auth and parent-session authorization |
 | `*    /api/wr/session-env/*` | session-env routes (mounted by the host) | exposure-dependent runtime auth |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |

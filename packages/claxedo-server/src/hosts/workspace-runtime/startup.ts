@@ -3,6 +3,9 @@ import path from "path"
 
 let versionCache: string | undefined
 
+const SEMVER_PATTERN =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*))?(?:\+([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/
+
 export function workspaceRuntimeRoot() {
   return path.resolve(import.meta.dirname, "../../../../workspace-runtime")
 }
@@ -21,10 +24,22 @@ export function claxedoWorkspaceRuntimeEntry() {
 
 export function workspaceRuntimeVersion() {
   if (versionCache) return versionCache
-  try {
-    versionCache = JSON.parse(fs.readFileSync(path.join(workspaceRuntimeRoot(), "package.json"), "utf8")).version as string
-    return versionCache
-  } catch {}
-  versionCache = "0.0.0"
+  versionCache = readWorkspaceRuntimeVersion(workspaceRuntimeRoot())
   return versionCache
+}
+
+export function readWorkspaceRuntimeVersion(root: string) {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as unknown
+    const version =
+      parsed && typeof parsed === "object" && "version" in parsed
+        ? (parsed as { version?: unknown }).version
+        : undefined
+    if (typeof version !== "string" || !SEMVER_PATTERN.test(version)) {
+      throw new Error("version must be a semantic-version string")
+    }
+    return version
+  } catch (cause) {
+    throw new Error("Invalid workspace-runtime package metadata", { cause })
+  }
 }

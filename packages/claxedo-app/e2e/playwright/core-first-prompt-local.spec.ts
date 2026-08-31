@@ -90,7 +90,7 @@
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page } from "@playwright/test"
 import { installMockRuntime } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
+import { expectAssistantReplyVisible, ensureComposerModelSelected, expectTurnCounts, expectNoDuplicateRows, SELECTORS } from "../helpers/turn-oracle"
 
 type TitleContinuityProbe = {
   expectedTitle: string
@@ -272,6 +272,7 @@ test.describe("core first prompt (local) @core", () => {
     const input = await openDraftPrompt(page, DIR)
 
     const promptText = "core first prompt local turn one"
+    await ensureComposerModelSelected(page)
     await input.click()
     await input.fill(promptText)
     await expect(input).toContainText(promptText, { timeout: 10_000 })
@@ -354,6 +355,7 @@ test.describe("core first prompt (local) @core", () => {
     await expect(workspace.locator('[data-slot="context-chip-label"]')).toHaveText("New local worktree")
 
     const promptText = "start this task from release next"
+    await ensureComposerModelSelected(page)
     await input.fill(promptText)
     await page.locator(SELECTORS.submitControl).last().click()
 

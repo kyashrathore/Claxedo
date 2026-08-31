@@ -33,8 +33,7 @@ import {
 } from "../harness"
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../extension-support"
-import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
-import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
 import { validatePiPromptModel } from "@claxedo/server-core/credentials/pi-provider-catalog"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
@@ -78,7 +77,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
 
   try {
     const saved = sessionId
-      ? await cloudRuntimeSessionHarness(ws, sessionId, sandboxFetchOptions(c, options)) ?? await resolveHarnessForRequest({
+      ? await cloudRuntimeSessionHarness(ws, sessionId, await sandboxFetchOptions(c, options, ws.id)) ?? await resolveHarnessForRequest({
           sessionId,
           workspaceId: ws.id,
           directory: ws.directory,
@@ -88,7 +87,7 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
       ws,
       workspaceRuntimeHealthPath(sessionId),
       undefined,
-      sandboxFetchOptions(c, options),
+      await sandboxFetchOptions(c, options, ws.id),
     ).catch((): SandboxHealth => ({
       ok: false,
       status: "configured",
@@ -191,7 +190,7 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
       if (
         getSessionConfig(ws.id, sessionId)
         || await sessionMeta(sessionId)
-        || await sandboxSessionExists(ws, sessionId, sandboxFetchOptions(c, options))
+        || await sandboxSessionExists(ws, sessionId, await sandboxFetchOptions(c, options, ws.id))
       ) {
         return c.json(
           errorBody("agent_config_harness_change_locked", "Harness changes are only supported before a session is created"),
@@ -257,7 +256,7 @@ async function updateHarnessModelResponse(c: Context, options: AgentConfigRouteO
     if (
       !getSessionConfig(ws.id, sessionId)
       && !(await sessionMeta(sessionId))
-      && !(await sandboxSessionExists(ws, sessionId, sandboxFetchOptions(c, options)))
+      && !(await sandboxSessionExists(ws, sessionId, await sandboxFetchOptions(c, options, ws.id)))
     ) {
       return c.json(
         errorBody("agent_config_session_model_locked", "Session model changes require an existing session"),
@@ -345,7 +344,7 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
     ws,
     `${url.pathname}${url.search}`,
     undefined,
-    sandboxFetchOptions(c, options),
+    await sandboxFetchOptions(c, options, ws.id),
   ).catch((cause) => {
     const message = cause instanceof Error ? cause.message : String(cause)
     return errorBody("harness_config_options_unavailable", harnessOptionsErrorMessage(harness, message))
@@ -368,19 +367,8 @@ function harnessOptionsErrorMessage(harness: ReturnType<typeof normalize>, messa
   return message
 }
 
-function sandboxFetchOptions(c: Context, options: AgentConfigRouteOptions): SandboxFetchOptions {
-  const request = c.req.raw
-  const url = new URL(request.url)
-  return {
-    ...(options.services?.sandbox.sandboxManager
-      ? { sandboxManager: options.services.sandbox.sandboxManager }
-      : {}),
-    ...(options.services?.relay.provider ? { relayProvider: options.services.relay.provider } : {}),
-    ...(options.services?.localExecution.enabled && isLoopbackLocalRequest(request)
-      ? { loopbackRelayUrl: `${url.protocol}//127.0.0.1${url.port ? `:${url.port}` : ""}` }
-      : {}),
-    ...(options.services?.defaultHomeRegion ? { defaultHomeRegion: options.services.defaultHomeRegion } : {}),
-  }
+export async function sandboxFetchOptions(c: Context, options: AgentConfigRouteOptions, workspaceId: string) {
+  return sandboxFetchOptionsForRequest(c.req.raw, workspaceId, options)
 }
 
 function latestAssistantModel(options: AgentConfigRouteOptions, sessionId: string) {

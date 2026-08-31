@@ -28,12 +28,20 @@
  *     in-flight context view isn't stolen by a background URL update.
  */
 import type { Accessor } from "solid-js"
-import { workspaceSessionRoute } from "@/platform/identity/route"
+import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import { sameSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
 import type { ContentMeta } from "./types"
 import { routeSessionHarness } from "./route-session-harness"
 import { isNarrowViewport } from "../workbench/index"
+import { isRouteIntentClosed, markRouteIntentClosed } from "./route-bridge-resolution"
+export {
+  CLOSED_ROUTE_MAX,
+  isRouteIntentClosed,
+  markRouteIntentClosed,
+  resetRouteIntentClosedForTest,
+  routeIntentClosedSizeForTest,
+} from "./route-bridge-resolution"
 
 type Badge = {
   additions: number
@@ -100,64 +108,7 @@ type SessionRouteResolution =
   | { state: "workspace"; target: InventorySessionTarget }
   | { state: "central" }
 
-export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel">
-
-const CLOSED_ROUTE_TTL_MS = 10_000
-/**
- * Hard backstop on retained close markers. Entries self-expire after
- * CLOSED_ROUTE_TTL_MS and are swept on every write, so the map is normally
- * bounded by how many routes close within a 10s window; this cap only guards a
- * pathological burst. Without any sweep, a route closed and never revisited
- * lingered forever (its key is only pruned when that exact key is re-checked),
- * a slow leak in a long-running Electron shell.
- */
-export const CLOSED_ROUTE_MAX = 256
-const closedRouteKeys = new Map<string, number>()
-
-function closedRouteKey(input: { workspaceId?: string; sessionId?: string }) {
-  return `${input.workspaceId ?? ""}\0${input.sessionId ?? ""}`
-}
-
-function sweepClosedRoutes(now: number) {
-  for (const [key, until] of closedRouteKeys) {
-    if (now > until) closedRouteKeys.delete(key)
-  }
-  while (closedRouteKeys.size > CLOSED_ROUTE_MAX) {
-    const oldest = closedRouteKeys.keys().next().value
-    if (oldest === undefined) break
-    closedRouteKeys.delete(oldest)
-  }
-}
-
-export function markRouteIntentClosed(input: { workspaceId?: string; sessionId?: string }) {
-  const now = Date.now()
-  closedRouteKeys.set(closedRouteKey(input), now + CLOSED_ROUTE_TTL_MS)
-  sweepClosedRoutes(now)
-}
-
-/** Test-only: current retained close-marker count (asserts the bound). */
-export function routeIntentClosedSizeForTest() {
-  return closedRouteKeys.size
-}
-
-export function isRouteIntentClosed(input: { workspaceId?: string; sessionId?: string }) {
-  return consumeRouteIntentClosed(input)
-}
-
-export function resetRouteIntentClosedForTest() {
-  closedRouteKeys.clear()
-}
-
-function consumeRouteIntentClosed(input: { workspaceId?: string; sessionId?: string }) {
-  const key = closedRouteKey(input)
-  const until = closedRouteKeys.get(key)
-  if (!until) return false
-  if (Date.now() > until) {
-    closedRouteKeys.delete(key)
-    return false
-  }
-  return true
-}
+export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel" | "terminal">
 
 function workspaceBacking(input: { workspaceId?: string; kind?: string }): WorkspaceSessionBacking | undefined {
   if (!input.workspaceId || (input.kind !== "cloud" && input.kind !== "user-hosted")) return
@@ -183,21 +134,22 @@ function workspaceRootBacking(workspaceId: string, inventory: RouteIntentInvento
 }
 
 export function sessionInventoryTarget(sessionId: string, inventory: RouteIntentInventory) {
-  const inventoryRows = [
-    ...(inventory.global ?? []),
-    ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
-    ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
-  ]
-  if (inventoryRows.some((session) => !session.archived && session.id === sessionId && session.sessionRef?.startsWith("central:"))) return
+  const central = sessionInventoryCentralSession(sessionId, inventory)
+  if (central) return
 
   const workspaceMatches = Object.entries(inventory.byWorkspace)
     .filter(([, group]) => group.sessions?.some((session) => session.id === sessionId && !session.archived))
     .map(([key, group]): InventorySessionTarget => {
       const session = group.sessions?.find((session) => session.id === sessionId && !session.archived)
+      const backing = workspaceBacking({
+        workspaceId: group.workspaceId,
+        kind: session?.environment?.kind,
+      })
       const directory =
-        group.workspaceId ??
-        (group.key && group.key !== "/workspace" ? group.key : undefined) ??
+        backing?.workspaceId ??
         (group.directory && group.directory !== "/workspace" ? group.directory : undefined) ??
+        session?.directory ??
+        (group.key && group.key !== "/workspace" ? group.key : undefined) ??
         key
       const harness = routeSessionHarness(session)
       return {
@@ -206,10 +158,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
         sessionRef: sessionRefForWorkspaceSession({
           sessionId,
           directory,
-          workspace: workspaceBacking({
-            workspaceId: group.workspaceId,
-            kind: session?.environment?.kind,
-          }),
+          workspace: backing,
           ...(harness ? { harness } : {}),
         }),
       }
@@ -218,7 +167,8 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     .flatMap((sessions) => sessions)
     .filter((session) => session.id === sessionId && !session.archived)
     .flatMap((session): InventorySessionTarget[] => {
-      const directory = session.workspaceId ?? session.directory
+      const backing = workspaceBacking({ workspaceId: session.workspaceId, kind: session.environment?.kind })
+      const directory = backing?.workspaceId ?? session.directory ?? session.workspaceId
       const harness = routeSessionHarness(session)
       return directory
         ? [{
@@ -227,10 +177,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory,
-            workspace: workspaceBacking({
-                workspaceId: session.workspaceId,
-                kind: session.environment?.kind,
-              }),
+              workspace: backing,
               ...(harness ? { harness } : {}),
             }),
           }]
@@ -239,7 +186,8 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
   const globalMatches = (inventory.global ?? [])
     .filter((session) => session.id === sessionId && !session.archived)
     .flatMap((session): InventorySessionTarget[] => {
-      const directory = session.workspaceId ?? session.directory
+      const backing = workspaceBacking({ workspaceId: session.workspaceId, kind: session.environment?.kind })
+      const directory = backing?.workspaceId ?? session.directory ?? session.workspaceId
       const harness = routeSessionHarness(session)
       return directory
         ? [{
@@ -248,10 +196,7 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory,
-            workspace: workspaceBacking({
-                workspaceId: session.workspaceId,
-                kind: session.environment?.kind,
-              }),
+              workspace: backing,
               ...(harness ? { harness } : {}),
             }),
           }]
@@ -266,6 +211,18 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
     )
   if (matches.length !== 1) return
   return matches[0]
+}
+
+export function sessionInventoryCentralSession(sessionId: string, inventory: RouteIntentInventory) {
+  return [
+    ...(inventory.global ?? []),
+    ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
+    ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
+  ].find((session) =>
+    !session.archived &&
+    session.id === sessionId &&
+    session.sessionRef?.startsWith("central:") === true
+  )
 }
 
 function resolvedSessionTarget(sessionId: string, target: ResolvedSessionTarget): InventorySessionTarget {
@@ -480,7 +437,7 @@ export function createRouteIntentAdapter(input: {
       return
     }
     const workspaceId = intent.workspaceId
-    if (consumeRouteIntentClosed({ workspaceId, sessionId: intent.sessionId })) return
+    if (isRouteIntentClosed({ workspaceId, sessionId: intent.sessionId })) return
     if (!workspaceId) {
       if (!intent.sessionId) return
       const existing = existingSessionRouteContent(intent.sessionId, "workspace")
@@ -609,16 +566,66 @@ export function createRouteIntentAdapter(input: {
           if (focusedContentId() !== pending.id) activate(pending.id)
           return
         }
-        if (intent.workspaceRouteId) redirect(workspaceSessionRoute(intent.workspaceRouteId))
+        if (intent.workspaceRouteId) {
+          const focusedId = focusedContentId()
+          const upgraded = focusedId
+            ? findContent(
+                (m) =>
+                  m.id === focusedId &&
+                  m.type === "terminal" &&
+                  !!m.terminalId &&
+                  !m.terminalId.startsWith("pending-") &&
+                  matchesWorkspaceRoute(m, intent.workspaceRouteId),
+              )
+            : undefined
+          if (upgraded?.terminalId) {
+            const target = workspaceTerminalRoute(intent.workspaceRouteId, upgraded.terminalId)
+            // TerminalContent quietly history.replaceState's pending→real so the
+            // live PTY socket is not torn down. Solid Router params can lag on
+            // the pending id; a redirect here would remount the pane and drop
+            // the stream before firstByte (cloud D blank xterm).
+            if (typeof window !== "undefined" && window.location.pathname === target) {
+              if (focusedContentId() !== upgraded.id) activate(upgraded.id)
+              return
+            }
+            redirect(target)
+            return
+          }
+          redirect(workspaceSessionRoute(intent.workspaceRouteId))
+        }
         return
       }
       const existing = findContent(
-        (m) =>
-          m.type === "terminal" &&
-          m.directory === workspaceId &&
-          m.terminalId === intent.terminalId &&
-          matchesWorkspaceRoute(m, intent.workspaceRouteId),
-      )
+        (m) => {
+          if (m.type !== "terminal") return false
+          if (!matchesWorkspaceRoute(m, intent.workspaceRouteId)) return false
+          return m.terminalId === intent.terminalId
+        },
+      ) ?? (() => {
+        // In-flight pending→real: route may already show pty_* while meta still
+        // says pending-*. Only bind via ownership or a sole pending on this
+        // placement — never the first of several concurrent creates, and never
+        // any other terminal that merely shares the directory.
+        if (!intent.terminalId || intent.terminalId.startsWith("pending-")) return undefined
+        const ownerContentId = state.terminal.owner(intent.terminalId)
+        if (ownerContentId) {
+          return findContent(
+            (m) =>
+              m.id === ownerContentId &&
+              m.type === "terminal" &&
+              matchesWorkspaceRoute(m, intent.workspaceRouteId),
+          )
+        }
+        const pendings = state.meta.findAll(
+          (m) =>
+            m.type === "terminal" &&
+            !!m.terminalId?.startsWith("pending-") &&
+            (intent.workspaceRouteId
+              ? matchesWorkspaceRoute(m, intent.workspaceRouteId)
+              : m.directory === workspaceId),
+        )
+        return pendings.length === 1 ? pendings[0] : undefined
+      })()
       if (!existing?.id) {
         const nextId = state.layout.openTerminal(workspaceId, intent.terminalId, "Terminal", {
           workspaceRouteId: intent.workspaceRouteId,

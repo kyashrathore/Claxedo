@@ -3,13 +3,17 @@ import type { CompatEvent } from "./compat-events"
 import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport, SessionHarnessId } from "./harness-types"
 
 export {
-  AgentRuntimeTurnAdmissionError,
+  AGENT_RUNTIME_TURN_CONFLICT_CODE,
+  AgentRuntimeTurnConflictError,
+  AgentRuntimeTurnConflictError as AgentRuntimeTurnAdmissionError,
   createAgentRuntime,
-  isAgentRuntimeTurnAdmissionError,
+  isAgentRuntimeTurnConflictError,
+  isAgentRuntimeTurnConflictError as isAgentRuntimeTurnAdmissionError,
 } from "./runtime"
 export type {
   AgentHarnessFactory,
   AgentRuntime,
+  AgentRuntimeEventDeliveryPolicy,
   AgentRuntimeEventEnvelope,
   AgentRuntimeGoalErrorCode,
   AgentRuntimeGoalStartInput,
@@ -19,6 +23,7 @@ export type {
   AgentRuntimePermissionDecision,
   AgentRuntimeSessionCreateInput,
   AgentRuntimeSubscribeInput,
+  AgentRuntimeSubscriptionIdentity,
   AgentRuntimeStore,
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
@@ -154,6 +159,12 @@ export type PromptInput = {
   system?: string
   variant?: string
   permissionMode?: string
+  author?: {
+    id: string
+    name: string
+    avatarUrl?: string
+    kind: "human" | "agent"
+  }
 }
 
 export type ProcessHarnessConnection = {

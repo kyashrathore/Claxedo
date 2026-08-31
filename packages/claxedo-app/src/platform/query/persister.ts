@@ -1,5 +1,4 @@
-import { persistQueryClientRestore } from "@tanstack/query-persist-client-core"
-import { dehydrate } from "@tanstack/solid-query"
+import { dehydrate, hydrate } from "@tanstack/solid-query"
 import { createStore, del, get, set } from "idb-keyval"
 import { queryClient } from "@/platform/query/query-client"
 import { compactProviderListForStorage } from "@/platform/query/provider-list"
@@ -46,6 +45,9 @@ type PersistedQuery = {
 }
 
 type PersistedClient = {
+  buster?: string
+  timestamp?: number
+  scope?: string
   clientState?: {
     queries?: PersistedQuery[]
   }
@@ -216,6 +218,7 @@ function createThrottledQueryPersistence(input: {
   maxBytes: number
   buster: string
   quietDelay: () => number
+  scope: () => string
 }) {
   let timer: ReturnType<typeof setTimeout> | undefined
   let dirty = false
@@ -225,6 +228,7 @@ function createThrottledQueryPersistence(input: {
   const snapshot = () => ({
     buster: input.buster,
     timestamp: Date.now(),
+    scope: input.scope(),
     clientState: dehydrate(queryClient, { shouldDehydrateQuery }),
   })
 
@@ -282,7 +286,20 @@ function createThrottledQueryPersistence(input: {
       async restoreClient() {
         const cached = await input.storage.getItem(queryPersisterKey)
         if (!cached) return
-        return safePersistedClient(JSON.parse(cached, mapReviver))
+        const parsed = JSON.parse(cached, mapReviver) as PersistedClient
+        // Pre-scope v3 snapshots and snapshots from another principal are not
+        // valid inputs. Remove them instead of briefly hydrating private rows
+        // and relying on a later account-switch cleanup to catch up.
+        if (
+          parsed.scope !== input.scope() ||
+          parsed.buster !== input.buster ||
+          typeof parsed.timestamp !== "number" ||
+          Date.now() - parsed.timestamp > day
+        ) {
+          await input.storage.removeItem(queryPersisterKey)
+          return
+        }
+        return safePersistedClient(parsed)
       },
       async removeClient() {
         dirty = false
@@ -308,6 +325,8 @@ export function installQueryPersister(input: {
   maxBytes?: number
   /** Product-composition policy for deferring durable work during interactions. */
   quietDelay?: () => number
+  /** Current identity scope. The durable snapshot is rejected on mismatch. */
+  scope?: () => string
   /**
    * When true, schedule the persistQueryClient setup behind requestIdleCallback
    * so the initial cache hydration + subscription wiring does not contend with
@@ -338,20 +357,22 @@ export function installQueryPersister(input: {
       maxBytes: input.maxBytes ?? MAX_QUERY_PERSISTENCE_BYTES,
       buster: input.buster ?? buildHash,
       quietDelay: input.quietDelay ?? (() => 0),
+      scope: input.scope ?? (() => "anonymous"),
     })
     flushInstalledPersistence = persistence.flushNow
 
-    // Same order `persistQueryClient` uses: restore first, and only subscribe
-    // once it settles, so hydrating the restored snapshot does not immediately
-    // schedule a write of what was just read back.
+    // Restore first, and only subscribe once it settles, so hydrating the
+    // snapshot does not immediately schedule a write of what was just read.
+    // Scope is checked again immediately before synchronous hydration: an
+    // account switch can occur after IndexedDB returned but before this promise
+    // continuation runs, and that old snapshot must never land in the new
+    // principal's live cache.
     let unsubscribeCaches: (() => void) | undefined
     let cancelled = false
-    const restore = persistQueryClientRestore({
-      queryClient: queryClient as never,
-      persister: persistence.persister as never,
-      maxAge: day,
-      buster: input.buster ?? buildHash,
-    }).then(() => {
+    const restore = persistence.persister.restoreClient().then((client) => {
+      if (client?.clientState && client.scope === (input.scope ?? (() => "anonymous"))() && !cancelled) {
+        hydrate(queryClient, client.clientState as never)
+      }
       if (cancelled) return
       const onQueryCacheEvent = (event: { type: string; query: { queryKey: readonly unknown[] } }) => {
         if (!PERSISTABLE_CACHE_EVENTS.includes(event.type)) return
@@ -367,6 +388,8 @@ export function installQueryPersister(input: {
         unsubscribeQueries()
         unsubscribeMutations()
       }
+    }).catch(async () => {
+      await persistence.persister.removeClient()
     })
 
     uninstall = () => {

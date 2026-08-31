@@ -37,7 +37,7 @@ const verifier: ClerkVerifier = async (token, config) => ({
 
 function fakeConvexAuthority(overrides: Record<string, unknown> = {}) {
   return {
-    usersMe: vi.fn(async () => ({ subject: "user_1" })),
+    usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
     openWorkspace: vi.fn(async () => ({
       allowed: true,
       role: "owner",

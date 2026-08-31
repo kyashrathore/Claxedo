@@ -94,10 +94,7 @@ describe("harness process lifecycle", () => {
   })
 
   test("a failed startup rejects every joiner and still allows a later retry", async () => {
-    // The defect this primitive exists to prevent. OpenCode caches its startup
-    // promise and never clears it on failure, so one 15s spawn timeout bricks
-    // the adapter for the life of the process: every later call re-awaits the
-    // same rejected promise.
+    // A failed generation must not remain cached for later callers.
     let attempt = 0
     const harness = fixture({
       start: async () => {

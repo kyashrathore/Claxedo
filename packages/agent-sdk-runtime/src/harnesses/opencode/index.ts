@@ -459,8 +459,24 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   async createHandoffSession(directory: string, title: string | undefined, id: string) {
     const existing = await this.getSession(id, directory)
-    if (existing) await this.deleteSession(id, directory)
-    return { ...await this.createSession(directory, title, id), ownerKey: null }
+    if (existing) {
+      throw new Error(`Cannot prepare OpenCode handoff: target session ${id} already exists`)
+    }
+    const created = await this.createSession(directory, title, id)
+    let rolledBack = false
+    return {
+      ...created,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.deleteSession(created.id, directory)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(id: string, _agentSessionId: string, _ownerKey: string | null, directory: string) {
+    await this.deleteSession(id, directory)
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: string): Promise<AgentSession | null> {
@@ -534,6 +550,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
         sessionID: id,
         agent: input.agent,
         model: input.model,
+        ...(input.author ? { author: input.author } : {}),
         ...(input.tools ? { tools: input.tools } : {}),
         ...(input.format ? { format: input.format } : {}),
         ...(input.system ? { system: input.system } : {}),

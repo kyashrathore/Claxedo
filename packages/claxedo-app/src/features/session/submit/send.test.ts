@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { rollbackPromptDispatch, sendPromptRequest, waitForPendingWorktree } from "./send"
+import { isPromptAdmissionConflict, rollbackPromptDispatch, sendPromptRequest, waitForPendingWorktree } from "./send"
 import { clearPendingPromptsForTest, hasPendingPrompt, registerPendingPrompt } from "./pending"
 import {
   clearAllPromptSessionStatusTimeoutsForTest,
@@ -306,6 +306,39 @@ describe("sendPromptRequest abort coverage", () => {
 })
 
 describe("rollbackPromptDispatch", () => {
+  test("collision rollback preserves busy status and restores only the rejected optimistic prompt", () => {
+    dispatchSessionStatusEvent({
+      event: {
+        type: "session.status",
+        source: "server",
+        sessionID: "ses_1",
+        status: { type: "busy" },
+      },
+    })
+    const calls: string[] = []
+    rollbackPromptDispatch({
+      err: { status: 409, code: "session_turn_in_progress", message: "busy" },
+      sessionID: "ses_1",
+      clearBoot: () => calls.push("clear-boot"),
+      reportCloudStartupError: () => calls.push("cloud-error"),
+      showSendFailed: () => calls.push("show-error"),
+      removeSubmittedPrompt: () => calls.push("remove-loser"),
+      restoreSubmittedComments: () => calls.push("restore-comments"),
+      restoreInput: () => calls.push("restore-input"),
+    })
+
+    expect(statusFor("ses_1")).toEqual({ type: "busy" })
+    expect(calls).toEqual(["clear-boot", "show-error", "remove-loser", "restore-comments", "restore-input"])
+  })
+
+  test("disambiguates admission collision from other 409 errors by structured code", () => {
+    expect(isPromptAdmissionConflict({ status: 409, code: "session_turn_in_progress" })).toBe(true)
+    expect(isPromptAdmissionConflict({ status: 409, code: "unsupported_operation" })).toBe(false)
+    expect(isPromptAdmissionConflict(new Error(JSON.stringify({
+      error: { code: "session_turn_in_progress", message: "busy" },
+    })))).toBe(true)
+  })
+
   test("clears optimistic busy, runs every restore callback exactly once, and removes pending entry", () => {
     dispatchSessionStatusEvent({
       event: {

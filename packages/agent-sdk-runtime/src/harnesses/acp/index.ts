@@ -72,6 +72,7 @@ import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
 import { type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
+import { acceptedSessionConfig, acceptedSessionUpdate } from "../shared/accepted-session-mutation"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -350,7 +351,17 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const { proc } = await this.getOrSpawnProcess(id, directory)
     const agentSessionId = await this.boot(proc, directory, title)
     this.store.bindSession({ sessionId: id, directory, title, agentSessionId, ownerKey: processKey })
-    return { id, agentSessionId, ownerKey: processKey }
+    let rolledBack = false
+    return {
+      id,
+      agentSessionId,
+      ownerKey: processKey,
+      rollback: async () => {
+        if (rolledBack) return
+        this.releaseSessionProcess(id, processKey)
+        rolledBack = true
+      },
+    }
   }
 
   async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
@@ -371,40 +382,32 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
-    const previous = this.store.getSessionConfig(id)
-    const next = this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
-    try {
-      if (next.model?.modelID) {
-        this.setModel(next.model.modelID === "default" ? "" : next.model.modelID)
-      }
-      const proc = this.entryForSession(id)?.proc
-      const agentSessionId = this.store.getAgentSessionId(id)
-      if (!proc?.alive || !agentSessionId) return next
-      await proc.syncSession(agentSessionId, {
-        parts: [],
-        assistantMessageId: "cfg",
-        agent: next.agent ?? "build",
-        model: this.cfg(next.model),
-        ...(next.variant ? { variant: next.variant } : {}),
-      })
-      return next
-    } catch (error) {
-      if (previous) {
-        this.store.updateSessionConfig(id, {
-          harness: previous.harness,
-          model: previous.model ?? null,
-          variant: previous.variant ?? null,
-          agent: previous.agent ?? null,
-          handoff: previous.handoff ?? null,
-        })
-      }
-      throw error
+    const current = this.store.getSessionConfig(id)
+    if (!current) throw new Error(`Session ${id} has no runtime config`)
+    const next = acceptedSessionConfig(current, update)
+    if (update.model !== undefined) {
+      this.setModel(next.model?.modelID === "default" ? "" : next.model?.modelID ?? "")
     }
+    const proc = this.entryForSession(id)?.proc
+    const agentSessionId = this.store.getAgentSessionId(id)
+    if (!proc?.alive || !agentSessionId) return next
+    await proc.syncSession(agentSessionId, {
+      parts: [],
+      assistantMessageId: "cfg",
+      agent: next.agent ?? "build",
+      model: this.cfg(next.model),
+      ...(next.variant ? { variant: next.variant } : {}),
+    })
+    return next
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {
     this.finishGoalProjection(id)
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
+    this.releaseSessionProcess(id, key)
+  }
+
+  private releaseSessionProcess(id: string, key: string | null | undefined): void {
     const entry = key ? this.processMap().get(key) : undefined
     const agentSessionId = this.store.getAgentSessionId(id)
     if (agentSessionId) entry?.proc?.unlistenGoal(agentSessionId)
@@ -419,7 +422,6 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       entry.proc?.dispose()
       this.processMap().delete(key)
     }
-    this.store.deleteSession(id)
   }
 
   async getMessages(id: string, _directory: string): Promise<AgentMessage[]> {

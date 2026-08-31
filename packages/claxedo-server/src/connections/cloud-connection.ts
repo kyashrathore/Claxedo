@@ -1,7 +1,8 @@
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, localControlPlaneAuth, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
@@ -23,7 +24,7 @@ export async function cloudConnectionInfo(
     } as const
   }
   const authority = requireAuthority(services)
-  await authority.usersMe(auth)
+  const actor = await resolveRuntimeActor(authority, auth)
   const result = await authority.openWorkspace(auth, { workspaceId: ws.id })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, ws.id)
   if (authz) return authz
@@ -70,6 +71,7 @@ export async function cloudConnectionInfo(
   const orgId = await authority.resolveOrgId(auth)
   const token = await configuredRuntimeAccessTokenSigner(options)({
     subject: auth.user.subject,
+    ...actor,
     orgId,
     workspaceId: ws.id,
     hostId,
@@ -79,6 +81,9 @@ export async function cloudConnectionInfo(
     jti: token.jti,
     workspaceId: ws.id,
     hostId,
+    actorId: actor.actorId,
+    actorKind: actor.actorKind,
+    role,
     expiresAt: token.tokenExpiresAt,
   })
   await authority.auditAllow(auth, {
@@ -183,18 +188,24 @@ export async function localLoopbackCloudConnectionInfo(
   }
   const hostId = target.hostId
   const orgId = current.org_id ?? ws.org_id
-  const token = options.runtimeAccessTokenSigner && orgId
-    ? await options.runtimeAccessTokenSigner({
-        subject: "local",
-        orgId,
-        workspaceId: ws.id,
-        hostId,
-        role: "owner",
-      })
-    : {
-        runtimeAccessToken: `local-loopback-${ws.id}`,
-        tokenExpiresAt: Date.now() + 24 * 60 * 60_000,
-      }
+  let token
+  if (options.runtimeAccessTokenSigner && orgId) {
+    const localAuth = localControlPlaneAuth()
+    const actor = await resolveRuntimeActor(requireAuthority(services), localAuth)
+    token = await options.runtimeAccessTokenSigner({
+      subject: localAuth.user.subject,
+      ...actor,
+      orgId,
+      workspaceId: ws.id,
+      hostId,
+      role: "owner",
+    })
+  } else {
+    token = {
+      runtimeAccessToken: `local-loopback-${ws.id}`,
+      tokenExpiresAt: Date.now() + 24 * 60 * 60_000,
+    }
+  }
   return {
     connection: {
       access: "cloud",

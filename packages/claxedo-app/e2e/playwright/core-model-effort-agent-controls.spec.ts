@@ -147,7 +147,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { installMockRuntime, type MockRuntimeHandles } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const DIR = "/tmp/e2e-core-model-effort-agent-controls"
 const SESSION_ID = "ses_core_model_effort_agent"
@@ -462,6 +462,9 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await seedOneProject(page, DIR)
     const input = await openDraftPrompt(page, DIR)
 
+    await pickModelFromPopover(page, "Sonnet 4.6")
+    await expect(modelTrigger(page)).toContainText("Sonnet 4.6", { timeout: 10_000 })
+
     const promptText = "first turn before the model swap"
     await input.click()
     await input.fill(promptText)
@@ -568,6 +571,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     const promptText = "which agent handled this"
     await input.click()
     await input.fill(promptText)
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
@@ -625,6 +629,7 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       const promptText = "does the save-failed toast appear"
       await input.click()
       await input.fill(promptText)
+      await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
       await page.locator(SELECTORS.submitControl).last().click()
 
       await expect.poll(() => mock.requests.createSessionCount, { timeout: 15_000 }).toBeGreaterThan(0)
@@ -652,7 +657,12 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await input.press("Enter")
 
     await expect(page.locator('[data-slot="toast-title"]', { hasText: "Select an agent and model" })).toHaveCount(0)
-    await expect(page.locator('[data-slot="dialog-container"]').last()).toBeVisible({ timeout: 10_000 })
+    // Missing-model Enter clicks the unified harness+model control, which opens the
+    // harness-model picker popover (not the Settings dialog-container).
+    await expect(page.getByRole("dialog", { name: /Select harness, model and effort/i })).toBeVisible({
+      timeout: 10_000,
+    })
+    await expect(page.locator('[data-component="harness-model-picker"]')).toBeVisible()
     await expect(input).toContainText(promptText)
     expect(mock.requests.promptCount).toBe(0)
     expect(mock.requests.createSessionCount).toBe(0)

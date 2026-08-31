@@ -132,7 +132,12 @@
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page, type Route } from "@playwright/test"
-import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import {
+  ensureComposerModelSelected,
+  expectAssistantReplyVisible,
+  expectTurnCounts,
+  SELECTORS,
+} from "../helpers/turn-oracle"
 import { installMockRuntime, providerCatalogIndex } from "../helpers/mock-runtime"
 import { stampTestAuth } from "../playwright-global-setup"
 import {
@@ -363,17 +368,22 @@ async function installCloudRuntimeMock(
   // time would let the workspace reach "ready" before the app ever observes
   // the earlier steps, making behavior 1 (the pipeline actually rendering)
   // unobservable/flaky.
+  //
+  // Keep each step dwell long enough that a warm Vite + Soft paint still
+  // mounts CloudStartupView while currentStep is still non-ready. 150ms was
+  // enough under cold load; warm fail-fast runs finished all four steps before
+  // the first paint and skipped the pipeline entirely.
   let advanceStarted = false
   function startAutoAdvance() {
     if (!opts.autoAdvance || advanceStarted) return
     advanceStarted = true
     void (async () => {
       for (const step of ["cloning", "starting_runtime", "waiting_health"] as const) {
-        await wait(150)
+        await wait(800)
         currentStep = step
         emitProvision(step)
       }
-      await wait(150)
+      await wait(800)
       currentStep = "ready"
     })()
   }
@@ -680,15 +690,9 @@ test.describe("core cloud provisioning @core", () => {
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
     await expect(input).toHaveAttribute("contenteditable", "true")
-    // The gate unlocking only proves the WORKSPACE connection is ready — the
-    // draft's own provider/model catalog (a separate relay request, fired once
-    // the gate renders children) can still be in flight for a moment after.
-    // Sending before it resolves hits the composer's own (correct) "no-model"
-    // submit block, which no-ops the click — wait for a real model to land in
-    // the model control first, matching the pattern every other cloud spec
-    // that sends a first turn already uses (e.g. core-harness-ownership-
-    // cloud.spec.ts's `expectOnlyOpenCodeModelControl`).
-    await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    // Product rule: drafts do not invent a catalog default. Drive the same
+    // picker a user would after the gate unlocks and the catalog is ready.
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
 
     // Behavior 3/4: a send dispatches through the workspace-scoped relay lane
     // and the oracle proves the reply renders; exactly one user + one
@@ -780,14 +784,9 @@ test.describe("core cloud provisioning @core", () => {
 
       const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
       await expect(input).toBeVisible({ timeout: 20_000 })
-      // Switching the draft's environment to "cloud" re-resolves the provider/
-      // model catalog for the (virtual, not-yet-created) cloud scope — sending
-      // before that resolves hits the composer's own "no-model" submit block,
-      // which no-ops the click before `resolveCloudSessionDirectory` (and thus
-      // `createCloudWorkspace`) is ever reached, so the create-failure path
-      // under test never fires at all. Wait for a real model first, matching
-      // core-cloud-provisioning's other send scenarios.
-      await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+      // Switching the draft's environment to "cloud" re-resolves the catalog.
+      // Product rule: drafts do not invent a default — pick Big Pickle explicitly.
+      await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
       const promptText = "should not create a cloud vm"
       await input.click()
       await input.fill(promptText)
@@ -842,11 +841,9 @@ test.describe("core cloud provisioning @core", () => {
 
     const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
     await expect(input).toBeVisible({ timeout: 20_000 })
-    // See the "request rejected" scenario above: the cloud-scope provider/model
-    // catalog can still be resolving right after the environment switch, and
-    // sending before it settles hits the composer's own "no-model" submit
-    // block instead of ever reaching `createCloudWorkspace`.
-    await expect(page.locator('[data-action="prompt-harness-model"]')).toContainText(/Big Pickle|big-pickle/i, { timeout: 20_000 })
+    // See the "request rejected" scenario above: pick a model after the cloud
+    // environment switch so submit reaches createCloudWorkspace.
+    await ensureComposerModelSelected(page, { modelName: /^Big Pickle$/i, search: "Big Pickle" })
     const promptText = "should not create a cloud vm either"
     await input.click()
     await input.fill(promptText)

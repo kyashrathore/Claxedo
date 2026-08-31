@@ -14,6 +14,7 @@ function cursorDriver(transcriptRegistrar?: Parameters<typeof ingestCursorSdkMes
     setAuth() {},
     applyConfig() {},
     createAgentSession: async () => "cursor-parent-agent",
+    deleteAgentSession() {},
     createRuntime: (threadId) => createAgentEventRuntime({
       harness: "cursor",
       threadId,

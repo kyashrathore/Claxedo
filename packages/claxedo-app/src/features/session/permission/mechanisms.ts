@@ -230,6 +230,11 @@ export function permissionMechanism(harness: HarnessId): PermissionMechanism {
   return { kind: "acp-session-mode" }
 }
 
+/** True when the picker may show Claxedo's own rows instead of a harness list. */
+export function harnessUsesClaxedoPermissionPicker(harness: HarnessId): boolean {
+  return permissionMechanism(harness).kind === "opencode-session-ruleset"
+}
+
 /** Prose label for ANY harness identity ("Claude (SDK)", or the connection's slug label). */
 export function harnessPermissionLabel(harness: HarnessId): string {
   return (HARNESS_LABELS as Partial<Record<string, string>>)[harness] ?? harnessDisplayLabel(harness)

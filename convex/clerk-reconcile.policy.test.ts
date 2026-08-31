@@ -270,6 +270,40 @@ describe("the sweep corrects a seeded divergence within one cycle (W6.3 DoD)", (
     ])
   })
 
+  test("reconcile revoke also revokes the member's runtime tokens (dropped-webhook fallback)", async () => {
+    const t = convexTest(schema, modules)
+    const { orgId, userId } = await seedOrgFixture(t)
+    await t.run(async (ctx) => {
+      const workspaceId = await ctx.db.insert("workspaces", {
+        workspace_id: "ws_1",
+        org_id: orgId,
+        owner_user_id: userId,
+        backing: "cloud-vm",
+        access: "cloud",
+        display_name: "Reconcile token revocation",
+        created_at: 1,
+        updated_at: 1,
+      })
+      await ctx.db.insert("runtime_access_tokens", {
+        jti: "jti_1",
+        workspace_id: workspaceId,
+        minted_for_user_id: userId,
+        host_id: "host_1",
+        expires_at: 9_999_999,
+        created_at: 1,
+      })
+    })
+    const { client } = fakeClerk({ clerk_org_1: [] })
+
+    await runClerkSweep({ ctx: sweepCtx(t), client, limit: 10, now: 9_000 })
+
+    expect(await membershipRows(t)).toEqual([])
+    // Without the revocation wiring the token would stay live to expiry.
+    expect(await t.run(async (ctx) =>
+      await ctx.db.query("runtime_access_tokens").withIndex("by_jti", (q) => q.eq("jti", "jti_1")).unique()
+    )).toMatchObject({ revoked_at: expect.any(Number) })
+  })
+
   test("membership in Clerk, missing in Convex: inserted with an audit event", async () => {
     const t = convexTest(schema, modules)
     const { orgId, userId } = await seedOrgFixture(t, { skipMembership: true })

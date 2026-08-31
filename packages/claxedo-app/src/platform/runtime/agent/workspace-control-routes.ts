@@ -1,4 +1,4 @@
-import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/server-transport"
 import {
@@ -41,7 +41,10 @@ export function workspaceResolveUrl(input: {
     ? "/api/claxedo/workspace/resolve"
     : "/api/workspace/resolve"
   const url = new URL(path, baseUrl)
-  const workspaceId = input.workspaceId ?? workspaceIdFromRef(input.scope)
+  // Local association UUIDs are store ids, not filesystem paths — resolve by id.
+  const workspaceId = input.workspaceId
+    ?? workspaceIdFromRef(input.scope)
+    ?? localWorkspaceAssociationId(input.scope)
   if (input.scope && !workspaceId) url.searchParams.set("directory", input.scope)
   if (workspaceId) url.searchParams.set("workspaceId", workspaceId)
   if (input.create) url.searchParams.set("create", "true")
@@ -92,6 +95,10 @@ export function controlSessionListUrl(input: {
   if (input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
   if (input.directory) url.searchParams.set("directory", input.directory)
   return url
+}
+
+export function controlPlaneEventsUrl(input: { baseUrl: string }) {
+  return new URL("/api/claxedo/events", controlPlaneBaseUrl(input.baseUrl))
 }
 
 export function controlSessionUrl(input: {

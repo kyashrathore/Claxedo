@@ -64,7 +64,10 @@ const ENTRIES = [
   // durable facts. The only package edges are Node `fs` for that durable local
   // ledger and the pinned, read-only `tokentracker-cli` pricing catalog.
   // Combined with dev's sandbox-contract split, the exact package count is 28.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 140, packages: 28 },
+  // +4 modules (140 -> 144): the already-reachable workspace SessionEnv facade
+  // now delegates to focused factory, protocol, runtime-env, and admission
+  // owners. No package edge was added.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 144, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
   // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
@@ -76,7 +79,11 @@ const ENTRIES = [
   // +1 module (111 -> 112): the 236-byte `agent-sdk-runtime/message-page`
   // contract. It replaces runtime imports of the 6.7 MB all-adapters barrel,
   // stays dependency-free in the emitted Worker graph, and adds no package.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 112, packages: 13 },
+  // +3 modules (113 -> 116): the reviewed workspace extension mutation owner,
+  // its shared enablement contract, and the Convex adapter now reached by the
+  // hosted shell. These routes make extension policy canonical in the signed
+  // control plane and add no package edge.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 116, packages: 13 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.

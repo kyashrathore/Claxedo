@@ -23,10 +23,10 @@ import * as PaneID from "@/app/workbench/context/pane-id"
 import * as Workbench from "@/app/workbench/workbench"
 import * as WorkspaceQuery from "@/features/workspaces/data/use-workspace-query"
 import * as WorkspaceConnection from "@/features/workspaces/data/workspace-connection"
+import * as WorkspaceCreate from "@/features/workspaces/data/workspace-create-api"
 import * as WorkspaceGateModule from "@/features/workspaces/data/workspace-gate"
 import * as WorkspaceScope from "@/features/workspaces/data/workspace-scope"
 import * as DirectoryScopeModule from "@/app/workbench/context/directory-scope"
-import * as StatusPopoverModule from "@/app/connection/status-popover"
 import * as SurfaceStatus from "@/app/workbench/compact-switcher/surface-status"
 import * as Navigation from "@/app/workbench/navigation/navigation-row"
 import * as LayoutActions from "@/app/workbench/actions/shared"
@@ -109,10 +109,10 @@ configureSessionAppPorts({
   useWorkspaceQuery: WorkspaceQuery.useWorkspaceQuery,
   isWorkspaceReady: WorkspaceConnection.isWorkspaceReady,
   workspacePlacement: WorkspaceConnection.workspacePlacement,
+  createCloudWorkspace: WorkspaceCreate.createCloudWorkspace,
   WorkspaceGate: WorkspaceGateModule.WorkspaceGate,
   useWorkspaceScopeRegistryOptional: WorkspaceScope.useWorkspaceScopeRegistryOptional,
   DirectoryScope: DirectoryScopeModule.DirectoryScope,
-  StatusPopover: StatusPopoverModule.StatusPopover,
   terminalSurfaceStatus: SurfaceStatus.terminalSurfaceStatus,
   NavigationRow: Navigation.NavigationRow,
   NavigationStatusDot: Navigation.NavigationStatusDot,

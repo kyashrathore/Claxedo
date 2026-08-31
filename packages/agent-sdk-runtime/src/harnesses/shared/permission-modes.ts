@@ -24,13 +24,8 @@ export class PermissionModeSelection {
   ) {}
 
   /**
-   * The mode this session runs under, falling back to the `auto` rung.
-   *
-   * Falling back to `auto` rather than `ask` is a deliberate default-on choice,
-   * and it is safe HERE specifically because every `auto` rung in this file is
-   * enforced by the harness — Claude's classifier, Cursor's Auto-review — rather
-   * than by Claxedo answering prompts. A harness whose `auto` were merely local
-   * answering must not use this default.
+   * The selected mode, or the harness-enforced `auto` mode when none is selected.
+   * Only harness-enforced automatic modes belong in this selection policy.
    */
   currentId(sessionId: string): string | undefined {
     return this.selected.get(sessionId) ?? this.modes.find((mode) => mode.level === "auto")?.id
@@ -51,9 +46,8 @@ export class PermissionModeSelection {
   }
 
   /**
-   * Throws on an unknown id rather than storing it. A stored id the harness will
-   * later fail to honour reads as applied in the UI and does nothing in fact —
-   * the precise divergence this channel exists to prevent.
+   * Accepts only modes advertised by this selection policy so stored state and
+   * the harness remain aligned.
    */
   set(sessionId: string, modeId: string): AgentPermissionModeState {
     if (!this.modes.some((mode) => mode.id === modeId)) {
@@ -95,15 +89,9 @@ export const CLAUDE_PERMISSION_MODES: readonly AgentPermissionMode[] = [
   mode("default", "Default", "Standard behavior, prompts for dangerous operations", "ask"),
   mode("acceptEdits", "Accept edits", "Auto-accept file edit operations"),
   /**
-   * The `auto` rung, because Claxedo's Auto means FULL ACCESS WITH THE DANGER
-   * TIER STILL GATED — not "edits only".
-   *
-   * `acceptEdits` carried this before and it was the wrong shape: it
-   * auto-accepts edits and then prompts on every Bash and MCP call, which is
-   * neither full access nor automatic. Anthropic's classifier mode approves the
-   * safe tiers outright and escalates genuinely risky actions, which is the
-   * definition this rung is for — and it is also the mode Anthropic themselves
-   * call "auto".
+   * Claxedo's automatic rung allows safe tiers and escalates dangerous work.
+   * Anthropic's classifier mode implements that policy across edits, Bash, and
+   * MCP calls.
    */
   mode("auto", "Auto", "Use a model classifier to approve/deny permission prompts", "auto"),
   mode("plan", "Plan", "Planning mode, no actual tool execution"),
@@ -134,9 +122,8 @@ export const CURSOR_PERMISSION_MODES: readonly AgentPermissionMode[] = [
  * The `LocalAgentOptions` fragment for a mode id, shaped for spreading straight
  * into `Agent.create({ local: … })`.
  *
- * Returns `{}` for an unknown or absent id rather than a default, so an id this
- * build does not recognise leaves Cursor's own defaults untouched instead of
- * quietly imposing one of ours.
+ * Unknown or absent ids produce no override, leaving Cursor's configured
+ * defaults authoritative.
  */
 export function cursorPermissionOptions(
   modeId: string | undefined,
@@ -193,10 +180,8 @@ export const codexSettingsFor = (modeId: string | undefined): CodexPermissionSet
   CODEX_SETTINGS[modeId ?? ""] ?? CODEX_SETTINGS[DEFAULT_CODEX_MODE]!
 
 /**
- * `turn/start` takes a STRUCTURED sandbox policy while `thread/start` takes the
- * bare slug. Same concept, two encodings — which is exactly the kind of split
- * that let the two call sites drift out of agreement before, so the conversion
- * lives here rather than being written out at each one.
+ * `turn/start` takes a structured sandbox policy while `thread/start` takes the
+ * bare slug. This function owns the conversion shared by both call sites.
  */
 export function codexSandboxPolicy(sandbox: CodexPermissionSettings["sandbox"], directory: string) {
   if (sandbox === "read-only") return { type: "readOnly" as const }

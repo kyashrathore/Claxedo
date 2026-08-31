@@ -171,7 +171,7 @@ function handoffHarness(input: {
     async createHandoffSession(_directory, _title, id, options) {
       input.handoffs?.push(id)
       input.handoffSystems?.push(options.system)
-      return { id, agentSessionId: `${input.id}-native-thread` }
+      return { id, agentSessionId: `${input.id}-native-thread`, rollback: async () => {} }
     },
     async updateSession() { return null },
     async getSessionConfig() { return config },

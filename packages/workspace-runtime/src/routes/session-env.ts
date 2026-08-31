@@ -2,10 +2,19 @@ import { Hono } from "hono"
 import fs from "fs"
 import path from "path"
 import { spawn } from "child_process"
-import { assertTarget, resolveWorkspacePath, WorkspaceTargetError } from "../target"
+import { assertTarget, resolveWorkspaceCommandPaths, resolveWorkspacePath, WorkspaceTargetError } from "../target"
 import { buildSafeEnv } from "../pty/env"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { ProcessObserver } from "../managed-processes/process-observer"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import { denyWorkspaceViewers } from "./workspace-role"
+import {
+  encodeSessionEnvExecFrame,
+  SESSION_ENV_EXEC_DEFAULT_TIMEOUT_MS,
+  SESSION_ENV_EXEC_MAX_TIMEOUT_MS,
+  type SessionEnvErrorCode,
+  type SessionEnvExecFrame,
+} from "../session-env-contract"
 
 const EXEC_KILL_GRACE_MS = 250
 
@@ -36,12 +45,19 @@ function err(c: { json: (body: unknown, status?: number) => Response }, cause: u
     return c.json(requestBodyTooLargeBody(), 413)
   }
   if (cause instanceof WorkspaceTargetError && message.includes("pinned")) {
-    return c.json(errorBody("session_env_invalid_directory", "Session env directory must match configured workspace"), 400)
+    return c.json(
+      sessionEnvErrorBody("session_env_invalid_directory", "Session env directory must match configured workspace"),
+      400,
+    )
   }
   if (cause instanceof WorkspaceTargetError) {
-    return c.json(errorBody("session_env_path_forbidden", message), 403)
+    return c.json(sessionEnvErrorBody("session_env_path_forbidden", message), 403)
   }
-  return c.json(errorBody("session_env_operation_failed", message), 400)
+  return c.json(sessionEnvErrorBody("session_env_operation_failed", message), 400)
+}
+
+function sessionEnvErrorBody(code: SessionEnvErrorCode, message: string) {
+  return errorBody(code, message)
 }
 
 function jsonBody(c: { req: { header(name: string): string | undefined; raw: Request } }) {
@@ -63,8 +79,7 @@ function boolValue(input: unknown) {
 function envValue(input: unknown) {
   if (!input || typeof input !== "object") return {}
   return Object.fromEntries(
-    Object.entries(input)
-      .filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+    Object.entries(input).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
   )
 }
 
@@ -83,7 +98,7 @@ function globRegex(pattern: string) {
   const raw = posix(pattern)
   let out = ""
   for (let i = 0; i < raw.length; i++) {
-    const ch = raw[i]!
+    const ch = raw[i]
     if (ch === "*" && raw[i + 1] === "*" && raw[i + 2] === "/") {
       out += "(?:.*/)?"
       i += 2
@@ -114,7 +129,7 @@ function ignored(rel: string, ignore: string[]) {
 }
 
 function unsafeRegex() {
-  return errorBody("session_env_unsafe_regex", "Unsafe grep pattern")
+  return sessionEnvErrorBody("session_env_unsafe_regex", "Unsafe grep pattern")
 }
 
 function grepMatcher(pattern: string, literal: boolean | undefined, ignoreCase: boolean | undefined) {
@@ -150,7 +165,7 @@ function hasNestedOrAmbiguousQuantifier(pattern: string) {
   let escaped = false
   let charClass = false
   for (let i = 0; i < pattern.length; i++) {
-    const ch = pattern[i]!
+    const ch = pattern[i]
     if (escaped) {
       escaped = false
       continue
@@ -232,9 +247,9 @@ async function walkFiles(base: string, limit: number, ignore: string[]) {
  * rejection is fatal (drains to `process.exit(1)`). This is the single point
  * where an enqueue may fail, so the `try/catch` is localized here.
  */
-function writeNdjson(ctrl: ReadableStreamDefaultController<Uint8Array>, payload: unknown) {
+function writeNdjson(ctrl: ReadableStreamDefaultController<Uint8Array>, payload: SessionEnvExecFrame) {
   try {
-    ctrl.enqueue(new TextEncoder().encode(`${JSON.stringify(payload)}\n`))
+    ctrl.enqueue(encodeSessionEnvExecFrame(payload))
     return true
   } catch {
     return false
@@ -256,7 +271,11 @@ function signalProcessGroup(child: ReturnType<typeof spawn>, signal: NodeJS.Sign
 
 function terminateExec(
   child: ReturnType<typeof spawn>,
-  state: { reason: "timeout" | "cancel" | undefined; sigkillTimer: ReturnType<typeof setTimeout> | undefined; sigkillSent: boolean },
+  state: {
+    reason: "timeout" | "cancel" | undefined
+    sigkillTimer: ReturnType<typeof setTimeout> | undefined
+    sigkillSent: boolean
+  },
   reason: "timeout" | "cancel",
 ) {
   if (state.reason) return
@@ -269,19 +288,20 @@ function terminateExec(
 }
 
 export function SessionEnvRoutes(processObserver?: ProcessObserver) {
-  return new Hono()
+  return new Hono<{ Variables: RelayHostAuthContext }>()
     .onError((cause, c) => {
       if (isRequestBodyTooLarge(cause)) return c.json(requestBodyTooLargeBody(), 413)
       throw cause
     })
-    .post("/exec", async (c) => {
+    .post("/exec", denyWorkspaceViewers("Workspace role does not allow shell execution"), async (c) => {
       const base = root(c)
       const body = await jsonBody(c)
       const command = stringValue(body.command)
-      if (!command) return c.json(errorBody("session_env_command_required", "Missing command"), 400)
+      if (!command) return c.json(sessionEnvErrorBody("session_env_command_required", "Missing command"), 400)
       let cwd: string
       try {
         cwd = await verifiedPath(base, stringValue(body.cwd), true)
+        await resolveWorkspaceCommandPaths(base, { command, allowAbsoluteExecutable: true })
       } catch (cause) {
         return err(c, cause)
       }
@@ -296,38 +316,35 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         },
         stdio: ["ignore", "pipe", "pipe"],
       })
-      const owner = child.pid && processObserver
-        ? processObserver.register(
-            {
-              ownerId: `session-shell:${crypto.randomUUID()}`,
-              ownerGeneration: crypto.randomUUID(),
-              launchId: crypto.randomUUID(),
-              kind: "session-shell",
-              role: "session-shell",
-              label: "Session tool shell",
-              pid: child.pid,
-              workspaceId: c.req.header("x-workspace-id") ?? base,
-              directory: cwd,
-              ...(stringValue(body.sessionId) ? { sessionId: stringValue(body.sessionId)! } : {}),
-              ...(stringValue(body.sessionId)
-                ? { parentOwnerId: `pi-session:${stringValue(body.sessionId)!}` }
-                : {}),
-            },
-            {
-              stopGracefully: async () => signalProcessGroup(child, "SIGTERM"),
-              killOwnedTree: async () => signalProcessGroup(child, "SIGKILL"),
-            },
-          )
-        : undefined
+      const owner =
+        child.pid && processObserver
+          ? processObserver.register(
+              {
+                ownerId: `session-shell:${crypto.randomUUID()}`,
+                ownerGeneration: crypto.randomUUID(),
+                launchId: crypto.randomUUID(),
+                kind: "session-shell",
+                role: "session-shell",
+                label: "Session tool shell",
+                pid: child.pid,
+                workspaceId: c.req.header("x-workspace-id") ?? base,
+                directory: cwd,
+                ...(stringValue(body.sessionId) ? { sessionId: stringValue(body.sessionId)! } : {}),
+                ...(stringValue(body.sessionId) ? { parentOwnerId: `pi-session:${stringValue(body.sessionId)!}` } : {}),
+              },
+              {
+                stopGracefully: async () => signalProcessGroup(child, "SIGTERM"),
+                killOwnedTree: async () => signalProcessGroup(child, "SIGKILL"),
+              },
+            )
+          : undefined
       const termination = {
         reason: undefined as "timeout" | "cancel" | undefined,
         sigkillTimer: undefined as ReturnType<typeof setTimeout> | undefined,
         sigkillSent: false,
       }
-      const timeout = numberValue(body.timeout)
-      const timer = timeout && timeout > 0
-        ? setTimeout(() => terminateExec(child, termination, "timeout"), timeout)
-        : undefined
+      const timeout = sessionEnvExecTimeout(body.timeout)
+      const timer = setTimeout(() => terminateExec(child, termination, "timeout"), timeout)
       let streamClosed = false
       const stream = new ReadableStream<Uint8Array>({
         start(ctrl) {
@@ -340,7 +357,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
             if (!writeNdjson(ctrl, { type: "stderr", data: chunk.toString("base64") })) streamClosed = true
           })
           child.on("error", (cause) => {
-            if (timer) clearTimeout(timer)
+            clearTimeout(timer)
             owner?.exit({ reason: "error" })
             if (streamClosed) return
             streamClosed = true
@@ -348,14 +365,11 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
             ctrl.close()
           })
           child.on("close", (exitCode, signal) => {
-            if (timer) clearTimeout(timer)
+            clearTimeout(timer)
             if (!termination.reason && termination.sigkillTimer) clearTimeout(termination.sigkillTimer)
             owner?.exit({
-              reason: termination.reason === "timeout"
-                ? "timeout"
-                : termination.reason === "cancel"
-                  ? "cancelled"
-                  : "exited",
+              reason:
+                termination.reason === "timeout" ? "timeout" : termination.reason === "cancel" ? "cancelled" : "exited",
               ...(typeof exitCode === "number" ? { exitCode } : {}),
             })
             if (streamClosed) return
@@ -373,7 +387,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         },
         cancel() {
           streamClosed = true
-          if (timer) clearTimeout(timer)
+          clearTimeout(timer)
           terminateExec(child, termination, "cancel")
         },
       })
@@ -476,10 +490,12 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         const base = root(c)
         const body = await jsonBody(c)
         const pattern = stringValue(body.pattern)
-        if (!pattern) return c.json(errorBody("session_env_pattern_required", "Missing pattern"), 400)
+        if (!pattern) return c.json(sessionEnvErrorBody("session_env_pattern_required", "Missing pattern"), 400)
         const cwd = await verifiedPath(base, stringValue(body.cwd), true)
         const limit = Math.min(Math.max(numberValue(body.limit) ?? 1000, 1), 10_000)
-        const ignore = Array.isArray(body.ignore) ? body.ignore.filter((item): item is string => typeof item === "string") : []
+        const ignore = Array.isArray(body.ignore)
+          ? body.ignore.filter((item): item is string => typeof item === "string")
+          : []
         const re = globRegex(pattern)
         const files = (await walkFiles(cwd, limit, ignore))
           .map((item) => path.relative(cwd, item))
@@ -495,7 +511,7 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         const base = root(c)
         const body = await jsonBody(c)
         const pattern = stringValue(body.pattern)
-        if (!pattern) return c.json(errorBody("session_env_pattern_required", "Missing pattern"), 400)
+        if (!pattern) return c.json(sessionEnvErrorBody("session_env_pattern_required", "Missing pattern"), 400)
         const searchPath = await verifiedPath(base, stringValue(body.path), true)
         const stat = await fs.promises.stat(searchPath)
         const limit = Math.min(Math.max(numberValue(body.limit) ?? 100, 1), 10_000)
@@ -523,12 +539,12 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
           }
           const lines = text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n")
           for (let i = 0; i < lines.length; i++) {
-            if (lines[i]!.length > SESSION_ENV_GREP_MAX_LINE_LENGTH) continue
-            if (!matcher.match(lines[i]!)) continue
+            if (lines[i].length > SESSION_ENV_GREP_MAX_LINE_LENGTH) continue
+            if (!matcher.match(lines[i])) continue
             matches.push({
               path: rel,
               line: i + 1,
-              text: lines[i]!,
+              text: lines[i],
               before: context > 0 ? lines.slice(Math.max(0, i - context), i) : [],
               after: context > 0 ? lines.slice(i + 1, Math.min(lines.length, i + 1 + context)) : [],
             })
@@ -540,4 +556,11 @@ export function SessionEnvRoutes(processObserver?: ProcessObserver) {
         return err(c, cause)
       }
     })
+}
+
+export function sessionEnvExecTimeout(input: unknown) {
+  const requested = numberValue(input)
+  return requested && requested > 0
+    ? Math.min(requested, SESSION_ENV_EXEC_MAX_TIMEOUT_MS)
+    : SESSION_ENV_EXEC_DEFAULT_TIMEOUT_MS
 }

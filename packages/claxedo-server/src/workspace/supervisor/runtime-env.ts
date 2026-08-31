@@ -50,12 +50,14 @@ export function controlPlaneVerificationEnv(
   const publicKeyPem = (input.env ?? process.env).CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM?.trim()
   if (driverId !== "docker" && localControlPlaneConfigured(input.options) && publicKeyPem) {
     return {
+      WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/api/runtime-authority/session-authorize`,
       WORKSPACE_RUNTIME_MANAGEMENT_VERIFY_PEM: publicKeyPem,
       WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: "claxedo-control-plane",
       WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: "supervisor-backplane",
     }
   }
   return {
+    WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/api/runtime-authority/session-authorize`,
     WORKSPACE_RUNTIME_MANAGEMENT_JWKS_URL: `${controlPlaneUrl.replace(/\/+$/g, "")}/.well-known/jwks.json`,
     WORKSPACE_RUNTIME_MANAGEMENT_ISSUER: "claxedo-control-plane",
     WORKSPACE_RUNTIME_MANAGEMENT_AUDIENCE: "supervisor-backplane",

@@ -17,6 +17,7 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     setAuth() {},
     applyConfig() {},
     createAgentSession: async () => "thread-1",
+    deleteAgentSession() {},
     createRuntime() {
       const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
       return {
@@ -483,18 +484,13 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("requires a workspace directory at cwd-dependent boundaries", async () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
-      pendingPermissions: Map<string, unknown>
-      store: {
-        listPermissions: () => []
-      }
-    }>
-    item.pendingPermissions = new Map()
-    item.store = {
-      listPermissions: () => [],
-    }
+    const item = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => minimalSdkRuntimeDriver(),
+    })
 
     await expect(item.listPermissions(undefined as never)).rejects.toThrow("workspace directory is required")
+    item.dispose()
   })
 
   test("process death clears pending permissions, questions, active turns, and threads", () => {
@@ -669,73 +665,64 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("dispose aborts and closes active turns", () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
-      turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
-      pendingPermissions: Map<string, unknown>
-      pendingQuestions: Map<string, { reject: () => void }>
-      driver: SdkRuntimeDriver
-      dispose: () => void
-    }>
+    const store = storeRows(createMemoryRuntimeStore())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "native-1" })
+    let host!: SdkRuntimeDriverHost
+    const item = new SdkRuntimeAdapter({
+      store,
+      driver: (input) => {
+        host = input
+        return minimalSdkRuntimeDriver()
+      },
+    })
     const abort = new AbortController()
     let closed = false
     let rejected = false
-    item.turnLifecycle = createSessionTurnLifecycle()
-    item.turnLifecycle.set("s1", { abort, close: () => { closed = true } })
-    item.pendingPermissions = new Map([["perm-1", {}]])
-    item.pendingQuestions = new Map([["question-1", { reject: () => { rejected = true } }]])
-    item.driver = {
-      ...minimalSdkRuntimeDriver(),
-      dispose: () => {},
-    }
+    let denied = false
+    host.lifecycle().set("s1", { abort, close: () => { closed = true } })
+    host.pendingPermissions.set("perm-1", {
+      sessionId: "s1",
+      agentSessionId: "native-1",
+      method: "permission",
+      params: {},
+      resolve: () => { denied = true },
+    })
+    host.pendingQuestions.set("question-1", {
+      sessionId: "s1",
+      agentSessionId: "native-1",
+      questions: [],
+      resolve() {},
+      reject: () => { rejected = true },
+    })
 
     item.dispose()
 
     expect(abort.signal.aborted).toBe(true)
     expect(closed).toBe(true)
+    expect(denied).toBe(true)
     expect(rejected).toBe(true)
-    expect(item.turnLifecycle.activeTurns.size).toBe(0)
-    expect(item.pendingPermissions.size).toBe(0)
-    expect(item.pendingQuestions.size).toBe(0)
+    expect(host.lifecycle().activeTurns.size).toBe(0)
+    expect(host.pendingPermissions.size).toBe(0)
+    expect(host.pendingQuestions.size).toBe(0)
   })
 
   test("per-session config updates do not mutate the adapter-wide model", async () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
-      currentModel: string
-      options: {}
-      driver: SdkRuntimeDriver
-      store: {
-        updateSessionConfig: () => unknown
-        getSessionConfig: () => unknown
-      }
-    }>
-    item.currentModel = ""
-    item.options = {}
-    item.driver = minimalSdkRuntimeDriver()
-    item.store = {
-      updateSessionConfig() {
-        return {
-          harness: { id: "codex", access: "native" },
-          model: { providerID: "codex", modelID: "session-model" },
-          variant: null,
-          agent: null,
-        }
-      },
-      getSessionConfig() {
-        return undefined
-      },
-    }
+    const store = storeRows(createMemoryRuntimeStore())
+    const item = new SdkRuntimeAdapter({ store, driver: () => minimalSdkRuntimeDriver() })
+    const session = await item.createSession(path.resolve("/work"))
 
-    await item.updateSessionConfig("s1", {
+    const accepted = await item.updateSessionConfig(session.id, {
       harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "session-model" },
     }, path.resolve("/work"))
 
-    expect(item.currentModel).toBe("")
-    expect(await item.getSessionConfig("s2", path.resolve("/work"))).toEqual({
+    expect(accepted.model).toEqual({ providerID: "codex", modelID: "session-model" })
+    expect(store.getSessionConfig(session.id)).toEqual({
       harness: { id: "codex", access: "native" },
       variant: null,
       agent: null,
     })
+    item.dispose()
   })
 })
 

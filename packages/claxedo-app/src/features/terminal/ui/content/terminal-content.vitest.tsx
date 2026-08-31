@@ -24,7 +24,10 @@ const h = vi.hoisted(() => ({
   setAgentStatus: vi.fn(),
   pathname: "/w/%2Frepo/session",
   sdkWorkspaceId: "ws_terminal" as string | undefined,
+  urlRoutingEnabled: true,
   resolveRecovery: vi.fn((_alias: unknown, id: string) => id),
+  resolveWorkspaceRuntime: vi.fn(async () => null),
+  transportFetch: vi.fn(),
 }))
 
 vi.mock("@/features/terminal/ui/terminal", () => ({
@@ -81,7 +84,16 @@ vi.mock("@/platform/api/api", () => ({
 }))
 
 vi.mock("@/platform/runtime/workspace-runtime-record", () => ({
-  resolveWorkspaceRuntime: vi.fn(async () => null),
+  resolveWorkspaceRuntime: h.resolveWorkspaceRuntime,
+}))
+
+vi.mock("@/platform/runtime/transport", () => ({
+  createTransport: () => ({ fetch: h.transportFetch }),
+  centralTransportForServer: () => "loopback",
+}))
+
+vi.mock("@/lib/runtime-mode", () => ({
+  urlRoutingEnabled: () => h.urlRoutingEnabled,
 }))
 
 vi.mock("../../../../app/workbench/state/index", () => ({
@@ -138,19 +150,24 @@ vi.mock("@/features/terminal/app-ports", () => ({
 import { TerminalContent } from "./terminal-content"
 import { workspaceTerminalRoute } from "@/platform/identity/route"
 
-function terminalMeta(id: string, title: string, workspaceRouteId?: string) {
+function terminalMeta(
+  id: string,
+  title: string,
+  identity: { sessionId?: string; workspaceRouteId?: string } = {},
+) {
   return {
     id: `content-${id}`,
     type: "terminal",
     scope: "directory",
     directory: "/repo",
     terminalId: id,
+    ...(identity.sessionId ? { sessionId: identity.sessionId } : {}),
     content: {
       type: "terminal",
       directory: "/repo",
       terminalId: id,
       title,
-      ...(workspaceRouteId ? { workspaceRouteId } : {}),
+      ...(identity.workspaceRouteId ? { workspaceRouteId: identity.workspaceRouteId } : {}),
     },
   } as const
 }
@@ -179,12 +196,17 @@ describe("TerminalContent switching", () => {
     h.setAgentStatus.mockReset()
     h.pathname = "/w/%2Frepo/session"
     h.sdkWorkspaceId = "ws_terminal"
+    h.urlRoutingEnabled = true
     h.resolveRecovery.mockImplementation((_alias: unknown, id: string) => id)
+    h.resolveWorkspaceRuntime.mockReset()
+    h.resolveWorkspaceRuntime.mockResolvedValue(null)
+    h.transportFetch.mockReset()
   })
 
   test("creates two terminal panes and keeps them mounted through repeated switches", async () => {
     h.ptys.splice(0)
-    h.terminalNew.mockImplementation(async (_command?: string, title?: string) => {
+    h.terminalNew.mockImplementation(async (options: { title?: string }) => {
+      const title = options.title
       const id = title === "Terminal 2" ? "pty-two" : "pty-one"
       h.ptys.push({ id, title: title ?? "Terminal", cwd: "/repo" })
       return id
@@ -222,8 +244,77 @@ describe("TerminalContent switching", () => {
     }
 
     expect(h.terminalNew).toHaveBeenCalledTimes(2)
-    expect(h.ensure).not.toHaveBeenCalled()
+    expect(h.ensure.mock.calls.map(([input]) => input.id)).toEqual(["pty-one", "pty-two"])
     expect(h.fit.mock.calls.length).toBeGreaterThanOrEqual(4)
+  })
+
+  test("passes the authoritative content session to managed PTY creation", async () => {
+    h.ptys.splice(0)
+    h.terminalNew.mockResolvedValue("pty-private")
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-private", "Private terminal", { sessionId: "session_private" })}
+        ctx={{ paneId: "pane-private", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.terminalNew).toHaveBeenCalled())
+    expect(h.terminalNew).toHaveBeenCalledWith({
+      createRequestId: expect.any(String),
+      initialCommand: undefined,
+      previousPtyId: undefined,
+      sessionId: "session_private",
+      title: "Private terminal",
+    })
+  })
+
+  test("does not write terminal state after a pending create surface is disposed", async () => {
+    h.ptys.splice(0)
+    let resolveCreate!: (id: string) => void
+    h.terminalNew.mockReturnValue(new Promise<string>((resolve) => {
+      resolveCreate = resolve
+    }))
+
+    const view = render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-disposed", "Terminal")}
+        ctx={{ paneId: "pane-disposed", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(h.terminalNew).toHaveBeenCalledTimes(1))
+    const patchesBeforeDispose = h.metaPatch.mock.calls.length
+    view.unmount()
+    resolveCreate("pty-too-late")
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(h.ensure).not.toHaveBeenCalled()
+    expect(h.metaPatch).toHaveBeenCalledTimes(patchesBeforeDispose)
+  })
+
+  test("stops pending-create reconciliation after a definitive runtime rejection", async () => {
+    h.ptys.splice(0)
+    let resolveWorkspace!: (workspace: { kind: "cloud"; workspaceId: string }) => void
+    h.resolveWorkspaceRuntime.mockReturnValue(new Promise((resolve) => {
+      resolveWorkspace = resolve
+    }))
+    h.terminalNew.mockRejectedValue(Object.assign(new Error("permission denied"), { status: 403 }))
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-denied", "Terminal")}
+        ctx={{ paneId: "pane-denied", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByText("permission denied")).toBeTruthy())
+    resolveWorkspace({ kind: "cloud", workspaceId: "ws_denied" })
+    await Promise.resolve()
+    await Promise.resolve()
+
+    expect(h.transportFetch).not.toHaveBeenCalled()
   })
 
   test("replaces the route when recovery swaps a real terminal id", async () => {
@@ -251,7 +342,7 @@ describe("TerminalContent switching", () => {
 
     render(() => (
       <TerminalContent
-        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        meta={terminalMeta("pty-one", "Terminal 1", { workspaceRouteId: "ws_terminal" })}
         ctx={{ paneId: "pane-one", isVisible: () => true }}
       />
     ))
@@ -271,7 +362,7 @@ describe("TerminalContent switching", () => {
 
     render(() => (
       <TerminalContent
-        meta={terminalMeta("pty-one", "Terminal 1", "ws_terminal")}
+        meta={terminalMeta("pty-one", "Terminal 1", { workspaceRouteId: "ws_terminal" })}
         ctx={{ paneId: "pane-one", isVisible: () => true }}
       />
     ))
@@ -292,17 +383,42 @@ describe("TerminalContent switching", () => {
       return "pty-created"
     })
 
+    const replaceState = vi.spyOn(window.history, "replaceState")
     render(() => (
       <TerminalContent
-        meta={terminalMeta("pending-local", "Terminal", "ws_local")}
+        meta={terminalMeta("pending-local", "Terminal", { workspaceRouteId: "ws_local" })}
         ctx={{ paneId: "pane-one", isVisible: () => true }}
       />
     ))
 
-    await waitFor(() => expect(h.navigate).toHaveBeenCalledWith(
+    await waitFor(() => expect(replaceState).toHaveBeenCalledWith(
+      window.history.state,
+      "",
       workspaceTerminalRoute("ws_local", "pty-created"),
-      { replace: true },
     ))
+    expect(h.navigate).not.toHaveBeenCalled()
+  })
+
+  test("does not write a pending terminal route into a file-backed desktop document", async () => {
+    h.ptys.splice(0)
+    h.urlRoutingEnabled = false
+    h.pathname = workspaceTerminalRoute("ws_local", "pending-local")
+    h.terminalNew.mockImplementation(async () => {
+      h.ptys.push({ id: "pty-created", title: "Terminal", cwd: "/repo" })
+      return "pty-created"
+    })
+    const replaceState = vi.spyOn(window.history, "replaceState")
+
+    render(() => (
+      <TerminalContent
+        meta={terminalMeta("pending-local", "Terminal", { workspaceRouteId: "ws_local" })}
+        ctx={{ paneId: "pane-one", isVisible: () => true }}
+      />
+    ))
+
+    await waitFor(() => expect(screen.getByTestId("terminal-pty-created")).toBeTruthy())
+    expect(replaceState).not.toHaveBeenCalled()
+    expect(h.navigate).not.toHaveBeenCalled()
   })
 
   test("uses producer-carried route identity when a local SDK adopts a real pty id", async () => {
@@ -339,6 +455,7 @@ describe("TerminalContent switching", () => {
     await fireEvent.click(screen.getByTestId("launch-terminal"))
 
     expect(h.metaPatch).toHaveBeenCalledWith("content-new", expect.objectContaining({
+      terminalCreateRequestId: expect.any(String),
       content: expect.objectContaining({ workspaceRouteId: "ws_selected" }),
     }))
     expect(h.navigate).toHaveBeenCalledWith(expect.stringMatching(/^\/w\/ws_selected\/terminal\/pending-/))

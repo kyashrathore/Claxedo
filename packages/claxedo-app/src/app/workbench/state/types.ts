@@ -140,6 +140,8 @@ export type ContentMeta = {
   draftProjectId?: string
   sessionId?: string
   terminalId?: string
+  /** Opaque PTY create correlation. It is never an authorization credential. */
+  terminalCreateRequestId?: string
   filePath?: string
   pageId?: string
   returnFocus?: { parentSessionId: string; subagentKey?: string; originId?: string }

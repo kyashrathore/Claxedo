@@ -6,65 +6,16 @@ import {
   controlMetaToGlobalSession,
   createInventoryPageSource,
   createSignedInventorySource,
-  listSignedWorkspaceRuntimeSessions,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
   signedWorkspaceHosting,
-  signedWorkspaceStatus,
   toSessionInventoryRow,
   workspaceGroupKey,
-  workspaceRuntimeReachable,
 } from "./inventory-source"
 
 describe("global sync inventory source helpers", () => {
   test("inventory source does not depend on RuntimeGateway", async () => {
     expect(await Bun.file(new URL("./inventory-source.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
-  })
-
-  test("signed user-hosted runtime inventory relays filesystem session lists", async () => {
-    const calls: string[] = []
-    const request = async (input: string | URL | Request, init?: RequestInit) => {
-      const url = new URL(input instanceof Request ? input.url : String(input))
-      calls.push(`${init?.method ?? (input instanceof Request ? input.method : "GET")} ${url}`)
-      if (url.pathname === "/api/workspace/ws_signed/connection") {
-        return jsonResponse({
-          access: "user-hosted",
-          backing: "local-worktree",
-          workspaceId: "ws_signed",
-          role: "owner",
-          relayUrl: "http://127.0.0.1:3001",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 300_000,
-        })
-      }
-      if (url.pathname === "/workspaces/ws_signed/session") return jsonResponse([])
-      return new Response("bare runtime path", { status: 500 })
-    }
-
-    await expect(listSignedWorkspaceRuntimeSessions({
-      serverUrl: "http://127.0.0.1:3001",
-      request,
-      workspaceId: "ws_signed",
-      directory: "/srv/remote-workspace",
-      kind: "user-hosted",
-      limit: 50,
-    })).resolves.toEqual([])
-
-    expect(calls.map((call) => new URL(call.slice(call.indexOf("http"))).pathname)).toEqual([
-      "/api/workspace/ws_signed/connection",
-      "/workspaces/ws_signed/session",
-    ])
-  })
-
-  test("signed runtime inventory propagates connection failures", async () => {
-    await expect(listSignedWorkspaceRuntimeSessions({
-      serverUrl: "http://127.0.0.1:3001",
-      request: async () => new Response("offline", { status: 503 }),
-      workspaceId: "ws_unavailable",
-      directory: "/srv/remote-workspace",
-      kind: "user-hosted",
-      limit: 50,
-    })).rejects.toThrow("Workspace connection failed: 503")
   })
 
   test("workspace group key prefers workspace identity over placeholder keys", () => {
@@ -118,6 +69,7 @@ describe("global sync inventory source helpers", () => {
       hasSignedAccess: true,
       baseUrl: "http://127.0.0.1:4096",
       directory: "/repo/local",
+      workspaceID: "ws_local",
     })).toBe(false)
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,
@@ -133,6 +85,7 @@ describe("global sync inventory source helpers", () => {
       hasSignedAccess: true,
       baseUrl: "https://app.test",
       directory: "/repo/local",
+      workspaceID: "ws_local",
     })).toBe(true)
   })
 
@@ -295,8 +248,7 @@ describe("global sync inventory source helpers", () => {
     })
   })
 
-  test("signed inventory source combines cloud and user-hosted workspace snapshots", async () => {
-    const runtimeCalls: unknown[] = []
+  test("signed inventory source keeps user-hosted visibility authority-filtered", async () => {
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
@@ -335,29 +287,19 @@ describe("global sync inventory source helpers", () => {
             ],
           })
         }
-        return jsonResponse({ sessions: [] }, { status: 500 })
+        return jsonResponse({ sessions: [] })
       },
       signedWorkspaceInfo: () => undefined,
       resolveWorkspace: async () => undefined,
-      runtimeSessions: async (input) => {
-        runtimeCalls.push(input)
-        return [{ session_id: "ses_user", created_at: 4, updated_at: 4 }]
-      },
     })
 
     const snapshot = await source.fetchSignedWorkspaceSnapshot()
 
     expect(snapshot.projects.map((project) => project.id).sort()).toEqual(["project_cloud", "project_user"])
-    expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud", "ws_user"])
+    expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])
-    expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")?.sessions.map((item) => item.id))
-      .toEqual(["ses_user"])
-    expect(runtimeCalls).toEqual([{
-      workspaceId: "ws_user",
-      directory: "workspace:ws_user",
-      kind: "user-hosted",
-    }])
+    expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
   })
 
   test("signed directory fetch uses known workspace metadata before resolving runtime", async () => {
@@ -379,21 +321,15 @@ describe("global sync inventory source helpers", () => {
         resolveCalls++
         return { workspaceId: "ws_resolved", directory: "workspace:ws_resolved", kind: "cloud" }
       },
-      runtimeSessions: async () => [{ session_id: "ses_known", created_at: 5, updated_at: 6 }],
     })
 
     const sessions = await source.fetchSignedDirectorySessions("/repo/known")
 
     expect(resolveCalls).toBe(0)
-    expect(sessions).toMatchObject([{
-      id: "ses_known",
-      directory: "workspace:ws_known",
-      workspaceId: "ws_known",
-      workspaceName: "Known",
-    }])
+    expect(sessions).toEqual([])
   })
 
-  test("cloud control-plane empty result falls back to runtime sessions", async () => {
+  test("cloud control-plane inventory is authoritative when empty", async () => {
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
@@ -401,236 +337,16 @@ describe("global sync inventory source helpers", () => {
       authFetch: async () => jsonResponse({ sessions: [] }),
       signedWorkspaceInfo: () => undefined,
       resolveWorkspace: async () => undefined,
-      runtimeSessions: async () => [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }],
     })
 
     expect(await source.fetchSignedWorkspaceSessions({
       workspaceId: "ws_cloud",
       directory: "workspace:ws_cloud",
       kind: "cloud",
-    })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
-  })
-
-  test("workspace reachability defaults to reachable for unknown statuses", () => {
-    for (const status of ["ready", "acquiring", "provisioning", "", undefined, null]) {
-      expect(workspaceRuntimeReachable(status)).toBe(true)
-    }
-    for (const status of ["stopped", " Stopped ", "DESTROYED", "unavailable", "failed", "offline", "deleted"]) {
-      expect(workspaceRuntimeReachable(status)).toBe(false)
-    }
-  })
-
-  test("workspace status reads both snake_case and camelCase runtime fields", () => {
-    expect(signedWorkspaceStatus({ status: "stopped" })).toBe("stopped")
-    expect(signedWorkspaceStatus({ runtime_status: "ready" })).toBe("ready")
-    expect(signedWorkspaceStatus({ runtimeStatus: "failed" })).toBe("failed")
-    expect(signedWorkspaceStatus({})).toBeUndefined()
-    expect(signedWorkspaceStatus(undefined)).toBeUndefined()
-  })
-
-  test("a dead workspace makes the control plane authoritative instead of probing the runtime", async () => {
-    let runtimeCalls = 0
-    const source = createSignedInventorySource({
-      queryClient: immediateQueryClient(),
-      baseUrl: () => "https://app.test",
-      owner: () => "user_1",
-      authFetch: async () => jsonResponse({ sessions: [] }),
-      signedWorkspaceInfo: () => undefined,
-      resolveWorkspace: async () => undefined,
-      workspaceStatus: async () => "stopped",
-      runtimeSessions: async () => {
-        runtimeCalls++
-        return [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }]
-      },
-    })
-
-    // Convex genuinely has nothing for this workspace, and its sandbox is gone.
-    // The honest answer is the empty control-plane list — NOT a dead-end probe.
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_dead",
-      directory: "workspace:ws_dead",
-      kind: "cloud",
     })).toEqual([])
-    expect(runtimeCalls).toBe(0)
   })
 
-  test.each(["stopped", "destroyed", "unavailable", "failed", "offline", "DELETED"])(
-    "treats %s as unreachable",
-    async (status) => {
-      let runtimeCalls = 0
-      const source = createSignedInventorySource({
-        queryClient: immediateQueryClient(),
-        baseUrl: () => "https://app.test",
-        owner: () => "user_1",
-        authFetch: async () => jsonResponse({ sessions: [] }),
-        signedWorkspaceInfo: () => undefined,
-        resolveWorkspace: async () => undefined,
-        workspaceStatus: async () => status,
-        runtimeSessions: async () => {
-          runtimeCalls++
-          return []
-        },
-      })
-
-      await source.fetchSignedWorkspaceSessions({
-        workspaceId: `ws_${status}`,
-        directory: `workspace:ws_${status}`,
-        kind: "cloud",
-      })
-      expect(runtimeCalls).toBe(0)
-    },
-  )
-
-  test("a reachable or unknown-status workspace still falls back to the runtime", async () => {
-    for (const status of ["ready", "acquiring", undefined]) {
-      let runtimeCalls = 0
-      const source = createSignedInventorySource({
-        queryClient: immediateQueryClient(),
-        baseUrl: () => "https://app.test",
-        owner: () => "user_1",
-        authFetch: async () => jsonResponse({ sessions: [] }),
-        signedWorkspaceInfo: () => undefined,
-        resolveWorkspace: async () => undefined,
-        workspaceStatus: async () => status,
-        runtimeSessions: async () => {
-          runtimeCalls++
-          return [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }]
-        },
-      })
-
-      expect(await source.fetchSignedWorkspaceSessions({
-        workspaceId: `ws_${status ?? "unknown"}`,
-        directory: "workspace:ws_live",
-        kind: "cloud",
-      })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
-      expect(runtimeCalls).toBe(1)
-    }
-  })
-
-  test("a dead workspace still renders whatever the control plane holds", async () => {
-    let runtimeCalls = 0
-    let statusCalls = 0
-    const source = createSignedInventorySource({
-      queryClient: immediateQueryClient(),
-      baseUrl: () => "https://app.test",
-      owner: () => "user_1",
-      authFetch: async () => jsonResponse({
-        sessions: [
-          { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
-          { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
-        ],
-      }),
-      signedWorkspaceInfo: () => undefined,
-      resolveWorkspace: async () => undefined,
-      workspaceStatus: async () => {
-        statusCalls++
-        return "stopped"
-      },
-      runtimeSessions: async () => {
-        runtimeCalls++
-        return []
-      },
-    })
-
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_dead",
-      directory: "workspace:ws_dead",
-      kind: "cloud",
-    })).toEqual([
-      { session_id: "ses_synced_old", created_at: 1, updated_at: 1 },
-      { session_id: "ses_synced_new", created_at: 2, updated_at: 3 },
-    ])
-    // Sessions were present, so neither the runtime nor the status port was consulted.
-    expect(runtimeCalls).toBe(0)
-    expect(statusCalls).toBe(0)
-  })
-
-  test("user-hosted workspaces never consult the control plane or the status port", async () => {
-    let statusCalls = 0
-    let controlCalls = 0
-    const source = createSignedInventorySource({
-      queryClient: immediateQueryClient(),
-      baseUrl: () => "https://app.test",
-      owner: () => "user_1",
-      authFetch: async () => {
-        controlCalls++
-        return jsonResponse({ sessions: [] })
-      },
-      signedWorkspaceInfo: () => undefined,
-      resolveWorkspace: async () => undefined,
-      workspaceStatus: async () => {
-        statusCalls++
-        return "stopped"
-      },
-      runtimeSessions: async () => [{ session_id: "ses_user", created_at: 1, updated_at: 1 }],
-    })
-
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_user",
-      directory: "workspace:ws_user",
-      kind: "user-hosted",
-    })).toEqual([{ session_id: "ses_user", created_at: 1, updated_at: 1 }])
-    expect(statusCalls).toBe(0)
-    expect(controlCalls).toBe(0)
-  })
-
-  test("a known workspace status wins over the status port", async () => {
-    let statusCalls = 0
-    let runtimeCalls = 0
-    const source = createSignedInventorySource({
-      queryClient: immediateQueryClient(),
-      baseUrl: () => "https://app.test",
-      owner: () => "user_1",
-      authFetch: async () => jsonResponse({ sessions: [] }),
-      signedWorkspaceInfo: () => undefined,
-      resolveWorkspace: async () => undefined,
-      workspaceStatus: async () => {
-        statusCalls++
-        return "ready"
-      },
-      runtimeSessions: async () => {
-        runtimeCalls++
-        return []
-      },
-    })
-
-    await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_dead",
-      directory: "workspace:ws_dead",
-      kind: "cloud",
-      status: "stopped",
-    })
-    expect(statusCalls).toBe(0)
-    expect(runtimeCalls).toBe(0)
-  })
-
-  test("a throwing status port is treated as unknown, preserving the runtime fallback", async () => {
-    let runtimeCalls = 0
-    const source = createSignedInventorySource({
-      queryClient: immediateQueryClient(),
-      baseUrl: () => "https://app.test",
-      owner: () => "user_1",
-      authFetch: async () => jsonResponse({ sessions: [] }),
-      signedWorkspaceInfo: () => undefined,
-      resolveWorkspace: async () => undefined,
-      workspaceStatus: async () => {
-        throw new Error("resolve failed")
-      },
-      runtimeSessions: async () => {
-        runtimeCalls++
-        return [{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }]
-      },
-    })
-
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_unknown",
-      directory: "workspace:ws_unknown",
-      kind: "cloud",
-    })).toEqual([{ session_id: "ses_runtime", created_at: 7, updated_at: 8 }])
-    expect(runtimeCalls).toBe(1)
-  })
-
-  test("non-OK control-plane responses return empty arrays", async () => {
+  test("session and workspace authority failures reject", async () => {
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
@@ -638,11 +354,76 @@ describe("global sync inventory source helpers", () => {
       authFetch: async () => jsonResponse({}, { status: 503 }),
       signedWorkspaceInfo: () => undefined,
       resolveWorkspace: async () => undefined,
-      runtimeSessions: async () => [],
     })
 
-    expect(await source.fetchControlPlaneSessions("ws_down")).toEqual([])
-    expect(await source.fetchControlPlaneWorkspaces("cloud")).toEqual([])
+    await expect(source.fetchControlPlaneSessions("ws_down"))
+      .rejects.toThrow("Control-plane session list failed with 503")
+    await expect(source.fetchControlPlaneWorkspaces("cloud"))
+      .rejects.toThrow("Control-plane cloud workspace list failed with 503")
+  })
+
+  test("effective-access checks bypass cached session inventory and surface authority failures", async () => {
+    let authorized = true
+    let status = 200
+    let requests = 0
+    let cached: unknown
+    const source = createSignedInventorySource({
+      queryClient: {
+        fetchQuery: async (options: { queryFn: () => Promise<unknown> }) => {
+          if (cached !== undefined) return cached
+          cached = await options.queryFn()
+          return cached
+        },
+      } as never,
+      baseUrl: () => "https://app.test",
+      owner: () => "signed:user_1",
+      authFetch: async () => {
+        requests++
+        return jsonResponse({
+          sessions: authorized ? [{ session_id: "ses_shared" }] : [],
+        }, { status })
+      },
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+    })
+
+    expect(await source.fetchControlPlaneSessions("ws_1")).toHaveLength(1)
+    authorized = false
+    expect(await source.hasControlPlaneSessionAccess({ workspaceId: "ws_1", sessionId: "ses_shared" })).toBe(false)
+    expect(requests).toBe(2)
+
+    status = 503
+    await expect(source.hasControlPlaneSessionAccess({ workspaceId: "ws_1", sessionId: "ses_shared" }))
+      .rejects.toThrow("Control-plane session list failed with 503")
+  })
+
+  test("signed workspace refresh bypasses cached authority after revocation", async () => {
+    let authorized = true
+    let cached: unknown
+    const source = createSignedInventorySource({
+      queryClient: {
+        fetchQuery: async (options: { queryFn: () => Promise<unknown> }) => {
+          if (cached !== undefined) return cached
+          cached = await options.queryFn()
+          return cached
+        },
+      } as never,
+      baseUrl: () => "https://app.test",
+      owner: () => "signed:user_1",
+      authFetch: async () => jsonResponse({
+        sessions: authorized ? [{ session_id: "ses_shared" }] : [],
+      }),
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+    })
+
+    expect(await source.fetchControlPlaneSessions("ws_1")).toHaveLength(1)
+    authorized = false
+    expect(await source.fetchSignedWorkspaceSessions({
+      workspaceId: "ws_1",
+      directory: "workspace:ws_1",
+      kind: "cloud",
+    })).toEqual([])
   })
 
   test("inventory page source uses local control sessions for loopback global pages", async () => {
@@ -671,6 +452,65 @@ describe("global sync inventory source helpers", () => {
     expect(page.data.map((item) => item.id)).toEqual(["ses_3", "ses_2"])
     expect(page.cursor).toBe(2)
     expect(requests.map((item) => new URL(item).pathname)).toEqual(["/api/claxedo/session"])
+  })
+
+  test("loopback grouping preserves a central session's authoritative workspace identity", async () => {
+    const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async () => jsonResponse({
+        sessions: [{
+          sessionID: "ses_central",
+          sessionRef: "central:ses_central",
+          workspaceID: "ws_authoritative",
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }),
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    const groups = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(groups).toHaveLength(1)
+    expect(groups[0]).toMatchObject({
+      key: "ws_authoritative",
+      directory: "ws_authoritative",
+      workspaceId: "ws_authoritative",
+      sessions: [{ id: "ses_central", sessionRef: "central:ses_central", workspaceId: "ws_authoritative" }],
+    })
+  })
+
+  test("loopback grouping keeps a local workspace's filesystem transport directory", async () => {
+    const source = createInventoryPageSource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "http://127.0.0.1:4096",
+      pageSize: 2,
+      platformFetch: () => async () => jsonResponse({
+        sessions: [{
+          sessionID: "ses_local",
+          workspaceID: "ws_local",
+          directory: "/repo/local",
+          createdAt: 1,
+          updatedAt: 2,
+        }],
+      }),
+      hasSignedAccess: () => false,
+      signedWorkspaceProjects: () => [],
+      signedInventorySource: emptySignedInventorySource(),
+    })
+
+    const groups = await source.fetchWorkspaceGrouped({ perGroup: 2 })
+
+    expect(groups).toMatchObject([{
+      key: "ws_local",
+      directory: "/repo/local",
+      workspaceId: "ws_local",
+      sessions: [{ id: "ses_local", directory: "/repo/local", workspaceId: "ws_local" }],
+    }])
   })
 
   test("inventory page source dedupes concurrent workspace group requests", async () => {

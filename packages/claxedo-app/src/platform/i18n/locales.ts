@@ -15,23 +15,7 @@
  */
 
 export type LocaleCode =
-  | "en"
-  | "zh"
-  | "zht"
-  | "ko"
-  | "de"
-  | "es"
-  | "fr"
-  | "da"
-  | "ja"
-  | "pl"
-  | "ru"
-  | "bs"
-  | "ar"
-  | "no"
-  | "br"
-  | "th"
-  | "tr"
+  "en" | "zh" | "zht" | "ko" | "de" | "es" | "fr" | "da" | "ja" | "pl" | "ru" | "bs" | "ar" | "no" | "br" | "th" | "tr"
 
 export type LocaleSource = { dict: Record<string, string> }
 
@@ -55,8 +39,8 @@ export type LocaleEntry = {
   matches: (language: string) => boolean
 }
 
-function loadMerged(app: Promise<LocaleSource>, ui: Promise<LocaleSource>): Promise<LocaleSource> {
-  return Promise.all([app, ui]).then(([a, b]) => ({ dict: { ...a.dict, ...b.dict } }))
+function loadMerged(...sources: Promise<LocaleSource>[]): Promise<LocaleSource> {
+  return Promise.all(sources).then((loaded) => ({ dict: Object.assign({}, ...loaded.map((source) => source.dict)) }))
 }
 
 /**
@@ -74,14 +58,18 @@ function isTraditionalChinese(language: string): boolean {
 export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
   {
     code: "en",
-    loader: () => loadMerged(import("./en").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/en")),
+    loader: () =>
+      loadMerged(
+        import("./en").then((m) => ({ dict: m.dict })),
+        import("@opencode-ai/ui/i18n/en"),
+      ),
     intlTag: "en",
     labelKey: "language.en",
     matches: (language) => language.startsWith("en"),
   },
   {
     code: "zh",
-    loader: () => loadMerged(import("./zh").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/zh")),
+    loader: () => loadMerged(import("./zh"), import("./provider-settings/zh"), import("@opencode-ai/ui/i18n/zh")),
     intlTag: "zh-Hans",
     labelKey: "language.zh",
     // Excludes the Traditional-script signals (hant script token, and the
@@ -92,108 +80,107 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
   },
   {
     code: "zht",
-    loader: () => loadMerged(import("./zht").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/zht")),
+    loader: () => loadMerged(import("./zht"), import("./provider-settings/zht"), import("@opencode-ai/ui/i18n/zht")),
     intlTag: "zh-Hant",
     labelKey: "language.zht",
     matches: (language) => language.startsWith("zh") && isTraditionalChinese(language),
   },
   {
     code: "ko",
-    loader: () => loadMerged(import("./ko").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/ko")),
+    loader: () => loadMerged(import("./ko"), import("./provider-settings/ko"), import("@opencode-ai/ui/i18n/ko")),
     intlTag: "ko",
     labelKey: "language.ko",
     matches: (language) => language.startsWith("ko"),
   },
   {
     code: "de",
-    loader: () => loadMerged(import("./de").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/de")),
+    loader: () => loadMerged(import("./de"), import("./provider-settings/de"), import("@opencode-ai/ui/i18n/de")),
     intlTag: "de",
     labelKey: "language.de",
     matches: (language) => language.startsWith("de"),
   },
   {
     code: "es",
-    loader: () => loadMerged(import("./es").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/es")),
+    loader: () => loadMerged(import("./es"), import("./provider-settings/es"), import("@opencode-ai/ui/i18n/es")),
     intlTag: "es",
     labelKey: "language.es",
     matches: (language) => language.startsWith("es"),
   },
   {
     code: "fr",
-    loader: () => loadMerged(import("./fr").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/fr")),
+    loader: () => loadMerged(import("./fr"), import("./provider-settings/fr"), import("@opencode-ai/ui/i18n/fr")),
     intlTag: "fr",
     labelKey: "language.fr",
     matches: (language) => language.startsWith("fr"),
   },
   {
     code: "da",
-    loader: () => loadMerged(import("./da").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/da")),
+    loader: () => loadMerged(import("./da"), import("./provider-settings/da"), import("@opencode-ai/ui/i18n/da")),
     intlTag: "da",
     labelKey: "language.da",
     matches: (language) => language.startsWith("da"),
   },
   {
     code: "ja",
-    loader: () => loadMerged(import("./ja").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/ja")),
+    loader: () => loadMerged(import("./ja"), import("./provider-settings/ja"), import("@opencode-ai/ui/i18n/ja")),
     intlTag: "ja",
     labelKey: "language.ja",
     matches: (language) => language.startsWith("ja"),
   },
   {
     code: "pl",
-    loader: () => loadMerged(import("./pl").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/pl")),
+    loader: () => loadMerged(import("./pl"), import("./provider-settings/pl"), import("@opencode-ai/ui/i18n/pl")),
     intlTag: "pl",
     labelKey: "language.pl",
     matches: (language) => language.startsWith("pl"),
   },
   {
     code: "ru",
-    loader: () => loadMerged(import("./ru").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/ru")),
+    loader: () => loadMerged(import("./ru"), import("./provider-settings/ru"), import("@opencode-ai/ui/i18n/ru")),
     intlTag: "ru",
     labelKey: "language.ru",
     matches: (language) => language.startsWith("ru"),
   },
   {
     code: "bs",
-    loader: () => loadMerged(import("./bs").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/bs")),
+    loader: () => loadMerged(import("./bs"), import("./provider-settings/bs"), import("@opencode-ai/ui/i18n/bs")),
     intlTag: "bs",
     labelKey: "language.bs",
     matches: (language) => language.startsWith("bs"),
   },
   {
     code: "ar",
-    loader: () => loadMerged(import("./ar").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/ar")),
+    loader: () => loadMerged(import("./ar"), import("./provider-settings/ar"), import("@opencode-ai/ui/i18n/ar")),
     intlTag: "ar",
     labelKey: "language.ar",
     matches: (language) => language.startsWith("ar"),
   },
   {
     code: "no",
-    loader: () => loadMerged(import("./no").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/no")),
+    loader: () => loadMerged(import("./no"), import("./provider-settings/no"), import("@opencode-ai/ui/i18n/no")),
     intlTag: "nb-NO",
     labelKey: "language.no",
-    matches: (language) =>
-      language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
+    matches: (language) => language.startsWith("no") || language.startsWith("nb") || language.startsWith("nn"),
   },
   {
     code: "br",
     // App-side file is pt-BR.ts (see file header); ui package's file is still
     // named by locale code, br.ts.
-    loader: () => loadMerged(import("./pt-BR").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/br")),
+    loader: () => loadMerged(import("./pt-BR"), import("./provider-settings/pt-BR"), import("@opencode-ai/ui/i18n/br")),
     intlTag: "pt-BR",
     labelKey: "language.br",
     matches: (language) => language.startsWith("pt"),
   },
   {
     code: "th",
-    loader: () => loadMerged(import("./th").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/th")),
+    loader: () => loadMerged(import("./th"), import("./provider-settings/th"), import("@opencode-ai/ui/i18n/th")),
     intlTag: "th",
     labelKey: "language.th",
     matches: (language) => language.startsWith("th"),
   },
   {
     code: "tr",
-    loader: () => loadMerged(import("./tr").then((m) => ({ dict: m.dict })), import("@opencode-ai/ui/i18n/tr")),
+    loader: () => loadMerged(import("./tr"), import("./provider-settings/tr"), import("@opencode-ai/ui/i18n/tr")),
     intlTag: "tr",
     labelKey: "language.tr",
     matches: (language) => language.startsWith("tr"),
@@ -204,8 +191,7 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
 // member has no entry above (mirrors src/i18n/locale-parity.test.ts's
 // runtime check of the same invariant).
 type _MissingLocaleEntries = Exclude<LocaleCode, (typeof LOCALE_ENTRIES)[number]["code"]>
-const _localeEntriesCoverAllCodes: _MissingLocaleEntries extends never ? true : [
-  "LOCALE_ENTRIES is missing:",
-  _MissingLocaleEntries,
-] = true
+const _localeEntriesCoverAllCodes: _MissingLocaleEntries extends never
+  ? true
+  : ["LOCALE_ENTRIES is missing:", _MissingLocaleEntries] = true
 void _localeEntriesCoverAllCodes

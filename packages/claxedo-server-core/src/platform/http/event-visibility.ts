@@ -67,6 +67,10 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ClaxedoEve
       // ownerUserId is stamped from auth.user.subject at publish
       // (server-workgraph.ts); "local" marks unsigned-local publishes.
       return event.ownerUserId === principal.subject
+    case "session.share.changed":
+      // ownerUserId is the *recipient* Clerk subject stamped at grant/revoke
+      // publish (session share fanout), not the granter.
+      return event.ownerUserId === principal.subject
     case "document.changed":
       // event.orgId is the authority-internal org id (documents routes scope
       // via `authority.resolveOrgId`); principal.orgId is resolved through the

@@ -90,6 +90,13 @@
       "import": "./dist/route-contribution.mjs",
       "default": "./dist/route-contribution.mjs"
     },
+    "./session-env-contract": {
+      "types": "./dist/session-env-contract.d.ts",
+      "bun": "./dist/session-env-contract.mjs",
+      "development": "./dist/session-env-contract.mjs",
+      "import": "./dist/session-env-contract.mjs",
+      "default": "./dist/session-env-contract.mjs"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "bun": "./dist/testing.mjs",

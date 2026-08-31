@@ -9,6 +9,8 @@ import type {
   Todo,
 } from "@opencode-ai/sdk/v2/client"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
+import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
+import { runtimeRequestError } from "./agent-runtime-request-error"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/session-ref"
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
@@ -62,7 +64,6 @@ export type AgentRuntimePermissionMode = {
   description?: string
   level?: "ask" | "auto" | "full"
 }
-
 export type AgentRuntimePermissionModeState = {
   modes: AgentRuntimePermissionMode[]
   currentModeId?: string
@@ -191,7 +192,7 @@ export function createAgentRuntimeClient(options: {
   workspaceKind?: "cloud" | "user-hosted"; workspaceReachable?: boolean
   opencodeClient?: AgentRuntimeOpenCodeClient
 } = {}) {
-  const request = options.request ?? authFetch
+  const request = options.request ?? createControlPlaneAccountFetch(authFetch)
   const signed = options.signedControlPlane === true
   const serverUrl = () => options.serverUrl?.trim() || undefined
 
@@ -654,7 +655,7 @@ export function createAgentRuntimeClient(options: {
         suffix: input.mode === "sync" ? "/message" : "/prompt_async",
         init: jsonInit("POST", input),
       })
-      if (input.mode !== "sync" && !res.ok) throw new Error((await res.text()) || `Request failed: ${res.status}`)
+      if (input.mode !== "sync" && !res.ok) throw await runtimeRequestError(res)
       return input.mode === "sync" ? { data: await readJson<SessionPromptResponse>(res) } : { data: undefined }
     },
     async abort(input: { directory: AgentRuntimeDirectory; sessionID: string }) {

@@ -652,6 +652,29 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(state.fastSessionSwitchQuietDelay).toHaveBeenCalledWith({ sessionId: "parent", baseDelay: 100 })
   })
 
+  test("rehydrates the durable subagent snapshot after the runtime scope resets", async () => {
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/main"]), {
+      at: 1,
+      limit: 5,
+      total: 0,
+      session: readyStore.session,
+    })
+
+    render(() => (
+      <DirectoryScope {...directoryScopeProps}
+        directory="/repo/main"
+        sessionId={() => "parent"}
+        surfaceId={() => state.surfaceId}
+      >
+        <div>visible pane content</div>
+      </DirectoryScope>
+    ))
+
+    await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(1))
+    state.subagentSubscriber?.({ type: "reset" })
+    await waitFor(() => expect(state.runtimeRequest).toHaveBeenCalledTimes(2))
+  })
+
   test("keeps subagent hydration behind the active session's network-quiet deadline", async () => {
     vi.useFakeTimers()
     const scheduleFrame = vi.fn((_callback: FrameRequestCallback) => 1)

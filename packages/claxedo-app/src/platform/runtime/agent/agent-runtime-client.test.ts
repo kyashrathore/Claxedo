@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { apiBearerToken, configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient, DEFAULT_AGENT_RUNTIME_CAPABILITIES } from "./agent-runtime-client"
+import { AgentRuntimeRequestError } from "./agent-runtime-request-error"
 
 function ok(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -83,6 +84,28 @@ describe("AgentRuntimeClient", () => {
     expect(seen).toEqual([
       "https://control.example/api/control/sessions/runtime-session-1/messages?workspaceId=ws_1&view=latest-turn",
     ])
+  })
+
+  it("parses prompt admission conflicts into a structured request error", async () => {
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async () => new Response(JSON.stringify({
+        error: { code: "session_turn_in_progress", message: "Session is already processing a turn" },
+      }), { status: 409, headers: { "Content-Type": "application/json" } }),
+    })
+
+    const error = await client.sendMessage({
+      mode: "async",
+      directory: "/repo/main",
+      sessionID: "runtime-session-1",
+      agent: "build",
+      model: { providerID: "test", modelID: "fixture" },
+      messageID: "loser",
+      parts: [],
+    }).catch((caught) => caught)
+
+    expect(error).toBeInstanceOf(AgentRuntimeRequestError)
+    expect(error).toMatchObject({ status: 409, code: "session_turn_in_progress" })
   })
 
   it("routes signed capability requests through workspace-runtime", async () => {

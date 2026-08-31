@@ -59,6 +59,17 @@ const PROJECT_ID = "proj_claude_native_sdk"
 const SESSION_ID = "ses_claude_native_sdk_mock"
 const WORKSPACE_ID = "ws_claude_native_sdk"
 
+function slug(value: string) {
+  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
+}
+
+async function openTreeAtDirectory(page: Page, dir: string) {
+  await page.goto(`/${slug(dir)}/session`)
+  await page.waitForLoadState("domcontentloaded")
+  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
+  await expect(page.locator('[data-testid="rail-sidebar"]')).toBeVisible({ timeout: 20_000 })
+}
+
 type FixtureSession = { sessionId: string; title: string; createdAt: number; updatedAt: number }
 
 /**
@@ -383,6 +394,7 @@ test.describe("rail — claude native-SDK harness @core", () => {
    * pins the same contract for `claude-sdk`.
    */
   test("a native-SDK session's rail row tracks working -> done as session.status/idle land", async ({ page }) => {
+    const targetId = "ses_claude_dot"
     const mock = await installMockRuntime(page, {
       dir: DIR,
       sessionId: SESSION_ID,
@@ -393,50 +405,26 @@ test.describe("rail — claude native-SDK harness @core", () => {
         [DIR]: { workspaceId: WORKSPACE_ID, kind: "local", directory: DIR, available: true },
       },
     })
-    const fixtures = await installSessionListFixture(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
-    await seedProjectAtHome(page, DIR)
-    await openTreeFromHome(page)
-
-    const id = "ses_claude_dot"
     const now = Date.now()
-    fixtures.setSessions([{ sessionId: id, title: "Dot probe", createdAt: now, updatedAt: now }])
-    mock.emitFlat({
-      type: "session.lifecycle",
-      phase: "created",
-      directory: DIR,
-      sessionID: id,
-      workspaceId: WORKSPACE_ID,
-      info: {
-        id,
-        slug: id,
-        projectID: PROJECT_ID,
-        workspaceID: WORKSPACE_ID,
-        directory: DIR,
-        title: "Dot probe",
-        version: "local",
-        time: { created: now, updated: now },
-      },
-      ts: now,
+    await installSessionListFixture(page, {
+      dir: DIR,
+      projectId: PROJECT_ID,
+      sessions: [{ sessionId: targetId, title: "Dot probe", createdAt: now, updatedAt: now }],
     })
+    await seedProjectAtHome(page, DIR)
+    await openTreeAtDirectory(page, DIR)
 
-    const row = sessionRow(page, id)
+    const row = sessionRow(page, targetId)
     await expect(row).toBeVisible({ timeout: 15_000 })
     // Idle rows render a relative-time label and no dot at all.
     await expect(row.locator("[data-sidebar-status]")).toHaveCount(0)
 
-    // `busy` is the only status the dot's "working" branch reads besides
-    // `retry` (`sessionSurfaceStatus`, surface-status.ts:28). The mock's live
-    // status map is moved in step with each frame so the SSE dispatch and the
-    // sidebar's batched `client.session.status()` reconciliation cannot
-    // disagree — the same discipline behaviour 4 documents.
-    mock.setSessionStatus(id, { type: "busy" })
-    mock.emit({ type: "session.status", properties: { sessionID: id, status: { type: "busy" } } })
+    // Same transport contract as core-sidebar-tree behavior 4; claude-sdk harness
+    // coverage is the mock install above, not a different wire shape for status.
+    mock.setSessionStatus(targetId, { type: "busy" })
+    mock.emit({ type: "session.status", properties: { sessionID: targetId, status: { type: "busy" } } })
     await expect(row.locator('[data-sidebar-status="working"]')).toHaveCount(1, { timeout: 20_000 })
 
-    // The dot lives in the LEFT indent gutter, not on the right in place of the
-    // timestamp. Both halves are asserted because the old layout satisfied the
-    // first check above just as well: what changed is WHERE it renders and that
-    // the timestamp is no longer sacrificed to show it.
     await expect(row.locator('[data-slot="navigation-row-glyph"] [data-sidebar-status="working"]')).toHaveCount(1)
     await expect(row.locator('[data-slot="session-navigation-time"]')).toHaveText(/\S/)
     const dotX = await row.locator("[data-sidebar-status]").evaluate((el) => el.getBoundingClientRect().left)
@@ -445,11 +433,8 @@ test.describe("rail — claude native-SDK harness @core", () => {
       .evaluate((el) => el.getBoundingClientRect().left)
     expect(dotX).toBeLessThan(titleX)
 
-    // Settling clears the session from the live map: the real route reports
-    // idle by OMITTING the key, never by sending `{type:"idle"}`.
-    mock.setSessionStatus(id)
-    mock.emit({ type: "session.idle", properties: { sessionID: id } })
-    // Never focused in this spec, so a settled turn is "done" (unseen), not idle.
+    mock.setSessionStatus(targetId)
+    mock.emit({ type: "session.idle", properties: { sessionID: targetId } })
     await expect(row.locator('[data-sidebar-status="done"]')).toHaveCount(1, { timeout: 20_000 })
   })
 })

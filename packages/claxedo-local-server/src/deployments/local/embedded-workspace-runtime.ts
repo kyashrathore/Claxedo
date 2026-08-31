@@ -62,6 +62,7 @@ let configuredPiModelBackend: PiModelBackendResolver | undefined
  */
 let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] = []
 let configuredProcessObserver: ProcessObserver | undefined
+let configuredSessionAccessPolicy: WorkspaceRuntimeServerOptions["sessionAccessPolicy"] | undefined
 // Host-supplied sink for a harness session's async auto-title (and any other
 // session.created/session.updated event). A harness session's title is
 // re-emitted asynchronously — e.g. a post-turn ACP auto-title
@@ -108,6 +109,8 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   piModelBackend?: PiModelBackendResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
+  /** Signed hosts inject their managed-private authority; unsigned desktop leaves this local. */
+  sessionAccessPolicy?: WorkspaceRuntimeServerOptions["sessionAccessPolicy"]
   onSessionMetaEvent?: (event: OpencodeEvent) => void
   onSessionMetaCreated?: (workspace: Workspace, session: unknown) => Promise<void> | void
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
@@ -122,6 +125,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   configuredPiModelBackend = input.piModelBackend
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
+  configuredSessionAccessPolicy = input.sessionAccessPolicy
   configuredOnSessionMetaEvent = input.onSessionMetaEvent
   configuredOnSessionMetaCreated = input.onSessionMetaCreated
   configuredOnSessionMetaSnapshot = input.onSessionMetaSnapshot
@@ -223,6 +227,7 @@ function options(
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),
     ...(configuredProcessObserver ? { processObserver: configuredProcessObserver } : {}),
+    ...(configuredSessionAccessPolicy ? { sessionAccessPolicy: configuredSessionAccessPolicy } : {}),
     ...(configuredOnTurnOutcome ? { onTurnOutcome: configuredOnTurnOutcome } : {}),
     // Hub-side compat events: the complete, exactly-once turn stream — the
     // harness-neutral session service publishes ACP/native-adapter turns

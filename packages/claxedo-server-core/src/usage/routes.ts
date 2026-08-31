@@ -729,6 +729,26 @@ export function UsageRoutes(input: {
   telemetry?: UsageTelemetry
 }) {
   const app = new Hono()
+  // Hosted callers share the desktop lifecycle wake used by local outboxes,
+  // but the central authority has no outbox of its own: accepted revisions are
+  // already in `ledger`. Authenticate the tenant exactly like the dashboard
+  // read and report that authoritative empty state instead of leaving the
+  // declared hosted operation as a 404.
+  app.post("/sync", async (c) => {
+    try {
+      const auth = await controlPlaneAuthContext(c.req.raw, {
+        config: input.authConfig,
+        verifier: input.verifier,
+      })
+      if (auth.mode !== "signed" || !auth.user.orgId) {
+        return c.json({ error: "signed_org_required", message: "A signed organization session is required" }, 401)
+      }
+      return c.json({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+      throw error
+    }
+  })
   app.get("/", async (c) => {
     const startedAt = Date.now()
     try {

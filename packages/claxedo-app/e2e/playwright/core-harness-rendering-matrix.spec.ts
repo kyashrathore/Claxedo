@@ -338,7 +338,7 @@ import {
   type MockRuntimeHandles,
   type MockRuntimeSubagentRow,
 } from "../helpers/mock-runtime"
-import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "fixtures", "harness-traces")
 
@@ -571,16 +571,9 @@ async function primeHarness(
       childSessions: subagents.children,
       runtimeEventAuthorizeParent: subagents.runtimeEventAuthorizeParent,
     } : {}),
-    // Pin opencode to a concrete model instead of the mock default `big-pickle`
-    // placeholder. The reworked composer (see `core-docks.spec.ts`'s identical
-    // `establishSession` note) defers/redirects the very first send while only the
-    // `big-pickle` placeholder model is resolved, which lets the legacy
-    // `/<b64dir>/session` -> `/w/<workspaceId>` redirect win the race so the create
-    // POST never targets the draft directory and the mocked session is never created
-    // (the URL then settles on the workspace-root `/w/<workspaceId>` with no session pane).
-    // Every other harness already defaults to a concrete model, so this only affects
-    // opencode. Matches the canonical send-flow convention in
-    // `core-first-prompt-local.spec.ts`.
+    // Pin opencode to GPT-5 in the mock catalog. Drafts no longer invent a default
+    // model — primeHarness must pick explicitly before the first send (same convention
+    // as core-first-prompt-local and turn-oracle's ensureComposerModelSelected).
     ...(harness === "opencode" ? { harnessModels: { opencode: [{ id: "gpt-5", name: "GPT-5" }] } } : {}),
   })
   await seedOneProject(page, dir)
@@ -596,6 +589,7 @@ async function primeHarness(
   const promptText = `matrix probe ${harness}`
   await input.click()
   await input.fill(promptText)
+  await ensureComposerModelSelected(page)
   await page.locator(SELECTORS.submitControl).last().click()
 
   await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })

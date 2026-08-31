@@ -798,14 +798,18 @@ describe("control plane integration", () => {
     )
     await stream.ready
 
-    const params = new URLSearchParams({
-      tabId: "tab-1",
-      terminalId: "term-1",
-      workspaceId: wsx.id,
-      eventType: "Start",
+    // Lifecycle ingestion is POST-only (the mutating GET was removed); the
+    // proxy still routes on the workspaceId query param.
+    const res = await fetch(`${base()}/api/wr/hook/agent-lifecycle?workspaceId=${encodeURIComponent(wsx.id)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        tabId: "tab-1",
+        terminalId: "term-1",
+        workspaceId: wsx.id,
+        eventType: "Start",
+      }),
     })
-
-    const res = await fetch(`${base()}/api/wr/hook/agent-lifecycle?${params}`)
     expect(res.status).toBe(200)
 
     const event = await stream.event

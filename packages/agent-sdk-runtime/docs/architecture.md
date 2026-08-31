@@ -59,7 +59,10 @@ and protocol I/O in harness-specific files.
 
 Each runtime subscriber has a fixed buffer. A slow subscriber receives a
 `runtime.subscription_overflow` notice and closes; it can replay from the
-durable store. Lazy adapter resolution is single-flight per harness identity.
+durable store. After reconnecting, it reloads the authoritative runtime
+projections. When the host provides `eventDelivery`, authorization is checked
+against the subscriber identity before each queued event is returned. Lazy
+adapter resolution is single-flight per harness identity.
 
 ## Package boundaries
 

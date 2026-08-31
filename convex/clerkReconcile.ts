@@ -48,6 +48,7 @@ import { v } from "convex/values"
 import { internal } from "./_generated/api"
 import { clerkRoleFor, orgMembershipTombstone } from "./clerkTombstones"
 import { cronAction, cronMutation, cronQuery, orgByClerkOrgId, userByClerkSubject } from "./model"
+import { revokeOrgWorkspaceTokens } from "./orgs"
 
 // ===========================================================================
 // Bounds. Every one of these is a number chosen against a documented limit,
@@ -512,6 +513,11 @@ export const applyReconcileCorrections = cronMutation({
           skipped += 1
           continue
         }
+        // Fallback for a dropped webhook: this sweep is the only path removing
+        // access, so it must revoke the member's live runtime tokens too — just
+        // as the webhook membership-delete path does (orgs.ts). Otherwise a
+        // reconciled-away member keeps working until token expiry.
+        await revokeOrgWorkspaceTokens(ctx, existing.org_id, existing.user_id, Date.now())
         await ctx.db.delete(existing._id)
         // Tombstoned with the sweep's OBSERVATION time. Clerk did not tell us
         // when the membership vanished — only that it is absent now — so the
@@ -590,6 +596,12 @@ export const applyReconcileCorrections = cronMutation({
         if (existing.role !== correction.from) {
           skipped += 1
           continue
+        }
+        // Match the webhook downgrade policy (orgs.ts): losing org owner/admin
+        // for plain member drops workspace write access, so revoke the stale
+        // runtime tokens minted under the higher role.
+        if ((existing.role === "owner" || existing.role === "admin") && correction.to === "member") {
+          await revokeOrgWorkspaceTokens(ctx, existing.org_id, existing.user_id, Date.now())
         }
         await ctx.db.patch(existing._id, { role: correction.to, updated_at: Date.now() })
         await recordMembershipAudit(ctx, {

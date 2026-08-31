@@ -127,6 +127,20 @@ describe("eventVisibleTo — per-event authorization", () => {
     expect(eventVisibleTo(signedAs("user_b"), event)).toBe(false)
   })
 
+  test("session.share.changed is visible only to its recipient subject", () => {
+    const event = {
+      type: "session.share.changed",
+      phase: "granted",
+      ownerUserId: "user_bob",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
+      ts: 1,
+    } as const
+    expect(eventVisibleTo(signedAs("user_bob"), event)).toBe(true)
+    expect(eventVisibleTo(signedAs("user_alice"), event)).toBe(false)
+    expect(eventVisibleTo(signedAs("user_casey"), event)).toBe(false)
+  })
+
   test("document.changed is visible only within its org", () => {
     const event = {
       type: "document.changed",
@@ -305,6 +319,43 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
     expect(received).toContain("doc_mine")
     expect(received).not.toContain("doc_other")
   }, 10_000)
+
+  test("closes an established org stream before delivering another event after membership changes", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    let currentOrgId = "org_internal_x"
+    const app = mountHandler({
+      bus,
+      authConfig: baseConfig,
+      verifier: async () => ({
+        mode: "signed",
+        user: {
+          subject: "user_a",
+          tokenIdentifier: "https://example.clerk.dev|user_a",
+          issuer: "https://example.clerk.dev",
+        },
+      }),
+      resolveOrgId: async () => currentOrgId,
+    })
+    const res = await app.request("/api/claxedo/events", {
+      headers: { authorization: "Bearer valid-token" },
+    })
+    const reader = res.body!.getReader()
+    const first = await reader.read()
+    expect(new TextDecoder().decode(first.value)).toContain("heartbeat")
+
+    currentOrgId = "org_personal_user_a"
+    bus.publish({
+      type: "document.changed",
+      documentId: "doc_after_removal",
+      orgId: "org_internal_x",
+      projectId: "proj_1",
+      ts: 2,
+    })
+
+    const next = await reader.read()
+    expect(next.done).toBe(true)
+    expect(next.value).toBeUndefined()
+  }, 10_000)
 })
 
 // ─── SSE replay ────────────────────────────────────────────────────────────
@@ -312,9 +363,10 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
 // Mirrors `packages/workspace-runtime/src/routes/runtime-events.test.ts`. This
 // stream was subscribe-on-connect only, so every frame published while a
 // consumer sat in its reconnect gap was gone for good. The central twist the
-// workspace stream does not have: the retention ring is shared across every
-// identity, so the per-identity `eventVisibleTo` filter has to be re-applied at
-// REPLAY time or a reconnect leaks other tenants' frames.
+// workspace stream does not have: the source retention ring is shared across
+// every identity, while subscriber cursor rings must contain only frames that
+// identity can see. The same `eventVisibleTo` predicate is re-applied at final
+// delivery for both replay and live frames.
 
 type ReplayConnection = {
   text: () => string
@@ -396,12 +448,34 @@ function mountSignedAs(bus: ReturnType<typeof createBus<ClaxedoEvent>>, subject:
     "/api/claxedo/events",
     eventsHandler({
       bus,
+      allowLoopbackLocal: true,
       authConfig: baseConfig,
       verifier: async () => ({
         mode: "signed",
         user: {
           subject,
           tokenIdentifier: `https://example.clerk.dev|${subject}`,
+          issuer: "https://example.clerk.dev",
+        },
+      }),
+    }),
+  )
+  return app
+}
+
+function mountSignedByBearer(bus: ReturnType<typeof createBus<ClaxedoEvent>>) {
+  const app = new Hono()
+  app.get(
+    "/api/claxedo/events",
+    eventsHandler({
+      bus,
+      allowLoopbackLocal: true,
+      authConfig: baseConfig,
+      verifier: async (token) => ({
+        mode: "signed",
+        user: {
+          subject: token,
+          tokenIdentifier: `https://example.clerk.dev|${token}`,
           issuer: "https://example.clerk.dev",
         },
       }),
@@ -418,6 +492,29 @@ const lifecycle = (tabId: string): ClaxedoEvent => ({
 })
 
 describe("eventsHandler — /api/claxedo/events replay", () => {
+  test("keeps two loopback bearer subscribers isolated by signed principal", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountSignedByBearer(bus)
+    const alice = await connect(app, { bearer: "user_alice" })
+    const bob = await connect(app, { bearer: "user_bob" })
+    await Promise.all([
+      alice.until((seen) => seen.includes("heartbeat"), "Alice did not connect"),
+      bob.until((seen) => seen.includes("heartbeat"), "Bob did not connect"),
+    ])
+
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_alice", ts: 1 })
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_bob", ts: 2 })
+    const [aliceText, bobText] = await Promise.all([
+      alice.until((seen) => seen.includes("user_alice"), "Alice did not receive her frame"),
+      bob.until((seen) => seen.includes("user_bob"), "Bob did not receive his frame"),
+    ])
+    alice.close()
+    bob.close()
+
+    expect(aliceText).not.toContain("user_bob")
+    expect(bobText).not.toContain("user_alice")
+  })
+
   test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
     const bus = createBus<ClaxedoEvent>()
     const app = mountLocal(bus)
@@ -540,12 +637,10 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
   })
 
   test("replay re-applies the identity filter: another tenant's frame is NOT replayed", async () => {
-    // THE central-stream hazard. The retention ring is shared by every identity
-    // — it has to be, because the frames worth recovering are the ones
-    // published while nobody was connected — so the only thing standing between
-    // user_b and user_a's events on a Last-Event-ID reconnect is that
-    // `eventVisibleTo` runs on the WRITE path, which replayed frames traverse
-    // exactly like live ones.
+    // THE central-stream hazard. Source retention is shared by every identity
+    // because frames published while nobody is connected still need recovery.
+    // user_b's cursor ring is filtered before ids are assigned, and the write
+    // path re-applies the same predicate to replayed frames.
     const bus = createBus<ClaxedoEvent>()
     const app = mountSignedAs(bus, "user_b")
 
@@ -559,9 +654,32 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
     stream.close()
 
     expect(text).not.toContain("user_a")
-    // The id is still the SHARED publish-order sequence, not a per-identity
-    // renumbering: a cursor has to mean the same thing on every connection.
-    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("2")
+    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("1")
+  })
+
+  test("another tenant's traffic cannot create a false replay gap", async () => {
+    const bus = createBus<ClaxedoEvent>()
+    const app = mountSignedAs(bus, "user_b")
+
+    // Register user_b's stable cursor scope, then disconnect while user_a is
+    // busy enough to overflow the shared source retention ring.
+    const first = await connect(app, { bearer: "valid-token" })
+    const opened = await first.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
+    expect(bootstrapId(opened)).toBe("0")
+    first.close()
+
+    for (let i = 1; i <= 300; i += 1) {
+      bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: i })
+    }
+    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 301 })
+
+    const second = await connect(app, { lastEventId: "0", bearer: "valid-token" })
+    const text = await second.until((seen) => seen.includes("user_b"), "own replay frame never arrived")
+    second.close()
+
+    expect(text).not.toContain("stream.replay-gap")
+    expect(text).not.toContain("user_a")
+    expect(frames(text).find((frame) => frame.data?.includes("user_b"))?.id).toBe("1")
   })
 
   test("an invisible frame is dropped on the live path too, and does not block the next visible one", async () => {

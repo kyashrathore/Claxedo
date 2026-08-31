@@ -43,6 +43,8 @@ import { retainedWorkspaceRuntimeInternalSecrets, type WorkspaceRuntimeInternalS
 import type { ProcessObserver } from "./managed-processes/process-observer"
 import type { RuntimeEventAuthorization } from "./routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./workspace/core"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "./session-access-policy"
+import { remoteWorkspaceSessionAccessPolicyFromEnv } from "./remote-session-authority"
 
 type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
@@ -67,6 +69,7 @@ export type WorkspaceRuntimeServiceExposure = {
 }
 
 export type WorkspaceRuntimeServerOptions = {
+  sessionAccessPolicy?: SessionAccessPolicy
   /** Optional local owner observer. Remote/relay compositions omit it. */
   processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
@@ -437,6 +440,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
+    sessionAccessPolicy: options.sessionAccessPolicy ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
+      ? managedWorkspaceSessionAccessPolicy()
+      : remoteWorkspaceSessionAccessPolicyFromEnv()),
   })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({

@@ -1,4 +1,5 @@
 import { describe, expect, it, spyOn } from "bun:test"
+import { Hono } from "hono"
 import { fetchDouble } from "../test-support/fetch-double"
 import type {
   AgentMessage,
@@ -32,6 +33,7 @@ import { createRuntimeEventHub } from "../runtime-event-hub"
 import { workspaceRuntimeBus, type WorkspaceRuntimeEvent } from "../bus"
 import { createSessionRoutes } from "./session-core"
 import { SessionRoutes } from "./session"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 function adapter(input: {
   // The adapter interface hands these a `RuntimeDirectory` (`string |
@@ -630,6 +632,67 @@ describe("session prompt route", () => {
       id: "session-created",
       directory,
     })
+  })
+
+  it("registers a managed session before admitting its first prompt", async () => {
+    const directory = process.cwd()
+    const registered = new Set<string>()
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async (input) => input.operation !== "prompt" || registered.has(input.sessionId ?? "")
+        ? { allowed: true }
+        : { allowed: false, status: 403, code: "session_private", message: "private" },
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => input.sessionIds,
+      registerSession: async (input) => {
+        registered.add(input.sessionId)
+        return { allowed: true }
+      },
+    }
+    const routes = createSessionRoutes({
+      resolveAdapter: async () => ({
+        ...adapter({
+          async *sendMessage(id) {
+            yield sessionIdle(id)
+          },
+        }),
+        createSession: async () => ({ id: "ses_managed_create" }),
+      }),
+      resolveDirectory: async () => directory,
+      sessionAccessPolicy: policy,
+      sessionBus: {
+        publish() {},
+        subscribe() {
+          return () => {}
+        },
+      },
+      publishGlobal() {},
+    })
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      c.set("relayHostAuth" as never, {
+        workspace_id: "ws_1",
+        org_id: "org_1",
+        role: "editor",
+        actor_id: "actor_1",
+        actor_kind: "human",
+      } as never)
+      await next()
+    })
+    app.route("/", routes)
+
+    expect((await app.request(`http://localhost/session?directory=${encodeURIComponent(directory)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", authorization: "Bearer signed-rht" },
+      body: JSON.stringify({ title: "Managed" }),
+    })).status).toBe(201)
+    expect(registered).toEqual(new Set(["ses_managed_create"]))
+
+    expect((await app.request(`http://localhost/session/ses_managed_create/prompt_async?directory=${encodeURIComponent(directory)}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", authorization: "Bearer signed-rht" },
+      body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
+    })).status).toBe(204)
   })
 
   it("applies a selected runtime model before creating a session", async () => {
@@ -2276,7 +2339,7 @@ describe("session prompt route", () => {
     expect(calls).toEqual([])
   })
 
-  it("admits question replies on the explicit sessionId when one is supplied", async () => {
+  it("admits question replies on the authoritative session when the supplied session matches", async () => {
     const directory = process.cwd()
     const admissions: { sessionId: string; operation: string }[] = []
     let resolvedAdapters = 0
@@ -2286,6 +2349,7 @@ describe("session prompt route", () => {
         return adapter({})
       },
       resolveDirectory: async () => directory,
+      listQuestions: async () => [{ id: "q1", sessionID: "s9", questions: [] }],
       beforeSessionOperation: (_c, input) => {
         admissions.push(input)
       },
@@ -2312,6 +2376,81 @@ describe("session prompt route", () => {
     expect(resolvedAdapters).toBe(1)
   })
 
+  it("rejects cross-session question replies and rejections before authorization or mutation", async () => {
+    for (const path of ["/question/q1/reply", "/question/q1/reject"]) {
+      const directory = process.cwd()
+      const admissions: string[] = []
+      const calls: string[] = []
+      const app = createSessionRoutes({
+        resolveAdapter: async () => ({
+          ...adapter({}),
+          replyQuestion: async () => {
+            calls.push("reply")
+          },
+          rejectQuestion: async () => {
+            calls.push("reject")
+          },
+        }),
+        resolveDirectory: async () => directory,
+        listQuestions: async () => [{ id: "q1", sessionID: "session_owner", questions: [] }],
+        beforeSessionOperation: (_c, input) => {
+          admissions.push(input.sessionId)
+        },
+        sessionBus: { publish() {}, subscribe: () => () => {} },
+        publishGlobal() {},
+      })
+
+      const response = await app.request(
+        `http://localhost${path}?directory=${encodeURIComponent(directory)}&sessionId=session_attacker`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ answer: "Continue" }),
+        },
+      )
+
+      expect(response.status, path).toBe(409)
+      await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_session_mismatch" } })
+      expect(admissions, path).toEqual([])
+      expect(calls, path).toEqual([])
+    }
+  })
+
+  it("rejects a permission response when the permission belongs to another session", async () => {
+    const directory = process.cwd()
+    const admissions: string[] = []
+    const calls: string[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: async () => ({
+        ...adapter({}),
+        respondPermission: async () => {
+          calls.push("permission")
+        },
+      }),
+      resolveDirectory: async () => directory,
+      listPermissions: async () => [{ id: "permission_1", sessionID: "session_owner" }],
+      beforeSessionOperation: (_c, input) => {
+        admissions.push(input.sessionId)
+      },
+      sessionBus: { publish() {}, subscribe: () => () => {} },
+      publishGlobal() {},
+    })
+
+    const response = await app.request(
+      `http://localhost/session/session_attacker/permissions/permission_1?directory=${encodeURIComponent(directory)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ response: "once" }),
+      },
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "interaction_session_mismatch" } })
+    expect(admissions).toEqual([])
+    expect(calls).toEqual([])
+  })
+
   // Resolving an adapter can construct one on the host, so a caller the guard
   // turns away must not reach that when the session is already known.
   it("does not resolve an adapter for a rejected question reply", async () => {
@@ -2323,6 +2462,7 @@ describe("session prompt route", () => {
         return adapter({})
       },
       resolveDirectory: async () => directory,
+      listQuestions: async () => [{ id: "q1", sessionID: "s9", questions: [] }],
       beforeSessionOperation: () =>
         new Response(JSON.stringify({ ok: false }), { status: 403, headers: { "Content-Type": "application/json" } }),
       sessionBus: {

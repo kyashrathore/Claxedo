@@ -248,6 +248,11 @@ export function roomPrincipalFromHeaders(headers: Headers): EventScopePrincipal 
   }
 }
 
+function replayPrincipalKey(principal: EventScopePrincipal) {
+  if (principal.mode === "unsigned-local") return "local"
+  return `signed:${principal.orgId ?? ""}:${principal.subject}`
+}
+
 /**
  * Derive the DO room NAME from a resolved subscriber. Org-scoped events
  * (document.changed, provision) fan to every member of an org, so a subscriber
@@ -363,10 +368,11 @@ function socketFromResponse(response: Response) {
   return (response as Response & { webSocket?: LiveSyncSocket }).webSocket
 }
 
-function sameAuth(left: ControlPlaneAuthContext, right: ControlPlaneAuthContext) {
-  if (left.mode !== right.mode) return false
-  if (left.mode === "unsigned-local" || right.mode === "unsigned-local") return true
-  return left.user.subject === right.user.subject && left.user.orgId === right.user.orgId
+function sameSubscriber(left: LiveSyncSubscriber, right: LiveSyncSubscriber) {
+  if (left.auth.mode !== right.auth.mode) return false
+  if (left.auth.mode === "unsigned-local" || right.auth.mode === "unsigned-local") return true
+  if (left.auth.user.subject !== right.auth.user.subject) return false
+  return left.auth.user.orgId === right.auth.user.orgId && left.orgId === right.orgId
 }
 
 export class LiveSyncRoom {
@@ -423,7 +429,12 @@ export class LiveSyncRoom {
    * (post-reset frames still deliver, and a stale cursor gets the gap notice
    * on its next reconnect) — see scripts/drill/live-sync-post-reset-resume-probe.ts.
    */
-  private readonly replay = createSseReplayBuffer<ClaxedoEvent>({ isTerminal: isTerminalClaxedoEvent })
+  private readonly retained = createSseReplayBuffer<ClaxedoEvent>({ isTerminal: isTerminalClaxedoEvent })
+  private readonly replays = new Map<string, {
+    replay: ReturnType<typeof createSseReplayBuffer<ClaxedoEvent>>
+    principal: EventScopePrincipal
+  }>()
+  private readonly replayTombstones = new Map<string, { sequence: number; retainedCursor?: string }>()
 
   constructor(
     private readonly state: LiveSyncRoomState,
@@ -438,38 +449,67 @@ export class LiveSyncRoom {
    * a settled workspace back through `cloning` and leave a spinner that nothing
    * will ever settle again.
    */
-  private resumeCursor(headers: Headers) {
-    return headers.get(HEADER_LAST_EVENT_ID) ?? this.replay.lastId() ?? "0"
+  private replayFor(principal: EventScopePrincipal) {
+    const key = replayPrincipalKey(principal)
+    const existing = this.replays.get(key)
+    if (existing) return existing.replay
+    const tombstone = this.replayTombstones.get(key)
+    this.replayTombstones.delete(key)
+    const replay = createSseReplayBuffer<ClaxedoEvent>({
+      isTerminal: isTerminalClaxedoEvent,
+      ...(tombstone ? { initialSequence: tombstone.sequence } : {}),
+    })
+    for (const event of this.retained.replayAfter(tombstone?.retainedCursor)) {
+      if (eventVisibleTo(principal, event.payload)) replay.push(event.payload)
+    }
+    this.replays.set(key, { replay, principal })
+    return replay
+  }
+
+  private releaseReplay(principal: EventScopePrincipal, closingSocket?: LiveSyncSocket) {
+    const key = replayPrincipalKey(principal)
+    if ([...this.connections.values()].some((connection) => replayPrincipalKey(connection.principal) === key)) return
+    if ((this.state.getWebSockets?.() ?? []).some((socket) => {
+      if (socket === closingSocket) return false
+      const attachment = socket.deserializeAttachment?.()
+      return attachment?.principal && replayPrincipalKey(attachment.principal) === key
+    })) return
+    const scope = this.replays.get(key)
+    if (!scope) return
+    const retainedCursor = this.retained.lastId()
+    this.replayTombstones.delete(key)
+    this.replayTombstones.set(key, {
+      sequence: Number(scope.replay.lastId() ?? "0"),
+      ...(retainedCursor ? { retainedCursor } : {}),
+    })
+    while (this.replayTombstones.size > 256) this.replayTombstones.delete(this.replayTombstones.keys().next().value!)
+    this.replays.delete(key)
+  }
+
+  private resumeCursor(headers: Headers, principal: EventScopePrincipal) {
+    return headers.get(HEADER_LAST_EVENT_ID) ?? this.replayFor(principal).lastId() ?? "0"
   }
 
   /**
    * What to write to a connection at open time, after its bootstrap frame.
    *
-   * The identity filter is applied HERE and in `handleNudge`, and both call the
-   * same `eventVisibleTo` with the same principal — the room is shared by
-   * every member of an org (`liveSyncRoomName` keys org members to `org:<id>`),
-   * so the ring holds several identities' frames and the only thing keeping
-   * carol from replaying alice's `workgraph.changed` is that replayed frames
-   * traverse the same predicate live frames do.
-   *
-   * Ids stay the room's SHARED publish-order sequence rather than a
-   * per-identity renumbering: a cursor has to mean the same thing on every
-   * connection to that room. The knock-ons match `routes/events.ts` — a
-   * filtered frame consumes an id without being delivered, so a quiet
-   * identity's cursor lags, and `hasGap` is computed over the shared sequence
-   * so a busy org can produce a gap notice for an identity that lost nothing.
-   * Over-reporting is the only safe direction: the ring cannot know whether an
-   * already-evicted frame was visible to the caller.
+   * The identity filter is applied when populating the principal's replay ring,
+   * HERE during replay drain, and in `handleNudge` for live writes. All three
+   * call the same `eventVisibleTo` with the same principal. The room is shared
+   * by every member of an org, but cursor ids are minted only after a frame is
+   * visible to that principal, so another member's traffic cannot create holes
+   * or false replay-gap notices in this connection's sequence.
    */
   private replayFrames(principal: EventScopePrincipal, cursor: string): Array<{ id?: string; frame: LiveSyncFrame }> {
-    const throughId = this.replay.lastId()
-    if (cursorAhead(cursor, throughId) || this.replay.hasGap(cursor, throughId)) {
+    const replay = this.replayFor(principal)
+    const throughId = replay.lastId()
+    if (cursorAhead(cursor, throughId) || replay.hasGap(cursor, throughId)) {
       // The notice REPLACES the partial replay — a reader must refetch, not
       // stitch a hole-ridden log into its incremental view. It carries only
       // cursor ids, no tenant data, so it bypasses the identity filter.
       return [{ frame: replayGapEvent(cursor, throughId) }]
     }
-    return this.replay
+    return replay
       .replayAfter(cursor, throughId)
       .filter((event) => eventVisibleTo(principal, event.payload))
       .map((event) => ({ id: event.id, frame: event.payload }))
@@ -498,7 +538,7 @@ export class LiveSyncRoom {
       return Response.json({ error: "live-sync room connection limit reached" }, { status: 503 })
     }
     const principal = roomPrincipalFromHeaders(request.headers)
-    const cursor = this.resumeCursor(request.headers)
+    const cursor = this.resumeCursor(request.headers, principal)
     this.state.acceptWebSocket!(pair.server)
     pair.server.serializeAttachment?.({ principal })
     // Replayed frames are pushed onto the socket before this response is even
@@ -523,7 +563,7 @@ export class LiveSyncRoom {
       return Response.json({ error: "live-sync room connection limit reached" }, { status: 503 })
     }
     const principal = roomPrincipalFromHeaders(request.headers)
-    const cursor = this.resumeCursor(request.headers)
+    const cursor = this.resumeCursor(request.headers, principal)
     const hb = Number(request.headers.get(HEADER_HEARTBEAT_MS))
     if (Number.isFinite(hb) && hb > 0) this.heartbeatMs = hb
     const id = crypto.randomUUID()
@@ -546,7 +586,7 @@ export class LiveSyncRoom {
         // notice rather than a silent truncation.
         const replayed = this.replayFrames(principal, cursor)
         const frames = replayed.length > SSE_QUEUE_LIMIT - 1
-          ? [{ id: undefined, frame: replayGapEvent(cursor, this.replay.lastId()) }]
+          ? [{ id: undefined, frame: replayGapEvent(cursor, this.replayFor(principal).lastId()) }]
           : replayed
         for (const entry of frames) {
           if (!this.write(controller, entry.frame, entry.id)) break
@@ -555,6 +595,7 @@ export class LiveSyncRoom {
       },
       cancel: () => {
         this.connections.delete(id)
+        this.releaseReplay(principal)
         this.maybeStopHeartbeat()
       },
     }, { highWaterMark: SSE_QUEUE_LIMIT })
@@ -576,32 +617,56 @@ export class LiveSyncRoom {
     }
     const event = liveSyncEvent(input)
     if (!event) return Response.json({ error: "invalid nudge body" }, { status: 400 })
-    // Retain BEFORE fanning out, and once for the whole room. The id minted
-    // here is what both the live write below and any later replay carry, so a
-    // frame is byte-identical either way and a reconnecting client can tell
-    // that it already has it. Retention is unconditional — the frames worth
-    // recovering are precisely the ones published while NO connection was
-    // attached, so a ring that only filled when someone was listening would be
-    // empty exactly when it is needed.
-    const { id } = this.replay.push(event)
+    // Retain BEFORE fanning out, and once for the whole room, so a principal
+    // first seen after this nudge can seed its filtered ring. Each known
+    // principal then mints its own compact id after `eventVisibleTo`; that same
+    // id is used for the live write and later replay. Retention is unconditional
+    // because the frames worth recovering are precisely those published while
+    // no connection was attached.
+    this.retained.push(event)
+    const deliveries = new Map<string, { visible: boolean; id?: string }>()
+    for (const scope of this.replays.values()) {
+      const visible = eventVisibleTo(scope.principal, event)
+      if (visible) scope.replay.push(event)
+      deliveries.set(replayPrincipalKey(scope.principal), {
+        visible,
+        ...(visible ? { id: scope.replay.idFor(event) } : {}),
+      })
+    }
+    const deliveryFor = (principal: EventScopePrincipal) => {
+      const key = replayPrincipalKey(principal)
+      const existing = deliveries.get(key)
+      if (existing) return existing
+      const visible = eventVisibleTo(principal, event)
+      const replay = this.replayFor(principal)
+      const delivery = { visible, ...(visible ? { id: replay.idFor(event) } : {}) }
+      deliveries.set(key, delivery)
+      return delivery
+    }
     let delivered = 0
+    const disconnected = new Map<string, EventScopePrincipal>()
     for (const connection of [...this.connections.values()]) {
-      if (!eventVisibleTo(connection.principal, event)) continue
-      if (this.write(connection.controller, event, id)) {
+      const delivery = deliveryFor(connection.principal)
+      if (!delivery.visible) continue
+      if (this.write(connection.controller, event, delivery.id)) {
         delivered += 1
         continue
       }
       this.connections.delete(connection.id)
+      disconnected.set(replayPrincipalKey(connection.principal), connection.principal)
     }
+    for (const principal of disconnected.values()) this.releaseReplay(principal)
     const sockets = this.state.getWebSockets?.() ?? []
     for (const socket of sockets) {
       const attachment = socket.deserializeAttachment?.()
-      if (!attachment?.principal || !eventVisibleTo(attachment.principal, event)) continue
+      if (!attachment?.principal) continue
+      const delivery = deliveryFor(attachment.principal)
+      if (!delivery.visible) continue
       if ((socket.bufferedAmount ?? 0) > MAX_SOCKET_BUFFER_BYTES) {
         socket.close(1013, "live-sync client is too slow")
         continue
       }
-      if (this.send(socket, event, id)) delivered += 1
+      if (this.send(socket, event, delivery.id)) delivered += 1
       else socket.close(1011, "live-sync delivery failed")
     }
     return Response.json({ delivered, held: this.connections.size + sockets.length })
@@ -639,6 +704,7 @@ export class LiveSyncRoom {
         if (!this.write(connection.controller, HEARTBEAT)) {
           // Prune connections whose controller has closed without a cancel.
           this.connections.delete(connection.id)
+          this.releaseReplay(connection.principal)
         }
       }
       this.maybeStopHeartbeat()
@@ -658,16 +724,29 @@ export class LiveSyncRoom {
     return this.connections.size + (this.state.getWebSockets?.().length ?? 0)
   }
 
+  /** Test/introspection helper: active replay scopes and bounded reconnect cursors. */
+  get replayScopeCount(): number {
+    return this.replays.size
+  }
+
+  get replayTombstoneCount(): number {
+    return this.replayTombstones.size
+  }
+
   webSocketMessage(socket: LiveSyncSocket) {
     socket.close(1008, "live-sync sockets are server-push only")
   }
 
   webSocketClose(socket: LiveSyncSocket, code: number, reason: string) {
+    const principal = socket.deserializeAttachment?.()?.principal
     socket.close(code, reason)
+    if (principal) this.releaseReplay(principal, socket)
   }
 
   webSocketError(socket: LiveSyncSocket) {
+    const principal = socket.deserializeAttachment?.()?.principal
     socket.close(1011, "live-sync socket error")
+    if (principal) this.releaseReplay(principal, socket)
   }
 }
 
@@ -684,7 +763,7 @@ export function connectLiveSyncRoom(
   namespace: LiveSyncRoomNamespace,
   subscriber: LiveSyncSubscriber,
   heartbeatMs?: number,
-  reauthorize?: () => Promise<ControlPlaneAuthContext>,
+  reauthorize?: () => Promise<LiveSyncSubscriber>,
   lastEventId?: string,
 ): Promise<Response> {
   return namespace
@@ -760,7 +839,7 @@ export function connectLiveSyncRoom(
       const heartbeat = async () => {
         if (stopped) return
         try {
-          if (reauthorize && !sameAuth(subscriber.auth, await reauthorize())) {
+          if (reauthorize && !sameSubscriber(subscriber, await reauthorize())) {
             throw new Error("live-sync authorization changed")
           }
           if (!write(HEARTBEAT)) return

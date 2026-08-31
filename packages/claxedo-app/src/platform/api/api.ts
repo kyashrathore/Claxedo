@@ -1,7 +1,7 @@
 /**
  * Shared API helpers for web and desktop.
  */
-import { throttledFetch } from "@/lib/fetch-throttle";
+import { bypassFetchThrottle, isEventStreamPath, throttledFetch } from "@/lib/fetch-throttle";
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 export { isDemoMode, isDemoPath, isEmbedMode } from "@/lib/runtime-mode"
 import { isDemoMode } from "@/lib/runtime-mode"
@@ -250,9 +250,35 @@ function beginApiFetchDebug(input: string | URL | Request) {
 function signedRuntimeEventInput(input: string | URL | Request, init?: RequestInit) {
   const url = new URL(apiFetchUrl(input), getClaxedoServerUrl())
   if (url.pathname !== "/global/event" && url.pathname !== "/event") return { input, init }
+  // Unsigned local keeps the loopback engine stream. A bound bearer means this
+  // document is a signed client — including 127.0.0.1 e2e fixtures — so it must
+  // use the control-plane lifecycle bus. Skipping that rewrite for every
+  // `localUrl` left signed cloud subscribed to a dead `/global/event` path and
+  // rail rows never appeared from session.lifecycle.
+  if (localUrl(url.href) && !cfg.bearerToken) return { input, init }
   url.pathname = "/api/wr/events"
-  if (input instanceof Request) return { input: new Request(url, input), init }
+  if (input instanceof Request) {
+    return {
+      input: new Request(url, {
+        method: input.method,
+        headers: input.headers,
+        signal: input.signal,
+        cache: input.cache,
+        redirect: input.redirect,
+        credentials: input.credentials,
+        mode: input.mode,
+        referrer: input.referrer,
+        integrity: input.integrity,
+      }),
+      init,
+    }
+  }
   return { input: url, init }
+}
+
+function throttleInit(init: RequestInit | undefined, input: string | URL | Request) {
+  if (isEventStreamPath(input)) return bypassFetchThrottle(init ?? {})
+  return init
 }
 
 /**
@@ -400,8 +426,8 @@ export async function authFetch(
   // `./fetch-throttle.ts` for the policy.
   const first = await buildRequest(false)
   const firstResponse = first.request instanceof Request
-    ? await throttledFetch(() => fetch(first.request as Request), undefined, first.request)
-    : await throttledFetch(() => fetch(first.request as string | URL, first.init), first.init, first.request)
+    ? await throttledFetch(() => fetch(first.request as Request), throttleInit(undefined, first.request), first.request)
+    : await throttledFetch(() => fetch(first.request as string | URL, first.init), throttleInit(first.init, first.request), first.request)
   apiFetchDebug("first-response", firstResponse)
 
   if (firstResponse.status === 403 && first.token) {
@@ -425,8 +451,8 @@ export async function authFetch(
   // Step 2: force-refresh the Clerk JWT and retry.
   const retried = await buildRequest(true)
   const retriedResponse = retried.request instanceof Request
-    ? await throttledFetch(() => fetch(retried.request as Request), undefined, retried.request)
-    : await throttledFetch(() => fetch(retried.request as string | URL, retried.init), retried.init, retried.request)
+    ? await throttledFetch(() => fetch(retried.request as Request), throttleInit(undefined, retried.request), retried.request)
+    : await throttledFetch(() => fetch(retried.request as string | URL, retried.init), throttleInit(retried.init, retried.request), retried.request)
   apiFetchDebug("retried-response", retriedResponse)
 
   // If the force-refreshed token is STILL rejected (Clerk
@@ -500,4 +526,34 @@ export const api = {
       method: "DELETE",
     })
   },
+}
+
+function loopbackHttpUrl(input: string | undefined) {
+  if (!input) return false
+  try {
+    const url = new URL(input)
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]")
+  } catch {
+    return false
+  }
+}
+
+export function isLoopbackHttpUrl(input: string | undefined) {
+  return loopbackHttpUrl(input)
+}
+
+export function usesUnsignedLocalTransport(input: string | undefined) {
+  return loopbackHttpUrl(input)
+}
+
+export function unsignedLocalFetch(input: string | URL | Request, init?: RequestInit) {
+  if (input instanceof Request) {
+    const headers = new Headers(init?.headers ?? input.headers)
+    headers.delete("Authorization")
+    return globalThis.fetch(new Request(input, { ...init, headers }))
+  }
+  const headers = new Headers(init?.headers)
+  headers.delete("Authorization")
+  return globalThis.fetch(input, { ...init, headers })
 }

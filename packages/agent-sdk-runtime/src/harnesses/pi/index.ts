@@ -25,7 +25,6 @@ import {
   type AgentPermission,
   type AgentQuestion,
   type AgentRuntimeStreamEvent,
-  type AgentSession,
   type PromptInput,
   type RuntimeDirectory,
   type SessionConfig,
@@ -43,8 +42,9 @@ import type { RunStore, SessionEnv, SessionEnvFactory, SessionEnvFactoryInput } 
 import { createMemoryRunStore } from "../../session-env"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { firstTurnErrorData } from "../../first-turn-error"
-import { agentRuntimeEvent, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
-import type { Agent, AgentTool } from "@mariozechner/pi-agent-core"
+import type { AgentRuntimeEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { Agent } from "@mariozechner/pi-agent-core"
+import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import type { Usage as PiUsage } from "@mariozechner/pi-ai"
 import {
   createPiAgent,
@@ -60,30 +60,8 @@ import {
 import {
   observeAgentProcess,
   type AgentProcessObserver,
-  type AgentProcessObserverHandle,
 } from "../../process-observer"
-import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
-
-type PiSession = {
-  id: string
-  directory?: RuntimeDirectory
-  parentID?: string
-  title: string | null
-  created: number
-  updated: number
-  env: SessionEnv
-  config: SessionConfig
-  messages: AgentMessage[]
-  active?: AbortController
-  /** Live pi Agent for model-backed turns; lazily created at first model turn. */
-  agent?: Agent
-  /** Backend extra tools captured at Agent creation; preserved across placement swaps. */
-  agentExtraTools?: AgentTool[]
-  processOwnerId: string
-  processObservation: AgentProcessObserverHandle
-  goal?: RuntimeGoalSnapshot | null
-  goalRun?: { generation: number; backend: PiModelBackend; done: Promise<void> }
-}
+import { defaultPiSessionConfig, piSessionRow as row, type PiSession } from "./session-state"
 
 export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createEnv?: SessionEnvFactory
@@ -136,26 +114,6 @@ function notImplemented(feature: string) {
   return new Error(`${feature} is not implemented for Pi central sessions yet`)
 }
 
-function row(session: PiSession): AgentSession {
-  return {
-    id: session.id,
-    ...(session.parentID ? { parentID: session.parentID } : {}),
-    title: session.title,
-    slug: session.id,
-    version: "central",
-    time: { created: session.created, updated: session.updated },
-  }
-}
-
-function defaultConfig(): SessionConfig {
-  return {
-    harness: { id: "pi", access: "native" },
-    model: { providerID: "pi", modelID: "virtual" },
-    variant: null,
-    agent: null,
-  }
-}
-
 function textPart(input: { sessionId: string; messageId: string; text: string; suffix: string }): CompatPart {
   return {
     id: `${input.messageId}-${input.suffix}`,
@@ -171,6 +129,66 @@ function putMessage(session: PiSession, message: AgentMessage) {
     ...session.messages.filter((item) => item.info.id !== message.info.id),
     message,
   ]
+}
+
+function piUserMessage(sessionId: string, input: PromptInput): {
+  info: ReturnType<typeof buildUserMessage>
+  parts: CompatPart[]
+} | undefined {
+  if (!input.userMessageId) return
+  const prompt = promptText(input.parts)
+  return {
+    info: buildUserMessage({
+      id: input.userMessageId,
+      sessionID: sessionId,
+      agent: input.agent,
+      model: input.model,
+      ...(input.author ? { author: input.author } : {}),
+      ...(input.tools ? { tools: input.tools } : {}),
+      ...(input.format ? { format: input.format } : {}),
+      ...(input.system ? { system: input.system } : {}),
+      ...(input.variant ? { variant: input.variant } : {}),
+    }),
+    parts: prompt ? [textPart({ sessionId, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
+  }
+}
+
+function completedPiMessage(input: {
+  sessionId: string
+  assistant: Parameters<typeof buildAssistantMessage>[0]
+  assistantText: string
+  assistantError?: string
+  assistantUsage?: PiUsage
+}): {
+  info: ReturnType<typeof buildAssistantMessage>
+  parts: CompatPart[]
+} {
+  const completed = Date.now()
+  const info = {
+    ...buildAssistantMessage({
+      ...input.assistant,
+      completed,
+      ...(input.assistantError
+        ? { error: { name: "UnknownError", data: firstTurnErrorData(input.assistantError) } }
+        : { finish: "stop" }),
+    }),
+    ...(input.assistantUsage
+      ? {
+          tokens: {
+            input: input.assistantUsage.input,
+            output: input.assistantUsage.output,
+            reasoning: 0,
+            cache: { read: input.assistantUsage.cacheRead, write: input.assistantUsage.cacheWrite },
+          },
+        }
+      : {}),
+  }
+  return {
+    info,
+    parts: input.assistantText
+      ? [textPart({ sessionId: input.sessionId, messageId: input.assistant.id, text: input.assistantText, suffix: "text" })]
+      : [],
+  }
 }
 
 function runtimeEvent(input: AgentRuntimeStreamEvent): input is AgentRuntimeEvent {
@@ -467,8 +485,24 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async createHandoffSession(directory: RuntimeDirectory, title: string | undefined, id: string) {
-    if (this.sessions.has(id)) await this.deleteSession(id, directory)
-    return { ...await this.bindSession({ id, title, directory }), ownerKey: null }
+    if (this.sessions.has(id)) {
+      throw new Error(`Cannot prepare Pi handoff: target session ${id} already exists`)
+    }
+    const created = await this.bindSession({ id, title, directory })
+    let rolledBack = false
+    return {
+      ...created,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.deleteSession(created.id, directory)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(id: string, _agentSessionId: string, _ownerKey: string | null, directory: RuntimeDirectory) {
+    await this.deleteSession(id, directory)
   }
 
   async bindSession(input: { id: string; parentID?: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {
@@ -530,7 +564,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         },
         this.processObserver,
       ),
-      config: defaultConfig(),
+      config: defaultPiSessionConfig(),
       messages: [],
       processOwnerId,
       processObservation,
@@ -563,17 +597,21 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     const session = this.sessions.get(id)
     if (!session) return null
     session.title = updates.title ?? session.title
+    if (updates.time?.archived !== undefined) {
+      session.archived = updates.time.archived
+      session.active?.abort()
+    }
     session.updated = Date.now()
     return row(session)
   }
 
   async getSessionConfig(id: string, _directory: RuntimeDirectory) {
-    return this.sessions.get(id)?.config ?? defaultConfig()
+    return this.sessions.get(id)?.config ?? defaultPiSessionConfig()
   }
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, _directory: RuntimeDirectory) {
     const session = this.sessions.get(id)
-    if (!session) return defaultConfig()
+    if (!session) return defaultPiSessionConfig()
     if (update.model !== undefined && session.active) {
       throw new Error("Start a new Pi session to use another model")
     }
@@ -598,10 +636,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   /**
-   * Swap the session's tool placement MID-CONVERSATION (Demo B): dispose the
-   * old SessionEnv, create one for the new placement, and re-point the live
-   * Agent's tools at it. Conversation history is untouched. Refused while a
-   * turn is active — a running tool call must never have its env ripped out.
+   * Replace a session's tool environment and point the live agent at the new
+   * placement without changing conversation history. Active turns prevent the
+   * replacement so running tools retain their environment.
    */
   async updateSessionPlacement(id: string, placement: PiSessionPlacement): Promise<{ ok: true }> {
     const session = this.sessions.get(id)
@@ -696,21 +733,8 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       ...(input.variant ? { variant: input.variant } : {}),
     }
     try {
-      if (input.userMessageId) {
-        const prompt = promptText(input.parts)
-        const user = {
-          info: buildUserMessage({
-          id: input.userMessageId,
-          sessionID: id,
-          agent: input.agent,
-          model: input.model,
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.format ? { format: input.format } : {}),
-          ...(input.system ? { system: input.system } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-          }),
-          parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
-        }
+      const user = piUserMessage(id, input)
+      if (user) {
         putMessage(session, user)
         yield emit(messageUpdated(user.info))
         if (user.parts[0]) yield emit(messagePartUpdated(user.parts[0]))
@@ -803,7 +827,6 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       session.active = undefined
       session.updated = Date.now()
     }
-    const completed = Date.now()
     if (assistantUsage) {
       yield emit({
         type: "usage",
@@ -821,32 +844,15 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         },
       })
     }
-    const info = {
-      ...buildAssistantMessage({
-        ...assistant,
-        completed,
-        ...(assistantError
-          ? { error: { name: "UnknownError", data: firstTurnErrorData(assistantError) } }
-          : { finish: "stop" }),
-      }),
-      ...(assistantUsage
-        ? {
-            tokens: {
-              input: assistantUsage.input,
-              output: assistantUsage.output,
-              reasoning: 0,
-              cache: { read: assistantUsage.cacheRead, write: assistantUsage.cacheWrite },
-            },
-          }
-        : {}),
-    }
-    putMessage(session, {
-      info,
-      parts: assistantText
-        ? [textPart({ sessionId: id, messageId: input.assistantMessageId, text: assistantText, suffix: "text" })]
-        : [],
+    const completedMessage = completedPiMessage({
+      sessionId: id,
+      assistant,
+      assistantText,
+      ...(assistantError ? { assistantError } : {}),
+      ...(assistantUsage ? { assistantUsage } : {}),
     })
-    yield emit(messageUpdated(info))
+    putMessage(session, completedMessage)
+    yield emit(messageUpdated(completedMessage.info))
     if (assistantError) {
       yield emit({ type: "session-status", status: "error" })
       yield emit({ type: "error", error: assistantError })

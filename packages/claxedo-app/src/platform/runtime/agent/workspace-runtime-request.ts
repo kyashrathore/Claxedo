@@ -1,5 +1,5 @@
 import { createWorkspaceRelayConnection, openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
-import { authFetch } from "@/platform/api/api"
+import { authFetch, unsignedLocalFetch } from "@/platform/api/api"
 import { hasBacking, type SessionRef } from "@/platform/identity/session-ref"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
@@ -13,6 +13,7 @@ export {
   isLocalPersonalScope,
   isLoopbackHttpUrl,
 } from "@/platform/runtime/server-transport"
+export { unsignedLocalFetch } from "@/platform/api/api"
 
 export type WorkspaceRuntimeSnapshotLike = {
   kind?: "local" | "cloud" | "user-hosted" | null
@@ -43,17 +44,6 @@ type RelayConnection = {
 
 const relayRequestIds = new WeakMap<typeof fetch, number>()
 let nextRelayRequestId = 1
-
-export function unsignedLocalFetch(input: string | URL | Request, init?: RequestInit) {
-  if (input instanceof Request) {
-    const headers = new Headers(init?.headers ?? input.headers)
-    headers.delete("Authorization")
-    return globalThis.fetch(new Request(input, { ...init, headers }))
-  }
-  const headers = new Headers(init?.headers)
-  headers.delete("Authorization")
-  return globalThis.fetch(input, { ...init, headers })
-}
 
 function unsignedFetchWith(request: typeof fetch, input: string | URL | Request, init?: RequestInit) {
   if (input instanceof Request) {

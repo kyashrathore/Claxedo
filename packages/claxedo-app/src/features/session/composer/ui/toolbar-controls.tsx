@@ -102,7 +102,19 @@ export function PromptToolbarControls(props: {
         planModeLabel={props.planModeTitle}
       />
       <PromptPermissionControl
-        enabled={props.approveEnabled}
+        enabled={() => {
+          if (!props.approveEnabled() || !props.active() || props.harnessPending()) return false
+          const groups = props.permissionGroups()
+          if (!groups) return false
+          const current = props.permissionCurrent()
+          if (!current?.id) return false
+          // Hide the trigger until the offered rows include the resolved mode.
+          // Otherwise a default Claxedo id can flash on an opencode-shaped draft
+          // while Codex modes are still loading (tier-real behavior 13).
+          const offered = [...groups.claxedo, ...groups.harness.rows]
+          if (offered.length === 0) return false
+          return offered.some((row) => row.option.id === current.id)
+        }}
         disabled={addDisabled}
         style={props.attachStyle}
         groups={props.permissionGroups}

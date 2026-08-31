@@ -2,7 +2,6 @@ import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import {
   isLoopbackHostname,
   workspaceRuntimeListenHostname,
-  type WorkspaceRuntimeCorsOrigin,
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { RuntimeRunner } from "@claxedo/workspace-runtime"
@@ -38,9 +37,17 @@ export function claxedoWorkspaceRuntimeLaunch(input: {
   credential: { token: string; expiresAt: number }
   now?: number
 }) {
-  if (input.epoch < 1) throw new Error("workspace-runtime launch requires a positive lease epoch")
+  if (!Number.isSafeInteger(input.epoch) || input.epoch < 1) {
+    throw new Error("workspace-runtime launch requires a positive safe-integer lease epoch")
+  }
+  assertRuntimePort(input.port, "workspace-runtime launch port")
   if (!input.credential.token.trim()) throw new Error("workspace-runtime launch requires a bootstrap credential")
-  if (input.credential.expiresAt <= (input.now ?? Date.now())) {
+  const now = input.now ?? Date.now()
+  if (!Number.isFinite(now)) throw new Error("workspace-runtime launch requires a finite current timestamp")
+  if (!Number.isFinite(input.credential.expiresAt)) {
+    throw new Error("workspace-runtime launch requires a finite bootstrap credential expiry")
+  }
+  if (input.credential.expiresAt <= now) {
     throw new Error("workspace-runtime bootstrap credential is expired")
   }
   return {
@@ -83,7 +90,8 @@ export function claxedoRuntimeRunnerFromEnv(env: NodeJS.ProcessEnv = process.env
   const raw = text(env, "WORKSPACE_RUNTIME_RUNNER")
   const identity = raw === "acp"
     ? { id: "claude" as const, access: "acp" as const }
-    : normalizeHarnessIdentity(raw ?? "opencode") ?? { id: "opencode" as const, access: "native" as const }
+    : normalizeHarnessIdentity(raw ?? "opencode")
+  if (!identity) throw new Error(`Unknown WORKSPACE_RUNTIME_RUNNER: ${raw}`)
   const acpBinary = text(env, "WORKSPACE_RUNTIME_ACP_BINARY")
   return {
     id: identity.id,
@@ -106,7 +114,10 @@ export function claxedoRuntimeRunnerFromEnv(env: NodeJS.ProcessEnv = process.env
 export async function claxedoWorkspaceRuntimeBootFromEnv(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<ClaxedoWorkspaceRuntimeBoot> {
-  const port = parseInt(text(env, "WORKSPACE_RUNTIME_PORT") ?? "3002", 10)
+  const rawPort = text(env, "WORKSPACE_RUNTIME_PORT") ?? "3002"
+  if (!/^\d+$/.test(rawPort)) throw new Error(`WORKSPACE_RUNTIME_PORT must be an integer: ${rawPort}`)
+  const port = Number(rawPort)
+  assertRuntimePort(port, "WORKSPACE_RUNTIME_PORT")
   const hostname = workspaceRuntimeListenHostname(env)
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
   const opencodeUrl = text(env, "OPENCODE_URL")
@@ -143,4 +154,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     opencodeCompat: env.WORKSPACE_RUNTIME_OPENCODE_COMPAT !== "0",
   }
   return { port, hostname, options }
+}
+
+function assertRuntimePort(port: number, label: string) {
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error(`${label} must be an integer between 1 and 65535`)
+  }
 }

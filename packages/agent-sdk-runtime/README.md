@@ -167,8 +167,15 @@ The root import does not load SQLite or Convex.
 
 Harness factories have individual entries and a convenience aggregate:
 
+- `@claxedo/agent-sdk-runtime/harnesses/acp`
+- `@claxedo/agent-sdk-runtime/harnesses/claude`
+- `@claxedo/agent-sdk-runtime/harnesses/codex`
+- `@claxedo/agent-sdk-runtime/harnesses/cursor`
+- `@claxedo/agent-sdk-runtime/harnesses/opencode`
+- `@claxedo/agent-sdk-runtime/harnesses/pi`
+
 ```ts
-import { claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { acp, claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 // Smaller single-harness graph:
 import { claude as nativeClaude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
 ```
@@ -181,7 +188,7 @@ event plumbing.
 `src/harness-types.ts` is the source of truth for supported harness ids and
 access modes.
 
-- ACP harnesses: `claude`, `codex`, and `cursor` with `access: "acp"`.
+- ACP connections: `acp(id, { binary, ... })` with `access: "acp"`.
 - Native harnesses: `claude`, `codex`, `cursor`, `opencode`, and `pi` with
   `access: "native"`.
 
@@ -245,6 +252,8 @@ synthetic data or events.
 helpers.
 
 - `RuntimeEventHub` is a lightweight pub/sub boundary for runtime events.
+- `createAgentRuntime({ subscriberBufferSize, eventDelivery })` bounds each
+  subscriber while allowing the host to authorize every delivered event.
 - `createSseReplayBuffer()` keeps bounded replay for reconnecting clients.
 - `attachSseFanout()` bridges a subscribe function into a streaming response
   with lifecycle cleanup.
@@ -398,7 +407,9 @@ Entry point status:
 - Stable: `@claxedo/agent-sdk-runtime/harnesses`,
   `@claxedo/agent-sdk-runtime/stores/memory`,
   `@claxedo/agent-sdk-runtime/stores/sqlite`
-- Advanced: `@claxedo/agent-sdk-runtime/adapters`
+- Advanced: `@claxedo/agent-sdk-runtime/adapters`,
+  `@claxedo/agent-sdk-runtime/subagent-admission`,
+  `@claxedo/agent-sdk-runtime/message-page`
 - Integration: `@claxedo/agent-sdk-runtime/stores/convex`,
   `@claxedo/agent-sdk-runtime/session-env`,
   `@claxedo/agent-sdk-runtime/virtual-session-env`,
@@ -413,7 +424,14 @@ use `createAgentRuntime()` plus harness factories. Use the adapter subpath only
 when building a workspace host, custom HTTP compatibility layer, or harness
 integration that needs direct driver lifecycle control.
 
-The package publishes built ESM and declaration files from `dist`.
+Handoff-capable custom adapters return an `AgentPreparedHandoffSession` with an
+idempotent `rollback()` and may implement `releaseHandoffSource` to clean up the
+old native session only after the target binding commits.
+
+The package publishes built ESM and declaration files from `dist`. Publish
+verification hashes the complete reachable declaration closure for every
+export-map entrypoint, so reviewed type-contract changes must update the API
+manifest explicitly.
 
 ## Verification
 

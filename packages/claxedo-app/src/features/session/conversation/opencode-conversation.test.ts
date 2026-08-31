@@ -230,6 +230,21 @@ describe("opencode conversation chat adapter", () => {
     expect(handle.written).toHaveLength(3)
   })
 
+  test("a final assistant event does not replace an announced subagent task step", () => {
+    const handle = chat()
+    const announced = message("msg_user_r")
+    const final = message("msg_final")
+
+    expect(applyOpencodeConversationEvent(handle, event("message.updated", { info: announced }))).toBe(true)
+    expect(applyOpencodeConversationEvent(handle, event("message.part.updated", {
+      part: { ...toolPart("part_task", "msg_user_r", "running"), tool: "task" },
+    }))).toBe(true)
+    expect(applyOpencodeConversationEvent(handle, event("message.updated", { info: final }))).toBe(true)
+
+    expect(handle.messages().map((item) => item.id)).toEqual(["msg_user_r", "msg_final"])
+    expect(handle.messages()[0]?.parts).toMatchObject([{ type: "tool-call", name: "task" }])
+  })
+
   test("a settled assistant message rejects late streamed parts under a different part id", () => {
     // Ordering raced in CI: the REST history refetch lands the completed
     // assistant row (persisted part id `<msgId>_text`) BEFORE the delayed SSE
@@ -273,11 +288,46 @@ describe("opencode conversation chat adapter", () => {
       parts: { msg_assistant: [textPart("msg_assistant_text", "msg_assistant", "hello")] },
     })
 
-    expect(mergeConversationSnapshot(live, fetched)).toMatchObject([{
+    expect(mergeConversationSnapshot(live, fetched, {
+      canonicalPartMessageIDs: new Set(["msg_assistant"]),
+    })).toMatchObject([{
       id: "msg_assistant",
       parts: [{ type: "text", content: "hello" }],
     }])
-    expect(mergeConversationSnapshot(live, fetched)[0]?.parts).toHaveLength(1)
+    expect(mergeConversationSnapshot(live, fetched, {
+      canonicalPartMessageIDs: new Set(["msg_assistant"]),
+    })[0]?.parts).toHaveLength(1)
+  })
+
+  test("a settled latest-surface fragment cannot remove an intermediate task part", () => {
+    const user = message("msg_user", "user")
+    const announced = {
+      ...message("msg_user_r"),
+      parentID: "msg_user",
+      time: { created: 2 },
+    } as Message
+    const final = {
+      ...message("msg_final"),
+      parentID: "msg_user",
+      time: { created: 3, completed: 4 },
+    } as Message
+    const handle = chat(opencodeConversationSnapshot({ messages: [user], parts: { msg_user: [] } }))
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: announced }))
+    applyOpencodeConversationEvent(handle, event("message.part.updated", {
+      part: { ...toolPart("part_task", "msg_user_r", "completed"), tool: "task" } as Part,
+    }))
+    const surface = opencodeConversationSnapshot({
+      messages: [user, final],
+      parts: {
+        msg_user: [],
+        msg_final: [textPart("part_final", "msg_final", "done")],
+      },
+    })
+
+    const merged = mergeConversationSnapshot(handle.messages(), surface, { order: "snapshot", membership: "resolved" })
+
+    expect(merged.map((item) => item.id)).toEqual(["msg_user", "msg_final", "msg_user_r"])
+    expect(merged[2]?.parts).toMatchObject([{ type: "tool-call", name: "task", state: "complete" }])
   })
 
   test("snapshot merge advances a live tool call to its persisted terminal state", () => {
@@ -323,6 +373,41 @@ describe("opencode conversation chat adapter", () => {
     expect(merged.find((item) => item.id === "msg_step_1")?.parts).toMatchObject([
       { type: "tool-call", name: "task", state: "complete" },
     ])
+  })
+
+  test("preserves an announced tool step and separate final reply from one canonical snapshot", () => {
+    const user = message("msg_user", "user")
+    const announced = {
+      ...message("msg_user_r"),
+      parentID: "msg_user",
+      time: { created: 2, completed: 3 },
+    } as Message
+    const final = {
+      ...message("msg_final"),
+      parentID: "msg_user",
+      time: { created: 3, completed: 4 },
+    } as Message
+    const live = opencodeConversationSnapshot({
+      messages: [user, announced],
+      parts: {
+        msg_user: [textPart("part_prompt", "msg_user", "delegate")],
+        msg_user_r: [{ ...toolPart("part_task", "msg_user_r", "running"), tool: "task" } as Part],
+      },
+    })
+    const fetched = opencodeConversationSnapshot({
+      messages: [user, announced, final],
+      parts: {
+        msg_user: [textPart("part_prompt", "msg_user", "delegate")],
+        msg_user_r: [{ ...toolPart("part_task", "msg_user_r", "completed"), tool: "task" } as Part],
+        msg_final: [textPart("part_final", "msg_final", "done")],
+      },
+    })
+
+    const merged = mergeConversationSnapshot(live, fetched, { order: "snapshot", membership: "resolved" })
+
+    expect(merged.map((item) => item.id)).toEqual(["msg_user", "msg_user_r", "msg_final"])
+    expect(merged[1]?.parts).toMatchObject([{ type: "tool-call", name: "task", state: "complete" }])
+    expect(merged[2]?.parts).toMatchObject([{ type: "text", content: "done" }])
   })
 
   test("snapshot merge preserves chat-owned live deltas for matching parts", () => {
@@ -400,6 +485,25 @@ describe("opencode conversation chat adapter", () => {
     expect(stored?.error).toMatchObject({
       name: "APIError",
       data: { message: "Unauthorized", statusCode: 401, responseBody: body },
+    })
+  })
+
+  test("a later engine message.updated without claxedo.author keeps the signed host stamp", () => {
+    const attributed = {
+      ...message("msg_user", "user"),
+      claxedo: { author: { id: "usr_alice", name: "Alice", kind: "human" } },
+    } as Message
+    const engine = message("msg_user", "user") as Message
+
+    const handle = chat()
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: attributed }))
+    applyOpencodeConversationEvent(handle, event("message.updated", { info: engine }))
+
+    const stored = (handle.messages()[0] as { metadata?: { opencodeMessage?: Message } }).metadata?.opencodeMessage
+    expect((stored as { claxedo?: { author?: { name?: string } } } | undefined)?.claxedo?.author).toEqual({
+      id: "usr_alice",
+      name: "Alice",
+      kind: "human",
     })
   })
 

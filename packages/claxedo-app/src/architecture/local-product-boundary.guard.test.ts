@@ -14,10 +14,18 @@ const appRoot = path.resolve(import.meta.dir, "../..")
  * imports are excluded: the bundler erases them. The emitted-artifact gate
  * covers what source scanning cannot see.
  *
- * Fixtures prove the scanner reports an injected edge.
- * `PRE_SPLIT_HOSTED_REACH` is the published entry's remaining hosted reach —
- * currently none. A new route to an identity provider fails here instead of
- * blending into a known one.
+ * The published local entry is now separate from the hosted bootstrap. This
+ * file has two jobs:
+ *
+ *  1. Prove the SCANNER is discriminating. An injected cross-product edge must
+ *     be reported with its shortest import chain. A guard that cannot fail on a
+ *     planted violation proves nothing about the real graph, so the fixtures
+ *     below are the load-bearing part of this suite.
+ *  2. Enforce that the CURRENT local entry cannot reach a hosted capability.
+ *
+ * Type-only imports are excluded: the bundler erases them, so a shared type
+ * contract is not a runtime boundary breach. The emitted-artifact gate covers
+ * what source scanning alone cannot see.
  */
 
 /** Bare packages that only the hosted product may depend on. */
@@ -45,9 +53,6 @@ export function isHostedCapability(ref: ProductImportRef) {
   if (!module) return false
   return HOSTED_SOURCE_ROOTS.some((root) => module === root || module.startsWith(root) || module.startsWith(`${root}/`))
 }
-
-/** Remaining hosted reach from the published entry. Any new route fails here. */
-const PRE_SPLIT_HOSTED_REACH = null
 
 function fixtureApp(files: Record<string, string>) {
   const root = mkdtempSync(path.join(tmpdir(), "claxedo-local-boundary-"))
@@ -133,13 +138,13 @@ describe("local product boundary", () => {
     }
   })
 
-  test("the published entry reaches no hosted capability", () => {
+  test("keeps the published local entry free of hosted capabilities", () => {
     expect(
       shortestForbiddenImportChain({
         appRoot,
         entry: "app/entry/index.tsx",
         isForbidden: isHostedCapability,
       }),
-    ).toEqual(PRE_SPLIT_HOSTED_REACH)
+    ).toBeNull()
   })
 })

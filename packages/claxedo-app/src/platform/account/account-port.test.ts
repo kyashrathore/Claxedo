@@ -30,25 +30,14 @@ function matrixOperations() {
   return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*\.[\w.]*)` \|/gm)].map((match) => match[1]).toSorted()
 }
 
-const DEFERRED_HOSTED_OPERATIONS = [
-  "billing.checkout", "billing.portal",
-  "connections.attempt", "connections.connect", "connections.disconnect", "connections.list", "connections.repositories",
-  "documents.content.get", "documents.content.put", "documents.create", "documents.events", "documents.export",
-  "documents.get", "documents.list", "documents.snapshots", "documents.snapshots.restore", "documents.statuses",
-  "documents.update", "documents.workSource", "documents.workSourcePin",
-  "hostLink.challenge", "hostLink.heartbeat", "hostLink.pause", "hostLink.register", "hostLink.secondDeviceOpen",
-  "provisioning.events",
-  "sandbox.drivers.auth", "sandbox.drivers.list", "sandbox.drivers.read", "sandbox.drivers.setDefault",
-  "session.create", "session.events", "session.gateway", "session.list", "session.messages", "session.runtimeEvents",
-  "workgraph.command", "workgraph.read", "workgraph.snapshot", "workgraph.write",
-].toSorted()
+const UNIT_10_DEFERRED_OPERATIONS: string[] = []
 
 describe("HostedOperationName", () => {
   test("names only operations the matrix declares and pins operations not yet on the port", () => {
     const inMatrix = new Set(matrixOperations())
     expect(declaredOperations().filter((operation) => !inMatrix.has(operation))).toEqual([])
     const declared = new Set(declaredOperations())
-    expect(matrixOperations().filter((operation) => !declared.has(operation))).toEqual(DEFERRED_HOSTED_OPERATIONS)
+    expect(matrixOperations().filter((operation) => !declared.has(operation))).toEqual(UNIT_10_DEFERRED_OPERATIONS)
   })
 
   test("includes machine-wide enrollment", () => {

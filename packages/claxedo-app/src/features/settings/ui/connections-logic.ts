@@ -15,6 +15,9 @@ import {
   type SourceViewRefreshResponse,
   type UpdateSourceViewInput,
 } from "@claxedo/workgraph/contracts"
+import type { ConnectionsRequest } from "@/platform/account/integrations-request"
+
+export type { ConnectionsRequest }
 
 export type IntegrationPrompt = {
   id: string
@@ -42,9 +45,6 @@ export type ConnectionInfo = {
   createdAt: number
   updatedAt: number
 }
-
-/** Path is relative to the /api/claxedo/integrations mount ("" for the root list). */
-export type ConnectionsRequest = (path: string, init?: RequestInit) => Promise<Response>
 
 async function jsonOf(response: Response): Promise<Record<string, unknown>> {
   const body = await response.json().catch(() => undefined)

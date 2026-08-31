@@ -262,8 +262,15 @@ async function mintAndRecordRuntimeAccessToken(input: {
     pem(requireEnv(input.env, "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM")),
     algorithm,
   )
+  const client = new ConvexHttpClient(requireEnv(input.env, "CLAXEDO_WORKSPACE_AUTHORITY_URL"))
+  client.setAuth(input.authToken)
+  const actor = await client.mutation(api.users.me, {})
   const runtimeAccessToken = await mintRuntimeAccessToken({
     subject: "staging-stress",
+    actorId: actor.actor_id,
+    actorKind: actor.actor_kind,
+    actorPublicId: actor.actor_public_id,
+    actorName: actor.actor_name,
     orgId: "org_staging_stress",
     workspaceId: input.workspaceId,
     hostId: input.hostId,
@@ -271,12 +278,13 @@ async function mintAndRecordRuntimeAccessToken(input: {
     ttlSeconds,
     jti,
   }, privateKey, algorithm)
-  const client = new ConvexHttpClient(requireEnv(input.env, "CLAXEDO_WORKSPACE_AUTHORITY_URL"))
-  client.setAuth(input.authToken)
   await client.mutation(api.runtimeAccessTokens.recordMint, {
     jti,
     workspace_id: input.workspaceId,
     host_id: input.hostId,
+    actor_id: actor.actor_id,
+    actor_kind: actor.actor_kind,
+    role: "editor",
     expires_at: expiresAt,
   })
   return { runtimeAccessToken, tokenExpiresAt: expiresAt, jti }

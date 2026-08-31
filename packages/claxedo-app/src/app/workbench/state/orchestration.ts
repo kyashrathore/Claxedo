@@ -24,7 +24,7 @@ import {
   sameSessionRef,
   type SessionRef,
 } from "@/platform/identity/session-ref"
-import { markRouteIntentClosed } from "./route-intent"
+import { markRouteIntentClosed } from "./route-bridge-resolution"
 
 type WorkspaceDirectoryRef = string
 
@@ -39,7 +39,12 @@ export type LayoutOrchestrationApi = {
   openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
   completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
-  openTerminal(directory: string, terminalId: string, title?: string, opts?: { focus?: boolean; command?: string; workspaceRouteId?: string }): string
+  openTerminal(
+    directory: string,
+    terminalId: string,
+    title?: string,
+    opts?: { focus?: boolean; command?: string; sessionId?: string; workspaceRouteId?: string },
+  ): string
   openPage(pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }): string
   openPagesIndex(directory?: string, opts?: { workspaceRouteId?: string }): string
   openMarketplace(): string
@@ -450,11 +455,13 @@ export function createLayoutOrchestration(input: {
 
     openTerminal(directory, terminalId, title, opts) {
       const existing = meta.find(
-        (m) =>
-          m.type === "terminal" &&
-          m.directory === directory &&
-          m.terminalId === terminalId &&
-          (!opts?.workspaceRouteId || m.content?.workspaceRouteId === opts.workspaceRouteId),
+        (m) => {
+          if (m.type !== "terminal" || m.terminalId !== terminalId) return false
+          if (opts?.workspaceRouteId) {
+            return m.content?.workspaceRouteId === opts.workspaceRouteId
+          }
+          return m.directory === directory
+        },
       )
       if (existing) patchTerminalTitle(existing, directory, terminalId, title)
       return showOrCreate(
@@ -468,6 +475,7 @@ export function createLayoutOrchestration(input: {
               scope: "directory",
               directory,
               terminalId,
+              ...(opts?.sessionId ? { sessionId: opts.sessionId } : {}),
             },
             payload: {
               type: "terminal",

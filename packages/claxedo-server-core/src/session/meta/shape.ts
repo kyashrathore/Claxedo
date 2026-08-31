@@ -130,10 +130,12 @@ export function sessionModel(input: unknown): { providerID: string; modelID: str
 export function storedSessionRef(input: {
   session_id: string
   workspace_id?: string | null
+  workspace_kind?: Workspace["kind"]
   directory?: string | null
   host?: string | null
 }) {
   if (input.host === "central") return `central:${input.session_id}`
+  if (input.workspace_kind === "local") return `local:${input.directory ?? "global"}:session:${input.session_id}`
   if (input.workspace_id) return `workspace:${input.workspace_id}:session:${input.session_id}`
   return `local:${input.directory ?? "global"}:session:${input.session_id}`
 }
@@ -147,7 +149,13 @@ export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
   const hostValue = host(item?.host) ?? "workspace"
   const directory = txt(item?.directory) ?? ws?.directory ?? null
   return {
-    session_ref: storedSessionRef({ session_id, workspace_id, directory, host: hostValue }),
+    session_ref: storedSessionRef({
+      session_id,
+      workspace_id,
+      workspace_kind: ws?.kind,
+      directory,
+      host: hostValue,
+    }),
     session_id,
     workspace_id,
     project_id: ws?.project_id ?? txt(item?.projectID) ?? null,

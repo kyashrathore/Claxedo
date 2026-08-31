@@ -10,7 +10,7 @@ import { decodeHostedResult } from "./hosted-operations"
  * This process holds no credential. It names an operation, main decides the
  * method and path, attaches the token it holds, and sends back a decoded
  * result. The renderer cannot construct a request, which is what makes the
- * arrangement worth having — a renderer compromise gets the thirteen operations
+ * arrangement worth having — a renderer compromise gets the named operations
  * the product uses and not the rest of the API.
  *
  * `browserAccountPort` is the same shape over the browser's own session. Product

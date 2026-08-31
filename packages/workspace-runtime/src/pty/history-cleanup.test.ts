@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
-import { cleanupOrphanedHistory, createDiskHistory, historyPath } from "./history-disk"
+import {
+  cleanupOrphanedHistory,
+  createDiskHistory,
+  historyPath,
+  readHistorySessionId,
+  renameHistory,
+} from "./history-disk"
 
 let root: string
 const previous = process.env.WORKSPACE_RUNTIME_PTY_HISTORY_DIR
@@ -77,6 +83,24 @@ describe("cleanupOrphanedHistory", () => {
     expect(await fs.readFile(historyPath(directory, "pty_live"), "utf8")).toContain(
       "output after the sweep",
     )
+  })
+})
+
+describe("PTY history session ownership", () => {
+  test("persists ownership and carries it across cold-restore re-keying", async () => {
+    const history = await createDiskHistory({
+      directory: "/proj",
+      id: "pty_old",
+      limit: 1024,
+      sessionId: "session_private",
+    })
+    history.append("private scrollback")
+    await history.close()
+
+    expect(await readHistorySessionId("/proj", "pty_old")).toBe("session_private")
+    await renameHistory("/proj", "pty_old", "pty_new")
+    expect(await readHistorySessionId("/proj", "pty_old")).toBeUndefined()
+    expect(await readHistorySessionId("/proj", "pty_new")).toBe("session_private")
   })
 })
 

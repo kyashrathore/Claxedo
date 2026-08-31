@@ -202,8 +202,8 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
     expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/claxedo/workspace/resolve")
     expect(fetchCalls.map((item) => new URL(item.url).pathname)).toContain("/api/workspace/ws_1/connection")
-    expect(startup.some((item) => item.status === "acquiring_sandbox" && item.id === "ws_1")).toBe(true)
-    expect(startup.some((item) => item.status === "ready")).toBe(true)
+    // Runtime preparation progress is remembered but not shown as a second
+    // submit overlay; WorkspaceGate owns those connection phases.
     expect(startup.some((item) => item.status === "loading_models")).toBe(true)
     expect(startup.some((item) => item.status === "creating_session")).toBe(true)
     expect(startup.some((item) => item.status === "sending_prompt")).toBe(true)
@@ -461,7 +461,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    expect(startup.some((item) => item.status === "ready")).toBe(true)
     expect(startup.at(-1)).toEqual({
       status: "error",
       id: undefined,
@@ -652,7 +651,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-1" })
     expect(optimisticAdds.map((item) => item.directory)).toContain("ws_1")
     expect(optimisticAdds.map((item) => item.directory)).not.toContain("/repo/main")
-    expect(startup.some((item) => item.status === "acquiring_sandbox" && item.id === "ws_1")).toBe(true)
   })
 
 

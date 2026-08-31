@@ -30,16 +30,21 @@ import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/sub
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 
 export {
+  AGENT_RUNTIME_TURN_CONFLICT_CODE,
   AgentRuntimeGoalError,
   AgentRuntimeTurnAdmissionError,
+  AgentRuntimeTurnAdmissionError as AgentRuntimeTurnConflictError,
   isAgentRuntimeGoalError,
   isAgentRuntimeTurnAdmissionError,
+  isAgentRuntimeTurnAdmissionError as isAgentRuntimeTurnConflictError,
 } from "./runtime/contracts"
 export type {
   AgentHarnessFactory,
   AgentRuntimeAbortResult,
+  AgentRuntimeEventDeliveryPolicy,
   AgentRuntimeEventEnvelope,
   AgentRuntimeGoalErrorCode,
+  AgentRuntimeSubscriptionIdentity,
   AgentRuntimeGoalStartInput,
   AgentRuntimeHealth,
   AgentRuntimeInteractionResult,
@@ -87,6 +92,31 @@ function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is
   return !toCompatEvent(payload) && payload.type !== "server.heartbeat"
 }
 
+/** The durable record for one admitted turn, actor identity included. */
+function turnStartRecord(
+  turn: AgentRuntimeTurnStartInput,
+  prompt: PromptInput,
+  userMessageId: string,
+  assistantMessageId: string,
+  agentSessionId: string | undefined,
+) {
+  return {
+    sessionId: turn.sessionId,
+    ...(agentSessionId ? { agentSessionId } : {}),
+    userMessageId,
+    assistantMessageId,
+    agent: prompt.agent,
+    model: prompt.model,
+    parts: prompt.parts,
+    ...(turn.tools ? { tools: turn.tools } : {}),
+    ...(turn.format ? { format: turn.format } : {}),
+    ...(turn.system ? { system: turn.system } : {}),
+    ...(prompt.variant ? { variant: prompt.variant } : {}),
+    ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
+    ...(turn.author ? { author: turn.author } : {}),
+  }
+}
+
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = createRuntimeEventHub()
   const store = input.store as unknown as RuntimeStoreInternal
@@ -102,6 +132,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   // rejected concurrent prompt cannot manufacture a failed turn or overwrite
   // the status of the turn that is actually running.
   const activeTurnAdmissions = new Map<string, object>()
+  const activeTurnLeases = new Map<string, string>()
   const goalStartAdmissions = new Map<string, Promise<void>>()
 
   const withGoalStartAdmission = async <T>(sessionId: string, operation: () => Promise<T>): Promise<T> => {
@@ -232,8 +263,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     adapter: AgentHarnessAdapter,
     admission: object,
     clearsHandoff = false,
+    openingUserPublished = false,
   ) => {
     const ownsAdmission = () => activeTurnAdmissions.get(sessionId) === admission
+    // The store already published the opening user message with the turn
+    // record; the adapter's own echo of it would fan a duplicate to every
+    // subscriber, so exactly one echo is dropped.
+    let openingUserAlreadyPublished = openingUserPublished
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
     const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
@@ -390,6 +426,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
         const compat = toCompatEvent(payload)
         if (compat) {
+          if (
+            openingUserAlreadyPublished
+            && compat.type === "message.updated"
+            && compat.properties.info.role === "user"
+            && compat.properties.info.id === prompt.userMessageId
+          ) {
+            openingUserAlreadyPublished = false
+            continue
+          }
           if (compat.type === "session.idle") await maybeEmitTitle()
           if (adapter.commitsStreamEvents) {
             publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
@@ -701,6 +746,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     turns: {
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
+        if ((turn.actorId === undefined) !== (turn.actorKind === undefined)) {
+          throw new Error("Turn actor id and kind must be provided together")
+        }
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
         const { adapter, config } = await runtimeForSession(turn.sessionId)
@@ -725,34 +773,37 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         const admission = {}
         activeTurnAdmissions.set(turn.sessionId, admission)
-        try {
-          const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
-          const started = store.startTurn({
-            sessionId: turn.sessionId,
-            ...(agentSessionId ? { agentSessionId } : {}),
-            userMessageId,
-            assistantMessageId,
-            agent: prompt.agent,
-            model: prompt.model,
-            parts: prompt.parts,
-            ...(turn.tools ? { tools: turn.tools } : {}),
-            ...(turn.format ? { format: turn.format } : {}),
-            ...(turn.system ? { system: turn.system } : {}),
-            ...(prompt.variant ? { variant: prompt.variant } : {}),
-          })
-          for (const payload of started.events) {
-            publish({ sessionId: turn.sessionId, directory, payload })
-          }
-          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff)
-            .finally(() => {
-              if (activeTurnAdmissions.get(turn.sessionId) === admission) {
-                activeTurnAdmissions.delete(turn.sessionId)
-              }
-            })
-        } catch (error) {
+        // The store lease is the CROSS-INSTANCE admission: two runtimes sharing
+        // one store (two route clients, say) must not both admit a turn for the
+        // same session. The in-memory map above only covers this instance.
+        const leaseId = store.acquireTurnLease(turn.sessionId)
+        if (!leaseId) {
+          activeTurnAdmissions.delete(turn.sessionId)
+          throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
+        }
+        activeTurnLeases.set(turn.sessionId, leaseId)
+        const releaseAdmission = () => {
+          if (activeTurnLeases.get(turn.sessionId) === leaseId) activeTurnLeases.delete(turn.sessionId)
+          store.releaseTurnLease(turn.sessionId, leaseId)
           if (activeTurnAdmissions.get(turn.sessionId) === admission) {
             activeTurnAdmissions.delete(turn.sessionId)
           }
+        }
+        turn.onAdmitted?.()
+        try {
+          const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
+          const started = store.startTurn(turnStartRecord(turn, prompt, userMessageId, assistantMessageId, agentSessionId))
+          for (const payload of started.events) {
+            publish({ sessionId: turn.sessionId, directory, payload })
+          }
+          const openingUserPublished = started.events.some((payload) =>
+            payload.type === "message.updated"
+            && payload.properties.info.role === "user"
+            && payload.properties.info.id === userMessageId)
+          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff, openingUserPublished)
+            .finally(releaseAdmission)
+        } catch (error) {
+          releaseAdmission()
           throw error
         }
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
@@ -773,6 +824,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           // any later adapter frames remain fenced as the old generation.
           publish({ sessionId, directory, payload: { type: "finish", sessionId } })
           activeTurnAdmissions.delete(sessionId)
+          const lease = activeTurnLeases.get(sessionId)
+          if (lease) {
+            activeTurnLeases.delete(sessionId)
+            store.releaseTurnLease(sessionId, lease)
+          }
         }
         return result
       },
@@ -821,7 +877,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
-        return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256)
+        return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256, input.eventDelivery)
       },
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
         const adapter = await adapterForSession(sessionId)

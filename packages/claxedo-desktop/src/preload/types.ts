@@ -237,5 +237,11 @@ export type ElectronAPI = {
     signIn: () => Promise<unknown>
     signOut: () => Promise<unknown>
     run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>
+    streamOpen: (operation: string, input?: Record<string, unknown>) => Promise<{ streamId: string }>
+    streamStart: (streamId: string) => Promise<void>
+    streamClose: (streamId: string) => Promise<void>
+    onStreamChunk: (listener: (payload: { streamId: string; text: string }) => void) => () => void
+    onStreamEnd: (listener: (payload: { streamId: string }) => void) => () => void
+    onStreamError: (listener: (payload: { streamId: string; message: string }) => void) => () => void
   }
 }

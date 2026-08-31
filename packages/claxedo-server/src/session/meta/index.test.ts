@@ -74,7 +74,9 @@ describe("session meta", () => {
 
     const hit = await sessionMeta("child")
     expect(hit).toMatchObject({
+      sessionRef: "local:/tmp/repo:session:child",
       sessionID: "child",
+      workspaceID: "ws_1",
       projectID: "proj_1",
       directory: "/tmp/repo",
       parentID: "root",
@@ -303,6 +305,35 @@ describe("session meta", () => {
     })
   })
 
+  test("syncSessionMetas migrates a local workspace away from a hosted session ref", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const workspace = {
+      id: "ws_local",
+      project_id: "proj_local",
+      directory: "/tmp/local-repo",
+      created_at: 1,
+      updated_at: 1,
+    }
+    const sessions = [
+      { id: "sess_local", title: "Local", time: { created: 10, updated: 12 } },
+    ]
+
+    await syncSessionMetas({ ...workspace, kind: "cloud" }, sessions)
+    expect((await sessionMeta("sess_local"))?.sessionRef).toBe("workspace:ws_local:session:sess_local")
+
+    await syncSessionMetas({ ...workspace, kind: "local" }, sessions)
+
+    expect(await sessionMeta("sess_local")).toMatchObject({
+      sessionRef: "local:/tmp/local-repo:session:sess_local",
+      workspaceID: "ws_local",
+    })
+    expect(ClaxedoDB.raw().prepare(`
+      SELECT session_ref FROM claxedo_session_meta WHERE session_id = ?
+    `).all("sess_local")).toEqual([
+      { session_ref: "local:/tmp/local-repo:session:sess_local" },
+    ])
+  })
+
   test("lists tagged global sessions and keeps hidden ones out of default view", async () => {
     await fs.mkdir(root, { recursive: true })
     await putSessionMeta("visible", {
@@ -377,7 +408,11 @@ describe("session meta", () => {
       directory: "/tmp/repo",
       archived: "active",
       limit: 2,
-      cursor: { updatedAt: 30, sessionID: "ses_b" },
+      cursor: {
+        updatedAt: 30,
+        sessionID: "ses_b",
+        sessionRef: "local:/tmp/repo:session:ses_b",
+      },
     })
     expect(next.map((item) => item.sessionID)).toEqual(["ses_a"])
   })
@@ -399,7 +434,7 @@ describe("session meta", () => {
     ClaxedoDB.raw().prepare(`
       INSERT INTO claxedo_session_tag (session_ref, session_id, tag, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?)
-    `).run("workspace:ws_1:session:ses_review", "ses_review", "review", 1, 1)
+    `).run("local:/tmp/repo:session:ses_review", "ses_review", "review", 1, 1)
 
     const rows = await listSessionNavigationMetas({
       directory: "/tmp/repo",
@@ -442,8 +477,8 @@ describe("session meta", () => {
       sessionID: item.sessionID,
       title: item.title,
     }))).toEqual([
-      { sessionRef: "workspace:ws_2:session:shared", sessionID: "shared", title: "B" },
-      { sessionRef: "workspace:ws_1:session:shared", sessionID: "shared", title: "A" },
+      { sessionRef: "local:/tmp/repo-b:session:shared", sessionID: "shared", title: "B" },
+      { sessionRef: "local:/tmp/repo-a:session:shared", sessionID: "shared", title: "A" },
     ])
 
     await putSessionMeta("shared", {
@@ -461,7 +496,7 @@ describe("session meta", () => {
     expect((await listSessionNavigationMetas({
       archived: "active",
       limit: 10,
-    })).map((item) => item.sessionRef)).toEqual(["workspace:ws_2:session:shared"])
+    })).map((item) => item.sessionRef)).toEqual(["local:/tmp/repo-b:session:shared"])
   })
 
   test("creates session navigation indexes for common updated-time views", async () => {

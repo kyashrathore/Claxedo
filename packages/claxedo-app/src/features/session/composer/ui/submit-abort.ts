@@ -111,3 +111,26 @@ export function createPromptAbort(input: {
       })
   }
 }
+
+/** The composer's full abort wiring: transport-aware prompt abort behind the Goal-aware gate. */
+export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0] & {
+  hasActiveGoal?: () => boolean
+  stopGoal?: () => void | Promise<unknown>
+  stopGoalFailedTitle: () => string
+  errorMessage: (err: unknown) => string
+  showToast: (toast: { title: string; description: string; variant: "error" }) => void
+}) {
+  const promptAbort = createPromptAbort(input)
+  return createGoalAwareAbort({
+    hasActiveGoal: input.hasActiveGoal,
+    stopGoal: input.stopGoal,
+    promptAbort,
+    onStopGoalError: (err) => {
+      input.showToast({
+        title: input.stopGoalFailedTitle(),
+        description: input.errorMessage(err),
+        variant: "error",
+      })
+    },
+  })
+}

@@ -9,15 +9,48 @@ import { Hono } from "hono"
 import z from "zod/v3"
 import { workspaceRuntimeBus } from "../bus"
 import { Log } from "../log"
-import { boundedJsonBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { boundedJsonBody, boundedTextBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import {
   setupAgentHooks,
   getTerminalEnvVars,
   isSetupComplete,
   listWrapperAgents,
 } from "../agent-hooks"
+import {
+  managedWorkspaceSessionAccessPolicy,
+  sessionAccessContext,
+  sessionAccessDenied,
+  type SessionAccessPolicy,
+} from "../session-access-policy"
 
 const log = Log.create({ service: "agent-hook" })
+
+function managedLifecycleSessionRequired() {
+  return Response.json({
+    error: {
+      code: "agent_lifecycle_session_required",
+      message: "Managed agent lifecycle content requires a sessionId",
+    },
+  }, { status: 403 })
+}
+
+function managedLifecycleActorRequired() {
+  return Response.json({
+    error: {
+      code: "session_actor_required",
+      message: "Managed session access requires verified actor claims",
+    },
+  }, { status: 403 })
+}
+
+function managedTerminalOwnerConflict() {
+  return Response.json({
+    error: {
+      code: "terminal_session_actor_conflict",
+      message: "Terminal lifecycle state belongs to another actor",
+    },
+  }, { status: 403 })
+}
 
 export const AgentEventType = z.enum(["Busy", "Idle", "UserActionRequired", "Error"])
 export type AgentEventType = z.infer<typeof AgentEventType>
@@ -46,16 +79,21 @@ const normalizeAgentEventType = (value: unknown): AgentEventType | undefined => 
   return parsed.data as AgentEventType
 }
 
+const lifecycleId = z.string().max(512)
+const lifecyclePath = z.string().max(4_096)
+const lifecyclePrompt = z.string().max(800)
+const lifecycleAssistantMessage = z.string().max(1_500)
+
 export const AgentLifecyclePayload = z.object({
-  tabId: z.string(),
-  terminalId: z.string().optional(),
-  workspaceId: z.string().optional(),
-  provider: z.string().optional(),
-  sessionId: z.string().optional(),
-  transcriptPath: z.string().optional(),
-  refName: z.string().optional(),
-  prompt: z.string().optional(),
-  lastAssistantMessage: z.string().optional(),
+  tabId: lifecycleId.trim().min(1),
+  terminalId: lifecycleId.optional(),
+  workspaceId: lifecycleId.optional(),
+  provider: lifecycleId.optional(),
+  sessionId: lifecycleId.optional(),
+  transcriptPath: lifecyclePath.optional(),
+  refName: lifecycleId.optional(),
+  prompt: lifecyclePrompt.optional(),
+  lastAssistantMessage: lifecycleAssistantMessage.optional(),
   eventType: AgentEventType,
 })
 export type AgentLifecyclePayload = z.infer<typeof AgentLifecyclePayload>
@@ -65,28 +103,45 @@ const AgentLifecycleInputPayload = AgentLifecyclePayload.extend({
 })
 
 const TerminalSessionPayload = z.object({
-  terminalId: z.string(),
-  tabId: z.string().optional(),
-  workspaceId: z.string().optional(),
-  provider: z.string().optional(),
-  sessionId: z.string().nullable().optional(),
-  transcriptPath: z.string().nullable().optional(),
-  refName: z.string().optional(),
-  prompt: z.string().optional(),
-  lastAssistantMessage: z.string().optional(),
+  terminalId: lifecycleId,
+  tabId: lifecycleId.optional(),
+  workspaceId: lifecycleId.optional(),
+  provider: lifecycleId.optional(),
+  sessionId: lifecycleId.nullable().optional(),
+  transcriptPath: lifecyclePath.nullable().optional(),
+  refName: lifecycleId.optional(),
+  prompt: lifecyclePrompt.optional(),
+  lastAssistantMessage: lifecycleAssistantMessage.optional(),
   eventType: AgentEventType.optional(),
   updatedAt: z.number(),
 })
 type TerminalSessionPayload = z.infer<typeof TerminalSessionPayload>
+type TerminalSessionRecord = TerminalSessionPayload & { ownerActorId?: string }
 
 const TERMINAL_SESSION_TTL_MS = (() => {
   const v = Number(process.env.WORKSPACE_RUNTIME_TERMINAL_SESSION_TTL_MS)
   return Number.isFinite(v) && v > 0 ? Math.round(v) : 30 * 24 * 60 * 60 * 1000
 })()
 
-const terminalSessions = new Map<string, TerminalSessionPayload>()
+const terminalSessions = new Map<string, TerminalSessionRecord>()
+
+export const TERMINAL_SESSION_MAX_ENTRIES = (() => {
+  const value = Number(process.env.WORKSPACE_RUNTIME_TERMINAL_SESSION_MAX_ENTRIES)
+  return Number.isSafeInteger(value) && value > 0 ? Math.min(value, 1_024) : 256
+})()
 
 const clean = (value: unknown) => (typeof value === "string" ? value.trim() : "")
+
+export const lifecycleLogMetadata = (payload: AgentLifecyclePayload) => ({
+  tabId: payload.tabId,
+  terminalId: payload.terminalId,
+  workspaceId: payload.workspaceId,
+  provider: payload.provider,
+  sessionId: payload.sessionId,
+  eventType: payload.eventType,
+  hasPrompt: !!payload.prompt,
+  hasLastAssistantMessage: !!payload.lastAssistantMessage,
+})
 
 const normalizeProvider = (value: unknown) => clean(value).toLowerCase()
 
@@ -187,8 +242,14 @@ const pruneTerminalSessions = () => {
   }
 }
 
-const rememberTerminalSession = (session: TerminalSessionPayload) => {
+const rememberTerminalSession = (session: TerminalSessionRecord) => {
+  terminalSessions.delete(session.terminalId)
   terminalSessions.set(session.terminalId, session)
+  while (terminalSessions.size > TERMINAL_SESSION_MAX_ENTRIES) {
+    const oldest = terminalSessions.keys().next().value
+    if (oldest === undefined) break
+    terminalSessions.delete(oldest)
+  }
 }
 
 const upsertTerminalSession = (input: {
@@ -202,6 +263,7 @@ const upsertTerminalSession = (input: {
   prompt?: string
   lastAssistantMessage?: string
   eventType?: AgentEventType
+  ownerActorId?: string
 }) => {
   pruneTerminalSessions()
   const terminalId = clean(input.terminalId)
@@ -226,7 +288,7 @@ const upsertTerminalSession = (input: {
       provider,
       sessionId: sessionId || previousSessionId,
     })
-  const next: TerminalSessionPayload = {
+  const next: TerminalSessionRecord = {
     terminalId,
     tabId: clean(input.tabId) || clean(previous?.tabId) || undefined,
     workspaceId: clean(input.workspaceId) || clean(previous?.workspaceId) || undefined,
@@ -241,6 +303,7 @@ const upsertTerminalSession = (input: {
         ? undefined
         : clean(previous?.lastAssistantMessage) || undefined,
     eventType: input.eventType || previous?.eventType,
+    ownerActorId: input.ownerActorId || previous?.ownerActorId,
     updatedAt: Date.now(),
   }
   rememberTerminalSession(next)
@@ -252,7 +315,7 @@ const clearTerminalSession = (terminalId: string) => {
   const id = clean(terminalId)
   if (!id) return
   const previous = terminalSessions.get(id)
-  const next: TerminalSessionPayload = {
+  const next: TerminalSessionRecord = {
     terminalId: id,
     tabId: clean(previous?.tabId) || undefined,
     workspaceId: clean(previous?.workspaceId) || undefined,
@@ -263,6 +326,7 @@ const clearTerminalSession = (terminalId: string) => {
     prompt: clean(previous?.prompt) || undefined,
     lastAssistantMessage: clean(previous?.lastAssistantMessage) || undefined,
     eventType: "Idle",
+    ownerActorId: previous?.ownerActorId,
     updatedAt: Date.now(),
   }
   rememberTerminalSession(next)
@@ -286,7 +350,10 @@ const readTerminalSession = (input: { terminalId?: string; tabId?: string }) => 
   const terminalId = resolveTerminalId(input)
   if (!terminalId) return
   const mapped = terminalSessions.get(terminalId)
-  if (mapped) return { source: "memory" as const, terminalId, session: mapped }
+  if (mapped) {
+    const { ownerActorId: _ownerActorId, ...session } = mapped
+    return { source: "memory" as const, terminalId, session }
+  }
 }
 
 // Subscribe to PTY exit/delete events to clear terminal sessions
@@ -298,81 +365,36 @@ workspaceRuntimeBus.subscribe((event) => {
   }
 })
 
-export function AgentHookRoutes() {
+export function AgentHookRoutes(options: { sessionAccessPolicy?: SessionAccessPolicy } = {}) {
+  const sessionAccessPolicy = options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()
   return new Hono()
     .onError((err, c) => {
       if (isRequestBodyTooLarge(err)) return c.json(requestBodyTooLargeBody(), 413)
       throw err
     })
-    .get("/agent-lifecycle", async (c) => {
-      const tabId = clean(c.req.query("tabId"))
-      const terminalId = clean(c.req.query("terminalId"))
-      const workspaceId = clean(c.req.query("workspaceId"))
-      const provider = clean(c.req.query("provider"))
-      const sessionId = clean(c.req.query("sessionId"))
-      const transcriptPath = clean(c.req.query("transcriptPath"))
-      const refName = clean(c.req.query("refName"))
-      const prompt = clean(c.req.query("prompt"))
-      const lastAssistantMessage = clean(c.req.query("lastAssistantMessage"))
-      const eventType = c.req.query("eventType")
-
-      if (!tabId) return c.json({ success: false, error: "Missing tabId" }, 400)
-      if (!eventType) return c.json({ success: false, error: "Missing eventType" }, 400)
-
-      const normalizedEventType = normalizeAgentEventType(eventType)
-      if (!normalizedEventType) {
-        return c.json({ success: false, error: `Invalid eventType: ${eventType}` }, 400)
-      }
-
-      const resolvedTerminalId = resolveTerminalId({ tabId, terminalId })
-      const stored = resolvedTerminalId
-        ? upsertTerminalSession({
-            terminalId: resolvedTerminalId,
-            tabId,
-            workspaceId: workspaceId || undefined,
-            provider: provider || undefined,
-            sessionId: sessionId || undefined,
-            transcriptPath: transcriptPath || undefined,
-            refName: refName || undefined,
-            prompt: prompt || undefined,
-            lastAssistantMessage: lastAssistantMessage || undefined,
-            eventType: normalizedEventType,
-          })
-        : undefined
-
-      const normalized = {
-        tabId,
-        terminalId: resolvedTerminalId || terminalId || undefined,
-        workspaceId: workspaceId || undefined,
-        provider: normalizeProvider(provider) || undefined,
-        sessionId: sessionId || undefined,
-        transcriptPath: transcriptPath || undefined,
-        refName: stored?.refName || refName || undefined,
-        prompt: stored?.prompt || prompt || undefined,
-        lastAssistantMessage: stored?.lastAssistantMessage || lastAssistantMessage || undefined,
-        eventType: normalizedEventType,
-      }
-
-      log.info("agent lifecycle", normalized)
-      workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...normalized })
-
-      return c.json({
-        success: true,
-        tabId,
-        terminalId: normalized.terminalId,
-        provider: normalized.provider,
-        sessionId: normalized.sessionId,
-        refName: normalized.refName,
-        eventType: normalizedEventType,
-      })
-    })
     .post("/agent-lifecycle", async (c) => {
-      const body = await boundedJsonBody<unknown | null>(c, null)
+      const body = c.req.header("content-type")?.includes("application/x-www-form-urlencoded")
+        ? Object.fromEntries(new URLSearchParams(await boundedTextBody(c)))
+        : await boundedJsonBody<unknown | null>(c, null)
       const parsed = AgentLifecycleInputPayload.safeParse(body)
       if (!parsed.success) {
         return c.json({ success: false, error: "Invalid payload" }, 400)
       }
       const payload = parsed.data
+      const access = sessionAccessContext(c as never)
+      const hasContent = !!clean(payload.prompt) || !!clean(payload.lastAssistantMessage)
+      if (access.authority && hasContent && !payload.sessionId) return managedLifecycleSessionRequired()
+      if (access.authority && payload.sessionId && !access.actor) return managedLifecycleActorRequired()
+      if (payload.sessionId) {
+        const decision = await sessionAccessPolicy.authorize({
+          ...access,
+          operation: "agent_lifecycle_write",
+          sessionId: payload.sessionId,
+          method: c.req.method,
+          path: c.req.path,
+        })
+        if (!decision.allowed) return sessionAccessDenied(decision)
+      }
       const eventType = normalizeAgentEventType(payload.eventType)
       if (!eventType) {
         return c.json({ success: false, error: `Invalid eventType: ${payload.eventType}` }, 400)
@@ -382,8 +404,16 @@ export function AgentHookRoutes() {
         tabId: payload.tabId,
         terminalId: payload.terminalId,
       })
+      const existingTerminal = resolvedTerminalId ? terminalSessions.get(resolvedTerminalId) : undefined
+      if (
+        access.authority
+        && existingTerminal?.ownerActorId
+        && existingTerminal.ownerActorId !== access.actor?.actorId
+      ) return managedTerminalOwnerConflict()
 
-      const stored = resolvedTerminalId
+      // A managed session-less status event must not recover content from a
+      // prior terminal mapping merely because it guessed the terminal id.
+      const stored = resolvedTerminalId && (!access.authority || payload.sessionId)
         ? upsertTerminalSession({
             terminalId: resolvedTerminalId,
             tabId: payload.tabId,
@@ -395,6 +425,7 @@ export function AgentHookRoutes() {
             prompt: payload.prompt,
             lastAssistantMessage: payload.lastAssistantMessage,
             eventType,
+            ownerActorId: access.actor?.actorId,
           })
         : undefined
 
@@ -411,7 +442,7 @@ export function AgentHookRoutes() {
         eventType,
       }
 
-      log.info("agent lifecycle (POST)", normalized)
+      log.info("agent lifecycle (POST)", lifecycleLogMetadata(normalized))
       workspaceRuntimeBus.publish({ type: "agent.lifecycle", ...normalized })
 
       return c.json({ success: true })
@@ -430,6 +461,19 @@ export function AgentHookRoutes() {
           terminalId: resolveTerminalId({ tabId, terminalId }) || clean(terminalId) || undefined,
           session: null,
         })
+      }
+      const access = sessionAccessContext(c as never)
+      if (access.authority && !result.session.sessionId) return managedLifecycleSessionRequired()
+      if (access.authority && !access.actor) return managedLifecycleActorRequired()
+      if (access.authority) {
+        const decision = await sessionAccessPolicy.authorize({
+          ...access,
+          operation: "agent_lifecycle_read",
+          sessionId: result.session.sessionId ?? undefined,
+          method: c.req.method,
+          path: c.req.path,
+        })
+        if (!decision.allowed) return sessionAccessDenied(decision)
       }
       return c.json({
         success: true,

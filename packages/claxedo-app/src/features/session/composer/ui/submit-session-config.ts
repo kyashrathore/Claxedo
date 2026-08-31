@@ -32,6 +32,19 @@ export function sameExistingSessionConfig(left: ExistingSessionConfig, right: Ex
     left.model?.modelID === right.model?.modelID
 }
 
+/**
+ * A model-less GET `/session/:id/config` is a default, not persisted session
+ * state. Structured `info().config` remains authoritative until the live
+ * config actually carries a model.
+ */
+export function preferAuthoritativeExistingSessionConfig(
+  fetched: ExistingSessionConfig | undefined,
+  fromInfo: ExistingSessionConfig | undefined,
+) {
+  if (!fetched?.model && fromInfo?.model) return fromInfo
+  return fetched ?? fromInfo
+}
+
 function modelConfig(input: unknown) {
   const model = record(input)
   const providerID = string(model?.providerID)

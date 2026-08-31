@@ -1,13 +1,16 @@
 import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test"
 import { ProcessRoutes, createProcessRoutes } from "./process"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
+import { Hono } from "hono"
+import type { RelayHostAuthContext } from "../workspace-host-service-auth"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 let previousDirectory: string | undefined
 
 const state = {
   processes: new Map<string, { ptyId?: string }>(),
   names: new Map<string, { ptyId?: string }>(),
-  ptys: new Map<string, { id: string }>(),
+  ptys: new Map<string, { id: string; sessionId?: string }>(),
   snapshots: new Map<string, string>(),
 }
 
@@ -64,6 +67,59 @@ describe("ProcessRoutes logs", () => {
 
     expect(res.status).toBe(200)
     expect(await res.text()).toBe("three\nfour")
+  })
+
+  test("authorizes every PTY log alias against the owning private session", async () => {
+    state.processes.set("proc_1", { ptyId: "pty_1" })
+    state.names.set("dev", { ptyId: "pty_1" })
+    state.ptys.set("pty_1", { id: "pty_1", sessionId: "session_private" })
+    state.snapshots.set("pty_1", "private output")
+    const calls: Array<{ sessionId?: string; operation: string }> = []
+    const policy: SessionAccessPolicy = {
+      authorize: async (input) => {
+        calls.push({ sessionId: input.sessionId, operation: input.operation })
+        return {
+          allowed: false,
+          status: 403,
+          code: "session_private",
+          message: "Session access denied",
+        }
+      },
+      filterSessions: async () => [],
+      authorizePrefix: async () => ({ allowed: true }),
+    }
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      const now = Math.floor(Date.now() / 1000)
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        sub: "user_1",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+        access: "cloud",
+        backing: "cloud-vm",
+        actor_id: "actor_1",
+        actor_kind: "human",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+      })
+      return await next()
+    })
+    app.route("/", createProcessRoutes({ manager, pty }, policy))
+
+    for (const query of ["pty_id=pty_1", "terminal_id=pty_1", "process_id=proc_1", "name=dev"]) {
+      const response = await app.request(`http://localhost/logs?${query}`)
+      expect(response.status).toBe(403)
+      await expect(response.json()).resolves.toEqual(errorBody("session_private", "Session access denied"))
+    }
+    expect(calls).toEqual(Array.from({ length: 4 }, () => ({
+      sessionId: "session_private",
+      operation: "pty_read",
+    })))
   })
 
   test("resolves logs by process name and clamps invalid line counts", async () => {
@@ -190,6 +246,52 @@ describe("ProcessRoutes logs", () => {
         })
       ).status,
     ).toBe(404)
+  })
+
+  test("denies process routes to authenticated viewers", async () => {
+    const app = new Hono<{ Variables: RelayHostAuthContext }>()
+    app.use("*", async (c, next) => {
+      const now = Math.floor(Date.now() / 1000)
+      c.set("relayHostAuth", {
+        iss: "workspace-relay",
+        aud: "workspace-host-service",
+        sub: "user_1",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "viewer",
+        access: "cloud",
+        backing: "cloud-vm",
+        exp: now + 60,
+        iat: now,
+        jti: "jti_1",
+      })
+      return await next()
+    })
+    app.route("/", ProcessRoutes())
+
+    const response = await app.request("http://localhost/")
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual(errorBody(
+      "relay_role_denied",
+      "Workspace role does not allow process access",
+    ))
+  })
+
+  test("rejects managed-process cwd and args outside the workspace", async () => {
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = "/tmp/workspace-runtime-process"
+    const request = (body: Record<string, unknown>) => ProcessRoutes().request(
+      "http://localhost/?directory=/tmp/workspace-runtime-process",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "blocked", command: "cat", ...body }),
+      },
+    )
+
+    expect((await request({ cwd: "/tmp" })).status).toBe(400)
+    expect((await request({ args: ["~/.local/share/opencode/opencode.db"] })).status).toBe(400)
+    expect((await request({ command: "cat ~/.local/share/opencode/opencode.db" })).status).toBe(400)
   })
 
   test("rejects oversized process route bodies", async () => {

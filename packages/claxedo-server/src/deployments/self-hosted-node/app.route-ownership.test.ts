@@ -73,6 +73,7 @@ const SELF_HOSTED_MOUNTS = [
   { prefix: "/api/claxedo/remote-access", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/workspace", owner: "self-hosted-node" },
   { prefix: "/api/control", owner: "self-hosted-node" },
+  { prefix: "/api/runtime-authority", owner: "self-hosted-node" },
   { prefix: "/api/workspace", owner: "self-hosted-node" },
   { prefix: "/documents", owner: "self-hosted-node" },
   { prefix: "/internal/documents", owner: "self-hosted-node" },

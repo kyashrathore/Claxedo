@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest"
+import { describe, expect, test, vi } from "vitest"
 import { HostedShellRoutes } from "./shell"
 // Cross-package import of the app's REAL marketplace parsers, so these tests
 // break the moment the hosted stubs and the app disagree about response
@@ -76,6 +76,37 @@ describe("hosted shell marketplace routes", () => {
         effective: {},
       })
     }
+  })
+
+  test("workspace extension enable writes through the signed hosted authority", async () => {
+    const setWorkspaceAgentExtensionEnabled = vi.fn(async () => ({ updated: true }))
+    const workspace = HostedShellRoutes({
+      authConfig: { enabled: true, issuer: "https://auth.test", jwksUrl: "custom:test" },
+      verifier: async (token) => ({
+        mode: "signed",
+        token,
+        user: { subject: "user_1", tokenIdentifier: "token_1", issuer: "https://auth.test" },
+      }),
+      workspaceAgentExtensions: {
+        listWorkspaceAgentExtensions: async () => [],
+        authorizeWorkspaceAgentExtensionsAdmin: async () => undefined,
+        setWorkspaceAgentExtensionEnabled,
+        deleteWorkspaceAgentExtension: async () => ({ deleted: true }),
+      },
+    })
+
+    const response = await workspace.request(
+      "/api/claxedo/agent-config/extensions/review/enable?scope=workspace&workspaceId=ws_1",
+      { method: "POST", headers: { authorization: "Bearer hosted-token" } },
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toEqual({ ok: true })
+    expect(setWorkspaceAgentExtensionEnabled).toHaveBeenCalledWith(expect.objectContaining({ token: "hosted-token" }), {
+      workspaceId: "ws_1",
+      extensionId: "review",
+      enabled: true,
+    })
   })
 })
 

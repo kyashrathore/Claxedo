@@ -1,4 +1,5 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
+import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
 import type { SaveRequest, SaveResponse } from "@/features/documents/state/persistence-controller"
 
 export type DocumentSummary = {
@@ -127,21 +128,68 @@ function parseErrorBody(text: string) {
   }
 }
 
+function queryParams(query: DocumentQuery = {}) {
+  return {
+    ...(query.projectId ? { project_id: query.projectId } : {}),
+    ...(query.documentId ? { document_id: query.documentId } : {}),
+    ...(query.directory ? { directory: query.directory } : {}),
+    ...(query.archived ? { archived: query.archived } : {}),
+  }
+}
+
 async function request<T>(url: URL, init?: RequestInit) {
   const headers = new Headers(init?.headers)
   if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json")
   return json<T>(await authFetch(String(url), { ...init, headers }))
 }
 
+async function documentCall<T>(
+  operation: Parameters<typeof hostedControlCall>[0],
+  input: Record<string, unknown>,
+  fallback: () => Promise<T>,
+): Promise<T> {
+  try {
+    return await hostedControlCall(operation, input, fallback)
+  } catch (error) {
+    const hosted = parseHostedHttpError(error)
+    if (hosted) {
+      const body = hosted.body as { error?: { code?: string; message?: string } | string } | null
+      const code = typeof body?.error === "object" && body.error?.code
+        ? body.error.code
+        : typeof body?.error === "string"
+          ? body.error
+          : "document_request_failed"
+      const message = typeof body?.error === "object" && body.error?.message
+        ? body.error.message
+        : hosted.detail
+      throw new DocumentApiError(code, hosted.status, message)
+    }
+    throw error
+  }
+}
+
 export const documentsApi = {
   list(query: DocumentQuery = {}) {
-    return request<DocumentSummary[]>(documentsUrl({ query: { ...query, archived: query.archived ?? "active" } }))
+    const archived = query.archived ?? "active"
+    return documentCall(
+      "documents.list",
+      queryParams({ ...query, archived }),
+      () => request<DocumentSummary[]>(documentsUrl({ query: { ...query, archived } })),
+    )
   },
   get(id: string) {
-    return request<DocumentSummary>(documentsUrl({ id }))
+    return documentCall(
+      "documents.get",
+      { id },
+      () => request<DocumentSummary>(documentsUrl({ id })),
+    )
   },
   content(id: string) {
-    return request<DocumentContent>(documentsUrl({ id, path: "content" }))
+    return documentCall(
+      "documents.content.get",
+      { id },
+      () => request<DocumentContent>(documentsUrl({ id, path: "content" })),
+    )
   },
   async open(id: string): Promise<OpenDocument> {
     // Fetch summary and content concurrently. They are independent reads, and
@@ -161,37 +209,86 @@ export const documentsApi = {
     }
   },
   agentOpen(id: string, sessionId: string) {
-    return request<DocumentAgentOpen>(documentsUrl({ id, path: "agent-open" }), {
-      method: "POST",
-      body: JSON.stringify({ session_id: sessionId }),
-    })
+    return documentCall(
+      "documents.agentOpen",
+      { id, session_id: sessionId },
+      () => request<DocumentAgentOpen>(documentsUrl({ id, path: "agent-open" }), {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId }),
+      }),
+    )
   },
   resolveRuntimeConflict(id: string, input: { sessionId: string; choice: "durable" | "draft" }) {
-    return request<{ path: string; preserved?: string; version: string }>(
-      documentsUrl({ id, path: ["runtime-conflict", "resolve"] }),
-      {
-        method: "POST",
-        body: JSON.stringify({ session_id: input.sessionId, choice: input.choice }),
-      },
+    return documentCall(
+      "documents.runtimeConflictResolve",
+      { id, session_id: input.sessionId, choice: input.choice },
+      () => request<{ path: string; preserved?: string; version: string }>(
+        documentsUrl({ id, path: ["runtime-conflict", "resolve"] }),
+        {
+          method: "POST",
+          body: JSON.stringify({ session_id: input.sessionId, choice: input.choice }),
+        },
+      ),
     )
   },
   snapshots(id: string) {
-    return request<DocumentSnapshot[]>(documentsUrl({ id, path: "snapshots" }))
+    return documentCall(
+      "documents.snapshots",
+      { id },
+      () => request<DocumentSnapshot[]>(documentsUrl({ id, path: "snapshots" })),
+    )
   },
   restoreSnapshot(id: string, snapshotId: string, expectedVersion: string) {
-    return request<DocumentContent>(documentsUrl({ id, path: ["snapshots", snapshotId, "restore"] }), {
-      method: "POST",
-      headers: { "If-Match": expectedVersion },
-      body: JSON.stringify({}),
-    })
+    return documentCall(
+      "documents.snapshots.restore",
+      { id, snapshotId, ifMatch: expectedVersion },
+      () => request<DocumentContent>(documentsUrl({ id, path: ["snapshots", snapshotId, "restore"] }), {
+        method: "POST",
+        headers: { "If-Match": expectedVersion },
+        body: JSON.stringify({}),
+      }),
+    )
   },
   moveToRepository(id: string, destination: { workspaceId: string; path: string }) {
-    return request<DocumentSummary>(documentsUrl({ id, path: "move-to-repository" }), {
-      method: "POST",
-      body: JSON.stringify({ workspace_id: destination.workspaceId, path: destination.path }),
-    })
+    return documentCall(
+      "documents.moveToRepository",
+      { id, workspace_id: destination.workspaceId, path: destination.path },
+      () => request<DocumentSummary>(documentsUrl({ id, path: "move-to-repository" }), {
+        method: "POST",
+        body: JSON.stringify({ workspace_id: destination.workspaceId, path: destination.path }),
+      }),
+    )
   },
   async save(id: string, input: SaveRequest): Promise<SaveResponse> {
+    const run = accountRun()
+    if (run) {
+      try {
+        const saved = await documentCall<DocumentContent>(
+          "documents.content.put",
+          {
+            id,
+            display_name: input.displayName,
+            markdown: input.markdown,
+            ifMatch: input.expectedVersion,
+          },
+          async () => {
+            throw new Error("unreachable")
+          },
+        )
+        return { ok: true, version: saved.version }
+      } catch (error) {
+        if (error instanceof DocumentApiError && error.status === 409) {
+          const current = await documentsApi.open(id)
+          return {
+            ok: false,
+            kind: "conflict",
+            currentVersion: current.version,
+            current: { displayName: current.displayName, markdown: current.markdown },
+          }
+        }
+        throw error
+      }
+    }
     const response = await authFetch(String(documentsUrl({ id, path: "content" })), {
       method: "PUT",
       headers: { "Content-Type": "application/json", "If-Match": input.expectedVersion },
@@ -211,15 +308,24 @@ export const documentsApi = {
     return { ok: true, version: saved.version }
   },
   create(input: { projectId?: string; directory?: string; displayName: string; markdown?: string }) {
-    return request<DocumentSummary>(documentsUrl(), {
-      method: "POST",
-      body: JSON.stringify({
-        project_id: input.projectId,
-        directory: input.directory,
+    return documentCall(
+      "documents.create",
+      {
         display_name: input.displayName,
         markdown: input.markdown ?? "",
+        ...(input.projectId ? { project_id: input.projectId } : {}),
+        ...(input.directory ? { directory: input.directory } : {}),
+      },
+      () => request<DocumentSummary>(documentsUrl(), {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: input.projectId,
+          directory: input.directory,
+          display_name: input.displayName,
+          markdown: input.markdown ?? "",
+        }),
       }),
-    })
+    )
   },
   createFromRepository(input: {
     projectId?: string
@@ -228,25 +334,53 @@ export const documentsApi = {
     path: string
     displayName?: string
   }) {
-    return request<DocumentSummary>(documentsUrl({ path: "from-repo" }), {
-      method: "POST",
-      body: JSON.stringify({
-        project_id: input.projectId,
-        directory: input.directory,
+    return documentCall(
+      "documents.fromRepo",
+      {
         workspace_id: input.workspaceId,
         path: input.path,
-        display_name: input.displayName,
+        ...(input.projectId ? { project_id: input.projectId } : {}),
+        ...(input.directory ? { directory: input.directory } : {}),
+        ...(input.displayName ? { display_name: input.displayName } : {}),
+      },
+      () => request<DocumentSummary>(documentsUrl({ path: "from-repo" }), {
+        method: "POST",
+        body: JSON.stringify({
+          project_id: input.projectId,
+          directory: input.directory,
+          workspace_id: input.workspaceId,
+          path: input.path,
+          display_name: input.displayName,
+        }),
       }),
-    })
+    )
   },
   async exportBytes(id: string) {
-    const response = await authFetch(String(documentsUrl({ id, path: "export" })))
-    if (response.ok) return new Uint8Array(await response.arrayBuffer())
-    return await json<never>(response)
+    const envelope = await documentCall(
+      "documents.export",
+      { id },
+      async () => {
+        const response = await authFetch(String(documentsUrl({ id, path: "export" })))
+        if (!response.ok) return await json<never>(response)
+        const bytes = new Uint8Array(await response.arrayBuffer())
+        // Match the AccountPort envelope so the common path below is one decode.
+        let binary = ""
+        for (const byte of bytes) binary += String.fromCharCode(byte)
+        return { bytesBase64: btoa(binary) }
+      },
+    )
+    const binary = atob(envelope.bytesBase64)
+    const out = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i)
+    return out
   },
   async listStatuses(query: DocumentQuery = {}) {
-    const rows = await request<Array<Omit<DocumentStatus, "transitions"> & { transitions: string[] | string }>>(
-      documentsUrl({ path: "statuses", query }),
+    const rows = await documentCall(
+      "documents.statuses",
+      queryParams(query),
+      () => request<Array<Omit<DocumentStatus, "transitions"> & { transitions: string[] | string }>>(
+        documentsUrl({ path: "statuses", query }),
+      ),
     )
     return rows.map((row) => ({
       ...row,

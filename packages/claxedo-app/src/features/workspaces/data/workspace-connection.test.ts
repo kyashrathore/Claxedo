@@ -134,6 +134,48 @@ describe("workspace connection authority", () => {
     })
   })
 
+  test("user-hosted readiness consumes a connection cached before the authority entry", async () => {
+    const workspaceId = "ws_cached_editor"
+    const baseUrl = "http://server.cached-user-hosted-role.test"
+    const request = (async (input: string | URL | Request) => {
+      const url = new URL(input instanceof Request ? input.url : String(input))
+      if (url.pathname === `/api/workspace/${workspaceId}/connection`) {
+        return Response.json(relayInfo({
+          access: "user-hosted",
+          backing: "local-worktree",
+          workspaceId,
+          role: "editor",
+          tokenExpiresAt: Date.now() + 10 * 60_000,
+        }))
+      }
+      if (url.pathname.endsWith("/api/wr/health")) return Response.json({ ok: true })
+      return Response.json({})
+    }) as typeof fetch
+
+    // An earlier runtime request fills the bearer-scoped cache while there is
+    // no reactive workspace row to receive the observer notification.
+    await openWorkspaceConnection(workspaceId, { serverUrl: baseUrl, request })
+
+    await createRoot(async (dispose) => {
+      const handle = acquireWorkspaceConnection({
+        workspaceId,
+        kind: "user-hosted",
+        baseUrl,
+        request,
+        relayRequest: request,
+      })
+      for (let attempt = 0; attempt < 100 && !isWorkspaceReady(workspaceId); attempt += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 5))
+      }
+
+      expect(workspaceConnection(workspaceId)).toMatchObject({ status: "ready" })
+      expect(connectionPlacement(workspaceId)).toEqual({ state: "role-known", workspaceId, role: "editor" })
+      expect(workspacePlacement(workspaceId)?.role).toBe("editor")
+      handle.release()
+      dispose()
+    })
+  })
+
   test("recently ready user-hosted workspaces stay ready across reload while health revalidates", () => {
     createRoot((dispose) => {
       internals.rememberRecentReady("ws_warm_uh")

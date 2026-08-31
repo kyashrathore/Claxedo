@@ -236,6 +236,13 @@ export type OutputFormatJsonSchema = {
 
 export type OutputFormat = OutputFormatText | OutputFormatJsonSchema
 
+export type ClaxedoMessageAuthor = {
+  id: string
+  name: string
+  avatarUrl?: string
+  kind: "human" | "agent"
+}
+
 export type UserMessage = {
   id: string
   sessionID: string
@@ -258,6 +265,9 @@ export type UserMessage = {
   system?: string
   tools?: {
     [key: string]: boolean
+  }
+  claxedo?: {
+    author: ClaxedoMessageAuthor
   }
 }
 

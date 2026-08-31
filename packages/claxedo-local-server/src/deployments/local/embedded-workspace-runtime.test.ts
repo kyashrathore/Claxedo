@@ -16,6 +16,8 @@ import type { OpenCodeRequestFn } from "@claxedo/server-core/opencode/engine"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
+import { managedWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
+import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
 
 /**
  * Delete workspace roots AFTER releasing the module-scoped sqlite handles:
@@ -103,6 +105,65 @@ afterEach(async () => {
 })
 
 describe("embedded workspace runtime", () => {
+  test("uses the signed composition's managed-private session authority", async () => {
+    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-private-session-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const authorityCalls: string[] = []
+    const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy({
+      requireActor: true,
+      authorizeSessionRead: (input) => {
+        authorityCalls.push(`${input.actor.actorId}:read:${input.sessionId}:${input.credential}`)
+        return input.actor.actorId === "actor_alice"
+      },
+      authorizeSessionWrite: (input) => {
+        authorityCalls.push(`${input.actor.actorId}:write:${input.sessionId}:${input.credential}`)
+        return input.actor.actorId === "actor_alice"
+      },
+      registerSession: () => true,
+    })
+    configureEmbeddedWorkspaceRuntime({
+      opencodeRequest: async () => Response.json({ id: "ses_private", directory: project, title: "Private" }),
+      sessionAccessPolicy,
+    })
+
+    try {
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_private", project), { config: "skip" })
+      const embeddedClaims = (actorId: string, actorName: string) => JSON.stringify({
+        actor_id: actorId,
+        actor_kind: "human",
+        actor_public_id: actorId.replace("actor_", "usr_"),
+        actor_name: actorName,
+        workspace_id: "ws_private",
+        org_id: "org_1",
+        role: "editor",
+      })
+      const denied = await runtime.app.request("http://runtime.test/session/ses_private", {
+        headers: {
+          authorization: "Bearer bob-proof",
+          [EMBEDDED_RELAY_HOST_AUTH_HEADER]: embeddedClaims("actor_bob", "Bob"),
+        },
+      })
+      expect(denied.status).toBe(403)
+      await expect(denied.json()).resolves.toMatchObject({ error: { code: "session_private" } })
+
+      const allowed = await runtime.app.request("http://runtime.test/session/ses_private", {
+        headers: {
+          authorization: "Bearer alice-proof",
+          [EMBEDDED_RELAY_HOST_AUTH_HEADER]: embeddedClaims("actor_alice", "Alice"),
+        },
+      })
+      expect(allowed.status).toBe(200)
+      expect(authorityCalls).toEqual([
+        "actor_bob:read:ses_private:Bearer bob-proof",
+        "actor_alice:read:ses_private:Bearer alice-proof",
+      ])
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
   test("applies signed workspace Agent Extension records to an active local host", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-embedded-ext-"))
     const project = path.join(root, "project")
