@@ -29,6 +29,7 @@ import {
   resolveHostedOperation,
   type HostedOperationName,
 } from "./hosted-operations"
+import { fetchHostedWithStallRecovery } from "./hosted-transport"
 import { accountPerfMark, accountPerfNow } from "./account-perf"
 
 export type { RefreshOutcome } from "./desktop-native-auth"
@@ -411,12 +412,16 @@ export function createAccountService(options: AccountServiceOptions) {
       const held = credential
       if (startedIn !== era || !held) throw new Error("not signed in")
       const request = resolveHostedOperation(name, input)
-      const controller = new AbortController()
-      activeRequests.add(controller)
       const fetchStarted = accountPerfNow()
-      let response: Response
-      try {
-        response = await options.fetch(`${held.binding.controlPlaneOrigin}${request.path}`, {
+      // Stall recovery lives at this seam: reads that produce no response
+      // headers are retried once on a fresh connection, mutations keep their
+      // single attempt. See hosted-transport.ts for the live failure this
+      // absorbs (the signed bootstrap froze on the splash behind one stalled
+      // `account.get`).
+      const response = await fetchHostedWithStallRecovery(
+        options.fetch,
+        `${held.binding.controlPlaneOrigin}${request.path}`,
+        {
           method: request.method,
           // Deliberately no invented desktop-version header/426 state: the
           // selected core exposes no version-admission contract yet. Add both
@@ -427,11 +432,12 @@ export function createAccountService(options: AccountServiceOptions) {
             ...(request.headers ?? {}),
           },
           ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-          signal: controller.signal,
-        })
-      } finally {
-        activeRequests.delete(controller)
-      }
+        },
+        (controller) => {
+          activeRequests.add(controller)
+          return () => activeRequests.delete(controller)
+        },
+      )
       accountPerfMark("account.unary_main_fetch_ms", {
         operation: name,
         ms: accountPerfNow() - fetchStarted,
@@ -524,15 +530,28 @@ export function createAccountService(options: AccountServiceOptions) {
       let firstChunk = true
       let httpOkAt: number | undefined
       try {
-        const response = await options.fetch(`${held.binding.controlPlaneOrigin}${request.path}`, {
-          method: request.method,
-          headers: {
-            authorization: `Bearer ${access.token}`,
-            Accept: "text/event-stream",
-            ...(request.headers ?? {}),
+        // The SSE open is a read: a stalled establishment (headers never
+        // arrive) is retried once on a fresh connection instead of sitting
+        // behind the transport's own multi-minute headers timeout. The read
+        // loop below still uses `controller`, which stays registered for
+        // logout/caller aborts for the stream's whole life.
+        const response = await fetchHostedWithStallRecovery(
+          options.fetch,
+          `${held.binding.controlPlaneOrigin}${request.path}`,
+          {
+            method: request.method,
+            headers: {
+              authorization: `Bearer ${access.token}`,
+              Accept: "text/event-stream",
+              ...(request.headers ?? {}),
+            },
           },
-          signal: controller.signal,
-        })
+          (attempt) => {
+            activeRequests.add(attempt)
+            return () => activeRequests.delete(attempt)
+          },
+          controller.signal,
+        )
         if (startedIn !== era) throw new Error("not signed in")
         if (response.status === 401) {
           invalidate("the server rejected this session")
