@@ -69,6 +69,41 @@ desktop PKCE token exchange "hang" against the live staging Worker.
   and re-observing, and filing with Cloudflare with the request IDs recorded
   in this session (e.g. `f4dd34de1a523c74c7d380d2775dc57e`).
 
+### UI-driven acceptance and the deeper transport truth (same day, later)
+
+A human-driven UI test (real clicks: Log out → Sign in, system browser)
+surfaced the rest of the story and passed end to end:
+
+- The stall is not per-connection-history: during a bad window the app's
+  requests produced NO Worker invocations while parallel fresh-connection
+  probes returned 200 instantly. Poisoned keep-alive sockets sit in the
+  client's pool and the app's own polling keeps them warm forever, so pooled
+  clients never recover without a restart. It bites BROWSERS too: the user's
+  Chrome hung loading /oauth2/authorize (never reached the Worker) until its
+  socket pools were flushed (`chrome://net-internals/#sockets`), which makes
+  this an origin-side incident class affecting real web users, not a desktop
+  quirk. CF ticket material: request id `f4dd34de1a523c74c7d380d2775dc57e`,
+  timelines in this doc.
+- Desktop remedies, all committed with tests: stall-abort-retry in the token
+  transport; a bounded stall guard for hosted reads; a 20s refresh-failure
+  cool-down so serial boot operations fail fast instead of chaining stalled
+  refreshes under the splash; and finally `no-reuse-fetch.ts` — core-origin
+  account traffic now uses one fresh node http(s) connection per request
+  (`agent: false`, explicit `Connection: close`), which removes the
+  poisoned-pool class outright. Boundary ceilings raised to measured values
+  after verify:closure.
+- Verified live through the real UI: Log out → remote revocation CONFIRMED;
+  Sign in → authorize 302 with the existing browser session (zero clicks) →
+  token exchange 200 in 549 ms on the fresh-connection transport → signed,
+  org reads flowing.
+- Desktop builds MUST set `VITE_AUTH_ENABLED=true` or the renderer omits the
+  hosted-contributions chunk and the account menu hides Sign in while
+  unsigned (`bun run build` alone produces a local-only build).
+- Known follow-ups: the auth-enabled renderer can mount an empty root on
+  first load (a reload fixes it; reproduce and fix the mount race); signed
+  bridge state reports `identity.userId` as an empty string; the worker's
+  multiplayer gate maps AuthenticationError to a generic 503 instead of 401.
+
 ### Still open for "all happy flows on real Cloudflare"
 
 - Two-user sharing through the real UI (second GitHub identity on web/mobile

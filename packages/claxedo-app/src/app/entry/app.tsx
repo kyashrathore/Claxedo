@@ -487,11 +487,19 @@ function AuthenticatedLayout(
   }
 
   const defaultServer = ServerConnection.Key.make(resolveDefaultUrl())
-  // Whether the shell has been on screen once in this layout's lifetime. Owned
-  // here because the only consumer is the root Suspense fallback below.
-  const [shellRevealed, setShellRevealed] = createSignal(false)
+  // Whether the shell has been on screen once in this WINDOW. Signing in
+  // changes the principal's data scope, which deliberately remounts the
+  // provider subtree (data isolation between accounts) — and a component- or
+  // module-scoped flag would reset with it, replaying the boot splash as a
+  // flash on every account transition. The window carries the fact across
+  // those remounts; it is per-window, never persisted, and read once here.
+  const windowState = window as { __claxedoShellRevealed?: boolean }
+  const [shellRevealed, setShellRevealed] = createSignal(windowState.__claxedoShellRevealed === true)
   const ShellRevealed = () => {
-    onMount(() => setShellRevealed(true))
+    onMount(() => {
+      windowState.__claxedoShellRevealed = true
+      setShellRevealed(true)
+    })
     return null
   }
 

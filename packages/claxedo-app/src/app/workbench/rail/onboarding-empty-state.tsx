@@ -501,7 +501,6 @@ export function OnboardingEmptyState(props: {
       return (
         <RemoteAccessSurface
           availability={remoteAccess.availability()}
-          workspaceLink={remoteAccess.workspaceLink()}
           devices={remoteAccess.devices.data ?? []}
           showDevices={false}
           startAtLogin={remoteAccess.startAtLogin()}

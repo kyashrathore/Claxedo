@@ -15,6 +15,11 @@ import { SandboxSettingsSection } from "@/features/settings/ui/sandbox-section"
 import { OrgTeamSettingsSection } from "@/features/settings/ui/org-team-section"
 import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
+import { remoteAccessClientId, remoteAccessWorkspaceLink } from "@/features/onboarding/remote-access-state"
+import { localWorkspaceShareTarget, registerUserHostedWorkspace } from "@/features/workspaces/data/share-workspace"
+import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
+import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
+import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { useServer } from "@/app/connection/server"
 import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
@@ -31,6 +36,45 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
     serverUrl: server.url,
     signInAvailable: () => productUi().accountSignIn,
   })
+  const queryClient = useQueryClient()
+  const shellQueries = useShellQueryOptions()
+  const projectsQuery = useQuery(() => shellQueries.projects())
+  const sharedWorkspaces = useSharedWorkspaceIds()
+  // Every local workspace across every open project, with its live shared
+  // state. The share ACTION lives here now — the rail rows only display state.
+  const shareableWorkspaces = createMemo(() => {
+    const projects = projectsQuery.data ?? []
+    return projects.flatMap((project: { worktree: string; workspaces?: Record<string, { directory?: string }> }) => {
+      const directories = new Set<string>([
+        project.worktree,
+        ...Object.values(project.workspaces ?? {}).map((workspace) => workspace.directory ?? ""),
+      ])
+      return [...directories].filter(Boolean).flatMap((candidate) => {
+        const target = localWorkspaceShareTarget({ project, directory: candidate })
+        if (!target) return []
+        return [{
+          workspaceId: target.workspaceId,
+          path: target.directory,
+          label: candidate.split("/").filter(Boolean).at(-1) ?? candidate,
+          shared: sharedWorkspaces.shared(target.workspaceId),
+        }]
+      })
+    })
+  })
+  const shareWorkspaces = async (workspaceIds: readonly string[]) => {
+    for (const workspaceId of workspaceIds) {
+      const workspace = shareableWorkspaces().find((entry) => entry.workspaceId === workspaceId)
+      await registerUserHostedWorkspace({ workspaceId, ...(workspace ? { displayName: workspace.label } : {}) })
+    }
+    await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })
+    await remoteAccess.devices.refetch()
+  }
+  const shareLinkFor = (workspaceId: string) => {
+    const origin = /^https?:$/.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)
+      ? window.location.origin
+      : "https://app.claxedo.com"
+    return remoteAccessWorkspaceLink({ appOrigin: origin, workspaceId, sourceClientId: remoteAccessClientId() })
+  }
   const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 
@@ -153,8 +197,10 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
             <div class="p-6">
               <RemoteAccessSurface
                 availability={remoteAccess.availability()}
-                workspaceLink={remoteAccess.workspaceLink()}
                 devices={remoteAccess.devices.data ?? []}
+                shareableWorkspaces={shareableWorkspaces()}
+                onShare={shareWorkspaces}
+                shareLinkFor={shareLinkFor}
                 startAtLogin={remoteAccess.startAtLogin()}
                 onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
                 onEnable={() => void remoteAccess.enable()}

@@ -92,7 +92,7 @@ import {
 } from "./rail-session-status-target"
 import { subscribeSessionActivity } from "@/features/session/store/session-status-dispatcher"
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace, workspaceShareUrl } from "@/features/workspaces/data/share-workspace"
+import { useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
@@ -1503,7 +1503,6 @@ export function RailSidebar(props: RailSidebarProps) {
      */
     scope: "project" | "workspace"
   }) => {
-    const [sharing, setSharing] = createSignal(false)
     const selectedRouteId = () =>
       workspaceRouteId([input.project], input.workspaceDir) ??
       (input.workspaceDir === props.activeDirectory ? props.activeWorkspaceRouteId : undefined)
@@ -1525,45 +1524,7 @@ export function RailSidebar(props: RailSidebarProps) {
       })
     }
     const mainWorkspace = () => input.workspaceDir === input.project.worktree
-    const shareTarget = createMemo(() => localWorkspaceShareTarget({
-      project: input.project,
-      directory: input.workspaceDir,
-    }))
     const canMutateWorkspace = () => !workspace(input.project, input.workspaceDir).workspaceId || can("mutate.workspace", workspacePlacement(workspace(input.project, input.workspaceDir).workspaceId))
-    const copyShareUrl = async (url: string) => {
-      const clipboard = typeof navigator === "undefined" ? undefined : navigator.clipboard
-      if (!clipboard?.writeText) return false
-      return await clipboard.writeText(url).then(
-        () => true,
-        () => false,
-      )
-    }
-    const shareWorkspace = async () => {
-      const target = shareTarget()
-      if (!target || sharing()) return
-      setSharing(true)
-      try {
-        await registerUserHostedWorkspace({
-          workspaceId: target.workspaceId,
-          displayName: input.label,
-        })
-        const url = workspaceShareUrl({ workspaceId: target.workspaceId })
-        const copied = await copyShareUrl(url)
-        showToast({
-          variant: "success",
-          title: "Workspace shared",
-          description: copied ? "Workspace link copied to clipboard." : url,
-        })
-      } catch (err) {
-        showToast({
-          variant: "error",
-          title: "Failed to share workspace",
-          description: err instanceof Error ? err.message : String(err),
-        })
-      } finally {
-        setSharing(false)
-      }
-    }
 
     // The cluster's buttons are `size-6` in a `gap-0.5` row: two of them on a
     // project header (new session, new terminal) plus the menu, and two more
@@ -1680,15 +1641,6 @@ export function RailSidebar(props: RailSidebarProps) {
                   <Icon name="pencil-line" size="small" />
                   Edit
                 </DropdownMenu.Item>
-                <Can do="share.workspace">
-                  <DropdownMenu.Item
-                    disabled={!shareTarget() || sharing()}
-                    onSelect={() => void shareWorkspace()}
-                  >
-                    <Icon name="share" size="small" />
-                    {sharing() ? "Sharing..." : "Share workspace"}
-                  </DropdownMenu.Item>
-                </Can>
                 <Show when={workspace(input.project, input.workspaceDir).canDelete && canMutateWorkspace()}>
                   <DropdownMenu.Separator />
                   <DropdownMenu.Item onSelect={() => props.onDeleteWorkspace?.(workspace(input.project, input.workspaceDir))}>
@@ -1922,10 +1874,14 @@ export function RailSidebar(props: RailSidebarProps) {
     const active = createMemo(() => props.activeDirectory === section.workspaceDir)
     const runtime = createMemo(() => workspaceRuntimeKind(section.project, section.workspaceDir, sectionCloud(section.project, section.workspaceDir)))
     const workspaceItem = createMemo(() => workspace(section.project, section.workspaceDir))
+    const sharedWorkspacesForMeta = useSharedWorkspaceIds()
     const workspaceMeta = createMemo(() => {
       const workspace = projectWorkspaceInfo(section.project, section.workspaceDir)
       return [
         workspaceStatusLabel(workspace),
+        // The only durable trace of a share used to be a transient toast; the
+        // row itself now says which workspaces a phone can reach.
+        sharedWorkspacesForMeta.shared(workspaceItem().workspaceId) ? "Shared" : undefined,
       ].filter((item): item is string => !!item)
     })
     const sessionListQuery = createMemo<SessionListQuery>(() => ({
