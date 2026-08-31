@@ -1006,6 +1006,10 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
   "session.gateway": { sessionId: "ses_1", workspaceId: WORKSPACE_ID },
   "billing.checkout": { plan: "monthly" },
   "billing.portal": {},
+  "hostLink.challenge": {
+    id: WORKSPACE_ID,
+    hostId: "host_1",
+  },
   "hostLink.register": {
     id: WORKSPACE_ID,
     hostId: "host_1",
@@ -1013,6 +1017,12 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     challengeId: "challenge_1",
     signature: "sig",
     displayName: "Host",
+    ttlMs: 60_000,
+  },
+  "hostLink.heartbeat": {
+    id: WORKSPACE_ID,
+    hostId: "host_1",
+    signature: "sig",
     ttlMs: 60_000,
   },
   "usage.get": { since: 1_700_000_000_000, until: 1_700_086_400_000, timezone: "UTC", view: "quota" },

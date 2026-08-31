@@ -118,6 +118,12 @@ export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
   "host.enrollCurrentMachine",
   "host.enrollmentNonce",
   "host.enrollmentHeartbeat",
+  // The share trio signs with the machine key; a renderer able to run them
+  // could register links for host ids it does not hold. hostConnector.share
+  // is the renderer's reviewed route.
+  "hostLink.challenge",
+  "hostLink.register",
+  "hostLink.heartbeat",
 ]
 
 /**
