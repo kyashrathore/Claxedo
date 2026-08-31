@@ -223,7 +223,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
       },
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
-    authHandler: (request) => authProtocol.fetch(request),
+    authHandler: async (request) => await authProtocol.fetch(request),
     serviceInstallations,
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     billing: "absent",
