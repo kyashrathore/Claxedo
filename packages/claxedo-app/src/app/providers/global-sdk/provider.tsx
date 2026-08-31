@@ -27,6 +27,8 @@ import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-wa
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
 import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
+import type { SessionRef } from "@/platform/identity/session-ref"
+import { applyLiveSessionGoalEvent, invalidateSessionGoalData, liveSessionGoalScope } from "./goal-events"
 import {
   eventDirectoryForLiveSession,
   globalSdkClientPlacement,
@@ -47,7 +49,6 @@ const claxedoExtensionEventTypes = new Set<string>(["message.completed", "sessio
 export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
   return !claxedoExtensionEventTypes.has(event.type)
 }
-
 function runtimeWorkspaceKind(input: unknown) {
   if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
 }
@@ -194,6 +195,7 @@ export function resetRuntimeReplayGapState(input: {
   baseUrl?: string
   liveSession?: LiveSession
   subagents?: SubagentRegistry
+  goalScope?: Parameters<typeof invalidateSessionGoalData>[0]
 }) {
   input.projections?.clear()
   input.covered?.clear()
@@ -208,6 +210,7 @@ export function resetRuntimeReplayGapState(input: {
     queryClient.invalidateQueries({ queryKey: queryKeys.session.todo(input.baseUrl, directory, input.envelope.sessionId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.session.diff(input.baseUrl, directory, input.envelope.sessionId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.shell.sessionInventory(input.baseUrl) }),
+    ...(input.goalScope ? [invalidateSessionGoalData(input.goalScope)] : []),
   ]).then(() => {})
 }
 
@@ -532,10 +535,24 @@ const globalSDKContextInput = {
                   baseUrl: currentServer.http.url,
                   liveSession: eventLiveSession(),
                   subagents,
+                  goalScope: liveSessionGoalScope({
+                    live: eventLiveSession(),
+                    serverUrl: currentServer.http.url,
+                    signedControlPlane: signedEventAccess(),
+                  }),
                 })
                 lastRuntimeEventId = undefined
                 runtimeAttempt.abort()
                 break
+              }
+              if (envelope.payload.type === "goal-updated" || envelope.payload.type === "goal-cleared") {
+                applyLiveSessionGoalEvent({
+                  live: eventLiveSession(),
+                  serverUrl: currentServer.http.url,
+                  signedControlPlane: signedEventAccess(),
+                  sessionId: envelope.sessionId,
+                  payload: envelope.payload,
+                })
               }
               applySubagentRuntimeEventEnvelope(envelope, subagents)
               if (!runtimeProjectionOwnsCompat(envelope)) continue
@@ -731,7 +748,7 @@ const globalSDKContextInput = {
       throwOnError: true,
     })
 
-    const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string }) => {
+    const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }) => {
       const transition = liveSessionTransition(liveSession, sessionID, opts)
       liveSession = transition.next
       if (transition.workspaceScopeChanged) subagents.workspaceChanged()

@@ -206,7 +206,11 @@ export const desktopRendererUnsigned: Policy = {
   // logic, provider setup row, and the settings-providers dialog opener add the
   // same eight named owners as app-local: 981 + 8 - 3 = 986 modules, no new
   // package edge.
-  ceilings: { modules: 986, packages: 62 },
+  // Universal Goal reaches the same ten focused session owners reviewed by
+  // app-local (intent/controller, submission/draft lifecycle, cache/query/
+  // controller, runtime client/event ingress, and dock): 986 + 10 = 996
+  // modules, with no new package edge.
+  ceilings: { modules: 996, packages: 62 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -254,7 +258,10 @@ export const desktopHostedContribution: Policy = {
     requiredPackages: ["solid-js", "@claxedo/workgraph"],
   },
   // The hosted task composer now reaches the existing canonical config owner.
-  ceilings: { modules: 299, packages: 40 },
+  // Universal Goal adds the hosted-reachable subset of its focused session
+  // owners plus the existing session-resource authority owner reached by the
+  // Goal cache: 299 + 8 = 307 modules, with no new package edge.
+  ceilings: { modules: 307, packages: 40 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 500,

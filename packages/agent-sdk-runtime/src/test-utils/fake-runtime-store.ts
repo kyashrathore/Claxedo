@@ -3,6 +3,7 @@ import type {
   AgentRuntimeCommittedCompatOutput,
   AgentRuntimeStoreWithRecovery,
 } from "../harnesses/shared/runtime-store"
+import { MemoryRuntimeStore } from "../stores/memory"
 
 /** Creates the commit receipt used by focused store-port tests. */
 export function committedAppend(input: {
@@ -19,6 +20,13 @@ export function committedAppend(input: {
   }
 }
 
+/** Commits the standard opening events for a turn. */
+export function committedStartTurn(input: unknown) {
+  return new MemoryRuntimeStore().startTurn(
+    input as Parameters<MemoryRuntimeStore["startTurn"]>[0],
+  )
+}
+
 /** A complete inert store whose individual operations can be replaced by a test. */
 export function fakeRuntimeStore(
   overrides: Partial<AgentRuntimeStoreWithRecovery> = {},
@@ -32,16 +40,7 @@ export function fakeRuntimeStore(
     getSessionConfig: () => null,
     deleteSession: () => {},
     getAgentSessionId: () => null,
-    startTurn: (input) => {
-      const row = input as { sessionId: string; agentSessionId?: string }
-      return {
-        sessionId: row.sessionId,
-        seq: 1,
-        createdAt: 1,
-        ...(row.agentSessionId ? { agentSessionId: row.agentSessionId } : {}),
-        events: [],
-      }
-    },
+    startTurn: committedStartTurn,
     finishTurn: () => ({ events: [] }),
     appendEvent: committedAppend,
     getMessages: () => [],

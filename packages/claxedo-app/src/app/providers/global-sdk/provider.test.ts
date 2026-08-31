@@ -29,6 +29,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { sessionGoalKey, type SessionGoalData } from "@/features/session/store/session-goal-query"
 
 afterEach(() => {
   queryClient.clear()
@@ -708,8 +709,18 @@ describe("global sdk event fetch", () => {
     })
     const rowKey = queryKeys.session.row("http://claxedo.test", "/repo/main", "runtime-session-1")
     const messagesKey = queryKeys.session.messages("http://claxedo.test", "/repo/main", "runtime-session-1")
+    const goalScope = {
+      sessionID: "runtime-session-1",
+      directory: "/repo/main",
+      serverUrl: "http://claxedo.test",
+    }
+    const goalKey = sessionGoalKey(goalScope)
     queryClient.setQueryData(rowKey, { id: "runtime-session-1" })
     queryClient.setQueryData(messagesKey, [{ info: { id: "assistant-1" } }])
+    queryClient.setQueryData<SessionGoalData>(goalKey, {
+      capabilities: { implemented: true, available: true, actions: [], recovery: "reconcile", optionalFields: [] },
+      goal: null,
+    })
 
     await resetRuntimeReplayGapState({
       envelope: {
@@ -726,6 +737,7 @@ describe("global sdk event fetch", () => {
       covered,
       baseUrl: "http://claxedo.test",
       subagents,
+      goalScope,
     })
 
     expect(projections.size).toBe(0)
@@ -733,6 +745,7 @@ describe("global sdk event fetch", () => {
     expect(subagents.list()).toEqual([])
     expect(queryClient.getQueryState(rowKey)?.isInvalidated).toBe(true)
     expect(queryClient.getQueryState(messagesKey)?.isInvalidated).toBe(true)
+    expect(queryClient.getQueryState(goalKey)?.isInvalidated).toBe(true)
   })
 
   test("drops mirrored compat events for runtime-owned sessions even before runtime coverage arrives", () => {

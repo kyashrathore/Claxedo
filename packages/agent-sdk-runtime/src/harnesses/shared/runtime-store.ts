@@ -1,4 +1,5 @@
 import type { CompatEvent } from "../../compat-events"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { AdmittedSubagentObservation, SubagentObservation } from "../../subagent-admission"
@@ -49,6 +50,8 @@ export type AgentRuntimeStoreCore = {
   getSessionConfig(id: string): SessionConfig | null | undefined
   deleteSession(id: string): void
   getAgentSessionId(id: string): string | null | undefined
+  getGoal?(id: string): RuntimeGoalSnapshot | null | undefined
+  setGoal?(id: string, goal: RuntimeGoalSnapshot | null): void
   startTurn(input: unknown): AgentRuntimeTurnStartOutput
   finishTurn(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput
   appendEvent(input: {

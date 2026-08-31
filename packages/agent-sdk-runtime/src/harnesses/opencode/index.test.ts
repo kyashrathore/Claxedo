@@ -362,6 +362,35 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     })
   })
 
+  test("surfaces upstream read failures without returning empty collections", async () => {
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => new Response("unavailable", { status: 503 }),
+    })
+
+    await expect(adapter.listSessions("/work"))
+      .rejects.toThrow("List OpenCode sessions failed with HTTP 503")
+    await expect(adapter.getMessages("s1", "/work"))
+      .rejects.toThrow("List OpenCode messages failed with HTTP 503")
+    await expect(adapter.listPermissions("/work"))
+      .rejects.toThrow("List OpenCode permissions failed with HTTP 503")
+    await expect(adapter.listQuestions("/work"))
+      .rejects.toThrow("List OpenCode questions failed with HTTP 503")
+    await expect(adapter.getTodos("s1", "/work"))
+      .rejects.toThrow("List OpenCode todos failed with HTTP 503")
+  })
+
+  test("treats only HTTP 404 as an absent OpenCode session", async () => {
+    let status = 404
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => new Response(null, { status }),
+    })
+
+    await expect(adapter.getSession("s1", "/work")).resolves.toBeNull()
+    status = 503
+    await expect(adapter.getSession("s1", "/work"))
+      .rejects.toThrow("Read OpenCode session failed with HTTP 503")
+  })
+
   test("routes session list/create/status through the injected handler — no spawn, no network", async () => {
     const seen: Array<{ method: string; path: string; directory: string | null; body: string }> = []
     const handler: OpenCodeRequestFn = async (req) => {

@@ -48,7 +48,7 @@ export function openCodeSpawnConfigContent(
     ...base,
     ...generated,
     ...(configuredMcp || generatedMcp
-      ? { mcp: { ...(configuredMcp ?? {}), ...(generatedMcp ?? {}) } }
+      ? { mcp: { ...configuredMcp, ...generatedMcp } }
       : {}),
   })
 }
@@ -112,9 +112,8 @@ export class OpenCodeServerProcess {
           log.info("opencode process idle timeout, disposing", { idleMs: IDLE_TIMEOUT_MS })
         }
         if (event.type === "start-failed") {
-          // Recorded, not cached. The previous implementation kept the rejected
-          // startup promise forever, so one spawn timeout bricked the adapter
-          // for the life of the process.
+          // The lifecycle clears failed startup state, while this record keeps
+          // the failed generation observable.
           log.error("opencode spawn failed", { generation: event.generation })
         }
       },

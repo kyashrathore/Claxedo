@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
+import { committedStartTurn } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter } from "./index"
 
 type BaseInternals = {
@@ -28,7 +29,7 @@ function adapter<Extra extends object = Record<never, never>>() {
     sessions: new Map(),
     probe: null,
   }
-  Object.assign(out, defaults)
+  Object.assign(out, defaults, { processes: defaults.sessions })
   return out
 }
 
@@ -50,6 +51,7 @@ describe("AcpHarnessAdapter", () => {
       unrevert: false,
       configOptions: true,
       subagents: false,
+      goals: false,
     })
   })
 
@@ -63,7 +65,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { sessionId?: string; payload: { type: string } }) => { sessionId: string; seq: number; createdAt: number; payload: { type: string } }
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -93,6 +95,7 @@ describe("AcpHarnessAdapter", () => {
       },
       startTurn(input) {
         calls.push({ name: "startTurn", args: [input] })
+        return committedStartTurn(input)
       },
       appendEvent(input) {
         seen.push(input.payload.type)
@@ -150,7 +153,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { payload: { type: string } }) => void
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -190,7 +193,9 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
@@ -305,7 +310,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { sessionId?: string; payload: { type: string } }) => { sessionId: string; seq: number; createdAt: number; payload: { type: string } }
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -336,6 +341,7 @@ describe("AcpHarnessAdapter", () => {
       },
       startTurn(input) {
         calls.push({ name: "startTurn", args: [input] })
+        return committedStartTurn(input)
       },
       appendEvent(input) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
@@ -399,7 +405,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { payload: { type: string } }) => void
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -425,7 +431,9 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return "ACP process restarted; pending interactive state must be rerun"
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
@@ -480,7 +488,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { sessionId?: string; payload: { type: string } }) => { sessionId: string; seq: number; createdAt: number; payload: { type: string } }
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -510,6 +518,7 @@ describe("AcpHarnessAdapter", () => {
       },
       startTurn(input) {
         calls.push({ name: "startTurn", args: [input] })
+        return committedStartTurn(input)
       },
       appendEvent(input) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
@@ -628,6 +637,7 @@ describe("AcpHarnessAdapter", () => {
       },
     }
     item.sessions = new Map()
+    Object.assign(item, { processes: item.sessions })
 
     await item.respondPermission("perm-1", "allow_once", "/work")
 
@@ -667,6 +677,7 @@ describe("AcpHarnessAdapter", () => {
       ["s-live", { proc: { alive: true, pendingPermissions: new Map([["perm-live", {}]]) } }],
       ["s-stale", { proc: { alive: false, pendingPermissions: new Map() } }],
     ])
+    Object.assign(item, { processes: item.sessions })
 
     expect(await item.listPermissions("/work")).toEqual([{ id: "perm-live", sessionID: "s-live" }])
     expect(stale).toEqual([])
@@ -683,7 +694,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { payload: { type: string } }) => void
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -714,7 +725,9 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },
@@ -777,7 +790,7 @@ describe("AcpHarnessAdapter", () => {
         markSessionInterrupted: (id: string) => void
         bindSession: (input: unknown) => void
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: { payload: { type: string } }) => void
       }
       getOrSpawnProcess: (id: string, directory: string) => Promise<{
@@ -805,7 +818,9 @@ describe("AcpHarnessAdapter", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent(input: { sessionId?: string; payload: { type: string } }) {
         return { sessionId: input.sessionId ?? "s1", seq: 1, createdAt: 1, payload: input.payload }
       },

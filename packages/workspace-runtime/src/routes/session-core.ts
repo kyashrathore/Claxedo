@@ -3,15 +3,16 @@ import { HTTPException } from "hono/http-exception"
 import { streamSSE } from "hono/streaming"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import type {
-  AgentMessageRow,
-  AgentPermissionRow,
-  AgentQuestionRow,
+  AgentMessage,
+  AgentPermission,
+  AgentQuestion,
   AgentRuntime,
-  AgentSessionRow,
+  AgentSession,
   RuntimeDirectory,
   SessionConfig,
   SessionConfigRequestUpdate,
   HarnessCapabilities,
+  AgentGoalMutationResult,
 } from "@claxedo/agent-sdk-runtime"
 import type {
   AgentHarnessAdapter,
@@ -31,7 +32,7 @@ import {
   type CompatEnvelope,
 } from "../compat-events"
 import { recovering } from "@claxedo/agent-sdk-runtime/status"
-import { isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
+import { isAgentRuntimeGoalError, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import { attachSseFanout, createSseReplayBuffer } from "@claxedo/agent-sdk-runtime/sse"
 import {
   compatScope,
@@ -79,7 +80,7 @@ type SessionBus = {
 }
 
 type MessageSnapshot = {
-  messages: AgentMessageRow[]
+  messages: AgentMessage[]
   maxEventOrdinal?: number
 }
 
@@ -183,15 +184,15 @@ type Opts = {
       sessionId?: string
     },
   ) => Promise<RuntimeDirectory> | RuntimeDirectory
-  listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSessionRow[]>
+  listSessions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentSession[]>
   listSubagents?: (c: Ctx, directory: RuntimeDirectory, parentSessionId: string) => Promise<unknown[]> | unknown[]
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string) => Promise<{ id: string }>
-  listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermissionRow[]>
-  listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestionRow[]>
+  listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
+  listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
   getStatus?: (c: Ctx, directory: RuntimeDirectory, adapter: AgentHarnessAdapter) => Promise<unknown | Response> | unknown | Response
-  afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSessionRow[]) => Promise<void> | void
+  afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
-  getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<AgentSessionRow | null> | AgentSessionRow | null
+  getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<AgentSession | null> | AgentSession | null
   afterGetSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
   getSessionConfig?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<SessionConfig>
   getTodos?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<unknown[] | undefined> | unknown[] | undefined
@@ -209,7 +210,7 @@ type Opts = {
     update: SessionConfigRequestUpdate,
     adapter: AgentHarnessAdapter,
   ) => Promise<SessionConfig>
-  getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
+  getMessages?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
   getMessagePage?: (
     c: Ctx,
     directory: RuntimeDirectory,
@@ -225,7 +226,7 @@ type Opts = {
     updates: { title?: string; time?: { archived?: number } },
   ) => Promise<void> | void
   afterDeleteSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<void> | void
-  afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessageRow[]) => Promise<void> | void
+  afterMessageCheckpoint?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, messages: AgentMessage[]) => Promise<void> | void
   flushSessionDocuments?: (sessionId: string) => Promise<void>
   exposeCommandRoute?: boolean
   sessionBus: SessionBus
@@ -282,6 +283,41 @@ function errorBody(code: string, message: string) {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Session creation failed"
+}
+
+function goalRuntimeErrorResponse(c: Ctx, error: unknown) {
+  if (!isAgentRuntimeGoalError(error)) throw error
+  const status = error.code === "goal_invalid_objective"
+    ? 400
+    : error.code === "goal_session_not_found"
+    ? 404
+    : 409
+  return noStoreJson(c, errorBody(error.code, error.message), status)
+}
+
+function goalMutationResponse(
+  c: Ctx,
+  result: AgentGoalMutationResult,
+  successStatus: 200 | 201 = 200,
+) {
+  if (result.ok) return noStoreJson(c, result, successStatus)
+  const status = result.status === "not_found"
+    ? 404
+    : result.status === "failed"
+    ? 502
+    : 409
+  return noStoreJson(c, result, status)
+}
+
+async function resolveGoalRuntime(
+  opts: Opts,
+  c: Ctx,
+  sessionId: string,
+  directory: RuntimeDirectory,
+) {
+  const runtime = await opts.resolveRuntime?.(c, { sessionId, directory })
+  if (runtime) return runtime
+  return noStoreJson(c, errorBody("goal_runtime_unavailable", "Goal runtime is unavailable"), 503)
 }
 
 function normalizeSession(s: unknown, fallbackDirectory?: RuntimeDirectory): unknown {
@@ -662,6 +698,102 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const caps = await adapter.readHarnessCapabilities(directory, { sessionId })
       return noStoreJson(c, caps)
+    })
+    .get("/session/:id/goal/capabilities", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_capabilities")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      try {
+        return noStoreJson(c, await runtime.goals.capabilities(sessionId, directory))
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
+    })
+    .get("/session/:id/goal", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_read")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      try {
+        return noStoreJson(c, await runtime.goals.read(sessionId, directory))
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
+    })
+    .post("/session/:id/goal", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_start")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      const body = (await c.req.json().catch(() => ({}))) as { objective?: unknown }
+      try {
+        return goalMutationResponse(
+          c,
+          await runtime.goals.start({ sessionId, objective: body.objective as string }, directory),
+          201,
+        )
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
+    })
+    .post("/session/:id/goal/pause", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_pause")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      try {
+        return goalMutationResponse(c, await runtime.goals.pause(sessionId, directory))
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
+    })
+    .post("/session/:id/goal/resume", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_resume")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      try {
+        return goalMutationResponse(c, await runtime.goals.resume(sessionId, directory))
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
+    })
+    .post("/session/:id/goal/stop", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_stop")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      try {
+        return goalMutationResponse(c, await runtime.goals.stop(sessionId, directory))
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
+    })
+    .delete("/session/:id/goal", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "goal_delete")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const runtime = await resolveGoalRuntime(opts, c, sessionId, directory)
+      if (runtime instanceof Response) return runtime
+      try {
+        return goalMutationResponse(c, await runtime.goals.delete(sessionId, directory))
+      } catch (error) {
+        return goalRuntimeErrorResponse(c, error)
+      }
     })
     .get("/session/:id/subagents", async (c) => {
       const sessionId = c.req.param("id")

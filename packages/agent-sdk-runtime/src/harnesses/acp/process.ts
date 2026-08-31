@@ -9,7 +9,6 @@ import {
   type InitializeResponse,
   type McpServer,
   type PermissionOption,
-  type RequestPermissionRequest,
   type ToolKind,
   type RequestPermissionResponse,
   type SessionConfigOption,
@@ -20,6 +19,7 @@ import {
 import type { PromptInput } from "../../index"
 import { Log } from "../../log"
 import {
+  ACP_GOAL_METHODS,
   blocks,
   extractAgents,
   init,
@@ -28,9 +28,14 @@ import {
   resume,
   setPermissionMode,
   sync,
+  goalExtension,
+  goalExtensionCapabilities,
   type ACPState,
+  type ACPGoalExtension,
 } from "./session"
 import type { AgentPermissionModeState } from "../../adapter-contract"
+import type { GoalCapabilities } from "../../capabilities"
+import { isRuntimeGoalStatus, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { IDLE_TIMEOUT_MS, promptTimeoutMs, watch } from "./helpers"
 import { createIdleReaper, type IdleReaper } from "../shared/process-lifecycle"
 import type { ACPTransport, ACPTransportEnv, ACPTransportFactory } from "./transport"
@@ -80,9 +85,12 @@ export class ACPProcess {
   readonly agent: ClientContext
   private readonly idle: IdleReaper
   private caps: InitializeResponse["agentCapabilities"] | null = null
+  private goal: ACPGoalExtension | null = null
   readonly pendingPermissions = new Map<string, PendingPermission>()
   // agentSessionId → update listener
   readonly sessionListeners = new Map<string, (update: SessionUpdate) => void>()
+  readonly goalListeners = new Map<string, (goal: RuntimeGoalSnapshot | null) => void>()
+  readonly goalUpdateListeners = new Map<string, (update: SessionUpdate) => void>()
   private states = new Map<string, ACPState>()
   // agentSessionId → permission pusher
   readonly permissionPushers = new Map<string, PermissionPusher>()
@@ -170,18 +178,10 @@ export class ACPProcess {
           log.info("ACP sessionUpdate: cached config options", { count: opts.length })
         }
         /*
-         * The legacy channel's counterpart, and the correction `setPermissionMode`
-         * depends on.
-         *
-         * `session/set_mode` returns nothing, so that write records the requested
-         * id optimistically and relies on the agent's own notification to correct
-         * it when the agent kept something else — a plan-mode exit, or a mode
-         * clamped because a model change shrank `availableModes`. Without this the
-         * optimistic value is never revisited and the picker reports a mode the
-         * agent is not in.
-         *
-         * Agents on the config channel are already covered by the branch above;
-         * this is what an agent advertising only `availableModes` sends.
+         * `session/set_mode` has no response state. Mode notifications synchronize
+         * the requested value with the agent when plan exit or model changes alter
+         * the available mode set. Agents using config options are handled above;
+         * agents advertising `availableModes` publish `current_mode_update`.
          */
         if (params.update?.sessionUpdate === "current_mode_update") {
           const currentModeId = (params.update as { currentModeId?: string }).currentModeId
@@ -196,8 +196,19 @@ export class ACPProcess {
             log.info("ACP sessionUpdate: agent changed mode", { sessionId: params.sessionId, currentModeId })
           }
         }
+        const updateMeta = params.update && typeof params.update === "object"
+          ? (params.update as { _meta?: Record<string, unknown> })._meta
+          : undefined
+        if (updateMeta && "goal" in updateMeta) {
+          this.goalListeners.get(params.sessionId)?.(this.normalizeGoal(updateMeta.goal, params.sessionId))
+        }
         const listener = this.sessionListeners.get(params.sessionId)
         if (!listener) {
+          const goalListener = this.goalUpdateListeners.get(params.sessionId)
+          if (goalListener) {
+            goalListener(params.update)
+            return
+          }
           log.info("ACP sessionUpdate: no listener registered, dropping update", {
             sessionId: params.sessionId,
             kind,
@@ -210,9 +221,8 @@ export class ACPProcess {
         const permId = randomUUID()
         const toolCall = params.toolCall
         const tool = toolCall.title ?? "unknown"
-        // `title` is prose for display; `kind` is the classification any policy
-        // decision must key on. Forwarding only the title left every consumer
-        // matching against strings like "Read file src/index.ts".
+        // `title` is prose for display; `kind` is the stable classification used
+        // by permission policy.
         // ACP types this as `ToolKind | null | undefined`; collapse the null so
         // downstream only has to handle "absent".
         const kind = toolCall.kind ?? undefined
@@ -320,12 +330,93 @@ export class ACPProcess {
       this.waitForExit(),
     ])
     this.caps = result.agentCapabilities ?? null
+    this.goal = goalExtension(result._meta)
     this.observation?.update({ lifecycle: "ready" })
     log.info("ACP initialize: handshake complete", { directory: this.directory, ms: Date.now() - t0 })
   }
 
   failureDetail() {
     return this.lastStderr
+  }
+
+  goalCapabilities(): GoalCapabilities {
+    return goalExtensionCapabilities(this.goal)
+  }
+
+  private normalizeGoal(input: unknown, sessionId: string): RuntimeGoalSnapshot | null {
+    if (input === null) return null
+    const outer = input && typeof input === "object" ? input as Record<string, unknown> : null
+    const value = outer && "goal" in outer ? outer.goal : input
+    if (value === null) return null
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("ACP Goal response is malformed")
+    const row = value as Record<string, unknown>
+    if (
+      typeof row.objective !== "string"
+      || !isRuntimeGoalStatus(row.status)
+      || typeof row.createdAt !== "number"
+      || typeof row.updatedAt !== "number"
+    ) throw new Error("ACP Goal response is missing required fields")
+    const result: RuntimeGoalSnapshot = {
+      sessionId,
+      objective: row.objective,
+      status: row.status,
+      createdAt: row.createdAt,
+      updatedAt: row.updatedAt,
+    }
+    for (const field of this.goal?.optionalFields ?? []) {
+      const item = row[field]
+      if (field === "lastReason") {
+        if (typeof item === "string") result.lastReason = item
+      } else if (typeof item === "number" && Number.isFinite(item)) {
+        result[field] = item
+      }
+    }
+    return result
+  }
+
+  private async goalRequest(
+    method: string,
+    agentSessionId: string,
+    localSessionId: string,
+    input?: Record<string, unknown>,
+  ): Promise<RuntimeGoalSnapshot | null> {
+    if (!this.goal?.methods.has(method)) throw new Error(`ACP Goal method ${method} was not negotiated`)
+    const response = await this.agent.request<unknown, Record<string, unknown>>(method, {
+      sessionId: agentSessionId,
+      ...(input ?? {}),
+    })
+    return this.normalizeGoal(response, localSessionId)
+  }
+
+  readGoal(agentSessionId: string, localSessionId: string) {
+    return this.goalRequest(ACP_GOAL_METHODS.read, agentSessionId, localSessionId)
+  }
+
+  startGoal(agentSessionId: string, localSessionId: string, objective: string) {
+    return this.goalRequest(ACP_GOAL_METHODS.start, agentSessionId, localSessionId, { objective })
+  }
+
+  stopGoal(agentSessionId: string, localSessionId: string) {
+    return this.goalRequest(ACP_GOAL_METHODS.stop, agentSessionId, localSessionId)
+  }
+
+  goalAction(action: "pause" | "resume" | "delete", agentSessionId: string, localSessionId: string) {
+    if (!this.goal?.actions.includes(action)) throw new Error(`ACP Goal action ${action} was not negotiated`)
+    return this.goalRequest(ACP_GOAL_METHODS[action], agentSessionId, localSessionId)
+  }
+
+  listenGoal(agentSessionId: string, localSessionId: string, listener: (goal: RuntimeGoalSnapshot | null) => void) {
+    this.goalListeners.set(agentSessionId, (goal) => listener(goal ? { ...goal, sessionId: localSessionId } : null))
+    return () => this.goalListeners.delete(agentSessionId)
+  }
+
+  listenGoalUpdates(agentSessionId: string, listener: (update: SessionUpdate) => void) {
+    this.goalUpdateListeners.set(agentSessionId, listener)
+  }
+
+  unlistenGoal(agentSessionId: string) {
+    this.goalListeners.delete(agentSessionId)
+    this.goalUpdateListeners.delete(agentSessionId)
   }
 
   private state(sessionId: string) {
@@ -352,21 +443,20 @@ export class ACPProcess {
   async setPermissionMode(agentSessionId: string, modeId: string): Promise<AgentPermissionModeState> {
     const { state, result } = await setPermissionMode(this.agent, this.state(agentSessionId), agentSessionId, modeId)
     this.states.set(agentSessionId, state)
-    // Keep the shared config cache aligned with the write. `set_config_option`
-    // returns the complete refreshed list, so this REPLACES rather than merges —
-    // merging would resurrect options the agent just dropped.
+    // `set_config_option` returns the complete option list, which becomes the
+    // shared discovery cache.
     if (state.cfg && state.cfg.length > 0) this.cachedConfigOptions = state.cfg
     return result
   }
 
   /** Derive available agents from any session state or cached config options. */
   getAgents(): Array<{ name: string; description?: string; mode: string }> {
-    // Try extracting from the first available session state
+    // Session state is the live source when a session exists.
     for (const state of this.states.values()) {
       const agents = extractAgents(state)
       if (agents.length > 0) return agents
     }
-    // Fall back to cached config options (available even before a session prompt)
+    // The probe cache supplies discovery data before the first session prompt.
     if (this.cachedConfigOptions) {
       const agents = extractAgents({
         caps: this.caps,
@@ -607,6 +697,8 @@ export class ACPProcess {
   dispose() {
     if (this.disposed) return
     this.disposed = true
+    this.goalListeners.clear()
+    this.goalUpdateListeners.clear()
     this.exitObservation({ reason: "disposed" })
     this.idle.cancel()
     log.info("ACP transport dispose", { directory: this.directory, kind: this.transport.kind })

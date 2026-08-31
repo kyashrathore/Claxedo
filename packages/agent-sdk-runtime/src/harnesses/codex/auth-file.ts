@@ -1,6 +1,10 @@
 import fs from "fs"
 import path from "path"
+import type { FetchLike } from "../../adapter-contract"
 import { record, text, type JsonRecord } from "../shared/sdk-runtime-adapter"
+
+const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
+const OPENAI_ISSUER = "https://auth.openai.com"
 
 export type CodexChatGptTokens = {
   access: string
@@ -102,6 +106,50 @@ export function mergeCodexAuth(input: JsonRecord | undefined, tokens: {
       refresh: tokens.refresh,
       account_id: tokens.accountId,
       ...(tokens.planType ? { plan_type: tokens.planType } : {}),
+    },
+  }
+}
+
+export async function refreshCodexChatgptAuth(input: {
+  auth: JsonRecord | undefined
+  home: string
+  fetch?: FetchLike
+}) {
+  const current = codexChatgptAuthTokens(input.auth) ?? codexChatgptAuthTokens(readCodexAuthFile(input.home))
+  if (!current?.refresh) {
+    throw new Error("Codex ChatGPT auth is missing a refresh token. Run `codex login` or sync a valid Codex credential, then retry.")
+  }
+  const response = await (input.fetch ?? fetch)(`${OPENAI_ISSUER}/oauth/token`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      grant_type: "refresh_token",
+      refresh_token: current.refresh,
+      client_id: OPENAI_CLIENT_ID,
+    }).toString(),
+  })
+  if (!response.ok) {
+    throw new Error(`Codex ChatGPT auth refresh failed (${response.status}). Run \`codex login\` or sync a valid Codex credential, then retry.`)
+  }
+  const row = record(await response.json().catch(() => undefined))
+  const access = text(row?.access_token)
+  const refresh = text(row?.refresh_token) ?? current.refresh
+  if (!access) throw new Error("Codex ChatGPT auth refresh returned no access token")
+  const tokens = {
+    access,
+    refresh,
+    accountId: text(row?.account_id) ?? accountIdFromClaims(row) ?? current.accountId,
+    idToken: text(row?.id_token) ?? current.idToken,
+    planType: current.planType,
+  }
+  const auth = mergeCodexAuth(input.auth ?? readCodexAuthFile(input.home), tokens)
+  await writeCodexAuthFile(input.home, auth)
+  return {
+    auth,
+    login: {
+      accessToken: tokens.access,
+      chatgptAccountId: tokens.accountId,
+      chatgptPlanType: tokens.planType ?? null,
     },
   }
 }

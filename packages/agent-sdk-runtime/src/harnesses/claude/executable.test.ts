@@ -25,7 +25,7 @@ describe("resolveClaudeExecutable", () => {
     expect(resolveClaudeExecutable({ PATH: dir }, "darwin", root)).toBe(path.posix.join(dir, "claude"))
   })
 
-  test("falls back to the native-installer location when PATH misses it", () => {
+  test("uses the native-installer location when PATH misses it", () => {
     const home = path.join(root, "home")
     const bin = makeExecutable(path.join(home, ".local", "bin"), "claude")
     expect(resolveClaudeExecutable({ PATH: "" }, "linux", home)).toBe(bin)
@@ -40,7 +40,7 @@ describe("resolveClaudeExecutable", () => {
     ).toBe(override)
   })
 
-  test("a broken explicit override resolves to undefined rather than silently drifting", () => {
+  test("a broken explicit override resolves to undefined", () => {
     expect(
       resolveClaudeExecutable({ [CLAUDE_EXECUTABLE_ENV]: "/does/not/exist/claude", PATH: "" }, "darwin", root),
     ).toBeUndefined()

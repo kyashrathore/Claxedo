@@ -57,6 +57,19 @@ function locationData(validate: (value: any) => void) {
   }
 }
 
+function goalMetadata(sessionID: string, status: "active" | "paused") {
+  return {
+    "claxedo.goal": {
+      sessionId: sessionID,
+      objective: "Exercise Goal lifecycle",
+      status,
+      createdAt: 1,
+      updatedAt: 1,
+      iteration: 0,
+    },
+  }
+}
+
 const scenarios: Scenario[] = [
   http.protected
     .get("/global/health", "global.health")
@@ -1442,6 +1455,110 @@ const scenarios: Scenario[] = [
     .json(200, (body) => {
       check(body === true, "missing session abort should remain a no-op success")
     }),
+  http.protected
+    .get("/session/{sessionID}/goal/capabilities", "session.goal.capabilities")
+    .seeded((ctx) => ctx.session({ title: "Goal capabilities" }))
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/goal/capabilities", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+    }))
+    .json(200, (body) => {
+      object(body)
+      check(body.implemented === true && body.available === true, "OpenCode Goal should be available")
+      check(Array.isArray(body.actions) && body.actions.includes("delete"), "Goal capabilities should advertise lifecycle actions")
+    }),
+  http.protected
+    .get("/session/{sessionID}/goal", "session.goal.get")
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Goal read" })
+        yield* ctx.sessionMetadata(session.id, goalMetadata(session.id, "paused"))
+        return session
+      }),
+    )
+    .at((ctx) => ({ path: route("/session/{sessionID}/goal", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .json(200, (body, ctx) => {
+      object(body)
+      check(body.sessionId === ctx.state.id && body.status === "paused", "Goal read should return durable state")
+    }),
+  http.protected
+    .post("/session/{sessionID}/goal", "session.goal.start")
+    .preserveDatabase()
+    .withLlm()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Goal start" })
+        yield* ctx.llmText("Goal work complete")
+        yield* ctx.llmText('{"met":true,"reason":"HTTP exerciser verified completion"}')
+        return session
+      }),
+    )
+    .at((ctx) => ({
+      path: route("/session/{sessionID}/goal", { sessionID: ctx.state.id }),
+      headers: ctx.headers(),
+      body: { objective: "Exercise Goal lifecycle" },
+    }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.sessionId === ctx.state.id && body.status === "active", "Goal start should return active state")
+        yield* ctx.llmWait(2)
+      }),
+    ),
+  http.protected
+    .post("/session/{sessionID}/goal/pause", "session.goal.pause")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Goal pause" })
+        yield* ctx.sessionMetadata(session.id, goalMetadata(session.id, "active"))
+        return session
+      }),
+    )
+    .at((ctx) => ({ path: route("/session/{sessionID}/goal/pause", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .json(200, (body) => {
+      object(body)
+      check(body.status === "paused", "Goal pause should persist paused state")
+    }),
+  http.protected
+    .post("/session/{sessionID}/goal/resume", "session.goal.resume")
+    .preserveDatabase()
+    .withLlm()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Goal resume" })
+        yield* ctx.sessionMetadata(session.id, goalMetadata(session.id, "paused"))
+        yield* ctx.llmText("Resumed Goal work complete")
+        yield* ctx.llmText('{"met":true,"reason":"Resume verified"}')
+        return session
+      }),
+    )
+    .at((ctx) => ({ path: route("/session/{sessionID}/goal/resume", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        object(body)
+        check(body.status === "active", "Goal resume should return active state")
+        yield* ctx.llmWait(2)
+      }),
+    ),
+  http.protected
+    .delete("/session/{sessionID}/goal", "session.goal.delete")
+    .mutating()
+    .seeded((ctx) =>
+      Effect.gen(function* () {
+        const session = yield* ctx.session({ title: "Goal delete" })
+        yield* ctx.sessionMetadata(session.id, goalMetadata(session.id, "paused"))
+        return session
+      }),
+    )
+    .at((ctx) => ({ path: route("/session/{sessionID}/goal", { sessionID: ctx.state.id }), headers: ctx.headers() }))
+    .jsonEffect(200, (body, ctx) =>
+      Effect.gen(function* () {
+        check(body === null, "Goal delete should return null")
+        const session = yield* ctx.sessionGet(ctx.state.id)
+        check(session !== undefined, "Goal delete should preserve the owning session")
+      }),
+    ),
   http.protected
     .post("/session/{sessionID}/init", "session.init")
     .preserveDatabase()

@@ -114,8 +114,7 @@ describe("writing an ACP permission mode", () => {
     const before = state({ modes: [{ id: "plan", name: "Plan" }] as never })
     const result = await setPermissionMode(ctx, before, "ses_a", "plan")
     expect(calls[0]!.params).toEqual({ sessionId: "ses_a", modeId: "plan" })
-    // set_mode answers with nothing, so the request is recorded optimistically and
-    // the next session/update corrects it.
+    // set_mode has no response state; session/update later synchronizes the value.
     expect(result.result.currentModeId).toBe("plan")
   })
 
@@ -144,16 +143,7 @@ describe("currentModeId survives merges", () => {
     expect(merge(first, { configOptions: [] }).currentModeId).toBe("a")
   })
 
-  /*
-   * The shape `process.ts` builds when an agent sends `current_mode_update`.
-   *
-   * `session/set_mode` returns nothing, so a write records the requested id
-   * optimistically; this notification is the only thing that corrects it when the
-   * agent kept a different mode. The handler has to re-send `availableModes`
-   * alongside the new `currentModeId`, because `merge` treats a `modes` payload as
-   * authoritative for both fields and would otherwise blank the advertised list.
-   */
-  test("an agent-initiated mode change corrects the optimistic id without dropping the list", () => {
+  test("an agent-initiated mode change synchronizes the id without dropping the list", () => {
     const available = [{ id: "plan", name: "Plan" }, { id: "code", name: "Code" }]
     const optimistic = merge(init(null), { modes: { currentModeId: "code", availableModes: available } })
     expect(optimistic.currentModeId).toBe("code")

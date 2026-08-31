@@ -5,6 +5,11 @@ import { usesScopedSessionTransport } from "@/platform/identity/legacy-resolver"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
+import type {
+  AgentRuntimeGoalCapabilities,
+  AgentRuntimeGoalMutationResult,
+} from "@/platform/runtime/agent/agent-runtime-client"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 
 export type SessionClient = Parameters<typeof createHttpSessionBackend>[0]["client"]
 
@@ -190,6 +195,7 @@ export async function fetchSessionCapabilitiesByTransport(input: {
   client: SessionClient
   directory: string
   sessionID?: string
+  harness?: string
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
@@ -205,4 +211,63 @@ export async function fetchSessionCapabilitiesByTransport(input: {
     workspaceKind: input.workspaceKind,
     sessionRef: input.sessionRef,
   }).getCapabilities(input)
+}
+
+export type SessionGoalTransportScope = {
+  client: SessionClient
+  directory: AgentRuntimeDirectory
+  sessionID: string
+  claxedoServerUrl?: string
+  signedControlPlane?: boolean
+  workspaceId?: string
+  workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
+  signal?: AbortSignal
+}
+
+function sessionGoalBackend(input: SessionGoalTransportScope) {
+  return createHttpSessionBackend({
+    client: input.client,
+    claxedoServerUrl: input.claxedoServerUrl,
+    signedControlPlane: input.signedControlPlane,
+    workspaceId: input.workspaceId,
+    workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
+  })
+}
+
+export async function fetchSessionGoalCapabilitiesByTransport(
+  input: SessionGoalTransportScope,
+): Promise<AgentRuntimeGoalCapabilities> {
+  return await sessionGoalBackend(input).getGoalCapabilities(input)
+}
+
+export async function fetchSessionGoalByTransport(
+  input: SessionGoalTransportScope,
+): Promise<RuntimeGoalSnapshot | null> {
+  return await sessionGoalBackend(input).getGoal(input)
+}
+
+export async function pauseSessionGoalByTransport(
+  input: SessionGoalTransportScope,
+): Promise<AgentRuntimeGoalMutationResult> {
+  return await sessionGoalBackend(input).pauseGoal(input)
+}
+
+export async function resumeSessionGoalByTransport(
+  input: SessionGoalTransportScope,
+): Promise<AgentRuntimeGoalMutationResult> {
+  return await sessionGoalBackend(input).resumeGoal(input)
+}
+
+export async function stopSessionGoalByTransport(
+  input: SessionGoalTransportScope,
+): Promise<AgentRuntimeGoalMutationResult> {
+  return await sessionGoalBackend(input).stopGoal(input)
+}
+
+export async function deleteSessionGoalByTransport(
+  input: SessionGoalTransportScope,
+): Promise<AgentRuntimeGoalMutationResult> {
+  return await sessionGoalBackend(input).deleteGoal(input)
 }

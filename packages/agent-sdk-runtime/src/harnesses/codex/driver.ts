@@ -11,20 +11,16 @@ import {
   codexCollabAgentCall,
   codexStartedSubagent,
 } from "@claxedo/agent-event-runtime/harnesses/codex"
-import type { AgentConfigOption, PromptInput } from "../../index"
-import type { AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
+import type { AgentConfigOption } from "../../index"
+import type { AgentGoalResource, AgentHarnessAdapterHealth, FetchLike } from "../../adapter-contract"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { Log } from "../../log"
 import { createLiveModelSource } from "../../live-model-source"
 import {
-  modelConfigOption,
   resolveSupportedEffort,
-  thoughtLevelConfigOption,
-  type SdkModelEntry,
 } from "../../sdk-model-catalog"
 import {
   errorMessage,
-  extractTextFromParts,
   record,
   text,
   type JsonRecord,
@@ -33,7 +29,6 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
-import { harnessSpawnEnv } from "../shared/spawn-env"
 import {
   CODEX_PERMISSION_MODES,
   CODEX_SETTINGS,
@@ -42,133 +37,47 @@ import {
   codexSandboxPolicy,
   codexSettingsFor,
 } from "../shared/permission-modes"
-import {
-  observeAgentProcess,
-  type AgentProcessObserver,
-} from "../../process-observer"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
 import {
-  accountIdFromClaims,
   codexChatgptAuthTokens,
-  mergeCodexAuth,
   readCodexAuthFile,
+  refreshCodexChatgptAuth,
   sourceAuthValue,
   sourceCodexAuthValue,
-  writeCodexAuthFile,
 } from "./auth-file"
+import { codexConfigOptions, fetchCodexModels } from "./model-options"
+import { CodexGoalController } from "./goal"
+import {
+  CODEX_DYNAMIC_TOOLS,
+  type CodexActiveThread,
+  codexAppServerModel,
+  codexGoalSnapshot,
+  codexIdleTimeoutMs,
+  codexSpawnEnv,
+  codexTurnModel,
+  codexUserInput,
+  permissionResponse,
+  questionIds,
+  startTurnWithThreadRecovery,
+} from "./protocol"
+
+export {
+  codexGoalSnapshot,
+  codexSpawnEnv,
+  isThreadNotFound,
+  sessionLostMessage,
+  startTurnWithThreadRecovery,
+} from "./protocol"
 
 const log = Log.create({ service: "codex-app-server-adapter" })
 const CODEX_SOURCE = "codex.app-server"
-const OPENAI_CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
-const OPENAI_ISSUER = "https://auth.openai.com"
-
-type CodexActiveThread = {
-  sessionId: string
-  agentSessionId: string
-  directory: string
-  model?: string
-  effort?: string
-  process: CodexAppServerProcess
-  project: (method: string, payload: JsonRecord, frame: unknown) => void
-  observeSubagent: SdkRuntimeTurnInput["observeSubagent"]
-}
-
-/**
- * The app-server reports an unknown thread as `thread not found: <uuid>`. Matched on the
- * message because the JSON-RPC error carries no dedicated code for it.
- */
-export function isThreadNotFound(err: unknown): boolean {
-  return /thread not found/i.test(errorMessage(err))
-}
-
-/** Two resume cycles bound recovery for a thread that is no longer available. */
-const MAX_THREAD_RESUME_ATTEMPTS = 2
-
-/**
- * Human copy for a permanently-lost Codex thread. Phrased so `classifyFirstTurnError`
- * routes it to the `session` recovery class (the `session not found` phrasing matches its
- * regex) — the app-server's own `thread not found: <uuid>` string never becomes the
- * headline. The original protocol string (including the uuid) is appended so it survives
- * into the client's raw-detail disclosure, which reads `error.data.message`.
- */
-export function sessionLostMessage(cause: unknown): string {
-  return `The agent process no longer has this conversation (session not found). ${errorMessage(cause)}`
-}
-
-/**
- * A Codex thread lives in the memory of the app-server process that started it, but is
- * persisted to disk. `ensureProcess` transparently respawns a dead subprocess (crash,
- * idle kill, host sleep), so a session that worked earlier can hand its threadId to a
- * process that has never heard of it — the app-server answers `thread not found: <uuid>`
- * and, without recovery, EVERY later turn in that session fails permanently.
- *
- * On that specific error, resume the thread by id into the current process and retry the
- * turn. Recovery is bounded to {@link MAX_THREAD_RESUME_ATTEMPTS} resume+retry cycles: if
- * the thread is still missing after them, the state is treated as terminal and a
- * classified, human error is thrown (see {@link sessionLostMessage}) rather than
- * propagating the raw `thread not found: <uuid>` protocol string to the transcript.
- *
- * Any non-`thread not found` error propagates untouched (never mask a real failure), and
- * the bound guarantees this cannot loop. We deliberately do NOT re-create the thread and
- * replay the prompt: a fresh thread has none of the conversation history the UI still
- * shows, so a silently context-free answer under a full transcript would be a lie.
- */
-export async function startTurnWithThreadRecovery(input: {
-  startTurn: () => Promise<JsonRecord>
-  resumeThread: () => Promise<unknown>
-}): Promise<JsonRecord> {
-  try {
-    return await input.startTurn()
-  } catch (err) {
-    if (!isThreadNotFound(err)) throw err
-    let lastError = err
-    for (let attempt = 0; attempt < MAX_THREAD_RESUME_ATTEMPTS; attempt++) {
-      await input.resumeThread()
-      try {
-        return await input.startTurn()
-      } catch (retryErr) {
-        if (!isThreadNotFound(retryErr)) throw retryErr
-        lastError = retryErr
-      }
-    }
-    // Bounded recovery exhausted: the thread is genuinely gone. Surface a classified,
-    // human terminal error — never the raw protocol string as the headline.
-    throw new Error(sessionLostMessage(lastError))
-  }
-}
 
 export function createCodexAppServerDriver(host: SdkRuntimeDriverHost, options: CodexDriverOptions = {}): SdkRuntimeDriver {
   return new CodexAppServerDriver(host, options)
 }
 
 type CodexDriverOptions = { binary?: string; fetch?: FetchLike; codexHome?: string }
-
-const CODEX_DYNAMIC_TOOLS = [{
-  name: "spawn_agent",
-  description: "Spawn a child Codex agent to execute one bounded task.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      task_name: { type: "string", description: "Short stable name for the child task." },
-      message: { type: "string", description: "Task instructions for the child agent." },
-    },
-    required: ["task_name", "message"],
-    additionalProperties: false,
-  },
-}]
-
-/**
- * How long an idle codex app-server survives.
- *
- * Matches the OpenCode adapter's desktop default. Codex is the more expensive
- * one to leave resident, because the driver otherwise holds it for its own
- * lifetime rather than the session's.
- */
-function codexIdleTimeoutMs() {
-  const configured = Number(process.env.CLAXEDO_CODEX_IDLE_TIMEOUT_MS)
-  return Number.isFinite(configured) && configured > 0 ? Math.round(configured) : 30_000
-}
 
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
@@ -187,11 +96,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   private authRevision = 0
   private processAuthRevision = -1
   private processAuthWasExplicit = false
+  private processGoalUnsubscribe: (() => void) | null = null
   private lifecycleRevision = 0
   private disposed = false
   private processError: string | null = null
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private activeThreads = new Map<string, CodexActiveThread>()
+  private readonly goalController: CodexGoalController
+  readonly goals: AgentGoalResource
   private readonly codexHome: string
   private readonly modelSource = createLiveModelSource({
     fetchModels: (directory) => this.fetchModels(directory),
@@ -203,6 +115,15 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   ) {
     // Keep auth reads and writes on the same resolved Codex home for this driver.
     this.codexHome = options.codexHome ?? process.env.CODEX_HOME ?? path.join(os.homedir(), ".codex")
+    this.goalController = new CodexGoalController({
+      driverHost: this.host,
+      ensureProcess: (directory) => this.ensureProcess(directory),
+      lease: () => this.idle.lease(),
+      activeThreads: this.activeThreads,
+      projectThreadNotification: (input, threadId, method, params, frame) =>
+        this.projectThreadNotification(input, threadId, method, params, frame),
+    })
+    this.goals = this.goalController.resource
   }
 
   setAuth(keys: SdkRuntimeAuth) {
@@ -273,6 +194,12 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       threadId,
       adapter: codexAppServerAdapter(),
     })
+  }
+
+  async deleteAgentSession(sessionId: string, agentSessionId: string, directory: string) {
+    const result = await this.goalController.clear(sessionId, directory)
+    if (!result.ok && result.status !== "not_found") throw new Error(result.message)
+    this.goalController.releaseSession(sessionId, agentSessionId)
   }
 
   /**
@@ -353,65 +280,14 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       const method = text(message.method)
       const params = record(message.params) ?? {}
       if (!method) return
+      if (method === "thread/goal/updated" || method === "thread/goal/cleared") return
       messageQueue = messageQueue.then(async () => {
-        const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
-        if (startedSubagent?.parentThreadId === threadId) {
-          await input.observeSubagent({
-            observation: {
-              observationId: `codex:thread-started:${startedSubagent.id}:${startedSubagent.status}`,
-              harnessExecutionId: threadId,
-              stableCorrelationId: startedSubagent.id,
-              providerId: startedSubagent.id,
-              providerKind: "codex",
-              status: startedSubagent.status,
-              transcript: { kind: "live" },
-              ...(startedSubagent.label ? { label: startedSubagent.label } : {}),
-              ...(startedSubagent.subagentType ? { subagentType: startedSubagent.subagentType } : {}),
-              ...(startedSubagent.description ? { description: startedSubagent.description } : {}),
-            },
-            correlationKeys: [startedSubagent.id],
-            source: { dir: "in", method, frame: message },
-          })
-        }
-
-        const call = codexCollabAgentCall(record(params.item))
-        if (call?.senderThreadId === threadId) {
-          await Promise.all(call.receiverThreadIds.map((receiverThreadId) => input.observeSubagent({
-            observation: {
-              observationId: `codex:${method}:${call.id}:${receiverThreadId}:${call.statuses[receiverThreadId] ?? "edge"}`,
-              harnessExecutionId: threadId,
-              stableCorrelationId: receiverThreadId,
-              toolCallId: call.id,
-              toolCallRole: call.toolCallRole,
-              providerId: receiverThreadId,
-              providerKind: "codex",
-              transcript: { kind: "live" },
-              ...(call.statuses[receiverThreadId]
-                ? { status: call.statuses[receiverThreadId] }
-                : call.toolCallRole === "spawn" && method === "item/started"
-                  ? { status: "pending" as const }
-                  : {}),
-              ...(call.prompt ? { description: call.prompt } : {}),
-              subagentType: call.model ?? "codex",
-            },
-            correlationKeys: [receiverThreadId],
-            source: { dir: "in", method, frame: message },
-          })))
-        }
-
-        const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
-        const parentOwned = !eventThreadId || eventThreadId === threadId
+        const { parentOwned } = await this.projectThreadNotification(input, threadId, method, params, message)
         if (method === "turn/started" && parentOwned) {
           turnId = text(record(params.turn)?.id) ?? turnId
           const active = this.host.lifecycle().get(input.sessionId)
           if (active) active.turnId = turnId
         }
-        project(
-          method,
-          params,
-          message,
-          parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId },
-        )
         if (method === "turn/completed" && parentOwned) resolveCompleted?.()
       }).catch((err: unknown) => failTurn(new Error(errorMessage(err))))
     })
@@ -459,6 +335,66 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
   }
 
+  private async projectThreadNotification(
+    input: SdkRuntimeTurnInput,
+    threadId: string,
+    method: string,
+    params: JsonRecord,
+    frame: unknown,
+  ) {
+    const startedSubagent = method === "thread/started" ? codexStartedSubagent(params) : undefined
+    if (startedSubagent?.parentThreadId === threadId) {
+      await input.observeSubagent({
+        observation: {
+          observationId: `codex:thread-started:${startedSubagent.id}:${startedSubagent.status}`,
+          harnessExecutionId: threadId,
+          stableCorrelationId: startedSubagent.id,
+          providerId: startedSubagent.id,
+          providerKind: "codex",
+          status: startedSubagent.status,
+          transcript: { kind: "live" },
+          ...(startedSubagent.label ? { label: startedSubagent.label } : {}),
+          ...(startedSubagent.subagentType ? { subagentType: startedSubagent.subagentType } : {}),
+          ...(startedSubagent.description ? { description: startedSubagent.description } : {}),
+        },
+        correlationKeys: [startedSubagent.id],
+        source: { dir: "in", method, frame },
+      })
+    }
+    const call = codexCollabAgentCall(record(params.item))
+    if (call?.senderThreadId === threadId) {
+      await Promise.all(call.receiverThreadIds.map((receiverThreadId) => input.observeSubagent({
+        observation: {
+          observationId: `codex:${method}:${call.id}:${receiverThreadId}:${call.statuses[receiverThreadId] ?? "edge"}`,
+          harnessExecutionId: threadId,
+          stableCorrelationId: receiverThreadId,
+          toolCallId: call.id,
+          toolCallRole: call.toolCallRole,
+          providerId: receiverThreadId,
+          providerKind: "codex",
+          transcript: { kind: "live" },
+          ...(call.statuses[receiverThreadId]
+            ? { status: call.statuses[receiverThreadId] }
+            : call.toolCallRole === "spawn" && method === "item/started"
+              ? { status: "pending" as const }
+              : {}),
+          ...(call.prompt ? { description: call.prompt } : {}),
+          subagentType: call.model ?? "codex",
+        },
+        correlationKeys: [receiverThreadId],
+        source: { dir: "in", method, frame },
+      })))
+    }
+    const eventThreadId = text(params.threadId) ?? text(record(params.thread)?.id)
+    const parentOwned = !eventThreadId || eventThreadId === threadId
+    input.ingest({ source: CODEX_SOURCE, method, payload: params }, {
+      dir: "in",
+      method,
+      frame,
+    }, parentOwned ? { kind: "parent" } : { kind: "child", correlationKey: eventThreadId })
+    return { parentOwned, eventThreadId }
+  }
+
   readRuntimeHealth(): AgentHarnessAdapterHealth {
     if (!this.processError) return { status: "ok" }
     return {
@@ -480,6 +416,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
     if (!this.process) return
     log.info("codex app-server idle timeout, disposing", { idleMs: this.idleMs })
+    this.processGoalUnsubscribe?.()
+    this.processGoalUnsubscribe = null
     this.process.dispose()
     this.process = null
   }
@@ -490,6 +428,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     this.idle.cancel()
     this.lifecycleRevision++
     this.activeThreads.clear()
+    this.goalController.dispose()
+    this.processGoalUnsubscribe?.()
+    this.processGoalUnsubscribe = null
     this.processStartupAbort?.abort()
     this.process?.dispose()
     this.process = null
@@ -497,79 +438,19 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 
   async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
-    return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
+    return codexConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
-    return this.buildConfigOptions(this.modelSource.peek(directory), currentModel)
+    return codexConfigOptions(this.modelSource.peek(directory), currentModel)
   }
 
-  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string) {
-    if (models.length === 0) return []
-    const effort = thoughtLevelConfigOption(models, codexAppServerModel(currentModel), undefined)
-    return effort
-      ? [modelConfigOption(models, currentModel), effort]
-      : [modelConfigOption(models, currentModel)]
-  }
-
-  /**
-   * `model/list` entries carry both a picker `id` and the wire `model` slug;
-   * `thread/start`/`turn/start` take the slug, so that's what the option id
-   * must be. Hidden models stay out of the picker, and duplicate slugs (several
-   * picker rows can share one) collapse to the first row.
-   */
-  private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
-    const cwd = directory ?? process.cwd()
-    const observation = observeAgentProcess(this.host.processObserver, {
-      ownerId: `codex-probe:${randomUUID()}`,
-      launchId: randomUUID(),
-      harnessId: "codex",
-      access: "native",
-      role: "probe",
-      label: "Codex model probe",
-      locality: "in-process",
-      confidence: "direct",
-      capabilities: {
-        resourceMetrics: "shared-process",
-        ownerActions: false,
-      },
-      directory: cwd,
+  private async fetchModels(directory?: string) {
+    return await fetchCodexModels({
+      directory,
+      processObserver: this.host.processObserver,
+      ensureProcess: (cwd) => this.ensureProcess(cwd),
     })
-    observation.update({ lifecycle: "ready" })
-    try {
-      const proc = await this.ensureProcess(cwd)
-      const models = new Map<string, SdkModelEntry>()
-      let cursor: string | undefined
-      do {
-        const result = record(await proc.request("model/list", cursor ? { cursor } : {})) ?? {}
-        const data = Array.isArray(result.data) ? result.data : []
-        for (const item of data) {
-          const row = record(item)
-          if (!row || row.hidden === true) continue
-          const id = text(row.model) ?? text(row.id)
-          if (!id || models.has(id)) continue
-          const supportedEffortLevels = Array.isArray(row.supportedReasoningEfforts)
-            ? row.supportedReasoningEfforts
-              .map((option) => text(record(option)?.reasoningEffort))
-              .filter((effort): effort is string => !!effort)
-            : []
-          models.set(id, {
-            id,
-            name: text(row.displayName) ?? id,
-            ...(text(row.description) ? { description: text(row.description)! } : {}),
-            ...(row.isDefault === true ? { isDefault: true } : {}),
-            ...(supportedEffortLevels.length
-              ? { supportsEffort: true, supportedEffortLevels }
-              : {}),
-            ...(text(row.defaultReasoningEffort) ? { defaultEffort: text(row.defaultReasoningEffort)! } : {}),
-          })
-        }
-        cursor = text(result.nextCursor)
-      } while (cursor)
-      return [...models.values()]
-    } finally {
-      observation.exit({ reason: "disposed" })
-    }
   }
 
   failInteractiveState(err: Error) {
@@ -618,7 +499,11 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       mcp: this.currentMcp,
       signal,
       onClose: (err) => {
-        if (this.process === started) this.process = null
+        if (this.process === started) {
+          this.processGoalUnsubscribe?.()
+          this.processGoalUnsubscribe = null
+          this.process = null
+        }
         this.failInteractiveState(err)
       },
     })
@@ -627,6 +512,8 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       throw new Error("Codex app-server driver was disposed during startup")
     }
     this.process = started
+    this.processGoalUnsubscribe?.()
+    this.processGoalUnsubscribe = started.onMessage((message) => this.goalController.handleProcessMessage(message))
     this.processAuthRevision = -1
     this.processAuthWasExplicit = false
     this.processError = null
@@ -744,12 +631,9 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
       return permissionResponse(method, decision, params)
     }
     if (method === "account/chatgptAuthTokens/refresh") {
-      const tokens = await this.refreshChatgptAuthTokens()
-      return {
-        accessToken: tokens.access,
-        chatgptAccountId: tokens.accountId,
-        chatgptPlanType: tokens.planType ?? null,
-      }
+      const refreshed = await refreshCodexChatgptAuth({ auth: this.codexAuth, home: this.codexHome, fetch: this.options.fetch })
+      this.codexAuth = refreshed.auth
+      return refreshed.login
     }
     throw new Error(`Unsupported Codex app-server request: ${method}`)
   }
@@ -880,77 +764,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     }
   }
 
-  private async refreshChatgptAuthTokens() {
-    const current = codexChatgptAuthTokens(this.codexAuth) ?? codexChatgptAuthTokens(readCodexAuthFile(this.codexHome))
-    if (!current?.refresh) {
-      throw new Error("Codex ChatGPT auth is missing a refresh token. Run `codex login` or sync a valid Codex credential, then retry.")
-    }
-    const response = await (this.options.fetch ?? fetch)(`${OPENAI_ISSUER}/oauth/token`, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        grant_type: "refresh_token",
-        refresh_token: current.refresh,
-        client_id: OPENAI_CLIENT_ID,
-      }).toString(),
-    })
-    if (!response.ok) {
-      throw new Error(`Codex ChatGPT auth refresh failed (${response.status}). Run \`codex login\` or sync a valid Codex credential, then retry.`)
-    }
-    const row = record(await response.json().catch(() => undefined))
-    const access = text(row?.access_token)
-    const refresh = text(row?.refresh_token) ?? current.refresh
-    if (!access) throw new Error("Codex ChatGPT auth refresh returned no access token")
-    const next = {
-      access,
-      refresh,
-      accountId: text(row?.account_id) ?? accountIdFromClaims(row) ?? current.accountId,
-      idToken: text(row?.id_token) ?? current.idToken,
-      planType: current.planType,
-    }
-    this.codexAuth = mergeCodexAuth(this.codexAuth ?? readCodexAuthFile(this.codexHome), next)
-    await writeCodexAuthFile(this.codexHome, this.codexAuth)
-    return next
-  }
-}
-
-export function codexSpawnEnv(input: Record<string, string | undefined>) {
-  return harnessSpawnEnv(input)
 }
 
 export { observeCodexAppServerProcess } from "./app-server-process"
-function codexUserInput(parts: unknown[]) {
-  const textInput = extractTextFromParts(parts)
-  if (!textInput) return [{ type: "text", text: "", text_elements: [] }]
-  return [{ type: "text", text: textInput, text_elements: [] }]
-}
-
-function codexAppServerModel(model: string | undefined) {
-  const value = text(model)
-  if (!value || value === "default") return
-  return value
-}
-
-function codexTurnModel(input: PromptInput, configuredModel: string) {
-  return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
-}
-
-function questionIds(params: JsonRecord) {
-  const list = Array.isArray(params.questions) ? params.questions : []
-  return list.flatMap((question) => text(record(question)?.id) ?? [])
-}
-
-function permissionResponse(method: string, decision: "allow_once" | "allow_always" | "deny" | "reject_always", params: JsonRecord) {
-  const allow = decision === "allow_once" || decision === "allow_always"
-  const session = decision === "allow_always"
-  if (method === "execCommandApproval" || method === "applyPatchApproval") {
-    return { decision: allow ? session ? "approved_for_session" : "approved" : decision === "deny" ? "denied" : "abort" }
-  }
-  if (method === "item/permissions/requestApproval") {
-    return {
-      permissions: allow ? (record(params.permissions) ?? {}) : {},
-      scope: session ? "session" : "turn",
-    }
-  }
-  return { decision: allow ? session ? "acceptForSession" : "accept" : decision === "deny" ? "decline" : "cancel" }
-}

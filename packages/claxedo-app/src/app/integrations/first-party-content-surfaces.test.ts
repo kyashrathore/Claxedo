@@ -44,7 +44,7 @@ describe("content surface contributions", () => {
       reference: {
         sessionId: "ses_workgraph",
         workspaceId: "envelope_reference",
-        harness: "codex-acp",
+        harness: "acp:codex",
         environment: { kind: "local_worktree", placement: "shared", directory: "/repo" },
       },
       request,
@@ -75,7 +75,7 @@ describe("content surface contributions", () => {
         host: "workspace",
         cwd: "/repo/.worktrees/workgraph",
         toolSandbox: { kind: "local", cwd: "/repo/.worktrees/workgraph" },
-        harness: { id: "codex-acp" },
+        harness: { id: "acp:codex" },
       },
     })
     expect(navigate).toHaveBeenCalledWith("/s/ses_workgraph")
@@ -86,7 +86,7 @@ describe("content surface contributions", () => {
     const navigate = mock(() => {})
 
     await expect(hosted.openWorkGraphSession({
-      reference: { sessionId: "ses_missing", harness: "codex-acp" },
+      reference: { sessionId: "ses_missing", harness: "acp:codex" },
       request: async () => new Response(undefined, { status: 404 }),
       serverUrl: "http://claxedo.test",
       projects: [],

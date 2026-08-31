@@ -5,6 +5,10 @@ export type {
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
+  AgentGoalMutationFailure,
+  AgentGoalMutationResult,
+  AgentGoalResource,
+  AgentGoalStartInput,
   AgentMessagePage,
   AgentMessagePageInput,
   AgentHarnessAdapterProcessOptions,
@@ -14,6 +18,7 @@ export type {
   SupportsCommands,
   SupportsConfigOptions,
   SupportsFork,
+  SupportsGoals,
   SupportsMessagePages,
   SupportsPermissions,
   SupportsQuestions,
@@ -22,13 +27,24 @@ export type {
   SupportsTodos,
   SupportsUnrevert,
 } from "./adapter-contract"
+export { requireGoalResource } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
 export {
+  GOAL_ACTIONS,
+  GOAL_OPTIONAL_FIELDS,
+  GoalCapabilityError,
+  goalActionAvailable,
+  goalCapabilities,
   hasAdapterCapability,
+  requireGoalAction,
 } from "./capabilities"
 export type {
   AdapterCapability,
   AdapterCapabilityProvider,
+  GoalAction,
+  GoalCapabilities,
+  GoalOptionalField,
+  GoalRecovery,
   HttpProxyAdapter,
   RuntimeConfigurableAdapter,
 } from "./capabilities"
@@ -64,6 +80,7 @@ export type { PiAdapterOptions, PiSessionPlacement } from "./harnesses/pi"
 export {
   createPiAgent,
   DEFAULT_PI_SYSTEM_PROMPT,
+  evaluatePiGoal,
   piApiKeyBackendResolver,
   PiModelResolutionError,
   requirePiModel,
@@ -75,6 +92,9 @@ export type {
   PiModelBackend,
   PiModelBackendResolver,
   PiModelBackendResolverInput,
+  PiGoalEvaluation,
+  PiGoalEvaluator,
+  PiGoalEvaluatorInput,
   PiApiKeyBackendOptions,
   PiModelResolutionErrorCode,
   PiModelTurnResult,

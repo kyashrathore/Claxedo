@@ -90,11 +90,50 @@ outcome is recorded by the runtime after the harness stream settles. When a UI
 needs to reconcile an in-flight prompt, compare `lastTurn.assistantMessageId`
 with the assistant message id for that prompt; `lastTurn.status` alone only
 describes the most recent settled turn. If the host has a higher-level lifecycle
-such as a Codex goal or long-running task, use that lifecycle for session-level
+such as a Goal or long-running task, use that lifecycle for session-level
 "working" and "done" badges. Claude SDK, Codex app-server, ACP, OpenCode, and Pi
 terminal signals all normalize through this runtime/store path. Shell hook
 integrations remain useful for terminal presence, but they are not the canonical
 SDK turn outcome source.
+
+## Goals
+
+A Goal is a session-level completion condition that may span multiple harness
+turns. It is a dedicated runtime resource, not a prompt mode: callers use
+`runtime.goals`, and adapters must never repair missing support by sending the
+objective through `runtime.turns.start()`.
+
+```ts
+const capabilities = await runtime.goals.capabilities(session.id, directory)
+if (!capabilities.available) throw new Error(capabilities.unavailableReason)
+
+const started = await runtime.goals.start({
+  sessionId: session.id,
+  objective: "Ship when verification passes",
+}, directory)
+
+const current = await runtime.goals.read(session.id, directory)
+```
+
+`HarnessCapabilities.goals` is only coarse runtime availability. Always read
+the detailed Goal capabilities for the materialized session before rendering
+actions. Pause and Resume form one reversible pair; do not expose either unless
+both are advertised. Delete is independent. Stop is part of the common Goal
+lifecycle and disables continuation before interrupting active work.
+
+| Harness | Start authority | Actions | Recovery |
+| --- | --- | --- | --- |
+| Codex native | structured app-server Goal RPC | Pause, Resume, Delete | reconcile durable thread state |
+| Claude native | SDK `/goal` plus `active_goal` messages | none | blocked if provider state is lost |
+| Cursor native | `Agent.send("/goal …")` plus durable Run state | none | blocked if provider state is lost |
+| OpenCode native | first-party Session Goal aggregate | Pause, Resume, Delete | reconcile; orphaned execution becomes blocked |
+| Pi native | owned evaluator and follow-up controller | Pause, Resume, Delete | blocked after non-durable process loss |
+| ACP | negotiated `_meta.goal` extension | negotiated subset | negotiated reconciliation |
+
+Goal snapshots report only provider- or controller-owned fields. Optional
+budgets, usage, iteration, and diagnostic reason fields are not synthesized.
+After reconnect, refetch `runtime.goals.read()`; `recovery: "blocked"` means an
+active persisted snapshot must become visibly blocked rather than complete.
 
 ## Layers
 
@@ -103,7 +142,7 @@ SDK turn outcome source.
 `src/index.ts` defines the public runtime surface.
 
 - `createAgentRuntime()` is the main public entrypoint.
-- `runtime.sessions`, `runtime.turns`, `runtime.events`, `runtime.permissions`,
+- `runtime.sessions`, `runtime.turns`, `runtime.goals`, `runtime.events`, `runtime.permissions`,
   `runtime.questions`, `runtime.todos`, `runtime.commands`, `runtime.config`,
   and `runtime.health` are the user-facing resource namespaces.
 - `PromptInput` is the normalized message submission shape used across
@@ -197,8 +236,8 @@ are attached, so one parent cannot observe another parent's child lifecycle.
 - `hasAdapterCapability()` is the safe narrowing helper for optional adapter
   extensions.
 
-Capability data should be explicit. Avoid fallback behavior that pretends a
-harness supports a feature it cannot actually perform.
+Capability data is explicit. Unsupported operations fail rather than returning
+synthetic data or events.
 
 ### Events And SSE
 

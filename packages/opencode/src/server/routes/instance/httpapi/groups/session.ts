@@ -25,6 +25,7 @@ import { described } from "./metadata"
 import { QueryBoolean } from "./query"
 import { ProviderV2 } from "@opencode-ai/core/provider"
 import { ModelV2 } from "@opencode-ai/core/model"
+import { SessionGoal } from "@/session/goal"
 
 const root = "/session"
 export const ListQuery = Schema.Struct({
@@ -75,11 +76,24 @@ export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
+export const GoalStartPayload = Schema.Struct({ objective: Schema.String })
+export const GoalCapabilities = Schema.Struct({
+  implemented: Schema.Literal(true),
+  available: Schema.Boolean,
+  unavailableReason: Schema.optional(Schema.String),
+  actions: Schema.Array(Schema.Literals(["pause", "resume", "delete"])),
+  recovery: Schema.Literal("reconcile"),
+  optionalFields: Schema.Array(Schema.Literals(["iteration", "lastReason"])),
+})
 
 export const SessionPaths = {
   list: root,
   status: `${root}/status`,
   get: `${root}/:sessionID`,
+  goalCapabilities: `${root}/:sessionID/goal/capabilities`,
+  goal: `${root}/:sessionID/goal`,
+  goalPause: `${root}/:sessionID/goal/pause`,
+  goalResume: `${root}/:sessionID/goal/resume`,
   children: `${root}/:sessionID/children`,
   todo: `${root}/:sessionID/todo`,
   diff: `${root}/:sessionID/diff`,
@@ -141,6 +155,67 @@ export const SessionApi = HttpApi.make("session")
             summary: "Get session",
             description: "Retrieve detailed information about a specific OpenCode session.",
           }),
+        ),
+        HttpApiEndpoint.get("goalCapabilities", SessionPaths.goalCapabilities, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: GoalCapabilities,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.goal.capabilities",
+            summary: "Get Goal capabilities",
+            description: "Get first-party OpenCode Goal actions and recovery behavior.",
+          }),
+        ),
+        HttpApiEndpoint.get("goalGet", SessionPaths.goal, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: Schema.NullOr(SessionGoal.Snapshot),
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.goal.get",
+            summary: "Get Goal",
+            description: "Read the durable session Goal snapshot.",
+          }),
+        ),
+        HttpApiEndpoint.post("goalStart", SessionPaths.goal, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          payload: GoalStartPayload,
+          success: SessionGoal.Snapshot,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.goal.start",
+            summary: "Start Goal",
+            description: "Start first-party autonomous Goal execution.",
+          }),
+        ),
+        HttpApiEndpoint.post("goalPause", SessionPaths.goalPause, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: SessionGoal.Snapshot,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({ identifier: "session.goal.pause", summary: "Pause Goal" }),
+        ),
+        HttpApiEndpoint.post("goalResume", SessionPaths.goalResume, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: SessionGoal.Snapshot,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({ identifier: "session.goal.resume", summary: "Resume Goal" }),
+        ),
+        HttpApiEndpoint.delete("goalDelete", SessionPaths.goal, {
+          params: { sessionID: SessionID },
+          query: WorkspaceRoutingQuery,
+          success: Schema.Null,
+          error: [HttpApiError.BadRequest, ApiNotFoundError],
+        }).annotateMerge(
+          OpenApi.annotations({ identifier: "session.goal.delete", summary: "Delete Goal" }),
         ),
         HttpApiEndpoint.get("children", SessionPaths.children, {
           params: { sessionID: SessionID },

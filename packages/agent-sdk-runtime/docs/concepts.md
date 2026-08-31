@@ -95,7 +95,7 @@ otherwise                               -> Idle
 ```
 
 These labels describe the most recent harness turn. If your product has a
-higher-level lifecycle, such as a Codex goal that can continue across multiple
+higher-level lifecycle, such as a Goal that can continue across multiple
 turns, that lifecycle owns the session-level "working" and "done" badges.
 
 Do not use `message.time.completed` as proof that a turn completed. An
@@ -104,6 +104,24 @@ or stream cleanup finish. Native SDK streams, app-server turn events, ACP stop
 reasons, OpenCode compat events, and Pi runtime events normalize into the
 runtime/store outcome projection. CLI hook injection is terminal lifecycle
 visibility, not the durable source for SDK-owned turn outcomes.
+
+## Goal State Is Independent From Turn State
+
+A Goal is one session-level objective whose executor may accept several real
+turns before reaching a terminal condition. `session.status` still describes
+the current turn; `runtime.goals.read()` describes the longer-lived Goal. A
+settled turn therefore does not imply that an active Goal is complete.
+
+Goal submission uses `runtime.goals.start()`. It never enters `PromptInput`, an
+ordinary slash-command dispatcher, or `runtime.turns.start()`. Each adapter
+owns the translation to its authoritative Goal mechanism. Missing support is a
+capability error rather than permission to send the objective as ordinary text.
+
+Detailed capabilities separate implementation, current availability, actions,
+recovery, and optional snapshot fields. Pause and Resume are a pair. Delete is
+advertised independently. On reconnect, the host reads Goal state from the
+adapter authority; if the underlying execution cannot be restored, the state
+becomes `blocked` instead of being inferred as `complete`.
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"

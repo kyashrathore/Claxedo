@@ -42,6 +42,7 @@ function Probe() {
     <div
       data-testid="prompt"
       data-images={latest.current().filter((part) => part.type === "image").length}
+      data-goal-armed={latest.goal.armed() ? "true" : "false"}
     >
       {latest.current().map((part) => ("content" in part ? part.content : "")).join("")}
     </div>
@@ -73,6 +74,29 @@ afterEach(() => {
 })
 
 describe("PromptProvider", () => {
+  test("keeps armed Goal intent with its draft across composer remounts", async () => {
+    setSessionId("goal-draft")
+    const first = render(() => (
+      <PromptProvider directory="/repo" sessionId={sessionId}>
+        <Probe />
+      </PromptProvider>
+    ))
+
+    latest.goal.setArmed(true)
+    await waitFor(() => expect(first.getByTestId("prompt")).toHaveAttribute("data-goal-armed", "true"))
+    first.unmount()
+
+    const second = render(() => (
+      <PromptProvider directory="/repo" sessionId={sessionId}>
+        <Probe />
+      </PromptProvider>
+    ))
+    await waitFor(() => expect(second.getByTestId("prompt")).toHaveAttribute("data-goal-armed", "true"))
+
+    latest.goal.setArmed(false)
+    await waitFor(() => expect(second.getByTestId("prompt")).toHaveAttribute("data-goal-armed", "false"))
+  })
+
   test("keeps image attachments and submit cleanup isolated between new-session draft surfaces", async () => {
     setSessionId("new")
     setDraftId("draft-a")

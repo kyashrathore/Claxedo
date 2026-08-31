@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { apiBearerToken, configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
-import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient } from "./agent-runtime-client"
+import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient, DEFAULT_AGENT_RUNTIME_CAPABILITIES } from "./agent-runtime-client"
 
 function ok(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
@@ -115,6 +115,69 @@ describe("AgentRuntimeClient", () => {
     expect(seen).toEqual([
       "https://control.example/api/workspace/ws_1/connection",
       "https://control.example/workspaces/ws_1/session/runtime-session-1/capabilities",
+    ])
+  })
+
+  it("routes every Goal operation through the session authority", async () => {
+    const seen: Array<{ url: string; method: string; body?: string }> = []
+    const goal = {
+      sessionId: "runtime-session-1",
+      objective: "Ship verified work",
+      status: "active",
+      createdAt: 1,
+      updatedAt: 2,
+    }
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async (input, init) => {
+        seen.push({
+          url: String(input),
+          method: init?.method ?? "GET",
+          ...(typeof init?.body === "string" ? { body: init.body } : {}),
+        })
+        if (String(input).endsWith("/capabilities?directory=%2Frepo%2Fmain")) {
+          return ok({ implemented: true, available: true, actions: ["pause", "resume", "delete"], recovery: "reconcile", optionalFields: [] })
+        }
+        if ((init?.method ?? "GET") === "GET") return ok(goal)
+        return ok({ ok: true, goal: init?.method === "DELETE" ? null : goal })
+      },
+    })
+    const scope = { directory: "/repo/main", sessionID: "runtime-session-1" }
+
+    await client.getGoalCapabilities(scope)
+    await client.getGoal(scope)
+    await client.startGoal({ ...scope, objective: goal.objective })
+    await client.pauseGoal(scope)
+    await client.resumeGoal(scope)
+    await client.stopGoal(scope)
+    await client.deleteGoal(scope)
+
+    expect(seen).toEqual([
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/capabilities?directory=%2Frepo%2Fmain", method: "GET" },
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal?directory=%2Frepo%2Fmain", method: "GET" },
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal?directory=%2Frepo%2Fmain", method: "POST", body: JSON.stringify({ objective: goal.objective }) },
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/pause?directory=%2Frepo%2Fmain", method: "POST", body: "{}" },
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/resume?directory=%2Frepo%2Fmain", method: "POST", body: "{}" },
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal/stop?directory=%2Frepo%2Fmain", method: "POST", body: "{}" },
+      { url: "http://127.0.0.1:3001/session/runtime-session-1/goal?directory=%2Frepo%2Fmain", method: "DELETE" },
+    ])
+  })
+
+  it("resolves draft capabilities for the selected harness", async () => {
+    const seen: string[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async (input) => {
+        seen.push(String(input))
+        return ok({ ...DEFAULT_AGENT_RUNTIME_CAPABILITIES, transport: "codex", goals: true })
+      },
+    })
+
+    const capabilities = await client.getCapabilities({ directory: "/repo/main", harness: "codex" })
+
+    expect(capabilities.goals).toBe(true)
+    expect(seen).toEqual([
+      "http://127.0.0.1:3001/session/capabilities?directory=%2Frepo%2Fmain&harness=codex",
     ])
   })
 

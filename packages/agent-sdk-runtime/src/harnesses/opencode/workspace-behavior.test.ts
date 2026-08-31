@@ -178,7 +178,127 @@ describe("opencode adapter", () => {
       unrevert: true,
       configOptions: false,
       subagents: true,
+      goals: true,
     })
+  })
+
+  test("maps the first-party OpenCode Goal resource without prompt fallback", async () => {
+    const calls: Array<{ method: string; path: string; body?: unknown }> = []
+    const statuses: Array<string | null> = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => {
+      if (event.payload.type === "goal-updated") statuses.push(event.payload.goal.status)
+      if (event.payload.type === "goal-cleared") statuses.push(null)
+    })
+    let goal: null | {
+      sessionId: string
+      objective: string
+      status: "active" | "complete"
+      createdAt: number
+      updatedAt: number
+      iteration: number
+      lastReason?: string
+    } = null
+    let reconcile = false
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      eventHub,
+      request: async (request) => {
+        const url = new URL(request.url)
+        const body = request.body ? await request.clone().json() : undefined
+        calls.push({ method: request.method, path: url.pathname, ...(body ? { body } : {}) })
+        if (url.pathname.endsWith("/goal/capabilities")) {
+          return Response.json({
+            implemented: true,
+            available: true,
+            actions: ["pause", "resume", "delete"],
+            recovery: "reconcile",
+            optionalFields: ["iteration", "lastReason"],
+          })
+        }
+        if (url.pathname.endsWith("/goal") && request.method === "POST") {
+          const now = Date.now()
+          goal = {
+            sessionId: "session-1",
+            objective: (body as { objective: string }).objective,
+            status: "active",
+            createdAt: now,
+            updatedAt: now,
+            iteration: 0,
+          }
+          reconcile = true
+          return Response.json(goal)
+        }
+        if (url.pathname.endsWith("/goal") && request.method === "GET") {
+          if (goal && reconcile) {
+            reconcile = false
+            goal = { ...goal, status: "complete", updatedAt: Date.now(), iteration: 1, lastReason: "Verified" }
+          }
+          return Response.json(goal)
+        }
+        if (url.pathname.endsWith("/goal") && request.method === "DELETE") {
+          goal = null
+          return Response.json(null)
+        }
+        throw new Error(`unexpected request: ${request.method} ${url.pathname}`)
+      },
+    })
+
+    expect(await adapter.goals.readCapabilities("session-1", "/repo")).toMatchObject({
+      available: true,
+      actions: ["pause", "resume", "delete"],
+    })
+    expect(await adapter.goals.start("session-1", { objective: "Ship verified work" }, "/repo"))
+      .toMatchObject({ ok: true, goal: { status: "active" } })
+    const deadline = Date.now() + 1_000
+    while (!statuses.includes("complete") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 5))
+    }
+    expect(statuses).toEqual(["active", "complete"])
+    expect(calls.some((call) => call.path.endsWith("/prompt_async"))).toBe(false)
+    expect(await adapter.goals.delete("session-1", "/repo")).toEqual({ ok: true, goal: null })
+    expect(statuses.at(-1)).toBeNull()
+    adapter.dispose()
+  })
+
+  test("reconciles an active Goal after transient Goal-read failures", async () => {
+    const statuses: string[] = []
+    const eventHub = createRuntimeEventHub()
+    eventHub.subscribeRuntime((event) => {
+      if (event.payload.type === "goal-updated") statuses.push(event.payload.goal.status)
+    })
+    let goalReads = 0
+    const active = {
+      sessionId: "session-retry",
+      objective: "Recover monitoring",
+      status: "active" as const,
+      createdAt: 1,
+      updatedAt: 1,
+      iteration: 0,
+    }
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      eventHub,
+      request: async (request) => {
+        const url = new URL(request.url)
+        if (url.pathname.endsWith("/goal") && request.method === "POST") return Response.json(active)
+        if (url.pathname.endsWith("/goal") && request.method === "GET") {
+          goalReads += 1
+          if (goalReads < 3) throw new Error("temporary Goal read failure")
+          return Response.json({ ...active, status: "complete", updatedAt: 2, iteration: 1 })
+        }
+        throw new Error(`unexpected request: ${request.method} ${url.pathname}`)
+      },
+    })
+
+    expect(await adapter.goals.start("session-retry", { objective: active.objective }, "/repo"))
+      .toMatchObject({ ok: true, goal: { status: "active" } })
+    const deadline = Date.now() + 2_000
+    while (!statuses.includes("complete") && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    }
+
+    expect(goalReads).toBe(3)
+    expect(statuses).toEqual(["active", "complete"])
+    adapter.dispose()
   })
 
   test("builds OpenCode auth content from raw api keys", () => {

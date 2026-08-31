@@ -43,10 +43,12 @@ import type {
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
   AgentInteractionResult,
+  AgentGoalMutationResult,
+  AgentGoalResource,
   AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
 } from "../../adapter-contract"
-import { harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
+import { goalCapabilities, harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
 import { draftPermissionModes, extractAgents, rememberLiveModes } from "./session"
 import { permissionOptionPreference, selectPermissionOption } from "./permission-options"
 import { listCommands } from "../../command-discovery"
@@ -67,6 +69,7 @@ import {
 } from "./helpers"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { AcpTurnRunner, activeAcpPromptCount, waitForNoActiveAcpPrompts } from "./turn-runner"
+import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 
 const log = Log.create({ service: "acp-adapter" })
 
@@ -108,6 +111,8 @@ export type {
 export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["runtime-config"] as const
   readonly commitsStreamEvents = true
+  private publishedGoals = new Map<string, string>()
+  readonly goals: AgentGoalResource = this.goalResource()
   private cfg(model?: SessionConfig["model"]) {
     if (model) return model
     if (this.currentModel) {
@@ -134,6 +139,18 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return !!this.probe?.proc?.alive && this.probe.proc.supportsForkSession()
   }
 
+  private supportsGoal(sessionId?: string) {
+    const available = (proc: unknown) => {
+      const read = (proc as { goalCapabilities?: () => { available?: boolean } } | undefined)?.goalCapabilities
+      return typeof read === "function" && read.call(proc).available === true
+    }
+    if (sessionId) return available(this.entryForSession(sessionId)?.proc)
+    for (const entry of this.processEntries()) {
+      if (entry.proc?.alive && available(entry.proc)) return true
+    }
+    return false
+  }
+
   readHarnessCapabilities(_directory?: string, context?: HarnessCapabilityContext): HarnessCapabilities {
     return harnessCapabilities({
       harness: this.harnessId(),
@@ -149,7 +166,109 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       unrevert: false,
       configOptions: true,
       subagents: false,
+      goals: this.supportsGoal(context?.sessionId),
     })
+  }
+
+  private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
+    const previous = this.store.getGoal?.(sessionId)
+    const signature = JSON.stringify(goal)
+    if (this.publishedGoals.get(sessionId) === signature) return
+    this.publishedGoals.set(sessionId, signature)
+    this.store.setGoal?.(sessionId, goal)
+    const advancedIteration = goal?.status === "active"
+      && previous?.status === "active"
+      && goal.iteration !== undefined
+      && previous.iteration !== undefined
+      && goal.iteration !== previous.iteration
+    if (!goal || goal.status !== "active" || advancedIteration) this.finishGoalProjection(sessionId)
+    this.options.eventHub?.publishRuntime({
+      directory,
+      sessionId,
+      agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
+      payload: goal
+        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
+        : agentRuntimeEvent.goalCleared({ sessionId }),
+    })
+  }
+
+  private async goalTarget(sessionId: string, directory: string) {
+    const required = requireWorkspaceDirectory(directory)
+    const agentSessionId = this.store.getAgentSessionId(sessionId)
+    if (!agentSessionId) throw new Error(`Session ${sessionId} has no ACP session binding`)
+    const { proc } = await this.getOrSpawnProcess(sessionId, required)
+    proc.listenGoal(agentSessionId, sessionId, (goal) => this.publishGoal(sessionId, required, goal))
+    proc.listenGoalUpdates(agentSessionId, (update) => {
+      this.observeGoalSessionUpdate(sessionId, agentSessionId, required, proc, update)
+    })
+    return { agentSessionId, directory: required, proc }
+  }
+
+  private goalResource(): AgentGoalResource {
+    const mutate = async <T extends RuntimeGoalSnapshot | null>(
+      sessionId: string,
+      directory: string,
+      operation: (target: Awaited<ReturnType<AcpHarnessAdapter["goalTarget"]>>) => Promise<T>,
+    ): Promise<AgentGoalMutationResult<T>> => {
+      try {
+        const target = await this.goalTarget(sessionId, directory)
+        const goal = await operation(target)
+        this.publishGoal(sessionId, target.directory, goal)
+        return { ok: true, goal }
+      } catch (cause) {
+        return {
+          ok: false,
+          status: "failed",
+          message: cause instanceof Error ? cause.message : String(cause),
+        }
+      }
+    }
+    return {
+      readCapabilities: async (sessionId, directory) => {
+        try {
+          const target = await this.goalTarget(sessionId, requireWorkspaceDirectory(directory))
+          return goalCapabilities(target.proc.goalCapabilities())
+        } catch (cause) {
+          return goalCapabilities({
+            implemented: false,
+            available: false,
+            unavailableReason: cause instanceof Error ? cause.message : String(cause),
+            actions: [],
+            recovery: "blocked",
+            optionalFields: [],
+          })
+        }
+      },
+      read: async (sessionId, directory) => {
+        const target = await this.goalTarget(sessionId, requireWorkspaceDirectory(directory))
+        const goal = await target.proc.readGoal(target.agentSessionId, sessionId)
+        this.store.setGoal?.(sessionId, goal)
+        return goal
+      },
+      start: (sessionId, input, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
+        const goal = await target.proc.startGoal(target.agentSessionId, sessionId, input.objective)
+        if (!goal) throw new Error("ACP Goal start returned no Goal")
+        return goal
+      }),
+      pause: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
+        const goal = await target.proc.goalAction("pause", target.agentSessionId, sessionId)
+        if (!goal) throw new Error("ACP Goal pause returned no Goal")
+        return goal
+      }),
+      resume: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
+        const resumed = await target.proc.goalAction("resume", target.agentSessionId, sessionId)
+        const refreshed = await target.proc.readGoal(target.agentSessionId, sessionId)
+        const goal = refreshed ?? resumed
+        if (!goal) throw new Error("ACP Goal resume returned no Goal")
+        return goal
+      }),
+      stop: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), (target) =>
+        target.proc.stopGoal(target.agentSessionId, sessionId)),
+      delete: (sessionId, directory) => mutate(sessionId, requireWorkspaceDirectory(directory), async (target) => {
+        await target.proc.goalAction("delete", target.agentSessionId, sessionId)
+        return null
+      }),
+    }
   }
 
   async listSessions(directory: string): Promise<AgentSession[]> {
@@ -250,8 +369,12 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   }
 
   async deleteSession(id: string, _directory: string): Promise<void> {
+    this.finishGoalProjection(id)
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
     const entry = key ? this.processMap().get(key) : undefined
+    const agentSessionId = this.store.getAgentSessionId(id)
+    if (agentSessionId) entry?.proc?.unlistenGoal(agentSessionId)
+    this.publishedGoals.delete(id)
     entry?.sessionIds.delete(id)
     this.sessionProcessMap().delete(id)
     const persistedSiblings = key
@@ -638,8 +761,8 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       if (context?.sessionId && session.id !== context.sessionId) return false
       if (session.status !== "recovering") return false
       // RuntimeStore is shared by every harness in a workspace. Health belongs
-      // to this adapter only: an old native recovery (or another ACP
-      // connection) must not degrade the active operator ACP. Persistent
+      // to this adapter only: stale native recovery state and other ACP
+      // connections are outside this adapter's health boundary. Persistent
       // stores project config on the list row; the config lookup keeps the same
       // contract for in-memory/custom stores without inventing ownership.
       const harness = session.config?.harness ?? this.store.getSessionConfig(session.id)?.harness

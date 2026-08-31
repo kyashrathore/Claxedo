@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { createSessionRoutes, type RuntimeSessionBusEvent, type SessionLifecycleEvent } from "./session-core"
 import type {
-  AgentMessageRow,
+  AgentMessage,
   AgentRuntime,
   AgentRuntimeStreamEvent,
-  AgentSessionRow,
+  AgentSession,
   PromptInput,
   RuntimeDirectory,
   SessionConfig,
@@ -24,7 +24,7 @@ import type { Message } from "@opencode-ai/sdk/v2"
 function adapter(input: {
   onDirectory?: (directory: RuntimeDirectory) => void
   events?: AgentRuntimeStreamEvent[]
-  messages?: AgentMessageRow[]
+  messages?: AgentMessage[]
   getMessagePage?: (
     id: string,
     page: AgentMessagePageInput,
@@ -74,6 +74,7 @@ function adapter(input: {
         unrevert: true,
         configOptions: false,
         subagents: true,
+        goals: false,
       }
     },
     sendMessage: (_id: string, _prompt: PromptInput, directory: RuntimeDirectory) => {
@@ -107,8 +108,8 @@ function adapter(input: {
 }
 
 describe("createSessionRoutes message paging", () => {
-  const first = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessageRow
-  const second = { info: { id: "message-2", role: "assistant" }, parts: [] } as AgentMessageRow
+  const first = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessage
+  const second = { info: { id: "message-2", role: "assistant" }, parts: [] } as AgentMessage
 
   test("uses the route authority before an adapter page and forwards its opaque cursor", async () => {
     const calls: Array<{ sessionId: string; page: AgentMessagePageInput; directory: RuntimeDirectory }> = []
@@ -328,9 +329,9 @@ function routes(input: {
   events?: CompatEnvelope[]
   busEvents?: RuntimeSessionBusEvent[]
   lifecycle?: SessionLifecycleEvent[]
-  getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
-  getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessageRow[]; maxEventOrdinal?: number } | undefined
-  getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSessionRow | null> | AgentSessionRow | null
+  getMessages?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
+  getMessageSnapshot?: (directory: RuntimeDirectory, sessionId: string) => Promise<{ messages: AgentMessage[]; maxEventOrdinal?: number } | undefined> | { messages: AgentMessage[]; maxEventOrdinal?: number } | undefined
+  getSession?: (directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
 }) {
   return createSessionRoutes({
     resolveAdapter: () => input.adapter,
@@ -458,7 +459,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("returns snapshot metadata and the canonical session together", async () => {
-    const messages: AgentMessageRow[] = [{
+    const messages: AgentMessage[] = [{
       info: { id: "message_1", sessionID: "session_1", role: "assistant" },
       parts: [],
     }]
@@ -477,7 +478,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   })
 
   test("wraps replay messages with the canonical session only for snapshot callers", async () => {
-    const messages: AgentMessageRow[] = [{
+    const messages: AgentMessage[] = [{
       info: { id: "message_1", sessionID: "session_1", role: "assistant" },
       parts: [],
     }]
@@ -595,7 +596,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   test("can run message turns through the agent runtime facade", async () => {
     const events: CompatEnvelope[] = []
     const busEvents: RuntimeSessionBusEvent[] = []
-    const messages: AgentMessageRow[] = [{
+    const messages: AgentMessage[] = [{
       info: {
         id: "assistant_1",
         sessionID: "session_1",

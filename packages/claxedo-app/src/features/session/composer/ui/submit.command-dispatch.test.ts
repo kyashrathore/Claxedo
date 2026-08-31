@@ -40,6 +40,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
+      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
     })
 
     await submit.handleSubmit(submitEvent())
@@ -71,6 +72,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
       mode: () => "shell",
+      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
     })
 
     await submit.handleSubmit(submitEvent())
@@ -99,6 +101,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
       mode: () => "shell",
+      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
       setMode: (value) => {
         modes.push(value)
       },
@@ -127,6 +130,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
+      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
       imageAttachments: () => [{
         mime: "image/png",
         dataUrl: "data:image/png;base64,abc",
@@ -172,6 +176,7 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
+      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
     })
 
     await submit.handleSubmit(submitEvent())

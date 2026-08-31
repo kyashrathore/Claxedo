@@ -2875,6 +2875,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
             unrevert: false,
             configOptions: false,
             subagents: false,
+            goals: false,
           }),
           dispose() {},
         } as unknown as AgentHarnessAdapter
@@ -3798,6 +3799,7 @@ describe("scoped Session tool compatibility", () => {
         unrevert: false,
         configOptions: false,
         subagents: false,
+        goals: false,
       }),
       sendMessage: async function* (_id: string, input: { parts: unknown[] }) {
         resolvePrompt(input)

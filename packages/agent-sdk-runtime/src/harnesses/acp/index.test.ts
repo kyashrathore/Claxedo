@@ -1,7 +1,7 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import { internalsOf, type WithInternals } from "../../test-utils/class-internals"
-import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
+import { committedStartTurn, fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { AcpHarnessAdapter, type AcpRuntimeStore, type ACPTransport } from "./index"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 import { generateAITitle } from "./title"
@@ -18,7 +18,7 @@ function adapter() {
     sessions: Map<string, { proc: { alive: boolean; pendingPermissions: Map<string, unknown>; respondPermission: (id: string, response: unknown) => void } }>
   }>
   item.sessions = new Map()
-  Object.assign(item, { permissionOwners: new Map() })
+  Object.assign(item, { permissionOwners: new Map(), processes: item.sessions })
   return item
 }
 
@@ -394,14 +394,19 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const calls: string[] = []
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
+        getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
         listSessionsByOwnerKey: (key: string) => string[]
         deleteSession: (id: string) => void
       }
+      publishedGoals: Map<string, string>
       processes: Map<string, { key: string; directory: string; proc: { dispose: () => void }; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
     }>
     item.store = {
+      getAgentSessionId() {
+        return null
+      },
       getSessionOwnerKey() {
         return "process-key"
       },
@@ -423,6 +428,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
+    item.publishedGoals = new Map()
 
     await item.deleteSession("s1", path.resolve("/work"))
 
@@ -434,14 +440,19 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
     const calls: string[] = []
     const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
       store: {
+        getAgentSessionId: (id: string) => string | null
         getSessionOwnerKey: (id: string) => string | null
         listSessionsByOwnerKey: (key: string) => string[]
         deleteSession: (id: string) => void
       }
+      publishedGoals: Map<string, string>
       processes: Map<string, { key: string; directory: string; proc: { dispose: () => void }; init: null; sessionIds: Set<string> }>
       sessionProcesses: Map<string, string>
     }>
     item.store = {
+      getAgentSessionId() {
+        return null
+      },
       getSessionOwnerKey() {
         return "process-key"
       },
@@ -463,6 +474,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       },
     ]])
     item.sessionProcesses = new Map([["s1", "process-key"]])
+    item.publishedGoals = new Map()
 
     await item.deleteSession("s1", path.resolve("/work"))
 
@@ -754,7 +766,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
@@ -785,7 +797,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent() {},
       bindSession() {},
     }
@@ -845,7 +859,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
@@ -876,7 +890,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent() {},
       bindSession() {},
     }
@@ -929,7 +945,7 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
         getAgentSessionId: (id: string) => string
         getSession: (id: string) => { title?: string | null } | null
         consumeRecoveryError: (id: string) => string | null
-        startTurn: (input: unknown) => void
+        startTurn: (input: unknown) => ReturnType<typeof committedStartTurn>
         appendEvent: (input: unknown) => void
         bindSession: (input: unknown) => void
       }
@@ -975,7 +991,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
       consumeRecoveryError() {
         return null
       },
-      startTurn() {},
+      startTurn(input) {
+        return committedStartTurn(input)
+      },
       appendEvent() {},
       bindSession() {},
     }

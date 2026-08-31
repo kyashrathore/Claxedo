@@ -226,7 +226,7 @@ export function createChildEventRouter(options: {
     dispose() {
       if (disposed) return
       disposed = true
-      for (const correlationKey of [...buffers.keys()]) {
+      for (const correlationKey of buffers.keys()) {
         dropBuffer(
           correlationKey,
           "child_event_route_disposed",

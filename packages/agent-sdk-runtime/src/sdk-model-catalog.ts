@@ -116,36 +116,25 @@ export function thoughtLevelConfigOption(
   currentModel: string | undefined,
   currentEffort: string | undefined,
 ): AgentConfigOption | undefined {
-  // Same resolution `modelConfigOption` uses. `runtime.ts` maps the
-  // "Default (recommended)" selection to `setModel("")`, so an empty current
-  // model is the COMMON case, not an edge one — matching on id alone left the
-  // effort row missing for exactly the default state.
-  // Resolve the default the way `modelConfigOption` does, but ONLY for an
-  // empty/absent selection — `runtime.ts` maps "Default (recommended)" to
-  // `setModel("")`, so that is the common case, not an edge one. A non-empty id
-  // we do not recognise must NOT silently adopt some other model's levels;
-  // that would advertise an effort the turn cannot run at.
+  // An empty model selection means the model catalog's advertised default.
+  // A named model is resolved only by its own id.
   const model = selectedEffortModel(models, currentModel)
   const levels = model?.supportsEffort ? model.supportedEffortLevels ?? [] : []
   if (levels.length < 2) return undefined
-  // Never hand back a level this model does not offer. The SDK silently
-  // downgrades an unsupported effort, which would leave the UI reporting a
-  // setting the turn never actually ran with.
+  // The current value describes an explicit supported selection or the model's
+  // declared default. An absent value leaves selection with the model.
   const current = currentEffort && levels.includes(currentEffort)
     ? currentEffort
     : model?.defaultEffort && levels.includes(model.defaultEffort)
     ? model.defaultEffort
-    : levels[0]
+    : undefined
   return {
     id: EFFORT_CONFIG_ID,
     name: "Effort",
     description: "How much reasoning effort the model should use",
     category: "thought_level",
     type: "select",
-    currentValue: current,
-    // `selectOptions`, matching `modelConfigOption` above — that is this
-    // runtime's shape. ACP agents put the same data in `options`; the app-side
-    // extractor reads either, so both paths land on one Effort section.
+    ...(current ? { currentValue: current } : {}),
     selectOptions: levels.map((level) => ({ id: level, name: titleCase(level) })),
   }
 }

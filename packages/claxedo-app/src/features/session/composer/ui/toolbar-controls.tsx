@@ -6,6 +6,8 @@ import type { HarnessSelectionController } from "@/features/session/harness/cont
 import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"
 import { PromptPermissionControl } from "@/features/session/composer/ui/permission-control"
 import { openCodeDraftLabels } from "@/features/session/composer/open-code-draft-default"
+import { Tooltip } from "@opencode-ai/ui/tooltip"
+import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"
 import type { PermissionModeOption } from "@/features/session/permission/modes"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -31,6 +33,12 @@ export function PromptToolbarControls(props: {
   onContext: VoidFunction
   shellTitle: string
   onEnterShell: VoidFunction
+  goalTitle: string
+  clearGoalTitle: string
+  goalAvailable: Accessor<boolean>
+  goalArmed: Accessor<boolean>
+  onGoal: VoidFunction
+  onGoalToggle: VoidFunction
   planModeTitle: string
   agentGroupTitle: string
   approveEnabled: Accessor<boolean>
@@ -68,7 +76,7 @@ export function PromptToolbarControls(props: {
   const addDisabled = () => props.mode() !== "normal" || props.harnessPending()
 
   return (
-    <div data-slot="composer-controls" class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
+    <div data-slot="composer-controls" data-claxedo-compact-touch class="flex min-w-0 flex-1 items-center gap-1 overflow-hidden">
       <PromptAddMenu
         fileAttachmentInput={props.fileAttachmentInput}
         disabled={addDisabled}
@@ -83,6 +91,9 @@ export function PromptToolbarControls(props: {
         onContext={props.onContext}
         shellLabel={props.shellTitle}
         onEnterShell={props.onEnterShell}
+        goalLabel={props.goalTitle}
+        goalDisabled={() => !props.goalAvailable()}
+        onGoal={props.onGoal}
         agentNames={props.agentNames}
         currentAgentName={props.currentAgentName}
         onAgentSelect={props.onAgentSelect}
@@ -99,6 +110,13 @@ export function PromptToolbarControls(props: {
         label={props.approveTitle}
         onSelect={props.onPermissionSelect}
       />
+      <Show when={props.goalArmed()}>
+        <PromptGoalToggle
+          label={props.goalTitle}
+          clearLabel={props.clearGoalTitle}
+          onClear={props.onGoalToggle}
+        />
+      </Show>
       <div data-slot="composer-selection-controls" class="ml-auto flex min-w-0 items-center gap-1">
         <Show when={props.harnessController()}>
           {(controller) => (
@@ -144,5 +162,28 @@ export function PromptToolbarControls(props: {
         </Show>
       </div>
     </div>
+  )
+}
+
+export function PromptGoalToggle(props: {
+  label: string
+  clearLabel: string
+  onClear: VoidFunction
+}) {
+  return (
+    <Tooltip placement="top" value={props.clearLabel}>
+      <button
+        data-action="prompt-goal-toggle"
+        type="button"
+        aria-label={props.clearLabel}
+        aria-pressed="true"
+        onClick={props.onClear}
+        class="group/goal flex h-7 shrink-0 items-center gap-1.5 rounded-md bg-v2-overlay-simple-overlay-pressed px-2.5 text-compact font-body leading-4 text-v2-text-text-muted transition-colors duration-150 hover:bg-v2-overlay-simple-overlay-hover hover:text-v2-text-text-base focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-v2-border-border-focus"
+      >
+        <Icon name="circle-dashed" size="small" class="shrink-0 group-hover/goal:hidden" />
+        <Icon name="circle-x" size="small" class="hidden shrink-0 group-hover/goal:block" />
+        <span>{props.label}</span>
+      </button>
+    </Tooltip>
   )
 }

@@ -62,6 +62,7 @@ import { createComposerAutoAccept } from "./auto-accept"
 import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
 import { createComposerPermissionMode } from "./permission-mode"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
+import { createComposerGoalController } from "./goal-controller"
 const idleSessionStatus = { type: "idle" as const }
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -248,6 +249,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       routeWorkspaceAuthorityId: props.workspaceId?.(), serverUrl: getClaxedoServerUrl(),
     })
   })
+  const goalController = createComposerGoalController({
+    isNewSession: newSession, harness: () => currentHarnessType(scope()), harnessPending,
+    client: sdk.client.session, directory: submitSessionDirectory,
+    serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
+    workspaceId: () => props.workspaceId?.(), workspaceKind: () => props.workspaceKind?.(),
+    sessionRef: () => props.sessionRef?.(),
+    sessionCapabilities: () => props.goalCapabilities?.(),
+    armed: prompt.goal.armed,
+    setArmed: prompt.goal.setArmed,
+    unavailable: (reason) => {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: reason ?? "Goals are unavailable for this harness.",
+      })
+    },
+    normalizeMode: () => { engine?.setMode("normal"); engine?.closePopover() },
+    focus: () => editorRef?.focus(),
+  })
+  const { available: goalAvailable, armed: goalArmed, arm: armGoal, toggle: toggleGoal } = goalController
   const signedWorkspaceRuntimeFallback = createSignedWorkspaceRuntimeFallback({
     serverUrl: getClaxedoServerUrl,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
@@ -265,11 +286,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (activeTurn !== undefined) return activeTurn
     return status()?.type === "busy" || status()?.type === "retry"
   })
-  // status-meta is written directly into the query cache by the status
-  // dispatcher (session/store/session-status-dispatcher.ts) with no query
-  // observer, so promptSessionStatusStage alone is a non-reactive snapshot —
-  // without this cache subscription the escalation stages ("pending"/"long"/
-  // "failed") would never re-render after their timers fire.
+  // status-meta has no query observer, so subscribe explicitly; otherwise the
+  // escalation stages never re-render after their timers fire.
   const [statusMetaVersion, setStatusMetaVersion] = createSignal(0)
   createEffect(() => {
     const sid = resolvedSessionId()
@@ -381,18 +399,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     engine.bindEditor(el)
     props.ref?.(el)
   }
-
   registerPromptModeCommands({
     register: (scope, commands) => command.register(scope, commands),
     mode: engine.mode,
     pick,
     setMode: engine.enterMode,
+    goalAvailable,
+    armGoal,
     labels: {
       attachFile: language.t("prompt.action.attachFile"),
       fileCategory: language.t("command.category.file"),
       shellMode: language.t("command.prompt.mode.shell"),
       normalMode: language.t("command.prompt.mode.normal"),
       sessionCategory: language.t("command.category.session"),
+      goal: language.t("prompt.action.goal"),
     },
   })
 
@@ -641,6 +661,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     workspaceKind: props.workspaceKind,
     selectedModelForSubmit: toolbarState.currentModel,
     harnessController,
+    ...goalController.submitInput(props.goal, props.stopGoal),
   })
 
   const submitRetry = createPromptInputSubmitRetry({
@@ -665,8 +686,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const handleSubmit = submitRetry.handleSubmit
   const onRetry = submitRetry.onRetry
-
-  const designPlaceholder = () => promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
+  const designPlaceholder = () => goalArmed()
+    ? language.t("prompt.goal.placeholder")
+    : promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
       rootRef={(el) => (rootEl = el)}
@@ -723,6 +745,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       openCommands={() => engine.openPopover("slash")}
       openContext={() => engine.openPopover("at")}
       enterShellMode={() => engine.enterMode("shell")}
+      goalAvailable={goalAvailable} goalArmed={goalArmed}
+      armGoal={armGoal} toggleGoal={toggleGoal}
       approveEnabled={() => props.canPrompt?.() ?? true}
       permissionGroups={permissionMode.groups}
       permissionCurrent={permissionMode.current}

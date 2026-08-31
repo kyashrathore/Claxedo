@@ -21,6 +21,9 @@ import type { ComposerMode } from "@/features/session/composer/mode"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
 import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import type { PromptRetryAction } from "@/features/session/composer/prompt-input-props"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
+import { SessionGoalDock } from "./session-goal-dock"
 
 export function SessionComposerRegion(props: {
   state: SessionComposerState
@@ -92,6 +95,14 @@ export function SessionComposerRegion(props: {
    */
   status?: () => SessionStatus
   activeTurn?: () => boolean
+  goalController?: {
+    goal: () => RuntimeGoalSnapshot | null | undefined
+    goalCapabilities: () => AgentRuntimeGoalCapabilities | undefined
+    pauseGoal: () => Promise<unknown>
+    resumeGoal: () => Promise<unknown>
+    stopGoal: () => Promise<unknown>
+    deleteGoal: () => Promise<unknown>
+  }
   beforeInput?: JSX.Element
   registerRetry?: (retry?: PromptRetryAction) => void
 }) {
@@ -219,6 +230,26 @@ export function SessionComposerRegion(props: {
           )}
         </Show>
 
+        <Show when={props.goalController} keyed>
+          {(controller) => (
+            <Show when={controller.goal()} keyed>
+              {(goal) => (
+                <Show when={controller.goalCapabilities()} keyed>
+                  {(capabilities) => (
+                    <SessionGoalDock
+                      goal={goal}
+                      capabilities={capabilities}
+                      onPause={controller.pauseGoal}
+                      onResume={controller.resumeGoal}
+                      onDelete={controller.deleteGoal}
+                    />
+                  )}
+                </Show>
+              )}
+            </Show>
+          )}
+        </Show>
+
         <Show when={showComposer()}>
           <Show
             when={prompt.ready()}
@@ -330,6 +361,9 @@ export function SessionComposerRegion(props: {
                       canPrompt={props.canPrompt}
                       status={props.status}
                       activeTurn={props.activeTurn}
+                      goal={props.goalController?.goal}
+                      goalCapabilities={props.goalController?.goalCapabilities}
+                      stopGoal={props.goalController?.stopGoal}
                       registerRetry={props.registerRetry}
                     />
                   </Show>

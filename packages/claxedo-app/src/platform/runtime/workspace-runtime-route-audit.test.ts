@@ -713,7 +713,11 @@ describe("workspace runtime route audit", () => {
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
       const text = await Bun.file(path.join(root, file)).text()
-      if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(text)) {
+      const productionLines = text
+        .split("\n")
+        .filter((line) => !line.trimStart().startsWith("//"))
+        .join("\n")
+      if (/["'`](?:\/agent|\/command|\/provider)(?:[?"'`])/.test(productionLines)) {
         offenders.push(file)
       }
     }

@@ -5,7 +5,8 @@ import path from "path"
 import { describe, expect, test } from "bun:test"
 import { createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory, AgentRuntimeAbortResult } from "./runtime"
-import type { AgentHarnessAdapter } from "./adapter-contract"
+import type { AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
+import { goalCapabilities } from "./capabilities"
 import { claude, pi } from "./harnesses"
 import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
@@ -31,6 +32,16 @@ function tick() {
   return new Promise((resolve) => setTimeout(resolve, 0))
 }
 
+function failingStream(message: string): AsyncIterable<AgentRuntimeStreamEvent> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: async () => { throw new Error(message) },
+      }
+    },
+  }
+}
+
 /** Session rows are `unknown` on the store port — the runtime owns their shape — so narrow on read. */
 function lastTurnOf(rows: { getSession(id: string): unknown }, id: string) {
   return (rows.getSession(id) as { lastTurn?: { status?: string; error?: string } } | null)?.lastTurn
@@ -38,6 +49,8 @@ function lastTurnOf(rows: { getSession(id: string): unknown }, id: string) {
 
 function testHarness(options: {
   sendMessage?: AgentHarnessAdapter["sendMessage"]
+  goals?: AgentGoalResource
+  readHarnessCapabilities?: AgentHarnessAdapter["readHarnessCapabilities"]
   abort?: (id: string) => Promise<AgentRuntimeAbortResult>
   runtimeConfigCalls?: string[]
   commitsStreamEvents?: boolean
@@ -82,9 +95,8 @@ function testHarness(options: {
       }
     },
     async deleteSession() {},
-    readHarnessCapabilities() {
-      return {} as never
-    },
+    readHarnessCapabilities: options.readHarnessCapabilities ?? (() => ({} as never)),
+    ...(options.goals ? { goals: options.goals } : {}),
     sendMessage: options.sendMessage ?? (async function* () {}),
     async getMessages() {
       return []
@@ -163,6 +175,302 @@ function handoffHarness(input: {
 }
 
 describe("createAgentRuntime", () => {
+  test("runs Goal operations through the dedicated resource without prompt fallback", async () => {
+    const calls: string[] = []
+    let goal: Awaited<ReturnType<AgentGoalResource["read"]>> = null
+    const goals: AgentGoalResource = {
+      readCapabilities: () => goalCapabilities({
+        implemented: true,
+        available: true,
+        actions: ["pause", "resume", "delete"],
+        recovery: "reconcile",
+        optionalFields: [],
+      }),
+      read: async () => {
+        calls.push("read")
+        return goal
+      },
+      start: async (sessionId, input) => {
+        calls.push(`start:${input.objective}`)
+        goal = { sessionId, objective: input.objective, status: "active", createdAt: 1, updatedAt: 1 }
+        return { ok: true, goal }
+      },
+      pause: async () => {
+        calls.push("pause")
+        goal = goal ? { ...goal, status: "paused", updatedAt: 2 } : null
+        return goal ? { ok: true, goal } : { ok: false, status: "not_found", message: "No Goal" }
+      },
+      resume: async () => {
+        calls.push("resume")
+        goal = goal ? { ...goal, status: "active", updatedAt: 3 } : null
+        return goal ? { ok: true, goal } : { ok: false, status: "not_found", message: "No Goal" }
+      },
+      stop: async () => {
+        calls.push("stop")
+        goal = goal ? { ...goal, status: "paused", updatedAt: 4 } : null
+        return goal ? { ok: true, goal } : { ok: false, status: "not_found", message: "No Goal" }
+      },
+      delete: async () => {
+        calls.push("delete")
+        goal = null
+        return { ok: true, goal: null }
+      },
+    }
+    let messagesSent = 0
+    const factory = testHarness({
+      goals,
+      readHarnessCapabilities: () => ({
+        harness: "pi",
+        abort: false,
+        reconnect: false,
+        replay: true,
+        permissions: false,
+        questions: false,
+        todos: false,
+        commands: false,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: false,
+        subagents: false,
+        goals: true,
+      }),
+      sendMessage: async function* () {
+        messagesSent += 1
+      },
+    })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [factory],
+    })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.goals.start({ sessionId: session.id, objective: "  Ship safely  " }, "/repo")).resolves.toMatchObject({
+      ok: true,
+      goal: { objective: "Ship safely", status: "active" },
+    })
+    await expect(runtime.goals.pause(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "paused" } })
+    await expect(runtime.goals.resume(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "active" } })
+    await expect(runtime.goals.stop(session.id, "/repo")).resolves.toMatchObject({ ok: true, goal: { status: "paused" } })
+    await expect(runtime.goals.delete(session.id, "/repo")).resolves.toEqual({ ok: true, goal: null })
+    expect(calls).toEqual(["read", "start:Ship safely", "pause", "resume", "stop", "delete"])
+    expect(messagesSent).toBe(0)
+    runtime.dispose()
+  })
+
+  test("serializes concurrent Goal starts per session", async () => {
+    let goal: Awaited<ReturnType<AgentGoalResource["read"]>> = null
+    let reads = 0
+    let starts = 0
+    const goals: AgentGoalResource = {
+      readCapabilities: () => goalCapabilities({
+        implemented: true,
+        available: true,
+        actions: [],
+        recovery: "reconcile",
+        optionalFields: [],
+      }),
+      read: async () => {
+        reads += 1
+        await tick()
+        return goal
+      },
+      start: async (sessionId, input) => {
+        starts += 1
+        goal = { sessionId, objective: input.objective, status: "active", createdAt: 1, updatedAt: 1 }
+        return { ok: true, goal }
+      },
+      pause: async () => ({ ok: false, status: "unsupported", message: "unsupported" }),
+      resume: async () => ({ ok: false, status: "unsupported", message: "unsupported" }),
+      stop: async () => ({ ok: false, status: "not_found", message: "not found" }),
+      delete: async () => ({ ok: false, status: "unsupported", message: "unsupported" }),
+    }
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        goals,
+        readHarnessCapabilities: () => ({
+          harness: "pi",
+          abort: false,
+          reconnect: false,
+          replay: true,
+          permissions: false,
+          questions: false,
+          todos: false,
+          commands: false,
+          fork: false,
+          revert: false,
+          unrevert: false,
+          configOptions: false,
+          subagents: false,
+          goals: true,
+        }),
+      })],
+    })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    const [first, second] = await Promise.allSettled([
+      runtime.goals.start({ sessionId: session.id, objective: "First" }, "/repo"),
+      runtime.goals.start({ sessionId: session.id, objective: "Second" }, "/repo"),
+    ])
+
+    expect(first).toMatchObject({ status: "fulfilled", value: { ok: true, goal: { objective: "First" } } })
+    expect(second).toMatchObject({ status: "rejected", reason: { code: "goal_already_exists" } })
+    expect({ reads, starts }).toEqual({ reads: 2, starts: 1 })
+    runtime.dispose()
+  })
+
+  test("reports unavailable Goal capabilities and existing state without admitting mutations", async () => {
+    const mutations: string[] = []
+    const existing = {
+      sessionId: "ses_test",
+      objective: "Preserve the visible Goal",
+      status: "paused" as const,
+      createdAt: 1,
+      updatedAt: 2,
+    }
+    const unavailableReason = "Cursor SDK requires an explicit cursor-sdk API key"
+    const goals: AgentGoalResource = {
+      readCapabilities: () => goalCapabilities({
+        implemented: true,
+        available: false,
+        unavailableReason,
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      }),
+      read: async () => existing,
+      start: async () => {
+        mutations.push("start")
+        return { ok: true, goal: existing }
+      },
+      pause: async () => {
+        mutations.push("pause")
+        return { ok: true, goal: existing }
+      },
+      resume: async () => {
+        mutations.push("resume")
+        return { ok: true, goal: existing }
+      },
+      stop: async () => {
+        mutations.push("stop")
+        return { ok: true, goal: existing }
+      },
+      delete: async () => {
+        mutations.push("delete")
+        return { ok: true, goal: null }
+      },
+    }
+    const factory = testHarness({
+      goals,
+      readHarnessCapabilities: () => ({
+        harness: "cursor",
+        abort: false,
+        reconnect: false,
+        replay: true,
+        permissions: false,
+        questions: false,
+        todos: false,
+        commands: false,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: false,
+        subagents: false,
+        goals: true,
+      }),
+    })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [factory],
+    })
+    const session = await runtime.sessions.create({
+      id: existing.sessionId,
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await expect(runtime.goals.capabilities(session.id, "/repo")).resolves.toMatchObject({
+      implemented: true,
+      available: false,
+      unavailableReason,
+    })
+    await expect(runtime.goals.read(session.id, "/repo")).resolves.toEqual(existing)
+    await expect(runtime.goals.start({ sessionId: session.id, objective: "Retry" }, "/repo"))
+      .rejects.toMatchObject({ code: "goal_unavailable", message: unavailableReason })
+    await expect(runtime.goals.stop(session.id, "/repo"))
+      .rejects.toMatchObject({ code: "goal_unavailable", message: unavailableReason })
+    expect(mutations).toEqual([])
+    runtime.dispose()
+  })
+
+  test("rejects invalid, duplicate, unsupported, and cross-directory Goal work before adapter mutation", async () => {
+    const calls: string[] = []
+    const existing = { sessionId: "ses_test", objective: "Existing", status: "active" as const, createdAt: 1, updatedAt: 1 }
+    const goals: AgentGoalResource = {
+      readCapabilities: () => goalCapabilities({
+        implemented: true,
+        available: true,
+        actions: ["delete"],
+        recovery: "blocked",
+        optionalFields: [],
+      }),
+      read: async () => existing,
+      start: async () => {
+        calls.push("start")
+        return { ok: true, goal: existing }
+      },
+      pause: async () => {
+        calls.push("pause")
+        return { ok: true, goal: existing }
+      },
+      resume: async () => {
+        calls.push("resume")
+        return { ok: true, goal: existing }
+      },
+      stop: async () => {
+        calls.push("stop")
+        return { ok: true, goal: existing }
+      },
+      delete: async () => {
+        calls.push("delete")
+        return { ok: true, goal: null }
+      },
+    }
+    const factory = testHarness({
+      goals,
+      readHarnessCapabilities: () => ({
+        harness: "pi",
+        abort: false,
+        reconnect: false,
+        replay: true,
+        permissions: false,
+        questions: false,
+        todos: false,
+        commands: false,
+        fork: false,
+        revert: false,
+        unrevert: false,
+        configOptions: false,
+        subagents: false,
+        goals: true,
+      }),
+    })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [factory],
+    })
+    const session = await runtime.sessions.create({ directory: "/repo", harness: { id: "pi", access: "native" } })
+
+    await expect(runtime.goals.start({ sessionId: session.id, objective: " " }, "/repo")).rejects.toMatchObject({ code: "goal_invalid_objective" })
+    await expect(runtime.goals.start({ sessionId: session.id, objective: "x".repeat(4_001) }, "/repo")).rejects.toMatchObject({ code: "goal_invalid_objective" })
+    await expect(runtime.goals.start({ sessionId: session.id, objective: "Another" }, "/repo")).rejects.toMatchObject({ code: "goal_already_exists" })
+    await expect(runtime.goals.pause(session.id, "/repo")).rejects.toMatchObject({ code: "goal_action_unavailable" })
+    await expect(runtime.goals.delete(session.id, "/other")).rejects.toMatchObject({ code: "goal_scope_mismatch" })
+    expect(calls).toEqual([])
+    runtime.dispose()
+  })
+
   test("resolves one lazy adapter for concurrent callers", async () => {
     let resolutions = 0
     let targetAdapter: AgentHarnessAdapter | undefined
@@ -230,6 +538,39 @@ describe("createAgentRuntime", () => {
       questionAnswers: 0,
       questionRejects: 0,
     })
+    runtime.dispose()
+  })
+
+  test("rejects session operations when the runtime config is missing", async () => {
+    const store = createMemoryRuntimeStore()
+    storeRows(store).bindSession({
+      sessionId: "ses_missing_config",
+      directory: "/repo",
+      agentSessionId: "native_missing_config",
+    })
+    const runtime = createAgentRuntime({ store, harnesses: [testHarness()] })
+
+    await expect(runtime.config.read("ses_missing_config", "/repo"))
+      .rejects.toThrow("Session ses_missing_config has no runtime config")
+    await expect(runtime.events.list("ses_missing_config", "/repo"))
+      .rejects.toThrow("Session ses_missing_config has no runtime config")
+    await expect(runtime.turns.start({ sessionId: "ses_missing_config", text: "hello" }))
+      .rejects.toThrow("Session ses_missing_config has no runtime config")
+    runtime.dispose()
+  })
+
+  test("rejects todo reads when the selected harness does not implement them", async () => {
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness()],
+    })
+    const session = await runtime.sessions.create({
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+
+    await expect(runtime.todos.list(session.id, "/repo"))
+      .rejects.toThrow("This harness does not support todos")
     runtime.dispose()
   })
 
@@ -559,6 +900,7 @@ describe("createAgentRuntime", () => {
       harnesses: [testHarness({
         sendMessage: async function* (_id, input) {
           modes.push(input.permissionMode)
+          yield { type: "finish", sessionId: _id }
         },
       })],
     })
@@ -576,6 +918,7 @@ describe("createAgentRuntime", () => {
     const base = testHarness({
       sendMessage: async function* (_id, input) {
         models.push(input.model)
+        yield { type: "finish", sessionId: _id }
       },
     })
     const runtime = createAgentRuntime({
@@ -1026,9 +1369,7 @@ describe("createAgentRuntime", () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
       harnesses: [testHarness({
-        sendMessage: async function* () {
-          throw new Error("adapter exploded")
-        },
+        sendMessage: () => failingStream("adapter exploded"),
       })],
     })
     const session = await runtime.sessions.create({
@@ -1297,9 +1638,7 @@ describe("createAgentRuntime", () => {
       const first = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
         harnesses: [testHarness({
-          sendMessage: async function* () {
-            throw new Error("sqlite failure")
-          },
+          sendMessage: () => failingStream("sqlite failure"),
         })],
       })
       const session = await first.sessions.create({

@@ -14,6 +14,7 @@ import type { SessionTransportCapabilities } from "./session-transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { paneQueryOptions, parkedPaneQueryOptions } from "./pane-query-observer"
+import { sessionGoalKey, type SessionGoalData } from "./session-goal-query"
 import {
   sessionResourceAuthorityKey,
   type SessionResourceAuthorityScope,
@@ -85,6 +86,22 @@ export function createSessionPaneQueries(input: {
       enabled: false,
     })
   }))
+  const goalQuery = useQuery<SessionGoalData>(() => session("session-goal", (sessionID) => {
+    const signedControlPlane = input.signedControlPlane?.() ?? false
+    return paneQueryOptions<SessionGoalData>({
+      queryKey: sessionGoalKey({
+        sessionID,
+        directory: input.directory(),
+        serverUrl: input.serverUrl?.(),
+        signedControlPlane,
+        workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
+        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
+        sessionRef: input.sessionRef?.(),
+      }),
+      queryFn: skipToken,
+      enabled: false,
+    })
+  }))
   const directorySessionCacheQuery = useWorkspaceQuery(() => {
     if (!input.active()) return {
       ...parkedPaneQueryOptions<DirectorySessionCacheValue>("directory-session", "inactive"),
@@ -96,5 +113,5 @@ export function createSessionPaneQueries(input: {
     }
   })
 
-  return { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, directorySessionCacheQuery }
+  return { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, goalQuery, directorySessionCacheQuery }
 }

@@ -2,6 +2,7 @@ import { createSdkForServer } from "@/app/connection/server-client"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { LiveSession } from "../global-sdk-event-fetch"
+import type { SessionRef } from "@/platform/identity/session-ref"
 
 export const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 
@@ -13,7 +14,7 @@ type WorkspaceProjects = Parameters<typeof signedWorkspaceFromProjects>[0]
 export function nextLiveSession(
   current: LiveSession | undefined,
   sessionID: string,
-  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string },
+  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef },
 ) {
   const sameScope = !!current &&
     (opts?.host === undefined || opts.host === current.host) &&
@@ -25,13 +26,14 @@ export function nextLiveSession(
     directory: opts?.directory ?? (sameScope ? current?.directory : undefined),
     workspaceId: opts?.workspaceId ?? (sameScope ? current?.workspaceId : undefined),
     workspaceKind: opts?.workspaceKind ?? (sameScope ? current?.workspaceKind : undefined),
+    sessionRef: opts?.sessionRef ?? (sameScope ? current?.sessionRef : undefined),
   }
 }
 
 export function liveSessionTransition(
   current: LiveSession | undefined,
   sessionID: string,
-  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string },
+  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef },
 ) {
   const next = nextLiveSession(current, sessionID, opts)
   const workspaceScopeChanged =

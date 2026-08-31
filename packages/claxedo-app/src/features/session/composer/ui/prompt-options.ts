@@ -91,7 +91,8 @@ export function promptSlashCommands(input: {
       type: "builtin" as const,
     }))
 
-  const custom = (input.customCommands ?? []).map((cmd) => ({
+  const goalReserved = builtin.some((command) => command.trigger.toLowerCase() === "goal")
+  const custom = (input.customCommands ?? []).filter((cmd) => !(goalReserved && cmd.name.toLowerCase() === "goal")).map((cmd) => ({
     id: `custom.${cmd.name}`,
     trigger: cmd.name,
     title: cmd.name,

@@ -14,5 +14,9 @@ export type PiFactoryOptions = ProcessObservedFactoryOptions & {
 }
 
 export function pi(options: PiFactoryOptions = {}): AgentHarnessFactory {
-  return harnessFactory("pi", "native", (context) => new PiHarnessAdapter({ ...options, eventHub: context.eventHub }))
+  return harnessFactory("pi", "native", (context) => new PiHarnessAdapter({
+    ...options,
+    eventHub: context.eventHub,
+    goalStore: context.store,
+  }))
 }

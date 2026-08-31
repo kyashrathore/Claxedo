@@ -13,7 +13,6 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSDK } from "@/features/session/app-ports"
 import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
-import { setCursorPosition } from "@/features/session/composer/ui/editor-dom"
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/platform/api/api"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { useClaxedoState } from "@/features/session/app-ports"
@@ -52,6 +51,8 @@ import { createPromptAbort } from "./submit-abort"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef } from "./submit-create-session"
 import { resolvePreparedSubmitDirectory } from "./submit-directory"
 import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
+import { dispatchGoalSubmit, prepareGoalComposerIntent } from "./submit-goal"
+import { createSubmitDraftLifecycle } from "./submit-draft-lifecycle"
 import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 import { parseExistingSessionConfig, sameExistingSessionConfig } from "./submit-session-config"
@@ -177,7 +178,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     hostedSessionClient,
     saveSessionConfig,
   } = transport
-  const abort = createPromptAbort({
+  const promptAbort = createPromptAbort({
     canAbort: input.canAbort,
     sessionID: input.sessionID,
     sessionDirectory: input.sessionDirectory,
@@ -190,6 +191,18 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           : sdk.createClient({ directory, throwOnError: true }),
     usesSignedControlPlane,
   })
+  // Goal Stop is a provider mutation, not a local abort: a relay failure means
+  // the Goal is still running, so surface it and keep the dock visible for
+  // retry instead of letting the rejection vanish into a voided promise.
+  const abort = () => input.hasActiveGoal?.() && input.stopGoal
+    ? Promise.resolve(input.stopGoal()).catch((err) => {
+        showToast({
+          title: language.t("prompt.toast.goalStopFailed.title"),
+          description: errorMessage(err),
+          variant: "error",
+        })
+      })
+    : promptAbort()
 
   const globalProjects = () =>
     queryClient.getQueryData<ProjectCatalogItem[]>(queryOptions.projects().queryKey) ?? []
@@ -226,6 +239,13 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     if (admission === "abort-active") return abort()
     if (admission === "ignore") return
+
+    const goalIntent = prepareGoalComposerIntent({
+      text, armed: input.goalArmed?.() ?? false, mode: userMode, prompt: currentPrompt,
+      setPrompt: prompt.set, onArm: input.onGoalArm, setMode: input.setMode,
+      setPopover: input.setPopover, focus: () => { input.editor()?.focus(); input.queueScroll() },
+    })
+    if (goalIntent.kind === "arm") return
 
     input.addToHistory(currentPrompt, userMode)
     input.resetHistoryNavigation()
@@ -354,19 +374,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
     const signedWorkspaceId = signedControlPlane ? input.workspaceId?.() : undefined
     const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
+    const goalWorkspaceKind = signedWorkspaceKind === "local" ? undefined : signedWorkspaceKind
     if (!harnessMode && !signedControlPlane && usesLoopbackWorkspaceBridge(sessionDirectory)) {
       client = sessionClient(sessionDirectory, sessionHarnessType)
     }
-    // Rubric A3: slash detection is hoisted into `resolveSubmitMode`. The
-    // resolver needs the trimmed text + the list of available custom
-    // commands; the command list still has to be fetched here because it
-    // depends on the per-directory SDK + workspace context, which the pure
-    // resolver does not know about. We only pay the fetch cost when the
-    // user actually typed a leading slash and shell mode is not in play
-    // (shell beats slash, and harness/signed transports don't have a slash
-    // channel either — see `resolveSubmitMode`).
+    // Custom commands are directory-scoped, so resolve them only for inputs
+    // that can still enter the local slash-command channel.
     let customCommandNames: string[] | undefined
-    if (mode !== "shell" && !harnessMode && !signedControlPlane && text.startsWith("/")) {
+    if (goalIntent.kind !== "submit" && mode !== "shell" && !harnessMode && !signedControlPlane && text.startsWith("/")) {
       const commands = await queryClient
         .fetchQuery(
           commandListQuery({
@@ -636,41 +651,51 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         })
       },
     }
-    const clearInput = () => {
-      const scopes = uniquePromptScopes([
-        promptScope,
-        replaceSession && session?.id
-          ? promptViewScope({ directory: sessionDirectory, sessionId: session.id })
-          : undefined,
-      ])
-      for (const scope of scopes) prompt.reset(scope)
-      input.setMode("normal")
-      input.setPopover(null)
-    }
+    const draft = createSubmitDraftLifecycle({
+      prompt, current: currentPrompt, length: input.promptLength, userMode,
+      scopes: uniquePromptScopes([promptScope, replaceSession && session?.id
+        ? promptViewScope({ directory: sessionDirectory, sessionId: session.id }) : undefined]),
+      setMode: input.setMode, setPopover: input.setPopover, editor: input.editor, queueScroll: input.queueScroll,
+    })
+    const { clear: clearInput, restore: restoreInput } = draft
 
-    const restoreInput = () => {
-      const scopes = uniquePromptScopes([
-        promptScope,
-        replaceSession && session?.id
-          ? promptViewScope({ directory: sessionDirectory, sessionId: session.id })
-          : undefined,
-      ])
-      for (const scope of scopes) {
-        prompt.set(currentPrompt, input.promptLength(currentPrompt), scope)
-      }
-      // Restore the user-facing toggle, never the resolver-only "slash"
-      // value. `userMode` is the raw input toggle captured at submit
-      // entry; the resolver may have promoted it to "slash", but the
-      // input toggle itself only ever holds "normal" / "shell".
-      input.setMode(userMode)
-      input.setPopover(null)
-      requestAnimationFrame(() => {
-        const editor = input.editor()
-        if (!editor) return
-        editor.focus()
-        setCursorPosition(editor, input.promptLength(currentPrompt))
-        input.queueScroll()
+    if (goalIntent.kind === "submit") {
+      await dispatchGoalSubmit({
+        objective: goalIntent.objective,
+        session,
+        sessionDirectory,
+        sessionRef,
+        serverUrl: globalSDK?.url ?? getClaxedoServerUrl(),
+        signedControlPlane,
+        workspaceId: signedWorkspaceId,
+        workspaceKind: goalWorkspaceKind,
+        client: runtimePromptClient,
+        record: recordPromptSubmissionContext,
+        prepareLiveEvents: globalSDK ? async () => {
+          const runtimeRef = workspaceRuntimeRef(sessionDirectory)
+          globalSDK?.event.setLiveSession(session.id, {
+            ...(sessionRef?.host ? { host: sessionRef.host } : {}),
+            directory: sessionDirectory,
+            ...(runtimeRef ? { workspaceId: runtimeRef.workspaceId, workspaceKind: runtimeRef.kind } : {}),
+            sessionRef,
+          })
+          await globalSDK?.event.ready()
+        } : undefined,
+        clearInput,
+        restoreInput: () => draft.restoreGoal(goalIntent.objective, text),
+        applyCreatedSessionHandoff,
+        onAccepted: () => input.onGoalAccepted?.(),
+        clearBoot,
+        clearCloudStartup,
+        reportCloudStartupError,
+        showFailed: (err) => {
+          showToast({
+            title: language.t("prompt.toast.promptSendFailed.title"),
+            description: errorMessage(err),
+          })
+        },
       })
+      return
     }
 
     // Rubric A3: slash detection is owned by `resolveSubmitMode`. The

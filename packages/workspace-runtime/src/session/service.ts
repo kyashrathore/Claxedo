@@ -2,7 +2,7 @@ import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/pro
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnAdmissionError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
 import type {
-  AgentMessageRow,
+  AgentMessage,
   AgentRuntime,
   AgentRuntimeStreamEvent,
   PromptInput,
@@ -65,7 +65,7 @@ export type SessionPromptTurnResult = {
   assistantId: string
   assistantMessagePublished: boolean
   error?: string
-  messages: AgentMessageRow[]
+  messages: AgentMessage[]
 }
 
 export type SessionPromptTurnInput = {

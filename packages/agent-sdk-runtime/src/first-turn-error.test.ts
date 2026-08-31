@@ -24,7 +24,7 @@ describe("first-turn error taxonomy", () => {
     expect(classifyFirstTurnError(message)).toBe(expected)
   })
 
-  test("unclassifiable failures fall back to unknown, not workspace", () => {
+  test("classifies unrecognized failures as unknown", () => {
     expect(classifyFirstTurnError("connection closed unexpectedly")).toBe("unknown")
     expect(classifyFirstTurnError("Stream error")).toBe("unknown")
   })

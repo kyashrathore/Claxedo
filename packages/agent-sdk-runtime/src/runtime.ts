@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
   AgentPermission,
@@ -15,9 +15,10 @@ import type {
   SessionHarness,
   AgentTurnOutcome,
 } from "./index"
-import type { AgentHarnessAdapter } from "./adapter-contract"
+import type { AgentGoalMutationResult, AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
+import { requireGoalResource } from "./adapter-contract"
 import { renderSessionHandoff } from "./session-handoff"
-import { hasAdapterCapability } from "./capabilities"
+import { GoalCapabilityError, hasAdapterCapability, requireGoalAction, type GoalAction, type GoalCapabilities } from "./capabilities"
 import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
@@ -125,6 +126,37 @@ export type AgentRuntimeTurnStartResult = {
   prompt: PromptInput
 }
 
+export type AgentRuntimeGoalStartInput = {
+  sessionId: string
+  objective: string
+}
+
+export type AgentRuntimeGoalErrorCode =
+  | "goal_invalid_objective"
+  | "goal_session_not_found"
+  | "goal_scope_mismatch"
+  | "goal_unavailable"
+  | "goal_already_exists"
+  | "goal_action_unavailable"
+
+export class AgentRuntimeGoalError extends Error {
+  constructor(
+    readonly code: AgentRuntimeGoalErrorCode,
+    message: string,
+  ) {
+    super(message)
+    this.name = "AgentRuntimeGoalError"
+  }
+}
+
+export function isAgentRuntimeGoalError(error: unknown): error is AgentRuntimeGoalError {
+  return error instanceof AgentRuntimeGoalError || (
+    !!error && typeof error === "object" &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    (error as { code: string }).code.startsWith("goal_")
+  )
+}
+
 export class AgentRuntimeTurnAdmissionError extends Error {
   readonly code = "turn_already_active"
 
@@ -168,6 +200,19 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   // rejected concurrent prompt cannot manufacture a failed turn or overwrite
   // the status of the turn that is actually running.
   const activeTurnAdmissions = new Map<string, object>()
+  const goalStartAdmissions = new Map<string, Promise<void>>()
+
+  const withGoalStartAdmission = async <T>(sessionId: string, operation: () => Promise<T>): Promise<T> => {
+    const previous = goalStartAdmissions.get(sessionId) ?? Promise.resolve()
+    const run = previous.catch(() => {}).then(operation)
+    const settled = run.then(() => {}, () => {})
+    goalStartAdmissions.set(sessionId, settled)
+    try {
+      return await run
+    } finally {
+      if (goalStartAdmissions.get(sessionId) === settled) goalStartAdmissions.delete(sessionId)
+    }
+  }
 
   const adapterFor = async (harness: SessionHarness) => {
     const harnessKey = key(harness)
@@ -187,10 +232,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return await resolution
   }
 
-  const adapterForSession = async (sessionId: string, directory: RuntimeDirectory) => {
+  const configForSession = (sessionId: string) => {
     const config = store.getSessionConfig(sessionId)
     if (!config) throw new Error(`Session ${sessionId} has no runtime config`)
-    return await adapterFor(config.harness)
+    return config
+  }
+
+  const adapterForSession = async (sessionId: string) => {
+    return await adapterFor(configForSession(sessionId).harness)
   }
 
   const publish = (event: AgentRuntimeEventEnvelope) => {
@@ -451,7 +500,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     const current = store.getSessionConfig(sessionId)
     const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
     if (!changingHarness) {
-      const adapter = await adapterForSession(sessionId, directory)
+      const adapter = await adapterForSession(sessionId)
       const configured = await adapter.updateSessionConfig(sessionId, update, directory)
       const persisted = store.updateSessionConfig(sessionId, configured)
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
@@ -540,6 +589,77 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     }
   }
 
+  const goalResourceReadContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
+    const session = store.getSession(sessionId) as { directory?: string } | null
+    if (!session) {
+      throw new AgentRuntimeGoalError("goal_session_not_found", `Session ${sessionId} not found`)
+    }
+    const directory = session.directory ?? undefined
+    if (
+      requestedDirectory !== undefined &&
+      runtimeDirectory(requestedDirectory) !== runtimeDirectory(directory)
+    ) {
+      throw new AgentRuntimeGoalError("goal_scope_mismatch", `Session ${sessionId} does not belong to this directory`)
+    }
+    const adapter = await adapterForSession(sessionId)
+    const coarse = await adapter.readHarnessCapabilities(directory, { sessionId })
+    let resource: AgentGoalResource
+    try {
+      resource = requireGoalResource(adapter)
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Goal resource is unavailable"
+      throw new AgentRuntimeGoalError("goal_unavailable", message)
+    }
+    return { adapter, directory, harness: coarse.harness, resource }
+  }
+
+  const goalResourceContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
+    const context = await goalResourceReadContext(sessionId, requestedDirectory)
+    const capabilities = await context.resource.readCapabilities(sessionId, context.directory)
+    return { ...context, capabilities }
+  }
+
+  const availableGoalContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
+    const context = await goalResourceContext(sessionId, requestedDirectory)
+    const { capabilities } = context
+    if (!capabilities.implemented || !capabilities.available) {
+      throw new AgentRuntimeGoalError(
+        "goal_unavailable",
+        capabilities.unavailableReason ?? `${context.harness} Goal is unavailable`,
+      )
+    }
+    return context
+  }
+
+  const publishGoalResult = (
+    sessionId: string,
+    directory: RuntimeDirectory,
+    result: AgentGoalMutationResult,
+  ) => {
+    if (!result.ok) return
+    const payload = result.goal
+      ? agentRuntimeEvent.goalUpdated({ sessionId, goal: result.goal })
+      : agentRuntimeEvent.goalCleared({ sessionId })
+    publish({ sessionId, directory, payload })
+  }
+
+  const runGoalAction = async (
+    sessionId: string,
+    action: GoalAction,
+    requestedDirectory?: RuntimeDirectory,
+  ): Promise<AgentGoalMutationResult> => {
+    const context = await availableGoalContext(sessionId, requestedDirectory)
+    try {
+      requireGoalAction(context.capabilities, action)
+    } catch (error) {
+      const message = error instanceof GoalCapabilityError ? error.message : `Goal action '${action}' is unavailable`
+      throw new AgentRuntimeGoalError("goal_action_unavailable", message)
+    }
+    const result = await context.resource[action](sessionId, context.directory) as AgentGoalMutationResult
+    publishGoalResult(sessionId, context.directory, result)
+    return result
+  }
+
   return {
     sessions: {
       async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
@@ -562,29 +682,20 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           variant: create.variant ?? null,
           agent: create.agent ?? null,
         }
-        store.updateSessionConfig(session.id, config)
-        return (await adapter.getSession(session.id, create.directory) ?? store.getSession(session.id)) as AgentSession
+        const persistedConfig = store.updateSessionConfig(session.id, config)
+        if (!persistedConfig) throw new Error(`Session ${session.id} has no runtime config`)
+        const persistedSession = store.getSession(session.id)
+        if (!persistedSession) throw new Error(`Session ${session.id} was not persisted`)
+        return persistedSession as AgentSession
       },
-      async get(sessionId: string, directory?: RuntimeDirectory): Promise<AgentSession | null> {
-        const config = store.getSessionConfig(sessionId)
-        if (!config) return store.getSession(sessionId) as AgentSession | null
-        const projected = store.getSession(sessionId) as AgentSession | null
-        const adapter = await adapterFor(config.harness)
-        const live = await adapter.getSession(sessionId, directory) as AgentSession | null
-        if (!live) return projected
-        if (!projected) return live
-        return {
-          ...projected,
-          ...live,
-          status: projected.status,
-          lastTurn: projected.lastTurn,
-        }
+      async get(sessionId: string, _directory?: RuntimeDirectory): Promise<AgentSession | null> {
+        return store.getSession(sessionId) as AgentSession | null
       },
       async list(inputDirectory: RuntimeDirectory): Promise<AgentSession[]> {
         return store.listSessions(runtimeDirectory(inputDirectory)) as AgentSession[]
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         const updated = await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
         if (!updated) throw new Error(`Session ${sessionId} not found`)
         const persisted = store.updateSession(sessionId, {
@@ -598,7 +709,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return await updateSessionConfig(sessionId, update, directory)
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         await adapter.deleteSession(sessionId, directory)
         store.deleteSession(sessionId)
       },
@@ -607,10 +718,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
-        const storedConfig = store.getSessionConfig(turn.sessionId)
+        const config = configForSession(turn.sessionId)
         const directory = session.directory ?? undefined
-        const adapter = await adapterForSession(turn.sessionId, directory)
-        const config = storedConfig ?? await adapter.getSessionConfig(turn.sessionId, directory)
+        const adapter = await adapterFor(config.harness)
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
@@ -646,7 +756,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             ...(turn.system ? { system: turn.system } : {}),
             ...(prompt.variant ? { variant: prompt.variant } : {}),
           })
-          for (const payload of started?.events ?? []) {
+          for (const payload of started.events) {
             publish({ sessionId: turn.sessionId, directory, payload })
           }
           void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff)
@@ -664,7 +774,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return { sessionId: turn.sessionId, userMessageId, assistantMessageId, directory, prompt }
       },
       async abort(sessionId: string, directory?: RuntimeDirectory): Promise<AgentRuntimeAbortResult> {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         if (!adapter.abort) throw new Error("This harness does not support abort")
         const result = await adapter.abort(sessionId, directory)
         if (result.ok && result.status === "cancelled") {
@@ -683,12 +793,57 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return result
       },
     },
+    goals: {
+      async capabilities(sessionId: string, directory?: RuntimeDirectory): Promise<GoalCapabilities> {
+        return (await goalResourceContext(sessionId, directory)).capabilities
+      },
+      async read(sessionId: string, directory?: RuntimeDirectory): Promise<RuntimeGoalSnapshot | null> {
+        const context = await goalResourceReadContext(sessionId, directory)
+        return await context.resource.read(sessionId, context.directory)
+      },
+      async start(input: AgentRuntimeGoalStartInput, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
+        if (typeof input?.objective !== "string") {
+          throw new AgentRuntimeGoalError("goal_invalid_objective", "Goal objective must be a string")
+        }
+        const objective = input.objective.trim()
+        if (!objective || objective.length > 4_000) {
+          throw new AgentRuntimeGoalError(
+            "goal_invalid_objective",
+            "Goal objective must contain between 1 and 4,000 characters",
+          )
+        }
+        return await withGoalStartAdmission(input.sessionId, async () => {
+          const context = await availableGoalContext(input.sessionId, directory)
+          if (await context.resource.read(input.sessionId, context.directory)) {
+            throw new AgentRuntimeGoalError("goal_already_exists", `Session ${input.sessionId} already has a Goal`)
+          }
+          const result = await context.resource.start(input.sessionId, { objective }, context.directory)
+          publishGoalResult(input.sessionId, context.directory, result)
+          return result
+        })
+      },
+      async pause(sessionId: string, directory?: RuntimeDirectory) {
+        return await runGoalAction(sessionId, "pause", directory)
+      },
+      async resume(sessionId: string, directory?: RuntimeDirectory) {
+        return await runGoalAction(sessionId, "resume", directory)
+      },
+      async stop(sessionId: string, directory?: RuntimeDirectory): Promise<AgentGoalMutationResult> {
+        const context = await availableGoalContext(sessionId, directory)
+        const result = await context.resource.stop(sessionId, context.directory)
+        publishGoalResult(sessionId, context.directory, result)
+        return result
+      },
+      async delete(sessionId: string, directory?: RuntimeDirectory) {
+        return await runGoalAction(sessionId, "delete", directory) as AgentGoalMutationResult<null>
+      },
+    },
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
         return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256)
       },
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         return await adapter.getMessages(sessionId, directory) as AgentMessage[]
       },
     },
@@ -700,7 +855,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as AgentPermission[])
           .find((item) => item.id === permissionId)
         if (!permission) throw new Error(`Permission ${permissionId} not found`)
-        const adapter = await adapterForSession(permission.sessionID, directory)
+        const adapter = await adapterForSession(permission.sessionID)
         if (!adapter?.respondPermission) throw new Error("No registered harness supports permissions")
         const result = await adapter.respondPermission(permissionId, decision, directory)
         publishInteractionEvents(result?.events, directory)
@@ -715,7 +870,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
         if (!question) throw new Error(`Question ${questionId} not found`)
-        const adapter = await adapterForSession(question.sessionID, directory)
+        const adapter = await adapterForSession(question.sessionID)
         if (!adapter?.replyQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.replyQuestion(questionId, answer, directory)
         publishInteractionEvents(result?.events, directory)
@@ -725,7 +880,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
         if (!question) throw new Error(`Question ${questionId} not found`)
-        const adapter = await adapterForSession(question.sessionID, directory)
+        const adapter = await adapterForSession(question.sessionID)
         if (!adapter?.rejectQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.rejectQuestion(questionId, directory)
         publishInteractionEvents(result?.events, directory)
@@ -734,7 +889,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     todos: {
       async list(sessionId: string, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         if (!adapter.getTodos) throw new Error("This harness does not support todos")
         return await adapter.getTodos(sessionId, directory)
       },
@@ -744,15 +899,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return merge(adapters, (adapter) => adapter.listCommands?.(directory))
       },
       async execute(sessionId: string, command: string, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         if (!adapter.executeCommand) throw new Error("This harness does not support commands")
         return await adapter.executeCommand(sessionId, command, directory)
       },
     },
     config: {
-      async read(sessionId: string, directory?: RuntimeDirectory) {
-        const adapter = await adapterForSession(sessionId, directory)
-        return await adapter.getSessionConfig(sessionId, directory)
+      async read(sessionId: string, _directory?: RuntimeDirectory) {
+        return configForSession(sessionId)
       },
       async update(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
         return await updateSessionConfig(sessionId, update, directory)
@@ -770,12 +924,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     capabilities: {
       async read(sessionId: string, directory?: RuntimeDirectory): Promise<HarnessCapabilities> {
-        const adapter = await adapterForSession(sessionId, directory)
+        const adapter = await adapterForSession(sessionId)
         return await adapter.readHarnessCapabilities(directory, { sessionId })
       },
     },
     dispose() {
       activeTurnAdmissions.clear()
+      goalStartAdmissions.clear()
       for (const subscriber of subscribers) subscriber.close()
       for (const adapter of adapters.values()) adapter.dispose()
       store.close?.()

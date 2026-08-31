@@ -1,6 +1,8 @@
 import type { CompatEvent } from "./compat-events"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { StatusChunk } from "./status"
-import type { AdapterCapability, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
+import { GoalCapabilityError } from "./capabilities"
+import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
 import type { AgentProcessObserver } from "./process-observer"
 import type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 import type {
@@ -130,6 +132,53 @@ export interface SupportsTodos {
   getTodos(sessionId: string, directory: RuntimeDirectory): Promise<Array<{ content: string; status: string; priority: string }>>
 }
 
+export type AgentGoalStartInput = {
+  objective: string
+}
+
+export type AgentGoalMutationFailure = {
+  ok: false
+  status: "unsupported" | "unavailable" | "not_found" | "conflict" | "failed"
+  message: string
+}
+
+export type AgentGoalMutationResult<Goal extends RuntimeGoalSnapshot | null = RuntimeGoalSnapshot | null> =
+  | { ok: true; goal: Goal }
+  | AgentGoalMutationFailure
+
+/**
+ * One session-scoped Goal resource. Action methods remain present so adapters
+ * have one complete contract; callers must gate them with readCapabilities.
+ */
+export interface AgentGoalResource {
+  readCapabilities(sessionId: string, directory: RuntimeDirectory): Promise<GoalCapabilities> | GoalCapabilities
+  read(sessionId: string, directory: RuntimeDirectory): Promise<RuntimeGoalSnapshot | null>
+  start(sessionId: string, input: AgentGoalStartInput, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
+  pause(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
+  resume(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
+  /** Disable future continuation before interrupting active work. */
+  stop(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot | null>>
+  delete(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<null>>
+}
+
+export interface SupportsGoals {
+  readonly goals: AgentGoalResource
+}
+
+function isGoalResource(value: unknown): value is AgentGoalResource {
+  if (!value || typeof value !== "object") return false
+  const resource = value as Partial<Record<keyof AgentGoalResource, unknown>>
+  return ["readCapabilities", "read", "start", "pause", "resume", "stop", "delete"]
+    .every((method) => typeof resource[method as keyof AgentGoalResource] === "function")
+}
+
+export function requireGoalResource(adapter: AgentHarnessAdapter): AgentGoalResource {
+  if (!isGoalResource(adapter.goals)) {
+    throw new GoalCapabilityError("This harness does not expose the Goal resource")
+  }
+  return adapter.goals
+}
+
 export interface SupportsPermissions {
   listPermissions(directory: RuntimeDirectory): Promise<AgentPermission[]>
   respondPermission(permId: string, decision: PermissionDecision, directory: RuntimeDirectory): Promise<AgentInteractionResult | void>
@@ -227,5 +276,6 @@ export type AgentHarnessAdapter =
   & Partial<SupportsQuestions>
   & Partial<SupportsRuntimeConfig>
   & Partial<SupportsConfigOptions>
+  & Partial<SupportsGoals>
 
 export type AgentRuntimeStatusChunk = StatusChunk

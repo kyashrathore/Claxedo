@@ -110,7 +110,12 @@ export const appLocal: Policy = {
   // logic, provider setup row, and the settings-providers dialog opener add
   // eight named owners on the already-reachable session/settings path:
   // 897 + 8 - 3 = 902 modules, still no package edge.
-  ceilings: { modules: 902, packages: 41 },
+  // Universal Goal adds ten focused owners on the already-reachable session
+  // path: composer intent/controller, Goal submission/draft lifecycle,
+  // authority cache/query/controller, runtime client/event ingress, and the
+  // active-Goal dock. The reviewed closure is 902 + 10 = 912 modules with no
+  // new package edge.
+  ceilings: { modules: 912, packages: 41 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

@@ -1,4 +1,5 @@
 import type { StopReason } from "@agentclientprotocol/sdk"
+import { randomUUID } from "crypto"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { createAcpEventTranslator, translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
 import {
@@ -34,6 +35,17 @@ const log = Log.create({ service: "acp-turn-runner" })
 const activePromptCounts = new Map<string, number>()
 const activePromptWaiters = new Map<string, Set<() => void>>()
 
+type GoalProjection = {
+  agentSessionId: string
+  directory: string
+  assistantMessageId: string
+  runtime: ReturnType<typeof createAgentEventRuntime>
+  projector: ReturnType<typeof createTurnEventProjector>
+  proc: ACPProcess
+  turn: { drain(message: string): void }
+  leaveBusy: () => void
+}
+
 export function activeAcpPromptCount(harness: string) {
   return activePromptCounts.get(harness) ?? 0
 }
@@ -66,6 +78,147 @@ function unrestorable(error: unknown) {
 }
 
 export abstract class AcpTurnRunner extends AcpProcessManager {
+  private goalProjections = new Map<string, GoalProjection>()
+
+  private goalProjectionMap() {
+    this.goalProjections ??= new Map<string, GoalProjection>()
+    return this.goalProjections
+  }
+
+  protected observeGoalSessionUpdate(
+    sessionId: string,
+    agentSessionId: string,
+    directory: string,
+    proc: ACPProcess,
+    update: SessionUpdate,
+  ) {
+    if (this.store.getGoal?.(sessionId)?.status !== "active") return
+    let projection = this.goalProjectionMap().get(sessionId)
+    const runtime = projection?.agentSessionId === agentSessionId
+      ? projection.runtime
+      : createAgentEventRuntime({
+          harness: this.harnessId(),
+          threadId: agentSessionId,
+          adapter: createAcpEventTranslator({ client: this.harnessId() }),
+        })
+    const result = runtime.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: update,
+    })
+    if (result.events.length === 0) return
+    if (!projection || projection.agentSessionId !== agentSessionId) {
+      if (projection) this.finishGoalProjection(sessionId, "ACP Goal session binding changed")
+      const started = this.startGoalProjection(sessionId, agentSessionId, directory, proc, runtime)
+      if (!started) return
+      projection = started
+    }
+    for (const event of result.events) {
+      projection.projector.project(event, {
+        dir: "in",
+        method: "sessionUpdate",
+        frame: update,
+      })
+    }
+  }
+
+  protected finishGoalProjection(sessionId: string, error?: string) {
+    const projection = this.goalProjectionMap().get(sessionId)
+    if (!projection) return
+    this.goalProjectionMap().delete(sessionId)
+    projection.proc.permissionPushers.delete(projection.agentSessionId)
+    if (error) {
+      projection.projector.terminalizeOpenTools(error, {
+        dir: "in",
+        method: "goal.turn.error.open-tools",
+        frame: { message: error },
+      })
+      projection.projector.project({ type: "error", error }, {
+        dir: "in",
+        method: "goal.turn.error",
+        frame: { message: error },
+      })
+    } else {
+      projection.projector.project({ type: "finish", sessionId }, {
+        dir: "in",
+        method: "goal.turn.finish",
+        frame: { sessionId },
+      })
+    }
+    const finished = this.store.finishTurn({
+      sessionId,
+      assistantMessageId: projection.assistantMessageId,
+      outcome: error
+        ? { status: "failed", completedAt: Date.now(), error }
+        : { status: "completed", completedAt: Date.now() },
+    })
+    for (const event of finished.events) this.options.eventHub?.publishGlobal({ directory: projection.directory, payload: event })
+    this.lifecycle().delete(sessionId, projection.turn)
+    projection.leaveBusy()
+  }
+
+  private startGoalProjection(
+    sessionId: string,
+    agentSessionId: string,
+    directory: string,
+    proc: ACPProcess,
+    runtime: ReturnType<typeof createAgentEventRuntime>,
+  ) {
+    const leaveBusy = this.lifecycle().enter(sessionId)
+    if (!leaveBusy) return null
+    const config = this.store.getSessionConfig(sessionId)
+    const assistantMessageId = randomUUID()
+    const created = Date.now()
+    const input: PromptInput = {
+      parts: [],
+      assistantMessageId,
+      agent: config?.agent ?? "build",
+      model: config?.model ?? { providerID: this.harnessId(), modelID: this.currentModel || "default" },
+      ...(config?.variant ? { variant: config.variant } : {}),
+    }
+    const started = this.store.startTurn({
+      sessionId,
+      agentSessionId,
+      assistantMessageId,
+      agent: input.agent,
+      model: input.model,
+      parts: [],
+      ...(input.variant ? { variant: input.variant } : {}),
+    })
+    for (const event of started.events) this.options.eventHub?.publishGlobal({ directory, payload: event })
+    const projector = createTurnEventProjector({
+      store: this.store,
+      owner: { sessionId, getAgentSessionId: () => agentSessionId },
+      directory,
+      input,
+      assistantMessageId,
+      created,
+      onEvent: (event) => this.options.eventHub?.publishGlobal({ directory, payload: event }),
+      onRuntimeEvent: this.options.eventHub?.publishRuntime,
+    })
+    proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+      this.permissionOwnerMap().set(permId, proc)
+      const event = permissionAsked(acpPermissionRequest({ permId, sessionId, tool, kind, paths }))
+      this.store.appendEvent({
+        sessionId,
+        agentSessionId,
+        payload: event,
+        source: { dir: "in", method: "requestPermission", frame: { tool, paths } },
+      })
+      this.options.eventHub?.publishGlobal({ directory, payload: event })
+    })
+    const turn = {
+      drain: (message: string) => {
+        void proc.cancel(agentSessionId).catch(() => {})
+        this.finishGoalProjection(sessionId, message)
+      },
+    }
+    const projection = { agentSessionId, directory, assistantMessageId, runtime, projector, proc, turn, leaveBusy }
+    this.goalProjectionMap().set(sessionId, projection)
+    this.lifecycle().set(sessionId, turn)
+    return projection
+  }
+
   async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
     const t0 = Date.now()
     log.info("sendMessage: start", { id, directory, partCount: input.parts.length })
@@ -331,10 +484,8 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       const run = async (): Promise<void> => {
         install()
         try {
-          // The PROMPT turn runs for as long as the model thinks/streams — it
-          // must use the prompt timeout (5 min default), NOT the 10s
-          // new-session handshake timeout, which cancelled every turn slower
-          // than 10s.
+          // Model turns use the prompt timeout; session creation and restoration
+          // use the shorter handshake timeout.
           const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
           // Prompt-result usage is the ONLY meterable usage on this rail:
           // mid-turn `usage_update` notifications carry a context meter, not

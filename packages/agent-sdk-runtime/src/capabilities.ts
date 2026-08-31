@@ -19,6 +19,8 @@ export type HarnessCapabilities = {
   unrevert: boolean
   configOptions: boolean
   subagents: boolean
+  /** Runtime availability only. Detailed support is read from `SupportsGoals.goals`. */
+  goals: boolean
 }
 
 export type HarnessCapabilityContext = {
@@ -27,6 +29,70 @@ export type HarnessCapabilityContext = {
 
 export function harnessCapabilities(input: HarnessCapabilities): HarnessCapabilities {
   return input
+}
+
+export const GOAL_ACTIONS = ["pause", "resume", "delete"] as const
+export type GoalAction = typeof GOAL_ACTIONS[number]
+export type GoalRecovery = "reconcile" | "blocked"
+export const GOAL_OPTIONAL_FIELDS = [
+  "tokenBudget",
+  "tokensUsed",
+  "timeUsedSeconds",
+  "iteration",
+  "lastReason",
+] as const
+export type GoalOptionalField = typeof GOAL_OPTIONAL_FIELDS[number]
+
+export type GoalCapabilities = {
+  /** Whether this adapter contains a real Goal implementation. */
+  implemented: boolean
+  /** Whether that implementation can be used in the current session/runtime. */
+  available: boolean
+  unavailableReason?: string
+  actions: readonly GoalAction[]
+  /** Whether authoritative state can be reconciled after reconnect/reload. */
+  recovery: GoalRecovery
+  /** Optional snapshot fields this implementation may report without fabrication. */
+  optionalFields: readonly GoalOptionalField[]
+}
+
+export class GoalCapabilityError extends Error {
+  readonly code = "goal_capability_unavailable"
+
+  constructor(message: string) {
+    super(message)
+    this.name = "GoalCapabilityError"
+  }
+}
+
+export function goalCapabilities(input: GoalCapabilities): GoalCapabilities {
+  if (input.available && !input.implemented) {
+    throw new GoalCapabilityError("A Goal implementation cannot be available when it is not implemented")
+  }
+  if (!input.available && !input.unavailableReason?.trim()) {
+    throw new GoalCapabilityError("An unavailable Goal implementation must report unavailableReason")
+  }
+  if (new Set(input.actions).size !== input.actions.length) {
+    throw new GoalCapabilityError("Goal actions must not contain duplicates")
+  }
+  if (new Set(input.optionalFields).size !== input.optionalFields.length) {
+    throw new GoalCapabilityError("Goal optionalFields must not contain duplicates")
+  }
+  return input
+}
+
+export function goalActionAvailable(capabilities: GoalCapabilities, action: GoalAction): boolean {
+  if (!capabilities.implemented || !capabilities.available) return false
+  if (action === "pause" || action === "resume") {
+    return capabilities.actions.includes("pause") && capabilities.actions.includes("resume")
+  }
+  return capabilities.actions.includes(action)
+}
+
+export function requireGoalAction(capabilities: GoalCapabilities, action: GoalAction): void {
+  if (!goalActionAvailable(capabilities, action)) {
+    throw new GoalCapabilityError(`Goal action '${action}' is not available`)
+  }
 }
 
 export type AdapterCapabilityProvider = {

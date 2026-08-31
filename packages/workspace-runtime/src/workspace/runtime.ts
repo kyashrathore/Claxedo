@@ -11,11 +11,10 @@ import {
   normalizeAgentHarnessTransport,
   normalizeHarnessIdentity,
   type AgentHarnessId,
-  type AgentSessionRow,
   type AgentSession,
   type AgentMessage,
-  type AgentPermissionRow,
-  type AgentQuestionRow,
+  type AgentPermission,
+  type AgentQuestion,
   type SessionConfig,
   type SessionConfigUpdate,
   type AgentProcessObserver,
@@ -645,7 +644,7 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
     const finish = store.finishTurn?.bind(store)
     if (finish) {
       store.finishTurn = (value) => {
-        finish(value)
+        const finished = finish(value)
         const session = store.getSession(value.sessionId) as { lastTurn?: AgentTurnOutcome } | null
         options.onTurnOutcome?.({
           ...value,
@@ -653,6 +652,7 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
             ? { assistantMessageId: value.assistantMessageId ?? session?.lastTurn?.assistantMessageId }
             : {}),
         })
+        return finished
       }
     }
     return store
@@ -768,6 +768,8 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
     {
       match: (runner) => runner.id === "pi",
       create: ({ options }) => new PiHarnessAdapter({
+        createStore: adapterCreateStore(resolveStoreFactory(options)),
+        ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
         ...(options.eventHub ? { eventHub: options.eventHub } : {}),
         ...(options.piModelBackend ? { modelBackend: options.piModelBackend } : {}),
         ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
@@ -910,7 +912,7 @@ async function proxyOpenCode(
  * Whether an adapter's EMPTY session list was an answer rather than a swallowed
  * failure.
  *
- * `AgentHarnessAdapter.listSessions` returns `AgentSessionRow[]`, so the only
+ * `AgentHarnessAdapter.listSessions` returns `AgentSession[]`, so the only
  * failure it can report is a throw — and the OpenCode adapter does not throw:
  * it returns `[]` for ANY non-2xx. A transient 5xx from a server that has just
  * restarted is therefore byte-identical to a fresh install, and the one-time
@@ -1413,16 +1415,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             harness: item.runner.id,
             error: error instanceof Error ? error.message : String(error),
           })
-          return [] as AgentSessionRow[]
+          return [] as AgentSession[]
         }
       }))
       if (complete) store().markSessionInventoryImported?.(directory)
       return mergeSessionRows([
-        ...(store().listSessions(directory) as AgentSessionRow[]),
+        ...(store().listSessions(directory) as AgentSession[]),
         ...rows.flat(),
       ])
     }
-    return mergeSessionRows(store().listSessions(directory) as AgentSessionRow[])
+    return mergeSessionRows(store().listSessions(directory) as AgentSession[])
   }
 
   async function sessionListAdapters() {
@@ -1452,7 +1454,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return (await adapter.listSessions(directory)).map((session) => bindDiscoveredSession(session, targetRunner, directory))
   }
 
-  function bindDiscoveredSession(session: AgentSessionRow, targetRunner: RuntimeRunner, directory: string) {
+  function bindDiscoveredSession(session: AgentSession, targetRunner: RuntimeRunner, directory: string) {
     const id = typeof session.id === "string" ? session.id : undefined
     if (!id) return session
     const existing = store().getSession(id) as
@@ -1486,12 +1488,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return session
   }
 
-  function mergeSessionRows(rows: AgentSessionRow[]) {
+  function mergeSessionRows(rows: AgentSession[]) {
     return [...rows.reduce((acc, row) => {
       const prev = acc.get(row.id)
       if (!prev || sessionTime(row, "updated") >= sessionTime(prev, "updated")) acc.set(row.id, row)
       return acc
-    }, new Map<string, AgentSessionRow>()).values()]
+    }, new Map<string, AgentSession>()).values()]
       .sort((a, b) => sessionTime(b, "updated") - sessionTime(a, "updated"))
   }
 
@@ -1519,7 +1521,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return true
         })
         .map((item) => item.listPermissions?.(directory) ?? Promise.resolve([])),
-    )).flat() as AgentPermissionRow[]
+    )).flat() as AgentPermission[]
   }
 
   async function listQuestions(input: {
@@ -1537,7 +1539,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return true
         })
         .map((item) => item.listQuestions?.(directory) ?? Promise.resolve([])),
-    )).flat() as AgentQuestionRow[]
+    )).flat() as AgentQuestion[]
   }
 
   function clear() {

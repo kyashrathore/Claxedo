@@ -3,8 +3,11 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import type {
   AgentRuntimeDirectory,
+  AgentRuntimeGoalCapabilities,
+  AgentRuntimeGoalMutationResult,
   AgentRuntimePermissionModeState,
 } from "@/platform/runtime/agent/agent-runtime-client"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 
 export type SessionTurnOutcome = (
   | { status: "completed"; completedAt: number; reason?: string }
@@ -49,9 +52,33 @@ export type SessionBackend = {
   getCapabilities: (input: {
     directory: string
     sessionID?: string
+    harness?: string
     sessionRef?: SessionRef
     signal?: AbortSignal
   }) => Promise<SessionTransportCapabilities>
+  getGoalCapabilities: (input: {
+    directory: AgentRuntimeDirectory
+    sessionID: string
+    sessionRef?: SessionRef
+    signal?: AbortSignal
+  }) => Promise<AgentRuntimeGoalCapabilities>
+  getGoal: (input: {
+    directory: AgentRuntimeDirectory
+    sessionID: string
+    sessionRef?: SessionRef
+    signal?: AbortSignal
+  }) => Promise<RuntimeGoalSnapshot | null>
+  startGoal: (input: {
+    directory: AgentRuntimeDirectory
+    sessionID: string
+    objective: string
+    sessionRef?: SessionRef
+    signal?: AbortSignal
+  }) => Promise<AgentRuntimeGoalMutationResult>
+  pauseGoal: (input: { directory: AgentRuntimeDirectory; sessionID: string; sessionRef?: SessionRef; signal?: AbortSignal }) => Promise<AgentRuntimeGoalMutationResult>
+  resumeGoal: (input: { directory: AgentRuntimeDirectory; sessionID: string; sessionRef?: SessionRef; signal?: AbortSignal }) => Promise<AgentRuntimeGoalMutationResult>
+  stopGoal: (input: { directory: AgentRuntimeDirectory; sessionID: string; sessionRef?: SessionRef; signal?: AbortSignal }) => Promise<AgentRuntimeGoalMutationResult>
+  deleteGoal: (input: { directory: AgentRuntimeDirectory; sessionID: string; sessionRef?: SessionRef; signal?: AbortSignal }) => Promise<AgentRuntimeGoalMutationResult>
   listMessages: (input: {
     directory: string
     sessionID: string

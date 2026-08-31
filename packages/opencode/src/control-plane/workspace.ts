@@ -23,6 +23,7 @@ import { type Target, type WorkspaceInfo, WorkspaceInfo as WorkspaceInfoSchema }
 import { WorkspaceV2 } from "@opencode-ai/core/workspace"
 import { Session } from "@/session/session"
 import { SessionPrompt } from "@/session/prompt"
+import { SessionGoal } from "@/session/goal"
 import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionID } from "@/session/schema"
 import { NotFoundError } from "@/storage/storage"
@@ -952,6 +953,7 @@ export const node = LayerNode.make({
     Auth.node,
     Session.node,
     SessionPrompt.node,
+    SessionGoal.node,
     httpClient,
     EventV2Bridge.node,
     Vcs.node,

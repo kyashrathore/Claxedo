@@ -158,6 +158,8 @@ export const state: {
   runtimeProviderResponse: unknown
   runtimeSessionConfig: unknown
   localSessionConfig: unknown
+  goalCapabilities: unknown
+  goalMutation: unknown
   sessionConfigSaveError: string | undefined
   claxedoServerUrl: string
   syncProject: SyncProject | undefined
@@ -188,6 +190,24 @@ export const state: {
   runtimeProviderResponse: undefined,
   runtimeSessionConfig: undefined,
   localSessionConfig: undefined,
+  goalCapabilities: {
+    implemented: true,
+    available: true,
+    actions: ["pause", "resume", "delete"],
+    recovery: "reconcile",
+    optionalFields: [],
+  },
+  goalMutation: {
+    ok: true,
+    status: "started",
+    goal: {
+      sessionId: "session-1",
+      objective: "Ship Goal support",
+      status: "active",
+      createdAt: 10,
+      updatedAt: 10,
+    },
+  },
   sessionConfigSaveError: undefined,
   claxedoServerUrl: "http://localhost:3001",
   syncProject: undefined,
@@ -415,6 +435,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         headers: { "Content-Type": "application/json" },
       })
     }
+    if (/\/session\/[^/]+\/goal\/capabilities$/.test(url.pathname)) {
+      return Response.json(state.goalCapabilities)
+    }
+    if (/\/session\/[^/]+\/goal$/.test(url.pathname) && request.method === "POST") {
+      return Response.json(state.goalMutation)
+    }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
@@ -584,6 +610,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         }
         return Response.json(state.localSessionConfig ?? { harness: { id: "opencode", access: "native" } })
       }
+      if (/\/session\/[^/]+\/goal\/capabilities$/.test(new URL(request.url).pathname)) {
+        return Response.json(state.goalCapabilities)
+      }
+      if (/\/session\/[^/]+\/goal$/.test(new URL(request.url).pathname) && request.method === "POST") {
+        return Response.json(state.goalMutation)
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -610,6 +642,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
             if (state.sessionConfigSaveError) return new Response(state.sessionConfigSaveError, { status: 500 })
             return Response.json(canonicalSessionConfig(init.body))
           }
+        }
+        if (/^\/session\/[^/]+\/goal\/capabilities(?:\?|$)/.test(path)) {
+          return Response.json(state.goalCapabilities)
+        }
+        if (/^\/session\/[^/]+\/goal(?:\?|$)/.test(path) && init?.method === "POST") {
+          return Response.json(state.goalMutation)
         }
         if (path.includes("/prompt_async") || (path.includes("/message") && init?.method === "POST")) {
           if (state.transportPromptAsyncError) {
@@ -984,6 +1022,24 @@ export function resetSubmitHarness() {
   state.runtimeProviderResponse = undefined
   state.runtimeSessionConfig = undefined
   state.localSessionConfig = undefined
+  state.goalCapabilities = {
+    implemented: true,
+    available: true,
+    actions: ["pause", "resume", "delete"],
+    recovery: "reconcile",
+    optionalFields: [],
+  }
+  state.goalMutation = {
+    ok: true,
+    status: "started",
+    goal: {
+      sessionId: "session-1",
+      objective: "Ship Goal support",
+      status: "active",
+      createdAt: 10,
+      updatedAt: 10,
+    },
+  }
   state.sessionConfigSaveError = undefined
   state.claxedoServerUrl = "http://localhost:3001"
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }

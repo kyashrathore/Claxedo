@@ -1323,6 +1323,8 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         raw: chunk.raw,
       }))]
 
+    case "goal-updated":
+    case "goal-cleared":
     case "subagent-updated":
       return []
 

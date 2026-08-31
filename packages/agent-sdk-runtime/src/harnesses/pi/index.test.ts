@@ -23,14 +23,6 @@ async function collect<T>(input: AsyncIterable<T>) {
   return out
 }
 
-async function nextEvent<T extends { type: string }>(iterator: AsyncIterator<T>, type: string) {
-  while (true) {
-    const next = await iterator.next()
-    if (next.done) throw new Error(`expected ${type}`)
-    if (next.value.type === type) return next.value
-  }
-}
-
 describe("PiHarnessAdapter", () => {
   test("a bare Pi adapter does not advertise a subagent tool", async () => {
     const capabilities = await new PiHarnessAdapter().readHarnessCapabilities("/work")
@@ -197,7 +189,7 @@ describe("PiHarnessAdapter", () => {
     }])
   })
 
-  test("falls back to central virtual placement when no placement is configured", async () => {
+  test("uses central virtual placement when no placement is configured", async () => {
     const placements: SessionEnvFactoryInput[] = []
     const adapter = new PiHarnessAdapter({
       createEnv: async (input) => {

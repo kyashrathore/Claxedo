@@ -33,20 +33,25 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "../../index"
-import type { AgentHarnessAdapter } from "../../adapter-contract"
+import type { AgentGoalMutationResult, AgentGoalResource, AgentHarnessAdapter } from "../../adapter-contract"
 import {
   AgentMessagePageError,
   type AgentMessagePage,
   type AgentMessagePageInput,
 } from "../../message-page"
-import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
+import { goalCapabilities, harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { listCommands } from "../../command-discovery"
 import { Log } from "../../log"
 import { requireWorkspaceDirectory } from "../../target"
 import { toOpencodeConfig, type ResolvedMcpServer } from "../../mcp-resolver"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { createSubagentAdmissionBoundary, type SubagentAdmissionStore } from "../../subagent-admission"
-import { createLegacyOpenCodeRuntimePublisher, drainEventStream, openEventStream } from "./events"
+import {
+  createLegacyOpenCodeRuntimePublisher,
+  drainEventStream,
+  openEventStream,
+  type OpenCodeEventStreamHandle,
+} from "./events"
 import { opencodeSubagentObservations } from "./subagent"
 import { opencodeAuthContent } from "./env"
 import { OpenCodeServerProcess, type OpenCodeServerConnection } from "./process"
@@ -58,6 +63,7 @@ import {
   type AgentProcessObserver,
   type AgentProcessObserverHandle,
 } from "../../process-observer"
+import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 export { opencodeAuthContent, prepareSpawnEnv, spawnEnv } from "./env"
 
 const log = Log.create({ service: "opencode-adapter" })
@@ -77,6 +83,11 @@ export type OpenCodeRequestFn = (request: Request) => Promise<Response>
 // rewrites this origin to the real server URL; in injected mode the host handler
 // sees it verbatim and routes on path only.
 const OPENCODE_INTERNAL_BASE = "http://opencode.internal"
+
+function requireUpstream(response: Response, operation: string) {
+  if (!response.ok) throw new Error(`${operation} failed with HTTP ${response.status}`)
+  return response
+}
 
 export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   readonly adapterCapabilities = ["http-proxy"] as const
@@ -104,6 +115,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   // interleave. One chain per adapter keeps them ordered without blocking the
   // event stream the turn is draining.
   private subagentAdmissions = Promise.resolve()
+  private publishedGoals = new Map<string, string>()
+  private goalMonitorGeneration = new Map<string, number>()
+  private goalStreams = new Map<string, OpenCodeEventStreamHandle>()
+  private goalRetryWaiters = new Map<string, { timer: ReturnType<typeof setTimeout>; cancel: () => void }>()
+  readonly goals: AgentGoalResource
+
   constructor(opencodeUrl?: string, input?: {
     headers?: HeadersInit
     eventHub?: RuntimeEventHub
@@ -123,6 +140,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       auth: () => this.auth,
       processObserver: input?.processObserver,
     })
+    this.goals = this.goalResource()
     if (this.injectedRequest || opencodeUrl) {
       this.rootOwnerId = `opencode-${this.injectedRequest ? "in-process" : "external"}:${randomUUID()}`
       this.transportObservation = observeAgentProcess(input?.processObserver, {
@@ -141,6 +159,177 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       })
       this.transportObservation.update({ lifecycle: "ready" })
     }
+  }
+
+  private goalResource(): AgentGoalResource {
+    const requestGoal = async <T>(sessionId: string, directory: string | undefined, path: string, init?: RequestInit) => {
+      const required = requireWorkspaceDirectory(directory)
+      const request = await this.requestFn()
+      const response = await request(OpenCodeHarnessAdapter.request(`/session/${sessionId}/goal${path}`, {
+        ...init,
+        headers: this.headers(required),
+      }))
+      requireUpstream(response, `OpenCode Goal ${path || "read"}`)
+      return response.json() as Promise<T>
+    }
+    const mutate = async <T extends RuntimeGoalSnapshot | null>(
+      sessionId: string,
+      directory: string | undefined,
+      path: string,
+      init: RequestInit,
+    ): Promise<AgentGoalMutationResult<T>> => {
+      const required = requireWorkspaceDirectory(directory)
+      try {
+        const goal = await requestGoal<T>(sessionId, required, path, init)
+        this.publishGoal(sessionId, required, goal)
+        return { ok: true, goal }
+      } catch (cause) {
+        return {
+          ok: false,
+          status: "failed",
+          message: cause instanceof Error ? cause.message : String(cause),
+        }
+      }
+    }
+    return {
+      readCapabilities: async (sessionId, directory) => {
+        try {
+          return goalCapabilities(await requestGoal(sessionId, directory, "/capabilities"))
+        } catch (cause) {
+          return goalCapabilities({
+            implemented: true,
+            available: false,
+            unavailableReason: cause instanceof Error ? cause.message : String(cause),
+            actions: [],
+            recovery: "reconcile",
+            optionalFields: [],
+          })
+        }
+      },
+      read: (sessionId, directory) => requestGoal<RuntimeGoalSnapshot | null>(sessionId, directory, ""),
+      start: async (sessionId, input, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        const result = await mutate<RuntimeGoalSnapshot>(sessionId, required, "", {
+          method: "POST",
+          body: JSON.stringify({ objective: input.objective }),
+        })
+        if (result.ok) this.monitorGoal(sessionId, required)
+        return result
+      },
+      pause: async (sessionId, directory) => {
+        const result = await mutate<RuntimeGoalSnapshot>(sessionId, directory, "/pause", { method: "POST" })
+        if (result.ok) this.stopGoalMonitor(sessionId)
+        return result
+      },
+      stop: async (sessionId, directory) => {
+        const result = await mutate<RuntimeGoalSnapshot>(sessionId, directory, "/pause", { method: "POST" })
+        if (result.ok) this.stopGoalMonitor(sessionId)
+        return result
+      },
+      resume: async (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        const result = await mutate<RuntimeGoalSnapshot>(sessionId, required, "/resume", { method: "POST" })
+        if (result.ok) this.monitorGoal(sessionId, required)
+        return result
+      },
+      delete: async (sessionId, directory) => {
+        const result = await mutate<null>(sessionId, directory, "", { method: "DELETE" })
+        if (result.ok) this.stopGoalMonitor(sessionId)
+        return result
+      },
+    }
+  }
+
+  private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
+    const signature = JSON.stringify(goal)
+    if (this.publishedGoals.get(sessionId) === signature) return
+    this.publishedGoals.set(sessionId, signature)
+    this.eventHub?.publishRuntime({
+      directory,
+      sessionId,
+      payload: goal
+        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
+        : agentRuntimeEvent.goalCleared({ sessionId }),
+    })
+  }
+
+  private stopGoalMonitor(sessionId: string) {
+    this.goalMonitorGeneration.set(sessionId, (this.goalMonitorGeneration.get(sessionId) ?? 0) + 1)
+    this.goalStreams.get(sessionId)?.close()
+    this.goalStreams.delete(sessionId)
+    this.goalRetryWaiters.get(sessionId)?.cancel()
+    this.goalRetryWaiters.delete(sessionId)
+  }
+
+  private cleanupGoalSession(sessionId: string) {
+    this.stopGoalMonitor(sessionId)
+    this.publishedGoals.delete(sessionId)
+    this.goalMonitorGeneration.delete(sessionId)
+  }
+
+  private monitorGoal(sessionId: string, directory: string) {
+    this.stopGoalMonitor(sessionId)
+    const generation = this.goalMonitorGeneration.get(sessionId) ?? 0
+    void (async () => {
+      let failures = 0
+      try {
+        while (this.goalMonitorGeneration.get(sessionId) === generation) {
+          let receivedEvent = false
+          try {
+            const request = await this.requestFn()
+            const goal = await this.goals.read(sessionId, directory)
+            this.publishGoal(sessionId, directory, goal)
+            if (!goal || goal.status !== "active") return
+            const stream = openEventStream(request, this.headers(directory, false))
+            this.goalStreams.set(sessionId, stream)
+            const publishRuntime = createLegacyOpenCodeRuntimePublisher({
+              directory,
+              sessionId,
+              assistantMessageId: randomUUID(),
+              eventHub: this.eventHub,
+            })
+            for await (const event of drainEventStream(stream, sessionId)) {
+              if (this.goalMonitorGeneration.get(sessionId) !== generation) return
+              receivedEvent = true
+              this.observeSubagents(event, sessionId, directory)
+              publishRuntime(event)
+              if (event.type !== "session.updated") continue
+              const current = await this.goals.read(sessionId, directory)
+              this.publishGoal(sessionId, directory, current)
+              if (!current || current.status !== "active") return
+            }
+            if (this.goalStreams.get(sessionId) === stream) this.goalStreams.delete(sessionId)
+          } catch (error) {
+            log.warn("OpenCode Goal monitor will reconnect after failure", { sessionId, error })
+          }
+          failures = receivedEvent ? 1 : failures + 1
+          if (!(await this.waitForGoalMonitorRetry(sessionId, generation, failures))) return
+        }
+      } finally {
+        if (this.goalMonitorGeneration.get(sessionId) === generation) {
+          this.goalMonitorGeneration.delete(sessionId)
+          this.goalStreams.delete(sessionId)
+        }
+      }
+    })()
+  }
+
+  private waitForGoalMonitorRetry(sessionId: string, generation: number, failures: number) {
+    const delay = Math.min(100 * 2 ** Math.min(failures - 1, 6), 5_000)
+    return new Promise<boolean>((resolve) => {
+      const finish = (current: boolean) => {
+        if (this.goalRetryWaiters.get(sessionId)?.timer === timer) this.goalRetryWaiters.delete(sessionId)
+        resolve(current)
+      }
+      const timer = setTimeout(() => finish(this.goalMonitorGeneration.get(sessionId) === generation), delay)
+      this.goalRetryWaiters.set(sessionId, {
+        timer,
+        cancel: () => {
+          clearTimeout(timer)
+          finish(false)
+        },
+      })
+    })
   }
 
   // ── Server lifecycle ─────────────────────────────────────────────────────────
@@ -245,22 +434,14 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   private async syncMcpConfig(request: OpenCodeRequestFn, directory: string) {
     const config = toOpencodeConfig(this.cfg).mcp
     if (!config || typeof config !== "object" || Array.isArray(config)) return
-    const results = await Promise.allSettled(
-      Object.entries(config).map(async ([name, cfg]) => {
-        const res = await request(OpenCodeHarnessAdapter.request(`/mcp`, {
-          method: "POST",
-          headers: this.headers(directory),
-          body: JSON.stringify({ name, config: cfg }),
-        }))
-        if (!res.ok) throw new Error(`${name}: ${res.status} ${await res.text().catch(() => res.statusText)}`)
-      }),
-    )
-    const failed = results.filter((item): item is PromiseRejectedResult => item.status === "rejected")
-    if (failed.length) {
-      log.warn("failed to sync opencode MCP config before session create", {
-        errors: failed.map((item) => item.reason instanceof Error ? item.reason.message : String(item.reason)),
-      })
-    }
+    await Promise.all(Object.entries(config).map(async ([name, cfg]) => {
+      const response = await request(OpenCodeHarnessAdapter.request(`/mcp`, {
+        method: "POST",
+        headers: this.headers(directory),
+        body: JSON.stringify({ name, config: cfg }),
+      }))
+      requireUpstream(response, `Configure OpenCode MCP server ${name}`)
+    }))
   }
 
   // ── Session lifecycle ────────────────────────────────────────────────────────
@@ -280,6 +461,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       unrevert: true,
       configOptions: false,
       subagents: true,
+      goals: true,
     })
   }
 
@@ -293,7 +475,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     directory: string,
     opts: { headers?: Record<string, string> } = {},
   ): Promise<Response> {
-    if (!this.compat) return Response.json({})
+    if (!this.compat) throw new Error("OpenCode compatibility reads are disabled")
     const request = await this.requestFn()
     const headers = this.headers(directory, false)
     if (opts.headers) {
@@ -305,12 +487,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async listSessions(directory: string): Promise<AgentSession[]> {
-    if (!this.compat) return []
+    if (!this.compat) throw new Error("OpenCode compatibility reads are disabled")
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session`, {
       headers: this.headers(directory),
     }))
-    if (!res.ok) return []
+    requireUpstream(res, "List OpenCode sessions")
     return res.json() as Promise<AgentSession[]>
   }
 
@@ -319,7 +501,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
       headers: this.headers(directory),
     }))
-    if (!res.ok) return null
+    if (res.status === 404) return null
+    requireUpstream(res, "Read OpenCode session")
     return res.json() as Promise<AgentSession>
   }
 
@@ -348,7 +531,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       headers: this.headers(directory),
       body: JSON.stringify(updates),
     }))
-    if (!res.ok) return null
+    if (res.status === 404) return null
+    requireUpstream(res, "Update OpenCode session")
     return res.json() as Promise<AgentSession>
   }
 
@@ -370,11 +554,13 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async deleteSession(id: string, directory: string): Promise<void> {
+    this.cleanupGoalSession(id)
     const request = await this.requestFn()
-    await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
+    const response = await request(OpenCodeHarnessAdapter.request(`/session/${id}`, {
       method: "DELETE",
       headers: this.headers(directory),
     }))
+    requireUpstream(response, "Delete OpenCode session")
   }
 
   // ── Messaging ────────────────────────────────────────────────────────────────
@@ -512,7 +698,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}/message`, {
       headers: this.headers(directory),
     }))
-    if (!res.ok) return []
+    requireUpstream(res, "List OpenCode messages")
     return res.json() as Promise<AgentMessage[]>
   }
 
@@ -552,18 +738,20 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   async revert(id: string, directory: string): Promise<void> {
     const request = await this.requestFn()
-    await request(OpenCodeHarnessAdapter.request(`/session/${id}/revert`, {
+    const response = await request(OpenCodeHarnessAdapter.request(`/session/${id}/revert`, {
       method: "POST",
       headers: this.headers(directory),
     }))
+    requireUpstream(response, "Revert OpenCode session")
   }
 
   async unrevert(id: string, directory: string): Promise<void> {
     const request = await this.requestFn()
-    await request(OpenCodeHarnessAdapter.request(`/session/${id}/unrevert`, {
+    const response = await request(OpenCodeHarnessAdapter.request(`/session/${id}/unrevert`, {
       method: "POST",
       headers: this.headers(directory),
     }))
+    requireUpstream(response, "Restore OpenCode session")
   }
 
   async forkSession(id: string, messageId: string, directory: string): Promise<{ id: string }> {
@@ -579,11 +767,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
 
   async executeCommand(id: string, command: string, directory: string): Promise<void> {
     const request = await this.requestFn()
-    await request(OpenCodeHarnessAdapter.request(`/session/${id}/command`, {
+    const response = await request(OpenCodeHarnessAdapter.request(`/session/${id}/command`, {
       method: "POST",
       headers: this.headers(directory),
       body: JSON.stringify({ command }),
     }))
+    requireUpstream(response, "Execute OpenCode command")
   }
 
   async listCommands(_directory: string): Promise<AgentCommand[]> {
@@ -599,7 +788,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const res = await request(OpenCodeHarnessAdapter.request(`/permission`, {
       headers: this.headers(directory),
     }))
-    if (!res.ok) return []
+    requireUpstream(res, "List OpenCode permissions")
     return res.json() as Promise<AgentPermission[]>
   }
 
@@ -613,13 +802,14 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const endpoint = sessionId
       ? `/session/${sessionId}/permissions/${actualPermId}`
       : `/permission/${permId}/respond`
-    await request(OpenCodeHarnessAdapter.request(endpoint, {
+    const response = await request(OpenCodeHarnessAdapter.request(endpoint, {
       method: "POST",
       headers: this.headers(directory),
       body: JSON.stringify({
         decision: decision === "reject_always" ? "deny" : decision,
       }),
     }))
+    requireUpstream(response, "Respond to OpenCode permission")
   }
 
   async listQuestions(directory: string): Promise<AgentQuestion[]> {
@@ -627,7 +817,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const res = await request(OpenCodeHarnessAdapter.request(`/question`, {
       headers: this.headers(directory),
     }))
-    if (!res.ok) return []
+    requireUpstream(res, "List OpenCode questions")
     return res.json() as Promise<AgentQuestion[]>
   }
 
@@ -637,11 +827,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const endpoint = sessionId
       ? `/session/${sessionId}/question/${actualQId}/reply`
       : `/question/${qId}/reply`
-    await request(OpenCodeHarnessAdapter.request(endpoint, {
+    const response = await request(OpenCodeHarnessAdapter.request(endpoint, {
       method: "POST",
       headers: this.headers(directory),
       body: JSON.stringify({ answer }),
     }))
+    requireUpstream(response, "Reply to OpenCode question")
   }
 
   async rejectQuestion(qId: string, directory: string): Promise<void> {
@@ -650,10 +841,11 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const endpoint = sessionId
       ? `/session/${sessionId}/question/${actualQId}/reject`
       : `/question/${qId}/reject`
-    await request(OpenCodeHarnessAdapter.request(endpoint, {
+    const response = await request(OpenCodeHarnessAdapter.request(endpoint, {
       method: "POST",
       headers: this.headers(directory),
     }))
+    requireUpstream(response, "Reject OpenCode question")
   }
 
   async getTodos(sessionId: string, directory: string): Promise<Array<{ content: string; status: string; priority: string }>> {
@@ -661,7 +853,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${sessionId}/todo`, {
       headers: this.headers(directory),
     }))
-    if (!res.ok) return []
+    requireUpstream(res, "List OpenCode todos")
     return res.json() as Promise<Array<{ content: string; status: string; priority: string }>>
   }
 
@@ -688,6 +880,8 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
   }
 
   dispose(): void {
+    const goalSessions = new Set([...this.goalMonitorGeneration.keys(), ...this.goalStreams.keys()])
+    for (const sessionId of goalSessions) this.cleanupGoalSession(sessionId)
     this.transportObservation?.exit({ reason: "disposed" })
     this.mcpObservations.forEach((handle) => handle.exit({ reason: "disposed" }))
     this.mcpObservations = []

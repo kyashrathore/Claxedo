@@ -2,11 +2,32 @@ import type { AvailableCommand, ContentBlock, ToolCallContent } from "@agentclie
 import type { RuntimeDiagnostic } from "./diagnostics"
 import type { RawHarnessEvent } from "./raw-harness-event"
 
-export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 6
+export const AGENT_RUNTIME_EVENT_CONTRACT_VERSION = 7
 
 export type RuntimeStatus = "busy" | "idle" | "error" | "recovering"
 export type RuntimeToolStatus = "pending" | "running" | "completed" | "failed"
 export type RuntimeNoticeSeverity = "debug" | "info" | "warn" | "error"
+export const RUNTIME_GOAL_STATUSES = ["active", "paused", "blocked", "limited", "complete"] as const
+export type RuntimeGoalStatus = typeof RUNTIME_GOAL_STATUSES[number]
+export type RuntimeGoalSnapshot = {
+  /** Claxedo session identity. One session owns at most one Goal. */
+  sessionId: string
+  objective: string
+  status: RuntimeGoalStatus
+  createdAt: number
+  updatedAt: number
+  /** Provider-reported fields. Absence means unknown and must remain absent. */
+  tokenBudget?: number
+  tokensUsed?: number
+  timeUsedSeconds?: number
+  iteration?: number
+  lastReason?: string
+}
+
+export function isRuntimeGoalStatus(value: unknown): value is RuntimeGoalStatus {
+  return typeof value === "string" && (RUNTIME_GOAL_STATUSES as readonly string[]).includes(value)
+}
+
 export type SubagentStatus = "pending" | "running" | "paused" | "interrupted" | "completed" | "failed" | "killed"
 export type SubagentMode = "foreground" | "background"
 export type SubagentToolCallRole = "spawn" | "interaction"
@@ -139,6 +160,8 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "auth-status"; status: "authenticated" | "unauthenticated" | "unknown"; authMode?: string | null; planType?: string | null; metadata?: Record<string, unknown> }
   | { type: "rate-limit"; status: "ok" | "limited"; usedPercent?: number; resetsAt?: number | null; windowDurationMins?: number | null; limitId?: string | null; limitName?: string | null; reason?: string | null; metadata?: Record<string, unknown> }
   | { type: "mcp-server-status"; serverName: string; status: "starting" | "ready" | "failed" | "cancelled"; error?: string | null }
+  | { type: "goal-updated"; sessionId: string; goal: RuntimeGoalSnapshot }
+  | { type: "goal-cleared"; sessionId: string }
   | SubagentUpdatedEvent
   | { type: "finish"; sessionId: string }
   | { type: "error"; error: string }
@@ -195,6 +218,8 @@ export const AGENT_RUNTIME_EVENT_TYPE_REGISTRY = {
   "auth-status": true,
   "rate-limit": true,
   "mcp-server-status": true,
+  "goal-updated": true,
+  "goal-cleared": true,
   "subagent-updated": true,
   finish: true,
   error: true,
@@ -242,6 +267,8 @@ export const AGENT_RUNTIME_EVENT_FACTORY_TYPES = {
   authStatus: "auth-status",
   rateLimit: "rate-limit",
   mcpServerStatus: "mcp-server-status",
+  goalUpdated: "goal-updated",
+  goalCleared: "goal-cleared",
   subagentUpdated: "subagent-updated",
   finish: "finish",
   error: "error",

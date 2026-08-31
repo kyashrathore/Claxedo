@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import type { RawHarnessEvent } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -14,7 +14,6 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import { listCommands } from "../../command-discovery"
-import { Log } from "../../log"
 import type {
   AgentCommand,
   AgentConfigOption,
@@ -29,6 +28,8 @@ import type {
 } from "../../index"
 import type {
   AbortResult,
+  AgentGoalResource,
+  AgentGoalMutationResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
@@ -98,8 +99,6 @@ export type {
 } from "./sdk-runtime-driver"
 export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
-const log = Log.create({ service: "sdk-runtime-adapter" })
-
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
 }
@@ -123,6 +122,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }>()
   private hydratedFileTranscripts = new Set<string>()
   private subagentChildByCorrelation = new Map<string, string>()
+  private publishedGoals = new Map<string, string>()
 
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
@@ -134,6 +134,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       processObserver: options.processObserver,
       transcriptRegistrar: options.transcriptRegistrar,
       bindSession: (input) => this.store.bindSession(input),
+      getAgentSessionId: (sessionId) => this.store.getAgentSessionId(sessionId),
+      getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
+      publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
+      runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
     })
   }
 
@@ -165,6 +169,170 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       unrevert: false,
       configOptions: true,
       subagents: true,
+      goals: !!this.driver.goals || !!this.driver.nativeGoal,
+    })
+  }
+
+  get goals(): AgentGoalResource | undefined {
+    const goals = this.driver.goals
+    if (!goals) return this.nativeGoalResource()
+    const publish = async <T extends RuntimeGoalSnapshot | null>(
+      sessionId: string,
+      directory: string,
+      operation: () => Promise<AgentGoalMutationResult<T>>,
+    ) => {
+      const result = await operation()
+      if (result.ok) this.publishGoal(sessionId, directory, result.goal)
+      return result
+    }
+    return {
+      readCapabilities: (sessionId, directory) => goals.readCapabilities(sessionId, directory),
+      read: (sessionId, directory) => goals.read(sessionId, directory),
+      start: (sessionId, input, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.start(sessionId, input, required))
+      },
+      pause: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.pause(sessionId, required))
+      },
+      resume: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.resume(sessionId, required))
+      },
+      stop: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.stop(sessionId, required))
+      },
+      delete: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.delete(sessionId, required))
+      },
+    }
+  }
+
+  private nativeGoalResource(): AgentGoalResource | undefined {
+    const native = this.driver.nativeGoal
+    if (!native) return
+    const unsupported = (action: string) => Promise.resolve({
+      ok: false as const,
+      status: "unsupported" as const,
+      message: `${this.driver.type} does not advertise Goal ${action}`,
+    })
+    return {
+      readCapabilities: (sessionId, directory) => native.capabilities(sessionId, requireWorkspaceDirectory(directory)),
+      read: async (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        const live = await native.read(sessionId, required)
+        if (live) return live
+        const projected = this.store.getGoal?.(sessionId)
+        if (!projected) return null
+        const capabilities = await native.capabilities(sessionId, required)
+        return capabilities.recovery === "blocked"
+          ? { ...projected, status: "blocked", updatedAt: Date.now() }
+          : projected
+      },
+      start: (sessionId, input, directory) => this.startNativeGoal(sessionId, input.objective, requireWorkspaceDirectory(directory)),
+      pause: () => unsupported("Pause"),
+      resume: () => unsupported("Resume"),
+      // No native driver has a provider clear operation: local-map deletion
+      // would lie, because a resumed provider session re-emits the Goal.
+      delete: () => unsupported("Delete"),
+      stop: async (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        const goal = await native.read(sessionId, required)
+        if (!goal) return { ok: false, status: "not_found", message: "No Goal exists" }
+        const stopped = await native.stop(sessionId, required)
+        if (!stopped) return { ok: false, status: "not_found", message: "No Goal exists" }
+        this.publishGoal(sessionId, required, stopped)
+        this.lifecycle().abort(sessionId)
+        await this.lifecycle().whenIdle(sessionId)
+        return { ok: true, goal: stopped }
+      },
+    }
+  }
+
+  private async startNativeGoal(sessionId: string, objective: string, directory: string): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
+    const native = this.driver.nativeGoal
+    if (!native) return { ok: false, status: "unsupported", message: `${this.driver.type} does not support Goal` }
+    const config = await this.getSessionConfig(sessionId, directory)
+    const input: PromptInput = {
+      parts: [{ type: "text", text: objective }],
+      userMessageId: randomUUID(),
+      assistantMessageId: randomUUID(),
+      agent: config.agent ?? "build",
+      model: config.model ?? { providerID: this.driver.type, modelID: this.currentModel || "default" },
+      ...(config.variant ? { variant: config.variant } : {}),
+    }
+    let settled = false
+    let accept: (result: AgentGoalMutationResult<RuntimeGoalSnapshot>) => void = () => {}
+    const accepted = new Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>((resolve) => {
+      accept = resolve
+    })
+    const consume = async () => {
+      for await (const _event of this.streamMessage(
+        sessionId,
+        input,
+        directory,
+        (turn) => native.run(turn, objective, (goal) => {
+          this.publishGoal(sessionId, directory, goal)
+          if (!settled && goal) {
+            settled = true
+            accept({ ok: true, goal })
+          }
+        }),
+      )) {}
+      if (!settled) {
+        settled = true
+        accept({ ok: false, status: "failed", message: `${this.driver.type} ended before accepting Goal` })
+      }
+    }
+    void consume().catch((error) => {
+      if (settled) return
+      settled = true
+      accept({ ok: false, status: "failed", message: errorMessage(error) })
+    })
+    return await accepted
+  }
+
+  private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
+    const signature = JSON.stringify(goal)
+    if (this.publishedGoals.get(sessionId) === signature) return
+    this.publishedGoals.set(sessionId, signature)
+    this.store.setGoal?.(sessionId, goal)
+    this.options.eventHub?.publishRuntime({
+      directory,
+      sessionId,
+      agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
+      payload: goal
+        ? agentRuntimeEvent.goalUpdated({ sessionId, goal })
+        : agentRuntimeEvent.goalCleared({ sessionId }),
+    })
+  }
+
+  private runProviderTurn(
+    sessionId: string,
+    directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+  ): Promise<boolean> {
+    const config = this.store.getSessionConfig(sessionId)
+    const input: PromptInput = {
+      parts: [],
+      assistantMessageId: randomUUID(),
+      agent: config?.agent ?? "build",
+      model: config?.model ?? { providerID: this.driver.type, modelID: this.currentModel || "default" },
+      ...(config?.variant ? { variant: config.variant } : {}),
+    }
+    return (async () => {
+      let admitted = false
+      for await (const _event of this.streamMessage(sessionId, input, directory, async (turn) => {
+        admitted = true
+        await execute(turn)
+      })) {}
+      return admitted
+    })().catch((error) => {
+      console.error(`${this.driver.type} provider Goal turn projection failed`, error)
+      return false
     })
   }
 
@@ -234,29 +402,39 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
   }
 
-  async deleteSession(id: string, _directory: string): Promise<void> {
+  async deleteSession(id: string, directory: string): Promise<void> {
+    directory = requireWorkspaceDirectory(directory)
     this.lifecycle().abort(id)
     for (const child of this.store.listSubagents?.(id) ?? []) {
       const childSessionId = (child as { childSessionId?: string }).childSessionId
       if (!childSessionId) continue
       const agentSessionId = this.store.getAgentSessionId(childSessionId)
-      if (agentSessionId) this.driver.deleteAgentSession?.(childSessionId, agentSessionId)
+      if (agentSessionId) await this.driver.deleteAgentSession?.(childSessionId, agentSessionId, directory)
     }
     const agentSessionId = this.store.getAgentSessionId(id)
-    if (agentSessionId) this.driver.deleteAgentSession?.(id, agentSessionId)
+    if (agentSessionId) await this.driver.deleteAgentSession?.(id, agentSessionId, directory)
     this.store.deleteSession(id)
   }
 
   /** Holds the busy lock until terminal emission and releases it on every exit path. */
   async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
     directory = requireWorkspaceDirectory(directory)
+    yield* this.streamMessage(id, input, directory, (turn) => this.driver.runTurn(turn))
+  }
+
+  private async *streamMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     const leaveBusy = this.lifecycle().enter(id)
     if (!leaveBusy) {
       yield sessionError("Session is already processing a message", id)
       return
     }
     try {
-      for await (const event of this._sendMessage(id, input, directory)) {
+      for await (const event of this._sendMessage(id, input, directory, execute)) {
         // Release BEFORE yielding: the consumer may take arbitrarily long to
         // process this event (the auto-title round-trip is downstream of it),
         // and every millisecond of that is a window a next prompt can lose in.
@@ -268,7 +446,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
   }
 
-  private async *_sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
+  private async *_sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     const current = this.store.getAgentSessionId(id)
     if (!current) {
       yield sessionError(`Session ${id} not found`, id)
@@ -479,7 +662,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
 
     this.lifecycle().set(id, { abort })
-    const run = this.driver.runTurn({
+    const run = execute({
       sessionId: id,
       getAgentSessionId: () => agentSessionId,
       input,
@@ -713,7 +896,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   private resolvePendingPermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
-    for (const [id, item] of [...this.pendingPermissions.entries()]) {
+    for (const [id, item] of this.pendingPermissions.entries()) {
       if (sessionId && item.sessionId !== sessionId) continue
       this.pendingPermissions.delete(id)
       if (item.sessionId && this.store?.appendEvent) {

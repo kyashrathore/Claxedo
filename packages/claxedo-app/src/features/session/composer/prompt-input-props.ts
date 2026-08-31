@@ -6,6 +6,8 @@ import type { CloudLog } from "@/features/session/ui/components/cloud-startup-vi
 import type { HarnessSelectionController, HarnessSubmitController } from "@/features/session/harness/controller"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "./mode"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 
 export type PromptRetryAction = (prompt?: Prompt) => unknown
 
@@ -67,6 +69,9 @@ export interface PromptInputProps {
   status?: () => SessionStatus
   /** Active turn state supplied by the session owner. Defaults to status-only for embedded contexts. */
   activeTurn?: () => boolean
+  goal?: () => RuntimeGoalSnapshot | null | undefined
+  goalCapabilities?: () => AgentRuntimeGoalCapabilities | undefined
+  stopGoal?: () => void | Promise<unknown>
   /** Registers the mounted composer's retry action for an in-timeline recovery surface. */
   registerRetry?: (retry?: PromptRetryAction) => void
   /** Signed workspace runtime identity for relay-backed session sends. */

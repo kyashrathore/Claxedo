@@ -115,9 +115,38 @@ row, not the whole harness turn.
 When reconciling a currently submitted prompt, also compare
 `session.lastTurn.assistantMessageId` with the assistant row id for that prompt.
 `lastTurn.status` alone can describe a previous turn on the same reusable
-session. If your host supports a higher-level lifecycle such as a Codex goal,
+session. If your host supports a higher-level lifecycle such as a Goal,
 keep using that lifecycle for session-level working/done state; a turn can
 settle while the goal continues.
+
+## Start And Reconcile A Goal
+
+Use this when one objective should remain active across multiple harness turns.
+Create or select the session first, then use the dedicated Goal resource:
+
+```ts
+const capabilities = await runtime.goals.capabilities(session.id, directory)
+if (!capabilities.implemented || !capabilities.available) {
+  throw new Error(capabilities.unavailableReason ?? "Goal is unavailable")
+}
+
+const result = await runtime.goals.start({
+  sessionId: session.id,
+  objective: "Finish when the release checks pass",
+}, directory)
+
+if (!result.ok) throw new Error(result.message)
+```
+
+Subscribe to runtime events for live `goal-updated` and `goal-cleared`
+notifications, but refetch `runtime.goals.read(session.id, directory)` after a
+replay gap or reconnect. Render Pause/Resume only when both appear in
+`capabilities.actions`, and render Delete only when it appears independently.
+
+To stop active autonomous work, call `runtime.goals.stop()`. To remove a Goal,
+call `runtime.goals.delete()` only when advertised. Do not substitute an abort,
+prompt, or local cache clear for an unsupported action; the adapter owns the
+ordering that disables continuation before interruption and state removal.
 
 ## 2. Turn It Into A Realtime App Loop
 

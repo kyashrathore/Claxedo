@@ -13,4 +13,6 @@ export type SessionTransportCapabilities = {
   revert: boolean
   unrevert: boolean
   configOptions: boolean
+  /** Coarse harness support. Session-scoped actions come from Goal capabilities. */
+  goals?: boolean
 }

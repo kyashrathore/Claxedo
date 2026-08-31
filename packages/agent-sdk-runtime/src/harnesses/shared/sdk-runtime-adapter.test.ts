@@ -31,6 +31,107 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
 }
 
 describe("SdkRuntimeAdapter", () => {
+  test("disables native Goal continuation before aborting its active turn", async () => {
+    const order: string[] = []
+    let publishActive: ((goal: ReturnType<typeof activeGoal>) => void) | undefined
+    const activeGoal = () => ({
+      sessionId: "session-1",
+      objective: "Ship safely",
+      status: "active" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: {
+          capabilities: () => ({
+            implemented: true,
+            available: true,
+            actions: [],
+            recovery: "blocked",
+            optionalFields: [],
+          }),
+          read: async () => activeGoal(),
+          run: async (input, _objective, onGoal) => {
+            publishActive = onGoal
+            onGoal(activeGoal())
+            await new Promise<void>((resolve) => {
+              input.abort.signal.addEventListener("abort", () => {
+                order.push("abort")
+                resolve()
+              }, { once: true })
+            })
+          },
+          stop: async () => {
+            order.push("stop")
+            return { ...activeGoal(), status: "paused", updatedAt: 2 }
+          },
+          delete: async () => true,
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+    const started = await adapter.goals?.start(session.id, { objective: "Ship safely" }, path.resolve("/repo"))
+    expect(started).toMatchObject({ ok: true, goal: { status: "active" } })
+    expect(publishActive).toBeDefined()
+
+    await expect(adapter.goals?.stop(session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      ok: true,
+      goal: { status: "paused" },
+    })
+    expect(order).toEqual(["stop", "abort"])
+    adapter.dispose()
+  })
+
+  test("deletes a native Goal only after stopping and aborting its active turn", async () => {
+    const order: string[] = []
+    const activeGoal = () => ({
+      sessionId: "session-1",
+      objective: "Ship safely",
+      status: "active" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    let goal: ReturnType<typeof activeGoal> | null = activeGoal()
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: {
+          capabilities: () => ({
+            implemented: true,
+            available: true,
+            actions: ["delete"],
+            recovery: "blocked",
+            optionalFields: [],
+          }),
+          read: async () => goal,
+          run: async () => {},
+          stop: async () => {
+            order.push("stop")
+            return goal && { ...goal, status: "paused" as const, updatedAt: 2 }
+          },
+          delete: async () => {
+            order.push("delete")
+            goal = null
+            return true
+          },
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+
+    await expect(adapter.goals?.delete(session.id, path.resolve("/repo"))).resolves.toEqual({
+      ok: true,
+      goal: null,
+    })
+    expect(order).toEqual(["stop", "delete"])
+    await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toBeNull()
+    adapter.dispose()
+  })
+
   test("applies the requested permission mode before the provider turn", async () => {
     const order: string[] = []
     const adapter = new SdkRuntimeAdapter({
@@ -307,6 +408,36 @@ describe("SdkRuntimeAdapter", () => {
       reason: "harness_process_lost",
       message: "process exited",
     })
+  })
+
+  test("Codex drops a provisional autonomous Goal queue when provider-turn admission is busy", async () => {
+    const host = {
+      lifecycle: () => createSessionTurnLifecycle(),
+      pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
+      bindSession() {},
+      getAgentSessionId: () => "thread-1",
+      getSessionConfig: () => null,
+      publishGoal() {},
+      runProviderTurn: async () => false,
+    }
+    const driver = createCodexAppServerDriver(host as never) as WithInternals<SdkRuntimeDriver, {
+      goalBindings: Map<string, { sessionId: string; directory: string }>
+      goalStatusByThread: Map<string, string>
+      goalTurnQueues: Map<string, unknown>
+      handleProcessMessage: (message: unknown) => void
+    }>
+    driver.goalBindings.set("thread-1", { sessionId: "session-1", directory: path.resolve("/repo") })
+    driver.goalStatusByThread.set("thread-1", "active")
+
+    driver.handleProcessMessage({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: { id: "goal-turn-1" } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(driver.goalTurnQueues.size).toBe(0)
+    driver.dispose?.()
   })
 
   test("explicit abort persists an interruption sentinel without emitting a session error", async () => {

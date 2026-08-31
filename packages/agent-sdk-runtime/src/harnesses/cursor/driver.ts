@@ -1,6 +1,7 @@
 import {
   createAgentEventRuntime,
   type AgentEventRuntime,
+  type RuntimeGoalSnapshot,
 } from "@claxedo/agent-event-runtime"
 import {
   cursorRuntimeMessage,
@@ -14,6 +15,7 @@ import type {
 } from "@cursor/sdk"
 import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
+import { goalCapabilities } from "../../capabilities"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { randomUUID } from "crypto"
 import { createLiveModelSource } from "../../live-model-source"
@@ -47,8 +49,15 @@ type CursorEntry = {
   observation: AgentProcessObserverHandle
 }
 
-export function createCursorSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {
-  return new CursorSdkDriver(host)
+export type CursorSdkDriverOptions = {
+  loadAgent?: () => Promise<Pick<typeof import("@cursor/sdk"), "Agent">>
+}
+
+export function createCursorSdkDriver(
+  host: SdkRuntimeDriverHost,
+  options: CursorSdkDriverOptions = {},
+): SdkRuntimeDriver {
+  return new CursorSdkDriver(host, options)
 }
 
 export function cursorTurnPrompt(parts: unknown[], system?: string) {
@@ -56,8 +65,38 @@ export function cursorTurnPrompt(parts: unknown[], system?: string) {
   return system ? `${system}\n\n${prompt}` : prompt
 }
 
+export function cursorGoalCommand(objective: string) {
+  return `/goal ${objective}`
+}
+
 class CursorSdkDriver implements SdkRuntimeDriver {
   readonly type = "cursor" as const
+  private goalBySession = new Map<string, RuntimeGoalSnapshot>()
+  readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
+    capabilities: () => {
+      const available = !!this.auth.cursor
+      // Delete is NOT advertised: the Goal lives in the cursor-agent session
+      // and no provider clear operation exists, so a resumed session would
+      // re-emit a Goal that Claxedo claimed was deleted.
+      return goalCapabilities({
+        implemented: true,
+        available,
+        ...(!available ? { unavailableReason: CURSOR_SDK_AUTH_ERROR } : {}),
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      })
+    },
+    read: async (sessionId) => this.goalBySession.get(sessionId) ?? null,
+    run: (input, objective, onGoal) => this.runGoal(input, objective, onGoal),
+    stop: async (sessionId) => {
+      const goal = this.goalBySession.get(sessionId)
+      if (!goal) return null
+      const stopped = { ...goal, status: "paused" as const, updatedAt: Date.now() }
+      this.goalBySession.set(sessionId, stopped)
+      return stopped
+    },
+  }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private agents = new Map<string, CursorEntry>()
@@ -66,7 +105,10 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     fetchModels: () => this.fetchModels(),
   })
 
-  constructor(private readonly host: SdkRuntimeDriverHost) {}
+  constructor(
+    private readonly host: SdkRuntimeDriverHost,
+    private readonly driverOptions: CursorSdkDriverOptions = {},
+  ) {}
 
   setAuth(keys: SdkRuntimeAuth) {
     const previous = this.auth.cursor
@@ -108,7 +150,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
 
   async createAgentSession(input: { directory: string; title?: string; model: string }) {
-    const { Agent } = await import("@cursor/sdk")
+    const { Agent } = await this.loadAgent()
     const model = cursorSdkModel(input.model)
     const observation = this.observeAgent(input.directory)
     try {
@@ -119,10 +161,8 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
         local: {
           cwd: input.directory,
-          // `sandboxOptions` and `autoReview` are LocalAgentOptions, read here by
-          // Agent.create and nowhere else — LocalSendOptions carries only `force`
-          // and `customTools`. Passing them to `send` instead compiles and does
-          // nothing, which is why the mode's appliesFrom is "next-session".
+          // Cursor reads permission policy while creating the local agent, so
+          // mode changes apply to the next session.
           ...cursorPermissionOptions(this.permissionSelection.currentId(input.directory)),
         },
       })
@@ -187,7 +227,58 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     }
   }
 
-  deleteAgentSession(_sessionId: string, agentSessionId: string) {
+  private async runGoal(
+    input: SdkRuntimeTurnInput,
+    objective: string,
+    onGoal: (goal: RuntimeGoalSnapshot | null) => void,
+  ) {
+    const agent = await this.ensureAgent(input.sessionId, input.getAgentSessionId(), input.directory)
+    const model = cursorSdkModel(text(input.input.model.modelID) ?? text(input.model))
+    const run = await agent.send(cursorGoalCommand(objective), {
+      ...(model ? { model } : {}),
+      ...(Object.keys(this.currentMcp).length ? { mcpServers: cursorMcpServers(this.currentMcp) } : {}),
+      local: { force: false },
+    })
+    const now = Date.now()
+    const active: RuntimeGoalSnapshot = {
+      sessionId: input.sessionId,
+      objective,
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    }
+    this.goalBySession.set(input.sessionId, active)
+    onGoal(active)
+    this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal: active })
+    const onAbort = () => run.cancel().catch(() => {})
+    input.abort.signal.addEventListener("abort", onAbort, { once: true })
+    this.host.lifecycle().set(input.sessionId, {
+      abort: input.abort,
+      turnId: run.id,
+      close: () => run.cancel().catch(() => {}),
+    })
+    try {
+      for await (const message of run.stream()) {
+        await ingestCursorSdkMessage(input, message, this.host.transcriptRegistrar)
+      }
+      const result = await run.wait()
+      const current = this.goalBySession.get(input.sessionId) ?? active
+      const status = result.status === "finished"
+        ? "complete"
+        : result.status === "cancelled"
+        ? "paused"
+        : "blocked"
+      const settled = { ...current, status, updatedAt: Date.now() } satisfies RuntimeGoalSnapshot
+      this.goalBySession.set(input.sessionId, settled)
+      onGoal(settled)
+      this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal: settled })
+    } finally {
+      input.abort.signal.removeEventListener("abort", onAbort)
+    }
+  }
+
+  deleteAgentSession(sessionId: string, agentSessionId: string) {
+    this.goalBySession.delete(sessionId)
     const entry = this.agents.get(agentSessionId)
     entry?.observation.exit({ reason: "disposed" })
     entry?.agent.close()
@@ -273,7 +364,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     if (existing?.directory === directory) return existing.agent
     existing?.observation.exit({ reason: "disposed" })
     existing?.agent.close()
-    const { Agent } = await import("@cursor/sdk")
+    const { Agent } = await this.loadAgent()
     const observation = this.observeAgent(directory, sessionId)
     let agent: CursorSDKAgent
     try {
@@ -301,6 +392,10 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     }
     this.processError = null
     return agent
+  }
+
+  private loadAgent() {
+    return this.driverOptions.loadAgent?.() ?? import("@cursor/sdk")
   }
 
   private observeAgent(directory: string, sessionId?: string): AgentProcessObserverHandle {

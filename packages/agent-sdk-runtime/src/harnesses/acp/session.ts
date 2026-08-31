@@ -12,6 +12,23 @@ import type {
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
 import type { AgentPermissionMode, AgentPermissionModeState } from "../../adapter-contract"
+import { GOAL_OPTIONAL_FIELDS, type GoalAction, type GoalCapabilities, type GoalOptionalField } from "../../capabilities"
+
+export const ACP_GOAL_METHODS = {
+  read: "session/goal/get",
+  start: "session/goal/start",
+  stop: "session/goal/stop",
+  pause: "session/goal/pause",
+  resume: "session/goal/resume",
+  delete: "session/goal/delete",
+} as const
+
+export type ACPGoalExtension = {
+  version: 1
+  methods: ReadonlySet<string>
+  actions: readonly GoalAction[]
+  optionalFields: readonly GoalOptionalField[]
+}
 
 type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
@@ -27,6 +44,50 @@ function rec(input: unknown): Record<string, unknown> | null {
 
 function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
+}
+
+export function goalExtension(meta: unknown): ACPGoalExtension | null {
+  const root = rec(meta)
+  const goal = rec(root?.goal)
+  if (goal?.version !== 1 || !Array.isArray(goal.methods) || !Array.isArray(goal.actions)) return null
+  const methods = new Set(goal.methods.filter((item): item is string => typeof item === "string"))
+  if (
+    !methods.has(ACP_GOAL_METHODS.read)
+    || !methods.has(ACP_GOAL_METHODS.start)
+    || !methods.has(ACP_GOAL_METHODS.stop)
+  ) return null
+  const advertised = new Set(goal.actions.filter((item): item is string => typeof item === "string"))
+  const actions: GoalAction[] = []
+  const reversible = advertised.has("pause")
+    && advertised.has("resume")
+    && methods.has(ACP_GOAL_METHODS.pause)
+    && methods.has(ACP_GOAL_METHODS.resume)
+  if (reversible) actions.push("pause", "resume")
+  if (advertised.has("delete") && methods.has(ACP_GOAL_METHODS.delete)) actions.push("delete")
+  const knownOptional = new Set<GoalOptionalField>(GOAL_OPTIONAL_FIELDS)
+  const optionalFields = Array.isArray(goal.optionalFields)
+    ? goal.optionalFields.filter((item): item is GoalOptionalField => typeof item === "string" && knownOptional.has(item as GoalOptionalField))
+    : []
+  return { version: 1, methods, actions, optionalFields }
+}
+
+export function goalExtensionCapabilities(extension: ACPGoalExtension | null): GoalCapabilities {
+  return extension
+    ? {
+        implemented: true,
+        available: true,
+        actions: extension.actions,
+        recovery: "reconcile",
+        optionalFields: extension.optionalFields,
+      }
+    : {
+        implemented: false,
+        available: false,
+        unavailableReason: "ACP agent did not negotiate the Goal extension",
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      }
 }
 
 function flat(options: SessionConfigSelectOption[] | SessionConfigSelectGroup[]) {
@@ -256,16 +317,15 @@ export async function setPermissionMode(
   }
   if (state.modes.some((mode) => mode.id === modeId)) {
     await conn.request(methods.agent.session.setMode, { sessionId, modeId })
-    // `set_mode` returns no state. Record the request optimistically so the UI is
-    // not blank, and let the next `session/update` correct it if the agent
-    // clamped to something else.
+    // `set_mode` returns no state. Record the requested mode so the UI remains
+    // populated until the agent's next `session/update` synchronizes it.
     const next: ACPState = { ...state, currentModeId: modeId }
     return { state: next, result: permissionModes(next) }
   }
   throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
 }
 
-/** Derive available agents from ACP session state (config options or legacy modeIds). */
+/** Derive available agents from ACP session state (config options or modeIds). */
 export function extractAgents(state: ACPState): Array<{ name: string; description?: string; mode: string }> {
   // Prefer config-based mode options (newer protocol path)
   const modeCfg = pick(state.cfg, "mode")

@@ -23,7 +23,7 @@ import {
 } from "@claxedo/agent-sdk-runtime"
 import type {
   AdmittedSubagentObservation,
-  AgentMessageRow,
+  AgentMessage,
   AgentTurnOutcome,
   HarnessConnection,
   SessionConfig,
@@ -2569,9 +2569,9 @@ export class RuntimeStore {
       payload_json: string
       created_at: number
     } | null
-    if (!active?.assistant_message_id) return
-    if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return
-    if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return
+    if (!active?.assistant_message_id) return { events: [] }
+    if (input.assistantMessageId && input.assistantMessageId !== active.assistant_message_id) return { events: [] }
+    if (this.hasTurnFinished(input.sessionId, active.assistant_message_id)) return { events: [] }
     const events: CompatEvent[] = []
 
     if (input.outcome.status === "failed") {
@@ -3065,7 +3065,7 @@ export class RuntimeStore {
       .all(sessionId) as Array<{ content: string; status: string; priority: string }>
   }
 
-  private hydrateMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessageRow[] {
+  private hydrateMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessage[] {
     if (msgs.length === 0) return []
     const partsByMessage = new Map<string, Record<string, unknown>[]>()
     for (let offset = 0; offset < msgs.length; offset += MESSAGE_HYDRATION_BATCH_SIZE) {
@@ -3089,7 +3089,7 @@ export class RuntimeStore {
     }
 
     return msgs.map((msg) => {
-      const info = JSON.parse(msg.info_json) as AgentMessageRow["info"]
+      const info = JSON.parse(msg.info_json) as AgentMessage["info"]
       const infoRecord = info as Record<string, unknown>
       const time = rec(info.time)
       const completed = typeof time?.completed === "number"
@@ -3111,7 +3111,7 @@ export class RuntimeStore {
    * The callers supply already-projected message envelopes, and the part query
    * excludes non-text JSON before it crosses the SQLite/JavaScript boundary.
    */
-  private hydrateSurfaceMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessageRow[] {
+  private hydrateSurfaceMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessage[] {
     if (msgs.length === 0) return []
     const placeholders = msgs.map(() => "?").join(", ")
     const candidates = this.db
@@ -3154,7 +3154,7 @@ export class RuntimeStore {
     const selectedIds = selectedIndexes.map((index) => candidates[index]!.part_id)
     if (selectedIds.length === 0) {
       return msgs.map((msg) => ({
-        info: JSON.parse(msg.info_json) as AgentMessageRow["info"],
+        info: JSON.parse(msg.info_json) as AgentMessage["info"],
         parts: [],
       }))
     }
@@ -3177,12 +3177,12 @@ export class RuntimeStore {
       partsByMessage.set(part.message_id, current)
     }
     return msgs.map((msg) => ({
-      info: JSON.parse(msg.info_json) as AgentMessageRow["info"],
+      info: JSON.parse(msg.info_json) as AgentMessage["info"],
       parts: partsByMessage.get(msg.id) ?? [],
     }))
   }
 
-  getMessages(sessionId: string): AgentMessageRow[] {
+  getMessages(sessionId: string): AgentMessage[] {
     const msgs = this.db
       .prepare("SELECT id, ord, info_json FROM message WHERE session_id = ? ORDER BY ord ASC")
       .all(sessionId) as MessageProjectionRow[]
@@ -3315,11 +3315,11 @@ export class RuntimeStore {
         `,
         )
         .all(sessionId, boundary.ord) as MessageProjectionRow[]
-      const user = JSON.parse(turn[0]!.info_json) as AgentMessageRow["info"]
+      const user = JSON.parse(turn[0]!.info_json) as AgentMessage["info"]
       const contiguous =
         turn.length > 0 &&
         turn.every((row, index) => {
-          const message = JSON.parse(row.info_json) as AgentMessageRow["info"]
+          const message = JSON.parse(row.info_json) as AgentMessage["info"]
           if (index === 0) return message.role === "user" && message.id === user.id
           return message.role === "assistant" && message.parentID === user.id
         })

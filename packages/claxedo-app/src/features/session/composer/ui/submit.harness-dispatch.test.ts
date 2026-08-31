@@ -21,6 +21,107 @@ beforeEach(() => h.resetSubmitHarness())
 afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Harness + demo dispatch and abort", () => {
+  test("bare /goal arms Goal mode without provisioning or dispatching", async () => {
+    promptValue.splice(0, promptValue.length, {
+      type: "text",
+      content: "/goal",
+      start: 0,
+      end: 5,
+    })
+    let armed = 0
+    const submit = createSubmit({
+      sessionID: () => "new",
+      sessionDirectory: () => "/repo/main",
+      onGoalArm: () => { armed += 1 },
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await settleSubmitEffects()
+
+    expect(armed).toBe(1)
+    expect(sessionCreateCalls).toHaveLength(0)
+    expect(runtimeCalls.some((call) => call.input.includes("/goal"))).toBe(false)
+    expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
+    expect(promptCalls.set.some((call) => call.prompt.every((part) => part.type !== "text"))).toBe(true)
+  })
+
+  test("direct /goal submits one Goal request and never sends a prompt", async () => {
+    promptValue.splice(0, promptValue.length, {
+      type: "text",
+      content: "/goal Ship Goal support",
+      start: 0,
+      end: 23,
+    })
+    let accepted = 0
+    state.localSessionConfig = {
+      harness: { id: "opencode", access: "native" },
+      agent: "agent",
+      model: { providerID: "provider", modelID: "model" },
+    }
+    const submit = createSubmit({
+      info: () => ({
+        id: "session-1",
+        config: state.localSessionConfig,
+      }),
+      sessionID: () => "session-1",
+      sessionDirectory: () => "/repo/main",
+      onGoalAccepted: () => { accepted += 1 },
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await waitForSubmitEffect(() => unsignedCalls.some((call) =>
+      call.method === "POST" && new URL(call.url).pathname === "/session/session-1/goal"
+    ) || toasts.length > 0)
+
+    const goalPosts = runtimeCalls.filter((call) =>
+      call.method === "POST" && call.input.startsWith("/session/session-1/goal?")
+    )
+    expect(goalPosts).toHaveLength(1)
+    expect(JSON.parse(goalPosts[0]!.body ?? "{}")).toEqual({ objective: "Ship Goal support" })
+    expect(runtimeCalls.some((call) => call.input.includes("/goal/capabilities"))).toBe(true)
+    expect(calls.prompt).toBe(0)
+    expect(calls.async).toBe(0)
+    expect(calls.transportAsync).toBe(0)
+    expect(runtimeCalls.some((call) => call.input.includes("/message") || call.input.includes("/prompt"))).toBe(false)
+    expect(accepted).toBe(1)
+    expect(promptCalls.reset.length).toBeGreaterThan(0)
+  })
+
+  test("failed armed Goal keeps its created session and restores an explicit retry draft", async () => {
+    promptValue.splice(0, promptValue.length, {
+      type: "text",
+      content: "Ship Goal support",
+      start: 0,
+      end: 17,
+    })
+    state.goalCapabilities = {
+      implemented: true,
+      available: false,
+      unavailableReason: "provider did not negotiate Goal",
+      actions: [],
+      recovery: "none",
+      optionalFields: [],
+    }
+    state.demoMode = false
+    state.harnessMode = true
+    const submit = createSubmit({
+      goalArmed: () => true,
+      sessionID: () => "new",
+      sessionDirectory: () => "/repo/main",
+      navigateOnCreate: () => true,
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await waitForSubmitEffect(() => handoffCalls.some((call) => call.sessionID === "session-1") || toasts.length > 0)
+
+    expect(runtimeCalls.some((call) => call.method === "POST" && call.input.includes("/goal?"))).toBe(false)
+    expect(handoffCalls.some((call) => call.sessionID === "session-1")).toBe(true)
+    expect(promptCalls.set.some((call) => call.prompt.some((part) =>
+      part.type === "text" && part.content === "/goal Ship Goal support"
+    ))).toBe(true)
+    expect(calls.prompt + calls.async + calls.transportAsync).toBe(0)
+  })
+
   test("uses the shared demo helper to send sync prompts", async () => {
     const submit = createPromptSubmit({
       info: () => undefined,

@@ -81,6 +81,11 @@ export class SqliteRuntimeStore extends MemoryRuntimeStore {
     return result
   }
 
+  override setGoal(id: string, goal: Parameters<MemoryRuntimeStore["setGoal"]>[1]) {
+    super.setGoal(id, goal)
+    this.commit(() => this.persistSession(id))
+  }
+
   override deleteSession(id: string) {
     super.deleteSession(id)
     this.commit(() => {

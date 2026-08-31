@@ -11,6 +11,8 @@ export type {
   AgentHarnessFactory,
   AgentRuntime,
   AgentRuntimeEventEnvelope,
+  AgentRuntimeGoalErrorCode,
+  AgentRuntimeGoalStartInput,
   AgentRuntimeAbortResult,
   AgentRuntimeHealth,
   AgentRuntimeInteractionResult,
@@ -21,13 +23,35 @@ export type {
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
 } from "./runtime"
-export type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
-export { harnessCapabilities }
+export { AgentRuntimeGoalError, isAgentRuntimeGoalError } from "./runtime"
+export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-event-runtime"
+export type { AgentRuntimeEvent, RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
+export {
+  GOAL_ACTIONS,
+  GOAL_OPTIONAL_FIELDS,
+  GoalCapabilityError,
+  goalActionAvailable,
+  goalCapabilities,
+  harnessCapabilities,
+  requireGoalAction,
+}
   from "./capabilities"
 export type {
+  GoalAction,
+  GoalCapabilities,
+  GoalOptionalField,
+  GoalRecovery,
   HarnessCapabilities,
   HarnessCapabilityTarget,
 } from "./capabilities"
+export { requireGoalResource } from "./adapter-contract"
+export type {
+  AgentGoalMutationFailure,
+  AgentGoalMutationResult,
+  AgentGoalResource,
+  AgentGoalStartInput,
+  SupportsGoals,
+} from "./adapter-contract"
 export type { CompatEvent, CompatEnvelope, CompatPart } from "./compat-events"
 export { classifyFirstTurnError, firstTurnErrorData, FIRST_TURN_ERROR_CLASSES } from "./first-turn-error"
 export type { FirstTurnErrorClass } from "./first-turn-error"

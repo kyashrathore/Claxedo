@@ -7,6 +7,7 @@ export type PromptModeCommand = {
   title: string
   category: string
   keybind: string
+  slash?: string
   disabled: boolean
   onSelect: VoidFunction
 }
@@ -19,12 +20,15 @@ export function registerPromptModeCommands(input: {
   mode: Accessor<PromptComposerEditMode>
   pick: VoidFunction
   setMode: (mode: PromptComposerEditMode) => void
+  goalAvailable: Accessor<boolean>
+  armGoal: VoidFunction
   labels: {
     attachFile: string
     fileCategory: string
     shellMode: string
     normalMode: string
     sessionCategory: string
+    goal: string
   }
 }) {
   input.register("prompt-input", () => [
@@ -35,6 +39,15 @@ export function registerPromptModeCommands(input: {
       keybind: "mod+u",
       disabled: input.mode() !== "normal",
       onSelect: input.pick,
+    },
+    {
+      id: "prompt.goal",
+      title: input.labels.goal,
+      category: input.labels.sessionCategory,
+      keybind: "",
+      slash: "goal",
+      disabled: input.mode() !== "normal" || !input.goalAvailable(),
+      onSelect: input.armGoal,
     },
     {
       id: "prompt.mode.shell",

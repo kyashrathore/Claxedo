@@ -97,25 +97,6 @@ const normalizeOverrides = (value?: unknown) => {
   return out
 }
 
-const diff = (
-  base: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
-  next: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
-) => {
-  const out: ManagedMcpOverrides = {}
-  for (const server of MANAGED_MCP_SERVERS) {
-    const baseAgents: Partial<Record<McpCapableAgent, boolean>> = base[server] ?? {}
-    const nextAgents: Partial<Record<McpCapableAgent, boolean>> = next[server] ?? {}
-    for (const agent of MCP_CAPABLE_AGENTS) {
-      const nextValue = nextAgents[agent]
-      if (nextValue === baseAgents[agent]) continue
-      if (typeof nextValue !== "boolean") continue
-      out[server] ??= {}
-      out[server]![agent] = nextValue
-    }
-  }
-  return out
-}
-
 const apply = (
   base: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
   overrides: ManagedMcpOverrides,

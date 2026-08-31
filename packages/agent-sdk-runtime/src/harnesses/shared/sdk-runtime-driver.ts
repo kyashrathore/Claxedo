@@ -1,9 +1,12 @@
-import type { AgentEventRuntime, RawHarnessEvent, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { AgentEventRuntime, RawHarnessEvent, RuntimeGoalSnapshot, SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
+import type { GoalCapabilities } from "../../capabilities"
 import type {
   AgentConfigOption,
   PromptInput,
+  SessionConfig,
 } from "../../index"
 import type {
+  AgentGoalResource,
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
@@ -74,6 +77,17 @@ export type SdkRuntimeDriverHost = {
   processObserver?: AgentProcessObserver
   transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
   bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
+  getAgentSessionId(sessionId: string): string | null | undefined
+  getSessionConfig(sessionId: string): SessionConfig | null | undefined
+  publishGoal(input: {
+    sessionId: string
+    directory: string
+    goal: RuntimeGoalSnapshot | null
+  }): void
+  runProviderTurn(
+    input: { sessionId: string; directory: string },
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+  ): Promise<boolean>
 }
 
 export type SdkRuntimeTurnInput = {
@@ -95,12 +109,23 @@ export type SdkRuntimeTurnInput = {
 
 export type SdkRuntimeDriver = {
   readonly type: SdkRuntimeRunnerType
+  readonly goals?: AgentGoalResource
+  readonly nativeGoal?: {
+    capabilities(sessionId: string, directory: string): Promise<GoalCapabilities> | GoalCapabilities
+    read(sessionId: string, directory: string): Promise<RuntimeGoalSnapshot | null>
+    run(
+      input: SdkRuntimeTurnInput,
+      objective: string,
+      onGoal: (goal: RuntimeGoalSnapshot | null) => void,
+    ): Promise<void>
+    stop(sessionId: string, directory: string): Promise<RuntimeGoalSnapshot | null>
+  }
   setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>
   createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
-  deleteAgentSession?(sessionId: string, agentSessionId: string): void
+  deleteAgentSession?(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
   dispose?(): void
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]>

@@ -326,8 +326,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }
     return { ...backend, extraTools }
   }
+  const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
   const adapter = new PiHarnessAdapter({
     eventHub,
+    goalStore: runtimeStore,
     defaultPlacement: {
       mode: "hybrid",
       host: "central",
@@ -343,7 +345,6 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
   })
   let onTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
-  const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
   const finishTurn = runtimeStore.finishTurn?.bind(runtimeStore)
   if (finishTurn) {
     runtimeStore.finishTurn = (input) => {

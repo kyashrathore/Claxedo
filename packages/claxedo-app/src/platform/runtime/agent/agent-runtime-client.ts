@@ -27,6 +27,7 @@ import {
   shouldUseRuntimeSessionTransport as decideRuntimeSessionTransport,
 } from "@/platform/runtime/agent/placement-table"
 import { centralRuntimePath } from "./central-runtime-path"
+import { createAgentRuntimeGoalClient } from "./agent-runtime-goal-client"
 import {
   agentRuntimeBaseUrl,
   agentRuntimeEventsUrl as claxedoEventsUrl,
@@ -39,6 +40,12 @@ import {
 } from "./agent-runtime-urls"
 export { centralRuntimePath } from "./central-runtime-path"
 export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
+export type {
+  AgentRuntimeGoalAction,
+  AgentRuntimeGoalCapabilities,
+  AgentRuntimeGoalMutationResult,
+  AgentRuntimeGoalOptionalField,
+} from "./agent-runtime-goal-client"
 /**
  * One permission mode as the harness describes it.
  *
@@ -141,6 +148,7 @@ export const DEFAULT_AGENT_RUNTIME_CAPABILITIES: SessionTransportCapabilities = 
   revert: true,
   unrevert: true,
   configOptions: false,
+  goals: true,
 }
 
 export function agentRuntimeWorkspaceTargetQueryKey(input: { serverUrl?: string; directory: AgentRuntimeDirectory }) {
@@ -517,17 +525,24 @@ export function createAgentRuntimeClient(options: {
       })
       return await readJson<unknown>(res)
     },
-    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; signal?: AbortSignal }) {
-      if (!shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
-      if (!input.sessionID) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
-      const res = await fetchRuntimeSession({
-        sessionID: input.sessionID,
-        directory: input.directory,
-        suffix: "/capabilities",
-        init: { headers: { Accept: "application/json" }, signal: input.signal },
-      })
+    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; harness?: string; signal?: AbortSignal }) {
+      if (!input.sessionID && !input.harness) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
+      if (input.sessionID && !shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
+      const res = input.sessionID
+        ? await fetchRuntimeSession({
+          sessionID: input.sessionID,
+          directory: input.directory,
+          suffix: "/capabilities",
+          init: { headers: { Accept: "application/json" }, signal: input.signal },
+        })
+        : await fetchRuntimePath({
+          directory: input.directory,
+          path: `/session/capabilities?directory=${encodeURIComponent(input.directory)}&harness=${encodeURIComponent(input.harness!)}`,
+          init: { headers: { Accept: "application/json" }, signal: input.signal },
+        })
       return await readJson<SessionTransportCapabilities>(res)
     },
+    ...createAgentRuntimeGoalClient(fetchRuntimeSession),
     async getMessages(input: {
       directory: AgentRuntimeDirectory
       sessionID: string

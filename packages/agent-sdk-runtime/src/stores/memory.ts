@@ -9,6 +9,7 @@ import {
   type CompatEvent,
 } from "../compat-events"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../index"
@@ -43,6 +44,7 @@ type SessionRow = {
     agentSessionId?: string
   }
   lastTurn?: AgentTurnOutcome
+  goal?: RuntimeGoalSnapshot | null
 }
 
 type MessageRow = {
@@ -113,6 +115,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       recoveryError: prev?.recoveryError ?? null,
       activeTurn: prev?.activeTurn,
       lastTurn: prev?.lastTurn,
+      goal: prev?.goal ?? null,
     })
     this.afterChange()
   }
@@ -178,6 +181,17 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getAgentSessionId(id: string) {
     return this.sessions.get(id)?.agentSessionId ?? null
+  }
+
+  getGoal(id: string) {
+    return this.sessions.get(id)?.goal ?? null
+  }
+
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null) {
+    const session = this.sessions.get(id)
+    if (!session) return
+    this.sessions.set(id, { ...session, goal })
+    this.afterChange()
   }
 
   startTurn(input: {

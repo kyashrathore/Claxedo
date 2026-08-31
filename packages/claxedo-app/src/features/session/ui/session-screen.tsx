@@ -1498,8 +1498,8 @@ export default function SessionPage() {
               agent={contentIntentDefaults()?.agent}
               canAbort={() => supports("abort")}
               canPrompt={() => supports("permissions")}
-              status={sessionController.status}
-              activeTurn={sessionController.activeTurn}
+              status={sessionController.status} activeTurn={sessionController.activeTurn}
+              goalController={sessionController}
               beforeInput={
                 <DeferredSessionSecondaryStatus
                   active={sessionParams.active}

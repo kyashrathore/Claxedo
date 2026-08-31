@@ -51,7 +51,7 @@ function store(): AgentRuntimeStoreWithRecovery {
     getAgentSessionId: (id) => agentSessionIds.get(id),
     getSession: (id) => sessions.get(id) ?? null,
     updateSessionConfig(id, update) {
-      const next = { ...(configs.get(id) ?? {}), ...update } as SessionConfig
+      const next = { ...configs.get(id), ...update } as SessionConfig
       configs.set(id, next)
       return next
     },

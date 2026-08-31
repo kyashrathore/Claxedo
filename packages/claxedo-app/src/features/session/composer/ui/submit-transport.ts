@@ -202,7 +202,11 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
           runtimeClient.sendMessage({ ...payload, mode: "async" }),
       },
     }
-    return runtimePromptClient
+    return {
+      ...runtimePromptClient,
+      getGoalCapabilities: runtimeClient.getGoalCapabilities,
+      startGoal: runtimeClient.startGoal,
+    }
   }
 
   const persistSessionConfig = async (configInput: SaveSessionConfigInput) => {

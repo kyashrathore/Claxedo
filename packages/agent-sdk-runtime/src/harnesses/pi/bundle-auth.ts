@@ -73,10 +73,7 @@ export function codexBundleToOAuth(input: string | Record<string, unknown> | und
   return { access, refresh, expires, ...(accountId ? { accountId } : {}) }
 }
 
-/**
- * Backend resolver over an injected codex bundle source. Resolves undefined
- * (adapter falls back to tools-only) when the source has no usable bundle.
- */
+/** Backend resolver over an injected Codex credential bundle source. */
 export function codexBundlePiBackendResolver(options: CodexBundleBackendOptions): PiModelBackendResolver {
   return async (input) => {
     if (input.model && input.model.providerID !== CODEX_PROVIDER) return undefined
