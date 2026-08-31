@@ -56,8 +56,12 @@ export const desktopMainComposition: Policy = {
   // share `account/account-perf.ts` as the single diagnostics owner. The
   // credential-bound auth descriptor and native refresh owner replace the old
   // userinfo identity module, a reviewed net +1 module with no package growth.
+  // Control-plane transport resilience adds two reviewed owners:
+  // `account/hosted-transport.ts` (stall recovery for hosted reads) and
+  // `account/no-reuse-fetch.ts` (fresh-connection node http(s) fetch), the
+  // latter bringing `node:https` and `node:stream` into the main closure.
   // Keep the measured closure exact with no headroom.
-  ceilings: { modules: 80, packages: 22 },
+  ceilings: { modules: 82, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -109,7 +113,10 @@ export const desktopAccountComposition: Policy = {
     requiredPackages: ["electron"],
   },
 
-  ceilings: { modules: 15, packages: 6 },
+  // Control-plane transport resilience: `account/no-reuse-fetch.ts` (reviewed
+  // owner of the fresh-connection node http(s) fetch) joins through
+  // `account/index.ts`, adding `node:https` to the composition closure.
+  ceilings: { modules: 16, packages: 7 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
     minModules: 10,
