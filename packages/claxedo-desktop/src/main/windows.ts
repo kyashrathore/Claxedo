@@ -6,6 +6,7 @@ import log from "electron-log/main.js"
 
 import { isBrowserTabEnabled } from "./browser/flag"
 import { IS_PACKAGED } from "./constants"
+import { resolveDevIdentity, tintIcon } from "./dev-identity"
 import { parseWindowSize } from "./window-size"
 import {
   MAIN_RENDERER_DOCUMENT,
@@ -42,9 +43,16 @@ function iconPath() {
   return join(iconsDir(), `icon.${ext}`)
 }
 
+/** A labeled worktree dev build tints its icon; everything else uses it as-is. */
+function brandedIcon(file: string) {
+  const icon = nativeImage.createFromPath(file)
+  const hue = resolveDevIdentity(IS_PACKAGED).hue
+  return hue === null ? icon : tintIcon(icon, hue)
+}
+
 export function setDockIcon() {
   if (process.platform !== "darwin") return
-  app.dock?.setIcon(nativeImage.createFromPath(join(iconsDir(), "128x128@2x.png")))
+  app.dock?.setIcon(brandedIcon(join(iconsDir(), "128x128@2x.png")))
 }
 
 export function createMainWindow(globals: Globals, options?: { deferLoad?: boolean }) {
@@ -68,7 +76,7 @@ export function createMainWindow(globals: Globals, options?: { deferLoad?: boole
     show: false,
     backgroundColor: "#111111",
     title: app.getName(),
-    icon: iconPath(),
+    icon: brandedIcon(iconPath()),
     ...(process.platform === "darwin"
       ? {
           titleBarStyle: "hidden" as const,

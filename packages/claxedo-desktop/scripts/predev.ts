@@ -121,9 +121,20 @@ async function patchDevBundleMetadata() {
     }
     return true
   }
+  // The menu-bar app name comes from the bundle, not app.setName(): label it
+  // per worktree so simultaneous dev builds are tellable apart. Each worktree
+  // has its own node_modules/electron bundle, so the patches never collide.
+  // Mirrors resolveDevIdentity in src/main/dev-identity.ts: a linked worktree
+  // (.git is a file) is labeled with its directory name.
+  const gitPointer = (() => {
+    try { return fs.statSync(path.resolve(PACKAGE_DIR, "../../.git")).isFile() } catch { return false }
+  })()
+  const label = process.env.CLAXEDO_DEV_LABEL?.trim()
+    || (gitPointer ? path.basename(path.resolve(PACKAGE_DIR, "../..")) : null)
+  const displayName = label ? `Claxedo Dev (${label})` : "Claxedo Dev"
   changes.push(
-    await setKey("CFBundleName", "Claxedo Dev"),
-    await setKey("CFBundleDisplayName", "Claxedo Dev"),
+    await setKey("CFBundleName", displayName),
+    await setKey("CFBundleDisplayName", displayName),
     await setKey("CFBundleIdentifier", "ai.claxedo.desktop.dev"),
     await setKey("CFBundleIconFile", icon),
     await setKey("CFBundleExecutable", executable),
@@ -140,7 +151,7 @@ async function patchDevBundleMetadata() {
   }
   // Bump mtime so LaunchServices re-reads the bundle metadata.
   await $`touch ${appPath}`.quiet().catch(() => {})
-  console.log(`[predev] Patched dev Electron bundle metadata → Claxedo Dev`)
+  console.log(`[predev] Patched dev Electron bundle metadata → ${displayName}`)
 }
 
 // workspace-runtime consumes agent-sdk-runtime through its `dist` exports, so
