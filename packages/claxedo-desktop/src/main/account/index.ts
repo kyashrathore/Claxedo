@@ -83,16 +83,21 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
   })
 
   const releaseValidationOperation = config.releaseValidationOperation
+  const canaryJourneyId = config.canaryJourneyId
   // Core-origin traffic never reuses a connection (see no-reuse-fetch.ts for
   // the poisoned keep-alive pool this removes); anything else keeps the
-  // platform fetch.
+  // platform fetch. Release-phase identification rides the same seam, so the
+  // descriptor, token, refresh, revoke, and hosted operations all carry it.
   const controlPlaneFetch: typeof fetch = (request, init) => {
     const next = new Request(request, init)
     if (new URL(next.url).origin !== config.coreOrigin) return fetch(next)
-    if (!releaseValidationOperation) return noConnectionReuseFetch(next)
+    if (!releaseValidationOperation && !canaryJourneyId) return noConnectionReuseFetch(next)
     const headers = new Headers(next.headers)
-    if (!headers.has("x-claxedo-multiplayer-validation-operation")) {
+    if (releaseValidationOperation && !headers.has("x-claxedo-multiplayer-validation-operation")) {
       headers.set("x-claxedo-multiplayer-validation-operation", releaseValidationOperation)
+    }
+    if (canaryJourneyId && !headers.has("x-claxedo-canary-journey-id")) {
+      headers.set("x-claxedo-canary-journey-id", canaryJourneyId)
     }
     return noConnectionReuseFetch(new Request(next, { headers }))
   }
