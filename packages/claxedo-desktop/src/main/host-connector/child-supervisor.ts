@@ -31,10 +31,41 @@ export type HostConnectorSetup = {
    */
   shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<HostConnectorStatus>
   unshareWorkspace(workspaceId: string): Promise<HostConnectorStatus>
+  /** The user's pause. Keeps the identity; cancels any pending auto-resume. */
   stop(): void
+  /**
+   * Stop because the ACCOUNT lapsed, not because anyone chose to.
+   *
+   * Separate from `stop()` because the two look identical from the outside and
+   * must not behave identically afterwards. Failing closed on auth loss is
+   * right — a credential the deployment may have revoked must not keep
+   * beating — but a two-second control-plane blip then un-published the machine
+   * for good, because nothing remembered that the stop was not a decision.
+   *
+   * Returns whether there was anything to suspend, so the caller can say so in
+   * the log without guessing.
+   */
+  suspendForAuthLapse(): boolean
+  /**
+   * Undo exactly one `suspendForAuthLapse()`, and nothing else.
+   *
+   * Answers `undefined` when the last stop was NOT an auth lapse — including
+   * when the connector was never started, which is why an account merely
+   * becoming signed can never publish a machine that was not already published.
+   */
+  resumeAfterAuthLapse(): Promise<HostConnectorStatus | undefined>
   revoke(): void
   dispose(): void
 }
+
+/**
+ * The stopped-state detail an auth lapse leaves behind.
+ *
+ * Distinct from the user's pause on purpose: this string is what the panel and
+ * `main.log` show for a machine that went off the air without anyone asking.
+ */
+export const HOST_CONNECTOR_AUTH_LAPSE_DETAIL =
+  "the account session lapsed; remote access is suspended until it returns"
 
 type PendingRequest = {
   resolve(status: HostConnectorChildState): void
@@ -111,6 +142,17 @@ export function setupHostConnectorChild(input: {
   let cancelStarting: ((error: Error) => void) | undefined
   let era = 0
   let intentionalExit = false
+  /**
+   * Set only when THIS process stopped a RUNNING connector because the account
+   * left "signed" — never by a user pause, a revoke, or a child crash.
+   *
+   * Deliberately in memory. It answers one question — "was remote access taken
+   * away from this machine, or turned off on it?" — and that question only has
+   * meaning for the lifetime of the stop it describes. A relaunch already has
+   * its own resume path through the persisted identity and share list, so a
+   * flag on disk could only outlive its own truth.
+   */
+  let authLapseSuspended = false
   const pending = new Map<string, PendingRequest>()
   /**
    * The one launch waiting for its child to finish enrolling.
@@ -306,41 +348,58 @@ export function setupHostConnectorChild(input: {
     settle({ status: "stopped", reason, detail })
   }
 
+  const startConnector = async (): Promise<HostConnectorStatus> => {
+    // Whoever reaches this has decided the machine should be on the air, so
+    // there is no longer an involuntary stop for a later sign-in to undo.
+    // That covers the user pressing Enable while a lapse-suspension is armed.
+    authLapseSuspended = false
+    if (starting) return starting
+    if (child && status.status === "enrolled") return status
+    if (child) {
+      const stale = child
+      intentionalExit = true
+      try {
+        stale.postMessage({ type: "stop", requestId: crypto.randomUUID() })
+      } finally {
+        stale.kill()
+      }
+      if (child === stale) child = undefined
+      rejectPending(new Error("restarting stopped Host Connector child"))
+    }
+    // `terminate` is the only thing that moves the era, so a change across this
+    // launch means a pause or revoke landed mid-flight — and the error below is
+    // then that cancellation, which must not overwrite the deliberate stop.
+    const startedIn = era
+    const cancellation = deferred<never>()
+    cancelStarting = cancellation.reject
+    starting = launch(cancellation.promise)
+      .catch((error) => {
+        if (child) {
+          intentionalExit = true
+          child.kill()
+          child = undefined
+        }
+        input.onError?.("child-start", error)
+        if (era !== startedIn && status.status === "stopped" && (status.reason === "revoked" || status.reason === "closed")) {
+          return status
+        }
+        // Nothing interrupted this launch; it failed on its own. Reporting the
+        // stopped state it started from would leave the panel and `main.log`
+        // blaming whatever stopped the machine last — after an auth lapse, an
+        // account that has already come back — for a failure that is entirely
+        // this attempt's.
+        return settle({ status: "stopped", reason: "error", detail: String(error) })
+      })
+      .finally(() => {
+        starting = undefined
+        if (cancelStarting === cancellation.reject) cancelStarting = undefined
+      })
+    return starting
+  }
+
   return {
     status: () => status,
-    async start() {
-      if (starting) return starting
-      if (child && status.status === "enrolled") return status
-      if (child) {
-        const stale = child
-        intentionalExit = true
-        try {
-          stale.postMessage({ type: "stop", requestId: crypto.randomUUID() })
-        } finally {
-          stale.kill()
-        }
-        if (child === stale) child = undefined
-        rejectPending(new Error("restarting stopped Host Connector child"))
-      }
-      const cancellation = deferred<never>()
-      cancelStarting = cancellation.reject
-      starting = launch(cancellation.promise)
-        .catch((error) => {
-          if (child) {
-            intentionalExit = true
-            child.kill()
-            child = undefined
-          }
-          input.onError?.("child-start", error)
-          if (status.status === "stopped" && (status.reason === "revoked" || status.reason === "closed")) return status
-          return settle({ status: "stopped", reason: "error", detail: String(error) })
-        })
-        .finally(() => {
-          starting = undefined
-          if (cancelStarting === cancellation.reject) cancelStarting = undefined
-        })
-      return starting
-    },
+    start: startConnector,
     async shareWorkspace(share: { workspaceId: string; displayName?: string }) {
       const target = child
       if (!target || status.status !== "enrolled" || !identityHostId) {
@@ -398,9 +457,41 @@ export function setupHostConnectorChild(input: {
     },
 
     stop() {
+      // The user's pause is a decision, and a decision outranks whatever this
+      // process was holding open to restore. Clearing here is what stops "I
+      // turned remote access off" from being quietly undone by the next
+      // sign-in.
+      authLapseSuspended = false
       terminate("closed", "connector closed")
     },
+
+    suspendForAuthLapse() {
+      // Nothing to take away: never started, already stopped, or already
+      // suspended. Arming on those would let an auth flap while the connector
+      // is off turn the NEXT sign-in into an enable nobody asked for.
+      if (!child && !starting) return false
+      authLapseSuspended = true
+      terminate("closed", HOST_CONNECTOR_AUTH_LAPSE_DETAIL)
+      return true
+    },
+
+    async resumeAfterAuthLapse() {
+      if (!authLapseSuspended) return undefined
+      // Consumed before the attempt, not after it: one restart per suspension
+      // is the entire budget. A restart that fails leaves the machine stopped
+      // with its reason on the panel, rather than re-arming a retry that would
+      // run again on every account transition for the rest of the session.
+      authLapseSuspended = false
+      // `start()` re-reads the share list this suspension left untouched, so
+      // the machine comes back publishing what it was publishing. There is no
+      // second store for that, and there must not be one.
+      return await startConnector()
+    },
+
     revoke() {
+      // Same reason as `stop()`, and more so: the user destroyed this
+      // machine's identity. Nothing about a later sign-in may bring it back.
+      authLapseSuspended = false
       // A destroyed identity can never heartbeat these links again; keeping
       // them stored would only re-register them under a DIFFERENT machine on
       // the next enable, which is not what "revoke" promised.

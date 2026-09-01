@@ -101,6 +101,8 @@ function harness(
     auth?: ReturnType<typeof authHarness>
     now?: number
     fetch?: Parameters<typeof createAccountService>[0]["fetch"]
+    onStateChange?: Parameters<typeof createAccountService>[0]["onStateChange"]
+    scheduleRevalidation?: Parameters<typeof createAccountService>[0]["scheduleRevalidation"]
   } = {},
 ) {
   const store = input.store ?? memoryStore()
@@ -110,6 +112,8 @@ function harness(
     auth: selectedAuth.auth,
     store,
     now: () => input.now ?? 1_000,
+    ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
+    ...(input.scheduleRevalidation ? { scheduleRevalidation: input.scheduleRevalidation } : {}),
     fetch:
       input.fetch ??
       (async (url, init) => {
@@ -171,7 +175,7 @@ describe("bound desktop account lifecycle", () => {
    * reach has made no statement about this credential, so the session must
    * survive the blip and recover on the next attempt.
    */
-  test("an unreachable descriptor does not end the session, and the next attempt recovers", async () => {
+  test("an unreachable descriptor never rejects the credential, and the next attempt recovers", async () => {
     let reachable = false
     const h = harness({
       store: memoryStore(CREDENTIAL),
@@ -184,13 +188,83 @@ describe("bound desktop account lifecycle", () => {
 
     await h.service.restore()
     await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
-    // The blip must not be recorded as a verdict on the credential.
-    expect(h.service.state()).not.toMatchObject({ status: "unavailable", reason: "callback-failed" })
+    // Fail closed — but the credential itself was never in question.
+    expect(h.service.state()).toMatchObject({ status: "unavailable" })
     expect(h.store.held(), "the credential is intact — nothing rejected it").toBeDefined()
     expect(h.store.rejected).toEqual([])
 
     reachable = true
     await expect(h.service.run("account.get")).resolves.toBeDefined()
+    expect(h.service.state(), "recovery must be observable as a return to signed").toMatchObject({ status: "signed" })
+  })
+
+  /**
+   * The live outage: a ~2s descriptor 503 during a redeploy left the desktop
+   * on "Sign in" — and remote access suspended — with nothing to bring it
+   * back, because only boot and an interactive sign-in ever produce `signed`.
+   * The retry is what makes the blip self-healing, and the signed transition
+   * it produces is what resumes the Host Connector.
+   */
+  test("recovers on its own after an unreachable deployment returns, with no user action", async () => {
+    let reachable = false
+    let scheduled: (() => void) | undefined
+    const transitions: string[] = []
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: authHarness({
+        validate: async () => {
+          if (!reachable) throw new DesktopAuthDescriptorError("descriptor_unavailable", "failed: 503")
+        },
+      }),
+      onStateChange: (next: { status: string }) => transitions.push(next.status),
+      scheduleRevalidation: (run: () => void) => {
+        scheduled = run
+        return 0 as unknown as ReturnType<typeof setTimeout>
+      },
+    })
+
+    await h.service.restore()
+    expect(h.service.state()).toMatchObject({ status: "unavailable" })
+    expect(scheduled, "a blip must arm a retry").toBeDefined()
+
+    reachable = true
+    scheduled!()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+    expect(transitions.at(-1)).toBe("signed")
+  })
+
+  /**
+   * The running case, distinct from a blip during restore: the credential is
+   * already adopted when the deployment goes unreachable. This is what
+   * happened live — signed, serving, then a redeploy's 503 — and the session
+   * must come back on the next successful validate rather than staying
+   * unavailable until someone signs in again.
+   */
+  test("a blip while already signed suspends, then returns to signed on the next success", async () => {
+    let reachable = true
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: authHarness({
+        validate: async () => {
+          if (!reachable) throw new DesktopAuthDescriptorError("descriptor_unavailable", "failed: 503")
+        },
+      }),
+    })
+
+    await h.service.restore()
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+
+    reachable = false
+    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    expect(h.service.state(), "fail closed while the deployment is unreachable").toMatchObject({
+      status: "unavailable",
+    })
+
+    reachable = true
+    await expect(h.service.run("account.get")).resolves.toBeDefined()
+    expect(h.service.state(), "the session must return without a new sign-in").toMatchObject({ status: "signed" })
   })
 
   test("a descriptor that answers and rejects still ends the session", async () => {

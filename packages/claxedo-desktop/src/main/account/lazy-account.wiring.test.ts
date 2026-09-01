@@ -25,8 +25,13 @@ describe("lazy account production wiring", () => {
     expect(main).not.toContain("await account.ready")
   })
 
-  test("a signed-to-unsigned transition pauses Host Connector publication", () => {
+  test("signed-to-unsigned suspends Host Connector publication, and a returning account resumes it", () => {
     expect(main).toMatch(/onStateChange:\s*\(next, previous\)\s*=>/)
-    expect(main).toMatch(/previous\.status === "signed" && next\.status !== "signed"\) hostConnector\?\.stop\(\)/)
+    expect(main).toMatch(/previous\.status === "signed" && next\.status !== "signed"\)/)
+    // Both edges, because only having the first is what let a ~2s descriptor
+    // 503 un-publish this machine for good.
+    // Tolerant of the formatter breaking the optional-call across lines.
+    expect(main).toMatch(/hostConnector\s*\?\.suspendForAuthLapse\(\)/)
+    expect(main).toMatch(/hostConnector\s*\?\.resumeAfterAuthLapse\(\)/)
   })
 })

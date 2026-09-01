@@ -714,7 +714,42 @@ const account = setupLazyAccount({
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
   onStateChange: (next, previous) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ACCOUNT_STATE_CHANGED_CHANNEL, next)
-    if (previous.status === "signed" && next.status !== "signed") hostConnector?.stop()
+    // Remote access follows the account, in BOTH directions.
+    //
+    // Stopping on auth loss is the fail-closed half and stays exactly as
+    // strict: the moment the account is not signed, this machine stops
+    // beating with a credential the deployment may have revoked.
+    //
+    // The other half is what a two-second control-plane blip cost. A descriptor
+    // 503 puts the account in `unavailable`, the connector stopped, the 60s
+    // enrollment lease expired, and every client was told this machine was
+    // offline — with nothing in `main.log`, nothing in the panel, and no way
+    // back short of the user finding the toggle. `suspendForAuthLapse` records
+    // that the stop was not a decision so the return trip can undo it, and only
+    // it: a user pause or revoke clears that flag inside the supervisor, so
+    // "the user turned it off" is never auto-undone by a later sign-in.
+    if (previous.status === "signed" && next.status !== "signed") {
+      if (hostConnector?.suspendForAuthLapse()) {
+        logger.warn(
+          `[host-connector] auth-lapse-suspend: account left "signed" (now "${next.status}") — remote access stopped; it will resume if the account returns`,
+        )
+      }
+      return
+    }
+    if (previous.status !== "signed" && next.status === "signed") {
+      void hostConnector
+        ?.resumeAfterAuthLapse()
+        .then((resumed) => {
+          // `undefined` means the last stop was not a lapse — most often that
+          // the connector was never running. Nothing happened, so nothing is
+          // claimed.
+          if (!resumed) return
+          logger.log(
+            `[host-connector] auth-lapse-resume: account is signed again — remote access restarted, state "${resumed.status}"`,
+          )
+        })
+        .catch((error) => logger.warn(`[host-connector] auth-lapse-resume: ${String(error)}`))
+    }
   },
 })
 

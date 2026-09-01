@@ -80,6 +80,23 @@ describe("ipc caller guard wiring", () => {
     expect(code, "launch must not start it").not.toMatch(/hostConnector[?.]*\.start\(/)
   })
 
+  test("remote access follows the account in both directions, through the supervisor's flag", () => {
+    // The fail-closed stop had no symmetric resume, so a ~2s descriptor 503
+    // un-published the machine permanently and silently. The resume must exist,
+    // and it must be the supervisor's `resumeAfterAuthLapse` — which restarts
+    // only a connector THIS process suspended — rather than a bare `start()`,
+    // which would publish the laptop of anyone who merely signs in. The test
+    // above pins the absence of that `start()`; this pins the presence of both
+    // halves, so neither can be deleted as dead code.
+    const code = entry
+      .split("\n")
+      .filter((line) => !line.trimStart().startsWith("//") && !line.trimStart().startsWith("*"))
+      .join("\n")
+
+    expect(code, "auth loss must suspend, recording that nobody chose it").toContain("suspendForAuthLapse()")
+    expect(code, "a returning account must undo exactly that suspension").toContain("resumeAfterAuthLapse()")
+  })
+
   test("the guard is installed exactly once", () => {
     // Installing twice would double-wrap every channel: two guard checks per
     // call, and a second `guardedCount` that silently disagrees with the first.

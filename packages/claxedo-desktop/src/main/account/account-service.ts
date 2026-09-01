@@ -73,6 +73,12 @@ export type AccountServiceOptions = {
    */
   resolveIdentity?: (accessToken: string) => Promise<AccountIdentity>
   now: () => number
+  /**
+   * Schedules the retry that recovers a session left unavailable by an
+   * unreachable deployment. Injected so a test does not wait 30 seconds;
+   * production uses `setTimeout`.
+   */
+  scheduleRevalidation?: (run: () => void, delayMs: number) => ReturnType<typeof setTimeout>
   onError?: (stage: string, error: unknown) => void
   onStateChange?: (next: AccountState, previous: AccountState) => void
 }
@@ -157,16 +163,54 @@ export function createAccountService(options: AccountServiceOptions) {
       // next attempt re-validates and recovers on its own. A descriptor that
       // ANSWERS and rejects — a bad binding, a malformed document — is a real
       // verdict and still ends the session.
-      if (error instanceof DesktopAuthDescriptorError && error.code === "descriptor_unavailable") {
-        return { ok: false as const, transient: true as const }
-      }
+      const transient = error instanceof DesktopAuthDescriptorError && error.code === "descriptor_unavailable"
       setState({
         status: "unavailable",
         reason: "callback-failed",
-        detail: `the selected deployment could not validate this credential: ${String(error)}`,
+        detail: transient
+          ? `the selected deployment is unreachable: ${String(error)}`
+          : `the selected deployment could not validate this credential: ${String(error)}`,
       })
-      return { ok: false as const, transient: false as const }
+      // Fail closed either way — a credential this deployment has not
+      // validated must not keep being used, and the Host Connector suspends
+      // on exactly this transition. What differs is the future: silence is
+      // retried by the callers below, a refusal is not.
+      return { ok: false as const, transient: transient as boolean }
     }
+  }
+
+  /**
+   * Come back from a blip without the user doing anything.
+   *
+   * `unavailable` used to be terminal: the only producers of `signed` are boot
+   * and an interactive sign-in, so a ~2s descriptor 503 during a redeploy left
+   * the desktop showing "Sign in" — and remote access suspended — until
+   * someone restarted it. Nothing was wrong with the credential; the only
+   * fact was that one request had failed.
+   *
+   * So while a credential is held and the session is not signed, re-validate
+   * on a timer. Success returns the state to `signed` through the normal
+   * transition, which is what wakes the Host Connector's auth-lapse resume.
+   * The timer stops itself the moment either condition stops holding, and is
+   * unref'd so it never keeps the process alive.
+   */
+  const REVALIDATE_AFTER_UNREACHABLE_MS = 30_000
+  let revalidating: ReturnType<typeof setTimeout> | undefined
+
+  const scheduleRevalidation = () => {
+    // Either shape of "we hold something worth revalidating": adopted, or
+    // waiting to be adopted because the blip hit during restore.
+    if (revalidating || (!credential && !deferredAdoption)) return
+    revalidating = options.scheduleRevalidation
+      ? options.scheduleRevalidation(() => {
+          revalidating = undefined
+          void currentAccessToken()
+        }, REVALIDATE_AFTER_UNREACHABLE_MS)
+      : setTimeout(() => {
+          revalidating = undefined
+          void currentAccessToken()
+        }, REVALIDATE_AFTER_UNREACHABLE_MS)
+    ;(revalidating as { unref?: () => void })?.unref?.()
   }
 
   /**
@@ -273,7 +317,15 @@ export function createAccountService(options: AccountServiceOptions) {
     if (!credential) await adoptDeferred()
     const held = credential
     if (!held) return { ok: false, detail: "not signed in" }
-    if (!(await validated(held)).ok) return { ok: false, detail: "not signed in" }
+    const check = await validated(held)
+    if (!check.ok) {
+      if (check.transient) scheduleRevalidation()
+      return { ok: false, detail: "not signed in" }
+    }
+    // The deployment just validated a credential we already hold, so whatever
+    // made the session unavailable is over. Returning to `signed` here is the
+    // transition the Host Connector's auth-lapse resume waits for.
+    if (state.status !== "signed") publishSigned(held.tokens.accessToken, era)
     if (!shouldRefresh({ expiresAt: held.tokens.expiresAt, now: options.now() })) {
       return { ok: true, token: held.tokens.accessToken }
     }
@@ -358,6 +410,7 @@ export function createAccountService(options: AccountServiceOptions) {
           // Unreachable is not a refusal: keep it adoptable so the next
           // operation tries again instead of the user seeing "Sign in".
           deferredAdoption = adoption.transient ? stored : undefined
+          if (adoption.transient) scheduleRevalidation()
           return state
         }
         deferredAdoption = undefined

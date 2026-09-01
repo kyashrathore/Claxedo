@@ -5,8 +5,13 @@ import type {
   HostConnectorBootstrapIdentity,
   HostConnectorChildMessage,
   HostConnectorParentMessage,
+  HostConnectorSharedWorkspace,
 } from "./child-protocol"
-import { setupHostConnectorChild, type HostConnectorChildProcess } from "./child-supervisor"
+import {
+  HOST_CONNECTOR_AUTH_LAPSE_DETAIL,
+  setupHostConnectorChild,
+  type HostConnectorChildProcess,
+} from "./child-supervisor"
 
 async function until(condition: () => boolean, description: string) {
   for (let attempt = 0; attempt < 1_000; attempt++) {
@@ -70,7 +75,12 @@ class FakeChild implements HostConnectorChildProcess {
   }
 }
 
-function harness() {
+function harness(options?: {
+  /** Shares this machine already published, as a previous run left them. */
+  sharedWorkspaces?: readonly HostConnectorSharedWorkspace[]
+  /** Fail every spawn from this attempt onwards (1 = the first). */
+  spawnFailsFrom?: number
+}) {
   const children: FakeChild[] = []
   const operations: Array<{ name: string; input?: Record<string, unknown> }> = []
   const errors: Array<{ stage: string; error: unknown }> = []
@@ -79,8 +89,22 @@ function harness() {
   let clears = 0
   let loads = 0
   let stores = 0
+  let spawns = 0
+  let shareLoads = 0
+  const shareStores: Array<readonly HostConnectorSharedWorkspace[]> = []
   const connector = setupHostConnectorChild({
+    loadSharedWorkspaces: () => {
+      shareLoads++
+      return options?.sharedWorkspaces ?? []
+    },
+    storeSharedWorkspaces: (next) => {
+      shareStores.push(next)
+    },
     spawn: () => {
+      spawns++
+      if (options?.spawnFailsFrom !== undefined && spawns >= options.spawnFailsFrom) {
+        throw new Error("the connector executable is missing")
+      }
       const child = new FakeChild()
       children.push(child)
       return child
@@ -120,6 +144,12 @@ function harness() {
     statuses,
     identity: () => identity,
     counts: () => ({ loads, stores, clears }),
+    shareCounts: () => ({ loads: shareLoads, stores: shareStores.length }),
+    shareStores,
+    bootstrapOf: (index: number) =>
+      children[index]?.parentMessages.find((message) => message.type === "bootstrap") as
+        | Extract<HostConnectorParentMessage, { type: "bootstrap" }>
+        | undefined,
   }
 }
 
@@ -425,6 +455,131 @@ describe("Electron-main child lifecycle", () => {
 
     await expect(connector.start()).resolves.toMatchObject({ status: "stopped", reason: "error" })
     expect(children[0]?.killed).toBe(true)
+  })
+})
+
+/**
+ * The live defect these cover.
+ *
+ * A ~2s control-plane redeploy answered the auth descriptor with 503. The
+ * account left "signed", main stopped the connector (correctly — never beat
+ * with a credential the deployment may have revoked), the 60s enrollment lease
+ * expired, and every client was told this machine was offline. Nothing ever
+ * resumed, because a transient lapse and "the user turned remote access off"
+ * were the same event to this supervisor.
+ *
+ * Both halves are load-bearing and both are asserted here: the stop still
+ * happens, AND a stop nobody chose is undone exactly once when the account
+ * returns.
+ */
+describe("auth-lapse suspension", () => {
+  const shares = [{ workspaceId: "ws_1", displayName: "Repo" }] as const
+
+  test("fails closed on auth loss, then restores the machine and its served workspaces", async () => {
+    const host = harness({ sharedWorkspaces: shares })
+    await host.connector.start()
+    expect(host.bootstrapOf(0)?.sharedWorkspaces).toEqual(shares)
+
+    // Fail closed. Unchanged by this work, and asserted so it stays that way:
+    // the child is gone and the machine is off the air the moment auth lapses.
+    expect(host.connector.suspendForAuthLapse()).toBe(true)
+    expect(host.children[0]!.killed).toBe(true)
+    expect(host.connector.status()).toEqual({
+      status: "stopped",
+      reason: "closed",
+      detail: HOST_CONNECTOR_AUTH_LAPSE_DETAIL,
+    })
+
+    const resumed = await host.connector.resumeAfterAuthLapse()
+
+    expect(resumed).toMatchObject({ status: "enrolled" })
+    expect(host.children).toHaveLength(2)
+    // The point of the fix: the machine comes back publishing what it was
+    // publishing, from the list the supervisor already keeps. One load, at
+    // construction — a second store would mean a second source of truth.
+    expect(host.bootstrapOf(1)?.sharedWorkspaces).toEqual(shares)
+    expect(host.shareCounts()).toEqual({ loads: 1, stores: 0 })
+  })
+
+  test("a user pause is never undone by a later sign-in", async () => {
+    const host = harness({ sharedWorkspaces: shares })
+    await host.connector.start()
+    host.connector.suspendForAuthLapse()
+
+    // The user reaches the panel while the account is down and turns remote
+    // access off. That is a decision, and it outranks the pending restore.
+    host.connector.stop()
+
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+    expect(host.children).toHaveLength(1)
+    expect(host.connector.status()).toMatchObject({ status: "stopped", detail: "connector closed" })
+  })
+
+  test("a user revoke is never undone by a later sign-in", async () => {
+    const host = harness({ sharedWorkspaces: shares })
+    await host.connector.start()
+    host.connector.suspendForAuthLapse()
+
+    host.connector.revoke()
+
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+    expect(host.children).toHaveLength(1)
+    expect(host.identity()).toBeUndefined()
+  })
+
+  test("a pause with no lapse behind it leaves nothing for a sign-in to resume", async () => {
+    const host = harness()
+    await host.connector.start()
+
+    host.connector.stop()
+
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+    expect(host.children).toHaveLength(1)
+  })
+
+  test("a failed restart is not retried until another suspension", async () => {
+    const host = harness({ spawnFailsFrom: 2 })
+    await host.connector.start()
+    expect(host.connector.suspendForAuthLapse()).toBe(true)
+
+    const failed = await host.connector.resumeAfterAuthLapse()
+
+    expect(failed).toMatchObject({ status: "stopped", reason: "error" })
+    expect(host.children).toHaveLength(1)
+    // One attempt was the whole budget. Every later account transition — and
+    // this daemon sees many — must find nothing to do, or a machine whose
+    // executable is missing would re-spawn forever behind a silent log.
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+    expect(host.connector.suspendForAuthLapse()).toBe(false)
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+    expect(host.children).toHaveLength(1)
+  })
+
+  test("an account merely becoming signed never publishes a machine that was not running", async () => {
+    const host = harness()
+
+    // The launch path. `restore()` publishes `signed` on most signed launches,
+    // and that must not enrol anything — same invariant `index.ts` holds by
+    // never calling `start()`.
+    expect(host.connector.suspendForAuthLapse()).toBe(false)
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+
+    expect(host.children).toHaveLength(0)
+    expect(host.counts()).toEqual({ loads: 0, stores: 0, clears: 0 })
+    expect(host.connector.status()).toEqual({ status: "not-started" })
+  })
+
+  test("pressing Enable during a suspension takes ownership of the machine's state", async () => {
+    const host = harness({ sharedWorkspaces: shares })
+    await host.connector.start()
+    host.connector.suspendForAuthLapse()
+
+    // The user did not wait for the account; they enabled it themselves.
+    await host.connector.start()
+
+    expect(host.children).toHaveLength(2)
+    expect(await host.connector.resumeAfterAuthLapse()).toBeUndefined()
+    expect(host.children).toHaveLength(2)
   })
 })
 
