@@ -169,17 +169,24 @@ export function runHostConnectorChild(port: ChildPort) {
       },
     })
     const started = await connector.start()
-    // Re-establish the shares this machine held before the restart:
-    // registration is an upsert, and a link the control plane no longer
-    // accepts simply fails and is reported without blocking the others.
-    if (started.status === "enrolled") {
-      for (const share of message.sharedWorkspaces ?? []) {
-        try {
-          await connector.shareWorkspace(share)
-        } catch {
-          // `shareWorkspace` already routed the failure through onError.
+    // Re-establish the shares this machine held before the restart — AFTER
+    // answering the bootstrap. Each re-registration is a challenge+register
+    // round trip to the control plane; done inline they pushed a two-share
+    // bootstrap past the supervisor's 10s budget and a perfectly healthy
+    // child was reported as timed out. Registration is an upsert, a link the
+    // control plane no longer accepts simply fails through onError, and the
+    // status push announces each restored share as it lands.
+    if (started.status === "enrolled" && message.sharedWorkspaces?.length) {
+      void (async () => {
+        for (const share of message.sharedWorkspaces ?? []) {
+          try {
+            await connector?.shareWorkspace(share)
+            send({ type: "status", status: snapshot() })
+          } catch {
+            // `shareWorkspace` already routed the failure through onError.
+          }
         }
-      }
+      })()
     }
     send({ type: "status", status: snapshot() })
     return snapshot()

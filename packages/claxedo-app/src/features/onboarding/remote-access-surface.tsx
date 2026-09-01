@@ -25,7 +25,7 @@ export type RemoteAccessSurfaceProps = {
   showDevices?: boolean
   startAtLogin: boolean
   onStartAtLoginChange: (enabled: boolean) => void
-  onEnable: () => void
+  onEnable: () => void | Promise<void>
   onSignIn: () => void
   onRevoke: (hostId: string) => void
   /**
@@ -60,6 +60,18 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
   // the UI answers instantly while the device list catches up.
   const [justShared, setJustShared] = createSignal<ReadonlySet<string>>(new Set<string>())
   const [rowError, setRowError] = createSignal<{ workspaceId: string; message: string }>()
+  // Enabling reaches the control plane through the Host Connector; its
+  // failure belongs on this panel, not in an unhandledrejection overlay.
+  const [enableError, setEnableError] = createSignal<string>()
+  const [enabling, setEnabling] = createSignal(false)
+  const enable = () => {
+    if (enabling()) return
+    setEnabling(true)
+    setEnableError(undefined)
+    void Promise.resolve(props.onEnable())
+      .catch((error) => setEnableError(error instanceof Error ? error.message : String(error)))
+      .finally(() => setEnabling(false))
+  }
 
   const shared = (workspace: ShareableWorkspace) => workspace.shared || justShared().has(workspace.workspaceId)
   const sharedWorkspaces = createMemo(() => (props.shareableWorkspaces ?? []).filter(shared))
@@ -138,7 +150,14 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
             />
             Start Claxedo when I sign in
           </label>
-          <Button class="mt-3" onClick={props.onEnable}>Enable remote access</Button>
+          <div class="mt-3 flex items-center gap-3">
+            <Button disabled={enabling()} onClick={enable}>
+              {enabling() ? "Enabling…" : "Enable remote access"}
+            </Button>
+            <Show when={enableError()}>
+              {(message) => <span class="text-12-regular text-icon-critical-base">{message()}</span>}
+            </Show>
+          </div>
         </div>
       </Show>
 
