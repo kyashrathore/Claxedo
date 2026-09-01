@@ -429,12 +429,14 @@ function replaceSessionUrl(session: Row) {
   window.history.replaceState(window.history.state, "", route)
   window.dispatchEvent(new PopStateEvent("popstate"))
 }
+
 export function RailSidebar(props: RailSidebarProps) {
   if (!railBodyMarked) {
     railBodyMarked = true
     perfDiag("diag.rail.sidebarBody", { projects: props.projects.length })
   }
   const claxedoState = useClaxedoState()
+  const account = useAccountPort()
   const language = useLanguage()
   const sessionTitles = useSessionTitleProjection()
   const projectedSessionTitleSelection = (input: {

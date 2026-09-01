@@ -797,11 +797,8 @@ export default function SessionPage() {
   const changeNewSessionWorktree = (value: string) => {
     setStore("newSessionControlsTouched", true)
     newSessionBranchSource.syncWorktree(value)
-    if (value === "create") {
-      setStore("newSessionWorktree", value)
-      return
-    }
-    setStore("newSessionWorktree", "main")
+    setStore("newSessionWorktree", value)
+    if (value === "create") return
     const target = value === "main" ? activeProject()?.worktree : value
     if (!target) return
     if (target === dir()) return

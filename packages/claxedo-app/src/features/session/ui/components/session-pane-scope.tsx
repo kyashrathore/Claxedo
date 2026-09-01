@@ -20,6 +20,8 @@ import { DirectoryScope } from "@/features/session/app-ports"
 export function SessionPaneScope(props: ParentProps<{
   directory: string
   sessionRef?: Accessor<SessionRef | undefined>
+  /** Workspace route identity for drafts whose provider directory is still local. */
+  workspaceId?: Accessor<string | undefined>
   harnessType?: Accessor<string | undefined>
   active?: Accessor<boolean>
   sessionId?: Accessor<string | undefined>
@@ -101,6 +103,7 @@ export function SessionPaneScope(props: ParentProps<{
     sessionPaneWorkspaceConnection({
       directory: props.directory,
       sessionRef: props.sessionRef?.(),
+      workspaceId: props.workspaceId?.(),
       projects: projects(),
     }))
   const workspaceKey = createMemo(() =>

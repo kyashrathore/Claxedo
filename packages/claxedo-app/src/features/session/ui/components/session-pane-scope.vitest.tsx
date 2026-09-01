@@ -241,6 +241,28 @@ describe("SessionPaneScope", () => {
     ))
 
     expect(calls.directoryScopeProps?.harnessType?.()).toBe("opencode")
+
+  test("routes a draft's local provider directory through its explicit workspace route", () => {
+    calls.projects = [{
+      workspaces: {
+        ws_cloud_route: { workspaceId: "ws_cloud_route", kind: "cloud", directory: "/runtime/repo" },
+      },
+    }]
+
+    render(() => (
+      <SessionPaneScope
+        directory="/local/project"
+        workspaceId={() => "ws_cloud_route"}
+        sessionId={() => "new"}
+      >
+        <div>draft content</div>
+      </SessionPaneScope>
+    ))
+
+    expect(calls.workspaceGateProps?.workspaceId).toBe("ws_cloud_route")
+    expect(calls.workspaceGateProps?.kind).toBe("cloud")
+    expect(calls.directoryScopeProps?.workspaceReady?.()).toBe(true)
+    expect(calls.scopeFor).toHaveBeenCalledWith("ws_cloud_route")
   })
 
   test("treats local filesystem panes as ready without a workspace scope registry entry", () => {

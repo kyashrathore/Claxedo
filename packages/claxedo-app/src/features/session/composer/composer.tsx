@@ -52,7 +52,7 @@ import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
-import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
+import { composerUsesSignedTransport, selectedNewSessionWorkspace, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { firstConnectedModel } from "./model-strategy"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
@@ -231,6 +231,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
+  const selectedRemoteWorkspace = () => selectedNewSessionWorkspace({
+    newSession: isNewSessionVariant(),
+    kind: props.newSessionWorkspaceKind,
+    worktree: props.newSessionWorktree,
+  })
   const submitSessionDirectory = () => {
     if (props.sessionRef?.()?.host === "central") return resolvedSessionDirectory() ?? sdk.directory
     const routeRef = sessionWorkspaceRuntimeRef({ directory: sessionParams.directory() })
@@ -248,6 +253,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
   const signedControlPlane = createMemo(() => {
+    if (selectedRemoteWorkspace()) return true
     const directory = resolvedSessionDirectory() ?? sdk.directory
     return composerUsesSignedTransport({
       explicit: props.signedControlPlane?.(), directory, projects: projectCatalog(), sdkWorkspace: sdk.workspace(directory),
@@ -279,8 +285,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     serverUrl: getClaxedoServerUrl,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     signedControlPlane,
-    workspaceId: props.workspaceId,
-    workspaceKind: props.workspaceKind,
+    workspaceId: () => props.workspaceId?.() ?? selectedRemoteWorkspace()?.workspaceId,
+    workspaceKind: () => props.workspaceKind?.() ?? selectedRemoteWorkspace()?.kind,
   })
   const info = createMemo(() => {
     const sid = resolvedSessionId()
