@@ -78,7 +78,7 @@ export type WorkspaceRouteOptions = {
   controlPlaneRateLimiter?: ConnectionRateLimiter
   /** Resolve feature state before ensure, including brokered secrets needed by the driver. */
   prepareRuntime?: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
-  /** Build-composed feature provisioning that must settle before a cloud runtime is handed to the caller. */
+  /** Build-composed feature provisioning that must settle before a signed runtime is handed to the caller. */
   provisionRuntime?: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
   /**
    * Entitlement choke point (ADR 014 §5, adversarial review): hosted

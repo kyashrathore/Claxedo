@@ -1,4 +1,5 @@
 declare module "@cloudflare/sandbox" {
+  export const ContainerProxy: unknown
   export const Sandbox: unknown
   export function getSandbox(binding: unknown, id: string, options?: {
     containerTimeouts?: {

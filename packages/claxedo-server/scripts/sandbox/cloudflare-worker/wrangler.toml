@@ -3,16 +3,14 @@ main = "src/index.ts"
 # HELD at 2025-04-01 deliberately (D3, 2026-07-27) — do not bulk-bump.
 # This Worker is the @cloudflare/sandbox container host, and its SDK is pinned
 # at 0.8.9 (0.12.4 is current). Container semantics are exactly what moved in
-# the gap — e.g. containers_pid_namespace defaults on at 2026-04-01 — and the
-# only way to exercise them is a real `wrangler deploy`, which builds and pushes
-# a ~4.5GB image. There is no dry-run that proves anything here.
+# the gap — e.g. containers_pid_namespace defaults on at 2026-04-01 — so the
+# compatibility date and @cloudflare/sandbox SDK must still move together in a
+# separately supervised change with a real deployment behind it.
 #
-# For the same reason this worker's `wrangler` stays pinned at 4.50.0 in its
-# package.json (and at `wrangler@4.50.0` in
-# .github/workflows/deploy-cloudflare-sandbox-worker.yml) while the two Worker
-# packages moved to 4.114.0 in D3. This whole container unit — compatibility
-# date, @cloudflare/sandbox SDK, and wrangler — is frozen together and should
-# move as ONE supervised change with a real deploy behind it.
+# Wrangler is pinned independently at 4.127.1. Its bundled Miniflare owns local
+# Container supervision; 4.50.0 repeatedly lost a healthy local container and
+# made `wrangler dev` unusable as the pre-deploy acceptance loop. Keep the
+# package pin and the workflow's explicit secret-sync pin aligned.
 compatibility_date = "2025-04-01"
 compatibility_flags = ["nodejs_compat"]
 
@@ -36,9 +34,6 @@ max_instances = 3
 
 [containers.constraints]
 regions = ["APAC"]
-
-[containers.configuration.observability.logs]
-enabled = true
 
 [[durable_objects.bindings]]
 class_name = "Sandbox"

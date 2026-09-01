@@ -4,8 +4,13 @@
  * Deploy: cd cloudflare-worker && npm install && wrangler deploy
  * Set secret: wrangler secret put API_TOKEN
  */
-import { getSandbox, Sandbox as CloudflareSandbox } from "@cloudflare/sandbox"
+import { ContainerProxy, getSandbox, Sandbox as CloudflareSandbox } from "@cloudflare/sandbox"
 import { EGRESS_TARGET_HEADER, handleEgressRequest, mintEgressToken } from "./egress"
+
+// Cloudflare routes intercepted container HTTP(S) through this Worker
+// Entrypoint. Without the export, the local sidecar accepts TLS and then has no
+// Worker target to forward to; production uses the same SDK contract.
+export { ContainerProxy }
 
 // Local export is required for Wrangler's [[containers]].class_name binding to
 // attach this Worker's Dockerfile to the Durable Object class.

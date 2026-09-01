@@ -9,6 +9,6 @@
     "@cloudflare/sandbox": "0.8.9"
   },
   "devDependencies": {
-    "wrangler": "4.50.0"
+    "wrangler": "4.127.1"
   }
 }
