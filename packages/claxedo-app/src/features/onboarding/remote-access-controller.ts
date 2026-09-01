@@ -112,7 +112,16 @@ export function useRemoteAccessController(input: {
     if (resumed || platform.platform !== "desktop" || startAtLogin() !== true) return
     if (status.data?.hostedSignedIn !== true || status.data?.enrolled !== true || status.data?.enabled === true) return
     resumed = true
-    void enable()
+    void enable().catch(() => {
+      // The resume can race the connector's own restart (a sign-in bounces
+      // the account era, a revoke lands elsewhere) and start() then reports
+      // "connector closed". That is not a crash to surface as an unhandled
+      // rejection: the panel keeps its explicit Enable button and the status
+      // refetch shows the truth. `resumed` stays set on purpose — auto-resume
+      // is a one-shot convenience, and retrying it against a failing start is
+      // how a laptop hammers the enrollment endpoint unattended.
+      void status.refetch()
+    })
   })
 
   // A machine can stop being published without anyone here asking: a heartbeat
