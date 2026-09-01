@@ -243,6 +243,46 @@ function apiFetchDebugEnabled(route: string) {
   )
 }
 
+/**
+ * Whether this request may carry the control plane's session cookie.
+ *
+ * `browserCredentials` is `"include"` whenever the control plane authenticates
+ * the browser with a cookie — but `authFetch` is also the egress for the RELAY,
+ * a different origin that authenticates with a Runtime Access Token in the
+ * `Authorization` header and has no session cookie of ours at all. Sending
+ * credentials there is wrong twice over: it offers the control plane's cookie
+ * to another host, and — because a credentialed cross-origin request requires
+ * `Access-Control-Allow-Credentials: true` in the preflight response, which a
+ * bearer service correctly does not send — the browser refuses to make the
+ * request at all.
+ *
+ * That refusal is what the hosted app reported as "Workspace host is offline":
+ *
+ *   Response to preflight request doesn't pass access control check: The value
+ *   of the 'Access-Control-Allow-Credentials' header in the response is ''
+ *   which must be 'true' when the request's credentials mode is 'include'.
+ *
+ * — while the relay was up, the host tunnel was connected, and the laptop was
+ * answering every request that actually reached it.
+ *
+ * So the cookie goes to the control plane and to loopback, and nowhere else.
+ * Other origins keep whatever the caller asked for, which defaults to
+ * `same-origin`.
+ */
+function credentialsFor(url: string, requested: RequestCredentials | undefined): RequestCredentials | undefined {
+  if (!cfg.browserCredentials) return requested
+  if (localUrl(url)) return cfg.browserCredentials
+  try {
+    const target = new URL(url, typeof window === "undefined" ? undefined : window.location.origin)
+    const controlPlane = cfg.base ?? (typeof window === "undefined" ? undefined : window.location.origin)
+    if (controlPlane && target.origin === new URL(controlPlane).origin) return cfg.browserCredentials
+    if (cfg.releaseValidation && target.origin === cfg.releaseValidation.coreOrigin) return cfg.browserCredentials
+  } catch {
+    // An unparseable target is not the control plane.
+  }
+  return requested
+}
+
 function apiFetchUrl(input: string | URL | Request) {
   if (input instanceof Request) return input.url
   if (input instanceof URL) return input.toString()
@@ -423,7 +463,7 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
   init = eventInput.init
   const apiFetchDebug = beginApiFetchDebug(input)
   const cache = localUrl(apiFetchUrl(input)) ? ("no-store" as const) : init?.cache
-  const credentials = cfg.browserCredentials ?? init?.credentials
+  const credentials = credentialsFor(apiFetchUrl(input), init?.credentials)
   const buildRequest = async (
     forceRefreshToken: boolean,
   ): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {

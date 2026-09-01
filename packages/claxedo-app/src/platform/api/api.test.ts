@@ -212,13 +212,35 @@ describe("authFetch", () => {
   })
 
   test("includes the browser session cookie only when the selected adapter binds cookie transport", async () => {
-    configureApiRuntime({ browserCredentials: "include" })
+    configureApiRuntime({ baseUrl: "https://api.example.test", browserCredentials: "include" })
 
     await authFetch("https://api.example.test/api/claxedo/bootstrap")
 
     expect(calls).toHaveLength(1)
     expect(calls[0]?.credentials).toBe("include")
     expect(calls[0]?.auth).toBeNull()
+  })
+
+  /**
+   * `authFetch` is also the egress for the RELAY, which is a different origin
+   * and authenticates with a Runtime Access Token, not our cookie. A
+   * credentialed cross-origin request requires
+   * `Access-Control-Allow-Credentials: true` in the preflight response, which a
+   * bearer service correctly does not send — so the browser refuses to send the
+   * request at all.
+   *
+   * That refusal is what the hosted app reported as "Workspace host is
+   * offline", with a healthy relay, a connected host tunnel, and a laptop
+   * answering everything that reached it. Sending the control plane's cookie to
+   * another host would also be wrong on its own terms.
+   */
+  test("never sends the control-plane cookie to another origin, such as the relay", async () => {
+    configureApiRuntime({ baseUrl: "https://api.example.test", browserCredentials: "include" })
+
+    await authFetch("https://api.example.test/api/claxedo/bootstrap")
+    await authFetch("https://relay.example.test/workspaces/ws_1/api/wr/health")
+
+    expect(calls.map((call) => call.credentials)).toEqual(["include", "same-origin"])
   })
 
   test("identifies validation-build requests only to the exact control-plane origin", async () => {
