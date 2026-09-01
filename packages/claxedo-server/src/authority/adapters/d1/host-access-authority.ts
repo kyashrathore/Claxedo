@@ -202,6 +202,21 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (workspace) {
       workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
       requireLocalWorkspace(workspace)
+      // The assigning machine describes the workspace it serves — name,
+      // repository, branch, directory — and that description is the record.
+      const description: Array<[string, string]> = [
+        ...(displayName ? [["display_name", displayName] as [string, string]] : []),
+        ...(args.repoUrl ? [["repo_url", args.repoUrl] as [string, string]] : []),
+        ...(args.repoName ? [["repo_name", args.repoName] as [string, string]] : []),
+        ...(args.gitBranch ? [["git_branch", args.gitBranch] as [string, string]] : []),
+        ...(args.remoteDirectory ? [["remote_directory", args.remoteDirectory] as [string, string]] : []),
+      ]
+      if (description.length) {
+        await this.database.prepare(`
+          update workspaces set ${description.map(([column]) => `${column} = ?`).join(", ")}, updated_at = ?
+          where workspace_id = ?
+        `).bind(...description.map(([, value]) => value), this.now(), workspaceId).run()
+      }
     } else {
       if (!this.options.registerLocalForSharing) {
         throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")

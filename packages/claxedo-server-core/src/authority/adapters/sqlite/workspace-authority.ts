@@ -1628,6 +1628,26 @@ export function createSqliteWorkspaceAuthority(
         if (existing) {
           if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
           refuseCloudWorkspace(existing)
+          // The assigning machine describes the workspace it serves — name,
+          // repository, branch, directory — and that description is the record.
+          db.prepare(`
+            UPDATE workspaces SET
+              display_name = COALESCE(?, display_name),
+              repo_url = COALESCE(?, repo_url),
+              repo_name = COALESCE(?, repo_name),
+              git_branch = COALESCE(?, git_branch),
+              remote_directory = COALESCE(?, remote_directory),
+              updated_at = ?
+            WHERE workspace_id = ?
+          `).run(
+            args.displayName ?? null,
+            args.repoUrl ?? null,
+            args.repoName ?? null,
+            args.gitBranch ?? null,
+            args.remoteDirectory ?? null,
+            now,
+            args.workspaceId,
+          )
         } else {
           const { orgId, projectId } = ownedProject(db, who, args)
           db.prepare(`

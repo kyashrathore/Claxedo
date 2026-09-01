@@ -273,6 +273,49 @@ describe("D1 host access and workspace sharing authority", () => {
     ).first()).toBeNull()
   })
 
+  /**
+   * A machine assigns a workspace it serves and says what it is — name,
+   * repository, branch, directory — and every client reads that description.
+   */
+  test("assigning an existing workspace records the machine's description of it", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-d" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-d",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(hostEnrollmentPayload({
+        hostId: "machine-d",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      })),
+      ttlMs: 8_000,
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_local",
+      hostId: "machine-d",
+      displayName: "Claxedo",
+      repoName: "Claxedo",
+      gitBranch: "dev",
+      remoteDirectory: "/Users/me/test/opencode",
+    })
+    expect(await input.database.prepare(
+      "select display_name, repo_name, git_branch, remote_directory from workspaces where workspace_id = 'ws_local'",
+    ).first()).toEqual({
+      display_name: "Claxedo",
+      repo_name: "Claxedo",
+      git_branch: "dev",
+      remote_directory: "/Users/me/test/opencode",
+    })
+    // A later assignment that says nothing leaves the description alone.
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-d" })
+    expect(await input.database.prepare(
+      "select display_name, remote_directory from workspaces where workspace_id = 'ws_local'",
+    ).first()).toEqual({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
+  })
+
   test("routes a workspace through owner assignment AND the machine's acked set on a live lease", async () => {
     const input = await setup()
     const { alice, outsider } = await fixture(input)

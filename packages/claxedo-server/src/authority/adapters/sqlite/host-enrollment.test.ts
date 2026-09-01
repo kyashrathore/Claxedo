@@ -337,6 +337,34 @@ describe("workspace assignments", () => {
     vi.useRealTimers()
   })
 
+  test("assigning an existing workspace records the machine's description of it", async () => {
+    const api = authority()
+    const { hostId } = await enroll(api, { displayName: "Laptop B" })
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_desc", hostId })
+    await api.assignWorkspaceHost!(owner, {
+      workspaceId: "ws_desc",
+      hostId,
+      displayName: "Claxedo",
+      repoName: "Claxedo",
+      gitBranch: "dev",
+      remoteDirectory: "/Users/me/test/opencode",
+    })
+    const rows = await api.listWorkspaces(owner) as Array<Record<string, unknown>>
+    expect(rows.find((w) => w.workspace_id === "ws_desc")).toMatchObject({
+      display_name: "Claxedo",
+      remote_directory: "/Users/me/test/opencode",
+    })
+    expect((await api.openWorkspace(owner, { workspaceId: "ws_desc" })).workspace).toMatchObject({
+      display_name: "Claxedo",
+      repo_name: "Claxedo",
+      git_branch: "dev",
+    })
+    // A later assignment that says nothing leaves the description alone.
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_desc", hostId })
+    const again = await api.listWorkspaces(owner) as Array<Record<string, unknown>>
+    expect(again.find((w) => w.workspace_id === "ws_desc")).toMatchObject({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
+  })
+
   test("routes a workspace through owner assignment AND the machine's acked set", async () => {
     const api = authority()
     const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })
