@@ -6,6 +6,7 @@ import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime
 import { authFetch } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
+import { isCancelledError } from "@tanstack/solid-query"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -65,6 +66,17 @@ type Translate = (key: string, vars?: Record<string, string | number>) => string
  * unhandledrejection overlay in dev. `cancelQueries` settles the in-flight
  * fetch first and swallows the cancellation, making the removal inert.
  */
+/**
+ * A bootstrap's fetchQuery rejecting with a CancelledError is a principal
+ * change (sign-in/out clears the query client) or a concurrent removal — not
+ * a failure to report. Callers fire bootstraps with `void`, so an unswallowed
+ * cancellation surfaces as an unhandledrejection overlay in dev.
+ */
+function swallowCancellation(error: unknown): null {
+  if (isCancelledError(error)) return null
+  throw error
+}
+
 function dropRequestQuery(filter: { queryKey: readonly unknown[]; exact?: boolean }) {
   void queryClient
     .cancelQueries(filter)
@@ -287,7 +299,7 @@ export function createBootstrapOrchestrator(input: {
     const requestKey = sessionLoadRequestKey(directory)
     const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
     if (pending && !opts.force) {
-      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null })
+      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null }).catch(swallowCancellation)
       const settledMeta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(directory))
       if (sessionLoadMetaMatchesWorkspace(settledMeta, requestedWorkspace)) return
     }
@@ -444,7 +456,7 @@ export function createBootstrapOrchestrator(input: {
           })
         return null
       },
-    }).finally(() => {
+    }).catch(swallowCancellation).finally(() => {
       dropRequestQuery({ queryKey: requestKey })
       input.children.unpin(directory)
     })
@@ -476,7 +488,7 @@ export function createBootstrapOrchestrator(input: {
         })
         return null
       },
-    }).finally(() => {
+    }).catch(swallowCancellation).finally(() => {
       dropRequestQuery({ queryKey: requestKey })
       input.children.unpin(directory)
     })
@@ -487,7 +499,7 @@ export function createBootstrapOrchestrator(input: {
     const freshKey = globalBootstrapFreshKey(input.baseUrl(), harnessType)
     const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
     if (pending) {
-      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null })
+      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null }).catch(swallowCancellation)
       return
     }
     const updatedAt = queryClient.getQueryState(freshKey)?.dataUpdatedAt ?? 0
@@ -521,7 +533,7 @@ export function createBootstrapOrchestrator(input: {
         })
         return null
       },
-    }).finally(() => {
+    }).catch(swallowCancellation).finally(() => {
       dropRequestQuery({ queryKey: requestKey, exact: true })
       input.markGlobalBootstrapFresh(input.baseUrl(), harnessType)
     })
