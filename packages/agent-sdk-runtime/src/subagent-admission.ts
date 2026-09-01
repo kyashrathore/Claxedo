@@ -37,12 +37,28 @@ export type SubagentAdmissionStore = {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
+    /**
+     * Host-side child session allocation, invoked ONLY when the resolved
+     * subagent has no child bound yet and the observation names none. Child
+     * identity is owned HERE, by admission, so exactly one resolver decides
+     * which row a child session belongs to. Splitting that ownership — a
+     * caller picking/creating a childSessionId from its own state while
+     * admission independently resolves the row — lets the same child id be
+     * stamped toward a second row, which either trips the binding-compat
+     * throw or crashes the turn on the durable store's unique child index
+     * ("UNIQUE constraint failed: session_subagent.child_session_id").
+     */
+    allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation
   markPublished(parentSessionId: string, observationId: string): void
 }
 
 export type SubagentAdmissionBoundary = {
-  admit(parentSessionId: string, observation: SubagentObservation): Promise<SubagentUpdatedEvent>
+  admit(
+    parentSessionId: string,
+    observation: SubagentObservation,
+    options?: { allocateChildSessionId?: () => string },
+  ): Promise<SubagentUpdatedEvent>
 }
 
 export function createSubagentAdmissionBoundary(input: {
@@ -51,11 +67,12 @@ export function createSubagentAdmissionBoundary(input: {
   allocateKey?: () => string
 }): SubagentAdmissionBoundary {
   return {
-    async admit(parentSessionId, observation) {
+    async admit(parentSessionId, observation, options) {
       const admitted = input.store.admit({
         parentSessionId,
         observation,
         allocateKey: input.allocateKey ?? (() => `subagent_${randomUUID()}`),
+        ...(options?.allocateChildSessionId ? { allocateChildSessionId: options.allocateChildSessionId } : {}),
       })
       if (admitted.published) return admitted.event
       await input.publish(parentSessionId, admitted.event)
@@ -76,13 +93,38 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
     providerKind?: string
     childSessionId?: string
   }>()
+  // Reverse index: which subagent key OWNS a child session. Child identity is
+  // the strongest correlator (one child session belongs to exactly one
+  // subagent — the durable store enforces it with a unique index), so an
+  // observation naming an already-owned child must resolve to the owning row
+  // no matter what its other keys say. The claude harness reports one Task
+  // through two channels (a tool-call observation and a background-task
+  // observation with disjoint keys); without this index the linking
+  // observation resolved by its stable key to the SECOND row while carrying
+  // the FIRST row's child — the durable write then died on the unique child
+  // index and killed the whole turn.
+  const childOwners = new Map<string, string>()
 
   return {
     admit(input) {
       const observationKey = scoped(input.parentSessionId, `observation:${input.observation.observationId}`)
       const existing = observations.get(observationKey)
       if (existing) {
-        if (JSON.stringify(eventInput(existing.event)) !== JSON.stringify(observationEventInput(input.observation))) {
+        // childSessionId is excluded from the byte-equality check because
+        // admission may have ALLOCATED it on first admit — a legitimate
+        // duplicate delivery (another host instance, a replayed frame) lacks
+        // it. A duplicate that names a DIFFERENT child is still a conflict.
+        if (
+          JSON.stringify(withoutChildSessionId(eventInput(existing.event))) !==
+          JSON.stringify(withoutChildSessionId(observationEventInput(input.observation)))
+        ) {
+          throw new Error(`subagent observation ${input.observation.observationId} was reused with conflicting content`)
+        }
+        if (
+          input.observation.childSessionId &&
+          existing.event.childSessionId &&
+          input.observation.childSessionId !== existing.event.childSessionId
+        ) {
           throw new Error(`subagent observation ${input.observation.observationId} was reused with conflicting content`)
         }
         return existing
@@ -104,7 +146,11 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
           binding.providerKind === input.observation.providerKind
         )
       }))
+      const childOwner = input.observation.childSessionId
+        ? childOwners.get(scoped(input.parentSessionId, `child:${input.observation.childSessionId}`))
+        : undefined
       const resolved = input.observation.subagentKey
+        ?? childOwner
         ?? (providerAssociation
           ? sole(associations.get(scoped(input.parentSessionId, providerAssociation))) ?? unboundMatch
           : sole(associationMatches))
@@ -114,10 +160,31 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
       requireCompatibleBinding("providerId", binding.providerId, input.observation.providerId)
       requireCompatibleBinding("providerKind", binding.providerKind, input.observation.providerKind)
       requireCompatibleBinding("childSessionId", binding.childSessionId, input.observation.childSessionId)
+      // Admission owns child identity: reuse the row's bound child, else the
+      // harness-named child, else allocate one (only when the caller says the
+      // subagent's transcript is openable). This runs AFTER row resolution,
+      // so the same child can never be handed to two rows.
+      const childSessionId = binding.childSessionId
+        ?? input.observation.childSessionId
+        ?? input.allocateChildSessionId?.()
+      if (childSessionId && !binding.childSessionId) {
+        const childOwnerKey = scoped(input.parentSessionId, `child:${childSessionId}`)
+        const owner = childOwners.get(childOwnerKey)
+        // Reaching here with a foreign owner requires an explicit subagentKey
+        // naming a different row than the child's owner — a protocol
+        // violation. Refuse it with a legible error instead of letting the
+        // durable layer crash on its unique child index.
+        if (owner && owner !== subagentKey) {
+          throw new Error(
+            `subagent child session ${childSessionId} is already owned by ${owner}; observation ${input.observation.observationId} targets ${subagentKey}`,
+          )
+        }
+        childOwners.set(childOwnerKey, subagentKey)
+      }
       bindings.set(bindingKey, {
         providerId: binding.providerId ?? input.observation.providerId,
         providerKind: binding.providerKind ?? input.observation.providerKind,
-        childSessionId: binding.childSessionId ?? input.observation.childSessionId,
+        ...(childSessionId ? { childSessionId } : {}),
       })
       const revisionKey = scoped(input.parentSessionId, `revision:${subagentKey}`)
       const revision = (revisions.get(revisionKey) ?? 0) + 1
@@ -137,7 +204,10 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
           type: "subagent-updated",
           subagentKey,
           revision,
-          ...observationEventInput(input.observation),
+          ...observationEventInput({
+            ...input.observation,
+            ...(childSessionId ? { childSessionId } : {}),
+          }),
         },
         published: false,
       } satisfies AdmittedSubagentObservation
@@ -159,6 +229,11 @@ export function createMemorySubagentAdmissionStore(): SubagentAdmissionStore & {
 function eventInput(event: SubagentUpdatedEvent) {
   const { type: _type, subagentKey: _subagentKey, revision: _revision, ...input } = event
   return input
+}
+
+function withoutChildSessionId<T extends { childSessionId?: string }>(input: T) {
+  const { childSessionId: _childSessionId, ...rest } = input
+  return rest
 }
 
 function observationEventInput(observation: SubagentObservation) {

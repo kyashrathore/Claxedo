@@ -44,17 +44,13 @@ export function subagentCorrelationKeys(configured: string[] | undefined, observ
   ].filter((key): key is string => !!key))]
 }
 
-export function childSessionIdFor(
-  observation: SubagentObservation,
-  transcript: OpenedSubagentTranscript | undefined,
-  existingSessionId: string | undefined,
-) {
-  if (observation.childSessionId) return observation.childSessionId
-  if (existingSessionId) return existingSessionId
-  const kind = observation.transcript?.kind
-  const openable = kind === "live" || kind === "messages" || kind === "file" && transcript?.state !== "unavailable"
-  return openable ? randomUUID() : undefined
-}
+// Child-session identity is resolved by the subagent admission store
+// (`subagent-admission.ts`): it reuses the resolved row's bound child, honors
+// a harness-named child, or allocates one via `allocateChildSessionId`.
+// Deliberately no helper here derives a child id from adapter-side state — a
+// second resolver can disagree with admission's row resolution and hand one
+// row's child to another, which the durable store's unique child index
+// rejects mid-turn.
 
 export function subagentOutcome(observation: SubagentObservation) {
   const completedAt = Date.now()
@@ -66,7 +62,6 @@ export function subagentOutcome(observation: SubagentObservation) {
     return { status: "cancelled" as const, completedAt, reason: observation.status }
   }
 }
-import { randomUUID } from "crypto"
 import type { SubagentObservation } from "../../subagent-admission"
 import type { SdkRuntimeTranscriptRegistrar } from "./sdk-runtime-driver"
 

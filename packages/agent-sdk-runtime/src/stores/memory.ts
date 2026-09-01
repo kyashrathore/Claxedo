@@ -378,6 +378,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
+    allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation {
     const existing = this.subagents.find((row) =>
       row.parentSessionId === input.parentSessionId &&
@@ -387,7 +388,14 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!existing) {
       this.subagents.push({
         parentSessionId: input.parentSessionId,
-        observation: { ...input.observation, subagentKey: admitted.event.subagentKey },
+        // Record the EFFECTIVE observation — subagent key and any child
+        // session the admission layer resolved or allocated — so
+        // hydrateSubagents replays the same bindings this admit produced.
+        observation: {
+          ...input.observation,
+          subagentKey: admitted.event.subagentKey,
+          ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
+        },
         published: false,
       })
       this.afterChange()

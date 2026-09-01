@@ -76,7 +76,6 @@ import { Log } from "../../log"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 import {
   admissibleSubagentObservation,
-  childSessionIdFor,
   openSubagentTranscript,
   scopedSubagentKey,
   subagentCorrelationKeys,
@@ -126,7 +125,6 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     target: ChildProjectionTarget
   }>()
   private hydratedFileTranscripts = new Set<string>()
-  private subagentChildByCorrelation = new Map<string, string>()
   private goalPublisher?: GoalPublisher
 
   /**
@@ -533,17 +531,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
     const observeSubagent: SdkRuntimeTurnInput["observeSubagent"] = async (observed) => {
       const fileTranscript = await openSubagentTranscript(this.options.transcriptRegistrar, id, observed.observation)
-      const admittedObservation = admissibleSubagentObservation(observed.observation, fileTranscript)
-      const correlationKeys = subagentCorrelationKeys(observed.correlationKeys, admittedObservation)
-      const existingChildKey = correlationKeys
-        .map((key) => this.subagentChildByCorrelation.get(scopedSubagentKey(id, key)))
-        .find((key): key is string => !!key)
-      const existingChild = existingChildKey ? this.subagentChildren.get(existingChildKey) : undefined
-      const childSessionId = childSessionIdFor(admittedObservation, fileTranscript, existingChild?.sessionId)
-      const observation = {
-        ...admittedObservation,
-        ...(childSessionId ? { childSessionId } : {}),
-      }
+      const observation = admissibleSubagentObservation(observed.observation, fileTranscript)
+      const correlationKeys = subagentCorrelationKeys(observed.correlationKeys, observation)
       const source = observed.source ?? { dir: "in" as const, method: "subagent/updated" }
       const admissionStore = this.store.admit && this.store.markPublished
         ? {
@@ -551,14 +540,26 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
             markPublished: (parentSessionId: string, observationId: string) => this.store.markPublished!(parentSessionId, observationId),
           }
         : this.subagentAdmissionStore
+      // Admission owns child-session identity: it reuses the resolved row's
+      // bound child, honors a harness-named child, or allocates one when the
+      // transcript is openable. The adapter must NOT pick a child from its
+      // own in-memory maps before admitting — a second resolver can disagree
+      // with admission's row resolution (claude's dual-channel Task
+      // observations; adapter memory empty after a process restart), and one
+      // row's child stamped toward another crashes the unique child index.
+      const transcriptKind = observation.transcript?.kind
+      const openable = transcriptKind === "live" || transcriptKind === "messages" || transcriptKind === "file"
       const event = await createSubagentAdmissionBoundary({
         store: admissionStore,
         publish: (_parentSessionId, payload) => router.project(payload, source),
-      }).admit(id, observation)
+      }).admit(id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined)
 
+      const childSessionId = event.childSessionId
       if (!childSessionId) return { event }
       const childKey = scopedSubagentKey(id, event.subagentKey)
-      const child = this.subagentChildren.get(childKey) ?? existingChild ?? (() => {
+      const child = this.subagentChildren.get(childKey)
+        ?? [...this.subagentChildren.values()].find((candidate) => candidate.sessionId === childSessionId)
+        ?? (() => {
         const agentSessionId = observation.providerId ?? `unbound:${childSessionId}`
         const created = Date.now()
         const target = {
@@ -606,7 +607,6 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
       this.subagentChildren.set(childKey, child)
       for (const correlationKey of correlationKeys) {
-        this.subagentChildByCorrelation.set(scopedSubagentKey(id, correlationKey), childKey)
         router.associate(correlationKey, child.target)
       }
       const fileCorrelation = correlationKeys[0] ?? event.subagentKey

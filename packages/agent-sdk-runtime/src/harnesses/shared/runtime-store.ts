@@ -72,6 +72,7 @@ export type AgentRuntimeStoreCore = {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
+    allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation
   markPublished?(parentSessionId: string, observationId: string): void
   close?: () => void

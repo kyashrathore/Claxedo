@@ -973,6 +973,7 @@ export class RuntimeStore {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
+    allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation {
     this.db.exec("BEGIN IMMEDIATE")
     try {
@@ -1024,7 +1025,15 @@ export class RuntimeStore {
           input.observation.observationId,
           admitted.event.subagentKey,
           admitted.event.revision,
-          JSON.stringify(input.observation),
+          // Persist the EFFECTIVE observation — with the child session the
+          // admission layer resolved or allocated stamped in — so hydrate's
+          // replay rebuilds the same child binding this admit produced. The
+          // raw input may lack the child (admission allocated it), and a
+          // replay without it would forget which row owns the child session.
+          JSON.stringify({
+            ...input.observation,
+            ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
+          }),
           JSON.stringify(admitted.event),
           Date.now(),
         )
