@@ -83,7 +83,7 @@ export const PromptInputFrame: Component<{
   openCommands: VoidFunction
   openContext: VoidFunction
   enterShellMode: VoidFunction
-  goalAvailable: Accessor<boolean>
+  goalSelectable: Accessor<boolean>
   goalArmed: Accessor<boolean>
   armGoal: VoidFunction
   toggleGoal: VoidFunction
@@ -351,7 +351,7 @@ export const PromptInputFrame: Component<{
           onEnterShell={props.enterShellMode}
           goalTitle={props.t("prompt.action.goal")}
           clearGoalTitle={props.t("prompt.action.clearGoal")}
-          goalAvailable={props.goalAvailable}
+          goalSelectable={props.goalSelectable}
           goalArmed={props.goalArmed}
           onGoal={props.armGoal}
           onGoalToggle={props.toggleGoal}

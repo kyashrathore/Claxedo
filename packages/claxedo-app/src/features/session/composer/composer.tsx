@@ -266,7 +266,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     normalizeMode: () => { engine?.setMode("normal"); engine?.closePopover() },
     focus: () => editorRef?.focus(),
   })
-  const { available: goalAvailable, armed: goalArmed, arm: armGoal, toggle: toggleGoal } = goalController
+  const { selectable: goalSelectable, armed: goalArmed, arm: armGoal, toggle: toggleGoal } = goalController
   const signedWorkspaceRuntimeFallback = createSignedWorkspaceRuntimeFallback({
     serverUrl: getClaxedoServerUrl,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
@@ -402,7 +402,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     mode: engine.mode,
     pick,
     setMode: engine.enterMode,
-    goalAvailable,
+    goalSelectable,
     armGoal,
     labels: {
       attachFile: language.t("prompt.action.attachFile"),
@@ -687,7 +687,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       openCommands={() => engine.openPopover("slash")}
       openContext={() => engine.openPopover("at")}
       enterShellMode={() => engine.enterMode("shell")}
-      goalAvailable={goalAvailable} goalArmed={goalArmed}
+      goalSelectable={goalSelectable} goalArmed={goalArmed}
       armGoal={armGoal} toggleGoal={toggleGoal}
       approveEnabled={() => props.canPrompt?.() ?? true}
       permissionGroups={permissionMode.groups}

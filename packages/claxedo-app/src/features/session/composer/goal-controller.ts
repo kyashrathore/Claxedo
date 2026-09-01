@@ -66,6 +66,20 @@ export function createComposerGoalController(input: {
   // An existing session whose capabilities have not hydrated yet is UNKNOWN, not
   // unavailable: refusing here is what made the toggle disagree with `/goal x`.
   const capabilitiesUnknown = () => !input.isNewSession() && input.sessionCapabilities() === undefined
+  /**
+   * Whether the Goal ENTRY POINTS (the `/goal` slash item, the toolbar Goal
+   * action) may be activated. Distinct from `available` on purpose: Goal
+   * capabilities for an EXISTING session arrive through DEFERRED secondary
+   * hydration, so unknown must count as selectable — `arm()` resolves the
+   * truth on activation (fetch, then arm or explain). Gating the entry points
+   * on `available` left `/goal` permanently disabled in every existing
+   * session until something else happened to hydrate capabilities, while a
+   * NEW session's eagerly-fetched draft capabilities made the same command
+   * work — the two entry paths must not disagree.
+   */
+  const selectable = createMemo(() => (input.isNewSession()
+    ? draftCapabilities.data?.goals === true
+    : input.sessionCapabilities() === undefined || input.sessionCapabilities()?.available === true))
   const armNow = () => {
     input.setArmed(true)
     input.normalizeMode()
@@ -92,6 +106,7 @@ export function createComposerGoalController(input: {
   const toggle = () => input.armed() ? Promise.resolve(disarm()) : arm()
   return {
     available,
+    selectable,
     armed: input.armed,
     arm,
     toggle,

@@ -35,7 +35,7 @@ export function PromptToolbarControls(props: {
   onEnterShell: VoidFunction
   goalTitle: string
   clearGoalTitle: string
-  goalAvailable: Accessor<boolean>
+  goalSelectable: Accessor<boolean>
   goalArmed: Accessor<boolean>
   onGoal: VoidFunction
   onGoalToggle: VoidFunction
@@ -92,7 +92,7 @@ export function PromptToolbarControls(props: {
         shellLabel={props.shellTitle}
         onEnterShell={props.onEnterShell}
         goalLabel={props.goalTitle}
-        goalDisabled={() => !props.goalAvailable()}
+        goalDisabled={() => !props.goalSelectable()}
         onGoal={props.onGoal}
         agentNames={props.agentNames}
         currentAgentName={props.currentAgentName}

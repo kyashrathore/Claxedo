@@ -130,4 +130,34 @@ describe("composer Goal toggle", () => {
     expect(armed()).toBe(false)
     expect(unavailable).toEqual([undefined])
   })
+
+  test("entry points stay selectable while an existing session's capabilities are unknown", () => {
+    // The `/goal` slash item and the toolbar Goal action gate on `selectable`.
+    // Existing sessions hydrate Goal capabilities DEFERRED, so unknown must
+    // count as selectable — gating on `available` left `/goal` permanently
+    // disabled in every existing session while new sessions (eager draft
+    // capabilities) worked.
+    const { controller } = mountController({ capabilities: () => undefined })
+    expect(controller.selectable()).toBe(true)
+    expect(controller.available()).toBe(false)
+  })
+
+  test("entry points disable only once capabilities are KNOWN unavailable", () => {
+    const { controller } = mountController({
+      capabilities: () => ({
+        implemented: true,
+        available: false,
+        unavailableReason: "provider did not negotiate Goal",
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      }),
+    })
+    expect(controller.selectable()).toBe(false)
+  })
+
+  test("entry points are selectable when capabilities are known available", () => {
+    const { controller } = mountController({ capabilities: () => available })
+    expect(controller.selectable()).toBe(true)
+  })
 })

@@ -30,7 +30,7 @@ describe("prompt mode commands", () => {
       setMode: (next) => {
         mode = next
       },
-      goalAvailable: () => true,
+      goalSelectable: () => true,
       armGoal: () => armed.push("goal"),
       labels,
     })
