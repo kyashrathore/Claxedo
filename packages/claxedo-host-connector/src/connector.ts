@@ -85,6 +85,29 @@ export type ConnectorState =
    */
   | { status: "stopped"; reason: "revoked" | "error" | "closed"; detail: string }
 
+/**
+ * Whether a failed heartbeat says "you are not enrolled" or merely "not right
+ * now".
+ *
+ * Only the control plane can revoke a machine, and it says so with a decisive
+ * status: 401/403 (this machine may not ask), 404/410 (no such enrollment),
+ * 409 (its state is not one that can beat). Anything else — a 5xx, a timeout,
+ * a rate limit, a socket that never opened — describes the CONNECTION to the
+ * control plane, not the enrollment, and must not be read as a decision the
+ * control plane made.
+ *
+ * The transport reports HTTP failures as `HOSTED_HTTP <status> <json>`
+ * (`claxedo-desktop/src/main/account/account-service.ts`), so the status is
+ * recoverable from the message. An error with no status at all is a transport
+ * failure and therefore transient; the enrollment lease at the control plane
+ * is what bounds that, expiring on its own if the machine really has gone.
+ */
+export function transientHeartbeatFailure(error: unknown) {
+  const status = /HOSTED_HTTP (\d{3})\b/.exec(error instanceof Error ? error.message : String(error))?.[1]
+  if (!status) return true
+  return !new Set(["400", "401", "403", "404", "409", "410"]).has(status)
+}
+
 export function createHostConnector(options: ConnectorOptions) {
   let state: ConnectorState = { status: "idle" }
   let timer: { cancel: () => void } | undefined
@@ -258,10 +281,30 @@ export function createHostConnector(options: ConnectorOptions) {
         // away when they turned it off themselves.
         if (startedIn !== era) return state
         options.onError?.("heartbeat", error)
-        // A rejected heartbeat means the control plane no longer recognises
-        // this machine — revoked, paused past expiry, or enrolled elsewhere.
-        // Re-enrolling on its own would be the connector overruling that
-        // decision, so it stops and waits for the user.
+        // A beat can fail for two completely different reasons, and treating
+        // them alike is what made remote access fragile.
+        //
+        // A DECISION — the control plane no longer recognises this machine
+        // (revoked, paused past expiry, enrolled elsewhere) — must stop the
+        // connector. Re-enrolling itself would be overruling the user.
+        //
+        // A DISRUPTION — the control plane was briefly unreachable or was mid
+        // release — must not. Observed live and repeatedly: deploying the
+        // control plane makes it answer
+        // `503 deployment_candidate_unavailable` for the seconds between the
+        // upload and the phase opening, and every beat in that window used to
+        // stop the machine permanently, with `revoked` on the panel. The
+        // laptop went on reporting `serving: true` with open relay sockets
+        // (its credential lease had not expired yet) while the control plane
+        // refused to route to it and the app said "Workspace host is
+        // offline" — the same symptom as a genuine revocation, with none of
+        // the same cause. Every deploy silently took remote access down.
+        //
+        // So a disruption keeps the enrollment and lets the next beat retry.
+        // The lease is the backstop: if the control plane really is gone, the
+        // enrollment expires there on its own and stops routing without this
+        // side having to guess.
+        if (transientHeartbeatFailure(error)) return state
         stop("revoked", String(error))
       }
       return state

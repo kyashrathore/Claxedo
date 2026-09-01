@@ -50,6 +50,21 @@ function transport(overrides: Partial<ConnectorTransport> = {}) {
   return { transport: base, calls }
 }
 
+/**
+ * What a real revocation looks like on the wire.
+ *
+ * The transport reports every HTTP failure as `HOSTED_HTTP <status> <json>`
+ * (`claxedo-desktop/src/main/account/account-service.ts`), and the connector
+ * now reads that status to tell a DECISION apart from a DISRUPTION. These
+ * tests used a bare `Error("revoked")`, a shape production never produces —
+ * which meant they could not have distinguished the two, and did not notice
+ * when a transient 503 was being treated as a revocation.
+ */
+const REVOCATION = 'HOSTED_HTTP 403 {"detail":"host enrollment revoked"}'
+
+/** A control plane that is briefly unreachable — a deploy, a blip, a timeout. */
+const DISRUPTION = 'HOSTED_HTTP 503 {"error":{"code":"deployment_candidate_unavailable"}}'
+
 async function connector(
   overrides: Partial<ConnectorTransport> = {},
   onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void,
@@ -137,7 +152,7 @@ describe("heartbeat", () => {
     // one on a status screen.
     const { instance, calls } = await connector({
       heartbeat: async () => {
-        throw new Error("revoked")
+        throw new Error(REVOCATION)
       },
     })
     await instance.start()
@@ -149,11 +164,51 @@ describe("heartbeat", () => {
     expect(calls.enrolls).toHaveLength(1)
   })
 
+  /**
+   * The live failure this closes, seen many times before it was understood:
+   * deploying the control plane makes it answer
+   * `503 deployment_candidate_unavailable` for the seconds between the upload
+   * and the release phase opening. Every beat in that window stopped the
+   * machine permanently and put `revoked` on the panel — so every deploy took
+   * remote access down, and the laptop went on reporting `serving: true` with
+   * open relay sockets because its credential lease had not expired yet. The
+   * app said "Workspace host is offline": the same symptom as a real
+   * revocation, none of the same cause.
+   */
+  test("survives a control plane that is briefly unavailable, and beats again", async () => {
+    let failures = 1
+    const { instance, calls } = await connector({
+      heartbeat: async () => {
+        if (failures-- > 0) throw new Error(DISRUPTION)
+        return { expires_at: 3_000 }
+      },
+    })
+    await instance.start()
+
+    expect(await instance.beat(), "a disruption is not a decision").toMatchObject({ status: "enrolled" })
+    expect(await instance.beat()).toMatchObject({ status: "enrolled", enrollment: { expires_at: 3_000 } })
+    expect(calls.enrolls, "recovering must not re-enroll behind the user").toHaveLength(1)
+  })
+
+  test("a transport failure with no status is a disruption, not a revocation", async () => {
+    // A socket that never opened says nothing about the enrollment. The
+    // control plane's own lease is what stops routing if the machine is
+    // really gone.
+    const { instance } = await connector({
+      heartbeat: async () => {
+        throw new Error("fetch failed")
+      },
+    })
+    await instance.start()
+
+    expect(await instance.beat()).toMatchObject({ status: "enrolled" })
+  })
+
   test("cancels the timer when it stops", async () => {
     // Otherwise a stopped connector keeps waking to do nothing, forever.
     const { instance, cancels } = await connector({
       heartbeat: async () => {
-        throw new Error("revoked")
+        throw new Error(REVOCATION)
       },
     })
     await instance.start()
@@ -234,7 +289,7 @@ describe("overlapping heartbeats", () => {
 
     // The second beat comes back first, rejected: the control plane no longer
     // recognises this machine.
-    gate.pending[1]!.reject(new Error("403 revoked"))
+    gate.pending[1]!.reject(new Error(REVOCATION))
     await late
     expect(instance.state()).toMatchObject({ status: "stopped", reason: "revoked" })
 
@@ -375,7 +430,7 @@ describe("close", () => {
   test("does not overwrite an earlier revocation", async () => {
     const { instance } = await connector({
       heartbeat: async () => {
-        throw new Error("revoked")
+        throw new Error(REVOCATION)
       },
     })
     await instance.start()
