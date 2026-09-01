@@ -33,7 +33,7 @@ const AUDIT_METADATA_KEYS = new Set([
   "hostId",
   "jti",
   "leaseEpoch",
-  "localHostLinkExpiresAt",
+  "hostLeaseExpiresAt",
   "orgId",
   "retryAfterMs",
   "runtimeKind",

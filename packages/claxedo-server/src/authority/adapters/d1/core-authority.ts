@@ -55,7 +55,6 @@ const WORKSPACE_LIFECYCLE_METHODS = [
 ] as const satisfies readonly (keyof D1WorkspaceAuthority)[]
 
 const HOST_LIFECYCLE_METHODS = [
-  "revokeLocalHostLink",
   "revokeHostEnrollment",
 ] as const satisfies readonly (keyof D1HostAccessAuthority)[]
 

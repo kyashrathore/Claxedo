@@ -75,19 +75,6 @@ function missingBearer() {
 }
 
 /**
- * The authority may not implement enrollment yet.
- *
- * The port's methods are optional while both authorities are being built out.
- * A 501 that says so beats a `TypeError: not a function` reaching the client as
- * a 500, and it disappears when Unit 6's hard cut makes the methods required.
- */
-function unsupported() {
-  return { error: { code: "not_implemented", message: "This control plane does not support machine enrollment" } }
-}
-
-class EnrollmentUnsupported extends Error {}
-
-/**
  * Per-account budget for `POST /requests`, the one route here that WRITES a row
  * per call.
  *
@@ -203,7 +190,6 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       try {
         return c.json((await run({ body: parsed.body as Body, auth, authority: requireAuthority(services) })) as never)
       } catch (err) {
-        if (err instanceof EnrollmentUnsupported) return c.json(unsupported(), 501)
         if (err instanceof ControlPlaneAuthError) {
           return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
         }
@@ -211,19 +197,12 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       }
     }
 
-  /** Present or 501 — the port's methods are optional until the hard cut. */
-  function required<T>(method: T | undefined): NonNullable<T> {
-    if (!method) throw new EnrollmentUnsupported()
-    return method as NonNullable<T>
-  }
-
   return app
     .post(
       "/requests",
       handle<z.infer<typeof requestBody>>(requestBody, async ({ body, auth, authority }) => {
-        const create = required(authority.createHostEnrollmentRequest)
         await authority.usersMe(auth)
-        return create(auth, { hostId: body.hostId })
+        return authority.createHostEnrollmentRequest(auth, { hostId: body.hostId })
       }, "POST", {
         limiter: enrollmentRequestRateLimiter,
         key: "host.enrollments.requests",
@@ -233,12 +212,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post(
       "/",
       handle<z.infer<typeof enrollBody>>(enrollBody, async ({ body, auth, authority }) => {
-        const enroll = required(authority.enrollHost)
         await authority.usersMe(auth)
         // The connector signed the nonce with its own private key. This server
         // only records the enrollment — it never holds the host key, and
         // nothing is written until the authority verifies the signature.
-        const enrollment = await enroll(auth, {
+        const enrollment = await authority.enrollHost(auth, {
           hostId: body.hostId,
           publicKey: body.publicKey,
           requestId: body.requestId,
@@ -257,8 +235,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post(
       "/heartbeat",
       handle<z.infer<typeof heartbeatBody>>(heartbeatBody, async ({ body, auth, authority }) => {
-        const beat = required(authority.heartbeatHostEnrollment)
-        const result = await beat(auth, {
+        const result = await authority.heartbeatHostEnrollment(auth, {
           hostId: body.hostId,
           signature: body.signature,
           workspaceIds: body.workspaceIds,
@@ -298,8 +275,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post(
       "/pause",
       handle<z.infer<typeof pauseBody>>(pauseBody, async ({ body, auth, authority }) => {
-        const pause = required(authority.pauseHostEnrollment)
-        const result = await pause(auth, {
+        const result = await authority.pauseHostEnrollment(auth, {
           ...(body.hostId ? { hostId: body.hostId } : {}),
           paused: body.paused,
         })
@@ -316,7 +292,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     )
     .get(
       "/",
-      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => required(authority.activeHostEnrollment)(auth), "GET", {
+      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => authority.activeHostEnrollment(auth), "GET", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.active",
         action: "host_enrollment.active.denied",

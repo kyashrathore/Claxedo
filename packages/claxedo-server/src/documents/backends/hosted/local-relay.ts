@@ -40,7 +40,7 @@ export function createHostedLocalDocumentRelay(
       if (write && !["editor", "admin", "owner"].includes(opened.role ?? "")) {
         throw new Error("Local document workspace write access is denied")
       }
-      const link = await authority.activeWorkspaceHost!(input.auth, { workspaceId: input.localWorkspaceId })
+      const link = await authority.activeWorkspaceHost(input.auth, { workspaceId: input.localWorkspaceId })
       if (!link.active) throw new Error("Local document installation is unreachable")
       const token = await provider.mintRuntimeAccessToken({
         workspaceId: input.localWorkspaceId,

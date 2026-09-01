@@ -60,7 +60,7 @@ describe("hosted core Worker root", () => {
     // canceled). Caching the app per env pinned the wedged first composition
     // for the isolate's lifetime — every authenticated core route hung at ~2ms
     // CPU forever (observed live 2026-09-01 on staging: bootstrap/orgs/
-    // workspace/hostLink all canceled after 8-150s while auth routes worked).
+    // workspace/host-assignment all canceled after 8-150s while auth routes worked).
     const firstApp = app()
     const secondApp = app()
     mocks.createHostedCoreApp.mockReset()

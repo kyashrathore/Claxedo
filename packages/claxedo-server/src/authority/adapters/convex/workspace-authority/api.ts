@@ -86,18 +86,6 @@ type ConvexApi = {
     delete: ConvexMutation
     createCloud: ConvexMutation
   }
-  localHostLinks: {
-    createChallenge: ConvexMutation
-    createChallengeForService: ConvexMutation
-    register: ConvexMutation
-    registerForService: ConvexMutation
-    heartbeat: ConvexMutation
-    heartbeatForService: ConvexMutation
-    pause: ConvexMutation
-    pauseForService: ConvexMutation
-    markSecondDeviceOpen: ConvexMutation
-    active: ConvexQuery
-  }
   hostEnrollments: {
     createRequest: ConvexMutation
     createRequestForService: ConvexMutation
@@ -114,6 +102,7 @@ type ConvexApi = {
     unassignWorkspace: ConvexMutation
     unassignWorkspaceForService: ConvexMutation
     activeWorkspaceHost: ConvexQuery
+    activeWorkspaceHostForRelay: ConvexQuery
     listAssignments: ConvexQuery
     markSecondDeviceOpen: ConvexMutation
   }

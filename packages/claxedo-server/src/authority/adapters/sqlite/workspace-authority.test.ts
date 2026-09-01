@@ -1,9 +1,8 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { generateKeyPairSync, sign as signData, type KeyObject } from "node:crypto"
 import Database from "better-sqlite3"
-import { describe, expect, test, vi } from "vitest"
+import { describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { localControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -92,41 +91,6 @@ function fileAuthority() {
     authority: createSqliteWorkspaceAuthority({ path: file }),
     database: openAuthorityDb({ path: file }),
   }
-}
-
-function hostKeyPair() {
-  const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
-  return {
-    publicKey: JSON.stringify(pair.publicKey.export({ format: "jwk" })),
-    privateKey: pair.privateKey,
-  }
-}
-
-// Client-side host attestation signing (mirror of routes/workspace-local-host.ts).
-function signPayload(privateKey: KeyObject, payload: string) {
-  return signData("sha256", Buffer.from(payload), {
-    key: privateKey,
-    dsaEncoding: "ieee-p1363",
-  }).toString("base64url")
-}
-
-function registrationPayload(input: { workspaceId: string; hostId: string; challengeId: string; nonce: string }) {
-  return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
-    `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
-function heartbeatPayload(input: { workspaceId: string; hostId: string; ttlMs?: number }) {
-  return [
-    "claxedo.local-host-link.heartbeat.v1",
-    `workspace_id=${input.workspaceId}`,
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-  ].join("\n")
 }
 
 describe("sqlite workspace authority", () => {
@@ -447,175 +411,6 @@ describe("sqlite workspace authority", () => {
     expect(await authority.resolveOrgId(owner)).toBe(me.org_id)
     expect(await authority.resolveOrgId(owner)).toBe(me.org_id)
     expect(await authority.resolveOrgId(other)).not.toBe(me.org_id)
-  })
-
-  test("local host link challenge/register/heartbeat/pause flow with real attestation", async () => {
-    const authority = memoryAuthority()
-    const key = hostKeyPair()
-    const hostId = "host_test_1"
-
-    const challenge = await authority.createLocalHostLinkChallenge(owner, { workspaceId: "ws_local", hostId })
-    expect(challenge.challenge_id).toBeTruthy()
-    expect(challenge.expires_at).toBeGreaterThan(Date.now())
-
-    const link = await authority.registerLocalHostLink(owner, {
-      workspaceId: "ws_local",
-      hostId,
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: signPayload(key.privateKey, registrationPayload({
-        workspaceId: "ws_local",
-        hostId,
-        challengeId: challenge.challenge_id,
-        nonce: challenge.nonce,
-      })),
-      displayName: "Local One",
-    }) as { host_id: string; paused: boolean }
-    expect(link).toMatchObject({ host_id: hostId, paused: false })
-
-    // Registration created the workspace, owned by the proving caller.
-    const opened = await authority.openWorkspace(owner, { workspaceId: "ws_local" })
-    expect(opened.workspace).toMatchObject({
-      org_id: expect.stringMatching(/^org_/),
-      project_id: expect.stringMatching(/^prj_[0-9a-f-]{36}$/),
-      backing: "local-worktree",
-      access: "user-hosted",
-    })
-
-    // A used challenge cannot register again.
-    await expect(authority.registerLocalHostLink(owner, {
-      workspaceId: "ws_local",
-      hostId,
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: "resigned",
-    })).rejects.toThrow("Invalid host attestation challenge")
-
-    const active = await authority.activeLocalHostLink(owner, { workspaceId: "ws_local" })
-    expect(active).toMatchObject({ active: true, host_id: hostId, workspace_id: "ws_local" })
-
-    const beat = await authority.heartbeatLocalHostLink(owner, {
-      workspaceId: "ws_local",
-      hostId,
-      signature: signPayload(key.privateKey, heartbeatPayload({ workspaceId: "ws_local", hostId, ttlMs: 120_000 })),
-      ttlMs: 120_000,
-    }) as { expires_at: number; paused: boolean }
-    expect(beat.paused).toBe(false)
-    expect(beat.expires_at).toBeGreaterThan(Date.now())
-
-    // A bad heartbeat signature is rejected against the registered key.
-    await expect(authority.heartbeatLocalHostLink(owner, {
-      workspaceId: "ws_local",
-      hostId,
-      signature: signPayload(key.privateKey, "tampered"),
-    })).rejects.toThrow("Invalid host attestation")
-
-    await authority.pauseLocalHostLink(owner, { workspaceId: "ws_local", hostId, paused: true })
-    expect(await authority.activeLocalHostLink(owner, { workspaceId: "ws_local" })).toEqual({ active: false })
-
-    await authority.pauseLocalHostLink(owner, { workspaceId: "ws_local", hostId, paused: false })
-    expect(await authority.activeLocalHostLink(owner, { workspaceId: "ws_local" })).toMatchObject({ active: true })
-  })
-
-  test("claims a host attestation challenge exactly once under concurrent registration", async () => {
-    const authority = memoryAuthority()
-    const key = hostKeyPair()
-    const challenge = await authority.createLocalHostLinkChallenge(owner, {
-      workspaceId: "ws_local_race",
-      hostId: "host_race",
-    })
-    const input = {
-      workspaceId: "ws_local_race",
-      hostId: "host_race",
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: signPayload(key.privateKey, registrationPayload({
-        workspaceId: "ws_local_race",
-        hostId: "host_race",
-        challengeId: challenge.challenge_id,
-        nonce: challenge.nonce,
-      })),
-    }
-
-    const results = await Promise.allSettled([
-      authority.registerLocalHostLink(owner, input),
-      authority.registerLocalHostLink(owner, input),
-    ])
-
-    expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1)
-    expect(results.filter((result) => result.status === "rejected")).toHaveLength(1)
-    expect(await authority.activeLocalHostLink(owner, { workspaceId: "ws_local_race" })).toMatchObject({
-      active: true,
-      host_id: "host_race",
-    })
-  })
-
-  test("rejects a host challenge that expires while its signature is verified", async () => {
-    vi.useFakeTimers()
-    try {
-      vi.setSystemTime(new Date("2026-01-01T00:00:00Z"))
-      const authority = memoryAuthority()
-      const key = hostKeyPair()
-      const challenge = await authority.createLocalHostLinkChallenge(owner, {
-        workspaceId: "ws_expiring",
-        hostId: "host_expiring",
-      })
-      const attempt = authority.registerLocalHostLink(owner, {
-        workspaceId: "ws_expiring",
-        hostId: "host_expiring",
-        publicKey: key.publicKey,
-        challengeId: challenge.challenge_id,
-        signature: signPayload(key.privateKey, registrationPayload({
-          workspaceId: "ws_expiring",
-          hostId: "host_expiring",
-          challengeId: challenge.challenge_id,
-          nonce: challenge.nonce,
-        })),
-      })
-
-      vi.setSystemTime(new Date("2026-01-01T00:01:01Z"))
-      await expect(attempt).rejects.toThrow("Invalid host attestation challenge")
-    } finally {
-      vi.useRealTimers()
-    }
-  })
-
-  test("rolls back the challenge claim and workspace when host-link persistence fails", async () => {
-    const { authority, database } = fileAuthority()
-    const key = hostKeyPair()
-    const challenge = await authority.createLocalHostLinkChallenge(owner, {
-      workspaceId: "ws_rollback",
-      hostId: "host_rollback",
-    })
-    const input = {
-      workspaceId: "ws_rollback",
-      hostId: "host_rollback",
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: signPayload(key.privateKey, registrationPayload({
-        workspaceId: "ws_rollback",
-        hostId: "host_rollback",
-        challengeId: challenge.challenge_id,
-        nonce: challenge.nonce,
-      })),
-    }
-    database().exec(`
-      CREATE TRIGGER fail_host_link BEFORE INSERT ON local_host_links
-      BEGIN SELECT RAISE(FAIL, 'forced host-link failure'); END
-    `)
-
-    await expect(authority.registerLocalHostLink(owner, input)).rejects.toThrow("forced host-link failure")
-    expect(database().prepare(
-      "SELECT used_at FROM host_attestation_challenges WHERE challenge_id = ?",
-    ).get(challenge.challenge_id)).toEqual({ used_at: null })
-    expect(database().prepare("SELECT workspace_id FROM workspaces WHERE workspace_id = ?").get("ws_rollback"))
-      .toBeUndefined()
-
-    database().exec("DROP TRIGGER fail_host_link")
-    await expect(authority.registerLocalHostLink(owner, input)).resolves.toMatchObject({
-      workspace_id: "ws_rollback",
-      host_id: "host_rollback",
-    })
   })
 
   test("runtime access tokens: record, active checks, revoke", async () => {

@@ -22,7 +22,6 @@ import type * as crons from "../crons.js";
 import type * as hostEnrollments from "../hostEnrollments.js";
 import type * as http from "../http.js";
 import type * as idempotency from "../idempotency.js";
-import type * as localHostLinks from "../localHostLinks.js";
 import type * as migrations from "../migrations.js";
 import type * as model from "../model.js";
 import type * as orgs from "../orgs.js";
@@ -75,7 +74,6 @@ declare const fullApi: ApiFromModules<{
   hostEnrollments: typeof hostEnrollments;
   http: typeof http;
   idempotency: typeof idempotency;
-  localHostLinks: typeof localHostLinks;
   migrations: typeof migrations;
   model: typeof model;
   orgs: typeof orgs;

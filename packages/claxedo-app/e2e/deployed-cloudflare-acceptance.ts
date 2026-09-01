@@ -1,3 +1,54 @@
+/**
+ * Two-user acceptance against a LIVE deployed Cloudflare control plane.
+ *
+ * Never part of CI: it signs into a real deployment with real GitHub accounts,
+ * enrolls a machine, and opens a relay tunnel. Run on demand, one stage per
+ * invocation, from `packages/claxedo-app`:
+ *
+ *   bun run test:e2e:deployed-cloudflare -- --capture-canary-identity
+ *   bun run test:e2e:deployed-cloudflare -- --bootstrap-canary
+ *   bun run test:e2e:deployed-cloudflare -- --capture-multiplayer-identities
+ *   bun run test:e2e:deployed-cloudflare -- --run-multiplayer
+ *
+ * ## Environment
+ *
+ * Required for every stage:
+ *   CLAXEDO_DEPLOYED_API_URL         Exact HTTPS origin of the deployed API
+ *                                    (no path/query/credentials). Must differ
+ *                                    from the app origin.
+ *   CLAXEDO_DEPLOYED_APP_URL         Exact HTTPS origin of the deployed app.
+ *   CLAXEDO_DEPLOYED_ACCEPTANCE_ID   Filesystem-safe run id; names the evidence
+ *                                    directory under
+ *                                    `.artifacts/deployed-cloudflare-acceptance/`.
+ *
+ * `--bootstrap-canary` additionally requires:
+ *   CLAXEDO_BOOTSTRAP_OWNER_CLAIM_FILE   Path to the owner-claim secret, mode
+ *                                        0600 (refused otherwise).
+ *
+ * Optional:
+ *   CLAXEDO_CANARY_JOURNEY_ID        Stamped onto phase headers for tracing.
+ *
+ * ## Credentials
+ *
+ * There are no credential environment variables by design. GitHub sign-in uses
+ * two PERSISTENT Playwright profiles under the run's state root (`owner`,
+ * `member`); a human completes the OAuth prompt once per profile and the
+ * session is reused. The `capture-*` stages exist to establish and record
+ * those identities before the run that spends them.
+ *
+ * ## Machine remote access
+ *
+ * `--run-multiplayer` exercises the enrollment grain end to end: nonce →
+ * signed enroll → owner assignment (which cold-registers the workspace) →
+ * heartbeat v2. Routing requires all three of owner assignment, the machine's
+ * heartbeat-acked set, and a live lease, so the relay tunnel it opens is only
+ * legitimate after the beat lands.
+ *
+ * The payload builders exported here are unit-gated offline by
+ * `playwright/deployed-cloudflare-acceptance.test.ts`
+ * (`bun run test:deployed-acceptance`), which talks to nothing.
+ */
+
 import fs from "node:fs/promises"
 import path from "node:path"
 import { generateKeyPairSync, sign, type JsonWebKey } from "node:crypto"
@@ -69,34 +120,61 @@ export function acceptanceConfig(
   }
 }
 
-export function registrationPayload(input: {
-  workspaceId: string
-  hostId: string
-  challengeId: string
-  nonce: string
-}) {
+/**
+ * Machine-enrollment payload (v1).
+ *
+ * Byte-identical to the authority's verifier (`hostEnrollmentPayload` in
+ * claxedo-server's `workspace/local-host.ts`, the D1/SQLite adapters and
+ * `convex/hostEnrollments.ts`). Rebuilt here rather than imported because this
+ * harness drives a DEPLOYED control plane over HTTP and must not link server
+ * code; the literal is the contract, so drift fails at the first enrollment.
+ */
+export function enrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
   return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
+    "claxedo.host-enrollment.enroll.v1",
     `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
+    `request_id=${input.requestId}`,
     `nonce=${input.nonce}`,
   ].join("\n")
 }
 
-export function createColdWorkspaceProof(input: {
-  workspaceId: string
+/**
+ * Heartbeat v2: ONE signature covers the lease renewal AND the workspaces this
+ * machine serves (sorted, comma-joined). Byte-identical to
+ * `hostEnrollmentHeartbeatPayloadV2`.
+ */
+export function heartbeatPayloadV2(input: {
   hostId: string
-  challengeId: string
-  nonce: string
+  ttlMs?: number
+  workspaceIds: readonly string[]
 }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v2",
+    `host_id=${input.hostId}`,
+    `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
+  ].join("\n")
+}
+
+/**
+ * A throwaway machine identity for one acceptance run.
+ *
+ * The private half never leaves this process — the deployed control plane
+ * stores the public key and verifies signatures, which is the property the
+ * enrollment handshake exists to prove.
+ */
+export function createMachineIdentity() {
   const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
   const publicJwk = pair.publicKey.export({ format: "jwk" }) as JsonWebKey
-  const signature = sign("sha256", Buffer.from(registrationPayload(input)), {
-    key: pair.privateKey,
-    dsaEncoding: "ieee-p1363",
-  }).toString("base64url")
-  return { publicKey: JSON.stringify(publicJwk), signature }
+  return {
+    publicKey: JSON.stringify(publicJwk),
+    sign(payload: string) {
+      return sign("sha256", Buffer.from(payload), {
+        key: pair.privateKey,
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url")
+    },
+  }
 }
 
 function selectedStage(argv: readonly string[]): Stage {
@@ -302,6 +380,30 @@ async function jsonRequest(
     )
   }
   return body
+}
+
+/**
+ * This owner's user-hosted workspace row, or undefined.
+ *
+ * The list is the only signed read that answers "does this workspace exist for
+ * me", and the acceptance run needs it twice: absent after enrollment, present
+ * after assignment. Those two answers together ARE the cold-registration
+ * proof.
+ */
+async function userHostedWorkspace(
+  context: BrowserContext,
+  config: DeployedAcceptanceConfig,
+  env: Environment,
+  workspaceId: string,
+) {
+  const body = record(
+    await jsonRequest(context, config, "run-multiplayer", env, "private_session", "/api/workspace?access=user-hosted"),
+    "user-hosted workspace list",
+  )
+  const rows = Array.isArray(body.workspaces) ? body.workspaces : []
+  return rows
+    .map((row) => (row && typeof row === "object" && !Array.isArray(row) ? (row as JsonRecord) : undefined))
+    .find((row) => row?.workspace_id === workspaceId || row?.workspaceId === workspaceId)
 }
 
 async function discoverIdentity(
@@ -580,47 +682,136 @@ async function runMultiplayer(config: DeployedAcceptanceConfig, env: Environment
     const hostId = `host_cf_${prefix}`
     const sessionId = `ses_cf_${prefix}`
     const operationId = `op_cf_${prefix}`
-    const challengeBody = record(
+    const machine = createMachineIdentity()
+
+    // 1. One-use nonce for THIS machine. Carries no workspace: enrollment is
+    //    machine-wide, which is the whole point of the grain.
+    const requestBody = record(
       await jsonRequest(
         owner,
         config,
         "run-multiplayer",
         env,
         "private_session",
-        `/api/workspace/${workspaceId}/user-hosted/challenge`,
+        "/api/claxedo/host/enrollments/requests",
         { method: "POST", body: JSON.stringify({ hostId }) },
       ),
-      "cold workspace challenge",
+      "machine enrollment request",
     )
-    const challenge = record(challengeBody.challenge, "cold workspace challenge.challenge")
-    const challengeId = textField(challenge.challengeId, "challengeId")
-    const nonce = textField(challenge.nonce, "nonce")
-    const proof = createColdWorkspaceProof({ workspaceId, hostId, challengeId, nonce })
-    const registration = record(
+    const requestId = textField(requestBody.request_id, "enrollment request.request_id")
+    const nonce = textField(requestBody.nonce, "enrollment request.nonce")
+
+    // 2. Prove possession of the machine key. Enrolling creates no workspace —
+    //    asserted below, because "enrolling a laptop creates nothing to own"
+    //    is the property that distinguishes this from the retired flow.
+    const enrolledBody = record(
       await jsonRequest(
         owner,
         config,
         "run-multiplayer",
         env,
         "private_session",
-        `/api/workspace/${workspaceId}/user-hosted/register`,
+        "/api/claxedo/host/enrollments",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            hostId,
+            publicKey: machine.publicKey,
+            requestId,
+            signature: machine.sign(enrollmentPayload({ hostId, requestId, nonce })),
+            displayName: `Cloudflare acceptance ${config.acceptanceId}`,
+          }),
+        },
+      ),
+      "machine enrollment",
+    )
+    const enrollment = record(enrolledBody.enrollment, "machine enrollment.enrollment")
+    if (textField(enrollment.host_id, "enrollment.host_id") !== hostId) {
+      throw new Error("enrollment returned a different host id than the one enrolled")
+    }
+    if (await userHostedWorkspace(owner, config, env, workspaceId)) {
+      throw new Error("enrolling a machine created a workspace, which it must never do")
+    }
+
+    // 3. The OWNER's assignment cold-registers the workspace and mints the
+    //    first serving credential — no challenge and no machine signature,
+    //    because liveness is the lease and consent is the acked set.
+    const assignedBody = record(
+      await jsonRequest(
+        owner,
+        config,
+        "run-multiplayer",
+        env,
+        "private_session",
+        `/api/workspace/${workspaceId}/host-assignment`,
         {
           method: "POST",
           body: JSON.stringify({
             orgId,
             hostId,
-            publicKey: proof.publicKey,
-            challengeId,
-            signature: proof.signature,
             displayName: `Cloudflare acceptance ${config.acceptanceId}`,
           }),
         },
       ),
-      "cold workspace registration",
+      "cold workspace host assignment",
     )
-    const workspace = record(registration.workspace, "cold workspace registration.workspace")
+    const assignment = record(assignedBody.assignment, "host assignment.assignment")
+    if (
+      assignment.assigned !== true
+      || textField(assignment.workspace_id, "assignment.workspace_id") !== workspaceId
+      || textField(assignment.host_id, "assignment.host_id") !== hostId
+    ) {
+      throw new Error("host assignment did not return the assigned workspace/host pair")
+    }
+
+    // 4. One beat: the signed served set IS the machine's consent, and the ack
+    //    carries back the owner's assignment view plus the credential for
+    //    assigned∩acked. Routing needs all three, so the tunnel below is only
+    //    legitimate once this beat has landed.
+    const beat = record(
+      await jsonRequest(
+        owner,
+        config,
+        "run-multiplayer",
+        env,
+        "private_session",
+        "/api/claxedo/host/enrollments/heartbeat",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            hostId,
+            signature: machine.sign(heartbeatPayloadV2({ hostId, workspaceIds: [workspaceId] })),
+            workspaceIds: [workspaceId],
+          }),
+        },
+      ),
+      "machine heartbeat",
+    )
+    const ackedAssignments = Array.isArray(beat.assigned_workspace_ids) ? beat.assigned_workspace_ids : undefined
+    if (!ackedAssignments?.includes(workspaceId)) {
+      throw new Error("heartbeat ack did not report the workspace as owner-assigned")
+    }
+    if (typeof beat.expires_at !== "number" || typeof beat.last_seen_at !== "number") {
+      throw new Error("heartbeat ack is missing expires_at/last_seen_at")
+    }
+
+    // The ack mints a serving credential too, for exactly the assigned∩acked
+    // set. Asserted rather than used: the tunnel below runs on the assignment's
+    // credential, and this proves the steady-state renewal path issues one.
+    const ackTunnel = record(beat.hostTunnel, "heartbeat ack.hostTunnel")
+    const ackWorkspaceIds = Array.isArray(ackTunnel.workspaceIds) ? ackTunnel.workspaceIds : undefined
+    if (!ackWorkspaceIds?.includes(workspaceId)) {
+      throw new Error("heartbeat ack credential does not cover the assigned workspace")
+    }
+
+    // Cold registration is only proven by the workspace EXISTING now, since it
+    // did not before the assignment.
+    const workspace = record(
+      await userHostedWorkspace(owner, config, env, workspaceId),
+      "cold workspace registration.workspace",
+    )
     const projectId = textField(workspace.project_id ?? workspace.projectId, "workspace.project_id")
-    const hostTunnel = record(registration.hostTunnel, "cold workspace registration.hostTunnel")
+    const hostTunnel = record(assignedBody.hostTunnel, "cold workspace assignment.hostTunnel")
     const hostTunnelToken = textField(hostTunnel.hostTunnelToken, "hostTunnel.hostTunnelToken")
     const relayUrl = textField(hostTunnel.relayUrl, "hostTunnel.relayUrl")
     const homeRegion = typeof hostTunnel.homeRegion === "string" ? hostTunnel.homeRegion : undefined

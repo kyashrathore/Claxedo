@@ -709,7 +709,6 @@ export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
   { table: "workspace_memberships", index: "by_workspace_user", field: "workspace_id" },
   { table: "workspace_share_grants", index: "by_workspace", field: "workspace_id" },
   { table: "session_share_grants", index: "by_workspace", field: "workspace_id" },
-  { table: "local_host_links", index: "by_workspace", field: "workspace_id" },
   { table: "runtime_access_tokens", index: "by_workspace_user", field: "workspace_id" },
   { table: "agent_extension_installs", index: "by_workspace", field: "workspace_id" },
   { table: "agent_extension_policy_overrides", index: "by_workspace", field: "workspace_id" },
@@ -718,7 +717,6 @@ export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
 
 /** Workspace children keyed on the PUBLIC workspace id string. */
 export const ORG_WORKSPACE_PUBLIC_TABLES: readonly ScopedRows[] = [
-  { table: "host_attestation_challenges", index: "by_workspace", field: "workspace_id" },
   // Owner intent that host H serves workspace X. Dies with the workspace: the
   // enrollment (user-owned, retained) stays, but nothing routable remains.
   { table: "host_workspace_assignments", index: "by_workspace", field: "workspace_id" },

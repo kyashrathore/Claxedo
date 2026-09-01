@@ -303,23 +303,6 @@ describe("GET /", () => {
   })
 })
 
-describe("an authority without enrollment", () => {
-  test("answers 501 rather than throwing a TypeError into a 500", async () => {
-    // The port's methods are optional until the hard cut, so a control plane
-    // built before this unit will not have them. "Not implemented" is a usable
-    // answer; a 500 with a stack is a support ticket.
-    const { post, call } = routes({
-      createHostEnrollmentRequest: undefined,
-      enrollHost: undefined,
-      activeHostEnrollment: undefined,
-    })
-
-    expect((await post("/requests", { hostId: "host_1" })).status).toBe(501)
-    expect((await post("/", { hostId: "host_1", publicKey: "{}", requestId: "r", signature: "s" })).status).toBe(501)
-    expect((await call("/", { method: "GET" })).status).toBe(501)
-  })
-})
-
 /**
  * Per-account abuse budget.
  *

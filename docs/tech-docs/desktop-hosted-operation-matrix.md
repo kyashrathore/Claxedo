@@ -55,11 +55,11 @@ Also excluded from AccountPort (intentional non-rows):
 - **Sandbox driver** routes (`GET|PUT /api/workspace/drivers*`) — local sidecar
   only; signed hosted sessions may view them through the local proxy but do not
   spend the Hosted Server bearer on them.
-- **Per-workspace hostLink** pause / second-device-open —
-  desktop reaches these through Host Connector IPC; browser self-hosted uses
-  the page session over HTTP. Machine-wide enrollment is the `host.enroll*`
-  rows below; challenge / register / heartbeat are Host-Connector-child rows
-  in the machine remote access section.
+- **Machine pause / second-device-open** — desktop reaches these through Host
+  Connector IPC; browser self-hosted uses the page session over HTTP. The
+  enrollment handshake itself is the `host.enroll*` rows below, and
+  request / enroll / heartbeat are Host-Connector-child rows in the machine
+  remote access section.
 - **Retired** `GET /documents/events` — editors now use the central
   `session.events` doorbell.
 
@@ -157,7 +157,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 |---|---|---|---|---|---|
 | `workspace.assignHost` | `src/main/host-connector/child-supervisor.ts` | `POST /api/workspace/:id/host-assignment` | unary | idempotency-key | The OWNER's declaration that this host serves the workspace — pure data, an upsert on workspace_id. No challenge and no machine signature: liveness is the enrollment lease and consent is the heartbeat's acked set; routing needs all three. **Main-only**: the host id must be THIS machine's, which only the supervisor knows, so `RENDERER_WITHHELD_OPERATIONS` refuses the account channel and the renderer's route is the data-only `claxedo.hostConnector.share` IPC. |
 | `workspace.unassignHost` | `src/main/host-connector/child-supervisor.ts` | `DELETE /api/workspace/:id/host-assignment` | unary | safe | Withdraws the owner's assignment; routing refuses immediately (intent AND consent). Main-only for the same reason as assign. |
-| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Unit 6's replacement for `hostLink.register`: enrolls the MACHINE once, with no workspace in the path. The key is the machine identity and it is a real one — `enrollForUser` patches the existing row for the same `host_id` rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
+| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Enrolls the MACHINE once, with no workspace in the path — the successor of the retired per-workspace host-link registration. The key is the machine identity and it is a real one — `enrollForUser` patches the existing row for the same `host_id` rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
 | `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. Main-only, like the enrollment it precedes: a renderer able to mint nonces holds step one of the handshake, and the account channel is refused. |
 | `host.enrollmentHeartbeat` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/heartbeat` | unary | safe | Presence AND consent, signed by the machine key: the v2 payload covers the served workspace set, the response returns the owner's assignment view for reconciliation plus ONE Host Tunnel credential for the assigned∩acked set. Safe to retry only by RE-SIGNING — every signature hash is single-use at the authority. A REJECTED beat is not retried at all — the connector stops, because re-enrolling would be it overruling a revocation. Main-only: the signature is the machine key's. |
 

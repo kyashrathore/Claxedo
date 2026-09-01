@@ -626,11 +626,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
           const authority = requireAuthority(services)
           await authority.usersMe(auth)
-          const assign = authority.assignWorkspaceHost
-          if (!assign) {
-            return c.json({ error: apiError("not_implemented", "This control plane does not support host assignments") }, 501)
-          }
-          const assignment = await assign(auth, {
+          const assignment = await authority.assignWorkspaceHost(auth, {
             workspaceId,
             hostId: body.hostId,
             ...(body.displayName ? { displayName: body.displayName } : {}),
@@ -680,11 +676,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
           const authority = requireAuthority(services)
           await authority.usersMe(auth)
-          const unassign = authority.unassignWorkspaceHost
-          if (!unassign) {
-            return c.json({ error: apiError("not_implemented", "This control plane does not support host assignments") }, 501)
-          }
-          const result = await unassign(auth, { workspaceId })
+          const result = await authority.unassignWorkspaceHost(auth, { workspaceId })
           await authority.auditAllow(auth, {
             action: "host_workspace_assignment.unassigned",
             workspaceId,

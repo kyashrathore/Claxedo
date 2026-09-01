@@ -455,33 +455,10 @@ export default defineSchema({
     .index("by_org", ["granted_to_org_id"])
     .index("by_team", ["granted_to_team_id"]),
 
-  local_host_links: defineTable({
-    workspace_id: v.id("workspaces"),
-    owner_user_id: v.id("users"),
-    host_id: v.optional(v.string()),
-    public_key: v.optional(v.string()),
-    display_name: v.optional(v.string()),
-    second_device_open_at: v.optional(v.number()),
-    last_seen_at: v.number(),
-    expires_at: v.number(),
-    paused_at: v.optional(v.number()),
-    // Pause provenance: a user pause must survive a kill-switch resume.
-    paused_by: v.optional(v.union(v.literal("user"), v.literal("killswitch"))),
-    paused_reason: v.optional(v.string()),
-    revoked_at: v.optional(v.number()),
-    created_at: v.number(),
-    updated_at: v.number(),
-  })
-    .index("by_workspace", ["workspace_id"])
-    .index("by_owner", ["owner_user_id"])
-    .index("by_host_id", ["host_id"])
-    .index("by_expires_at", ["expires_at"]),
-
-  // Machine-wide remote access (Unit 6). One row per (owner, machine) — NOT
-  // per workspace, which is the whole difference from local_host_links above.
-  // A user with twelve projects on one laptop enrolls the laptop once; which
-  // workspaces a session may reach is decided at request time from the
-  // workspace tables rather than frozen into a registration row.
+  // Machine-wide remote access. One row per (owner, machine) — NOT per
+  // workspace: a user with twelve projects on one laptop enrolls the laptop
+  // once, and which workspaces a session may reach is decided at request time
+  // from the workspace tables rather than frozen into a registration row.
   //
   // Convex has no unique constraints, so `by_owner_host` is how that rule is
   // enforced: every write path reads through it first and patches rather than
@@ -534,9 +511,8 @@ export default defineSchema({
     .index("by_owner_host", ["owner_user_id", "host_id"])
     .index("by_owner", ["owner_user_id"]),
 
-  // The one-use nonce a machine signs to prove it holds the private key.
-  // Separate from host_attestation_challenges because that table is keyed by
-  // workspace and this flow has no workspace to key by.
+  // The one-use nonce a machine signs to prove it holds the private key. It
+  // carries no workspace: enrollment is machine-wide.
   host_enrollment_requests: defineTable({
     request_id: v.string(),
     owner_user_id: v.id("users"),
@@ -553,23 +529,6 @@ export default defineSchema({
     // out to `used_at + ENROLLMENT_CONSUMED_RETENTION_MS` so one index answers
     // for both live nonces and retained consumed evidence.
     .index("by_expires_at", ["expires_at"]),
-
-  host_attestation_challenges: defineTable({
-    challenge_id: v.string(),
-    // PUBLIC workspace id (not a doc reference): a challenge may be issued for
-    // a never-registered workspace — the workspace doc is only created at
-    // register time, after the host proves its key.
-    workspace_id: v.string(),
-    owner_user_id: v.id("users"),
-    host_id: v.string(),
-    nonce: v.string(),
-    expires_at: v.number(),
-    used_at: v.optional(v.number()),
-    created_at: v.number(),
-  })
-    .index("by_challenge_id", ["challenge_id"])
-    .index("by_workspace", ["workspace_id"])
-    .index("by_owner", ["owner_user_id"]),
 
   session_history: defineTable({
     session_id: v.string(),

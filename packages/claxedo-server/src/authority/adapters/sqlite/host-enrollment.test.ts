@@ -375,6 +375,50 @@ describe("workspace assignments", () => {
       .rejects.toThrow(/Host enrollment not found/)
   })
 
+  test("a failed assignment strands no cold-registered workspace", async () => {
+    // Cold registration makes assigning a two-write operation, and the writes
+    // are not independent: the workspace row exists only to be assigned. If
+    // the first commits while the second fails, the owner is left with a
+    // user-hosted workspace no machine serves — visible in the workspace list
+    // as a share that does not work, and unreachable by retry, because the
+    // second attempt now finds an `existing` row and takes the authorize
+    // branch instead of re-registering.
+    //
+    // Forced at the second statement with a trigger on a second connection,
+    // the same device the retired registration path's rollback test used.
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-assign-rollback-")), "authority.db")
+    const api = createSqliteWorkspaceAuthority({ path: file })
+    const reader = new Database(file, { readonly: false })
+    const { keys, hostId } = await enroll(api)
+    reader.exec(`
+      CREATE TRIGGER fail_assignment BEFORE INSERT ON host_workspace_assignments
+      BEGIN SELECT RAISE(FAIL, 'forced assignment failure'); END
+    `)
+
+    await expect(api.assignWorkspaceHost!(owner, { workspaceId: "ws_cold", hostId }))
+      .rejects.toThrow(/forced assignment failure/)
+
+    // The whole operation rolled back: no workspace, no assignment, and
+    // nothing in the owner's list to explain.
+    expect(reader.prepare(`SELECT COUNT(*) AS n FROM workspaces WHERE workspace_id = ?`).get("ws_cold"))
+      .toEqual({ n: 0 })
+    expect(reader.prepare(`SELECT COUNT(*) AS n FROM host_workspace_assignments`).get()).toEqual({ n: 0 })
+    expect((await api.listWorkspaces(owner) as Array<{ workspace_id: string }>).map((w) => w.workspace_id))
+      .not.toContain("ws_cold")
+
+    // And the retry still takes the cold-register path, which is the property
+    // a half-committed first attempt would have destroyed.
+    reader.exec(`DROP TRIGGER fail_assignment`)
+    await expect(api.assignWorkspaceHost!(owner, { workspaceId: "ws_cold", hostId }))
+      .resolves.toEqual({ assigned: true, workspace_id: "ws_cold", host_id: hostId })
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_cold"] })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_cold" })).toMatchObject({
+      active: true,
+      workspace_id: "ws_cold",
+      host_id: hostId,
+    })
+  })
+
   test("unassign wins over a still-acked set: routing is intent AND consent", async () => {
     const api = authority()
     const { keys, hostId } = await enroll(api)

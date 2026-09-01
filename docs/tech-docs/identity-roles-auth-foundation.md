@@ -46,7 +46,7 @@ policy tests in the repo-root `convex/` directory, especially:
 - `convex/users.policy.test.ts`
 - `convex/sessions.policy.test.ts`
 - `convex/workspace-region.policy.test.ts`
-- `convex/local-host-links.policy.test.ts`
+- `convex/host-enrollments.policy.test.ts`
 - `convex/share-revoke.policy.test.ts`
 
 ## Maintenance Rule

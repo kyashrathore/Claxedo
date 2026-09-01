@@ -38,11 +38,11 @@ export async function userHostedConnectionInfo(
     } as const
   }
 
-  const activeLink = await authority.activeWorkspaceHost!(auth, { workspaceId })
+  const activeLink = await authority.activeWorkspaceHost(auth, { workspaceId })
   if (!activeLink.active) {
     await authority.auditDeny(auth, {
       action: "runtime_access_token.denied",
-      reason: "local_host_link_unavailable",
+      reason: "workspace_host_unavailable",
       workspaceId,
     })
     return {
@@ -112,7 +112,7 @@ export async function userHostedConnectionInfo(
         jti: token.jti,
         hostId,
         expiresAt: token.tokenExpiresAt,
-        localHostLinkExpiresAt: activeLink.expires_at,
+        hostLeaseExpiresAt: activeLink.expires_at,
       },
     }),
   ])
@@ -128,7 +128,7 @@ export async function userHostedConnectionInfo(
       role,
       jti: token.jti,
       expiresAt: token.tokenExpiresAt,
-      localHostLinkExpiresAt: activeLink.expires_at,
+      hostLeaseExpiresAt: activeLink.expires_at,
       relayRoom: workspaceId,
       relayUrl,
     },

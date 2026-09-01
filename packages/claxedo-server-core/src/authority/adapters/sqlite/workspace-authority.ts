@@ -42,14 +42,13 @@ import { createSqlitePrivateSessionAuthority } from "./private-session-authority
 // self-host enabler — a deployment with NO Convex/Clerk env composes this
 // authority so `requireAuthority` never fails 503 and workspace/session
 // features work out of the box. Per-method semantics mirror the Convex
-// backend functions (convex/workspaces.ts, convex/localHostLinks.ts, ...).
+// backend functions (convex/workspaces.ts, convex/hostEnrollments.ts, ...).
 // Node-only (better-sqlite3 via the store): hosted/Worker compositions must
 // never import this module (worker.import-graph guard).
 
-// Mirrors convex/localHostLinks.ts TTL policy.
+// Mirrors convex/hostEnrollments.ts TTL policy.
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
-const CHALLENGE_TTL_MS = 60_000
 
 /**
  * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
@@ -122,25 +121,10 @@ function base64url(bytes: Uint8Array) {
   return Buffer.from(bytes).toString("base64url")
 }
 
-function registrationPayload(input: {
-  workspace_id: string
-  host_id: string
-  challenge_id: string
-  nonce: string
-}) {
-  return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspace_id}`,
-    `host_id=${input.host_id}`,
-    `challenge_id=${input.challenge_id}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
 function enrollmentPayload(input: { host_id: string; request_id: string; nonce: string }) {
-  // A distinct v1 prefix from the local-host-link payloads above. Payload
-  // domains must not overlap: a signature captured from one flow being
-  // replayable in the other is exactly what a prefix prevents.
+  // A versioned, domain-prefixed payload. Payload domains must not overlap: a
+  // signature captured from one flow being replayable in another is exactly
+  // what a prefix prevents.
   return [
     "claxedo.host-enrollment.enroll.v1",
     `host_id=${input.host_id}`,
@@ -205,19 +189,6 @@ function toHostEnrollment(row: HostEnrollmentRow): HostEnrollment {
     last_seen_at: row.last_seen_at,
     created_at: row.created_at,
   }
-}
-
-function heartbeatPayload(input: {
-  workspace_id: string
-  host_id: string
-  ttl_ms?: number
-}) {
-  return [
-    "claxedo.local-host-link.heartbeat.v1",
-    `workspace_id=${input.workspace_id}`,
-    `host_id=${input.host_id}`,
-    `ttl_ms=${input.ttl_ms ?? ""}`,
-  ].join("\n")
 }
 
 async function verifyHostSignature(input: {
@@ -456,18 +427,6 @@ function workspaceJson(workspace: WorkspaceRow) {
     repo_name: workspace.repo_name ?? undefined,
     git_branch: workspace.git_branch ?? undefined,
   }
-}
-
-type HostLinkRow = {
-  workspace_id: string
-  host_id: string
-  public_key: string
-  display_name: string | null
-  second_device_open_at: number | null
-  last_seen_at: number
-  expires_at: number
-  paused_at: number | null
-  revoked_at: number | null
 }
 
 export function createSqliteWorkspaceAuthority(
@@ -1409,11 +1368,11 @@ export function createSqliteWorkspaceAuthority(
       })()
     },
 
-    // --- machine-wide enrollment (Unit 6) -----------------------------------
+    // --- machine-wide enrollment -------------------------------------------
     //
-    // The local-host-link methods below do the same four things per WORKSPACE.
-    // These do them per MACHINE, and every difference between the two blocks is
-    // the removal of workspace handling: no ownership check against a workspace
+    // The retired per-workspace host-link methods did these four things per
+    // WORKSPACE. These do them per MACHINE, and every difference is the
+    // removal of workspace handling: no ownership check against a workspace
     // row, no cloud-workspace refusal, and — the one that matters — no implicit
     // `INSERT INTO workspaces`. Enrolling a laptop creates nothing to own.
     async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args) {
@@ -1646,47 +1605,63 @@ export function createSqliteWorkspaceAuthority(
     async assignWorkspaceHost(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
-      const enrollment = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
-        .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
-      if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
       const now = Date.now()
-      const existing = workspaceByPublicId(db, args.workspaceId)
-      if (existing) {
-        if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
-        refuseCloudWorkspace(existing)
-      } else {
-        const { orgId, projectId } = ownedProject(db, who, args)
+      // ONE transaction over the cold register AND the assignment.
+      //
+      // Cold registration makes this method a two-write operation, and the two
+      // writes are not independent: the workspace row exists only to be
+      // assigned. Letting the first commit while the second fails leaves an
+      // owned, user-hosted workspace that no machine serves and no caller
+      // asked for — it shows up in the workspace list as a share that does not
+      // work, and the retry cannot recreate it (the row is now `existing`, so
+      // the second attempt takes the authorize branch instead).
+      //
+      // The enrollment read is inside for the same reason the writes are:
+      // "this host is enrolled" is the precondition the assignment is only
+      // valid under, and a revoke landing between the check and the insert
+      // would otherwise be admitted.
+      return db.transaction(() => {
+        const enrollment = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+          .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
+        if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
+        const existing = workspaceByPublicId(db, args.workspaceId)
+        if (existing) {
+          if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
+          refuseCloudWorkspace(existing)
+        } else {
+          const { orgId, projectId } = ownedProject(db, who, args)
+          db.prepare(`
+            INSERT INTO workspaces (
+              workspace_id, org_id, project_id, owner_token_identifier, backing, access,
+              display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            args.workspaceId,
+            orgId,
+            projectId,
+            who.token_identifier,
+            args.displayName ?? args.workspaceId,
+            validatedHomeRegion(args.homeRegion) ?? null,
+            args.repoUrl ?? null,
+            args.repoName ?? null,
+            args.gitBranch ?? null,
+            args.remoteDirectory ?? null,
+            now,
+            now,
+          )
+        }
         db.prepare(`
-          INSERT INTO workspaces (
-            workspace_id, org_id, project_id, owner_token_identifier, backing, access,
-            display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
-            created_at, updated_at
-          ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          args.workspaceId,
-          orgId,
-          projectId,
-          who.token_identifier,
-          args.displayName ?? args.workspaceId,
-          validatedHomeRegion(args.homeRegion) ?? null,
-          args.repoUrl ?? null,
-          args.repoName ?? null,
-          args.gitBranch ?? null,
-          args.remoteDirectory ?? null,
-          now,
-          now,
-        )
-      }
-      db.prepare(`
-        INSERT INTO host_workspace_assignments (
-          workspace_id, host_id, owner_token_identifier, second_device_open_at, assigned_at, updated_at
-        ) VALUES (?, ?, ?, NULL, ?, ?)
-        ON CONFLICT (workspace_id) DO UPDATE SET
-          host_id = excluded.host_id,
-          owner_token_identifier = excluded.owner_token_identifier,
-          updated_at = excluded.updated_at
-      `).run(args.workspaceId, args.hostId, who.token_identifier, now, now)
-      return { assigned: true as const, workspace_id: args.workspaceId, host_id: args.hostId }
+          INSERT INTO host_workspace_assignments (
+            workspace_id, host_id, owner_token_identifier, second_device_open_at, assigned_at, updated_at
+          ) VALUES (?, ?, ?, NULL, ?, ?)
+          ON CONFLICT (workspace_id) DO UPDATE SET
+            host_id = excluded.host_id,
+            owner_token_identifier = excluded.owner_token_identifier,
+            updated_at = excluded.updated_at
+        `).run(args.workspaceId, args.hostId, who.token_identifier, now, now)
+        return { assigned: true as const, workspace_id: args.workspaceId, host_id: args.hostId }
+      })()
     },
     async unassignWorkspaceHost(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -1780,202 +1755,6 @@ export function createSqliteWorkspaceAuthority(
       return [...groups.values()]
     },
 
-    // --- local host links (convex/localHostLinks.ts) ------------------------
-    async createLocalHostLinkChallenge(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      // A never-registered workspaceId may take a challenge; ownership is
-      // established at register (after host proof). When the row EXISTS, the
-      // admin/backing checks apply.
-      if (workspace) {
-        if (!authorizeWorkspaceForUser(db, workspace, who, "admin")) throw new Error("Workspace not found")
-        refuseCloudWorkspace(workspace)
-      }
-      const now = Date.now()
-      const nonce = base64url(crypto.getRandomValues(new Uint8Array(32)))
-      const challengeId = base64url(crypto.getRandomValues(new Uint8Array(16)))
-      db.prepare(`
-        INSERT INTO host_attestation_challenges (challenge_id, workspace_id, owner_token_identifier, host_id, nonce, expires_at, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-      `).run(challengeId, args.workspaceId, who.token_identifier, args.hostId, nonce, now + CHALLENGE_TTL_MS, now)
-      return { challenge_id: challengeId, nonce, expires_at: now + CHALLENGE_TTL_MS }
-    },
-    async registerLocalHostLink(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const existingWorkspace = workspaceByPublicId(db, args.workspaceId)
-      if (existingWorkspace) {
-        if (!authorizeWorkspaceForUser(db, existingWorkspace, who, "admin")) throw new Error("Workspace not found")
-        refuseCloudWorkspace(existingWorkspace)
-      }
-      const now = Date.now()
-      const challenge = db.prepare(`SELECT * FROM host_attestation_challenges WHERE challenge_id = ?`)
-        .get(args.challengeId) as {
-          workspace_id: string
-          owner_token_identifier: string
-          host_id: string
-          nonce: string
-          expires_at: number
-          used_at: number | null
-        } | undefined
-      if (
-        !challenge
-        || challenge.workspace_id !== args.workspaceId
-        || challenge.owner_token_identifier !== who.token_identifier
-        || challenge.host_id !== args.hostId
-        || challenge.used_at
-        || challenge.expires_at <= now
-      ) {
-        throw new Error("Invalid host attestation challenge")
-      }
-      await verifyHostSignature({
-        public_key: args.publicKey,
-        payload: registrationPayload({
-          workspace_id: args.workspaceId,
-          host_id: args.hostId,
-          challenge_id: args.challengeId,
-          nonce: challenge.nonce,
-        }),
-        signature: args.signature,
-      })
-      return db.transaction(() => {
-        const claimedAt = Date.now()
-        const claimed = db.prepare(`
-          UPDATE host_attestation_challenges SET used_at = ?
-          WHERE challenge_id = ? AND used_at IS NULL AND expires_at > ?
-        `).run(claimedAt, args.challengeId, claimedAt)
-        if (claimed.changes !== 1) throw new Error("Invalid host attestation challenge")
-
-        const currentWorkspace = workspaceByPublicId(db, args.workspaceId)
-        if (currentWorkspace) {
-          if (!authorizeWorkspaceForUser(db, currentWorkspace, who, "admin")) throw new Error("Workspace not found")
-          refuseCloudWorkspace(currentWorkspace)
-        } else {
-          const { orgId, projectId } = ownedProject(db, who, { workspaceId: args.workspaceId })
-          db.prepare(`
-            INSERT INTO workspaces (
-              workspace_id, org_id, project_id, owner_token_identifier, backing, access, display_name, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?)
-          `).run(
-            args.workspaceId,
-            orgId,
-            projectId,
-            who.token_identifier,
-            args.displayName ?? args.workspaceId,
-            claimedAt,
-            claimedAt,
-          )
-        }
-        const workspace = currentWorkspace ?? workspaceByPublicId(db, args.workspaceId)!
-        const expiresAt = claimedAt + ttl(args.ttlMs)
-        db.prepare(`
-          INSERT INTO local_host_links (
-            workspace_id, host_id, owner_token_identifier, public_key, display_name,
-            last_seen_at, expires_at, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON CONFLICT (workspace_id, host_id) DO UPDATE SET
-            public_key = excluded.public_key,
-            display_name = excluded.display_name,
-            last_seen_at = excluded.last_seen_at,
-            expires_at = excluded.expires_at,
-            paused_at = NULL,
-            paused_by = NULL,
-            paused_reason = NULL,
-            revoked_at = NULL,
-            updated_at = excluded.updated_at
-        `).run(
-          args.workspaceId,
-          args.hostId,
-          who.token_identifier,
-          args.publicKey,
-          args.displayName ?? null,
-          claimedAt,
-          expiresAt,
-          claimedAt,
-          claimedAt,
-        )
-        return {
-          host_id: args.hostId,
-          workspace_id: args.workspaceId,
-          home_region: workspace.home_region ?? undefined,
-          expires_at: expiresAt,
-          paused: false,
-        }
-      })()
-    },
-    async heartbeatLocalHostLink(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = requireWorkspace(db, who, args.workspaceId, "admin")
-      const link = db.prepare(`SELECT * FROM local_host_links WHERE workspace_id = ? AND host_id = ?`)
-        .get(args.workspaceId, args.hostId) as HostLinkRow | undefined
-      if (!link || link.revoked_at) throw new Error("Local Host Link not found")
-      if (!link.public_key) throw new Error("Host attestation required")
-      await verifyHostSignature({
-        public_key: link.public_key,
-        payload: heartbeatPayload({
-          workspace_id: args.workspaceId,
-          host_id: args.hostId,
-          ttl_ms: args.ttlMs,
-        }),
-        signature: args.signature,
-      })
-      const now = Date.now()
-      const expiresAt = now + ttl(args.ttlMs)
-      db.prepare(`
-        UPDATE local_host_links SET last_seen_at = ?, expires_at = ?, updated_at = ?
-        WHERE workspace_id = ? AND host_id = ?
-      `).run(now, expiresAt, now, args.workspaceId, args.hostId)
-      return {
-        host_id: args.hostId,
-        workspace_id: args.workspaceId,
-        home_region: workspace.home_region ?? undefined,
-        expires_at: expiresAt,
-        paused: !!link.paused_at,
-      }
-    },
-    async pauseLocalHostLink(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      requireWorkspace(db, who, args.workspaceId, "admin")
-      const now = Date.now()
-      const result = args.hostId
-        ? db.prepare(`
-            UPDATE local_host_links SET paused_at = ?, paused_by = ?, paused_reason = ?, updated_at = ?
-            WHERE workspace_id = ? AND host_id = ?
-          `).run(args.paused ? now : null, args.paused ? "user" : null, args.paused ? "user_paused" : null, now, args.workspaceId, args.hostId)
-        : db.prepare(`
-            UPDATE local_host_links SET paused_at = ?, paused_by = ?, paused_reason = ?, updated_at = ?
-            WHERE workspace_id = ?
-          `).run(args.paused ? now : null, args.paused ? "user" : null, args.paused ? "user_paused" : null, now, args.workspaceId)
-      return {
-        workspace_id: args.workspaceId,
-        paused: args.paused,
-        count: result.changes,
-      }
-    },
-    async activeLocalHostLink(auth: SignedControlPlaneAuth, args) {
-      const db = database()
-      const who = user(auth)
-      const workspace = workspaceByPublicId(db, args.workspaceId)
-      if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) return { active: false as const }
-      const link = db.prepare(`
-        SELECT * FROM local_host_links
-        WHERE workspace_id = ? AND revoked_at IS NULL AND paused_at IS NULL AND expires_at > ?
-        ORDER BY last_seen_at DESC LIMIT 1
-      `).get(args.workspaceId, Date.now()) as HostLinkRow | undefined
-      if (!link) return { active: false as const }
-      return {
-        active: true as const,
-        host_id: link.host_id,
-        workspace_id: args.workspaceId,
-        ...(link.display_name ? { display_name: link.display_name } : {}),
-        ...(link.second_device_open_at ? { second_device_open_at: link.second_device_open_at } : {}),
-        expires_at: link.expires_at,
-        last_seen_at: link.last_seen_at,
-      }
-    },
     async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)

@@ -179,71 +179,21 @@ export type WorkspaceAuthority = {
       homeRegion?: string
     },
   ) => Promise<unknown>
-  createLocalHostLinkChallenge: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-    },
-  ) => Promise<{ challenge_id: string; nonce: string; expires_at: number }>
-  registerLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-      publicKey: string
-      challengeId: string
-      signature: string
-      displayName?: string
-      ttlMs?: number
-      orgId?: string
-      projectId?: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) => Promise<unknown>
-  heartbeatLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-      signature: string
-      ttlMs?: number
-    },
-  ) => Promise<unknown>
-  pauseLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId?: string
-      paused: boolean
-    },
-  ) => Promise<unknown>
-  activeLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string },
-  ) => Promise<
-    | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
-    | { active: false }
-  >
   // --- machine-wide enrollment (Unit 6) ------------------------------------
   //
-  // The same four verbs as the local-host-link methods above, with the
-  // workspace removed from every one of them. That absence IS the feature: a
-  // laptop is enrolled once, and which workspaces a session may reach is
-  // decided at request time from the workspace tables rather than frozen into a
+  // Enrollment carries no workspace, and that absence IS the feature: a laptop
+  // is enrolled once, and which workspaces a session may reach is decided at
+  // request time from the workspace tables rather than frozen into a
   // registration row per project.
   //
-  // Optional on the port while both authorities are being built out; Unit 6's
-  // hard cut removes the legacy methods and makes these required.
-  createHostEnrollmentRequest?: (
+  // Required on the port. Unit 6's hard cut removed the per-workspace
+  // "local host link" methods these replaced, so every authority implements
+  // this grain and no call site needs an absence check.
+  createHostEnrollmentRequest: (
     auth: SignedControlPlaneAuth,
     args: { hostId: string },
   ) => Promise<{ request_id: string; nonce: string; expires_at: number }>
-  enrollHost?: (
+  enrollHost: (
     auth: SignedControlPlaneAuth,
     args: {
       hostId: string
@@ -254,7 +204,7 @@ export type WorkspaceAuthority = {
       ttlMs?: number
     },
   ) => Promise<HostEnrollment>
-  heartbeatHostEnrollment?: (
+  heartbeatHostEnrollment: (
     auth: SignedControlPlaneAuth,
     args: {
       hostId: string
@@ -274,11 +224,11 @@ export type WorkspaceAuthority = {
     /** Owner assignments for this host, for client-side set reconciliation. */
     assigned_workspace_ids: string[]
   }>
-  pauseHostEnrollment?: (
+  pauseHostEnrollment: (
     auth: SignedControlPlaneAuth,
     args: { hostId?: string; paused: boolean },
   ) => Promise<{ paused: boolean }>
-  activeHostEnrollment?: (
+  activeHostEnrollment: (
     auth: SignedControlPlaneAuth,
     args?: Record<string, never>,
   ) => Promise<HostEnrollmentState>
@@ -289,7 +239,7 @@ export type WorkspaceAuthority = {
    * acked set). Cold-registers the workspace row when it does not exist yet,
    * exactly as the retired per-workspace registration did.
    */
-  assignWorkspaceHost?: (
+  assignWorkspaceHost: (
     auth: SignedControlPlaneAuth,
     args: {
       workspaceId: string
@@ -304,16 +254,16 @@ export type WorkspaceAuthority = {
       homeRegion?: string
     },
   ) => Promise<{ assigned: true; workspace_id: string; host_id: string }>
-  unassignWorkspaceHost?: (
+  unassignWorkspaceHost: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<{ unassigned: boolean }>
   /**
    * The routable host for a workspace: owner-assigned AND inside the host's
-   * last-acked served set AND the enrollment lease is live. The successor of
-   * `activeLocalHostLink` for every read-side consumer.
+   * last-acked served set AND the enrollment lease is live. The single
+   * read-side routing question every consumer asks.
    */
-  activeWorkspaceHost?: (
+  activeWorkspaceHost: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<
@@ -321,7 +271,7 @@ export type WorkspaceAuthority = {
     | { active: false }
   >
   /** Every live assignment on the account, grouped for the devices surface. */
-  listHostAssignments?: (
+  listHostAssignments: (
     auth: SignedControlPlaneAuth,
   ) => Promise<Array<{
     host_id: string
@@ -331,7 +281,7 @@ export type WorkspaceAuthority = {
     workspace_ids: string[]
     acked_workspace_ids: string[]
   }>>
-  markSecondDeviceOpen?: (
+  markSecondDeviceOpen: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<{ recorded: boolean; second_device_open_at: number }>

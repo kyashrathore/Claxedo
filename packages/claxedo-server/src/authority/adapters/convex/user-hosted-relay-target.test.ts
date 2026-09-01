@@ -9,7 +9,7 @@ vi.mock("convex/browser", () => ({
 }))
 
 vi.mock("convex/server", () => ({
-  anyApi: { localHostLinks: { activeForRelay: {} } },
+  anyApi: { hostEnrollments: { activeWorkspaceHostForRelay: {} } },
 }))
 
 const { createUserHostedTargetResolver } = await import("./user-hosted-relay-target")

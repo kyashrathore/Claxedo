@@ -9,11 +9,6 @@ import type {
 } from "@claxedo/server-core/platform/auth/authority"
 
 export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
-  "createLocalHostLinkChallenge",
-  "registerLocalHostLink",
-  "heartbeatLocalHostLink",
-  "pauseLocalHostLink",
-  "activeLocalHostLink",
   "createHostEnrollmentRequest",
   "enrollHost",
   "heartbeatHostEnrollment",
@@ -33,7 +28,7 @@ export type D1HostAccessAuthorityPort = Pick<WorkspaceAuthority, (typeof D1_HOST
 export type D1HostAccessAuthorityOptions = {
   deploymentId: string
   now?: () => number
-  randomId?: (prefix: "challenge" | "request" | "enrollment" | "grant" | "assert") => string
+  randomId?: (prefix: "request" | "enrollment" | "grant" | "assert") => string
   randomNonce?: () => string
   registerLocalForSharing?: WorkspaceAuthority["registerLocalForSharing"]
 }
@@ -57,37 +52,6 @@ type WorkspaceRow = {
   access: "user-hosted" | "cloud"
   home_region: string | null
   role_rank: number
-}
-
-type HostChallengeRow = {
-  challenge_id: string
-  workspace_id: string
-  owner_user_id: string
-  owner_actor_id: string
-  host_id: string
-  nonce: string
-  expires_at: number
-  used_at: number | null
-  used_signature_hash: string | null
-}
-
-type HostLinkRow = {
-  workspace_id: string
-  org_id: string
-  project_id: string
-  host_id: string
-  owner_user_id: string
-  owner_actor_id: string
-  public_key_json: string
-  display_name: string | null
-  last_seen_at: number
-  expires_at: number
-  paused_at: number | null
-  revoked_at: number | null
-  second_device_open_at: number | null
-  last_signature_hash: string | null
-  created_at: number
-  updated_at: number
 }
 
 type EnrollmentRequestRow = {
@@ -188,270 +152,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     this.now = options.now ?? Date.now
     this.randomId = options.randomId ?? ((prefix) => `${prefix}_${randomBase64Url(16)}`)
     this.randomNonce = options.randomNonce ?? (() => randomBase64Url(32))
-  }
-
-  async createLocalHostLinkChallenge(
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string; hostId: string },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = requireText(args.hostId, "hostId")
-    const existing = await this.workspace(workspaceId)
-    if (existing) requireLocalWorkspace(await this.requireWorkspaceAccess(who, workspaceId, "admin"))
-    const challengeId = this.randomId("challenge")
-    const nonce = this.randomNonce()
-    const now = this.now()
-    const expiresAt = now + CHALLENGE_TTL_MS
-    await this.database.batch([
-      this.expiredRowSweep("host_attestation_challenges", "challenge_id", now),
-      this.database.prepare(`
-        insert into host_attestation_challenges (
-          challenge_id, workspace_id, owner_user_id, owner_actor_id,
-          host_id, nonce, expires_at, used_at, used_signature_hash, created_at
-        )
-        values (?, ?, ?, ?, ?, ?, ?, null, null, ?)
-      `).bind(
-        challengeId,
-        workspaceId,
-        who.userId,
-        who.actorId,
-        hostId,
-        nonce,
-        expiresAt,
-        now,
-      ),
-    ])
-    const created = await this.challenge(challengeId)
-    if (!created) throw denied()
-    return { challenge_id: challengeId, nonce, expires_at: expiresAt }
-  }
-
-  async registerLocalHostLink(
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-      publicKey: string
-      challengeId: string
-      signature: string
-      displayName?: string
-      ttlMs?: number
-      orgId?: string
-      projectId?: string
-      repoUrl?: string
-      repoName?: string
-      gitBranch?: string
-      remoteDirectory?: string
-      homeRegion?: string
-    },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = requireText(args.hostId, "hostId")
-    const challengeId = requireText(args.challengeId, "challengeId")
-    const displayName = optionalText(args.displayName, "displayName", 200)
-    const ttlMs = normalizedTtl(args.ttlMs)
-    const challenge = await this.challenge(challengeId)
-    const now = this.now()
-    if (
-      !challenge || challenge.workspace_id !== workspaceId || challenge.host_id !== hostId
-      || challenge.owner_user_id !== who.userId || challenge.owner_actor_id !== who.actorId
-      || challenge.used_at !== null || challenge.expires_at <= now
-    ) throw new D1HostAccessAuthorityError("host_attestation_denied", "Invalid local host attestation challenge")
-    const publicKey = await verifiedPublicKey(args.publicKey)
-    const signatureHash = await verifyHostSignature({
-      publicKey,
-      signature: args.signature,
-      payload: localHostRegistrationPayload({
-        workspaceId,
-        hostId,
-        challengeId,
-        nonce: challenge.nonce,
-      }),
-    })
-    let workspace = await this.workspace(workspaceId)
-    if (workspace) {
-      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-      requireLocalWorkspace(workspace)
-    } else {
-      if (!this.options.registerLocalForSharing) throw denied("Cold local workspace registration is unavailable")
-      await this.options.registerLocalForSharing(auth, {
-        workspaceId,
-        displayName: displayName ?? workspaceId,
-        ...(args.orgId ? { orgId: args.orgId } : {}),
-        ...(args.projectId ? { projectId: args.projectId } : {}),
-        ...(args.repoUrl ? { repoUrl: args.repoUrl } : {}),
-        ...(args.repoName ? { repoName: args.repoName } : {}),
-        ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
-        ...(args.remoteDirectory ? { remoteDirectory: args.remoteDirectory } : {}),
-        ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
-      })
-      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-      requireLocalWorkspace(workspace)
-    }
-    const expiresAt = now + ttlMs
-    const assertionId = this.randomId("assert")
-    await this.guardedBatch([
-      this.signatureUse(signatureHash, "local-register", who.actorId, workspaceId, hostId, now),
-      this.database.prepare(`
-        update host_attestation_challenges
-        set used_at = ?, used_signature_hash = ?
-        where challenge_id = ? and workspace_id = ? and owner_actor_id = ? and host_id = ?
-          and used_at is null and expires_at > ?
-      `).bind(now, signatureHash, challengeId, workspaceId, who.actorId, hostId, now),
-      this.database.prepare(`
-        insert into local_host_links (
-          workspace_id, org_id, project_id, host_id, owner_user_id, owner_actor_id,
-          public_key_json, display_name, last_seen_at, expires_at, paused_at, revoked_at,
-          second_device_open_at, last_signature_hash, created_at, updated_at
-        )
-        select challenge.workspace_id, workspace.org_id, workspace.project_id, challenge.host_id,
-          challenge.owner_user_id, challenge.owner_actor_id, ?, ?, ?, ?, null, null, null, ?, ?, ?
-        from host_attestation_challenges challenge
-        join workspaces workspace
-          on workspace.workspace_id = challenge.workspace_id and workspace.deleted_at is null
-        where challenge.challenge_id = ? and challenge.used_signature_hash = ?
-          and workspace.backing = 'local-worktree' and workspace.access = 'user-hosted'
-        on conflict (workspace_id, host_id) do update set
-          public_key_json = excluded.public_key_json,
-          display_name = excluded.display_name,
-          last_seen_at = excluded.last_seen_at,
-          expires_at = excluded.expires_at,
-          paused_at = null,
-          revoked_at = null,
-          last_signature_hash = excluded.last_signature_hash,
-          updated_at = excluded.updated_at
-      `).bind(
-        publicKey,
-        displayName ?? null,
-        now,
-        expiresAt,
-        signatureHash,
-        now,
-        now,
-        challengeId,
-        signatureHash,
-      ),
-      this.database.prepare(`
-        ${workspaceAccessCte(3)}
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from local_host_links link
-          join authorized_workspace workspace on workspace.workspace_id = link.workspace_id
-          where link.workspace_id = ? and link.host_id = ? and link.owner_actor_id = ?
-            and link.last_signature_hash = ? and link.revoked_at is null and link.paused_at is null
-        ) then 1 else 0 end)
-      `).bind(who.actorId, workspaceId, assertionId, workspaceId, hostId, who.actorId, signatureHash),
-      this.deleteAssertion(assertionId),
-    ], "Local host registration raced with an authority change")
-    return {
-      host_id: hostId,
-      workspace_id: workspaceId,
-      ...(workspace.home_region ? { home_region: workspace.home_region } : {}),
-      expires_at: expiresAt,
-      paused: false,
-    }
-  }
-
-  async heartbeatLocalHostLink(
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string; hostId: string; signature: string; ttlMs?: number },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = requireText(args.hostId, "hostId")
-    const ttlMs = normalizedTtl(args.ttlMs)
-    const workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
-    requireLocalWorkspace(workspace)
-    const link = await this.localHostLink(workspaceId, hostId)
-    if (!link || link.revoked_at !== null) throw new D1HostAccessAuthorityError("host_attestation_denied", "Local host link is unavailable")
-    const signatureHash = await verifyHostSignature({
-      publicKey: link.public_key_json,
-      signature: args.signature,
-      payload: localHostHeartbeatPayload({ workspaceId, hostId, ttlMs: args.ttlMs }),
-    })
-    const now = this.now()
-    const expiresAt = now + ttlMs
-    const assertionId = this.randomId("assert")
-    await this.guardedBatch([
-      this.signatureUse(signatureHash, "local-heartbeat", who.actorId, workspaceId, hostId, now),
-      this.database.prepare(`
-        ${workspaceAccessCte(3)}
-        update local_host_links set
-          last_seen_at = ?, expires_at = ?, last_signature_hash = ?, updated_at = ?
-        where workspace_id = ? and host_id = ? and revoked_at is null
-          and exists (select 1 from authorized_workspace)
-      `).bind(who.actorId, workspaceId, now, expiresAt, signatureHash, now, workspaceId, hostId),
-      this.database.prepare(`
-        insert into authority_batch_assertions (assertion_id, passed)
-        values (?, case when exists (
-          select 1 from local_host_links
-          where workspace_id = ? and host_id = ? and revoked_at is null
-            and last_seen_at = ? and expires_at = ? and last_signature_hash = ?
-        ) then 1 else 0 end)
-      `).bind(assertionId, workspaceId, hostId, now, expiresAt, signatureHash),
-      this.deleteAssertion(assertionId),
-    ], "Local host heartbeat raced with an authority change")
-    return {
-      host_id: hostId,
-      workspace_id: workspaceId,
-      ...(workspace.home_region ? { home_region: workspace.home_region } : {}),
-      expires_at: expiresAt,
-      paused: link.paused_at !== null,
-    }
-  }
-
-  async pauseLocalHostLink(
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string; hostId?: string; paused: boolean },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = optionalText(args.hostId, "hostId")
-    await this.requireWorkspaceAccess(who, workspaceId, "admin")
-    const now = this.now()
-    const result = await this.database.prepare(`
-      ${workspaceAccessCte(3)}
-      update local_host_links set paused_at = ?, updated_at = ?
-      where workspace_id = ? and (? is null or host_id = ?) and revoked_at is null
-        and exists (select 1 from authorized_workspace)
-    `).bind(
-      who.actorId,
-      workspaceId,
-      args.paused ? now : null,
-      now,
-      workspaceId,
-      hostId ?? null,
-      hostId ?? null,
-    ).run()
-    return { workspace_id: workspaceId, paused: args.paused, count: changes(result) }
-  }
-
-  async activeLocalHostLink(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    try {
-      await this.requireWorkspaceAccess(who, workspaceId, "read")
-    } catch (error) {
-      if (isDenied(error)) return { active: false as const }
-      throw error
-    }
-    const row = await this.database.prepare(`
-      select * from local_host_links
-      where workspace_id = ? and revoked_at is null and paused_at is null and expires_at > ?
-      order by last_seen_at desc, host_id limit 1
-    `).bind(workspaceId, this.now()).first<HostLinkRow>()
-    if (!row) return { active: false as const }
-    return {
-      active: true as const,
-      host_id: row.host_id,
-      workspace_id: row.workspace_id,
-      ...(row.display_name ? { display_name: row.display_name } : {}),
-      ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
-      expires_at: row.expires_at,
-      last_seen_at: row.last_seen_at,
-    }
   }
 
   async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
@@ -629,48 +329,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     return [...groups.values()]
   }
 
-  async revokeLocalHostLink(
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string; hostId?: string },
-  ) {
-    const who = await this.requirePrincipal(auth)
-    const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const hostId = optionalText(args.hostId, "hostId")
-    await this.requireWorkspaceAccess(who, workspaceId, "admin")
-    const now = this.now()
-    const results = await this.database.batch([
-      this.database.prepare(`
-        ${workspaceAccessCte(3)}
-        update local_host_links set revoked_at = ?, updated_at = ?
-        where workspace_id = ? and (? is null or host_id = ?) and revoked_at is null
-          and exists (select 1 from authorized_workspace)
-      `).bind(who.actorId, workspaceId, now, now, workspaceId, hostId ?? null, hostId ?? null),
-      this.database.prepare(`
-        ${workspaceAccessCte(3)}
-        update runtime_access_tokens set revoked_at = ?
-        where workspace_id = ? and (? is null or host_id = ?) and revoked_at is null
-          and exists (select 1 from authorized_workspace)
-          and exists (
-            select 1 from local_host_links link
-            where link.workspace_id = ? and (? is null or link.host_id = ?)
-              and link.revoked_at = ?
-          )
-      `).bind(
-        who.actorId,
-        workspaceId,
-        now,
-        workspaceId,
-        hostId ?? null,
-        hostId ?? null,
-        workspaceId,
-        hostId ?? null,
-        hostId ?? null,
-        now,
-      ),
-    ])
-    return { revoked: changes(results[0]!), runtime_tokens_revoked: changes(results[1]!) }
-  }
-
   async createHostEnrollmentRequest(auth: SignedControlPlaneAuth, args: { hostId: string }) {
     const who = await this.requirePrincipal(auth)
     const hostId = requireText(args.hostId, "hostId")
@@ -721,7 +379,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const enrollmentId = this.randomId("enrollment")
     const assertionId = this.randomId("assert")
     await this.guardedBatch([
-      this.signatureUse(signatureHash, "host-enroll", who.actorId, null, hostId, now),
+      this.signatureUse(signatureHash, "host-enroll", who.actorId, hostId, now),
       this.database.prepare(`
         update host_enrollment_requests
         set used_at = ?, used_signature_hash = ?, expires_at = ?
@@ -806,7 +464,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const expiresAt = now + normalizedTtl(args.ttlMs)
     const assertionId = this.randomId("assert")
     await this.guardedBatch([
-      this.signatureUse(signatureHash, "host-heartbeat", who.actorId, null, hostId, now),
+      this.signatureUse(signatureHash, "host-heartbeat", who.actorId, hostId, now),
       this.database.prepare(`
         update host_enrollments set
           last_seen_at = ?, expires_at = ?, last_signature_hash = ?, updated_at = ?,
@@ -1218,16 +876,6 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     `).bind(workspaceId, target.kind, target.id).first<ShareGrantRow>()
   }
 
-  private async challenge(challengeId: string) {
-    return await this.database.prepare(`select * from host_attestation_challenges where challenge_id = ?`)
-      .bind(challengeId).first<HostChallengeRow>()
-  }
-
-  private async localHostLink(workspaceId: string, hostId: string) {
-    return await this.database.prepare(`select * from local_host_links where workspace_id = ? and host_id = ?`)
-      .bind(workspaceId, hostId).first<HostLinkRow>()
-  }
-
   private async enrollmentRequest(requestId: string) {
     return await this.database.prepare(`select * from host_enrollment_requests where request_id = ?`)
       .bind(requestId).first<EnrollmentRequestRow>()
@@ -1243,26 +891,32 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       .bind(grantId).first<ShareGrantRow>()
   }
 
+  /**
+   * Replay guard for one machine signature.
+   *
+   * `workspace_id` is always null: enrollment is machine-wide, so no signature
+   * this authority verifies is scoped to a workspace. The column stays because
+   * it holds historical rows from the retired per-workspace flow.
+   */
   private signatureUse(
     signatureHash: string,
-    domain: "local-register" | "local-heartbeat" | "host-enroll" | "host-heartbeat",
+    domain: "host-enroll" | "host-heartbeat",
     actorId: string,
-    workspaceId: string | null,
     hostId: string,
     now: number,
   ) {
     return this.database.prepare(`
       insert into host_signature_uses (
         signature_hash, signature_domain, actor_id, workspace_id, host_id, used_at
-      ) values (?, ?, ?, ?, ?, ?)
-    `).bind(signatureHash, domain, actorId, workspaceId, hostId, now)
+      ) values (?, ?, ?, null, ?, ?)
+    `).bind(signatureHash, domain, actorId, hostId, now)
   }
 
   private deleteAssertion(assertionId: string) {
     return this.database.prepare(`delete from authority_batch_assertions where assertion_id = ?`).bind(assertionId)
   }
 
-  private expiredRowSweep(table: "host_attestation_challenges" | "host_enrollment_requests", id: string, now: number) {
+  private expiredRowSweep(table: "host_enrollment_requests", id: string, now: number) {
     return this.database.prepare(`
       delete from ${table} where ${id} in (
         select ${id} from ${table} where expires_at <= ? order by expires_at limit ?
@@ -1321,30 +975,6 @@ function workspaceAccessCte(rank: 1 | 3) {
     group by workspace.workspace_id
     having role_rank >= ${rank}
   )`
-}
-
-export function localHostRegistrationPayload(input: {
-  workspaceId: string
-  hostId: string
-  challengeId: string
-  nonce: string
-}) {
-  return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
-    `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
-export function localHostHeartbeatPayload(input: { workspaceId: string; hostId: string; ttlMs?: number }) {
-  return [
-    "claxedo.local-host-link.heartbeat.v1",
-    `workspace_id=${input.workspaceId}`,
-    `host_id=${input.hostId}`,
-    `ttl_ms=${input.ttlMs ?? ""}`,
-  ].join("\n")
 }
 
 export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {

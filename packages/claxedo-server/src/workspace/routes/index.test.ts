@@ -254,36 +254,23 @@ function services(): ControlPlaneServices {
         },
       })),
       listWorkspaces: vi.fn(async () => [{ workspace_id: "ws_1", role: "owner" }]),
-      createLocalHostLinkChallenge: vi.fn(async () => ({
-        challenge_id: "challenge_1",
-        nonce: "nonce_1",
-        expires_at: 60_000,
-      })),
       registerLocalForSharing: vi.fn(async () => ({})),
-      registerLocalHostLink: vi.fn(async (_auth, input: { workspaceId: string; hostId: string }) => ({
+      createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "nonce_1", expires_at: 60_000 })),
+      enrollHost: vi.fn(async (_auth, input: { hostId: string }) => ({
+        enrollment_id: "enr_1",
         host_id: input.hostId,
-        workspace_id: "ws_local",
-        expires_at: 60_000,
-        paused: false,
-      })),
-      heartbeatLocalHostLink: vi.fn(async (_auth, input: { workspaceId: string; hostId: string }) => ({
-        host_id: input.hostId,
-        workspace_id: "ws_local",
-        expires_at: 120_000,
-        paused: false,
-      })),
-      pauseLocalHostLink: vi.fn(async () => ({
-        workspace_id: "ws_local",
-        paused: true,
-        count: 1,
-      })),
-      activeLocalHostLink: vi.fn(async () => ({
-        active: true,
-        host_id: "host_1",
-        workspace_id: "ws_1",
         expires_at: 60_000,
         last_seen_at: 1,
+        created_at: 1,
       })),
+      heartbeatHostEnrollment: vi.fn(async () => ({
+        expires_at: 120_000,
+        last_seen_at: 1,
+        assigned_workspace_ids: [] as string[],
+      })),
+      pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
+      activeHostEnrollment: vi.fn(async () => ({ active: false as const, reason: "not-enrolled" as const })),
+      markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 1 })),
       activeWorkspaceHost: vi.fn(async () => ({
         active: true,
         host_id: "host_1",
@@ -2363,7 +2350,7 @@ describe("workspace routes signed control plane authority", () => {
       role: "editor",
       jti: "jti_user_hosted",
       expiresAt: 789_000,
-      localHostLinkExpiresAt: 60_000,
+      hostLeaseExpiresAt: 60_000,
       relayRoom: "ws_shared",
       relayUrl: "https://relay.example.test",
     })
@@ -2517,7 +2504,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
     expect(svc.authority?.auditDeny).toHaveBeenCalledWith(expect.objectContaining({ token: "user_2" }), {
       action: "runtime_access_token.denied",
-      reason: "local_host_link_unavailable",
+      reason: "workspace_host_unavailable",
       workspaceId: "ws_shared",
     })
   })

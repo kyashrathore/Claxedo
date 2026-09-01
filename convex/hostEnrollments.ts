@@ -17,11 +17,11 @@ import { registerLocalForSharingAs } from "./workspaces"
 /**
  * Machine-wide remote access.
  *
- * `localHostLinks.ts` does the same four things per WORKSPACE. This does them
- * per MACHINE, and every difference between the enrollment verbs and that file
- * is the removal of workspace handling: no ownership check against a workspace
- * doc, no cloud-workspace refusal, and — the one that matters — no implicit
- * workspace insert. Enrolling a laptop creates nothing to own.
+ * The retired per-workspace host-link module did these four things per
+ * WORKSPACE. This does them per MACHINE, and every difference is the removal
+ * of workspace handling: no ownership check against a workspace doc, no
+ * cloud-workspace refusal, and — the one that matters — no implicit workspace
+ * insert. Enrolling a laptop creates nothing to own.
  *
  * Workspaces re-enter at the ASSIGNMENT grain (`host_workspace_assignments`):
  * the owner's declaration that host H serves workspace X. An assignment
@@ -29,10 +29,9 @@ import { registerLocalForSharingAs } from "./workspaces"
  * machine here", the machine's consent set is acked by the heartbeat's v2
  * signature and stored on the enrollment doc, and routing requires all three.
  *
- * Unit 6's hard cut replaces that file with this one. Until the cutover runbook
- * runs, both exist; `docs/tech-docs/host-enrollment-hard-cut-runbook.md` is the
- * only supported way to retire the old one, and there is deliberately no
- * compatibility mode reading both.
+ * The hard cut removed the per-workspace module entirely — there is no
+ * compatibility mode reading both, because two writers to one access decision
+ * is how a session gets admitted while the other side believes it is paused.
  */
 
 const DEFAULT_TTL_MS = 60_000
@@ -91,8 +90,8 @@ function base64urlBytes(input: string) {
 /**
  * Signed payloads carry their own domain prefix.
  *
- * Distinct from `claxedo.local-host-link.*`: a signature captured from one flow
- * must not be replayable in the other, and the prefix is what prevents it.
+ * A signature captured from one flow must not be replayable in another, and
+ * the domain prefix is what prevents it.
  */
 function enrollmentPayload(input: { host_id: string; request_id: string; nonce: string }) {
   return [
@@ -555,7 +554,7 @@ export const active = authedQuery({
 })
 
 // Service variants: Hosted Server calls these on behalf of a user it has
-// already authenticated, exactly as the local-host-link module does.
+// already authenticated.
 export const createRequestForService = serviceMutation({
   args: { user: serviceUser, ...hostId },
   handler: async (ctx, args) => createRequestForUser(ctx, await upsertServiceUser(ctx, args.user), args),
@@ -687,6 +686,37 @@ export const sweepExpired = cronMutation({
       .take(limit)
     for (const doc of stale) await ctx.db.delete(doc._id)
     return { swept: stale.length }
+  },
+})
+
+/**
+ * Service-authenticated routing lookup for the internal relay resolver.
+ *
+ * The hosted relay resolver calls in with the control-plane service token and
+ * no end-user identity, so it cannot use `activeWorkspaceHost` above (which
+ * requires a signed workspace read). It answers the same question and applies
+ * the same three conditions — owner-assigned AND inside the machine's
+ * heartbeat-acked served set AND a live enrollment lease — and rechecks the
+ * authoritative workspace posture in the same call, matching
+ * `authority/adapters/d1/user-hosted-relay-target.ts` semantics.
+ */
+export const activeWorkspaceHostForRelay = serviceQuery({
+  args: { workspace_id: v.string() },
+  handler: async (ctx, args) => {
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (
+      !workspace
+      || workspace.deleted_at
+      || workspace.access !== "user-hosted"
+      || workspace.backing !== "local-worktree"
+    ) {
+      return { active: false as const }
+    }
+    const org = workspace.org_id ? await ctx.db.get(workspace.org_id) : undefined
+    if (!org || (org as { deleted_at?: number }).deleted_at) return { active: false as const }
+    const row = await activeWorkspaceHostRow(ctx, args.workspace_id)
+    if (!row.active) return { active: false as const }
+    return { active: true as const, host_id: row.host_id, backing: workspace.backing }
   },
 })
 

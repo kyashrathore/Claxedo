@@ -77,13 +77,13 @@ function recorder() {
 }
 
 async function driveEveryMethod(authority: ReturnType<typeof recorder>["authority"], auth: SignedControlPlaneAuth) {
-  await authority.createHostEnrollmentRequest!(auth, { hostId: "host_1" })
-  await authority.enrollHost!(auth, { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })
-  await authority.heartbeatHostEnrollment!(auth, { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
-  await authority.pauseHostEnrollment!(auth, { hostId: "host_1", paused: true })
-  await authority.activeHostEnrollment!(auth)
-  await authority.assignWorkspaceHost!(auth, { workspaceId: "ws_1", hostId: "host_1" })
-  await authority.unassignWorkspaceHost!(auth, { workspaceId: "ws_1" })
+  await authority.createHostEnrollmentRequest(auth, { hostId: "host_1" })
+  await authority.enrollHost(auth, { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })
+  await authority.heartbeatHostEnrollment(auth, { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
+  await authority.pauseHostEnrollment(auth, { hostId: "host_1", paused: true })
+  await authority.activeHostEnrollment(auth)
+  await authority.assignWorkspaceHost(auth, { workspaceId: "ws_1", hostId: "host_1" })
+  await authority.unassignWorkspaceHost(auth, { workspaceId: "ws_1" })
 }
 
 describe("enrollment routes a Clerk bearer to the authed Convex functions", () => {
@@ -115,7 +115,7 @@ describe("enrollment routes a Clerk bearer to the authed Convex functions", () =
   test("the heartbeat body carries the served set the v2 signature covers", async () => {
     const { calls, authority } = recorder()
 
-    await authority.heartbeatHostEnrollment!(clerkAuth, {
+    await authority.heartbeatHostEnrollment(clerkAuth, {
       hostId: "host_1",
       signature: "sig",
       workspaceIds: ["ws_b", "ws_a"],
@@ -127,8 +127,8 @@ describe("enrollment routes a Clerk bearer to the authed Convex functions", () =
   test("assignment reads use the caller's own bearer", async () => {
     const { calls, authority } = recorder()
 
-    await authority.activeWorkspaceHost!(clerkAuth, { workspaceId: "ws_1" })
-    await authority.listHostAssignments!(clerkAuth)
+    await authority.activeWorkspaceHost(clerkAuth, { workspaceId: "ws_1" })
+    await authority.listHostAssignments(clerkAuth)
 
     expect(calls.map((call) => call.fn)).toEqual([
       "hostEnrollments:activeWorkspaceHost",
@@ -279,6 +279,6 @@ describe("pause returns the port's shape, not Convex's", () => {
       },
     })
 
-    await expect(authority.pauseHostEnrollment!(clerkAuth, { paused: true })).resolves.toEqual({ paused: true })
+    await expect(authority.pauseHostEnrollment(clerkAuth, { paused: true })).resolves.toEqual({ paused: true })
   })
 })

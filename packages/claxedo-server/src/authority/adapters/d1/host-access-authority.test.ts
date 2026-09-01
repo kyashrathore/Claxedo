@@ -10,8 +10,6 @@ import {
   D1HostAccessAuthority,
   hostEnrollmentHeartbeatPayloadV2,
   hostEnrollmentPayload,
-  localHostHeartbeatPayload,
-  localHostRegistrationPayload,
 } from "./host-access-authority"
 
 const MIGRATIONS = [
@@ -22,6 +20,7 @@ const MIGRATIONS = [
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
   "0014_host_workspace_assignments.sql",
+  "0015_drop_local_host_links.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -220,44 +219,36 @@ describe("D1 host access and workspace sharing authority", () => {
     `).first()).toEqual({ name: "workspace_direct_memberships_by_user" })
   })
 
-  test("creates a cold user-hosted workspace only after a valid host challenge signature", async () => {
+  test("cold-registers a user-hosted workspace the first time an owner assigns it to an enrolled host", async () => {
     const input = await setup()
     const alice = await signed(input.workspace, "cold-owner")
     const key = await hostKey()
-    const challenge = await input.hostAccess.createLocalHostLinkChallenge(alice, {
-      workspaceId: "ws_cold",
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "host-cold" })
+    await input.hostAccess.enrollHost(alice, {
       hostId: "host-cold",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(hostEnrollmentPayload({
+        hostId: "host-cold",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      })),
     })
 
+    // Enrolling a machine creates nothing to own: the workspace row appears
+    // only when the owner assigns the workspace to it.
     expect(await input.database.prepare(
       "select 1 from workspaces where workspace_id = 'ws_cold'",
     ).first()).toBeNull()
 
-    const signature = await key.sign(localHostRegistrationPayload({
+    await expect(input.hostAccess.assignWorkspaceHost(alice, {
       workspaceId: "ws_cold",
       hostId: "host-cold",
-      challengeId: challenge.challenge_id,
-      nonce: challenge.nonce,
-    }))
-    await expect(input.hostAccess.registerLocalHostLink(alice, {
-      workspaceId: "ws_cold",
-      hostId: "host-cold",
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature,
       displayName: "Cold workspace",
       repoUrl: "https://github.com/acme/cold.git",
       remoteDirectory: "/workspace/cold",
       homeRegion: "apac-south",
-    })).resolves.toMatchObject({ workspace_id: "ws_cold", host_id: "host-cold" })
-
-    await expect(input.workspace.registerLocalForSharing(alice, {
-      workspaceId: "ws_cold",
-      displayName: "Cold workspace",
-      repoUrl: "https://github.com/acme/cold.git",
-      remoteDirectory: "/workspace/cold",
-      homeRegion: "apac-south",
-    })).resolves.toMatchObject({ workspace_id: "ws_cold" })
+    })).resolves.toMatchObject({ assigned: true, workspace_id: "ws_cold", host_id: "host-cold" })
 
     await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_cold" })).resolves.toMatchObject({
       workspace: {
@@ -269,135 +260,17 @@ describe("D1 host access and workspace sharing authority", () => {
         home_region: "apac-south",
       },
     })
-  })
 
-  test("binds local host links to tenant scope and consumes every attestation signature once", async () => {
-    const input = await setup()
-    const { alice, admin, outsider } = await fixture(input)
-    const key = await hostKey()
-
-    await expect(input.hostAccess.createLocalHostLinkChallenge(outsider, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-    })).rejects.toMatchObject({ status: 403 })
-    await expect(input.hostAccess.createLocalHostLinkChallenge(alice, {
-      workspaceId: "ws_cloud",
-      hostId: "host-a",
-    })).rejects.toMatchObject({ code: "resource_conflict" })
-
-    const challenge = await input.hostAccess.createLocalHostLinkChallenge(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-    })
-    const registrationSignature = await key.sign(localHostRegistrationPayload({
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      challengeId: challenge.challenge_id,
-      nonce: challenge.nonce,
-    }))
-    await expect(input.hostAccess.registerLocalHostLink(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-other",
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: registrationSignature,
+    // An assignment against a machine this owner never enrolled is refused,
+    // which is what keeps the cold-registration path from minting workspaces
+    // for an unattested host id.
+    await expect(input.hostAccess.assignWorkspaceHost(alice, {
+      workspaceId: "ws_colder",
+      hostId: "host-unknown",
     })).rejects.toMatchObject({ code: "host_attestation_denied" })
-    await expect(input.hostAccess.registerLocalHostLink(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: registrationSignature,
-      displayName: "Alice laptop",
-      ttlMs: 10_000,
-    })).resolves.toMatchObject({ host_id: "host-a", workspace_id: "ws_local", paused: false })
-    await expect(input.hostAccess.registerLocalHostLink(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      publicKey: key.publicKey,
-      challengeId: challenge.challenge_id,
-      signature: registrationSignature,
-      ttlMs: 10_000,
-    })).rejects.toMatchObject({ code: "host_attestation_denied" })
-
-    expect(await input.hostAccess.activeLocalHostLink(admin, { workspaceId: "ws_local" }))
-      .toMatchObject({ active: true, host_id: "host-a", display_name: "Alice laptop" })
-    const heartbeatSignature = await key.sign(localHostHeartbeatPayload({
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      ttlMs: 10_000,
-    }))
-    await input.hostAccess.heartbeatLocalHostLink(admin, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      signature: heartbeatSignature,
-      ttlMs: 10_000,
-    })
-    await expect(input.hostAccess.heartbeatLocalHostLink(admin, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      signature: heartbeatSignature,
-      ttlMs: 10_000,
-    })).rejects.toMatchObject({ code: "signature_replayed" })
-    await expect(input.hostAccess.heartbeatLocalHostLink(admin, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      signature: malleateP256Signature(heartbeatSignature),
-      ttlMs: 10_000,
-    })).rejects.toMatchObject({ code: "signature_replayed" })
-
-    await input.hostAccess.pauseLocalHostLink(alice, { workspaceId: "ws_local", paused: true })
-    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
-    await input.hostAccess.pauseLocalHostLink(alice, { workspaceId: "ws_local", paused: false })
-    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toMatchObject({ active: true })
-    input.advance(10_001)
-    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
-
-    await input.hostAccess.recordRuntimeAccessToken(alice, {
-      jti: "jti-local-host",
-      workspaceId: "ws_local",
-      hostId: "host-a",
-      expiresAt: 1_800_000_100_000,
-    })
-    expect(await input.hostAccess.revokeLocalHostLink(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-a",
-    })).toMatchObject({ revoked: 1, runtime_tokens_revoked: 1 })
-    expect(await input.hostAccess.activeLocalHostLink(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
-    expect(await input.hostAccess.runtimeAccessTokenActive({
-      jti: "jti-local-host",
-      workspaceId: "ws_local",
-      hostId: "host-a",
-    })).toMatchObject({ active: false, code: "runtime_access_token_revoked" })
-    await expect(input.database.prepare(`
-      update local_host_links set org_id = 'org_other' where workspace_id = 'ws_local' and host_id = 'host-a'
-    `).run()).rejects.toThrow(/local host link scope is immutable/)
-
-    const expiredChallenge = await input.hostAccess.createLocalHostLinkChallenge(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-expired",
-    })
-    const expiredSignature = await key.sign(localHostRegistrationPayload({
-      workspaceId: "ws_local",
-      hostId: "host-expired",
-      challengeId: expiredChallenge.challenge_id,
-      nonce: expiredChallenge.nonce,
-    }))
-    input.advance(60_001)
-    await expect(input.hostAccess.registerLocalHostLink(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-expired",
-      publicKey: key.publicKey,
-      challengeId: expiredChallenge.challenge_id,
-      signature: expiredSignature,
-    })).rejects.toMatchObject({ code: "host_attestation_denied" })
-    await input.hostAccess.createLocalHostLinkChallenge(alice, {
-      workspaceId: "ws_local",
-      hostId: "host-next",
-    })
-    expect(await input.database.prepare(`
-      select 1 from host_attestation_challenges where challenge_id = ?
-    `).bind(expiredChallenge.challenge_id).first()).toBeNull()
+    expect(await input.database.prepare(
+      "select 1 from workspaces where workspace_id = 'ws_colder'",
+    ).first()).toBeNull()
   })
 
   test("routes a workspace through owner assignment AND the machine's acked set on a live lease", async () => {

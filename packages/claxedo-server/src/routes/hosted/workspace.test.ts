@@ -235,14 +235,6 @@ describe("host assignment (POST /:id/host-assignment)", () => {
     expect(await res.json()).toMatchObject({ error: { code: "workspace_authority_unavailable" } })
   })
 
-  test("answers 501 when the composed authority has no assignment support", async () => {
-    const convex = fakeConvexAuthority({ assignWorkspaceHost: undefined })
-    const { app } = buildApp({ authority: convex })
-    const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
-    expect(res.status).toBe(501)
-    expect(await res.json()).toMatchObject({ error: { code: "not_implemented" } })
-  })
-
   test("requires a signed bearer token", async () => {
     const { app, convex } = buildApp({})
     const res = await app.fetch(
@@ -287,14 +279,6 @@ describe("host unassignment (DELETE /:id/host-assignment)", () => {
       expect.anything(),
       expect.objectContaining({ action: "host_workspace_assignment.unassigned", workspaceId: "ws_1" }),
     )
-  })
-
-  test("answers 501 when the composed authority has no assignment support", async () => {
-    const convex = fakeConvexAuthority({ unassignWorkspaceHost: undefined })
-    const { app } = buildApp({ authority: convex })
-    const res = await app.fetch(del("/ws_1/host-assignment"))
-    expect(res.status).toBe(501)
-    expect(await res.json()).toMatchObject({ error: { code: "not_implemented" } })
   })
 
   test("requires a signed bearer token", async () => {

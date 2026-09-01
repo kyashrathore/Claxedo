@@ -20,8 +20,8 @@ import type { ConvexAuthorityInput, ServiceArgs } from "./types"
  * ## authed vs. `ForService`, per call
  *
  * Every method branches on `isCliAccessAuth(auth)`, the same branch
- * `workspaces.ts` makes for local host links, and it is an authorization
- * decision rather than a style one:
+ * `workspaces.ts` makes for its own service variants, and it is an
+ * authorization decision rather than a style one:
  *
  *  - A Clerk-issued bearer is a token CONVEX can verify. Passing it through
  *    (`requireExecutor(input, auth)`) lets `authedMutation` resolve the identity
