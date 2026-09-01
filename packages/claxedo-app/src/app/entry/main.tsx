@@ -34,6 +34,7 @@ import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
 import { hostedServiceContributionLoaders } from "@/app/composition/hosted-contribution-loader"
+import { withStartupTimeout } from "./startup-timeout"
 
 const OAuthConsentPage = lazy(() => import("@/app/routes/oauth-consent"))
 const HostedOAuthConsentRoute = () => (
@@ -215,10 +216,15 @@ const platform: Platform = {
 async function startApp() {
   if (import.meta.env.DEV) console.log("[claxedo:boot]", "start", window.location.href)
   if (config.authEnabled) {
-    await browserAuthAdapter.initialize({
-      apiOrigin: getClaxedoServerUrl(),
-      appOrigin: window.location.origin,
-    })
+    // Bounded: this is the only await between a blank page and `render()`.
+    // See `startup-timeout.ts` for the live hang that made it mandatory.
+    await withStartupTimeout(
+      browserAuthAdapter.initialize({
+        apiOrigin: getClaxedoServerUrl(),
+        appOrigin: window.location.origin,
+      }),
+      "Signing in",
+    )
   }
   // In demo mode, start MSW to mock server responses before rendering
   if (isDemoMode()) {
@@ -418,7 +424,22 @@ function renderStartupFailure(error: unknown) {
   body.style.color = "var(--text-weak)"
   body.style.fontSize = "var(--font-size-small)"
 
-  panel.append(title, body)
+  // A startup failure is usually transient (a stalled response, a dropped
+  // connection). Without this the only way out of the panel is knowing to
+  // reload by hand.
+  const retry = document.createElement("button")
+  retry.textContent = "Try again"
+  retry.style.marginTop = "16px"
+  retry.style.padding = "6px 14px"
+  retry.style.borderRadius = "var(--radius-sm)"
+  retry.style.border = "1px solid var(--border-base)"
+  retry.style.background = "var(--background-element)"
+  retry.style.color = "var(--text-base)"
+  retry.style.font = "inherit"
+  retry.style.cursor = "pointer"
+  retry.addEventListener("click", () => window.location.reload())
+
+  panel.append(title, body, retry)
   root.append(panel)
 }
 
