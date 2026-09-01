@@ -98,6 +98,7 @@ describe("resource-closed hosted core app", () => {
       "/api/claxedo/bootstrap",
       "/api/claxedo/events",
       "/api/control/sessions",
+      "/api/control/session-list",
       "/api/control/orgs",
       "/api/control/orgs/:orgId/teams",
       "/api/control/teams/:teamId/members",
@@ -384,8 +385,8 @@ describe("control-plane root and unrouted paths", () => {
     expect(response.headers.get("content-type")).toContain("application/json")
     expect(await response.json()).toMatchObject({ error: { code: "route_not_found" } })
     // The exact shape that was rendered to a user as a whole web page.
-    expect(await appWith("https://app.example.test").request("/not-a-route").then((r) => r.text()))
-      .not.toBe("404 Not Found")
+    const again = await appWith("https://app.example.test").request("/not-a-route")
+    expect(await again.text()).not.toBe("404 Not Found")
   })
 
   test("still answers JSON at the root when no app origin is configured", async () => {
@@ -409,5 +410,58 @@ describe("coreAppHomeOrigin", () => {
   test("is absent when nothing is configured", () => {
     expect(coreAppHomeOrigin(undefined)).toBeUndefined()
     expect(coreAppHomeOrigin("")).toBeUndefined()
+  })
+})
+
+/**
+ * The rail's paginated read, on the root the deployed worker actually uses.
+ *
+ * Path presence (asserted above) is not enough — the route existed on the Node
+ * roots the whole time and the hosted app still 404'd, because the workerd root
+ * never mounted it. These exercise the wiring: the request reaches the shared
+ * `signedSessionList` and that reaches the authority with the right scope.
+ */
+describe("hosted-core session-list", () => {
+  function core(authority: Record<string, unknown>) {
+    const base = plane()
+    const services = base.services as unknown as { authority: Record<string, unknown> }
+    services.authority = { ...services.authority, ...authority }
+    return createHostedCoreApp(base, options) as unknown as Hono
+  }
+  const signed = { authorization: "Bearer user-1" }
+
+  test("lists a workspace's sessions through the authority", async () => {
+    const listSessions = vi.fn(async () => [])
+    const response = await core({ listSessions }).request(
+      "/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1",
+      { headers: signed },
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("application/json")
+    expect(listSessions).toHaveBeenCalledWith(expect.objectContaining({ mode: "signed" }), { workspaceId: "ws_1" })
+  })
+
+  /**
+   * The sidebar sends a PROJECT id and never a workspace id (rail-sidebar's
+   * ProjectBlock). The read must resolve the project's workspaces itself
+   * rather than 400 — the exact behaviour the canonical route had and the
+   * hosted roots lacked.
+   */
+  test("resolves a project-scoped list to the project's workspaces", async () => {
+    const listWorkspaces = vi.fn(async () => [{ workspace_id: "ws_9", project_id: "prj_1" }])
+    const listSessions = vi.fn(async () => [])
+    const response = await core({ listWorkspaces, listSessions }).request(
+      "/api/control/session-list?scope=project&limit=5&projectId=prj_1",
+      { headers: signed },
+    )
+    expect(response.status).toBe(200)
+    expect(listWorkspaces).toHaveBeenCalled()
+    expect(listSessions).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_9" })
+  })
+
+  test("refuses an unsigned caller with JSON, not a rendered 404", async () => {
+    const response = await core({}).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1")
+    expect(response.status).toBe(401)
+    expect(response.headers.get("content-type")).toContain("application/json")
   })
 })

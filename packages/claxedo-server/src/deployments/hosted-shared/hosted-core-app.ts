@@ -48,7 +48,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { sessionInventoryResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedSessionList } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -395,6 +395,34 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     return context.json(
       sessionInventoryResponse(await services.authority.listSessions(authResult.auth, { workspaceId })),
     )
+  })
+  // The rail's paginated read. Was missing from every hosted root — see
+  // `signedSessionList` for how that happened and why the read is shared.
+  app.get("/api/control/session-list", async (context) => {
+    const authResult = await signedOrError(
+      context.req.raw,
+      {
+        authentication,
+        requireSigned: true,
+      },
+      services,
+    )
+    if ("error" in authResult) return context.json(authResult.error, authResult.status as 401 | 403 | 503)
+    if (!authResult.auth) {
+      return context.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+    }
+    try {
+      return context.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(context.req.url))))
+    } catch (err) {
+      if (err instanceof ControlPlaneAuthError) return context.json(controlPlaneAuthErrorBody(err), err.status)
+      if (err instanceof Error && err.message === "invalid_session_list_cursor") {
+        return context.json(
+          { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
+          400,
+        )
+      }
+      throw err
+    }
   })
   app.get("/api/control/sessions/:sessionId/gateway", async (context) => {
     const authResult = await signedOrError(

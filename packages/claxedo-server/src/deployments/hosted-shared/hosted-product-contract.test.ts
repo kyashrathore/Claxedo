@@ -125,6 +125,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/control/runtime/heartbeat",
     "/api/control/runtime/register",
     "/api/control/session-registrations/reserve",
+    "/api/control/session-list",
     "/api/control/sessions",
     "/api/control/sessions/:sessionId/gateway",
     "/api/control/sessions/:sessionId/messages",

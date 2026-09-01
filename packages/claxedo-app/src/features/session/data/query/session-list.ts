@@ -145,12 +145,15 @@ export function sessionListQueryOptions(input: {
         baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
         ...input.query,
       }), {
-        headers: {
-          Accept: "application/json",
-          ...(input.query.directory || input.query.workspaceId || input.query.projectId ? {
-            "x-opencode-directory": input.query.directory ?? `workspace:${input.query.workspaceId ?? input.query.projectId}`,
-          } : {}),
-        },
+        // Scope travels in the QUERY STRING only — `sessionNavigationListUrl`
+        // already carries directory / workspaceId / projectId, and every
+        // server parses those, never a header. The `x-opencode-directory`
+        // header this used to add was redundant, and against the hosted
+        // control plane it was fatal: a header the cross-origin preflight
+        // does not name is not "ignored", the browser refuses to send the
+        // request at all. Every scoped rail fetch died before leaving the
+        // page, with nothing logged server-side.
+        headers: { Accept: "application/json" },
       })
       if (!res.ok) throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
       const page = await res.json() as SessionListResponse

@@ -94,7 +94,7 @@ import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-teleme
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
-import { sessionInventoryResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedSessionList } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 
@@ -693,6 +693,34 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       return c.json(sessionInventoryResponse(
         await services.authority.listSessions(authResult.auth, { workspaceId }),
       ))
+    })
+    // The rail's paginated read; shared with hosted-core — see `signedSessionList`.
+    app.get("/api/control/session-list", async (c) => {
+      const authResult = await signedOrError(
+        c.req.raw,
+        {
+          authConfig: services.auth.config,
+          ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          requireSigned: true,
+        },
+        services,
+      )
+      if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+      if (!authResult.auth) {
+        return c.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+      }
+      try {
+        return c.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(c.req.url))))
+      } catch (err) {
+        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+        if (err instanceof Error && err.message === "invalid_session_list_cursor") {
+          return c.json(
+            { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
+            400,
+          )
+        }
+        throw err
+      }
     })
     app.get("/api/control/sessions/:sessionId/gateway", async (c) => {
       const authResult = await signedOrError(
