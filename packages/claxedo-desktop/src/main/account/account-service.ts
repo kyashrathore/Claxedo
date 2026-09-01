@@ -551,26 +551,28 @@ export function createAccountService(options: AccountServiceOptions) {
       // single attempt. See hosted-transport.ts for the live failure this
       // absorbs (the signed bootstrap froze on the splash behind one stalled
       // `account.get`).
-      const response = await fetchHostedWithStallRecovery(
-        options.fetch,
-        `${held.binding.controlPlaneOrigin}${request.path}`,
-        {
-          method: request.method,
-          // Deliberately no invented desktop-version header/426 state: the
-          // selected core exposes no version-admission contract yet. Add both
-          // ends together when that server response is real and testable.
-          headers: {
-            authorization: `Bearer ${access.token}`,
-            ...(request.body ? { "content-type": "application/json" } : {}),
-            ...(request.headers ?? {}),
+      const issue = (token: string) =>
+        fetchHostedWithStallRecovery(
+          options.fetch,
+          `${held.binding.controlPlaneOrigin}${request.path}`,
+          {
+            method: request.method,
+            // Deliberately no invented desktop-version header/426 state: the
+            // selected core exposes no version-admission contract yet. Add both
+            // ends together when that server response is real and testable.
+            headers: {
+              authorization: `Bearer ${token}`,
+              ...(request.body ? { "content-type": "application/json" } : {}),
+              ...(request.headers ?? {}),
+            },
+            ...(request.body ? { body: JSON.stringify(request.body) } : {}),
           },
-          ...(request.body ? { body: JSON.stringify(request.body) } : {}),
-        },
-        (controller) => {
-          activeRequests.add(controller)
-          return () => activeRequests.delete(controller)
-        },
-      )
+          (controller) => {
+            activeRequests.add(controller)
+            return () => activeRequests.delete(controller)
+          },
+        )
+      let response = await issue(access.token)
       accountPerfMark("account.unary_main_fetch_ms", {
         operation: name,
         ms: accountPerfNow() - fetchStarted,
@@ -590,13 +592,26 @@ export function createAccountService(options: AccountServiceOptions) {
               ?? "Control plane rejected the account token. Enable JWT access tokens on the Clerk OAuth app, then sign out and sign in again.",
           )
         }
-        // The server disagrees with our credential. Not refreshed-and-retried
-        // here: renewal already happened ahead of expiry on the way in, so a
-        // 401 is not staleness — it is revocation, and a retry loop against a
-        // revoked token is how a signed-out desktop hammers the control plane
-        // while showing the user nothing.
-        invalidate("the server rejected this session")
-        throw new Error("session rejected")
+        // Renewal ahead of expiry covers a token that aged out, but not one
+        // the server retired EARLY — a refresh-family rotation revokes the
+        // access tokens minted before it, so a desktop holding a
+        // locally-unexpired token 401s forever while its refresh grant is
+        // perfectly alive. Observed live: every operation 401'd, remote access
+        // could not start, and the panel showed a signed-in account with no
+        // explanation.
+        //
+        // So: renew ONCE and re-issue. This is not the retry loop the previous
+        // comment warned about — a genuinely revoked session fails its
+        // renewal, or answers 401 again, and both land on the invalidate
+        // below. One attempt, then the honest sign-out.
+        const renewed = await renew(held)
+        if (startedIn !== era) throw new Error("not signed in")
+        const recovered = renewed.ok && (response = await issue(renewed.token)).status !== 401
+        if (!recovered) {
+          invalidate("the server rejected this session")
+          throw new Error("session rejected")
+        }
+        // Recovered: fall through to the normal response handling below.
       }
       if (!response.ok) {
         const body = await response.json().catch(() => undefined) as {

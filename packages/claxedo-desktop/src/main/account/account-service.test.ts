@@ -267,6 +267,44 @@ describe("bound desktop account lifecycle", () => {
     expect(h.service.state(), "the session must return without a new sign-in").toMatchObject({ status: "signed" })
   })
 
+  /**
+   * A refresh-family rotation revokes the access tokens minted before it, so a
+   * desktop can hold a locally-unexpired token the server has already retired
+   * while its refresh grant is alive. Observed live: every operation 401'd,
+   * remote access could not start, and the account still showed as signed in.
+   * One renewal recovers it; treating that 401 as revocation did not.
+   */
+  test("renews once and retries when the server retires an unexpired access token", async () => {
+    let seenTokens: string[] = []
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async (url, init) => {
+        const token = String((init?.headers as Record<string, string>)?.authorization ?? "")
+        seenTokens.push(token)
+        if (token.includes("at_1")) {
+          return Response.json({ error: { code: "invalid_credentials" } }, { status: 401 })
+        }
+        return Response.json({ ok: true })
+      },
+    })
+
+    await h.service.restore()
+    await expect(h.service.run("account.get")).resolves.toMatchObject({ ok: true })
+    expect(seenTokens.length, "the retired token, then the renewed one").toBe(2)
+    expect(h.service.state(), "a recoverable 401 must not sign the user out").toMatchObject({ status: "signed" })
+  })
+
+  test("a 401 that survives renewal is a real revocation and ends the session", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json({ error: { code: "invalid_credentials" } }, { status: 401 }),
+    })
+
+    await h.service.restore()
+    await expect(h.service.run("account.get")).rejects.toThrow("session rejected")
+    expect(h.service.state()).toMatchObject({ status: "unavailable", reason: "revoked" })
+  })
+
   test("a descriptor that answers and rejects still ends the session", async () => {
     const h = harness({
       store: memoryStore(CREDENTIAL),
@@ -437,18 +475,27 @@ describe("bound desktop account lifecycle", () => {
     expect(refreshAttempts).toBe(2)
   })
 
-  test("a 401 ends the session without refresh-and-retry", async () => {
+  test("a 401 costs exactly one renewal, then ends the session", async () => {
     const selectedAuth = authHarness()
+    let attempts = 0
     const h = harness({
       store: memoryStore(CREDENTIAL),
       auth: selectedAuth,
-      fetch: async () => new Response("", { status: 401 }),
+      fetch: async () => {
+        attempts += 1
+        return new Response("", { status: 401 })
+      },
     })
     await h.service.restore()
 
     await expect(h.service.run("account.get")).rejects.toThrow("session rejected")
     expect(h.store.held()).toBeUndefined()
-    expect(selectedAuth.refreshes()).toBe(0)
+    // Bounded: one renewal and one re-issue. The point of the original
+    // assertion — never loop against a token the server keeps refusing —
+    // still holds; what changed is that a token retired early by a
+    // refresh-family rotation now gets its single second chance.
+    expect(selectedAuth.refreshes()).toBe(1)
+    expect(attempts).toBe(2)
   })
 
   test("keeps a bound session when the control plane reports a token-shape error", async () => {
