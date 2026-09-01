@@ -264,6 +264,9 @@ describe("hosted session pull", () => {
       expect.objectContaining({ id: "ses_local", workspace_id: "ws_1", project_id: "prj_1", created_at: 10, updated_at: 20 }),
       expect.objectContaining({ id: "ses_archived", archived_at: 3 }),
     ])
+    // The host's filesystem path never reaches the app: it made the app scope
+    // session reads by that path against the control plane instead of the relay.
+    for (const row of rows ?? []) expect(row).not.toHaveProperty("directory")
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ principalKind: "user", auth: signed }))
   })
 

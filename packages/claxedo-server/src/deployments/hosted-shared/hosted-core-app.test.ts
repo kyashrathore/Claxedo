@@ -529,6 +529,8 @@ describe("hosted-core session-list", () => {
       expect(response.status).toBe(200)
       const body = await response.json() as { items: Array<{ sessionId: string; title: string }> }
       expect(body.items.map((item) => [item.sessionId, item.title])).toEqual([["ses_laptop", "created locally"]])
+      // Routed like a registry row: the directory is the workspace, not the host's path.
+      expect(body.items[0]).toMatchObject({ directory: "ws_1", sessionRef: "workspace:ws_1:session:ses_laptop" })
       expect(services.authority.listSessions, "the registry is not the source for a user-hosted workspace").not.toHaveBeenCalled()
     } finally {
       globalThis.fetch = originalFetch

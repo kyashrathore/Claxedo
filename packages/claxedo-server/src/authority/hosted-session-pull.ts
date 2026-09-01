@@ -333,9 +333,17 @@ export async function pullHostedControlSessionList(
     // list reads `created_at`/`updated_at`/`archived_at`. The workspace and
     // project ids are stamped for the same reason the canonical route stamps
     // them on authority rows: without them every row fails the scope filter.
+    //
+    // The host's `directory` is its own filesystem path and must NOT reach the
+    // app: registry rows carry no directory, so the navigation row derives it
+    // from the workspace id and the app routes every session read through the
+    // relay. With the path in place the app scoped reads by that path instead
+    // — `?directory=/Users/…` against the control plane, 404 for messages,
+    // config, agents and the transcript, and a sidebar with no project.
+    const { directory: _hostDirectory, ...hostRow } = item
     const time = rec(item.time)
     return [{
-      ...item,
+      ...hostRow,
       workspace_id: input.workspaceId,
       ...(projectId ? { project_id: projectId } : {}),
       ...(num(time?.created) !== undefined ? { created_at: num(time?.created) } : {}),
