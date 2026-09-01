@@ -109,19 +109,6 @@ export function codexPluginLaunch(launch: unknown): CodexPluginLaunch | undefine
   return { marketplace: { name, source }, plugins }
 }
 
-/**
- * The argv a Codex app-server launch uses. Named so the Agent Plugins launch
- * check can assert that activating a marketplace adds no argv overrides — the
- * generated marketplace is read from the managed Codex home instead.
- */
-export function codexAppServerCommand(binary: string) {
-  const args = ["app-server", "--listen", "stdio://"]
-  if (/\.(?:cjs|mjs|js)$/i.test(binary)) {
-    return { command: process.execPath, args: [binary, ...args] }
-  }
-  return { command: binary, args }
-}
-
 class CodexAppServerDriver implements SdkRuntimeDriver {
   readonly type = "codex" as const
   private auth: SdkRuntimeAuth = {}
@@ -672,6 +659,6 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
   }
 }
 
-export { observeCodexAppServerProcess } from "./app-server-process"
+export { observeCodexAppServerProcess, codexAppServerCommand } from "./app-server-process"
 
 export { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"
