@@ -552,6 +552,13 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Machine-scan discovers extensions already installed under ~/.claude etc.
     // A hosted central has no such local machine, so it returns an empty set.
     .get("/api/claxedo/agent-config/extensions/machine-scan", (c) => c.json([]))
+    // Operator-configured ACP agents live in the local machine's
+    // `user-agent-config.json` (an fs-backed store the local/self-hosted roots
+    // own). A hosted central has no such machine, so it answers the valid
+    // empty shape rather than Hono's bare 404 — the app treats any non-ok as
+    // "no ACP group", so this only quiets a recurring console 404 that read
+    // as a broken deployment.
+    .get("/api/claxedo/agent-config/harness/acp-connections", (c) => c.json({ connections: [] }))
     // A hosted central has no local machine/project install surface, so those
     // scopes return the valid empty shape. Workspace scope is authority-owned:
     // list and state mutations below use the same durable rows runtimes read.

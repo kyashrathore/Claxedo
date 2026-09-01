@@ -54,6 +54,18 @@ describe("hosted shell marketplace routes", () => {
     expect(machineItemsFromJson(body)).toEqual([])
   })
 
+  test("acp-connections returns the valid empty shape on a hosted central (no local machine)", async () => {
+    const res = await app.fetch(new Request("http://cp.test/api/claxedo/agent-config/harness/acp-connections"))
+    expect(res.status).toBe(200)
+    const body = await res.json()
+    // The app's `decodeAcpConnectionRows` accepts only `{ connections: [...] }`
+    // (a bare [] or a 404 body both decode to "no rows", which is why the 404
+    // was invisible in the UI and loud in the console). It is NOT imported
+    // here: unlike install-flow.ts it reaches for the app's `@/` alias, which
+    // this package cannot resolve — the header above is the rule.
+    expect(body).toEqual({ connections: [] })
+  })
+
   test("installed-extensions list parses through the app's marketplace parser", async () => {
     // The panel calls this once per scope (machine, then project+directory).
     // `installedRecordsFromJson` only accepts the `extensionListBody` object

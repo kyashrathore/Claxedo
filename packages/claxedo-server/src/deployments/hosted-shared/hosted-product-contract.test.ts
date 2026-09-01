@@ -118,6 +118,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/claxedo/agent-config/extensions/:id/enable",
     "/api/claxedo/agent-config/extensions/catalog",
     "/api/claxedo/agent-config/extensions/machine-scan",
+    "/api/claxedo/agent-config/harness/acp-connections",
   ],
   billing: ["/api/billing/checkout", "/api/billing/polar/webhook", "/api/billing/portal"],
   connections: ["/api/claxedo/integrations", "/api/claxedo/integrations/*"],
