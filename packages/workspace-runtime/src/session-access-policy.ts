@@ -44,6 +44,8 @@ export type SessionAccessOperation =
   | "unrevert"
   | "fork"
   | "command"
+  | "shell"
+  | "summarize"
   | "delete"
   | "session_event_stream"
   | "session_v2_proxy"
@@ -204,6 +206,8 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /session/:id/message": { kind: "authorize", operation: "prompt" },
   "POST /session/:id/prompt_async": { kind: "authorize", operation: "prompt" },
   "POST /session/:id/revert": { kind: "authorize", operation: "revert" },
+  "POST /session/:id/shell": { kind: "authorize", operation: "shell" },
+  "POST /session/:id/summarize": { kind: "authorize", operation: "summarize" },
   "POST /session/:id/unrevert": { kind: "authorize", operation: "unrevert" },
   "POST /session/:sessionId/permissions/:permId": { kind: "authorize", operation: "permission_response" },
   "PUT /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_write" },
@@ -222,6 +226,8 @@ const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
   "unrevert",
   "fork",
   "command",
+  "shell",
+  "summarize",
   "delete",
   "checkpoint_write",
   "tool_write",

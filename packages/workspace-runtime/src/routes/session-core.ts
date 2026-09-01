@@ -1502,6 +1502,48 @@ export function createSessionRoutes(opts: Opts) {
       await adapter.executeCommand!(sessionId, body.command ?? "", directory)
       return c.json({ ok: true })
     })
+    .post("/session/:id/shell", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "shell")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "shell", "shell")
+      if (unsupported) return unsupported
+      const body = (await c.req.json().catch(() => ({}))) as {
+        command?: string
+        agent?: string
+        model?: { providerID: string; modelID: string }
+        messageID?: string
+      }
+      await adapter.shell!(sessionId, {
+        command: body.command ?? "",
+        agent: body.agent ?? "",
+        ...(body.model ? { model: body.model } : {}),
+        ...(body.messageID ? { messageID: body.messageID } : {}),
+      }, directory)
+      return c.json({ ok: true })
+    })
+    .post("/session/:id/summarize", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "summarize")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "summarize", "summarize")
+      if (unsupported) return unsupported
+      const body = (await c.req.json().catch(() => ({}))) as {
+        providerID?: string
+        modelID?: string
+        auto?: boolean
+      }
+      await adapter.summarize!(sessionId, {
+        providerID: body.providerID ?? "",
+        modelID: body.modelID ?? "",
+        ...(body.auto !== undefined ? { auto: body.auto } : {}),
+      }, directory)
+      return c.json({ ok: true })
+    })
     .post("/session/:id/prompt_async", async (c) => {
       const id = c.req.param("id")
       const guarded = await sessionOperationGuard(opts, c, id, "prompt")

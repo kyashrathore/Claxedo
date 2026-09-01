@@ -31,6 +31,8 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /session/:id/message",
   "POST /session/:id/prompt_async",
   "POST /session/:id/revert",
+  "POST /session/:id/shell",
+  "POST /session/:id/summarize",
   "POST /session/:id/unrevert",
   "POST /session/:sessionId/permissions/:permId",
   "PUT /session/:id/permission-mode",
