@@ -91,6 +91,19 @@ export type AgentRuntimeSubscribeInput = {
   sessionId?: string
   directory?: RuntimeDirectory
   identity?: AgentRuntimeSubscriptionIdentity
+  /**
+   * In-process host subscription (e.g. the prompt turn driver reading its own
+   * session's events to project and publish them). Exempt from the
+   * `eventDelivery` identity requirement and from per-event delivery
+   * filtering: the host process owns the store outright, and this flag is
+   * reachable only from code running inside it — every network subscriber
+   * comes through an HTTP route that builds an `identity` from the request
+   * and cannot set this. Without the exemption, composing an
+   * `eventDelivery` policy silently killed every local prompt turn: the
+   * driver's identityless subscription threw at subscribe time and the turn
+   * died before `turn.start`.
+   */
+  hostInternal?: boolean
 }
 
 export type AgentRuntimeSessionCreateInput = {

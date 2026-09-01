@@ -18,7 +18,13 @@ export function createRuntimeSubscription(
 ): AsyncIterable<AgentRuntimeEventEnvelope> {
   if (!Number.isInteger(bufferSize) || bufferSize < 1) throw new Error("subscriberBufferSize must be a positive integer")
   const identity = input.identity
-  if (eventDelivery && !identity) throw new Error("Subscription identity is required when eventDelivery is configured")
+  // `hostInternal` marks the host process's own subscriptions (see the field's
+  // doc on AgentRuntimeSubscribeInput); they need no identity and skip
+  // delivery filtering. Every other identityless subscription is refused when
+  // a delivery policy is composed — network subscribers must authenticate.
+  if (eventDelivery && !identity && !input.hostInternal) {
+    throw new Error("Subscription identity is required when eventDelivery is configured")
+  }
   const queue: AgentRuntimeEventEnvelope[] = []
   const resolvers: Array<(result: IteratorResult<AgentRuntimeEventEnvelope>) => void> = []
   let closed = false
