@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import type { HostTunnelTokenSignerResult } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 import { UserHostedServingRoutes } from "./user-hosted-serving-routes"
@@ -73,6 +73,39 @@ describe("user-hosted serving routes", () => {
     })
     expect(response.status).toBe(400)
     expect(userHostedServingState()).toEqual({ serving: false })
+  })
+
+  /**
+   * The live failure this closes: the connector child exited silently, no ack
+   * renewed the credential, the control plane expired the enrollment and
+   * answered 409 — while the daemon went on reporting `serving: true` and the
+   * desktop kept showing "Serving 2 workspaces".
+   */
+  test("stops serving when the credential lapses without a renewing ack", async () => {
+    vi.useFakeTimers()
+    try {
+      await put({ ...ackCredential(), tokenExpiresAt: Date.now() + 60_000 })
+      expect(userHostedServingState()).toMatchObject({ serving: true })
+      vi.advanceTimersByTime(59_000)
+      expect(userHostedServingState(), "still leased").toMatchObject({ serving: true })
+      vi.advanceTimersByTime(2_000)
+      expect(userHostedServingState()).toEqual({ serving: false })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test("a renewing ack extends the lease rather than letting the first expiry stop it", async () => {
+    vi.useFakeTimers()
+    try {
+      await put({ ...ackCredential(), tokenExpiresAt: Date.now() + 60_000 })
+      vi.advanceTimersByTime(50_000)
+      await put({ ...ackCredential(), tokenExpiresAt: Date.now() + 60_000 })
+      vi.advanceTimersByTime(20_000)
+      expect(userHostedServingState(), "a beating machine must not be stopped").toMatchObject({ serving: true })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   test("rejects a credential without a relay to dial", async () => {

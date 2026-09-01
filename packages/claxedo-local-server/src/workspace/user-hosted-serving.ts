@@ -65,6 +65,8 @@ export type UserHostedServingCredential = {
   relayUrl: string
   token: string
   workspaceIds: readonly string[]
+  /** When the Host Tunnel Token dies, in epoch ms — the signer's `tokenExpiresAt`. */
+  expiresAt: number
 }
 
 type ActiveServing = {
@@ -73,9 +75,33 @@ type ActiveServing = {
   relayUrl: string
   token: { current: string }
   registration: { current: Set<string> }
+  expiresAt: number
+  lapse: ReturnType<typeof setTimeout>
 }
 
 let active: ActiveServing | undefined
+
+/**
+ * Serving is a LEASE, not a latch.
+ *
+ * Every heartbeat ack renews the credential, so a machine that is still
+ * beating always replaces this before it fires. If beats stop — the connector
+ * child dies, the account goes away, the network drops — the control plane
+ * expires the enrollment and refuses to route, and a tunnel left open here
+ * would keep this daemon reporting `serving: true` while the workspace is
+ * unreachable. Observed live: the child exited silently, the lease lapsed,
+ * and the desktop kept claiming "Serving 2 workspaces" while the phone was
+ * correctly told the host was offline.
+ *
+ * Stopping on lapse makes `serving: true` mean what it says: this machine
+ * holds a credential the control plane has renewed recently.
+ */
+function armLapse(expiresAt: number, context: { hostId: string; relayUrl: string }) {
+  return setTimeout(() => {
+    log.warn("user-hosted serving credential lapsed; stopping the relay tunnel", { ...context, expiresAt })
+    stopUserHostedServing()
+  }, Math.max(0, expiresAt - Date.now()))
+}
 
 function normalized(input: string) {
   return input.trim().replace(/\/+$/, "")
@@ -108,12 +134,14 @@ export function userHostedServingState() {
     hostId: active.hostId,
     relayUrl: active.relayUrl,
     workspaceIds: [...active.registration.current].sort(),
+    credentialExpiresAt: active.expiresAt,
   }
 }
 
 export function stopUserHostedServing() {
   const current = active
   active = undefined
+  if (current) clearTimeout(current.lapse)
   current?.tunnel.close()
 }
 
@@ -130,6 +158,11 @@ export async function setUserHostedServing(
 
   if (active && active.hostId === credential.hostId && active.relayUrl === relayUrl) {
     active.token.current = credential.token
+    // Each ack renews the lease; without this the first credential's expiry
+    // would stop a machine that is still beating perfectly well.
+    clearTimeout(active.lapse)
+    active.expiresAt = credential.expiresAt
+    active.lapse = armLapse(credential.expiresAt, { hostId: credential.hostId, relayUrl })
     if ([...active.registration.current].sort().join("\n") !== workspaceIds.join("\n")) {
       await active.tunnel.updateRegistration({ workspaceIds, token: credential.token })
       active.registration.current = new Set(workspaceIds)
@@ -164,7 +197,15 @@ export async function setUserHostedServing(
     reconnectIntervalMs: 1_000,
     ...hostTunnelPreOpenQueueFromEnv(),
   })
-  active = { tunnel, hostId: credential.hostId, relayUrl, token, registration }
-  log.info("user-hosted serving tunnel started", { ...context, workspaceIds })
+  active = {
+    tunnel,
+    hostId: credential.hostId,
+    relayUrl,
+    token,
+    registration,
+    expiresAt: credential.expiresAt,
+    lapse: armLapse(credential.expiresAt, context),
+  }
+  log.info("user-hosted serving tunnel started", { ...context, workspaceIds, expiresAt: credential.expiresAt })
   return userHostedServingState()
 }

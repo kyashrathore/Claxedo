@@ -60,6 +60,10 @@ export function UserHostedServingRoutes() {
               relayUrl: credential.relayUrl,
               token: credential.hostTunnelToken,
               workspaceIds: credential.workspaceIds,
+              // Serving is leased on this: no renewing ack before it passes
+              // and the tunnel closes, so the daemon cannot keep claiming to
+              // serve a machine the control plane has already expired.
+              expiresAt: credential.tokenExpiresAt,
             }
           : null,
         {
