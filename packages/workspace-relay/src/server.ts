@@ -922,6 +922,40 @@ function originMatcherFor(options: WorkspaceRelayOptions) {
   return matcher
 }
 
+/**
+ * Request headers a browser may send to the relay, for every adapter.
+ *
+ * ONE list, because there were three identical copies — `server.ts`,
+ * `cloudflare.ts` and `bun.ts` — and three copies of a list means the next
+ * header is added to two of them. A header missing from the copy that serves a
+ * given deployment does not degrade anything gracefully: the browser refuses to
+ * send the request at all, and the failure surfaces somewhere else entirely.
+ * The control plane's equivalent list is `BROWSER_ALLOWED_REQUEST_HEADERS` in
+ * `claxedo-server-core`; a header the app sends to BOTH must be in both.
+ *
+ * `Traceparent`/`Tracestate` are W3C Trace Context, carried from the browser
+ * through this relay to the laptop.
+ */
+export const RELAY_ALLOWED_REQUEST_HEADER_LIST = [
+  "Accept",
+  "Authorization",
+  "Content-Type",
+  "Last-Event-ID",
+  "Traceparent",
+  "Tracestate",
+  "X-Fetch-Bypass-Throttle",
+  "X-Daytona-Skip-Preview-Warning",
+  "X-Workspace-Id",
+  "X-OpenCode-Directory",
+  "X-Claxedo-Runner",
+  "X-Claxedo-Model",
+  "X-Claxedo-Draft-Id",
+  "X-Claxedo-Binary",
+] as const
+
+/** The same list as a header value, for the adapters that write it directly. */
+export const RELAY_ALLOWED_REQUEST_HEADERS = RELAY_ALLOWED_REQUEST_HEADER_LIST.join(", ")
+
 function denyCorsHeaders(request: Request, originAllowed: (origin: string) => boolean = defaultOriginMatcher) {
   const origin = request.headers.get("origin")
   if (!origin) return undefined
@@ -930,7 +964,7 @@ function denyCorsHeaders(request: Request, originAllowed: (origin: string) => bo
   if (!originAllowed(origin)) return undefined
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-headers": "Accept, Authorization, Content-Type, Last-Event-ID, X-Fetch-Bypass-Throttle, X-Daytona-Skip-Preview-Warning, X-Workspace-Id, X-OpenCode-Directory, X-Claxedo-Runner, X-Claxedo-Model, X-Claxedo-Draft-Id, X-Claxedo-Binary",
+    "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
   }
 }
@@ -1246,18 +1280,9 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
       if (!origin) return undefined
       return originAllowed(origin) ? origin : undefined
     },
-    allowHeaders: [
-      "Accept",
-      "Authorization",
-      "Content-Type",
-      "X-Daytona-Skip-Preview-Warning",
-      "X-Workspace-Id",
-      "X-OpenCode-Directory",
-      "X-Claxedo-Runner",
-      "X-Claxedo-Model",
-      "X-Claxedo-Draft-Id",
-      "X-Claxedo-Binary",
-    ],
+    // Was a fourth hand-maintained copy, and it had already lost
+    // `Last-Event-ID` and `X-Fetch-Bypass-Throttle` relative to the others.
+    allowHeaders: [...RELAY_ALLOWED_REQUEST_HEADER_LIST],
     allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }))
 

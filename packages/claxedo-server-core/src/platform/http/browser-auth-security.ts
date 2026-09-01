@@ -25,6 +25,12 @@ import type { BrowserAuthDescriptor } from "../auth/authentication"
 export const BROWSER_ALLOWED_REQUEST_HEADERS = [
   "content-type",
   "last-event-id",
+  // W3C Trace Context. Named here BEFORE anything sends it: a trace header the
+  // preflight omits does not degrade tracing, it kills the request carrying it,
+  // so instrumentation would take the product down. `@claxedo/telemetry`
+  // explains the propagation these two carry.
+  "traceparent",
+  "tracestate",
   "x-claxedo-bootstrap-owner-claim",
   "x-claxedo-multiplayer-validation-operation",
 ] as const

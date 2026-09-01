@@ -13,6 +13,7 @@ import {
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
+  RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
   createWorkspaceRelay,
   createWorkspaceRelayTrace,
@@ -498,7 +499,7 @@ function relayCorsHeaders(request: Request, input = new Headers()) {
   const origin = allowedCorsOrigin(request.headers.get("origin"))
   if (origin) {
     result.set("access-control-allow-origin", origin)
-    result.set("access-control-allow-headers", "Accept, Authorization, Content-Type, Last-Event-ID, X-Fetch-Bypass-Throttle, X-Daytona-Skip-Preview-Warning, X-Workspace-Id, X-OpenCode-Directory, X-Claxedo-Runner, X-Claxedo-Model, X-Claxedo-Draft-Id, X-Claxedo-Binary")
+    result.set("access-control-allow-headers", RELAY_ALLOWED_REQUEST_HEADERS)
     result.set("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
   }
   return result

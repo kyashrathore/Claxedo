@@ -15,6 +15,7 @@ import {
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
+  RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
@@ -847,7 +848,7 @@ function corsHeaders(request: Request) {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "Accept, Authorization, Content-Type, Last-Event-ID, X-Fetch-Bypass-Throttle, X-Daytona-Skip-Preview-Warning, X-Workspace-Id, X-OpenCode-Directory, X-Claxedo-Runner, X-Claxedo-Model, X-Claxedo-Draft-Id, X-Claxedo-Binary",
+    "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
     "access-control-max-age": "86400",
     vary: "Origin",
   }

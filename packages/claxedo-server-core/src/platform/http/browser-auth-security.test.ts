@@ -120,7 +120,8 @@ describe("provider-neutral browser auth HTTP security", () => {
     expect(trusted.headers.get("access-control-allow-credentials")).toBe("true")
     expect(trusted.headers.get("access-control-allow-methods")).toContain("POST")
     expect(trusted.headers.get("access-control-allow-headers")).toBe(
-      "content-type, last-event-id, x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
+      "content-type, last-event-id, traceparent, tracestate, "
+        + "x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
     )
 
     for (const origin of [undefined, "null", "https://evil.example.test"]) {
