@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createProcessClient } from "./client"
+import { queryClient } from "@/platform/query/query-client"
+import { queryKeys } from "@/platform/query/keys"
 
 const config = {
   id: "proc_1",
@@ -153,12 +155,9 @@ describe("process client relay transport", () => {
     ])
   })
 
-  // Regression: a signed user-hosted workspace addressed by its filesystem-path
-  // directory has no `/api/workspace/resolve` entry on the hosted control
-  // plane (that liveness read answers null for it), so a caller with only that
-  // directory and no explicit workspaceId needs the synchronous signed
-  // inventory match (`resolveSignedWorkspace`) to still reach the relay
-  // instead of falling back to the plain central transport.
+  // A signed user-hosted workspace addressed by its filesystem-path directory
+  // has no `/api/workspace/resolve` answer on the hosted control plane; the
+  // signed inventory is the placement authority that puts it on the relay.
   test("uses the signed workspace inventory match when the runtime resolve read comes back empty", async () => {
     const calls: string[] = []
     const request = (async (input, init) => {
@@ -203,5 +202,54 @@ describe("process client relay transport", () => {
       "http://server.test/api/workspace/ws_uh1/connection",
       "https://relay.example.test/workspaces/ws_uh1/api/wr/process",
     ])
+  })
+
+  test("reads the signed inventory from the shared Query cache when no resolver is handed in", async () => {
+    const server = "http://server.test"
+    queryClient.setQueryData(queryKeys.controlPlane.projects(server), [
+      {
+        id: "prj_uh",
+        worktree: "/repo/user-hosted/ws_uh2-dir",
+        workspaces: {
+          "/repo/user-hosted/ws_uh2-dir": { id: "ws_uh2", directory: "/repo/user-hosted/ws_uh2-dir", kind: "user-hosted", access: "user-hosted" },
+        },
+      },
+    ])
+    try {
+      const calls: string[] = []
+      const request = (async (input, init) => {
+        const req = new Request(requestUrl(input), init)
+        calls.push(req.url)
+        if (req.url === `${server}/api/workspace/ws_uh2/connection`) {
+          return Response.json({
+            access: "user-hosted",
+            backing: "local-worktree",
+            workspaceId: "ws_uh2",
+            role: "owner",
+            relayUrl: "https://relay.example.test",
+            runtimeAccessToken: "rat_uh2",
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        }
+        if (req.url === "https://relay.example.test/workspaces/ws_uh2/api/wr/process") {
+          return Response.json({ configs: [config], processes: [] })
+        }
+        throw new Error(`Unexpected request: ${req.method} ${req.url}`)
+      }) as typeof fetch
+
+      const client = createProcessClient({
+        baseUrl: server,
+        directory: "/repo/user-hosted/ws_uh2-dir",
+        fetch: request,
+        resolveWorkspaceRuntime: async () => null,
+      })
+      await client.list()
+      expect(calls).toEqual([
+        `${server}/api/workspace/ws_uh2/connection`,
+        "https://relay.example.test/workspaces/ws_uh2/api/wr/process",
+      ])
+    } finally {
+      queryClient.removeQueries({ queryKey: queryKeys.controlPlane.projects(server) })
+    }
   })
 })

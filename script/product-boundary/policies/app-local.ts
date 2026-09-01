@@ -144,7 +144,8 @@ export const appLocal: Policy = {
   // Session open/switch instrumentation (`platform/performance/session-perf.ts`
   // and its screen-side owner `features/session/ui/session-open-perf.ts`)
   // adds two modules and no package edge: 947/38.
-  ceilings: { modules: 947, packages: 38 },
+  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the signed inventory from the shared Query cache: one module, no package edge — 948/38.
+  ceilings: { modules: 948, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

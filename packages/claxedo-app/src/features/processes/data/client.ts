@@ -1,5 +1,6 @@
 import type { Process } from "./process"
 import { createTransport } from "@/platform/runtime/transport"
+import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import {
   centralTransportForServer,
   type WorkspaceRuntimeSnapshotLike,
@@ -124,9 +125,12 @@ function launch(schemas: typeof Process, raw: unknown, code: number) {
 
 export function createProcessClient(input: Input) {
   const fetch = input.fetch ?? globalThis.fetch.bind(globalThis)
+  // The signed inventory is the placement authority for a directory; a caller
+  // may hand in its own resolver (tests), otherwise the shared cache answers.
+  const resolveSignedWorkspace = input.resolveSignedWorkspace ?? ((selector: string) => cachedSignedWorkspace(input.baseUrl, selector))
   const transportFor = async () => {
     const workspace = workspaceRuntimeSnapshot(input.workspaceId ? { kind: "cloud", workspaceId: input.workspaceId } : undefined) ??
-      workspaceRuntimeSnapshot(input.resolveSignedWorkspace?.(input.directory)) ??
+      workspaceRuntimeSnapshot(resolveSignedWorkspace(input.directory)) ??
       workspaceRuntimeSnapshot(await input.resolveWorkspaceRuntime?.({ directory: input.directory }))
     const serverTransport = centralTransportForServer(input.baseUrl)
     return createTransport({

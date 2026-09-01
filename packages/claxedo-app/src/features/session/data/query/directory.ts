@@ -1,9 +1,8 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
 export type { Agent } from "@opencode-ai/sdk/v2/client"
 import { queryKeys } from "@/platform/query/keys"
+import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
-import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
 
@@ -102,10 +101,7 @@ export function agentListQuery(input: {
       if (!harnessUsesAgentProfiles(input.harnessType)) return []
       if (input.request && input.baseUrl) {
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
-        const signedWorkspace = signedWorkspaceFromProjects(
-          queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
-          input.directory,
-        )
+        const signedWorkspace = cachedSignedWorkspace(input.baseUrl, input.directory)
         const workspace = input.workspace ?? signedWorkspace ?? (
           input.workspace !== undefined
             ? input.workspace

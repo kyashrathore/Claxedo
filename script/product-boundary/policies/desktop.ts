@@ -249,7 +249,8 @@ export const desktopRendererUnsigned: Policy = {
   // Session open/switch instrumentation (`platform/performance/session-perf.ts`
   // and its screen-side owner `features/session/ui/session-open-perf.ts`)
   // adds two modules and no package edge: 1033/59.
-  ceilings: { modules: 1033, packages: 59 },
+  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the signed inventory from the shared Query cache: one module, no package edge — 1034/59.
+  ceilings: { modules: 1034, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
