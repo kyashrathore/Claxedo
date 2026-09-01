@@ -124,8 +124,6 @@ export interface CommandItem {
 
 export type HarnessType = AgentHarnessId
 export type AgentConfigOptions = {
-  acpDir?: string
-  platform?: NodeJS.Platform
   /**
    * Per-harness launch options contributed by the product composition.
    *

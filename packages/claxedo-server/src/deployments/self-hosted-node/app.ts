@@ -1564,12 +1564,11 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         .map((workspace) => ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })),
     )
   }
-  configureAgentConfig({
-    ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
-    // Reuse the authority selected by this composition (always SQLite;
-    // hosted trust fails closed above).
-    ...(services.authority ? { workspaceAuthority: services.authority } : {}),
-  })
+  // No options left to supply: agent-config's only option is the per-harness
+  // launch projection, which this deployment does not contribute. Its former
+  // `acpDir` and `workspaceAuthority` inputs went with the ACP binary lookup
+  // and the retired agent-extensions hydration respectively.
+  configureAgentConfig()
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),

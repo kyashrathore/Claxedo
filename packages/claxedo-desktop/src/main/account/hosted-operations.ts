@@ -507,14 +507,7 @@ export function resolveHostedOperation(
   const operation = (HOSTED_OPERATIONS as Record<string, HostedOperation | undefined>)[name]
   if (!operation) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
 
-  let method = operation.method
-  if (name === "agentConfig.extensions.write") {
-    const requested = String(input.httpMethod ?? "POST").toUpperCase()
-    if (requested !== "POST" && requested !== "PUT" && requested !== "DELETE") {
-      throw new MissingOperationParameter(`operation "${name}" requires httpMethod POST|PUT|DELETE`)
-    }
-    method = requested
-  }
+  const method = operation.method
 
   let path = operation.path
   if (path.endsWith("/*")) {
@@ -586,14 +579,6 @@ export function resolveHostedOperation(
   if (name === "workspace.create" && typeof body.repoFullName === "string" && body.repoFullName) {
     body.repo = { fullName: body.repoFullName }
     delete body.repoFullName
-  }
-  // agent-config writes pass an opaque JSON object as `payload`.
-  if (name === "agentConfig.extensions.write") {
-    const payload = body.payload
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return { method, path, body: {}, ...extra }
-    }
-    return { method, path, body: payload as Record<string, unknown>, ...extra }
   }
   return { method, path, body, ...extra }
 }

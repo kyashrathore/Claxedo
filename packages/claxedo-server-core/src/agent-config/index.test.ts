@@ -1,4 +1,4 @@
-import { describe, expect, test, beforeEach, afterAll, vi } from "vitest"
+import { describe, expect, test, beforeEach, afterAll } from "vitest"
 import { normalizeRuntimeSnapshot } from "@claxedo/workspace-runtime/config"
 import { realpathSync } from "fs"
 import fs from "fs/promises"
