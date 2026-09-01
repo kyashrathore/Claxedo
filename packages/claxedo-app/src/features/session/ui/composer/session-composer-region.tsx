@@ -23,6 +23,37 @@ import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { SessionGoalDock } from "./session-goal-dock"
 
+/**
+ * The rendered height of the composer container at rest, recorded from the
+ * last real mount. The loading placeholder reserves exactly this much space,
+ * so the composer replaces it with zero layout shift. Class-derived math
+ * (min-heights, paddings) cannot express the composed height — the toolbar
+ * row pushes the frame past its min — so the source of truth is one real
+ * measurement. Deliberately module-scoped and non-reactive: it only needs to
+ * be right for the NEXT placeholder, and it is stable for a given viewport
+ * width. Before the first-ever mount the placeholder falls back to the
+ * frame's min-height.
+ */
+const RESTING_COMPOSER_HEIGHT_KEY = "claxedo.composer.resting-height.v1"
+let restingComposerHeight: number | undefined = (() => {
+  try {
+    const stored = Number(globalThis.localStorage?.getItem(RESTING_COMPOSER_HEIGHT_KEY))
+    return Number.isFinite(stored) && stored > 40 && stored < 600 ? stored : undefined
+  } catch {
+    return undefined
+  }
+})()
+
+const recordRestingComposerHeight = (height: number) => {
+  if (!(height > 40 && height < 600)) return
+  restingComposerHeight = height
+  try {
+    globalThis.localStorage?.setItem(RESTING_COMPOSER_HEIGHT_KEY, String(Math.round(height)))
+  } catch {
+    // Best effort: the in-memory value still covers this app run.
+  }
+}
+
 export function SessionComposerRegion(props: {
   state: SessionComposerState
   ready: boolean
@@ -267,7 +298,10 @@ export function SessionComposerRegion(props: {
                   class="w-full pointer-events-none"
                   style={{ "margin-top": `${rolled() ? -18 : -36}px` }}
                 >
-                  <div class="min-h-[96px] w-full rounded-xl bg-v2-background-bg-base px-4 pt-4 pb-2 leading-5 text-compact text-text-weak whitespace-pre-wrap">
+                  <div
+                    class="w-full rounded-xl bg-v2-background-bg-base px-4 pt-4 pb-2 leading-5 text-compact text-text-weak whitespace-pre-wrap"
+                    style={{ "min-height": `${restingComposerHeight ?? 96}px` }}
+                  >
                     {handoffPrompt() || language.t("prompt.loading")}
                   </div>
                 </div>
@@ -311,6 +345,13 @@ export function SessionComposerRegion(props: {
               }}
               style={{
                 "margin-top": `${-lift()}px`,
+              }}
+              ref={(el) => {
+                // Record the settled resting height for the next placeholder.
+                // One rAF lets fonts/toolbar rows finish their first layout.
+                requestAnimationFrame(() => {
+                  if (el.isConnected) recordRestingComposerHeight(el.getBoundingClientRect().height)
+                })
               }}
             >
               {props.beforeInput}
