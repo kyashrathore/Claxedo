@@ -296,7 +296,12 @@ export function SessionComposerRegion(props: {
                 */}
                 <div
                   class="w-full pointer-events-none"
-                  style={{ "margin-top": `${rolled() ? -18 : -36}px` }}
+                  // The SAME lift the ready branch applies (line below): the
+                  // placeholder previously hardcoded -36px, which assumes the
+                  // dock is open. For a plain session it never opens, so the
+                  // composer's lift is 0 and the dock grew 36px at the swap,
+                  // dragging the whole transcript up with it.
+                  style={{ "margin-top": `${-lift()}px` }}
                 >
                   <div
                     class="w-full rounded-xl bg-v2-background-bg-base px-4 pt-4 pb-2 leading-5 text-compact text-text-weak whitespace-pre-wrap"
