@@ -1691,7 +1691,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
               }}
               data-index={current().item.index}
               style={timelineRowFrameStyle({
-                size: current().item.size,
                 minHeight: ready() ? undefined : current().item.size,
               })}
             >

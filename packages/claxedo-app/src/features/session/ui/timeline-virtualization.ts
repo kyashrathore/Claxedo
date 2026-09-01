@@ -105,20 +105,21 @@ export function createTimelineResizeAnchor() {
 }
 
 /**
- * Per-row frame styles for a virtualized timeline row. Offscreen rows carry
- * `content-visibility: auto` so the browser skips their style/layout/paint
- * entirely while the box keeps the virtualizer's size — scroll math is
- * unchanged, and `auto` intrinsic sizing retains each row's last RENDERED
- * height so re-measures after a scroll approach stay exact. On-screen rows are
- * unaffected.
+ * Per-row frame styles for a virtualized timeline row. Rows render fully at
+ * mount — no `content-visibility: auto`. Skippable rendering poisons the
+ * virtualizer: a cold row mounted in the overscan band is in skip state when
+ * `measureElement` runs, so it measures at the `contain-intrinsic-size`
+ * estimate instead of its content (a 24px turn gap measured — and painted —
+ * as the 180px placeholder), and a fast flick scrolls skipped rows into the
+ * viewport before the browser renders them, showing estimate-sized blank
+ * boxes. The overscan band is small (≤6 rows), so eager rendering costs a
+ * handful of rows and buys exact measurements plus pre-painted rows ahead of
+ * the scroll direction.
  */
 export function timelineRowFrameStyle(input: {
-  size: number
   minHeight: number | undefined
 }): Record<string, string | undefined> {
   return {
     "min-height": input.minHeight === undefined ? undefined : `${input.minHeight}px`,
-    "content-visibility": "auto",
-    "contain-intrinsic-size": `auto ${input.size}px`,
   }
 }
