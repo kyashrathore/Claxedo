@@ -361,7 +361,12 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   //
   // The root gets a redirect rather than an error, because a person typing
   // this hostname wants the product, not a diagnostic.
-  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS)
+  // Both spellings: the hosted roots' CORS reads the plural list, while the
+  // locked better-auth worker binds the SINGULAR `CLAXEDO_APP_ORIGIN`
+  // (`better-auth-d1-locked-worker.cf.ts`). Reading only the plural made the
+  // redirect silently never fire on the deployment it was written for —
+  // caught live: the root answered a JSON 404 with no `location`.
+  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS ?? plane.env.CLAXEDO_APP_ORIGIN)
   if (appHome) app.get("/", (context) => context.redirect(appHome, 302))
   app.notFound((context) =>
     context.json(

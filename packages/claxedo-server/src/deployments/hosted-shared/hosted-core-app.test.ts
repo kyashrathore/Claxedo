@@ -379,6 +379,23 @@ describe("control-plane root and unrouted paths", () => {
     expect(response.headers.get("location")).toBe("https://app.example.test")
   })
 
+  /**
+   * The deployment this exists for binds the SINGULAR name. The first version
+   * read only the plural and went live redirecting nothing — the root answered
+   * JSON 404 with no `location`, which is better than a rendered "404 Not
+   * Found" but not the product.
+   */
+  test("redirects from the singular binding the locked worker actually uses", async () => {
+    const base = plane()
+    const singular = {
+      ...base,
+      env: { ...base.env, CLAXEDO_APP_ORIGIN: "https://app.single.test" },
+    } as unknown as HostedControlPlane
+    const response = await (createHostedCoreApp(singular, options) as unknown as Hono).request("/")
+    expect(response.status).toBe(302)
+    expect(response.headers.get("location")).toBe("https://app.single.test")
+  })
+
   test("answers an unrouted path as JSON, never as a rendered page", async () => {
     const response = await appWith("https://app.example.test").request("/not-a-route")
     expect(response.status).toBe(404)
