@@ -479,7 +479,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     executePanelAction: async (benchmarkCase, target) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
       const activeTarget = await current.page.evaluate(() =>
-        document.querySelector<HTMLElement>("[data-session-id][data-session-active='true']")?.dataset.sessionId,
+        document.querySelector<HTMLElement>("[data-testid='session-page-root'][data-session-id]")?.dataset.sessionId,
       )
       if (activeTarget && activeTarget !== target.sessionId)
         throw new Error("Claxedo workspace-panel action is not on the control session")
@@ -488,7 +488,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     executePanelActionV2: async (benchmarkCase, target, preset) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
       const activeTarget = await current.page.evaluate(() =>
-        document.querySelector<HTMLElement>("[data-session-id][data-session-active='true']")?.dataset.sessionId,
+        document.querySelector<HTMLElement>("[data-testid='session-page-root'][data-session-id]")?.dataset.sessionId,
       )
       if (activeTarget && activeTarget !== target.sessionId) {
         throw new Error("Claxedo workspace-panel-v2 action is not on the control session")
