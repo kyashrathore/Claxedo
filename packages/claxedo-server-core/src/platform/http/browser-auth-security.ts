@@ -2,6 +2,33 @@ import type { Context, MiddlewareHandler } from "hono"
 
 import type { BrowserAuthDescriptor } from "../auth/authentication"
 
+/**
+ * Request headers a browser on a DIFFERENT origin may send to this server.
+ *
+ * A cross-origin request carrying a header that is not named here is never
+ * sent: the browser asks first, compares the answer, and drops the request
+ * itself. Nothing reaches this server, so nothing is logged, and the server
+ * looks perfectly healthy while the app is dead — which is exactly how the
+ * omission below survived. The hosted app showed "Workspace host is offline"
+ * with a fully working relay, a live host tunnel, and a laptop answering every
+ * request that was actually delivered to it.
+ *
+ * `last-event-id` is what made that concrete. `EventSource`, and every SSE
+ * client that resumes a stream, sends it on RECONNECT — so the first
+ * connection succeeded and every recovery after it was refused by the browser.
+ * A list that omits it does not break the event stream, it breaks the event
+ * stream's ability to heal, which is far harder to see.
+ *
+ * Add a header here when a browser client starts sending it. The pin in
+ * `browser-auth-security.test.ts` states what the client sends today.
+ */
+export const BROWSER_ALLOWED_REQUEST_HEADERS = [
+  "content-type",
+  "last-event-id",
+  "x-claxedo-bootstrap-owner-claim",
+  "x-claxedo-multiplayer-validation-operation",
+] as const
+
 function trustedRequestOrigin(request: Request, browser: BrowserAuthDescriptor) {
   const origin = request.headers.get("origin")
   return origin && browser.trustedOrigins.includes(origin) ? origin : undefined
@@ -82,10 +109,7 @@ export function browserAuthHttpSecurity(browser: BrowserAuthDescriptor): Middlew
       if (!origin) return originForbidden(context)
       stampCredentialedCors(context, origin)
       context.header("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
-      context.header(
-        "access-control-allow-headers",
-        "content-type, x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
-      )
+      context.header("access-control-allow-headers", BROWSER_ALLOWED_REQUEST_HEADERS.join(", "))
       return context.body(null, 204)
     }
     const cookieAuthenticatedMutation =

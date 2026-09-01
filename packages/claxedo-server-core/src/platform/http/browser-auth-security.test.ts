@@ -62,6 +62,48 @@ describe("provider-neutral browser auth HTTP security", () => {
     expect(wrong.headers.get("vary")).toContain("Origin")
   })
 
+  /**
+   * The browser's own gate, not a restatement of the list.
+   *
+   * A list-shaped assertion passes while production is broken — that is exactly
+   * what happened. The literal above matched the code perfectly while the
+   * hosted app could not reconnect its event stream at all, because the thing
+   * that decides is not whether the list matches the code, it is whether the
+   * list COVERS what the client sends. So this asks that question directly, the
+   * way Chrome does: for each header the browser client sends, is it named?
+   *
+   * `last-event-id` is the one that was missing. It rides SSE RECONNECTS only,
+   * so the initial stream worked and only recovery was refused, and the failure
+   * surfaced far away as "Workspace host is offline" on a system whose relay,
+   * host tunnel, and laptop were all healthy.
+   */
+  test("allows every header the browser client actually sends", async () => {
+    // What the app puts on requests to this server. `authorization` is absent
+    // deliberately: this transport is cookie-based, and its credential policy
+    // is `reject-cookie-and-authorization`.
+    const sent = ["content-type", "last-event-id", "x-claxedo-bootstrap-owner-claim"]
+
+    const response = await app(COOKIE_BROWSER).fetch(
+      new Request("https://api.example.test/api/wr/events", {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://app.example.test",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": sent.join(","),
+        },
+      }),
+    )
+
+    const allowed = new Set(
+      (response.headers.get("access-control-allow-headers") ?? "")
+        .split(",")
+        .map((name) => name.trim().toLowerCase())
+        .filter(Boolean),
+    )
+    const blocked = sent.filter((name) => !allowed.has(name))
+    expect(blocked, "a header the client sends but the server omits is dropped by the browser").toEqual([])
+  })
+
   test("answers cookie-browser preflight only for an exact trusted origin", async () => {
     const trusted = await app(COOKIE_BROWSER).fetch(
       new Request("https://api.example.test/write", {
@@ -78,7 +120,7 @@ describe("provider-neutral browser auth HTTP security", () => {
     expect(trusted.headers.get("access-control-allow-credentials")).toBe("true")
     expect(trusted.headers.get("access-control-allow-methods")).toContain("POST")
     expect(trusted.headers.get("access-control-allow-headers")).toBe(
-      "content-type, x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
+      "content-type, last-event-id, x-claxedo-bootstrap-owner-claim, x-claxedo-multiplayer-validation-operation",
     )
 
     for (const origin of [undefined, "null", "https://evil.example.test"]) {
