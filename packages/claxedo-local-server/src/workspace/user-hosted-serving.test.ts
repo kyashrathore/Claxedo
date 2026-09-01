@@ -97,13 +97,17 @@ describe("relay connection grain", () => {
   })
 
   /**
-   * THE 403 the hosted app hit: `/provider?harness=opencode` through the
-   * relay, refused by this guard because the ownership table called
-   * `/provider` central while the workspace runtime actually serves it. A
-   * connected workspace with no model catalog cannot run a single turn.
-   * `/provider/auth` is a genuinely central OAuth flow and stays refused.
+   * The workspace surface, the daemon's OpenCode-compat root, and an outright
+   * deny are three different verdicts (`user-hosted-surface.ts`), and a
+   * relayed request must land on the right one. `/provider?harness=opencode`
+   * is the runtime's own catalog — THE 403 the hosted app hit when the old
+   * guard (an allow-list built from the daemon's ROOT-surface ownership
+   * table) called `/provider` central instead. Provider auth and OAuth
+   * connect are a desktop capability with no other owner, so a remote client
+   * gets them too, through the daemon's root — never the daemon's own
+   * host-serving/remote-access administration.
    */
-  test("lets the relay reach the workspace's provider catalog but not its auth flows", async () => {
+  test("lets the relay reach the workspace catalog, provider auth/OAuth via the daemon root, and nothing of the daemon's own", async () => {
     await serve([WS_A])
     const first = live()[0]!
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider?harness=opencode" })?.pathname).toBe(
@@ -116,9 +120,55 @@ describe("relay connection grain", () => {
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/global/health" })?.pathname).toBe(
       `/workspaces/${WS_A}/global/health`,
     )
+    // Provider auth and `/provider/:id/oauth/:step` are the daemon's
+    // OpenCode-compat ROOT family, not the workspace runtime's — they land on
+    // `<localBaseUrl><path>` with the tunnel's own workspace forced into
+    // `?directory=`, never on `/workspaces/:id/*`.
+    const providerAuth = first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/auth" })
+    expect(providerAuth?.pathname).toBe("/provider/auth")
+    expect(providerAuth?.searchParams.get("directory")).toBe(WS_A)
+
+    const oauth = first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/anthropic/oauth/authorize" })
+    expect(oauth?.pathname).toBe("/provider/anthropic/oauth/authorize")
+    expect(oauth?.searchParams.get("directory")).toBe(WS_A)
+
+    // The daemon's own families never cross the tunnel, whichever verdict
+    // they would otherwise get close to: host-serving administration reached
+    // this same `/api/claxedo` family the old allow-list also refused.
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/health" })).toBeUndefined()
-    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/auth" })).toBeUndefined()
-    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/anthropic/oauth/authorize" })).toBeUndefined()
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/host-serving" })).toBeUndefined()
+    // A daemon-wide operation (disposes every workspace's cached OpenCode
+    // state), denied even though it IS part of the OpenCode-compat family the
+    // daemon root serves for a loopback caller.
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/global/dispose" })).toBeUndefined()
+  })
+
+  /**
+   * The previous guard was an ALLOW-list built from the daemon's root-surface
+   * ownership table, so any workspace-runtime route that table had never
+   * heard of was refused with a 403 the runtime never asked for — verified
+   * against the running daemon: `/path`, `/api/wr/worktrees`,
+   * `/api/wr/checkpoint/*`, `/api/wr/subagent-transcripts`, `/api/wr/file*`,
+   * and `/api/wr/find/*` all answer on the workspace surface but were refused
+   * through the tunnel. `user-hosted-surface.ts` inverts the shape to a
+   * DENY-list, so an unlisted runtime route reaches the runtime and gets an
+   * honest 404 for what it does not implement, not a 403 from a stale list.
+   */
+  test("reaches workspace-runtime routes the old allow-list had never heard of", async () => {
+    await serve([WS_A])
+    const first = live()[0]!
+    for (const path of [
+      "/path",
+      "/api/wr/worktrees",
+      "/api/wr/checkpoint/list",
+      "/api/wr/subagent-transcripts",
+      "/api/wr/file/content",
+      "/api/wr/find/text",
+    ]) {
+      expect(first.resolveLocalUrl({ workspaceId: WS_A, path })?.pathname, path).toBe(
+        `/workspaces/${WS_A}${path}`,
+      )
+    }
   })
 
   test("a renewing ack keeps live sockets instead of redialling every workspace", async () => {

@@ -1,23 +1,28 @@
 import { describe, expect, test } from "vitest"
 
-import { routeOwnership, RouteHandler, runtimeServesOnWorkspaceSurface, WORKSPACE_RUNTIME_IDENTITY_PATH } from "./route-ownership"
+import { routeOwnership, RouteHandler, WORKSPACE_RUNTIME_IDENTITY_PATH } from "./route-ownership"
 
-describe("runtimeServesOnWorkspaceSurface", () => {
+describe("routeOwnership", () => {
   /**
-   * `/global/health` is central on the daemon's root surface and the
-   * runtime's identity probe on the workspace surface. A tunnel guard that
-   * used the root verdict refused the control plane's own verification.
+   * `/global/health` is the daemon's own liveness probe on its ROOT surface
+   * and is rightly classified central here. On the workspace-scoped
+   * `/workspaces/:id/*` surface the same path is the runtime's identity probe
+   * instead — `user-hosted-surface.ts` (claxedo-local-server) admits it there
+   * directly rather than asking this root-surface table, which has no way to
+   * answer that question for a surface it does not model.
    */
-  test("admits the runtime identity probe although the root surface classifies it central", () => {
+  test("classifies the runtime identity probe central on the root surface", () => {
     expect(routeOwnership(WORKSPACE_RUNTIME_IDENTITY_PATH).handler).toBe(RouteHandler.CentralServer)
-    expect(runtimeServesOnWorkspaceSurface(WORKSPACE_RUNTIME_IDENTITY_PATH)).toBe(true)
   })
 
-  test("otherwise follows the runtime ownership verdict", () => {
-    expect(runtimeServesOnWorkspaceSurface("/session")).toBe(true)
-    expect(runtimeServesOnWorkspaceSurface("/provider")).toBe(true)
-    expect(runtimeServesOnWorkspaceSurface("/api/claxedo/health")).toBe(false)
-    expect(runtimeServesOnWorkspaceSurface("/global/dispose")).toBe(false)
-    expect(runtimeServesOnWorkspaceSurface("/provider/auth")).toBe(false)
+  test("classifies workspace-runtime routes", () => {
+    expect(routeOwnership("/session").handler).toBe(RouteHandler.SandboxRuntime)
+    expect(routeOwnership("/provider").handler).toBe(RouteHandler.SandboxRuntime)
+  })
+
+  test("classifies central-server routes", () => {
+    expect(routeOwnership("/api/claxedo/health").handler).toBe(RouteHandler.CentralServer)
+    expect(routeOwnership("/global/dispose").handler).toBe(RouteHandler.CentralServer)
+    expect(routeOwnership("/provider/auth").handler).toBe(RouteHandler.CentralServer)
   })
 })

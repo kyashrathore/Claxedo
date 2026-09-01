@@ -43,7 +43,7 @@ import {
   type WorkspaceRelayHostTunnelEvent,
 } from "@claxedo/workspace-runtime/relay"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { runtimeServesOnWorkspaceSurface } from "@claxedo/server-core/platform/governance/route-ownership"
+import { userHostedSurface } from "./user-hosted-surface"
 import { FORWARDED_CLIENT_HEADERS } from "@claxedo/server-core/platform/http/peer-address"
 
 const log = Log.create({ service: "user-hosted-serving" })
@@ -303,14 +303,14 @@ function openWorkspaceTunnel(input: {
       // naming any other workspace is not this connection's to answer, even
       // when the same machine happens to serve that one too.
       if (requested !== workspaceId) return
-      // The tunnel is the workspace-scoped surface: only what the runtime
-      // serves there crosses it — including its identity probe, which the
-      // root-surface classifier alone would call central and refuse.
-      if (!runtimeServesOnWorkspaceSurface(new URL(path, "http://workspace.local").pathname)) return
-      return new URL(
-        `/workspaces/${encodeURIComponent(workspaceId)}/${path.replace(/^\/+/, "")}`,
-        `${serving.localBaseUrl}/`,
-      )
+      // What a remote caller on THIS workspace's tunnel may reach on this
+      // machine, and where it lands: the daemon's own families denied
+      // outright, its OpenCode-compat root family for provider auth/OAuth/
+      // project metadata, everything else the workspace runtime itself
+      // (`user-hosted-surface.ts` for the full design).
+      const target = userHostedSurface({ localBaseUrl: serving.localBaseUrl, workspaceId, path })
+      if (target.kind === "deny") return
+      return target.url
     },
     tokenProvider: async () => serving.token.current,
     localReplayHeaders: loopbackReplayHeaders,
