@@ -87,7 +87,19 @@ export function setupHostConnectorChild(input: {
   onServing?: (tunnel: Record<string, unknown> | null) => void
   displayName?: string
   heartbeatIntervalMs?: number
+  /**
+   * Budget for the child to exist and answer with its identity: spawn, `ready`,
+   * and the bootstrap reply. No control-plane traffic happens inside it.
+   */
   startupTimeoutMs?: number
+  /**
+   * Budget for the enrollment that follows the bootstrap reply — the
+   * createRequest/enroll/heartbeat round trips the child now runs after
+   * answering. Wider than the startup budget on purpose: this deployment's
+   * edge can withhold a POST response on a warm connection for around twelve
+   * seconds, so the budget has to cover one such stall plus a retry.
+   */
+  enrollmentTimeoutMs?: number
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: (status: HostConnectorStatus) => void
 }): HostConnectorSetup {
@@ -100,6 +112,16 @@ export function setupHostConnectorChild(input: {
   let era = 0
   let intentionalExit = false
   const pending = new Map<string, PendingRequest>()
+  /**
+   * The one launch waiting for its child to finish enrolling.
+   *
+   * The bootstrap reply now means "alive, with an identity", so the enrollment
+   * outcome arrives later on the push channel. This is where `launch` parks
+   * until the child's first non-idle status — enrolled, or stopped with the
+   * connector's own detail — so `start()` still resolves on a decided machine
+   * rather than on a spawned process.
+   */
+  let enrolling: { target: HostConnectorChildProcess; waiting: PendingRequest } | undefined
 
   const settle = (next: HostConnectorStatus) => {
     status = next
@@ -110,6 +132,9 @@ export function setupHostConnectorChild(input: {
   const rejectPending = (error: Error) => {
     for (const request of pending.values()) request.reject(error)
     pending.clear()
+    const waiting = enrolling
+    enrolling = undefined
+    waiting?.waiting.reject(error)
   }
 
   const send = (target: HostConnectorChildProcess, message: HostConnectorParentMessage) => {
@@ -141,6 +166,13 @@ export function setupHostConnectorChild(input: {
     }
     if (message.type === "status") {
       settle(message.status)
+      // `idle` is the pre-enrollment state the bootstrap reply already carried;
+      // only a decided one ends the wait.
+      if (message.status.status !== "idle" && enrolling?.target === target) {
+        const waiting = enrolling
+        enrolling = undefined
+        waiting.waiting.resolve(message.status)
+      }
       return
     }
     if (message.type === "serving") {
@@ -205,24 +237,56 @@ export function setupHostConnectorChild(input: {
     const startupTimeoutMs = input.startupTimeoutMs ?? 10_000
     await bounded(Promise.race([ready.promise, cancelled]), startupTimeoutMs, "Host Connector child ready")
     if (startedIn !== era || child !== target) return status
-    const requestId = crypto.randomUUID()
-    const started = await bounded(
-      Promise.race([
-        request(target, {
-          type: "bootstrap",
-          requestId,
-          heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
-          ...(restored.identity ? { identity: restored.identity } : {}),
-          ...(input.displayName ? { displayName: input.displayName } : {}),
-          ...(sharedWorkspaces.length ? { sharedWorkspaces } : {}),
-        }),
-        cancelled,
-      ]),
-      startupTimeoutMs,
-      "Host Connector child bootstrap",
-    )
-    if (startedIn !== era) return status
-    return settle(started)
+
+    // Armed BEFORE the bootstrap is sent: a child that enrolls quickly can push
+    // its status before this side resumes, and a wait registered afterwards
+    // would miss the only announcement it is waiting for.
+    const enrolled = deferred<HostConnectorChildState>()
+    // The wait can be rejected by an exit or a terminate before `launch` has
+    // reached the race below; keeping a handler attached from the start is what
+    // stops that from surfacing as an unhandled rejection in main.
+    enrolled.promise.catch(() => {})
+    enrolling = { target, waiting: enrolled }
+
+    try {
+      const requestId = crypto.randomUUID()
+      const booted = await bounded(
+        Promise.race([
+          request(target, {
+            type: "bootstrap",
+            requestId,
+            heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
+            ...(restored.identity ? { identity: restored.identity } : {}),
+            ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...(sharedWorkspaces.length ? { sharedWorkspaces } : {}),
+          }),
+          cancelled,
+        ]),
+        startupTimeoutMs,
+        "Host Connector child bootstrap",
+      )
+      if (startedIn !== era) return status
+      // The child is alive and holds its machine identity. Publish that, so a
+      // panel opened during a slow enrollment shows a starting machine rather
+      // than the state from before the click.
+      settle(booted)
+
+      // Then the part that talks to the control plane. Its outcome arrives on
+      // the push channel, which is also how every later transition — an
+      // expiry, a rejected beat, a revocation — reaches this process.
+      const decided = await bounded(
+        Promise.race([enrolled.promise, cancelled]),
+        input.enrollmentTimeoutMs ?? 45_000,
+        "Host Connector child enrollment",
+      )
+      if (startedIn !== era) return status
+      // Already announced by the status handler that resolved this wait; the
+      // child's push is the authority, so this reads it back rather than
+      // settling the same transition twice.
+      return decided
+    } finally {
+      if (enrolling?.target === target) enrolling = undefined
+    }
   }
 
   const terminate = (reason: "closed" | "revoked" | "error", detail: string) => {

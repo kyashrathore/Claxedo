@@ -80,6 +80,69 @@ export function remoteAccessAppOrigin(): string {
   return "https://app.claxedo.com"
 }
 
+export type RemoteAccessResumeInput = {
+  /**
+   * The ACCOUNT LAYER has a usable credential right now.
+   *
+   * Deliberately not the connector's `hostedSignedIn`, which only means "an
+   * account client is configured" and goes true at boot before the session has
+   * restored. Auto-resume believed it, called start(), and the connector
+   * child's first account operation came back "not signed in" —
+   * `child-start: Error: connector closed` about half a minute into launch,
+   * with no retry, leaving the machine unpublished until a manual re-enable.
+   */
+  accountSigned: boolean
+  desktop: boolean
+  /** The user's persisted intent to have this machine published. */
+  startAtLogin: boolean
+  /** The machine is already published. */
+  enabled: boolean
+  /** An attempt has already been spent for the current sign-in. */
+  attempted: boolean
+}
+
+export type RemoteAccessResumeDecision = {
+  resume: boolean
+  /** The budget to carry into the next evaluation. */
+  attempted: boolean
+}
+
+/**
+ * Whether to resume a machine the user left published — and what that costs.
+ *
+ * ONE attempt per sign-in transition, and the transition is the retry: no
+ * timer, no poll. Boot order is the whole problem this solves, because a
+ * desktop that launches signed-out-then-restoring used to spend its single
+ * attempt during the gap and never take another.
+ *
+ * The budget is cleared only by going UNSIGNED, which is what keeps it finite:
+ * a start() that keeps failing while signed does not get a second go, because
+ * that is how an unattended laptop hammers the enrollment endpoint. Signing out
+ * and back in is a deliberate act and earns exactly one more.
+ *
+ * It is also what protects an explicit stop. Pausing or revoking leaves
+ * `enabled` false — the same shape as a machine waiting to come back up — but
+ * the attempt for this sign-in is already spent, so nothing re-publishes the
+ * machine behind the user. The standing way to turn the intent off is
+ * `startAtLogin`, and a state we decline to act on does NOT spend the budget:
+ * switching start-at-login on later must still get its attempt.
+ *
+ * There is deliberately NO `enrolled` condition. It reads like the obvious one
+ * — "resume a machine that has an identity" — and it was dead code: the desktop
+ * reports `enrolled === enabled` because an enrollment nobody beats for expires
+ * inside a minute (see `electronMachineRemoteAccess`), so a pre-start connector
+ * always answers `enrolled: false` and the resume never ran on a real boot.
+ * The persisted intent IS the signal; `enable()` performs the enrollment.
+ */
+export function remoteAccessResumeDecision(input: RemoteAccessResumeInput): RemoteAccessResumeDecision {
+  if (!input.accountSigned) return { resume: false, attempted: false }
+  if (input.attempted) return { resume: false, attempted: true }
+  if (!input.desktop || !input.startAtLogin || input.enabled) {
+    return { resume: false, attempted: false }
+  }
+  return { resume: true, attempted: true }
+}
+
 /** The two params that identify a link followed from this machine's QR. */
 export const SECOND_DEVICE_PARAM = "claxedo_second_device"
 export const SECOND_DEVICE_SOURCE_PARAM = "claxedo_source_client"

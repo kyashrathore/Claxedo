@@ -59,6 +59,16 @@ export function runHostConnectorChild(port: ChildPort) {
   const identityStored = new Map<string, Pending<void>>()
   let connector: ReturnType<typeof createHostConnector> | undefined
   let bootstrapped = false
+  /**
+   * Set the moment the parent asks to stop, or the runtime is torn down.
+   *
+   * Enrollment now runs AFTER the bootstrap reply, so a `stop` can land while
+   * `connector.start()` is still waiting on the control plane. `start()` writes
+   * its enrolled state without consulting the close that happened underneath
+   * it, so without this the child would announce an enrolled machine the parent
+   * has already retired — and leave a heartbeat timer nothing cancels.
+   */
+  let closed = false
 
   const send = (message: HostConnectorChildMessage) => port.postMessage(message)
   // The connector's state, with the live share list stapled on when
@@ -132,6 +142,51 @@ export function runHostConnectorChild(port: ChildPort) {
     return { identity, keys }
   }
 
+  /**
+   * The enrollment handshake, run after the bootstrap has already been
+   * answered.
+   *
+   * Every step here is a control-plane POST proxied through Electron main, and
+   * this deployment's edge can withhold a response on a warm connection for
+   * longer than the supervisor's bootstrap budget. Awaited inline it made one
+   * stalled request look like a dead child. The outcome reaches the parent on
+   * the `status` channel instead — the same channel `onError`, the re-share
+   * loop and every later heartbeat transition already use.
+   */
+  const enroll = async (message: Extract<HostConnectorParentMessage, { type: "bootstrap" }>) => {
+    const active = connector
+    if (!active) return
+    const started = await active.start()
+    if (connector !== active) return
+    if (closed) {
+      // The parent stopped us mid-handshake. `start()` overwrote the closed
+      // state and installed a heartbeat timer, so close it again for real
+      // rather than announcing an enrollment nobody asked to keep.
+      active.close()
+      return
+    }
+    // Re-establish the shares this machine held before the restart — AFTER
+    // answering the bootstrap. Each re-registration is a challenge+register
+    // round trip to the control plane; done inline they pushed a two-share
+    // bootstrap past the supervisor's 10s budget and a perfectly healthy
+    // child was reported as timed out. Registration is an upsert, a link the
+    // control plane no longer accepts simply fails through onError, and the
+    // status push announces each restored share as it lands.
+    if (started.status === "enrolled" && message.sharedWorkspaces?.length) {
+      void (async () => {
+        for (const share of message.sharedWorkspaces ?? []) {
+          try {
+            await connector?.shareWorkspace(share)
+            send({ type: "status", status: snapshot() })
+          } catch {
+            // `shareWorkspace` already routed the failure through onError.
+          }
+        }
+      })()
+    }
+    send({ type: "status", status: snapshot() })
+  }
+
   const bootstrap = async (message: Extract<HostConnectorParentMessage, { type: "bootstrap" }>) => {
     if (bootstrapped) throw new Error("Host Connector child has already been bootstrapped")
     bootstrapped = true
@@ -160,28 +215,24 @@ export function runHostConnectorChild(port: ChildPort) {
       },
       onServing: (tunnel) => send({ type: "serving", tunnel: tunnel ?? null }),
     })
-    const started = await connector.start()
-    // Re-establish the shares this machine held before the restart — AFTER
-    // answering the bootstrap. Each re-registration is a challenge+register
-    // round trip to the control plane; done inline they pushed a two-share
-    // bootstrap past the supervisor's 10s budget and a perfectly healthy
-    // child was reported as timed out. Registration is an upsert, a link the
-    // control plane no longer accepts simply fails through onError, and the
-    // status push announces each restored share as it lands.
-    if (started.status === "enrolled" && message.sharedWorkspaces?.length) {
-      void (async () => {
-        for (const share of message.sharedWorkspaces ?? []) {
+    // Bootstrapped means "this process is alive and holds its machine
+    // identity", not "the enrollment network calls succeeded". The caller
+    // sends this pre-start snapshot as the bootstrap reply and only then runs
+    // `enroll`, so the reply cannot be delayed by a stalled control-plane POST.
+    return {
+      status: snapshot(),
+      // Nothing awaits `enroll`, so its rejection has no caller to reach. The
+      // parent is waiting on a status, and an enrollment that died without one
+      // would leave it waiting for its whole budget.
+      enroll: () =>
+        void enroll(message).catch((error) => {
           try {
-            await connector?.shareWorkspace(share)
-            send({ type: "status", status: snapshot() })
+            send({ type: "status", status: { status: "stopped", reason: "error", detail: String(error) } })
           } catch {
-            // `shareWorkspace` already routed the failure through onError.
+            // The port is gone; there is nobody left to tell.
           }
-        }
-      })()
+        }),
     }
-    send({ type: "status", status: snapshot() })
-    return snapshot()
   }
 
   const onMessage = async (value: unknown) => {
@@ -202,6 +253,7 @@ export function runHostConnectorChild(port: ChildPort) {
     }
 
     if (message.type === "stop") {
+      closed = true
       connector?.close()
       const status = connector
         ? snapshot()
@@ -241,8 +293,11 @@ export function runHostConnectorChild(port: ChildPort) {
     }
 
     try {
-      const status = await bootstrap(message)
-      send({ type: "response", requestId: message.requestId, ok: true, status })
+      const booted = await bootstrap(message)
+      send({ type: "response", requestId: message.requestId, ok: true, status: booted.status })
+      // Strictly after the reply is on the wire, so no ordering of microtasks
+      // can let an enrollment status push overtake the bootstrap response.
+      booted.enroll()
     } catch (error) {
       send({ type: "response", requestId: message.requestId, ok: false, error: String(error) })
     }
@@ -255,6 +310,7 @@ export function runHostConnectorChild(port: ChildPort) {
 
   return {
     close() {
+      closed = true
       connector?.close()
       for (const pending of account.values()) pending.reject(new Error("Host Connector child closed"))
       for (const pending of identityStored.values()) pending.reject(new Error("Host Connector child closed"))

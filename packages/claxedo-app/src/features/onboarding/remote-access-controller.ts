@@ -9,6 +9,7 @@ import {
   remoteAccessClientId,
   remoteAccessDeviceLink,
   remoteAccessAppOrigin,
+  remoteAccessResumeDecision,
   type RemoteAccessIdentity,
 } from "./remote-access-state"
 
@@ -122,7 +123,19 @@ export function useRemoteAccessController(input: {
     appOrigin: remoteAccessAppOrigin(),
     sourceClientId: remoteAccessClientId(),
   }))
-  let resumed = false
+  /**
+   * Whether the ACCOUNT LAYER has a usable credential right now.
+   *
+   * Deliberately not `status.hostedSignedIn`. That is the connector's own
+   * view — "an account client is configured" — and at boot it goes true before
+   * the account session has finished restoring. Auto-resume believed it, called
+   * start(), and the connector child's first account operation came back "not
+   * signed in", which surfaced as `child-start: Error: connector closed` about
+   * half a minute into launch. The account port is the layer that actually
+   * holds the credential (main, on the desktop), so it is the only honest
+   * answer to "could a signed operation succeed now".
+   */
+  const accountSigned = createMemo(() => account.state().status === "signed")
 
   async function enable() {
     const remote = port()
@@ -136,21 +149,33 @@ export function useRemoteAccessController(input: {
     await Promise.all([status.refetch(), devices.refetch()])
   }
 
+  // Dispatch only: the rule itself is `remoteAccessResumeDecision`, so the
+  // boot-order behaviour can be exercised without standing up a shell.
+  let attempted = false
   createEffect(() => {
-    if (resumed || platform.platform !== "desktop" || startAtLogin() !== true) return
-    if (status.data?.hostedSignedIn !== true || status.data?.enrolled !== true || status.data?.enabled === true) return
-    resumed = true
-    void enable().catch(() => {
-      // The resume can race the connector's own restart (a sign-in bounces
-      // the account era, a revoke lands elsewhere) and start() then reports
-      // "connector closed". That is not a crash to surface as an unhandled
-      // rejection: the panel keeps its explicit Enable button and the status
-      // refetch shows the truth. `resumed` stays set on purpose — auto-resume
-      // is a one-shot convenience, and retrying it against a failing start is
-      // how a laptop hammers the enrollment endpoint unattended.
-      void status.refetch()
+    const decision = remoteAccessResumeDecision({
+      accountSigned: accountSigned(),
+      desktop: platform.platform === "desktop",
+      startAtLogin: startAtLogin() === true,
+      enabled: status.data?.enabled === true,
+      attempted,
     })
+    attempted = decision.attempted
+    if (decision.resume) void resume()
   })
+
+  async function resume() {
+    try {
+      await enable()
+    } catch {
+      // The resume can still race the connector's own restart (a revoke lands
+      // elsewhere, the child bounces) and start() then reports "connector
+      // closed". That is not a crash to surface as an unhandled rejection: the
+      // panel keeps its explicit Enable button and the status refetch shows the
+      // truth.
+      void status.refetch()
+    }
+  }
 
   // A machine can stop being published without anyone here asking: a heartbeat
   // is rejected, an enrollment expires, the owner revokes it elsewhere. Where a

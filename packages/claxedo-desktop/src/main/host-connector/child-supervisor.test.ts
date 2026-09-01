@@ -315,6 +315,97 @@ describe("Electron-main child lifecycle", () => {
     release()
   })
 
+  test("a control-plane stall longer than the bootstrap budget still enrols", async () => {
+    const children: FakeChild[] = []
+    const statuses: unknown[] = []
+    const connector = setupHostConnectorChild({
+      spawn: () => {
+        const child = new FakeChild()
+        children.push(child)
+        return child
+      },
+      loadIdentity: async () => ({ ok: true }),
+      storeIdentity: async () => ({ ok: true }),
+      clearIdentity: () => {},
+      runAccountOperation: async (name, input) => {
+        const hostId = String(input?.hostId)
+        if (name === "host.enrollmentNonce") {
+          // The live defect, scaled to a test clock: the edge withheld this
+          // POST for ~12s against a 10s bootstrap budget. Three times the
+          // budget here is the same relationship without the wall time.
+          await Bun.sleep(750)
+          return { request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 }
+        }
+        if (name === "host.enrollCurrentMachine") {
+          return { enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 10_000 } }
+        }
+        return { expires_at: 11_000 }
+      },
+      onStatusChange: (status) => statuses.push(status),
+      startupTimeoutMs: 250,
+      enrollmentTimeoutMs: 10_000,
+    })
+
+    await expect(connector.start()).resolves.toMatchObject({
+      status: "enrolled",
+      enrollment: { enrollment_id: "enr_1" },
+    })
+    expect(children[0]!.killed).toBe(false)
+    // The bootstrap reply was published while the stall was still open, so a
+    // panel open during a slow enrollment sees a starting machine.
+    expect(statuses).toEqual([{ status: "idle" }, expect.objectContaining({ status: "enrolled" })])
+  })
+
+  test("an enrollment the control plane refuses resolves with the connector's own detail", async () => {
+    const children: FakeChild[] = []
+    const connector = setupHostConnectorChild({
+      spawn: () => {
+        const child = new FakeChild()
+        children.push(child)
+        return child
+      },
+      loadIdentity: async () => ({ ok: true }),
+      storeIdentity: async () => ({ ok: true }),
+      clearIdentity: () => {},
+      runAccountOperation: async () => {
+        throw new Error("host enrollment is not permitted for this account")
+      },
+      startupTimeoutMs: 1_000,
+      enrollmentTimeoutMs: 10_000,
+    })
+
+    const settled = await connector.start()
+
+    // `electronMachineRemoteAccess.enable()` throws this detail verbatim, so a
+    // refusal has to survive the trip rather than be replaced by a generic
+    // supervisor error.
+    expect(settled).toMatchObject({ status: "stopped", reason: "error" })
+    expect((settled as { detail: string }).detail).toContain("host enrollment is not permitted for this account")
+  })
+
+  test("an enrollment that never answers is bounded by the enrollment budget, not the bootstrap one", async () => {
+    const children: FakeChild[] = []
+    const connector = setupHostConnectorChild({
+      spawn: () => {
+        const child = new FakeChild()
+        children.push(child)
+        return child
+      },
+      loadIdentity: async () => ({ ok: true }),
+      storeIdentity: async () => ({ ok: true }),
+      clearIdentity: () => {},
+      runAccountOperation: () => new Promise(() => {}),
+      startupTimeoutMs: 1_000,
+      enrollmentTimeoutMs: 40,
+    })
+
+    const settled = await connector.start()
+
+    expect(settled).toMatchObject({ status: "stopped", reason: "error" })
+    expect((settled as { detail: string }).detail).toContain("Host Connector child enrollment timed out after 40ms")
+    expect(children[0]!.killed).toBe(true)
+  })
+
   test("a child that neither becomes ready nor exits is terminated by the startup bound", async () => {
     const children: FakeChild[] = []
     const connector = setupHostConnectorChild({
