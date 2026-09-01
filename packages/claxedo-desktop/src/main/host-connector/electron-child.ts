@@ -68,6 +68,7 @@ export function machineDisplayName(platform: NodeJS.Platform): string {
 /** Production adapter from Electron primitives to the dependency-light supervisor. */
 export function setupElectronHostConnector(input: {
   runAccountOperation: AccountOperationRunner
+  describeWorkspace?: Parameters<typeof setupHostConnectorChild>[0]["describeWorkspace"]
   safeStorage: SafeStorageApi
   userDataDir: string
   fork: HostConnectorUtilityFork
@@ -93,6 +94,7 @@ export function setupElectronHostConnector(input: {
 
   return setupHostConnectorChild({
     runAccountOperation: input.runAccountOperation,
+    ...(input.describeWorkspace ? { describeWorkspace: input.describeWorkspace } : {}),
     loadSharedWorkspaces: () => shares.load(),
     storeSharedWorkspaces: (next) => shares.store(next),
     spawn: () => {

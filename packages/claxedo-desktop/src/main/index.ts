@@ -88,6 +88,7 @@ import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
 import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
 import { remoteAccessFollow } from "./host-connector/account-follow"
+import { describeLocalWorkspace } from "./host-connector/local-workspace-description"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
@@ -808,6 +809,7 @@ void serverReady.promise.then(() => {
 
 hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name as never, params),
+  describeWorkspace: async (workspaceId) => describeLocalWorkspace((await serverReady.promise).url, workspaceId),
   safeStorage,
   userDataDir: app.getPath("userData"),
   fork: utilityProcess.fork,

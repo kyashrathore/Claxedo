@@ -1,3 +1,4 @@
+import type { LocalWorkspaceDescription } from "./local-workspace-description"
 import {
   parseHostConnectorChildMessage,
   type HostConnectorBootstrapIdentity,
@@ -114,6 +115,12 @@ export function setupHostConnectorChild(input: {
    */
   loadSharedWorkspaces?: () => readonly HostConnectorSharedWorkspace[]
   storeSharedWorkspaces?: (shares: readonly HostConnectorSharedWorkspace[]) => void
+  /**
+   * This machine's own description of a workspace it is about to share —
+   * directory, repository, branch, name — recorded on the control plane's
+   * host assignment so every client addresses the workspace by what it is.
+   */
+  describeWorkspace?: (workspaceId: string) => Promise<LocalWorkspaceDescription | undefined>
   /** The serving credential from the latest heartbeat ack, for the tunnel owner. */
   onServing?: (tunnel: Record<string, unknown> | null) => void
   displayName?: string
@@ -409,10 +416,20 @@ export function setupHostConnectorChild(input: {
       // workspace to this host at the control plane. Machine consent second:
       // the child adds the id to its served set and forces one signed beat,
       // and only a beat that comes back with the assignment counts as shared.
+      const description = await input.describeWorkspace?.(share.workspaceId)
+      const displayName = share.displayName ?? description?.displayName
       await input.runAccountOperation("workspace.assignHost", {
         id: share.workspaceId,
         hostId: identityHostId,
-        ...(share.displayName ? { displayName: share.displayName } : {}),
+        ...(displayName ? { displayName } : {}),
+        ...(description
+          ? {
+              remoteDirectory: description.directory,
+              ...(description.repoName ? { repoName: description.repoName } : {}),
+              ...(description.gitBranch ? { gitBranch: description.gitBranch } : {}),
+              ...(description.repoUrl ? { repoUrl: description.repoUrl } : {}),
+            }
+          : {}),
       })
       const settled = await bounded(
         request(target, {

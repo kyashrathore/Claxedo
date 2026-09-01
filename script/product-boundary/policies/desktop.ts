@@ -66,7 +66,9 @@ export const desktopMainComposition: Policy = {
   // supervisor's onServing seam (machine-wide enrollment). 83/24.
   // `host-connector/account-follow.ts` is the one owner of what remote access
   // does when the account changes (verdicts, not reachability): one module.
-  ceilings: { modules: 84, packages: 24 },
+  // `host-connector/local-workspace-description.ts` — the machine's own description
+  // of a shared workspace, read from the daemon at share time: one module.
+  ceilings: { modules: 85, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

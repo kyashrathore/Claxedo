@@ -78,6 +78,8 @@ class FakeChild implements HostConnectorChildProcess {
 function harness(options?: {
   /** Shares this machine already published, as a previous run left them. */
   sharedWorkspaces?: readonly HostConnectorSharedWorkspace[]
+  /** What this machine says about a workspace it shares. */
+  describeWorkspace?: Parameters<typeof setupHostConnectorChild>[0]["describeWorkspace"]
   /** Fail every spawn from this attempt onwards (1 = the first). */
   spawnFailsFrom?: number
 }) {
@@ -93,6 +95,7 @@ function harness(options?: {
   let shareLoads = 0
   const shareStores: Array<readonly HostConnectorSharedWorkspace[]> = []
   const connector = setupHostConnectorChild({
+    ...(options?.describeWorkspace ? { describeWorkspace: options.describeWorkspace } : {}),
     loadSharedWorkspaces: () => {
       shareLoads++
       return options?.sharedWorkspaces ?? []
@@ -130,6 +133,7 @@ function harness(options?: {
         return { enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 10_000 } }
       }
       if (name === "host.enrollmentHeartbeat") return { expires_at: 11_000 }
+      if (name === "workspace.assignHost") return { assigned: true, workspace_id: String(input?.id), host_id: hostId }
       throw new Error(`unexpected account operation ${name}`)
     },
     onError: (stage, error) => errors.push({ stage, error }),
@@ -176,6 +180,27 @@ describe("Electron-main child lifecycle", () => {
       "host.enrollCurrentMachine",
     ])
     expect(JSON.stringify(host.operations)).not.toMatch(/authorization|bearer|access_?token/i)
+  })
+
+  test("a share records the machine's own description of the workspace on the assignment", async () => {
+    const host = harness({
+      describeWorkspace: async (workspaceId) =>
+        workspaceId === "ws_1"
+          ? { displayName: "Claxedo", directory: "/Users/me/test/opencode", repoName: "Claxedo", gitBranch: "dev" }
+          : undefined,
+    })
+    await host.connector.start()
+    // Owner intent is declared first; whether the machine's consent beat then
+    // settles is the child's business and not what this test reads.
+    await host.connector.shareWorkspace({ workspaceId: "ws_1" }).catch(() => undefined)
+    expect(host.operations.find((operation) => operation.name === "workspace.assignHost")?.input).toEqual({
+      id: "ws_1",
+      hostId: expect.any(String),
+      displayName: "Claxedo",
+      remoteDirectory: "/Users/me/test/opencode",
+      repoName: "Claxedo",
+      gitBranch: "dev",
+    })
   })
 
   test("concurrent and repeated starts own exactly one live child", async () => {
