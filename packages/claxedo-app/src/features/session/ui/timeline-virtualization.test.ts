@@ -81,6 +81,21 @@ describe("timeline resize anchor — display gating", () => {
     expect(recorded.scrollToEnd).toBe(0)
   })
 
+  test("a zero measurement never reaches the virtualizer", () => {
+    // Zero means the element was measured while display-locked or detached.
+    // Caching it collapses the total size to paddingEnd, which strands the
+    // bottom anchor and paints the last turn at the top of the viewport.
+    const { virtualizer, resizedCount } = harness({ displayed: () => true })
+    virtualizer.resizeItem(0, 0)
+    expect(resizedCount()).toBe(0)
+  })
+
+  test("a real measurement still reaches the virtualizer", () => {
+    const { virtualizer, resizedCount } = harness({ displayed: () => true })
+    virtualizer.resizeItem(0, 240)
+    expect(resizedCount()).toBe(1)
+  })
+
   test("the resize itself still reaches the virtualizer while stashed", () => {
     const { virtualizer, resizedCount } = harness({ displayed: () => false })
     virtualizer.resizeItem(0, 100)

@@ -70,6 +70,16 @@ export function createTimelineResizeAnchor() {
       }
 
       input.virtualizer.resizeItem = (index: number, size: number) => {
+        // A rendered row is never 0px. A zero measurement means the element was
+        // measured while its surface was display-locked (the workbench keeps
+        // sessions mounted under `content-visibility: hidden`) or detached, and
+        // caching it collapses the virtualizer's total size to `paddingEnd`.
+        // The scroller then has nothing to scroll, so the bottom anchor cannot
+        // land and the last turn paints at the TOP of the viewport with a gap
+        // above the composer — until real measurements arrive and shove
+        // everything down. Dropping the zero keeps this row on its estimate,
+        // which is close enough for the anchor to be right on the first frame.
+        if (size === 0) return
         const item = input.virtualizer.measurementsCache[index]
         const previous = item ? (input.virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
         const root = input.root()
