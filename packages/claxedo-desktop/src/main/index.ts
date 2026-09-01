@@ -750,11 +750,17 @@ const pushServing = async (tunnel: Record<string, unknown> | null) => {
   lastServingCredential = tunnel
   try {
     const server = await serverReady.promise
-    await fetch(new URL("/api/claxedo/host-serving", server.url), {
+    const response = await fetch(new URL("/api/claxedo/host-serving", server.url), {
       method: "PUT",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ credential: tunnel }),
     })
+    const body = await response.text()
+    // The daemon rejecting the credential (or the ack carrying none) must be
+    // visible: this hop failing silently cost a full acceptance run to find.
+    logger.info(
+      `[host-serving] pushed credential=${tunnel ? "present" : "null"} -> ${response.status} ${body.slice(0, 200)}`,
+    )
   } catch (error) {
     logger.warn(`[host-serving] push failed: ${String(error)}`)
   }

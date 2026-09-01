@@ -27,8 +27,38 @@ import {
 } from "@claxedo/workspace-runtime/relay"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
+import { FORWARDED_CLIENT_HEADERS } from "@claxedo/server-core/platform/http/peer-address"
 
 const log = Log.create({ service: "user-hosted-serving" })
+
+/**
+ * What the tunnel must NOT carry onto the loopback replay.
+ *
+ * A relay-delivered request reaches this daemon as a fetch the machine makes
+ * to its own `127.0.0.1` server, and the daemon's relay-shaped surface
+ * requires exactly that ("Host-tunnel traffic carries a relay-minted RHT" —
+ * `runtime-dispatch/shared-workspace-endpoint.ts`). Replaying the remote
+ * caller's headers verbatim made that genuinely-local request look proxied
+ * and the unsigned-local gate refused it: Cloudflare stamps
+ * `cf-connecting-ip`/`x-forwarded-*` on everything reaching the relay, the
+ * browser sends a foreign `Origin`, and `host` names the relay — each one
+ * alone is a 403 (verified against the running daemon).
+ *
+ * Stripping them is scoped to THIS path — the tunnel's own replay — so
+ * browser traffic to loopback keeps its Origin and its CSRF protection. The
+ * headers describe a client that is not the one making the local request, so
+ * forwarding them was never meaningful here; authorization for relay traffic
+ * is the relay's verified Runtime Access Token plus this module's own
+ * registration and route-ownership guards, not the socket the request
+ * arrived on.
+ */
+const REPLAY_STRIPPED_HEADERS = [...FORWARDED_CLIENT_HEADERS, "origin", "host"] as const
+
+/** The tunnel's local replay, with the remote caller's identity headers removed. */
+export function loopbackReplayHeaders(input: Record<string, string>): Record<string, string> {
+  const stripped = new Set<string>(REPLAY_STRIPPED_HEADERS)
+  return Object.fromEntries(Object.entries(input).filter(([name]) => !stripped.has(name.toLowerCase())))
+}
 
 export type UserHostedServingCredential = {
   hostId: string
@@ -128,6 +158,7 @@ export async function setUserHostedServing(
       )
     },
     tokenProvider: async () => token.current,
+    localReplayHeaders: loopbackReplayHeaders,
     onEvent: (event) => logTunnelEvent(context, event),
     pingIntervalMs: 15_000,
     reconnectIntervalMs: 1_000,

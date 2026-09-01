@@ -26,7 +26,15 @@ function loopbackHost(input: string) {
 type IncomingMessageLike = { socket?: { remoteAddress?: string } }
 
 const requestPeerAddresses = new WeakMap<Request, string>()
-const FORWARDED_CLIENT_HEADERS = [
+/**
+ * Headers that describe an ORIGINAL client behind a proxy. Their presence is
+ * what disqualifies a request from unsigned-local trust below — exported so
+ * the one component that legitimately replays a remote request onto loopback
+ * (the machine's relay host tunnel, see
+ * `claxedo-local-server/src/workspace/user-hosted-serving.ts`) strips exactly
+ * this set instead of keeping a second copy that can drift from the gate.
+ */
+export const FORWARDED_CLIENT_HEADERS = [
   "forwarded",
   "x-forwarded-for",
   "x-forwarded-host",
