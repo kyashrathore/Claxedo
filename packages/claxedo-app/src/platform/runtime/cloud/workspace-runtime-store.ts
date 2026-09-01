@@ -1,6 +1,8 @@
 import { queryClient } from "@/platform/query/query-client"
 import { createHttpWorkspaceRuntimeBackend } from "@/platform/runtime/http-backend"
+import { openWorkspaceConnection } from "@/platform/runtime/agent/workspace-relay-connection"
 import { pendingCloudRuntime, resolveWorkspaceRuntime, runtimeScope } from "@/platform/runtime/workspace-runtime-record"
+import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { authFetch } from "@/platform/api/api"
 import { bypassFetchThrottle } from "@/lib/fetch-throttle"
@@ -209,14 +211,30 @@ export async function prepareUserHostedRuntime(
   }
 }
 
+function hostedCloudRuntimeWithoutRecord(workspaceId: string | undefined): WorkspaceRuntimeSnapshot | null {
+  if (!workspaceId) return null
+  // Hosted `/api/workspace/resolve` is documented to return `null` on every
+  // call (no Convex round-trip). Provisioning is observed through connection
+  // mint, not the record. A `ws_` id with no snapshot is still a sandbox to
+  // wait for — treating that null as "already ready" skipped mint and left
+  // the composer overlay on Acquiring sandbox while session create hung.
+  return {
+    workspaceId,
+    kind: "cloud",
+    status: "acquiring_sandbox",
+  }
+}
+
 export async function prepareWorkspaceRuntime(
   input: PrepareWorkspaceRuntimeInput,
 ): Promise<PrepareWorkspaceRuntimeResult> {
-  const workspace = await resolveWorkspaceRuntime({
+  const scope = runtimeScope(input)
+  const resolved = await resolveWorkspaceRuntime({
     baseUrl: input.baseUrl,
     request: input.request,
-    ...runtimeScope(input),
+    ...scope,
   })
+  const workspace = resolved ?? hostedCloudRuntimeWithoutRecord(scope.workspaceId)
   if (input.cancelled?.()) return { ok: false, cancelled: true, workspace }
   input.onResolved?.(workspace)
   if (!pendingCloudRuntime(workspace)) {
@@ -242,12 +260,19 @@ export async function prepareWorkspaceRuntime(
   })
 
   try {
-    await ensureWorkspaceRuntime({
-      baseUrl: input.baseUrl,
-      request: input.request,
-      workspaceId: workspace.workspaceId,
-      directory: runtimeScope(input).directory,
-    })
+    if (resolved) {
+      await ensureWorkspaceRuntime({
+        baseUrl: input.baseUrl,
+        request: input.request,
+        workspaceId: workspace.workspaceId,
+        directory: scope.directory,
+      })
+    } else {
+      await openWorkspaceConnection(workspace.workspaceId, {
+        ...(input.baseUrl ? { serverUrl: input.baseUrl } : {}),
+        ...(input.request ? { request: input.request } : {}),
+      })
+    }
     if (input.cancelled?.()) return { ok: false, cancelled: true, workspace }
     input.onStatus?.("ready")
     input.onLog?.({

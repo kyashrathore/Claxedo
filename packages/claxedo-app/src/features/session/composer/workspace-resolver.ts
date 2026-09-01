@@ -21,6 +21,15 @@ const userHostedWorkspaceKind = "user-hosted"
 
 export type WorkspaceCatalogEntry = WorkspaceInventoryEntry & {
   kind?: WorkspaceCatalogKind | string | null
+  id?: string | null
+  workspaceId?: string | null
+  directory?: string | null
+  workspace_name?: string | null
+  workspaceName?: string | null
+  repo_url?: string | null
+  repoUrl?: string | null
+  git_remote?: string | null
+  gitRemote?: string | null
 }
 
 export type ProjectCatalogItem = WorkspaceInventoryProject & {
@@ -33,6 +42,19 @@ export type ProjectCatalogItem = WorkspaceInventoryProject & {
 export type RuntimeWorkspaceRef = {
   workspaceId: string
   kind: Extract<WorkspaceCatalogKind, "cloud" | "user-hosted">
+}
+
+export function selectedNewSessionWorkspace(input: {
+  newSession: boolean
+  kind?: WorkspaceCatalogKind
+  worktree?: string
+}): ({ kind: Extract<WorkspaceCatalogKind, "cloud" | "user-hosted">; workspaceId?: string }) | undefined {
+  if (!input.newSession || (input.kind !== cloudWorkspaceKind && input.kind !== userHostedWorkspaceKind)) return undefined
+  const workspaceId = input.worktree
+  return {
+    kind: input.kind,
+    ...(workspaceId && workspaceId !== "main" && workspaceId !== "create" ? { workspaceId } : {}),
+  }
 }
 
 export type WorkspaceSubmitPlan =
@@ -56,6 +78,16 @@ export type ResolveWorkspaceSubmitPlanInput = {
 
 export function projectId(project: ProjectCatalogItem | undefined) {
   return project?.id ?? project?.project_id ?? project?.projectID
+}
+
+/** Repository source already discovered by the authoritative project inventory. */
+export function projectRepoUrl(project: ProjectCatalogItem | undefined) {
+  if (!project) return undefined
+  for (const workspace of Object.values(project.workspaces ?? {})) {
+    const remote = workspace.repo_url ?? workspace.repoUrl ?? workspace.git_remote ?? workspace.gitRemote
+    if (typeof remote === "string" && remote.trim()) return remote.trim()
+  }
+  return undefined
 }
 
 export function projectForDirectory(projects: readonly ProjectCatalogItem[], directory: WorkspaceDirectory | undefined) {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { signedWorkspaceFromProjects } from "./signed-workspace"
+import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "./signed-workspace"
 
 describe("signed workspace lookup", () => {
   test("matches raw workspace ids from cached project metadata", () => {
@@ -54,5 +54,34 @@ describe("signed workspace lookup", () => {
       directory: "ws_nullable",
       kind: "user-hosted",
     })
+  test("treats a filesystem project's own UUID as local, not relay-backed", () => {
+    const projectId = "c4955849-a3c1-4f3e-8481-1fd1bdec3962"
+    const worktree = "/private/tmp/claxedo-agent-plugins-real-app/plugins-e2e"
+    const projects = [{
+      id: projectId,
+      worktree,
+      workspaces: {
+        [worktree]: { id: projectId, directory: worktree, kind: "local" },
+      },
+    }]
+
+    expect(localWorkspaceInProjects(projects, projectId)).toBe(true)
+    expect(localWorkspaceInProjects(projects, worktree)).toBe(true)
+    expect(signedWorkspaceFromProjects(projects, projectId)).toBeUndefined()
+  })
+
+  test("treats a desktop project UUID as local even when inventory omitted kind: local", () => {
+    const projectId = "b0b33e8a-8f25-4ce6-b9a8-e06d31a7caf3"
+    const worktree = "/tmp/claxedo-agent-plugins-real-app/project-three"
+    const projects = [{
+      id: projectId,
+      worktree,
+      workspaces: {
+        [worktree]: { id: projectId, directory: worktree },
+      },
+    }]
+
+    expect(localWorkspaceInProjects(projects, projectId)).toBe(true)
+    expect(localWorkspaceInProjects(projects, worktree)).toBe(true)
   })
 })

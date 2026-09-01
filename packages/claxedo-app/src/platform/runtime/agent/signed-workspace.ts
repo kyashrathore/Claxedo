@@ -18,6 +18,8 @@ export type WorkspaceInventoryEntry = {
 }
 
 export type WorkspaceInventoryProject = {
+  /** Desktop local projects route by this UUID; see `localWorkspaceInProjects`. */
+  id?: string | null
   worktree?: string
   sandboxes?: string[]
   workspaces?: Record<string, WorkspaceInventoryEntry>
@@ -39,6 +41,10 @@ export function sameWorkspaceDirectory(left: string | null | undefined, right: s
 
 function sameWorkspaceId(left: string | null | undefined, right: string | null | undefined) {
   return !!left && !!right && left === right
+}
+
+function isFilesystemWorktree(input: string | undefined | null) {
+  return !!input && (input.startsWith("/") || /^[A-Za-z]:[\\/]/.test(input))
 }
 
 export function signedWorkspaceFromProjects(projects: readonly WorkspaceInventoryProject[], directory: string | undefined) {
@@ -76,6 +82,16 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
         !sameWorkspaceDirectory(key, ref) &&
         !sameWorkspaceDirectory(workspace.directory, ref)
       ) continue
+      return true
+    }
+    // Desktop local projects use the project UUID as the workspace route id.
+    // That UUID is not relay-backed unless a signed cloud/user-hosted row also
+    // claims it — routing it at Convex mints 403 `workspace_authorization_denied`.
+    if (
+      isFilesystemWorktree(project.worktree) &&
+      (sameWorkspaceId(project.id, ref) || sameWorkspaceDirectory(project.worktree, ref)) &&
+      !findSignedWorkspaceFromProjects(projects, ref)
+    ) {
       return true
     }
   }
