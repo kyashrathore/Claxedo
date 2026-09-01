@@ -159,6 +159,41 @@ describe("Better Auth D1 candidate Worker", () => {
     expect(mocks.coreFetch).not.toHaveBeenCalled()
   })
 
+  /**
+   * What the user saw during a release window: "Claxedo failed to start /
+   * Failed to fetch". The 503 and its code existed; the browser hid them
+   * because the gate answered without CORS headers.
+   */
+  test("a locked deployment answers the app origin with CORS so the browser can read the denial", async () => {
+    const gatedEnv = { ...env(), CLAXEDO_APP_ORIGINS: "https://app.example.test,https://*.preview.example.test" }
+    const denied = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/health", { headers: { origin: "https://app.example.test" } }),
+      gatedEnv,
+    )
+    expect(denied.status).toBe(503)
+    expect(denied.headers.get("access-control-allow-origin")).toBe("https://app.example.test")
+    expect(denied.headers.get("access-control-allow-credentials")).toBe("true")
+    expect(await denied.json()).toEqual({ error: { code: "deployment_phase_denied" } })
+
+    const preflight = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/health", {
+        method: "OPTIONS",
+        headers: { origin: "https://x.preview.example.test", "access-control-request-method": "GET" },
+      }),
+      gatedEnv,
+    )
+    expect(preflight.status).toBe(204)
+    expect(preflight.headers.get("access-control-allow-origin")).toBe("https://x.preview.example.test")
+
+    // An origin the deployment does not know gets the denial, and no CORS.
+    const stranger = await worker.fetch(
+      new Request("https://api.example.test/api/claxedo/health", { headers: { origin: "https://evil.example" } }),
+      gatedEnv,
+    )
+    expect(stranger.status).toBe(503)
+    expect(stranger.headers.get("access-control-allow-origin")).toBeNull()
+  })
+
   test("a dev deployment with release gates disabled serves auth and product routes through any phase", async () => {
     for (const phase of ["locked", "provider_sync", "multiplayer_validation"] as const) {
       mocks.releaseState.mockResolvedValue(release(phase))

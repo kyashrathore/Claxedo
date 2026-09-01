@@ -5,6 +5,8 @@ import {
   securityHeaderEntries,
   withSecurityHeaders,
 } from "@claxedo/server-core/platform/http/security-headers"
+import { BROWSER_ALLOWED_REQUEST_HEADERS } from "@claxedo/server-core/platform/http/browser-auth-security"
+import { configuredCoreAppOrigins } from "../hosted-shared/hosted-core-app"
 import { EMPTY_SERVICE_MANIFEST_ID } from "@claxedo/service-contract"
 
 import {
@@ -74,6 +76,13 @@ export type BetterAuthD1CandidateWorkerEnv = HostedCoreWorkerEnv &
      * `deployment_candidate_unavailable`. Never set it on a shared or
      * production deployment — it disables release gating entirely.
      */
+    /**
+     * The browser app origins (comma-separated; `https://*.suffix` allowed).
+     * The phase gates answer these with CORS headers so a locked deployment
+     * reads as a 503 with a code in the app, not as "Failed to fetch".
+     */
+    CLAXEDO_APP_ORIGINS?: string
+    CLAXEDO_APP_ORIGIN?: string
     CLAXEDO_DEV_DISABLE_RELEASE_GATES?: string
   }
 
@@ -171,12 +180,50 @@ function multiplayerValidationOperation(
   return multiplayerValidationOperations.some((candidate) => candidate === value)
 }
 
-function unavailable(request: Request, code = "deployment_candidate_unavailable") {
+/**
+ * CORS for a gated answer.
+ *
+ * The open path answers the app origin with CORS through the core app's own
+ * middleware; a gated phase answers before that middleware exists. Without
+ * these headers the browser hides the 503 and its code behind "Failed to
+ * fetch", and a release window (locked for minutes) read in the hosted app as
+ * "Claxedo failed to start" with no reason. Same origin rule as the core app.
+ */
+function phaseGateCorsEntries(
+  request: Request,
+  env: { CLAXEDO_APP_ORIGINS?: string; CLAXEDO_APP_ORIGIN?: string },
+): ReadonlyArray<readonly [string, string]> {
+  const origin = request.headers.get("origin")
+  if (!origin) return []
+  const allowed = configuredCoreAppOrigins(env.CLAXEDO_APP_ORIGINS ?? env.CLAXEDO_APP_ORIGIN)
+  if (!allowed(origin)) return []
+  return [
+    ["access-control-allow-origin", origin],
+    ["access-control-allow-credentials", "true"],
+    ["access-control-allow-methods", "GET,POST,PUT,PATCH,DELETE,OPTIONS"],
+    ["access-control-allow-headers", BROWSER_ALLOWED_REQUEST_HEADERS.join(", ")],
+    ["vary", "origin"],
+  ]
+}
+
+function unavailable(
+  request: Request,
+  cors: ReadonlyArray<readonly [string, string]>,
+  code = "deployment_candidate_unavailable",
+) {
+  // A preflight during a gated phase must succeed for the browser to send
+  // the real request and read the 503 it gets back.
+  if (request.method === "OPTIONS" && cors.length) {
+    return withSecurityHeaders(new Response(null, { status: 204 }), cors)
+  }
   return withSecurityHeaders(
     Response.json({ error: { code } }, { status: 503 }),
-    securityHeaderEntries({
-      https: requestIsHttps({ url: request.url, header: (name) => request.headers.get(name) ?? undefined }),
-    }),
+    [
+      ...securityHeaderEntries({
+        https: requestIsHttps({ url: request.url, header: (name) => request.headers.get(name) ?? undefined }),
+      }),
+      ...cors,
+    ],
   )
 }
 
@@ -191,6 +238,7 @@ function available(request: Request, body: unknown) {
 
 const handler = {
   async fetch(request: Request, env: BetterAuthD1CandidateWorkerEnv, context?: ExecutionContext) {
+    const cors = phaseGateCorsEntries(request, env)
     try {
       if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
       assertOperatorSecretIsolation(env)
@@ -280,7 +328,7 @@ const handler = {
       if (release.phase === "locked") {
         const journeyId = requiredReleaseIdentifier(env.CLAXEDO_CANARY_JOURNEY_ID, "CLAXEDO_CANARY_JOURNEY_ID")
         if (request.headers.get("x-claxedo-canary-journey-id") !== journeyId) {
-          return unavailable(request, "deployment_phase_denied")
+          return unavailable(request, cors, "deployment_phase_denied")
         }
         if (authRoute(url.pathname)) return await selected.authHandler(request)
         if (url.pathname === "/__release/canary/identity" && request.method === "GET") {
@@ -290,10 +338,10 @@ const handler = {
             identityHash: await userDeployedOwnerIdentityHash(providerIdentity),
           })
         }
-        return unavailable(request, "deployment_phase_denied")
+        return unavailable(request, cors, "deployment_phase_denied")
       }
       if (release.phase === "provider_sync") {
-        return unavailable(request, "deployment_phase_denied")
+        return unavailable(request, cors, "deployment_phase_denied")
       }
       if (release.phase === "multiplayer_validation") {
         // Browser OAuth bootstrap cannot carry the validation-operation
@@ -342,14 +390,14 @@ const handler = {
       // identity hash equals the admitted canary identity.
       if (authRoute(url.pathname)) return await selected.authHandler(request)
       const claimPresent = request.headers.has(USER_DEPLOYED_OWNER_CLAIM_HEADER)
-      if (claimPresent && !unsafe(request.method)) return unavailable(request, "bootstrap_owner_claim_method_denied")
+      if (claimPresent && !unsafe(request.method)) return unavailable(request, cors, "bootstrap_owner_claim_method_denied")
 
       if (release.phase === "canary") {
         const admission = await requireDeploymentCanaryAdmission(env.AUTH_DB, identity)
         const canaryIdentityHash = admission.canaryIdentityHash
         const journeyId = admission.journeyId
         if (request.headers.get("x-claxedo-canary-journey-id") !== journeyId) {
-          return unavailable(request, "canary_journey_denied")
+          return unavailable(request, cors, "canary_journey_denied")
         }
         const mutationOperationId = unsafe(request.method)
           ? requiredReleaseIdentifier(
@@ -371,7 +419,7 @@ const handler = {
         }
         const principal = await selected.options.authentication.authenticate(request)
         if ((await userDeployedOwnerIdentityHash(principal.identity)) !== canaryIdentityHash) {
-          return unavailable(request, "canary_identity_denied")
+          return unavailable(request, cors, "canary_identity_denied")
         }
         await admitDeploymentOperation(env.AUTH_DB, identity, {
           binding: deploymentAdmissionBinding(release),
@@ -397,7 +445,7 @@ const handler = {
 
       const validationOperation = request.headers.get("x-claxedo-multiplayer-validation-operation")
       if (!multiplayerValidationOperation(validationOperation))
-        return unavailable(request, "multiplayer_validation_operation_denied")
+        return unavailable(request, cors, "multiplayer_validation_operation_denied")
       if (url.pathname === "/__release/multiplayer/identity" && request.method === "GET") {
         const providerIdentity = await selected.verifyIdentity(request)
         const identityHash = await userDeployedOwnerIdentityHash(providerIdentity)
@@ -430,7 +478,7 @@ const handler = {
       return await core.fetch(request, env, context)
     } catch (error) {
       console.error("[better-auth-d1-candidate] deployment is unavailable", error)
-      return unavailable(request)
+      return unavailable(request, cors)
     }
   },
 }
