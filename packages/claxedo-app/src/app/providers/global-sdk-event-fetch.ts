@@ -4,7 +4,7 @@ import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
+import { accountStreamUsable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
 
 const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
 
@@ -24,7 +24,7 @@ export type ControlPlaneEventFetchInput = {
   fetch: typeof fetch
 }
 
-export function openCentralRuntimeEventResponse(input: {
+export async function openCentralRuntimeEventResponse(input: {
   request: typeof fetch
   serverUrl: string
   sessionId: string
@@ -32,7 +32,7 @@ export function openCentralRuntimeEventResponse(input: {
   init: RequestInit
   signal: AbortSignal
 }) {
-  if (!accountStreamAvailable()) {
+  if (!(await accountStreamUsable())) {
     return input.request(
       new URL(
         `/api/control/session/${encodeURIComponent(input.sessionId)}/runtime-events?parentSessionId=${encodeURIComponent(input.sessionId)}`,

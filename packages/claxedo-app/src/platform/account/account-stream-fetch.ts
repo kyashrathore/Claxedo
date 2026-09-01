@@ -6,7 +6,7 @@
  * reassembles them into a `Response` the existing SSE readers already consume.
  */
 
-import { accountRun } from "./hosted-control-call"
+import { signedAccountRun } from "./hosted-control-call"
 import type { HostedOperationName } from "./account-port"
 
 type StreamBridge = {
@@ -44,11 +44,18 @@ function streamBridge(): StreamBridge | undefined {
 }
 
 /**
- * Present when the Electron account bridge exposes stream IPC. Unsigned /
- * browser builds keep `authFetch`.
+ * True when the Electron account bridge exposes stream IPC AND the account is
+ * actually signed (`signedAccountRun`). Bridge presence alone is not enough:
+ * the preload exposes `api.account` in every desktop build, including
+ * unsigned or unconfigured ones (no `CLAXEDO_ACCOUNT_*` baked at package
+ * time) where every account operation can only throw "this build has no
+ * account client configured". Routing a stream through the bridge in that
+ * state yields an endless connect → throw → retry loop and the central
+ * events never arrive; unsigned builds must keep the plain `authFetch` path
+ * against the local server, which serves `/api/claxedo/events` itself.
  */
-export function accountStreamAvailable() {
-  return Boolean(accountRun() && streamBridge())
+export async function accountStreamUsable(): Promise<boolean> {
+  return Boolean((await signedAccountRun()) && streamBridge())
 }
 
 export async function openAccountStreamResponse(input: {

@@ -51,6 +51,23 @@ export function reportStreamSyncLifecycle(id: StreamSyncStreamId, state: StreamS
   )
 }
 
+/**
+ * Deliberate-teardown eraser: called by the events provider when it REMOVES a
+ * stream target (session switch away, sign-out, provider cleanup). Without
+ * this, the final `"stopped"` snapshot — with `everLive` latched true — froze
+ * forever, and any UI reading that streamId later (switching back to an old
+ * session) treated ordinary startup as a reconnect. Clearing resets the
+ * stream to "never reported", so a future connection for the same streamId
+ * starts with a fresh `everLive` and first-connect suppression applies again.
+ */
+export function clearStreamSyncLifecycle(id: StreamSyncStreamId): void {
+  setStreamSyncSnapshots(
+    produce((snapshots) => {
+      delete snapshots[id]
+    }),
+  )
+}
+
 /** Reactive read accessor. Returns `undefined` before the stream has reported its first transition. */
 export function streamSyncLifecycleSnapshot(id: StreamSyncStreamId): StreamSyncSnapshot | undefined {
   return streamSyncSnapshots[id]

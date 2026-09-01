@@ -11,18 +11,27 @@ import {
  * pure function so the state → shown/hidden mapping — including first-connect
  * suppression — is testable without mounting Solid.
  *
- * Mounts only for `"reconnect-scheduled"` and `"stopped"`, and only once the
- * stream has proven itself by reaching `"live"` at least once
- * (`snapshot.everLive`). That second guard is what suppresses the line during
- * the first connect of a fresh session: a brand-new stream that has not yet
- * gone live is ordinary startup — `"connecting"`, or even an early
- * `"reconnect-scheduled"` from a first-attempt failure that has not yet
- * succeeded once — never renders anything. Only a stream that was `"live"`
- * and then dropped counts as a *reconnect*.
+ * Mounts only for `"reconnect-scheduled"`, and only once the stream has
+ * proven itself by reaching `"live"` at least once (`snapshot.everLive`).
+ * That second guard is what suppresses the line during the first connect of a
+ * fresh session: a brand-new stream that has not yet gone live is ordinary
+ * startup — `"connecting"`, or even an early `"reconnect-scheduled"` from a
+ * first-attempt failure that has not yet succeeded once — never renders
+ * anything. Only a stream that was `"live"` and then dropped counts as a
+ * *reconnect*.
+ *
+ * `"stopped"` deliberately does NOT show the line: the events provider only
+ * stops a stream on deliberate teardown (target removed by reconcile, or
+ * provider cleanup), and nothing will ever reconnect a stopped stream —
+ * "Reconnecting…" over it would be a lie that never clears. Observed as
+ * BUG 1: switching away from a session stopped its workspace stream, the
+ * frozen `{stopped, everLive: true}` snapshot survived, and every switch
+ * back showed a permanent "Reconnecting…". Teardown now also clears the
+ * snapshot (`clearStreamSyncLifecycle`), so this branch is defense in depth.
  */
 export function shouldShowConnectionLine(snapshot: StreamSyncSnapshot | undefined): boolean {
   if (!snapshot || !snapshot.everLive) return false
-  return snapshot.state === "reconnect-scheduled" || snapshot.state === "stopped"
+  return snapshot.state === "reconnect-scheduled"
 }
 
 /**

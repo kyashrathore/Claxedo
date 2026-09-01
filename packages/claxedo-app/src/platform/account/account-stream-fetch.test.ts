@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 
-import { openAccountStreamResponse } from "./account-stream-fetch"
+import { accountStreamUsable, openAccountStreamResponse } from "./account-stream-fetch"
 
 type Chunk = { streamId: string; text: string }
 type End = { streamId: string }
@@ -63,6 +63,29 @@ function bridge(input: {
   ;(globalThis as { api?: unknown }).api = { account }
   return { closes, chunks, ends, errors, starts: () => starts }
 }
+
+describe("accountStreamUsable", () => {
+  test("true only for a SIGNED account: bridge presence alone must not route streams", async () => {
+    const h = bridge({ onStart: () => {} })
+    void h
+    expect(await accountStreamUsable()).toBe(true)
+
+    // Same bridge, unsigned account — an unsigned or unconfigured build
+    // exposes the full bridge but every operation would throw; streams must
+    // stay on the local authFetch path.
+    const api = (globalThis as { api?: { account?: { state?: () => Promise<{ status?: string }> } } }).api
+    api!.account!.state = async () => ({ status: "unsigned" })
+    expect(await accountStreamUsable()).toBe(false)
+
+    api!.account!.state = async () => {
+      throw new Error("this build has no account client configured")
+    }
+    expect(await accountStreamUsable()).toBe(false)
+
+    delete (globalThis as { api?: unknown }).api
+    expect(await accountStreamUsable()).toBe(false)
+  })
+})
 
 describe("openAccountStreamResponse", () => {
   test("arms every listener before start so synchronous first chunk and end are preserved", async () => {
