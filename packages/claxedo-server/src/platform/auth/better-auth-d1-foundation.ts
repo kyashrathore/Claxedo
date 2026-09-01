@@ -109,6 +109,30 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
           },
         }
       : {}),
+    account: {
+      /**
+       * Validate the OAuth callback against the stored state, not a cookie.
+       *
+       * Better Auth picks this default from whether a SERVER SESSION STORE
+       * exists; this deployment has none (Workers, opaque D1-backed tokens),
+       * so it silently chose "cookie" — and that path hardcodes a 300s
+       * `__Secure-claxedo.state` cookie with no knob. Five minutes is a
+       * plausible amount of time to spend on GitHub's own screens (2FA, an
+       * approval prompt, or simply switching away), and once it lapses the
+       * callback answers `state_mismatch`: an opaque error page, no recovery,
+       * and a user who cannot sign in. Reproduced from a shell with no
+       * browser at all — mint a state, replay it at
+       * `/api/auth/callback/github`, get `state_mismatch` while the row is
+       * still in `verification`.
+       *
+       * The row this writes anyway lives 10 minutes and is what "database"
+       * checks, so this both doubles the window and removes the dependency on
+       * a third-party redirect preserving a cookie. The state stays
+       * unguessable and single-use; this changes where it is read from, not
+       * what it protects.
+       */
+      storeStateStrategy: "database",
+    },
     advanced: {
       useSecureCookies: true,
       disableCSRFCheck: false,

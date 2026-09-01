@@ -27,6 +27,35 @@ function options(configuration: ReturnType<typeof resolveBetterAuthConfiguration
 }
 
 describe("Better Auth D1 foundation configuration", () => {
+  /**
+   * Left to its default, Better Auth picks the state strategy from whether a
+   * server session store exists. This deployment has none, so it chose
+   * "cookie" — a path that hardcodes a 300s state cookie with no knob, and
+   * answers `state_mismatch` the moment a user spends longer than that on
+   * GitHub's own screens. Reproduced from a shell with no browser: mint a
+   * state, replay it at the callback, get `state_mismatch` while the row is
+   * still in `verification`. The database strategy checks that row (10
+   * minutes) and needs no cookie to survive a third-party redirect.
+   */
+  test("OAuth callback state is validated from the database, not a 5-minute cookie", () => {
+    const configured = options(resolveBetterAuthConfiguration({
+      env: {
+        CLAXEDO_AUTH_METHODS: "github",
+        BETTER_AUTH_URL: API_ORIGIN,
+        CLAXEDO_APP_ORIGIN: APP_ORIGIN,
+        BETTER_AUTH_SECRET: SECRET,
+        GITHUB_CLIENT_ID: "github-client",
+        GITHUB_CLIENT_SECRET: "github-secret",
+      },
+      emailSender: { async send() {} },
+    }))
+    try {
+      expect(configured.value.account?.storeStateStrategy).toBe("database")
+    } finally {
+      configured.database.close()
+    }
+  })
+
   test("a Google-only deployment does not enable password authentication or email delivery", () => {
     const configured = options(resolveBetterAuthConfiguration({
       env: {
