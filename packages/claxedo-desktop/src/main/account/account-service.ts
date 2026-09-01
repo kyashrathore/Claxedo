@@ -45,7 +45,7 @@ export type AccountIdentity = {
 export type AccountState =
   | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
   | { status: "pending" }
-  | { status: "signed"; identity: AccountIdentity }
+  | { status: "signed"; identity: AccountIdentity; identityLookup?: "failed" }
   | { status: "unavailable"; reason: "no-secure-storage" | "callback-failed" | "revoked"; detail: string }
 
 type Credential = { ok: true; token: string } | { ok: false; detail: string }
@@ -385,6 +385,11 @@ export function createAccountService(options: AccountServiceOptions) {
       setState({ status: "signed", identity })
     })().catch((error) => {
       options.onError?.("identity", error)
+      // Still signed — the credential is adopted — but the rail must not keep
+      // a spinner up for a lookup that is over. Say the lookup failed.
+      if (startedIn === era && state.status === "signed") {
+        setState({ status: "signed", identity: state.identity, identityLookup: "failed" })
+      }
     })
   }
 
@@ -431,6 +436,10 @@ export function createAccountService(options: AccountServiceOptions) {
 
     async signIn() {
       await logoutInFlight
+      // A signed account is the goal, not a state to replace: starting a
+      // second flow discarded the working session into `pending`, and the
+      // rail's "Cancel sign in" then logged the user out of it.
+      if (state.status === "signed") return { ok: true as const }
       if (!(await reconcilePendingRevocation())) {
         return {
           ok: false as const,

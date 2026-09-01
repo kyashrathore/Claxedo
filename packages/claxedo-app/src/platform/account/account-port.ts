@@ -44,7 +44,13 @@ export type AccountState =
   | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
   /** Sign-in is in flight — the system browser is open, or IPC is awaiting it. */
   | { status: "pending" }
-  | { status: "signed"; identity: AccountIdentity }
+  /**
+   * Signed. `identity` is empty until the profile lookup answers; when that
+   * lookup fails the account is still signed — the credential is what signs
+   * you in, the profile only names you — and `identityLookup: "failed"` says
+   * so, so the rail can stop spinning instead of waiting forever.
+   */
+  | { status: "signed"; identity: AccountIdentity; identityLookup?: "failed" }
   /**
    * Signed mode cannot work on this machine, with a reason to show.
    *

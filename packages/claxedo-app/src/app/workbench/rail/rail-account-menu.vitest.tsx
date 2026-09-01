@@ -10,6 +10,7 @@ const state = vi.hoisted(() => ({
   status: "signed" as "loading" | "anonymous" | "signed",
   accountStatus: "signed" as "unsigned" | "pending" | "signed" | "unavailable",
   accountIdentity: { userId: "user_1", displayName: "Yash Rathore" } as Record<string, string>,
+  accountIdentityLookup: undefined as "failed" | undefined,
   user: {} as Record<string, unknown>,
   signIn: vi.fn(async () => undefined),
   signOut: vi.fn(async () => undefined),
@@ -27,7 +28,11 @@ vi.mock("@/platform/auth/auth-session", () => ({
 vi.mock("@/platform/account/account-provider", () => ({
   useAccountPort: () => ({
     state: () => state.accountStatus === "signed"
-      ? { status: "signed", identity: state.accountIdentity }
+      ? {
+        status: "signed",
+        identity: state.accountIdentity,
+        ...(state.accountIdentityLookup ? { identityLookup: state.accountIdentityLookup } : {}),
+      }
       : state.accountStatus === "unavailable"
         ? { status: "unavailable", reason: "callback-failed" }
         : { status: state.accountStatus },
@@ -68,6 +73,7 @@ beforeEach(() => {
   state.accountSignInEnabled = false
   state.hostedCapable = false
   state.sandboxEnabled = false
+  state.accountIdentityLookup = undefined
   state.platform = "web"
   state.status = "signed"
   state.accountStatus = "signed"
@@ -205,6 +211,37 @@ describe("RailAccountMenu", () => {
     await openMenu("Local workspace")
 
     expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
+  })
+
+  /**
+   * What the desktop showed: "Signed in" with "Cancel sign in" AND "Log out".
+   * A signed account whose profile lookup is still running is signed; the
+   * only auth action is Log out, and the spinner says the name is coming.
+   */
+  test("keeps Log out, never Cancel, while a signed account's identity is still loading", async () => {
+    state.accountStatus = "signed"
+    state.accountIdentity = { userId: "" }
+    state.user = {}
+    renderMenu()
+
+    await openMenu("Signed in")
+    expect(document.querySelector('[data-component="spinner"]')).toBeTruthy()
+    expect(screen.queryByRole("menuitem", { name: "Cancel sign in" })).toBeNull()
+    expect(screen.queryByRole("menuitem", { name: "Sign in" })).toBeNull()
+    expect(screen.getByRole("menuitem", { name: "Log out" })).toBeTruthy()
+  })
+
+  test("stops the spinner and keeps Log out when the identity lookup failed", async () => {
+    state.accountStatus = "signed"
+    state.accountIdentity = { userId: "" }
+    state.accountIdentityLookup = "failed"
+    state.user = {}
+    renderMenu()
+
+    await openMenu("Signed in")
+    expect(document.querySelector('[data-component="spinner"]')).toBeNull()
+    expect(screen.queryByRole("menuitem", { name: "Cancel sign in" })).toBeNull()
+    expect(screen.getByRole("menuitem", { name: "Log out" })).toBeTruthy()
   })
 
   test("shows Signing in with a spinner and Cancel while pending", async () => {

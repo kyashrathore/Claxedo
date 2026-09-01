@@ -242,6 +242,50 @@ describe("bound desktop account lifecycle", () => {
    * must come back on the next successful validate rather than staying
    * unavailable until someone signs in again.
    */
+  /**
+   * The rail showed "Signed in" with both "Cancel sign in" and "Log out":
+   * a second sign-in while signed replaced the working session with
+   * `pending`, and cancelling it logged the user out. Signed is the goal.
+   */
+  test("sign-in while already signed keeps the session and starts no flow", async () => {
+    let flows = 0
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: authHarness({
+        signIn: async () => {
+          flows++
+          return { ok: true, credential: CREDENTIAL }
+        },
+      }),
+    })
+    await h.service.restore()
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+
+    await expect(h.service.signIn()).resolves.toEqual({ ok: true })
+
+    expect(flows, "no browser flow for an account that is already signed").toBe(0)
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+  })
+
+  /** A failed profile lookup must not leave the rail spinning forever: still signed, lookup failed. */
+  test("a failed identity lookup stays signed and says the lookup failed", async () => {
+    const h = harness({ store: memoryStore(CREDENTIAL) })
+    const service = createAccountService({
+      auth: h.auth.auth,
+      store: h.store,
+      now: () => 1_000,
+      fetch: async () => Response.json({ ok: true }),
+      resolveIdentity: async () => {
+        throw new Error("userinfo failed: 401")
+      },
+    })
+    await service.restore()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(service.state()).toEqual({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })
+  })
+
   test("a blip while already signed suspends, then returns to signed on the next success", async () => {
     let reachable = true
     const h = harness({

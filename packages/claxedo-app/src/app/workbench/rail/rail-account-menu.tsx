@@ -133,7 +133,10 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
   // "Account" (which read as "the lookup worked and your name is Account").
   const identityLoading = createMemo(() => {
     const state = accountState()
-    return state.status === "signed" && !state.identity.displayName && !state.identity.email
+    return state.status === "signed"
+      && state.identityLookup !== "failed"
+      && !state.identity.displayName
+      && !state.identity.email
   })
   const label = createMemo(() => {
     const state = accountState()
@@ -280,7 +283,14 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
             </DropdownMenu.Item>
           </DropdownMenu.Group>
 
-          <Show when={pending() || identityLoading()}>
+          {/*
+            Only while a sign-in is actually in flight. A signed account whose
+            profile lookup is still running (or failed) is signed: offering
+            "Cancel sign in" there, next to "Log out", read as two contradictory
+            states at once — and selecting it logged the user out of a working
+            session.
+          */}
+          <Show when={pending()}>
             <DropdownMenu.Item
               onSelect={() => {
                 // Cancels the in-flight OAuth attempt (era bump + flow.abort)
