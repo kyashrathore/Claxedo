@@ -17,16 +17,24 @@ describe("timeline Markdown height estimate", () => {
       ...Array.from({ length: 40 }, (_, index) => `| row-${index} | ready |`),
     ].join("\n")
 
-    expect(estimateLongMarkdownHeight(text)).toBe(text.split("\n").length * 24)
+    expect(estimateLongMarkdownHeight(text)).toBe(text.split("\n").length * 26)
   })
 
-  test("caps adversarial transcripts", () => {
-    expect(estimateLongMarkdownHeight(Array.from({ length: 1_000 }, () => "- row").join("\n"))).toBe(6_000)
+  test("tracks giant single-part transcripts at rendered scale instead of a low cap", () => {
+    // A 1,849-line part renders at ~53,000px; capping the estimate far below
+    // that made the bottom anchor chase a 9x size correction on first
+    // measure — a visibly blank viewport after switching to the session.
+    const estimate = estimateLongMarkdownHeight(Array.from({ length: 1_849 }, (_, i) => `line ${i}`).join("\n"))
+    expect(estimate).toBe(1_849 * 26)
+  })
+
+  test("caps truly adversarial payloads", () => {
+    expect(estimateLongMarkdownHeight(Array.from({ length: 10_000 }, () => "- row").join("\n"))).toBe(60_000)
   })
 
   test("reserves the complete line viewport for a large fenced block", () => {
     const text = ["```ts", ...Array.from({ length: 240 }, (_, index) => `export const value${index} = ${index}`), "```"].join("\n")
-    expect(estimateLongMarkdownHeight(text)).toBe(240 * 24 + 36)
+    expect(estimateLongMarkdownHeight(text)).toBe(242 * 26)
   })
 })
 

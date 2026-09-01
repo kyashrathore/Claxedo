@@ -1641,11 +1641,15 @@ export function MessageTimeline(props: MessageTimelineProps) {
   }
   function VirtualTimelineRow(props: { rowKey: string }) {
     let element: HTMLDivElement | undefined
-    const entry = createMemo(() => timelineVirtualEntry({
+    const liveEntry = createMemo(() => timelineVirtualEntry({
       rowKey: props.rowKey,
       items: virtualItemByKey(),
       rows: timelineRowByKey(),
     }))
+    // Latch the last defined entry: the virtualizer can publish an item list that momentarily omits this key while
+    // the row is still mounted (<For> disposes it a tick later); a non-keyed <Show> accessor read in that window
+    // throws Solid's stale-value error and takes down the pane boundary. The latch renders the closing frame.
+    const entry = createMemo<ReturnType<typeof liveEntry>>((previous) => liveEntry() ?? previous)
     const asyncFile = (value: TimelineRow.TimelineRow) => {
       if (value._tag !== "AssistantPart" || value.group.type !== "part") return false
       const part = getMsgPart(value.group.ref.messageID, value.group.ref.partID)
@@ -1658,16 +1662,9 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
     let contentMeasureFrame: number | undefined
     onCleanup(() => contentMeasureFrame !== undefined && cancelAnimationFrame(contentMeasureFrame))
-    onMount(() => element && virtualizer.measureElement(element))
-    createEffect(
-      on(
-        () => entry()?.item.index,
-        () => {
-          if (element) virtualizer.measureElement(element)
-        },
-        { defer: true },
-      ),
-    )
+    createEffect(on(() => entry()?.item.index, () => {
+      if (element) virtualizer.measureElement(element)
+    }, { defer: true }))
 
     return (
       <Show when={entry()}>
@@ -1688,6 +1685,8 @@ export function MessageTimeline(props: MessageTimelineProps) {
             <div
               ref={(value) => {
                 element = value
+                // JSX applies `data-index` after refs and measureElement drops (warns on) unindexed elements — stamp it first; this is also the mount measurement.
+                value.dataset.index = String(current().item.index)
                 virtualizer.measureElement(value)
               }}
               data-index={current().item.index}

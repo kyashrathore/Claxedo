@@ -28,6 +28,10 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
     const error = props.error
     if (error === reported) return
     reported = error
+    // The console line is the only locally-visible record: the boundary keeps
+    // the error out of window.onerror and the devtools console entirely, and
+    // the analytics capture below is invisible on a developer machine.
+    console.error("[error-page]", error)
     captureException(error, { ...identityProps(), surface: props.surface ?? "error_page" })
   })
 
