@@ -182,6 +182,30 @@ function matches(pathname: string, rule: RouteRule) {
   return rule.paths.some((item) => pathname === item || pathname.startsWith(item + "/"))
 }
 
+/**
+ * The runtime's identity probe. The control plane verifies every read it
+ * makes through a relay with this path first — the answer must name the
+ * workspace it asked for — before trusting the runtime it reached.
+ */
+export const WORKSPACE_RUNTIME_IDENTITY_PATH = "/global/health"
+
+/**
+ * Whether the workspace runtime answers `pathname` on the WORKSPACE-SCOPED
+ * surface: `/workspaces/:workspaceId/*`, which the relay tunnel and the
+ * loopback relay-shaped endpoint both serve.
+ *
+ * The rules above model the daemon's ROOT surface, where `/global/health` is
+ * the central server's own liveness probe and is rightly classified central.
+ * On the workspace surface the same path is the runtime's identity probe —
+ * `workspace-runtime` serves it with the workspace id — and a guard that
+ * classified the surface by root-surface rules refused exactly the request
+ * the control plane makes before every session read, with a 403 that made a
+ * connected host look like it held no sessions.
+ */
+export function runtimeServesOnWorkspaceSurface(pathname: string): boolean {
+  return pathname === WORKSPACE_RUNTIME_IDENTITY_PATH || routeOwnership(pathname).handler === RouteHandler.SandboxRuntime
+}
+
 export function routeOwnership(pathname: string): RouteOwnership {
   const rule = ROUTE_RULES.find((item) => matches(pathname, item))
   if (!rule) {

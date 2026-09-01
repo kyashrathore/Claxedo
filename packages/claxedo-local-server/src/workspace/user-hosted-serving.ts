@@ -43,7 +43,7 @@ import {
   type WorkspaceRelayHostTunnelEvent,
 } from "@claxedo/workspace-runtime/relay"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
-import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
+import { runtimeServesOnWorkspaceSurface } from "@claxedo/server-core/platform/governance/route-ownership"
 import { FORWARDED_CLIENT_HEADERS } from "@claxedo/server-core/platform/http/peer-address"
 
 const log = Log.create({ service: "user-hosted-serving" })
@@ -303,9 +303,10 @@ function openWorkspaceTunnel(input: {
       // naming any other workspace is not this connection's to answer, even
       // when the same machine happens to serve that one too.
       if (requested !== workspaceId) return
-      if (routeOwnership(new URL(path, "http://workspace.local").pathname).handler !== RouteHandler.SandboxRuntime) {
-        return
-      }
+      // The tunnel is the workspace-scoped surface: only what the runtime
+      // serves there crosses it — including its identity probe, which the
+      // root-surface classifier alone would call central and refuse.
+      if (!runtimeServesOnWorkspaceSurface(new URL(path, "http://workspace.local").pathname)) return
       return new URL(
         `/workspaces/${encodeURIComponent(workspaceId)}/${path.replace(/^\/+/, "")}`,
         `${serving.localBaseUrl}/`,

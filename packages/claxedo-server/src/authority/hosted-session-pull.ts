@@ -6,6 +6,7 @@ import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-
 import type { RelayRole } from "@claxedo/workspace-relay"
 import type { ControlPlaneServices } from "./services"
 import { resolveWorkspaceRuntimeTarget } from "./runtime-target"
+import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 
 function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
@@ -250,7 +251,7 @@ async function verifiedRuntimeJson<T>(
 ) {
   const health = await runtimeJson<Record<string, unknown>>(services, auth, {
     ...input,
-    path: "/global/health",
+    path: WORKSPACE_RUNTIME_IDENTITY_PATH,
   })
   if (txt(health.workspaceId) !== input.workspaceId) {
     throw new HostedSessionPullError(

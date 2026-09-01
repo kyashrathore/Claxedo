@@ -6,6 +6,7 @@ import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./
 import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
 import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
+import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
   const url = new URL(path, "http://workspace-runtime.local")
@@ -29,7 +30,7 @@ export async function verifiedRuntimeJson<T>(
 ) {
   const health = await runtimeJson<Record<string, unknown>>(services, options, {
     ...input,
-    path: "/global/health",
+    path: WORKSPACE_RUNTIME_IDENTITY_PATH,
   })
   if (txt(health.workspaceId) !== input.workspaceId) {
     throw new ControlPlaneProtocolError(

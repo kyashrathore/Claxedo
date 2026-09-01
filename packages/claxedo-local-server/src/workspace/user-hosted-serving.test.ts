@@ -109,6 +109,14 @@ describe("relay connection grain", () => {
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider?harness=opencode" })?.pathname).toBe(
       `/workspaces/${WS_A}/provider`,
     )
+    // The runtime's identity probe. The control plane verifies every read
+    // with it, and the root-surface classifier calls it central because the
+    // daemon's own liveness probe shares the path. Through the tunnel it is
+    // the runtime's, and refusing it made a connected host list no sessions.
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/global/health" })?.pathname).toBe(
+      `/workspaces/${WS_A}/global/health`,
+    )
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/claxedo/health" })).toBeUndefined()
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/auth" })).toBeUndefined()
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/anthropic/oauth/authorize" })).toBeUndefined()
   })
